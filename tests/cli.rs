@@ -3064,7 +3064,7 @@ fn bug_report_include_deck_adds_exactly_the_requested_deck_verbatim() {
     )
     .unwrap();
     let requested = decks.join("requested-private-name.md");
-    let requested_bytes = b"---\nformat-version: 1\nid: deck-requested123\n---\n## requested-front <!-- id: card-requested123 -->\nrequested-back\n> requested-authored-note\n";
+    let requested_bytes = b"---\nformat-version: 1\nid: deck-requested123\n---\n## requested-front <!-- id: card-requested123 -->\nrequested-back\n> [!NOTE]\n> requested-authored-note\n";
     std::fs::write(&requested, requested_bytes).unwrap();
     std::fs::write(
         decks.join("other.md"),
@@ -4323,6 +4323,7 @@ fn generate_workspace_applies_goal_language_audience_and_card_style() {
          - [ ] Hamburg\n\
          - [x] Berlin\n\
          - [ ] München\n\
+         > [!NOTE]\n\
          > Hamburg und München sind Großstädte, aber keine Bundeshauptstadt.\n\
          <!-- at: notes.md:1 -->\n\
          === item 2 ===\n\
@@ -4330,6 +4331,7 @@ fn generate_workspace_applies_goal_language_audience_and_card_style() {
          - [ ] Kommune\n\
          - [x] Bund\n\
          - [ ] Land\n\
+         > [!NOTE]\n\
          > Kommune und Land bezeichnen andere staatliche Ebenen.\n\
          <!-- at: notes.md:1 -->\n",
     );
@@ -6117,7 +6119,7 @@ fn the_verbose_log_contains_ids_but_no_learning_content_names_titles_or_paths() 
     let note = "PRIVATE_NOTE_44PX";
     let deck = format!(
         "---\nformat-version: 1\nid: deck-private83yq\ntitle: {title}\n---\n\
-         ## {front}\n{back}\n\n> {note}\n<!-- id: card-private29qw -->\n"
+         ## {front}\n{back}\n\n> [!NOTE]\n> {note}\n<!-- id: card-private29qw -->\n"
     );
     write(dir.path(), filename, &deck);
 

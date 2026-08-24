@@ -301,16 +301,39 @@ table and the next card. Anything outside that shape is a parse error rather
 than a guess. And a table earns its place at dozens of rows; under roughly
 ten cards, plain `##` cards read better and can carry everything a card can.
 
-## Notes
+## Notes and quotes
 
-A line beginning with `>` is a **note**: shown *after* you answer, never part of
-what's tested. Consecutive `>` lines join into one note:
+A blockquote whose first line is one of GitHub's five alert badges is a
+**note**: shown *after* you answer, never part of what's tested. The badge sits
+alone on that line, and the `>` lines under it are the note's body:
 
 ```
 ## Why does TCP open with a three-way handshake?
 To agree on initial sequence numbers in both directions.
+> [!NOTE]
 > SYN, SYN-ACK, ACK: each side learns the other's starting sequence.
 ```
+
+The five are `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, and
+`[!CAUTION]`, spelled exactly as GitHub spells them. They render as GitHub
+renders them, which is the point: a deck pasted from a repository keeps its
+meaning without editing.
+
+Every **other** blockquote is a quote, and a quote is content. It belongs to
+the answer and reveals with it, so you can finally put someone's actual words
+on a card:
+
+```
+## What did Dijkstra say about testing?
+That it shows the presence of bugs, never their absence.
+> Program testing can be used to show the presence of bugs, but never
+> to show their absence.
+```
+
+A badge alix does not recognize, a badge in the wrong case, or a badge with
+text after it on the same line is a quote, exactly as on GitHub. That is a
+quiet change of meaning, so `alix doctor` names it rather than leaving you to
+find it. A badge with no body below it draws a warning too, and shows nothing.
 
 Keep the *answer* to the thing you want to recall, and put the *why*, the example,
 or the mnemonic in a note.

@@ -51,6 +51,7 @@ others. Name the blank you mean and write the note to that name:
 ```
 ## The test pyramid, bottom to top
 \blank[base]{Unit}, \blank{integration}, \blank{end-to-end}
+> [!NOTE]
 > base: Fastest and most numerous, which is why they sit at the bottom.
 ```
 

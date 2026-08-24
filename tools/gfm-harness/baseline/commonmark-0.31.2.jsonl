@@ -3,7 +3,7 @@
 {"e":3,"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":4,"err":"line 4: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":5,"err":"line 4: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
-{"e":6,"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":6,"cards":1,"back":"exact"}
 {"e":7,"cards":1,"back":"exact"}
 {"e":8,"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":9,"cards":1,"back":"ws"}
@@ -98,7 +98,7 @@
 {"e":98,"g":[1,13],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
 {"e":99,"g":[13],"cards":1,"back":"exact"}
 {"e":100,"g":[1,13],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
-{"e":101,"g":[13],"cards":1,"back":"div"}
+{"e":101,"g":[13],"cards":1,"back":"exact"}
 {"e":102,"g":[13],"cards":1,"back":"div"}
 {"e":103,"g":[1,13],"err":"line 5: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
 {"e":104,"g":[1,13],"err":"line 7: prose after a `---` section terminator belongs to no section; open a heading first"}
@@ -125,7 +125,7 @@
 {"e":125,"g":[4],"cards":1,"back":"exact"}
 {"e":126,"g":[4],"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
 {"e":127,"g":[4],"lints":["Lint { line: 2, kind: UnclosedFence }"],"cards":1,"back":"ws"}
-{"e":128,"g":[4],"cards":1,"back":"div"}
+{"e":128,"g":[4],"cards":1,"back":"ws"}
 {"e":129,"g":[4],"cards":1,"back":"exact"}
 {"e":130,"g":[4],"cards":1,"back":"exact"}
 {"e":131,"g":[4],"lints":["Lint { line: 5, kind: UnclosedFence }"],"cards":1,"back":"ws"}
@@ -215,7 +215,7 @@
 {"e":215,"g":[8],"err":"line 4: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"}
 {"e":216,"g":[8],"err":"line 3: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"}
 {"e":217,"g":[8],"cards":1,"back":"div"}
-{"e":218,"g":[8],"cards":1,"back":"div"}
+{"e":218,"g":[8],"cards":1,"back":"ws"}
 {"e":219,"g":[3],"cards":1,"back":"ws"}
 {"e":220,"g":[3],"cards":1,"back":"ws"}
 {"e":221,"g":[3],"cards":1,"back":"ws"}
@@ -225,31 +225,31 @@
 {"e":225,"g":[3],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":226,"g":[3],"cards":1,"back":"ws"}
 {"e":227,"g":[3],"cards":1,"back":"div"}
-{"e":228,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
-{"e":229,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
-{"e":230,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":228,"g":[12],"cards":1,"back":"exact"}
+{"e":229,"g":[12],"cards":1,"back":"exact"}
+{"e":230,"g":[12],"cards":1,"back":"ws"}
 {"e":231,"g":[12],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
-{"e":232,"g":[12],"cards":1,"back":"div"}
-{"e":233,"g":[12],"cards":1,"back":"div"}
+{"e":232,"g":[12],"cards":1,"back":"exact"}
+{"e":233,"g":[12],"cards":1,"back":"exact"}
 {"e":234,"g":[12],"err":"line 3: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"}
-{"e":235,"g":[12],"cards":1,"back":"div"}
-{"e":236,"g":[12],"cards":1,"back":"div"}
-{"e":237,"g":[12],"lints":["Lint { line: 4, kind: UnclosedFence }"],"cards":1,"back":"div"}
-{"e":238,"g":[12],"cards":1,"back":"div"}
-{"e":239,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
-{"e":240,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
-{"e":241,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
-{"e":242,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
-{"e":243,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
-{"e":244,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
-{"e":245,"g":[12],"cards":1,"back":"div"}
+{"e":235,"g":[12],"cards":1,"back":"exact"}
+{"e":236,"g":[12],"cards":1,"back":"ws"}
+{"e":237,"g":[12],"lints":["Lint { line: 4, kind: UnclosedFence }"],"cards":1,"back":"ws"}
+{"e":238,"g":[12],"cards":1,"back":"ws"}
+{"e":239,"g":[12],"cards":1,"back":"exact"}
+{"e":240,"g":[12],"cards":1,"back":"ws"}
+{"e":241,"g":[12],"cards":1,"back":"ws"}
+{"e":242,"g":[12],"cards":1,"back":"ws"}
+{"e":243,"g":[12],"cards":1,"back":"exact"}
+{"e":244,"g":[12],"cards":1,"back":"exact"}
+{"e":245,"g":[12],"cards":1,"back":"exact"}
 {"e":246,"g":[12],"err":"line 3: a `***`/`___` break has no meaning inside a card; delete the line, or move the material to a section"}
-{"e":247,"g":[12],"cards":1,"back":"div"}
-{"e":248,"g":[12],"cards":1,"back":"div"}
-{"e":249,"g":[12],"cards":1,"back":"div"}
+{"e":247,"g":[12],"cards":1,"back":"exact"}
+{"e":248,"g":[12],"cards":1,"back":"ws"}
+{"e":249,"g":[12],"cards":1,"back":"exact"}
 {"e":250,"g":[12],"err":"line 2: quotes do not nest; keep the note one `>` deep, or put literal `>` text in a ``` fence"}
 {"e":251,"g":[12],"err":"line 2: quotes do not nest; keep the note one `>` deep, or put literal `>` text in a ``` fence"}
-{"e":252,"g":[12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":252,"g":[12],"cards":1,"back":"ws"}
 {"e":253,"g":[3,12],"err":"line 5: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":254,"g":[3,12],"err":"line 5: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":255,"g":[3,12],"cards":1,"back":"ws"}
@@ -289,8 +289,8 @@
 {"e":289,"g":[3,12],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":290,"g":[3,12],"err":"line 5: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":291,"g":[3,12],"cards":1,"back":"ws"}
-{"e":292,"g":[3,12],"cards":1,"back":"div"}
-{"e":293,"g":[3,12],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
+{"e":292,"g":[3,12],"cards":1,"back":"exact"}
+{"e":293,"g":[3,12],"cards":1,"back":"exact"}
 {"e":294,"g":[3,12],"cards":1,"back":"ws"}
 {"e":295,"g":[3,12],"cards":1,"back":"ws"}
 {"e":296,"g":[3,12],"cards":1,"back":"ws"}
@@ -317,8 +317,8 @@
 {"e":317,"g":[3,12],"cards":1,"back":"div"}
 {"e":318,"g":[3,12],"cards":1,"back":"ws"}
 {"e":319,"g":[3,12],"err":"line 5: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
-{"e":320,"g":[3,12],"cards":1,"back":"div"}
-{"e":321,"g":[3,12],"cards":1,"back":"div"}
+{"e":320,"g":[3,12],"cards":1,"back":"ws"}
+{"e":321,"g":[3,12],"cards":1,"back":"ws"}
 {"e":322,"g":[3,12],"cards":1,"back":"exact"}
 {"e":323,"g":[3,12],"cards":1,"back":"ws"}
 {"e":324,"g":[3,12],"cards":1,"back":"ws"}

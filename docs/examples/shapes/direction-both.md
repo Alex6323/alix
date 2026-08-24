@@ -9,11 +9,13 @@ id: "deck-2eeft2w6yt4fd1q69b2gxzpf5p"
 
 ## la mano
 the hand
+> [!NOTE]
 > Feminine despite the -o ending, which is why it is worth drilling
 > both ways.
 <!-- id: card-2m5b9qj3zd8g0fccdh0d1t5b3k -->
 
 ## el idioma
 language
+> [!NOTE]
 > Masculine despite the -a ending. Greek-derived nouns often are.
 <!-- id: card-5mesprm0sxnkc903b2k6kt5g7t -->

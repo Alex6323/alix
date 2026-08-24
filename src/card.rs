@@ -29,8 +29,9 @@ impl Direction {
 pub struct GroupMember {
     pub stamp: Option<Arc<str>>,
     pub hidden: Option<String>,
-    /// The member's directive line: the removal address of exactly this
-    /// region, never a card-block boundary.
+    /// The member's directive line: the removal address of e        line.starts_with("[!") &&
+    /// line.contains(0x27]0x27) && Self::parse(line).is_none()actly this region, never a
+    /// card-block boundary.
     pub line: usize,
 }
 
@@ -158,6 +159,8 @@ pub struct Card {
     pub context_leads: bool,
     pub back: Vec<String>,
     pub note: Option<String>,
+    /// The GitHub alert badge that opened this card's note, when one did.
+    pub note_badge: Option<Badge>,
     pub line: usize,
     /// The authored block's first line: a heading card's own line, a table
     /// row's table line. Every review unit one block expands to shares it.
@@ -207,6 +210,38 @@ pub struct Card {
     pub answer_fences: Vec<AnswerFence>,
 }
 
+/// GitHub's five alert badges, the closed set whose presence on a
+/// blockquote's first line makes it a note rather than a quote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Badge {
+    Note,
+    Tip,
+    Important,
+    Warning,
+    Caution,
+}
+
+impl Badge {
+    /// The exact GitHub spellings; any other casing is a quote there, so
+    /// accepting one here would diverge from the rendering alix mirrors.
+    pub fn parse(line: &str) -> Option<Self> {
+        match line {
+            "[!NOTE]" => Some(Self::Note),
+            "[!TIP]" => Some(Self::Tip),
+            "[!IMPORTANT]" => Some(Self::Important),
+            "[!WARNING]" => Some(Self::Warning),
+            "[!CAUTION]" => Some(Self::Caution),
+            _ => None,
+        }
+    }
+
+    /// True for a first blockquote line shaped like a badge that is not one
+    /// of the five, which stays a quote and is worth a doctor warning.
+    pub fn is_misspelled(line: &str) -> bool {
+        line.starts_with("[!") && line.contains(']') && Self::parse(line).is_none()
+    }
+}
+
 impl Card {
     pub fn plain(
         subject: Arc<str>,
@@ -229,6 +264,7 @@ impl Card {
             context_leads: false,
             back,
             note,
+            note_badge: None,
             line,
             block_line: line,
             parent_block: None,
@@ -275,6 +311,7 @@ impl Card {
         );
         card.deck_id = Arc::clone(&self.deck_id);
         card.definitions = Arc::clone(&self.definitions);
+        card.note_badge = self.note_badge;
         // Built after the parser has finished, so the builder's stamp never
         // reaches it: the reverse half must carry the section itself.
         card.section_context = self.section_context.clone();

@@ -9,6 +9,7 @@ description: Math rendering fixtures for every card surface.
 - [ ] $F = ma$
 - [ ] $p = mv$
 <!-- choices-single -->
+> [!NOTE]
 > Einstein related **energy** and mass with $E = mc^2$.
 > - [x] Includes $c^2$
 > - [ ] Includes `$c^2$` as code

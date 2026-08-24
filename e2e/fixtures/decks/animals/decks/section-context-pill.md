@@ -16,6 +16,7 @@ or crowd the answer choices during an ordinary review.
 - [ ] unterstellen
 - [ ] widerlegen
 <!-- choices-single -->
+> [!NOTE]
 > Einräumen means to concede, unterstellen means to allege, and widerlegen means to refute.
 <!-- id: card-2kdq2rmxgjz93sdpd3xne603w0 -->
 
@@ -25,5 +26,6 @@ or crowd the answer choices during an ordinary review.
 - [ ] unterstellen
 - [ ] widerlegen
 <!-- choices-single -->
+> [!NOTE]
 > Befürworten means to advocate, unterstellen means to allege, and widerlegen means to refute.
 <!-- id: card-35x9dyx527mb9ydkqp12wgmek2 -->

@@ -53,6 +53,7 @@ on the plain lines beneath it:
 ```
 ## What does SRS stand for?
 Spaced repetition system.
+> [!NOTE]
 > It schedules each card just before you'd forget it.
 
 ## Which scheduler does alix use?

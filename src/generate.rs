@@ -1051,7 +1051,7 @@ mod tests {
 
     #[test]
     fn a_generated_choice_note_cannot_name_a_position_that_shuffle_changes() {
-        let deck = "---\ntasklist: choices-single\n---\n## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n> Option 2 reverses the relation.\n";
+        let deck = "---\ntasklist: choices-single\n---\n## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n> [!NOTE]\n> Option 2 reverses the relation.\n";
 
         for card_style in [GenerateCardStyle::Mixed, GenerateCardStyle::AuthoredChoices] {
             let spec = GenerationSpec {

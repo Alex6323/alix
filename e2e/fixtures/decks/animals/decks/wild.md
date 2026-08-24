@@ -6,6 +6,7 @@ description: A few facts about wild animals.
 
 ## Which animal is the tallest in the world?
 Giraffe
+> [!NOTE]
 > A giraffe's neck alone can be taller than a grown-up.
 > - [x] Long neck
 > - [ ] Short neck

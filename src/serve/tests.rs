@@ -2195,6 +2195,7 @@ fn walk_deck(dir: &Path) -> crate::trace::Trace {
         "---\ntrace: how `it` works\nsource: source.txt\n---\n\
          ## Predict the `first` hop\n\
          it reads the `first` line\n\
+         > [!NOTE]\n\
          > call `read`\n\
          <!-- given: line — the `input` line -->\n\
          <!-- at: 1 -->\n\

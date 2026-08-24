@@ -10,5 +10,6 @@ id: "deck-40d21f4ad99ja80e67nbthesn4"
 - [x] Otter
 - [ ] Lizard
 <!-- choices-multiple -->
+> [!NOTE]
 > Dolphins and otters are mammals; trout and lizards are not.
 <!-- id: card-3pffk635vcekqemej1gyaeswrh -->

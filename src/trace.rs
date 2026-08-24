@@ -568,6 +568,7 @@ mod tests {
              source: source.txt\n---\n\
              ## Predict the first hop\n\
              it reads the first line\n\
+             > [!NOTE]\n\
              > the entry point\n\
              <!-- given: line — the current input line -->\n\
              <!-- at: 1 -->\n\

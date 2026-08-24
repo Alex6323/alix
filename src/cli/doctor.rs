@@ -658,6 +658,14 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
              below it stays literal; known names: `choices-single`, `choices-multiple`, \
              `cards`, `plain`"
             .to_string(),
+        LintKind::BadgeShape { text } => format!(
+            "`{text}` is not one of the five alert badges, so this blockquote is a quote \
+             and not a note; write `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, or \
+             `[!CAUTION]` alone on the line"
+        ),
+        LintKind::EmptyNote => "this alert badge opens a note with no body, so the card \
+             shows nothing for it"
+            .to_string(),
         LintKind::UnclosedFence => "a fence opened here never closes; everything after it \
              (cards included) was swallowed as its content"
             .to_string(),

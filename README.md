@@ -62,6 +62,7 @@ alix
 ```text
 ## What does a String own?
 A Vec<u8>, its bytes on the heap.
+> [!NOTE]
 > Capacity can exceed its length.
 
 ## Fill in the blank

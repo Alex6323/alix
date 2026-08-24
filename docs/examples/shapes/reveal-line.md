@@ -11,6 +11,7 @@ id: "deck-7yen1at9rgkttb00kvbyer46mh"
 The client sends SYN.
 The server replies SYN-ACK.
 The client sends ACK.
+> [!NOTE]
 > Three messages, not two: the server must also learn that its own
 > sequence number arrived.
 <!-- id: card-4qmfmcwc7432kj841ex6ecqv83 -->

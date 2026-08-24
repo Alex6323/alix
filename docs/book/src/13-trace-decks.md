@@ -32,12 +32,14 @@ source: .
 Only the stack data (pointer, length, capacity) is copied.
 So s1 and s2 point at the *same* heap allocation.
 <!-- at: src/ch04-01-what-is-ownership.md:290-297 fingerprint: xxh64-0123456789abcdef -->
+> [!NOTE]
 > The heap contents themselves are never copied here.
 
 ## So s1 and s2 point at one heap allocation. What breaks when both go out of scope, and how does Rust stop it?
 Both would call drop on that memory (a double free).
 Rust treats the assignment as a move: s1 is invalidated, so only s2 frees it.
 <!-- at: src/ch04-01-what-is-ownership.md:322-343 fingerprint: xxh64-123456789abcdef0 -->
+> [!NOTE]
 > Using s1 after the move is a compile-time error.
 ```
 

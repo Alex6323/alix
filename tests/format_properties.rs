@@ -147,7 +147,7 @@ fn render_card(card: &GenCard) -> String {
         }
     }
     if let Some(note) = &card.note {
-        out.push_str(&format!("> {note}\n"));
+        out.push_str(&format!("> [!NOTE]\n> {note}\n"));
     }
     if let Some(token) = &card.token {
         out.push_str(&format!("<!-- id: {token} -->\n"));

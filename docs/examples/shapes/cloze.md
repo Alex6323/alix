@@ -8,10 +8,12 @@ id: "deck-3na8f2nm1bcqhd2cacvam3y23c"
 
 ## Ownership in Rust
 When the owner leaves scope, the value is \blank{dropped}.
+> [!NOTE]
 > The point is deterministic release: no garbage collector decides when.
 <!-- id: card-11555cmyqk4h7bdmhwy15gy3ct -->
 
 ## The Gaussian year
 Light takes about \blank{8} minutes to reach Earth from the Sun.
+> [!NOTE]
 > Close enough to notice: a solar flare is seen after it happened.
 <!-- id: card-0p6f6sf99hy23k94xz8xz2bcwr -->

@@ -1069,7 +1069,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Old question\nOld answer\n> Clearer note.\n<!-- at: code.rs:2 -->\n<!-- id: card-oldcard -->\n",
+                "## Old question\nOld answer\n> [!NOTE]\n> Clearer note.\n<!-- at: code.rs:2 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
 
@@ -1228,7 +1228,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Old question\nOld answer\n> reviewed\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
+                "## Old question\nOld answer\n> [!NOTE]\n> reviewed\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
         stage(

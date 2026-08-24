@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::{
     answer::Input,
-    card::{Card, CardImage, Direction},
+    card::{Badge, Card, CardImage, Direction},
     choice,
     depth::Reveal,
     token,
@@ -111,6 +111,13 @@ pub enum LintKind {
     /// block below it stays literal, which is silent exactly when the
     /// author meant to invoke.
     UnknownInvocation,
+    /// A blockquote opening with a badge-shaped first line that is not one
+    /// of the five: it stays a quote, which is a silent meaning shift.
+    BadgeShape {
+        text: String,
+    },
+    /// A badged note with no body lines: it renders nothing.
+    EmptyNote,
     UntypableHole {
         answer: String,
     },
@@ -682,6 +689,14 @@ struct RawCard {
     /// The same rule for the note stream: a `> $$` opener, tracked on the
     /// stripped note text.
     open_note_math: Option<usize>,
+    note_badge: Option<Badge>,
+}
+
+/// What the blockquote run currently being scanned turned out to be.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum QuoteRun {
+    Note,
+    Quote,
 }
 
 impl RawCard {
@@ -921,6 +936,7 @@ fn scan(
     let mut prev_heading = false;
     let mut prev_prose = false;
     let mut mappable_block: Option<MappableBlock> = None;
+    let mut quote_run: Option<QuoteRun> = None;
     let mut terminated: Option<usize> = None;
     let mut idle_terminators: Vec<usize> = Vec::new();
 
@@ -934,6 +950,7 @@ fn scan(
         let was_prose = prev_prose;
         prev_prose = false;
         let block_above = mappable_block.take();
+        let run_above = quote_run.take();
 
         if skip_delimiter {
             skip_delimiter = false;
@@ -1188,6 +1205,7 @@ fn scan(
                 machinery: None,
                 open_math: None,
                 open_note_math: None,
+                note_badge: None,
             });
             prev_blank = false;
             prev_heading = true;
@@ -1309,16 +1327,53 @@ fn scan(
             match current.as_mut() {
                 Some(card) => {
                     card.machinery_stays_trailing()?;
-                    if trim_ws(text) == "$$" {
-                        card.open_note_math = match card.open_note_math {
-                            None => Some(lineno),
-                            Some(_) => None,
-                        };
+                    // A badge opens a note; every other blockquote is a
+                    // quote, which is answer content and reveals with it.
+                    let run = run_above.unwrap_or_else(|| match Badge::parse(trim_ws(text)) {
+                        Some(badge) => {
+                            card.note_badge = Some(badge);
+                            QuoteRun::Note
+                        }
+                        None => {
+                            if Badge::is_misspelled(trim_ws(text)) {
+                                lints.push(Lint {
+                                    line: lineno,
+                                    kind: LintKind::BadgeShape {
+                                        text: trim_ws(text).to_string(),
+                                    },
+                                });
+                            }
+                            QuoteRun::Quote
+                        }
+                    });
+                    quote_run = Some(run);
+                    match run {
+                        QuoteRun::Note => {
+                            if run_above.is_none() {
+                                if lines
+                                    .get(idx + 1)
+                                    .is_none_or(|next| trim_ws(next).strip_prefix('>').is_none())
+                                {
+                                    lints.push(Lint {
+                                        line: lineno,
+                                        kind: LintKind::EmptyNote,
+                                    });
+                                }
+                            } else {
+                                if trim_ws(text) == "$$" {
+                                    card.open_note_math = match card.open_note_math {
+                                        None => Some(lineno),
+                                        Some(_) => None,
+                                    };
+                                }
+                                append_note(card, text);
+                            }
+                        }
+                        QuoteRun::Quote => push_content(&mut current, lineno, t.to_string())?,
                     }
-                    append_note(card, text);
                 }
-                // A section has no note to append to, so the line is
-                // ordinary section prose rather than a dropped quote.
+                // A section has no card to own a note, so the line is
+                // ordinary section prose either way.
                 None => section_line(
                     &mut section,
                     seen_heading,
@@ -2526,6 +2581,7 @@ fn build_card_inner(
         machinery: _,
         open_math: _,
         open_note_math: _,
+        note_badge,
     } = raw;
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
     {
@@ -2891,6 +2947,7 @@ fn build_card_inner(
         }
         let mut card = Card::plain(Arc::clone(subject), front, correct, note, line);
         card.deck_id = Arc::clone(deck_id);
+        card.note_badge = note_badge;
         card.token = directives.token.as_deref().map(Arc::from);
         card.images = images;
         card.images_back = images_back;
@@ -3054,6 +3111,7 @@ fn build_card_inner(
             .collect();
         let mut card = Card::plain(Arc::clone(subject), front, back_lines, note, line);
         card.deck_id = Arc::clone(deck_id);
+        card.note_badge = note_badge;
         card.token = directives.token.as_deref().map(Arc::from);
         card.reveal = directives.reveal;
         card.input = directives.input;
@@ -3189,6 +3247,7 @@ fn build_card_inner(
             line,
         );
         card.deck_id = Arc::clone(deck_id);
+        card.note_badge = note_badge;
         card.context = context;
         card.context_leads = true;
         card.hash_lines = Some(hash_lines);
@@ -5086,7 +5145,7 @@ a
 
     #[test]
     fn consecutive_quote_lines_concatenate_into_the_note() {
-        let deck = parse("## q\n---\nans\n> one\n> two\n");
+        let deck = parse("## q\n---\nans\n> [!NOTE]\n> one\n> two\n");
         assert_eq!(Some("one\ntwo".to_string()), deck.cards[0].note);
     }
 
@@ -5501,6 +5560,86 @@ a
 
     /// The machinery run between a block and its invocation is a closed,
     /// recognized set; anything else standing there is a block of its own.
+    /// A badge opens a note; every other blockquote is a quote, which is
+    /// answer content and reveals with it.
+    #[test]
+    fn a_badge_opens_a_note_and_every_other_blockquote_is_a_quote() {
+        for (badge, why) in [
+            ("[!NOTE]", "the neutral badge"),
+            (
+                "[!TIP]",
+                "a tip is a plain styled note, not the retired hint",
+            ),
+            ("[!IMPORTANT]", "the third badge"),
+            ("[!WARNING]", "the fourth badge"),
+            ("[!CAUTION]", "the fifth badge"),
+        ] {
+            let deck = parse(&format!("## Q\nanswer\n> {badge}\n> because\n"));
+            assert_eq!(
+                Some("because".to_string()),
+                deck.cards[0].note,
+                "{why}: the badge line opens the note and never joins its body"
+            );
+            assert_eq!(
+                vec!["answer"],
+                deck.cards[0].back,
+                "{why}: a note is not answer content"
+            );
+            assert!(deck.lints.is_empty(), "{why}: a valid badge draws nothing");
+        }
+
+        let deck = parse("## Q\nanswer\n> a quoted line\n> and its second\n");
+        assert_eq!(
+            vec!["answer", "> a quoted line", "> and its second"],
+            deck.cards[0].back,
+            "a bare blockquote is a quote, so it is answer content"
+        );
+        assert_eq!(None, deck.cards[0].note, "and it is not a note");
+        assert!(
+            deck.lints.is_empty(),
+            "an ordinary quote is legitimate content and draws nothing: {:?}",
+            deck.lints
+        );
+    }
+
+    /// Badge misuse degrades to a quote with a doctor warning; hard errors
+    /// stay reserved for shapes that silently corrupt meaning.
+    #[test]
+    fn a_badge_alix_does_not_know_stays_a_quote_and_is_named() {
+        for (first, why) in [
+            ("[!NOTES]", "a typo'd badge name"),
+            (
+                "[!note]",
+                "GitHub casing is exact, so lowercase is a quote there too",
+            ),
+            (
+                "[!NOTE] text on the same line",
+                "GitHub wants the badge alone",
+            ),
+        ] {
+            let deck = parse(&format!("## Q\nanswer\n> {first}\n> body\n"));
+            assert_eq!(None, deck.cards[0].note, "{why}: it never opens a note");
+            assert_eq!(
+                3,
+                deck.cards[0].back.len(),
+                "{why}: the whole run is answer content"
+            );
+            assert!(
+                matches!(deck.lints[0].kind, LintKind::BadgeShape { .. }),
+                "{why}: the meaning shift is named, got {:?}",
+                deck.lints
+            );
+        }
+
+        let deck = parse("## Q\nanswer\n> [!NOTE]\n");
+        assert_eq!(None, deck.cards[0].note, "an empty note carries nothing");
+        assert!(
+            matches!(deck.lints[0].kind, LintKind::EmptyNote),
+            "a badge with no body is named rather than failing the deck: {:?}",
+            deck.lints
+        );
+    }
+
     #[test]
     fn everything_trails_invocation_sees_through_machinery_and_nothing_else() {
         let deck = parse(
@@ -5742,15 +5881,15 @@ a
     #[test]
     fn an_unclosed_display_math_note_fails_at_its_opener_line() {
         assert_eq!(
-            err("## Q\nanswer\n> $$\n> x^2\n"),
-            ParseError::UnclosedDisplayMath(3),
+            err("## Q\nanswer\n> [!NOTE]\n> $$\n> x^2\n"),
+            ParseError::UnclosedDisplayMath(4),
             "a note uses the same display-math spelling and hard-error contract"
         );
     }
 
     #[test]
     fn a_display_math_note_keeps_a_greater_than_source_line() {
-        let deck = parse("## Q\nanswer\n> $$\n> x^2\n> > 0\n> $$\n");
+        let deck = parse("## Q\nanswer\n> [!NOTE]\n> $$\n> x^2\n> > 0\n> $$\n");
         assert_eq!(deck.cards[0].note.as_deref(), Some("$$\nx^2\n> 0\n$$"));
     }
 
@@ -5901,7 +6040,7 @@ a
     #[test]
     fn a_choice_note_cannot_name_an_option_position_that_shuffle_changes() {
         let deck = parse(
-            "## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n<!-- choices-single -->\n> Option 2 confuses identity with sampling.\n",
+            "## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n<!-- choices-single -->\n> [!NOTE]\n> Option 2 confuses identity with sampling.\n",
         );
 
         assert_eq!(
@@ -6297,7 +6436,8 @@ a
 
     #[test]
     fn escaped_structural_markers_render_literal() {
-        let deck = parse("## q\n---\n\\## x\n\\> y\n\\---\n\\<!-- z -->\n\\```\n> real note\n");
+        let deck =
+            parse("## q\n---\n\\## x\n\\> y\n\\---\n\\<!-- z -->\n\\```\n> [!NOTE]\n> real note\n");
         assert_eq!(
             vec!["## x", "> y", "---", "<!-- z -->", "```"],
             deck.cards[0].back
@@ -6605,7 +6745,7 @@ a
     fn a_note_addressed_to_a_group_lands_on_the_merged_card() {
         let deck = parse(
             "## q\n\\blank[hs]{SYN}, \\blank[hs]{SYN-ACK}, \\blank{ACK}\n\
-             > Shared.\n> hs: Both halves of the opening.\n",
+             > [!NOTE]\n> Shared.\n> hs: Both halves of the opening.\n",
         );
         assert_eq!(
             Some("Both halves of the opening."),
@@ -6710,7 +6850,7 @@ a
         let deck = parse(
             "## The test pyramid, bottom to top\n\
              \\blank{Unit}, \\blank{integration}, \\blank{end-to-end}\n\
-             > Unit tests sit at the base because they are fastest and most numerous.\n",
+             > [!NOTE]\n> Unit tests sit at the base because they are fastest and most numerous.\n",
         );
         assert_eq!(
             vec![Lint {
@@ -6729,7 +6869,7 @@ a
     fn an_addressed_note_replaces_the_block_note_for_its_hole_alone() {
         let deck = parse(
             "## q\n\\blank[base]{Unit}, \\blank{integration}\n\
-             > Shared.\n> base: Fastest and most numerous.\n",
+             > [!NOTE]\n> Shared.\n> base: Fastest and most numerous.\n",
         );
         assert_eq!(
             Some("Fastest and most numerous."),
@@ -6742,7 +6882,7 @@ a
     fn a_plus_addressed_note_keeps_the_block_note_above_it() {
         let deck = parse(
             "## q\n\\blank[base]{Unit}, \\blank{integration}\n\
-             > Shared.\n> base+: And fastest.\n",
+             > [!NOTE]\n> Shared.\n> base+: And fastest.\n",
         );
         assert_eq!(Some("Shared.\nAnd fastest."), deck.cards[0].note.as_deref());
         assert_eq!(Some("Shared."), deck.cards[1].note.as_deref());
@@ -6750,7 +6890,9 @@ a
 
     #[test]
     fn an_addressed_note_with_no_block_note_stands_alone() {
-        let deck = parse("## q\n\\blank[base]{Unit}, \\blank{integration}\n> base+: Fastest.\n");
+        let deck = parse(
+            "## q\n\\blank[base]{Unit}, \\blank{integration}\n> [!NOTE]\n> base+: Fastest.\n",
+        );
         assert_eq!(Some("Fastest."), deck.cards[0].note.as_deref());
         assert_eq!(None, deck.cards[1].note.as_deref());
     }
@@ -6759,7 +6901,7 @@ a
     fn two_lines_addressed_to_one_hole_join_in_written_order() {
         let deck = parse(
             "## q\n\\blank[base]{Unit}, \\blank{integration}\n\
-             > base: First.\n> base: Second.\n",
+             > [!NOTE]\n> base: First.\n> base: Second.\n",
         );
         assert_eq!(Some("First.\nSecond."), deck.cards[0].note.as_deref());
     }
@@ -6768,7 +6910,8 @@ a
     /// beginning `2:` is prose and stays prose.
     #[test]
     fn a_note_that_looks_addressed_is_prose_where_no_hole_is_named() {
-        let deck = parse("## q\n\\blank{Unit}, \\blank{integration}\n> 2: the second one.\n");
+        let deck =
+            parse("## q\n\\blank{Unit}, \\blank{integration}\n> [!NOTE]\n> 2: the second one.\n");
         assert_eq!(Vec::<Lint>::new(), deck.lints);
         for card in &deck.cards {
             assert_eq!(Some("2: the second one."), card.note.as_deref());
@@ -6777,7 +6920,8 @@ a
 
     #[test]
     fn an_address_is_separated_from_its_text_by_a_space() {
-        let deck = parse("## q\n\\blank[base]{Unit}, \\blank{integration}\n> base:no space.\n");
+        let deck =
+            parse("## q\n\\blank[base]{Unit}, \\blank{integration}\n> [!NOTE]\n> base:no space.\n");
         assert_eq!(Vec::<Lint>::new(), deck.lints);
         for card in &deck.cards {
             assert_eq!(Some("base:no space."), card.note.as_deref());
@@ -6786,7 +6930,8 @@ a
 
     #[test]
     fn an_address_naming_no_hole_of_this_card_is_reported_and_kept() {
-        let deck = parse("## q\n\\blank[base]{Unit}, \\blank{integration}\n> bass: typo.\n");
+        let deck =
+            parse("## q\n\\blank[base]{Unit}, \\blank{integration}\n> [!NOTE]\n> bass: typo.\n");
         assert_eq!(
             vec![Lint {
                 line: 1,
@@ -6810,7 +6955,7 @@ a
         let deck = parse(
             "## The test pyramid, bottom to top\n\
              \\blank[base]{Unit}, \\blank{integration}, \\blank{end-to-end}\n\
-             > base: Unit tests sit at the base because they are fastest and most numerous.\n",
+             > [!NOTE]\n> base: Unit tests sit at the base because they are fastest and most numerous.\n",
         );
         assert_eq!(
             Vec::<Lint>::new(),
@@ -7468,7 +7613,7 @@ the answer
     fn a_heading_with_only_a_note_keeps_being_a_card_and_fails_loudly() {
         assert_eq!(
             ParseError::FrontWithoutAnswer(1),
-            err("## q\n> a note\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n")
+            err("## q\n> [!NOTE]\n> a note\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n")
         );
     }
 
@@ -8040,7 +8185,7 @@ the answer
     #[test]
     fn notes_ride_every_region_card() {
         let deck = parse(&format!(
-            "## name the parts\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 hidden=\"hamate\" b:d4e5f6 -->\n\n---\nthe parts\n> the lunate sits center\n<!-- id: {RTOK} -->\n"
+            "## name the parts\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 hidden=\"hamate\" b:d4e5f6 -->\n\n---\nthe parts\n> [!NOTE]\n> the lunate sits center\n<!-- id: {RTOK} -->\n"
         ));
         for card in &deck.cards {
             assert_eq!(

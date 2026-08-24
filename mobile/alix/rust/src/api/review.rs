@@ -944,6 +944,7 @@ mod tests {
              - [x] **$E = mc^2$**\n\
              - [ ] $F = ma$\n\
              <!-- choices-single -->\n\
+             > [!NOTE]\n\
              > Energy and mass use $E = mc^2$.\n\
              > - [x] Includes $c^2$\n\
              <!-- id: card-math -->\n",
@@ -1797,6 +1798,7 @@ mod tests {
              ---\n\
              ## Predict the `first` hop\n\
              it reads the `first` line\n\
+             > [!NOTE]\n\
              > call `read`\n\
              <!-- given: line — the `input` line -->\n\
              <!-- at: 1 -->\n\

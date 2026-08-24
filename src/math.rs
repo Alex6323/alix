@@ -493,6 +493,7 @@ mod tests {
              - [x] $\\sqrt{$\n\
              - [ ] $\\left($\n\
              <!-- choices-single -->\n\
+             > [!NOTE]\n\
              > note $\\begin{pmatrix}$\n\
              > `$\\frac{1$`\n\
              > ```\n\

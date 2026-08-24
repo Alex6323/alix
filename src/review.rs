@@ -883,7 +883,7 @@ mod tests {
     #[test]
     fn card_view_carries_context_note_and_images() {
         let (mut store, augment, _dir) = fixtures();
-        let mut cards = parse("## q\nthe \\blank{answer} is here\n> a note line\n");
+        let mut cards = parse("## q\nthe \\blank{answer} is here\n> [!NOTE]\n> a note line\n");
         cards[0].images = vec![crate::card::CardImage {
             src: "/pics/front.png".into(),
             alt: None,
@@ -1053,7 +1053,8 @@ mod tests {
 
     #[test]
     fn card_view_structures_the_note_and_flags_a_reshape() {
-        let mut cards = parse("## q\nan answer\n> Intro here.\n> ```\n> let x = 1;\n> ```\n");
+        let mut cards =
+            parse("## q\nan answer\n> [!NOTE]\n> Intro here.\n> ```\n> let x = 1;\n> ```\n");
         let plain = CardView::from(&cards[0]);
         assert_eq!(
             plain.note,

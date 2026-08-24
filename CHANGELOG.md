@@ -343,6 +343,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- BREAKING: a note is a badged blockquote, and every other blockquote is a
+  quote. A blockquote whose first line is exactly one of GitHub's five alert
+  badges (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`,
+  that spelling and that casing) is the post-answer note, and the `>` lines
+  under it are its body. Any other blockquote is content: it belongs to the
+  answer and reveals with it, which is how a deck carries an actual quotation
+  for the first time. Existing decks are affected without failing: a bare `>`
+  note becomes a quote in the answer, so add a badge line above each one. A
+  badge alix does not know, a badge in the wrong case, and a badge with text
+  after it on the same line are all quotes, matching GitHub, and each draws a
+  doctor warning naming the shift; a badge with no body draws one too and
+  shows nothing. Sidecar notes in a personal file are unaffected: their
+  `<!-- note: card-... -->` marker already declares them.
+
 - BREAKING: comment machinery trails its block (everything-trails).
   A mapping invocation (`<!-- cards -->`, `<!-- plain -->`,
   `<!-- choices-single -->`, `<!-- choices-multiple -->`) now sits on
