@@ -61,8 +61,12 @@ the temporary before the rename and resolves a symlinked path to its target
 first. Both properties are the file's own, not the writer's: a deck the user
 restricted to owner-only keeps that mode instead of taking the process umask,
 and a deck exposed through a symlink is repaired in place rather than having
-the link replaced by a divergent regular copy. A path that does not exist yet
-is created with the umask, which is the intended default for a new file. A writer marker and
+the link replaced by a divergent regular copy. Detecting the link and
+resolving it are separate states: a link whose target does not resolve, such
+as one pointing at unmounted storage, fails the save with the link untouched
+rather than falling back to renaming over the entry. A path that does not
+exist yet is created with the umask, which is the intended default for a new
+file. A writer marker and
 synchronization-conflict detection warn about likely same-deck concurrency;
 none of these mechanisms authenticates a writer or merges concurrent changes.
 An error after the rename remains visible, but progress and augmentation

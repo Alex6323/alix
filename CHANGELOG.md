@@ -595,6 +595,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A deck or store file reached through a symlink survives being saved: the
+  replacement lands on the link's target instead of renaming over the link
+  and forking the two paths, and the file's own permissions carry onto the
+  replacement rather than the process umask widening a restricted deck. A
+  link whose target does not resolve, such as one pointing at storage that
+  is not mounted, fails the save with the link untouched.
+
 - Link display follows the GFM inline-link grammar at its edges: a nested
   bracket pair stays inside the label (`[array[index]](url)` links) while
   a nested link beats the outer one (`[foo [bar](/inner)](/outer)` links

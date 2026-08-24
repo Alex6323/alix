@@ -6,6 +6,7 @@ use std::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Operation {
+    Resolve,
     CreateTemp,
     WriteTemp,
     SyncTemp,
@@ -81,10 +82,14 @@ pub(crate) fn replace_file_report(
     // A symlink names the entry the user chose to expose, so the replacement
     // has to land on its target: renaming over the link itself would turn it
     // into a regular copy and silently fork the two paths.
-    let resolved = std::fs::symlink_metadata(path)
-        .is_ok_and(|entry| entry.file_type().is_symlink())
-        .then(|| std::fs::canonicalize(path).ok())
-        .flatten();
+    // A link whose target does not resolve is still a link: failing to
+    // resolve must not fall back to the path that renames over the entry.
+    let resolved = match std::fs::symlink_metadata(path) {
+        Ok(entry) if entry.file_type().is_symlink() => {
+            Some(operation(Operation::Resolve, || std::fs::canonicalize(path)).map_err(before)?)
+        }
+        _ => None,
+    };
     let path = resolved.as_deref().unwrap_or(path);
     let sibling;
     let tmp = match resolved.as_deref().and_then(temp_beside) {
@@ -169,6 +174,27 @@ mod replacement_contract {
         assert!(
             !link_tmp.exists(),
             "the caller's temporary name is unused when the path resolves elsewhere"
+        );
+    }
+
+    #[test]
+    fn a_replacement_does_not_destroy_a_dangling_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("temporarily-unavailable.md");
+        let link = dir.path().join("deck.md");
+        std::os::unix::fs::symlink(&missing, &link).unwrap();
+        let tmp = dir.path().join(".deck.md.tmp");
+
+        let result = super::replace_file(&tmp, &link, b"replacement\n");
+
+        assert!(
+            result.is_err()
+                && std::fs::symlink_metadata(&link)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink()
+                && std::fs::read_link(&link).unwrap() == missing,
+            "an unavailable target must fail without replacing the user's symlink: {result:?}"
         );
     }
 }
@@ -426,7 +452,7 @@ mod tests {
         ];
         assert_eq!(
             expected, covered,
-            "the law must visit every operation in one replacement"
+            "the law must visit every operation a regular-file replacement performs"
         );
     }
 
