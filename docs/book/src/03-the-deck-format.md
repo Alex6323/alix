@@ -477,7 +477,10 @@ Key order never matters and yours is never diagnosed. Frontmatter alix itself
 writes follows one canonical order: authored keys first (`title` and
 `description` up front), machine lines like `id` last. To rewrite an existing
 deck into that order, opt in with `alix doctor <deck>
---repair-frontmatter-order`.
+--repair-frontmatter-order`. The same applies to a card's trailing comment
+machinery (any order parses, the id last is canonical):
+`--repair-comment-order` rewrites each machinery run into the canonical
+order without touching content.
 
 ## Escaping
 

@@ -1572,6 +1572,73 @@ fn trailing_table_mapping(lines: &[&str], header_idx: usize) -> Option<Mapping> 
     None
 }
 
+/// The opt-in doctor repair's half of spec choice 2 (liberal read,
+/// canonical write): reorder each contiguous run of recognized machinery
+/// comments into the canonical trailing order, the id last. Anything else
+/// (content, an editorial comment, a fence line, an unknown key) bounds a
+/// run, so the repair can never move a comment across content it might
+/// change the meaning of.
+pub fn reorder_card_comments(text: &str) -> Reorder {
+    fn machinery_rank(content: &str) -> Option<usize> {
+        let body = content
+            .trim()
+            .strip_prefix("<!--")?
+            .strip_suffix("-->")
+            .map(trim_ws)?;
+        if Mapping::parse(body).is_some() {
+            return Some(0);
+        }
+        let (key, _) = directive(body)?;
+        match key.as_str() {
+            "blank" | "cover" | "crop" => Some(2),
+            "at" => Some(3),
+            "id" => Some(4),
+            _ if is_known_card_key(&key) || matches!(key.as_str(), "diagram") => Some(1),
+            _ => None,
+        }
+    }
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let mut out = String::with_capacity(text.len());
+    let mut fence: Option<(char, usize)> = None;
+    let mut run: Vec<(usize, &str)> = Vec::new();
+    let flush = |out: &mut String, run: &mut Vec<(usize, &str)>| {
+        run.sort_by_key(|(rank, _)| *rank);
+        for (_, line) in run.drain(..) {
+            out.push_str(line);
+        }
+    };
+    for line in lines {
+        let content = line.trim_end_matches(['\n', '\r']);
+        if let Some((ch, open)) = fence {
+            if closes_fence(content, ch, open) {
+                fence = None;
+            }
+            flush(&mut out, &mut run);
+            out.push_str(line);
+            continue;
+        }
+        if let Some(opened) = fence_opener(content) {
+            fence = Some(opened);
+            flush(&mut out, &mut run);
+            out.push_str(line);
+            continue;
+        }
+        match machinery_rank(content) {
+            Some(rank) => run.push((rank, line)),
+            None => {
+                flush(&mut out, &mut run);
+                out.push_str(line);
+            }
+        }
+    }
+    flush(&mut out, &mut run);
+    if out == text {
+        Reorder::Unchanged
+    } else {
+        Reorder::Reordered(out)
+    }
+}
+
 fn check_cells(cells: &[String], lineno: usize) -> Result<(), ParseError> {
     for cell in cells {
         if cell.contains("\\blank{") || cell.contains("\\blank[") {
@@ -4613,6 +4680,44 @@ a
         let deck = parse("# S\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!("x", deck.cards[0].front);
+    }
+
+    #[test]
+    fn the_comment_order_repair_reorders_machinery_runs_only() {
+        let rows: [(&str, Reorder, &str); 5] = [
+            (
+                "## q\na\n<!-- id: card-x -->\n<!-- reveal: line -->\n",
+                Reorder::Reordered(
+                    "## q\na\n<!-- reveal: line -->\n<!-- id: card-x -->\n".into(),
+                ),
+                "the id moves last within its machinery run",
+            ),
+            (
+                "## q\na\n<!-- reveal: line -->\n<!-- id: card-x -->\n",
+                Reorder::Unchanged,
+                "the canonical order stays untouched",
+            ),
+            (
+                "## q\n```\n<!-- id: card-x -->\n<!-- reveal: line -->\n```\n",
+                Reorder::Unchanged,
+                "fence interiors are content, never machinery",
+            ),
+            (
+                "## q\na\n<!-- id: card-x -->\n<!-- an editorial aside -->\n<!-- reveal: line -->\n",
+                Reorder::Unchanged,
+                "an editorial comment bounds the runs, so nothing crosses it",
+            ),
+            (
+                "## q\n- [x] a\n- [ ] b\n<!-- id: card-x -->\n<!-- at: src/x.rs:1-2 -->\n<!-- blank: span hidden=\"a\" -->\n<!-- reveal: line -->\n<!-- choices-single -->\n",
+                Reorder::Reordered(
+                    "## q\n- [x] a\n- [ ] b\n<!-- choices-single -->\n<!-- reveal: line -->\n<!-- blank: span hidden=\"a\" -->\n<!-- at: src/x.rs:1-2 -->\n<!-- id: card-x -->\n".into(),
+                ),
+                "the full canonical order: invocation, directives, regions, locator, id",
+            ),
+        ];
+        for (input, expected, law) in rows {
+            assert_eq!(expected, reorder_card_comments(input), "{law}");
+        }
     }
 
     #[test]

@@ -268,6 +268,11 @@ notes it.
   lines like `id` last). Opt-in only: doctor never diagnoses your own order,
   and frontmatter it cannot safely permute (a blank line or comment inside
   the block) is left as-is with a note. Card and deck IDs are preserved.
+- `alix doctor [dir-or-deck] --repair-comment-order`: rewrite each checked
+  deck's trailing comment machinery into the canonical order (invocation,
+  directives, region comments, `at:` locator, `id` last). Opt-in only:
+  any order parses, an editorial comment or content bounds what may move,
+  and IDs are preserved.
 - Folder and workspace runs also count accumulated `.bak` backup files
   (overwrite leftovers) with their total size, naming both remedies:
   `alix deck restore <deck>` swaps one back,

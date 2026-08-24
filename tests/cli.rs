@@ -6919,6 +6919,37 @@ fn doctor_repair_diagrams_refuses_to_modify_a_standalone_deck() {
 }
 
 #[test]
+fn doctor_repair_comment_order_moves_the_id_last_and_is_idempotent() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "trailing.md",
+        "---\nid: \"deck-mathdeck\"\n---\n## What is 2 + 2?\n4\n<!-- id: card-math1 -->\n<!-- reveal: line -->\n",
+    );
+
+    let out = alix(&["doctor", "--repair-comment-order", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("reordered comment machinery"),
+        "stdout: {}",
+        stdout(&out)
+    );
+    let repaired = std::fs::read_to_string(&deck).unwrap();
+    assert!(
+        repaired.ends_with("4\n<!-- reveal: line -->\n<!-- id: card-math1 -->\n"),
+        "{repaired}"
+    );
+
+    let out = alix(&["doctor", "--repair-comment-order", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        !stdout(&out).contains("reordered"),
+        "a second run is already canonical: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
 fn doctor_repair_frontmatter_order_moves_machine_lines_last() {
     let dir = TempDir::new().unwrap();
     let deck = write(

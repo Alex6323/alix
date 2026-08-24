@@ -249,6 +249,12 @@ struct DoctorArgs {
     #[arg(long)]
     repair_frontmatter_order: bool,
 
+    /// Rewrite each checked deck's trailing comment machinery into the
+    /// canonical order (invocation, directives, regions, locator, id last).
+    /// Opt-in only; an author's own order is never diagnosed against it.
+    #[arg(long)]
+    repair_comment_order: bool,
+
     /// Delete every backup (`*.bak`) file under the checked folder, after one
     /// confirmation. The backups are what `alix deck restore` swaps in.
     #[arg(long)]
