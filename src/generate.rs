@@ -895,6 +895,50 @@ mod tests {
         );
     }
 
+    /// The two combinations the earlier probes never put together: a card
+    /// table plus the reveal directive the prompts offer it, and a choice card
+    /// carrying THREE trailing things at once. Both parse, so the prompts may
+    /// keep teaching them.
+    #[test]
+    fn the_remaining_joint_trailing_shapes_parse_in_prompt_order() {
+        let table = parser::parse(
+            "deck.md",
+            "| front | back |\n| --- | --- |\n| a | b |\n<!-- cards -->\n\
+             <!-- reveal: line -->\n",
+        )
+        .expect("a card-table invocation carries the taught reveal directive");
+        assert!(
+            table
+                .cards
+                .iter()
+                .all(|card| card.reveal == Some(crate::depth::Reveal::Line)),
+            "and the mode reaches every row card: {table:?}"
+        );
+
+        let choice = parser::parse(
+            "deck.md",
+            "## Pick one\n- [x] right\n- [ ] wrong\n- [ ] also wrong\n\
+             <!-- choices-single -->\n<!-- at: src/lib.rs:1-2 -->\n\
+             > [!NOTE]\n> why the alternatives fail\n",
+        )
+        .expect("a choice invocation carries a locator and then its taught note");
+        let card = &choice.cards[0];
+        assert_eq!(
+            Some("why the alternatives fail"),
+            card.note.as_deref(),
+            "the note survives two directives above it: {card:?}"
+        );
+        assert_eq!(
+            "src/lib.rs:1-2", card.citations[0].locator,
+            "so does the locator: {card:?}"
+        );
+        assert_eq!(
+            vec!["wrong", "also wrong"],
+            card.authored_distractors,
+            "and the invocation still binds its list: {card:?}"
+        );
+    }
+
     #[test]
     fn readme_quickstart_does_not_teach_the_retired_bare_note_shape() {
         let readme = include_str!("../README.md");
