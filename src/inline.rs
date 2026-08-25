@@ -1299,10 +1299,9 @@ fn footprint_start(glyph: &Glyph) -> usize {
     glyph.raw_index - usize::from(glyph.escaped && !glyph.code)
 }
 
-/// Projection deletes authored characters, so two glyphs adjacent in the
-/// projected stream need not have been adjacent in the source. Every
-/// predicate that asks a question about a NEIGHBOUR has to ask it of the
-/// authored text, or removed markup silently manufactures the adjacency.
+/// Projection deletes authored characters (a tag marker, a math delimiter, a
+/// code fence), so two glyphs adjacent in the projected stream need not have
+/// been adjacent in the source.
 fn authored_adjacent(before: &Glyph, after: &Glyph) -> bool {
     footprint_end(before) == footprint_start(after)
 }
@@ -2212,6 +2211,10 @@ mod tests {
             "Tom &amp; Jerry",
             "x<sup>_2_</sup>",
             "`code` &#65; *em*",
+            "**energy $E=mc^2$**",
+            "$$ \\sum_i x_i $$",
+            "`` a ` b `` c",
+            "![alt](img.png) [t](u) <https://x.test>",
         ] {
             let chars: Vec<char> = source.chars().collect();
             let glyphs = scan_glyphs(&chars, &[]);
@@ -2252,6 +2255,11 @@ mod tests {
                 "_&nbsp;x_",
                 "\u{a0}x",
                 "and a decoded SPACE must not stop the run flanking",
+            ),
+            (
+                "_x&nbsp;_",
+                "x\u{a0}",
+                "the same on the closing side, where the boundary is `;`",
             ),
         ] {
             let runs = parse_inline(source);
