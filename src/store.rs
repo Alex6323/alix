@@ -2191,6 +2191,11 @@ mod tests {
         assert_eq!(device_label_in(dir.path()).unwrap(), "desktop");
     }
 
+    // `directories` reads a Windows Known Folder, not the environment, so
+    // there is no data home for this pair to configure there: CI observed
+    // `AppData\Roaming\alix\data` with both HOME and XDG_DATA_HOME pointed
+    // at a temp dir.
+    #[cfg(unix)]
     #[test]
     fn process_data_paths_child() {
         let Some(root) = std::env::var_os("ALIX_STORE_PATH_CHILD") else {
@@ -2218,6 +2223,7 @@ mod tests {
         assert!(path.join("device").is_file());
     }
 
+    #[cfg(unix)]
     #[test]
     fn process_data_paths_use_the_configured_data_home() {
         let dir = tempfile::tempdir().unwrap();
