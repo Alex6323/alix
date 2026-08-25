@@ -245,7 +245,9 @@ ci:
 	RUSTFLAGS= $(MAKE) coverage
 
 # The local "am I ready to push or tag" gate. Runs strict Rust checks (fmt,
-# clippy + tests, the lean core, and the mobile bridge), then frb-check and
+# clippy + tests, the lean core, the mobile bridge, and the GFM corpus
+# harness -- the last two are separate crates `make check` never compiles,
+# each with its own blocking CI job), then frb-check and
 # package-check before asserting the working tree is clean. GitHub separately
 # enforces Flutter analysis, JavaScript syntax, and Playwright tests. This gate
 # catches warnings plus regenerated-but-unstaged files that can slip past a
@@ -257,6 +259,7 @@ preflight:
 	RUSTFLAGS="-Dwarnings" $(MAKE) check
 	RUSTFLAGS="-Dwarnings" $(MAKE) build-core
 	RUSTFLAGS="-Dwarnings" cargo test --manifest-path mobile/alix/rust/Cargo.toml
+	RUSTFLAGS="-Dwarnings" cargo check --locked --all-targets --manifest-path tools/gfm-harness/Cargo.toml
 	$(MAKE) mobile-unit
 	$(MAKE) frb-check
 	$(MAKE) package-check

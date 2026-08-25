@@ -166,7 +166,7 @@ fn card_measurement(card: &Card) -> CardMeasurement {
             .iter()
             .map(|line| inline::strip_inline(line))
             .collect(),
-        note: card.note.clone(),
+        note: card.first_note().map(|note| note.body.clone()),
         section_context: card.section_context.clone(),
         context: card.context.clone(),
         authored_distractors: card.authored_distractors.clone(),
