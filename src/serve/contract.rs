@@ -2542,7 +2542,7 @@ fn diagram_card() -> crate::card::Card {
             source.split('\n').nth(1).unwrap().to_string(),
             "```".to_string(),
         ],
-        None,
+        Vec::new(),
         1,
     );
     card.resolved_diagrams.push(crate::card::ResolvedDiagram {

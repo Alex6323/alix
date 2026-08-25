@@ -313,9 +313,9 @@ fn push_card(p: &mut String, card: &Card) {
         p.push_str(line);
         p.push('\n');
     }
-    if let Some(note) = &card.note {
+    for note in &card.notes {
         p.push_str("Note: ");
-        p.push_str(note);
+        p.push_str(&note.body);
         p.push('\n');
     }
 }
@@ -861,7 +861,7 @@ mod tests {
             Arc::from("deck.txt"),
             "Why?".to_string(),
             vec!["Because.".to_string()],
-            Some("a note".to_string()),
+            vec![crate::card::Note::bare("a note".to_string())],
             1,
         )
     }

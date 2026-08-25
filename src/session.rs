@@ -1225,7 +1225,7 @@ mod tests {
             Arc::from(subject),
             format!("front {n}"),
             vec![format!("back {n}")],
-            None,
+            Vec::new(),
             n,
         );
         card.token = Some(Arc::from(format!("tok{n}").as_str()));
@@ -2946,7 +2946,7 @@ mod tests {
             Arc::from("d.md"),
             "front a".into(),
             vec!["a".into()],
-            None,
+            Vec::new(),
             7,
         );
         sib_a.token = Some(Arc::from("sib"));
@@ -2955,7 +2955,7 @@ mod tests {
             Arc::from("d.md"),
             "front b".into(),
             vec!["b".into()],
-            None,
+            Vec::new(),
             7,
         );
         sib_b.token = Some(Arc::from("sib"));

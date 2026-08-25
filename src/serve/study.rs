@@ -1716,7 +1716,7 @@ mod tests {
             std::sync::Arc::from("study.md"),
             "question".to_string(),
             vec!["answer".to_string()],
-            None,
+            Vec::new(),
             1,
         );
         card.token = Some(std::sync::Arc::from(card_id.as_str()));

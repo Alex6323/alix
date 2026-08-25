@@ -797,7 +797,7 @@ mod tests {
             Arc::from("deck"),
             "kept".to_string(),
             vec!["answer".to_string()],
-            None,
+            Vec::new(),
             1,
         );
         stamped.token = Some(Arc::from("card-kept"));
@@ -806,7 +806,7 @@ mod tests {
                 Arc::from("deck"),
                 front.to_string(),
                 vec!["answer".to_string()],
-                None,
+                Vec::new(),
                 2,
             )
         };
@@ -1436,8 +1436,8 @@ it reads line two\n\
                 .iter()
                 .find(|card| card.id().as_deref() == Some(id))
                 .unwrap_or_else(|| panic!("{id} is in the session"))
-                .note
-                .clone()
+                .only_note()
+                .map(str::to_string)
         };
         assert_eq!(
             Some("mine on the authored card".to_string()),
@@ -1474,7 +1474,11 @@ it reads line two\n\
             panic!("a fact deck must review");
         };
         assert!(
-            build.session.cards().iter().all(|card| card.note.is_none()),
+            build
+                .session
+                .cards()
+                .iter()
+                .all(|card| card.only_note().is_none()),
             "an orphan note must not land on some other card"
         );
     }
@@ -1782,7 +1786,7 @@ it reads line two\n\
         let merged = browse(vec![path], None).unwrap();
         assert_eq!(merged.cards[0].front, "Name the parts");
         assert_eq!(merged.cards[0].back_for_display(), ["A", "B", "C"]);
-        let note = merged.cards[0].note.clone().unwrap_or_default();
+        let note = merged.cards[0].only_note().unwrap_or_default().to_string();
         assert!(note.contains("the parts are well known"), "{note}");
     }
 

@@ -1673,11 +1673,10 @@ mod tests {
             .expect("the authored card is still there");
         assert!(
             deck_card
-                .note
-                .as_deref()
-                .is_some_and(|note| note.contains("mine to remember")),
+                .first_note()
+                .is_some_and(|note| note.body.contains("mine to remember")),
             "the personal note reaches the authored card: {:?}",
-            deck_card.note
+            deck_card.notes
         );
     }
 

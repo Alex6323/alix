@@ -481,7 +481,13 @@ mod tests {
     use super::*;
 
     fn card(front: &str, back: &str) -> Card {
-        let mut c = Card::plain(Arc::from("d.md"), front.into(), vec![back.into()], None, 1);
+        let mut c = Card::plain(
+            Arc::from("d.md"),
+            front.into(),
+            vec![back.into()],
+            Vec::new(),
+            1,
+        );
         let slug: String = back
             .chars()
             .filter(|ch| ch.is_ascii_alphanumeric())

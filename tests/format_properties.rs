@@ -266,7 +266,14 @@ proptest! {
                 prop_assert_eq!(&card.answers[0], &deck.cards[0].back[0]);
             }
         }
-        prop_assert_eq!(card.note.as_deref(), deck.cards[0].note.as_deref());
+        prop_assert_eq!(
+            Vec::from_iter(card.note.as_ref().map(|body| alix::card::Note {
+                badge: Some(alix::card::Badge::Note),
+                body: body.clone(),
+            })),
+            deck.cards[0].notes.clone(),
+            "the rendered badge is the badge the deck parses back"
+        );
     }
 
     #[test]

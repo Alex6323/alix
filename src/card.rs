@@ -157,9 +157,7 @@ pub struct Card {
     /// label for the front (a table title, which steps back).
     pub context_leads: bool,
     pub back: Vec<String>,
-    pub note: Option<String>,
-    /// The GitHub alert badge that opened this card's note, when one did.
-    pub note_badge: Option<Badge>,
+    pub notes: Vec<Note>,
     pub line: usize,
     /// The authored block's first line: a heading card's own line, a table
     /// row's table line. Every review unit one block expands to shares it.
@@ -241,12 +239,25 @@ impl Badge {
     }
 }
 
+/// The badge is absent for a note no blockquote opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Note {
+    pub badge: Option<Badge>,
+    pub body: String,
+}
+
+impl Note {
+    pub fn bare(body: String) -> Self {
+        Self { badge: None, body }
+    }
+}
+
 impl Card {
     pub fn plain(
         subject: Arc<str>,
         front: String,
         back: Vec<String>,
-        note: Option<String>,
+        notes: Vec<Note>,
         line: usize,
     ) -> Self {
         // The parser overrides this for cloze sub-cards with a shared block-level fingerprint; this
@@ -262,8 +273,7 @@ impl Card {
             context: Vec::new(),
             context_leads: false,
             back,
-            note,
-            note_badge: None,
+            notes,
             line,
             block_line: line,
             parent_block: None,
@@ -305,12 +315,11 @@ impl Card {
             Arc::clone(&self.subject),
             self.back.join("\n"),
             vec![self.front.clone()],
-            self.note.clone(),
+            self.notes.clone(),
             self.line,
         );
         card.deck_id = Arc::clone(&self.deck_id);
         card.definitions = Arc::clone(&self.definitions);
-        card.note_badge = self.note_badge;
         // Built after the parser has finished, so the builder's stamp never
         // reaches it: the reverse half must carry the section itself.
         card.section_context = self.section_context.clone();
@@ -355,17 +364,36 @@ impl Card {
         ))
     }
 
+    /// The readers that still take a single note. Deleting this method is how
+    /// the change that lets notes stack enumerates every one of them.
+    pub fn first_note(&self) -> Option<&Note> {
+        self.notes.first()
+    }
+
     pub fn append_note(&mut self, notes: &[String]) {
         if notes.is_empty() {
             return;
         }
         let addition = notes.join("\n");
-        match &mut self.note {
+        match self.notes.last_mut() {
             Some(note) => {
-                note.push('\n');
-                note.push_str(&addition);
+                note.body.push('\n');
+                note.body.push_str(&addition);
             }
-            slot => *slot = Some(addition),
+            None => self.notes.push(Note::bare(addition)),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Card {
+    /// Panics on a second note rather than reading past it, so a change that
+    /// lets notes stack has to revisit every caller.
+    pub(crate) fn only_note(&self) -> Option<&str> {
+        match self.notes.as_slice() {
+            [] => None,
+            [note] => Some(&note.body),
+            several => panic!("the card carries {} notes: {several:?}", several.len()),
         }
     }
 }
@@ -410,7 +438,7 @@ mod tests {
             Arc::from(subject),
             front.to_string(),
             back.iter().map(|s| s.to_string()).collect(),
-            note.map(|s| s.to_string()),
+            Vec::from_iter(note.map(|s| Note::bare(s.to_string()))),
             1,
         )
     }
@@ -512,11 +540,54 @@ mod tests {
     fn append_note_creates_then_joins_with_newlines() {
         let mut c = card("d.md", "front", &["back"], None);
         c.append_note(&[]);
-        assert_eq!(None, c.note);
+        assert_eq!(None, c.only_note());
         c.append_note(&["first".to_string()]);
-        assert_eq!(Some("first".to_string()), c.note);
+        assert_eq!(Some("first"), c.only_note());
         c.append_note(&["second".to_string(), "third".to_string()]);
-        assert_eq!(Some("first\nsecond\nthird".to_string()), c.note);
+        assert_eq!(Some("first\nsecond\nthird"), c.only_note());
+    }
+
+    #[test]
+    fn an_appended_note_joins_the_badged_one_and_leaves_its_badge_alone() {
+        let mut c = card("d.md", "front", &["back"], None);
+        c.notes.push(Note {
+            badge: Some(Badge::Warning),
+            body: "authored".to_string(),
+        });
+        c.append_note(&["from the sidecar".to_string()]);
+        assert_eq!(
+            vec![Note {
+                badge: Some(Badge::Warning),
+                body: "authored\nfrom the sidecar".to_string()
+            }],
+            c.notes,
+            "an appended note joins the authored one rather than stacking beside it"
+        );
+    }
+
+    #[test]
+    fn every_single_note_reader_takes_the_first_of_several() {
+        let mut c = card("d.md", "front", &["back"], Some("first"));
+        c.notes.push(Note {
+            badge: Some(Badge::Caution),
+            body: "second".to_string(),
+        });
+        assert_eq!(
+            Some("first"),
+            c.first_note().map(|note| note.body.as_str()),
+            "the readers that still take one note take the first"
+        );
+        assert_eq!(
+            vec![crate::render::NoteUnit::Sentence {
+                text: "first".to_string(),
+                runs: vec![crate::inline::InlineRun {
+                    text: "first".to_string(),
+                    ..Default::default()
+                }],
+            }],
+            crate::render::note_units(&c),
+            "the display projection is the first note's, and the second shows nowhere"
+        );
     }
 
     #[test]
@@ -541,7 +612,7 @@ mod tests {
         let rev = fwd.reversed();
         assert_eq!("angeblich", rev.front);
         assert_eq!(vec!["purported"], rev.back);
-        assert_eq!(fwd.note, rev.note);
+        assert_eq!(fwd.notes, rev.notes);
         assert_eq!(fwd.line, rev.line);
         assert_eq!(fwd.reveal, rev.reveal);
         assert_ne!(fwd.id(), rev.id());

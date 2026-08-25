@@ -1084,7 +1084,10 @@ impl AugmentCache {
             card.front = front.clone();
         }
         if let Some(note) = &fmt.note {
-            card.note = Some(note.clone());
+            match card.notes.first_mut() {
+                Some(first) => first.body = note.clone(),
+                None => card.notes.push(crate::card::Note::bare(note.clone())),
+            }
         }
         if !fmt.back.is_empty() {
             card.display_back = Some(fmt.back.clone());
@@ -1215,7 +1218,7 @@ impl WarmItem {
             id: card.id().unwrap_or_default(),
             question: card.front.clone(),
             answer: card.back.join("\n"),
-            note: card.note.clone(),
+            note: card.first_note().map(|note| note.body.clone()),
         }
     }
 }
@@ -1862,7 +1865,13 @@ mod tests {
     }
 
     fn plain_card(back: &str) -> Card {
-        let mut c = Card::plain("deck.md".into(), "Q".into(), vec![back.into()], None, 1);
+        let mut c = Card::plain(
+            "deck.md".into(),
+            "Q".into(),
+            vec![back.into()],
+            Vec::new(),
+            1,
+        );
         let slug: String = back
             .chars()
             .filter(|ch| ch.is_ascii_alphanumeric())
@@ -2192,7 +2201,7 @@ mod tests {
             Arc::from("d.md"),
             "List the parts".to_string(),
             vec!["A, B, C".to_string()],
-            None,
+            Vec::new(),
             1,
         );
         card.token = Some(Arc::from("qfmt"));
@@ -2216,9 +2225,50 @@ mod tests {
     }
 
     #[test]
+    fn a_formatted_note_rewrites_the_authored_body_and_keeps_its_badge() {
+        use std::sync::Arc;
+        let mut card = Card::plain(
+            Arc::from("d.md"),
+            "f".into(),
+            vec!["a".into()],
+            vec![crate::card::Note {
+                badge: Some(crate::card::Badge::Warning),
+                body: "as written".to_string(),
+            }],
+            1,
+        );
+        card.token = Some(Arc::from("qfmt3"));
+        let id = cid(&card);
+        let mut cache = AugmentCache::open(std::env::temp_dir().join("nonexistent-deck3.json"));
+        cache.set_format(
+            &id,
+            Format {
+                note: Some("as reshaped".to_string()),
+                ..Default::default()
+            },
+            card.content_fingerprint,
+        );
+        cache.apply_format(&mut card);
+        assert_eq!(
+            vec![crate::card::Note {
+                badge: Some(crate::card::Badge::Warning),
+                body: "as reshaped".to_string()
+            }],
+            card.notes,
+            "a reshaped note replaces the body of the one note and never stacks beside it"
+        );
+    }
+
+    #[test]
     fn apply_format_respects_an_explicit_reveal() {
         use std::sync::Arc;
-        let mut card = Card::plain(Arc::from("d.md"), "f".into(), vec!["a".into()], None, 1);
+        let mut card = Card::plain(
+            Arc::from("d.md"),
+            "f".into(),
+            vec!["a".into()],
+            Vec::new(),
+            1,
+        );
         card.token = Some(Arc::from("qfmt2"));
         card.reveal = Some(Reveal::Flip);
         let id = cid(&card);

@@ -109,9 +109,8 @@ pub fn note_units(card: &Card) -> Vec<NoteUnit> {
 }
 
 pub(crate) fn note_units_with(card: &Card, projector: &mut DisplayProjector) -> Vec<NoteUnit> {
-    card.note
-        .as_deref()
-        .map(|note| text_units_with(note, projector, true, &card.resolved_diagrams))
+    card.first_note()
+        .map(|note| text_units_with(&note.body, projector, true, &card.resolved_diagrams))
         .unwrap_or_default()
 }
 
@@ -658,7 +657,7 @@ mod tests {
             Arc::from("s.txt"),
             "front".to_string(),
             vec!["back".to_string()],
-            Some(note.to_string()),
+            vec![crate::card::Note::bare(note.to_string())],
             1,
         )
     }
@@ -672,7 +671,13 @@ mod tests {
 
     #[test]
     fn no_note_yields_no_units() {
-        let card = Card::plain(Arc::from("s.txt"), "f".into(), vec!["b".into()], None, 1);
+        let card = Card::plain(
+            Arc::from("s.txt"),
+            "f".into(),
+            vec!["b".into()],
+            Vec::new(),
+            1,
+        );
         assert!(note_units(&card).is_empty());
     }
 
@@ -777,7 +782,8 @@ mod tests {
         );
         assert!(runs[0].math.as_ref().is_some_and(|math| math.display));
         assert_eq!(
-            card.note, None,
+            card.only_note(),
+            None,
             "a greater-than line inside display math must not become a card note"
         );
     }
@@ -1326,7 +1332,7 @@ mod tests {
             std::sync::Arc::from("deck.md"),
             "q".to_string(),
             vec!["answer".to_string()],
-            None,
+            Vec::new(),
             1,
         );
         card.context = context.to_vec();

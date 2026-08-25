@@ -288,7 +288,7 @@ mod tests {
             Arc::from("deck.txt"),
             format!("front {line}"),
             back.split('\n').map(String::from).collect(),
-            None,
+            Vec::new(),
             line,
         )
     }

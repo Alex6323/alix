@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::{
     answer::Input,
-    card::{Badge, Card, CardImage, Direction},
+    card::{Badge, Card, CardImage, Direction, Note},
     choice,
     depth::Reveal,
     token,
@@ -2274,7 +2274,8 @@ fn build_table_cards_inner(
             return Err(ParseError::FrontWithoutAnswer(row.line));
         }
         let note = row.cells.get(2).filter(|cell| !cell.is_empty()).cloned();
-        let mut card = Card::plain(Arc::clone(subject), front, vec![back], note, row.line);
+        let notes = Vec::from_iter(note.map(Note::bare));
+        let mut card = Card::plain(Arc::clone(subject), front, vec![back], notes, row.line);
         card.deck_id = Arc::clone(deck_id);
         card.context = raw.title.iter().cloned().collect();
         // An unstamped row is an unstamped card: composing an id from the
@@ -2604,6 +2605,10 @@ fn build_card(
         card.parent_block = parent;
     }
     out
+}
+
+fn card_notes(body: Option<String>, badge: Option<Badge>) -> Vec<Note> {
+    Vec::from_iter(body.map(|body| Note { badge, body }))
 }
 
 fn build_card_inner(
@@ -2996,9 +3001,14 @@ fn build_card_inner(
                 }
             }
         }
-        let mut card = Card::plain(Arc::clone(subject), front, correct, note, line);
+        let mut card = Card::plain(
+            Arc::clone(subject),
+            front,
+            correct,
+            card_notes(note, note_badge),
+            line,
+        );
         card.deck_id = Arc::clone(deck_id);
-        card.note_badge = note_badge.filter(|_| card.note.is_some());
         card.token = directives.token.as_deref().map(Arc::from);
         card.images = images;
         card.images_back = images_back;
@@ -3160,9 +3170,14 @@ fn build_card_inner(
             .filter(|segments| !image_only(segments))
             .map(|segments| seg_display(segments))
             .collect();
-        let mut card = Card::plain(Arc::clone(subject), front, back_lines, note, line);
+        let mut card = Card::plain(
+            Arc::clone(subject),
+            front,
+            back_lines,
+            card_notes(note, note_badge),
+            line,
+        );
         card.deck_id = Arc::clone(deck_id);
-        card.note_badge = note_badge.filter(|_| card.note.is_some());
         card.token = directives.token.as_deref().map(Arc::from);
         card.reveal = directives.reveal;
         card.input = directives.input;
@@ -3203,13 +3218,13 @@ fn build_card_inner(
         });
     }
     let (block_note, addressed) = split_note(note.as_deref(), &named, line, lints);
-    let notes: Vec<Option<String>> = groups
+    let hole_notes: Vec<Option<String>> = groups
         .iter()
         .map(|group| resolve_note(block_note.as_deref(), &addressed, holes[group[0]].name))
         .collect();
     for (n, group) in groups.iter().enumerate() {
         for hole in group.iter().map(|h| &holes[*h]) {
-            let shown_elsewhere = notes.iter().enumerate().any(|(other, note)| {
+            let shown_elsewhere = hole_notes.iter().enumerate().any(|(other, note)| {
                 other != n
                     && note
                         .as_deref()
@@ -3294,11 +3309,10 @@ fn build_card_inner(
             Arc::clone(subject),
             front.clone(),
             asked.iter().map(|hole| hole.text.to_string()).collect(),
-            notes[n].clone(),
+            card_notes(hole_notes[n].clone(), note_badge),
             line,
         );
         card.deck_id = Arc::clone(deck_id);
-        card.note_badge = note_badge.filter(|_| card.note.is_some());
         card.context = context;
         card.context_leads = true;
         card.hash_lines = Some(hash_lines);
@@ -5198,7 +5212,7 @@ a
     #[test]
     fn consecutive_quote_lines_concatenate_into_the_note() {
         let deck = parse("## q\n---\nans\n> [!NOTE]\n> one\n> two\n");
-        assert_eq!(Some("one\ntwo".to_string()), deck.cards[0].note);
+        assert_eq!(Some("one\ntwo"), deck.cards[0].only_note());
     }
 
     #[test]
@@ -5640,21 +5654,25 @@ a
     /// answer content and reveals with it.
     #[test]
     fn a_badge_opens_a_note_and_every_other_blockquote_is_a_quote() {
-        for (badge, why) in [
-            ("[!NOTE]", "the neutral badge"),
+        for (spelling, badge, why) in [
+            ("[!NOTE]", Badge::Note, "the neutral badge"),
             (
                 "[!TIP]",
+                Badge::Tip,
                 "a tip is a plain styled note, not the retired hint",
             ),
-            ("[!IMPORTANT]", "the third badge"),
-            ("[!WARNING]", "the fourth badge"),
-            ("[!CAUTION]", "the fifth badge"),
+            ("[!IMPORTANT]", Badge::Important, "the third badge"),
+            ("[!WARNING]", Badge::Warning, "the fourth badge"),
+            ("[!CAUTION]", Badge::Caution, "the fifth badge"),
         ] {
-            let deck = parse(&format!("## Q\nanswer\n> {badge}\n> because\n"));
+            let deck = parse(&format!("## Q\nanswer\n> {spelling}\n> because\n"));
             assert_eq!(
-                Some("because".to_string()),
-                deck.cards[0].note,
-                "{why}: the badge line opens the note and never joins its body"
+                vec![Note {
+                    badge: Some(badge),
+                    body: "because".to_string()
+                }],
+                deck.cards[0].notes,
+                "{why}: the badge line opens the note, never joins its body, and is what the note carries"
             );
             assert_eq!(
                 vec!["answer"],
@@ -5670,7 +5688,7 @@ a
             deck.cards[0].back,
             "a bare blockquote is a quote, so it is answer content"
         );
-        assert_eq!(None, deck.cards[0].note, "and it is not a note");
+        assert_eq!(None, deck.cards[0].only_note(), "and it is not a note");
         assert!(
             deck.lints.is_empty(),
             "an ordinary quote is legitimate content and draws nothing: {:?}",
@@ -5694,7 +5712,11 @@ a
             ),
         ] {
             let deck = parse(&format!("## Q\nanswer\n> {first}\n> body\n"));
-            assert_eq!(None, deck.cards[0].note, "{why}: it never opens a note");
+            assert_eq!(
+                None,
+                deck.cards[0].only_note(),
+                "{why}: it never opens a note"
+            );
             assert_eq!(
                 3,
                 deck.cards[0].back.len(),
@@ -5708,7 +5730,11 @@ a
         }
 
         let deck = parse("## Q\nanswer\n> [!NOTE]\n");
-        assert_eq!(None, deck.cards[0].note, "an empty note carries nothing");
+        assert_eq!(
+            None,
+            deck.cards[0].only_note(),
+            "an empty note carries nothing"
+        );
         assert!(
             matches!(deck.lints[0].kind, LintKind::EmptyNote),
             "a badge with no body is named rather than failing the deck: {:?}",
@@ -5722,8 +5748,8 @@ a
     fn a_note_is_trailing_machinery_that_content_may_not_follow() {
         let deck = parse("## q\nanswer\n<!-- reveal: line -->\n> [!WARNING]\n> body\n");
         assert_eq!(
-            Some("body".to_string()),
-            deck.cards[0].note,
+            Some("body"),
+            deck.cards[0].only_note(),
             "a directive above a note is two machinery items, not one above content"
         );
         assert_eq!(
@@ -6177,7 +6203,7 @@ a
     #[test]
     fn a_display_math_note_keeps_a_greater_than_source_line() {
         let deck = parse("## Q\nanswer\n> [!NOTE]\n> $$\n> x^2\n> > 0\n> $$\n");
-        assert_eq!(deck.cards[0].note.as_deref(), Some("$$\nx^2\n> 0\n$$"));
+        assert_eq!(deck.cards[0].only_note(), Some("$$\nx^2\n> 0\n$$"));
     }
 
     #[test]
@@ -6751,7 +6777,7 @@ a
             vec!["## x", "> y", "---", "<!-- z -->", "```"],
             deck.cards[0].back
         );
-        assert_eq!(Some("real note".to_string()), deck.cards[0].note);
+        assert_eq!(Some("real note"), deck.cards[0].only_note());
     }
 
     #[test]
@@ -6817,7 +6843,7 @@ a
             deck.cards[0].back
         );
         assert_eq!(None, deck.cards[0].token);
-        assert_eq!(None, deck.cards[0].note);
+        assert_eq!(None, deck.cards[0].only_note());
         assert!(deck.lints.is_empty());
     }
 
@@ -7058,9 +7084,9 @@ a
         );
         assert_eq!(
             Some("Both halves of the opening."),
-            deck.cards[0].note.as_deref()
+            deck.cards[0].only_note()
         );
-        assert_eq!(Some("Shared."), deck.cards[1].note.as_deref());
+        assert_eq!(Some("Shared."), deck.cards[1].only_note());
     }
 
     /// D4: the merged card inherits nothing, and the hole it did not touch
@@ -7182,9 +7208,9 @@ a
         );
         assert_eq!(
             Some("Fastest and most numerous."),
-            deck.cards[0].note.as_deref()
+            deck.cards[0].only_note()
         );
-        assert_eq!(Some("Shared."), deck.cards[1].note.as_deref());
+        assert_eq!(Some("Shared."), deck.cards[1].only_note());
     }
 
     #[test]
@@ -7193,8 +7219,8 @@ a
             "## q\n\\blank[base]{Unit}, \\blank{integration}\n\
              > [!NOTE]\n> Shared.\n> base+: And fastest.\n",
         );
-        assert_eq!(Some("Shared.\nAnd fastest."), deck.cards[0].note.as_deref());
-        assert_eq!(Some("Shared."), deck.cards[1].note.as_deref());
+        assert_eq!(Some("Shared.\nAnd fastest."), deck.cards[0].only_note());
+        assert_eq!(Some("Shared."), deck.cards[1].only_note());
     }
 
     #[test]
@@ -7202,15 +7228,17 @@ a
         let deck = parse(
             "## q\n\\blank[base]{Unit}, \\blank{integration}\n> [!NOTE]\n> base+: Fastest.\n",
         );
-        assert_eq!(Some("Fastest."), deck.cards[0].note.as_deref());
-        assert_eq!(None, deck.cards[1].note.as_deref());
         assert_eq!(
-            Some(Badge::Note),
-            deck.cards[0].note_badge,
+            vec![Note {
+                badge: Some(Badge::Note),
+                body: "Fastest.".to_string()
+            }],
+            deck.cards[0].notes,
             "the badge belongs to the note it opened"
         );
         assert_eq!(
-            None, deck.cards[1].note_badge,
+            Vec::<Note>::new(),
+            deck.cards[1].notes,
             "a card that resolves no note resolves no badge either"
         );
     }
@@ -7221,7 +7249,7 @@ a
             "## q\n\\blank[base]{Unit}, \\blank{integration}\n\
              > [!NOTE]\n> base: First.\n> base: Second.\n",
         );
-        assert_eq!(Some("First.\nSecond."), deck.cards[0].note.as_deref());
+        assert_eq!(Some("First.\nSecond."), deck.cards[0].only_note());
     }
 
     /// A card with no named hole cannot be addressing anything, so a note
@@ -7232,7 +7260,7 @@ a
             parse("## q\n\\blank{Unit}, \\blank{integration}\n> [!NOTE]\n> 2: the second one.\n");
         assert_eq!(Vec::<Lint>::new(), deck.lints);
         for card in &deck.cards {
-            assert_eq!(Some("2: the second one."), card.note.as_deref());
+            assert_eq!(Some("2: the second one."), card.only_note());
         }
     }
 
@@ -7242,7 +7270,7 @@ a
             parse("## q\n\\blank[base]{Unit}, \\blank{integration}\n> [!NOTE]\n> base:no space.\n");
         assert_eq!(Vec::<Lint>::new(), deck.lints);
         for card in &deck.cards {
-            assert_eq!(Some("base:no space."), card.note.as_deref());
+            assert_eq!(Some("base:no space."), card.only_note());
         }
     }
 
@@ -7262,7 +7290,7 @@ a
         for card in &deck.cards {
             assert_eq!(
                 Some("bass: typo."),
-                card.note.as_deref(),
+                card.only_note(),
                 "the line is still shown rather than lost"
             );
         }
@@ -7282,12 +7310,11 @@ a
         );
         assert!(
             deck.cards[0]
-                .note
-                .as_deref()
+                .only_note()
                 .is_some_and(|note| note.starts_with("Unit tests sit at the base"))
         );
-        assert_eq!(None, deck.cards[1].note.as_deref());
-        assert_eq!(None, deck.cards[2].note.as_deref());
+        assert_eq!(None, deck.cards[1].only_note());
+        assert_eq!(None, deck.cards[2].only_note());
     }
 
     #[test]
@@ -7666,7 +7693,7 @@ the answer
         let first = &deck.cards[0];
         assert_eq!("hund", first.front);
         assert_eq!(vec!["dog"], first.back);
-        assert_eq!(None, first.note);
+        assert_eq!(None, first.only_note());
         assert!(first.context.is_empty(), "an untitled table has no context");
         assert_eq!(Some(CONTAINER), first.token.as_deref());
         assert_eq!(Some("4k2x9w"), first.row.as_deref());
@@ -7685,8 +7712,8 @@ the answer
         );
         let deck = parse(&text);
         assert_eq!(2, deck.cards.len());
-        assert_eq!(Some("care"), deck.cards[0].note.as_deref());
-        assert_eq!(None, deck.cards[1].note);
+        assert_eq!(Some("care"), deck.cards[0].only_note());
+        assert_eq!(None, deck.cards[1].only_note());
         assert!(deck.cards[0].context.is_empty());
     }
 
@@ -8508,7 +8535,7 @@ the answer
         for card in &deck.cards {
             assert_eq!(
                 Some("the lunate sits center"),
-                card.note.as_deref(),
+                card.only_note(),
                 "the block's note rides every region card, as cloze notes do"
             );
         }

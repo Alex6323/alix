@@ -1010,7 +1010,7 @@ mod tests {
                 "$x^2$".to_string(),
                 "```".to_string(),
             ],
-            Some("Remember $x^2$.".to_string()),
+            vec![crate::card::Note::bare("Remember $x^2$.".to_string())],
             1,
         );
         card.context = vec!["Use $⍰ + ⬚$".to_string()];
@@ -1041,7 +1041,7 @@ mod tests {
             std::sync::Arc::from("deck.md"),
             "$x^2$".to_string(),
             vec!["$x^2$".to_string()],
-            Some("$x^2$".to_string()),
+            vec![crate::card::Note::bare("$x^2$".to_string())],
             1,
         );
         card.context = vec!["$x^2$".to_string()];

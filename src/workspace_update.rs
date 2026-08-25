@@ -1091,7 +1091,7 @@ mod tests {
                 .iter()
                 .any(|card| card.id().as_deref() == Some("card-oldcard"))
         );
-        assert_eq!(Some("Clearer note."), staged.cards[0].note.as_deref());
+        assert_eq!(Some("Clearer note."), staged.cards[0].only_note());
     }
 
     #[cfg(unix)]

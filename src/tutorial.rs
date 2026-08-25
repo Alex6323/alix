@@ -118,7 +118,7 @@ mod tests {
             let text = std::fs::read_to_string(&path).unwrap();
             let deck = crate::parser::parse(&name, &text).unwrap();
             assert!(
-                deck.cards.iter().any(|card| card.note.is_some()),
+                deck.cards.iter().any(|card| card.only_note().is_some()),
                 "{why} shows a real note, so a grammar change that stops opening one is loud"
             );
             assert!(

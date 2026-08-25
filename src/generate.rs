@@ -801,7 +801,7 @@ mod tests {
         );
         assert_eq!(
             Some("the mistaken premise"),
-            card.note.as_deref(),
+            card.only_note(),
             "and the note after it is still a note: {card:?}"
         );
 
@@ -824,7 +824,7 @@ mod tests {
         let parsed = parser::parse("deck.md", column).expect("the note column parses");
         assert_eq!(
             Some("n"),
-            parsed.cards[0].note.as_deref(),
+            parsed.cards[0].only_note(),
             "a card table's note is its column: {parsed:?}"
         );
 
@@ -922,7 +922,7 @@ mod tests {
         let card = &choice.cards[0];
         assert_eq!(
             Some("why the alternatives fail"),
-            card.note.as_deref(),
+            card.only_note(),
             "the note survives two directives above it: {card:?}"
         );
         assert_eq!(

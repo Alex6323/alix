@@ -13,7 +13,7 @@ use crate::{
     ask::{self, Reply},
     augment::AugmentCache,
     cache::DeckCache,
-    card::{Card, CardImage},
+    card::{Card, CardImage, Note},
     choice,
     config::{AskConfig, ReviewConfig},
     deck::Deck,
@@ -256,7 +256,7 @@ fn card_dto_structures_the_note() {
         Arc::from("s.md"),
         "the front".to_string(),
         vec!["the back".to_string()],
-        Some(note.to_string()),
+        vec![Note::bare(note.to_string())],
         1,
     );
     let dto = card_dto((&card).into(), card.id());
@@ -280,7 +280,7 @@ fn card_dto_exposes_image_urls_and_registry_matches() {
         Arc::from("s.md"),
         "q".to_string(),
         vec!["a".to_string()],
-        None,
+        Vec::new(),
         1,
     );
     card.images = vec![CardImage {
@@ -319,7 +319,7 @@ fn plain_card_has_no_image_urls() {
         Arc::from("s.md"),
         "q".to_string(),
         vec!["a".to_string()],
-        None,
+        Vec::new(),
         1,
     );
     let dto = card_dto((&card).into(), card.id());
@@ -1447,7 +1447,7 @@ fn browse_payload_renders_a_repeated_formula_once() {
         Arc::from("s.md"),
         "$x^2$".to_string(),
         vec!["$x^2$".to_string()],
-        Some("$x^2$".to_string()),
+        vec![Note::bare("$x^2$".to_string())],
         1,
     );
     let browsing = Browsing {
@@ -1482,7 +1482,7 @@ fn measure_math_state_and_browse_payloads() {
         Arc::from("math.md"),
         front,
         vec!["answer".to_string()],
-        None,
+        Vec::new(),
         1,
     );
     let before = crate::math::thread_render_count();
@@ -1507,7 +1507,7 @@ fn measure_math_state_and_browse_payloads() {
                 Arc::from("math.md"),
                 formula.clone(),
                 vec![formula],
-                None,
+                Vec::new(),
                 index + 1,
             )
         })
@@ -1832,7 +1832,7 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         Arc::from("d.md"),
         "front".to_string(),
         vec!["back".to_string()],
-        None,
+        Vec::new(),
         1,
     );
     card.token = Some(Arc::from("card-q1"));
@@ -1961,7 +1961,7 @@ fn poll_ask_condense_appends_note_to_sidecar_and_live_card() {
     assert!(
         r.session
             .current()
-            .and_then(|current| current.note.as_deref())
+            .and_then(|current| current.only_note())
             .is_some_and(|note| note.contains("key insight to reread"))
     );
 }
@@ -2315,7 +2315,7 @@ fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
     let card = w.checkpoint_card().expect("a checkpoint card");
     assert_eq!(
         Some("Source excerpt:\n1: first\n\ncall `read`"),
-        card.note.as_deref()
+        card.only_note()
     );
     let (tx, rx) = std::sync::mpsc::channel();
     w.ask.subject = w.walk.checkpoint().map(|c| c.card_id.clone());
@@ -2410,7 +2410,7 @@ fn aug_card(front: &str, back: &str) -> Card {
         Arc::from("d.md"),
         front.to_string(),
         vec![back.to_string()],
-        None,
+        Vec::new(),
         1,
     );
     card.token = Some(Arc::from(front.to_ascii_lowercase()));

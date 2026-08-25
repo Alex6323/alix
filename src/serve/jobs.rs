@@ -258,7 +258,7 @@ fn remote_card(c: &RemoteCard) -> Card {
         Arc::from(c.subject.as_str()),
         c.front.clone(),
         c.back.clone(),
-        None,
+        Vec::new(),
         0,
     );
     if let Some(locator) = &c.at {
@@ -1340,7 +1340,7 @@ impl Walking {
             Arc::from(trace.subject.as_str()),
             cp.prompt.clone(),
             cp.points.clone(),
-            (!note.is_empty()).then_some(note),
+            Vec::from_iter((!note.is_empty()).then(|| crate::card::Note::bare(note))),
             cp.line,
         ))
     }
@@ -1483,7 +1483,7 @@ mod tests {
             std::sync::Arc::from("deck.md"),
             "question".to_string(),
             vec!["answer".to_string()],
-            None,
+            Vec::new(),
             1,
         );
         card.token = Some(std::sync::Arc::from("card-augmentation"));
