@@ -875,23 +875,24 @@ mod tests {
             .collect()
     }
 
-    /// The text around each table-invocation mention: forward until the next
-    /// invocation or the end of reach, and backward only when no other
-    /// invocation lies within reach behind it.
+    /// The text after each table-invocation mention: forward until the next
+    /// invocation or the end of reach. There is no backward window.
     ///
-    /// Five weaker units were defeated in turn, and every one of them tried to
-    /// read backward ACROSS another invocation. A rule-sized window let one
-    /// legal exception phrase immunize every contradiction sharing the rule. A
-    /// sentence-sized window let a two-sentence table cell split subject from
-    /// tail. Stopping at the previous invocation TOKEN took the note that
-    /// invocation legitimately grants, because an instruction FOLLOWS its
-    /// subject. Stopping at the end of that subject's sentence needed a
-    /// sentence scan, and both `i.e. requires` and `cf. GFM` fooled it: no
-    /// casing or abbreviation test decides where an instruction ends.
+    /// Six weaker units were defeated in turn, and every single defeat was in
+    /// the BACKWARD direction. A rule-sized window let one legal exception
+    /// phrase immunize every contradiction sharing the rule. A sentence-sized
+    /// window let a two-sentence table cell split subject from tail. Stopping
+    /// at the previous invocation TOKEN took the note that invocation
+    /// legitimately grants, because an instruction FOLLOWS its subject.
+    /// Stopping at the end of that subject's sentence needed a sentence scan,
+    /// and `i.e. requires` and `cf. GFM` both fooled it. Reaching back only
+    /// when no other invocation was behind claimed the guide's own general
+    /// note rule, which sits two bullets above the invocation rule and is one
+    /// prose trim away from falling inside the reach.
     ///
-    /// So the backward reach is not repaired, it is withdrawn wherever another
-    /// subject could own the prose. What it still buys is the tail stated
-    /// before its only subject, which no forward window can see.
+    /// The forward window has never produced a false positive, so the backward
+    /// direction is deleted rather than tuned a seventh time. The cost is the
+    /// tail stated before its subject, which is now recorded as a blind spot.
     ///
     /// The window carries no exception phrase at all, which is why the
     /// prohibition is worded without naming a badge: a badge NEAR the table
@@ -910,9 +911,6 @@ mod tests {
             .iter()
             .map(|at| {
                 let end = at + TABLE_INVOCATION.chars().count();
-                let reach = at.saturating_sub(SUBJECT_REACH);
-                let shared = subjects.iter().any(|other| (reach..*at).contains(other));
-                let start = if shared { *at } else { reach };
                 let stop = subjects
                     .iter()
                     .filter(|other| *other > at)
@@ -921,7 +919,7 @@ mod tests {
                     .unwrap_or(chars.len())
                     .min(end + SUBJECT_REACH)
                     .min(chars.len());
-                chars[start..stop.max(end)].iter().collect()
+                chars[*at..stop.max(end)].iter().collect()
             })
             .collect()
     }
@@ -941,10 +939,6 @@ mod tests {
                 "a table cell splitting subject and tail across two sentences",
                 "| A table with extra context. | Close it with `<!-- cards -->`. \
                  Use a `> [!NOTE]` blockquote after the invocation. | judgement |",
-            ),
-            (
-                "the tail stated before its subject",
-                "| Put a `> [!NOTE]` blockquote after `<!-- cards -->`. |",
             ),
         ] {
             assert!(
@@ -982,6 +976,12 @@ mod tests {
                  `> [!NOTE]` blockquote. - `<!-- cards -->` takes only card \
                  directives.",
             ),
+            (
+                "the guide's own general note rule, one prose trim above the table rule",
+                "- Most cards deserve a `> [!NOTE]` note: an example or a caveat. \
+                 - One idea per card. - `<!-- cards -->` takes only card \
+                 directives.",
+            ),
         ] {
             assert!(
                 table_invocation_windows(text)
@@ -994,10 +994,10 @@ mod tests {
     }
 
     /// Advisory, not a sweep. It reads every surface a generator reads, but a
-    /// character window cannot attribute prose to a subject, and five versions
-    /// of it were defeated before the backward reach was withdrawn rather than
-    /// tuned again. What it still buys is the cheap case: a badge written next
-    /// to the table invocation, which is how the contradiction has actually
+    /// character window cannot attribute prose to a subject, and six versions
+    /// of it were defeated before the backward direction was deleted rather
+    /// than tuned again. What it still buys is the cheap case: a badge written
+    /// AFTER the table invocation, which is how the contradiction has actually
     /// appeared each time.
     ///
     /// `make shape-eval` is the instrument that asks whether the guide steers
@@ -1035,13 +1035,18 @@ mod tests {
     }
 
     /// What the window does NOT see, each shape verified against the detector
-    /// it is recorded under. Codex found all four. Kept executable and
+    /// it is recorded under. Codex found four of the five. Kept executable
+    /// and
     /// ignored so a structural replacement has a target to turn green.
     #[test]
     #[ignore = "a character window cannot attribute prose: `make shape-eval` is the instrument"]
     fn a_badge_attributed_to_the_table_beyond_the_window_is_missed() {
         let mut unseen = Vec::new();
         for (shape, text) in [
+            (
+                "the tail stated before its subject, which no forward window sees",
+                "| Put a `> [!NOTE]` blockquote after `<!-- cards -->`. |",
+            ),
             (
                 "a long table cell, the badge past the forward reach",
                 "| A table with supplemental context. | Close it with \
