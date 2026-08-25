@@ -195,6 +195,7 @@ fn walk_prompt(source: &str, spec: &GenerationSpec, url: bool, cfg: &TraceConfig
          <a key point a correct answer hits>\n\
          <another key point>\n\
          <!-- at: <locator> -->\n\
+         > [!NOTE]\n\
          > <one connecting insight>\n\n\
          The `## ` front is at column 0, never indented; the key points are plain \
          unindented lines below it; where the `at:` locator is {locator}.\n\n\
@@ -850,6 +851,21 @@ mod tests {
         );
         assert!(p.contains("WebFetch"));
         assert!(!p.contains("Glob"));
+    }
+
+    #[test]
+    fn walk_prompt_example_writes_a_badged_note() {
+        let prompt = walk_prompt(
+            ".",
+            &spec("understand the source"),
+            false,
+            &TraceConfig::default(),
+        );
+
+        assert!(
+            prompt.contains("> [!NOTE]\n> <one connecting insight>"),
+            "the example must emit a note rather than answer quotation: {prompt}"
+        );
     }
 
     #[test]

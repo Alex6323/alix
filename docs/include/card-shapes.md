@@ -43,9 +43,11 @@ Rules that hold whatever the shape:
 - A choice card's note names the option's claim or mistaken premise, never
   its number, letter, or screen position. Options shuffle between appearances.
 - Every `<!-- ... -->` line trails its card: it goes directly below the
-  card's last content line, with no blank line between them. Nothing
-  belonging to the card may follow a directive, so never place one above
-  an answer line, an option list, or a table.
+  card's last content line, with no blank line between them, and never
+  above an answer line, an option list, or a table. An invocation
+  (`<!-- choices-single -->`, `<!-- cards -->`) binds the block directly
+  above it, so it sits on the line immediately below the last option or
+  row, and a `> [!NOTE]` note comes after it.
 - One idea per card. Split compound facts rather than nesting them.
 - No two cards may test the same fact. Vary what is asked; do not
   rephrase.

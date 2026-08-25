@@ -69,8 +69,10 @@ A Vec<u8>, its bytes on the heap.
 let \blank{mut} x = 0;
 ```
 
-The front is the `## ` line; the plain lines below are the answer. A `> ` line
-is a note shown after you answer, and a `<!-- -->` directive on a card tunes it
+The front is the `## ` line; the plain lines below are the answer. A `> [!NOTE]`
+line opens a note shown after you answer (a blockquote without one of GitHub's
+five alert badges is a quotation, and belongs to the answer), and a `<!-- -->`
+directive on a card tunes it
 (here `\blank{mut}` turns into a fill-in-the-blank, auto-detected as a cloze
 card). Run `alix deck init <file>` once on a hand-written deck: it mints the
 stable deck and card ids that make the file appear in the picker and carry

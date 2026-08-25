@@ -150,9 +150,11 @@ the answer lines. A blockquote whose first line is NOT one of `[!NOTE]`, \
 `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]` is a QUOTATION and \
 belongs to the answer, so never write a bare `> ` note.
 - Every `<!-- ... -->` line TRAILS its card: put it below the card's LAST \
-content line, with NO blank line between them. Nothing belonging to the card \
-may follow a directive, so never place one above an answer line, an option \
-list, or a table.
+content line, with NO blank line between them, and never above an answer line, \
+an option list, or a table. An invocation (`<!-- choices-single -->`, \
+`<!-- cards -->`) binds the block directly above it, so it sits on the line \
+immediately below the last option or row, and a `> [!NOTE]` note comes after \
+it.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
@@ -229,9 +231,11 @@ whose answer maps to a specific, contiguous range of lines — read the real \
 lines, never guess the numbers — so the learner can flip the card to its \
 source on reveal. Omit it for a card that synthesizes across several places.
 - Every `<!-- ... -->` line TRAILS its card: put it below the card's LAST \
-content line, with NO blank line between them. Nothing belonging to the card \
-may follow a directive, so never place one above an answer line, an option \
-list, or a table.
+content line, with NO blank line between them, and never above an answer line, \
+an option list, or a table. An invocation (`<!-- choices-single -->`, \
+`<!-- cards -->`) binds the block directly above it, so it sits on the line \
+immediately below the last option or row, and a `> [!NOTE]` note comes after \
+it.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
@@ -757,6 +761,69 @@ mod tests {
                 card_style.as_str()
             );
         }
+    }
+
+    #[test]
+    fn authored_choice_prompt_allows_its_badged_note_after_the_invocation() {
+        let choices = GenerationSpec {
+            card_style: GenerateCardStyle::AuthoredChoices,
+            ..spec()
+        };
+        for (source, url) in [("https://example.org/page", true), ("src/lib.rs", false)] {
+            let prompt = build_prompt(source, url, &cfg(12), &choices);
+
+            assert!(
+                !prompt.contains("Nothing belonging to the card may follow a directive"),
+                "that absolute rule forbids the note the authored-choice contract requires ({source}): {prompt}"
+            );
+            assert!(
+                prompt.contains("binds the block directly above it"),
+                "and the satisfiable order replaces it rather than leaving the question open ({source}): {prompt}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_authored_choice_shape_the_prompt_teaches_parses_and_binds() {
+        let taught = "## Pick one\n- [x] right\n- [ ] wrong\n- [ ] also wrong\n\
+                      <!-- choices-single -->\n> [!NOTE]\n> the mistaken premise\n";
+        let parsed = parser::parse("deck.md", taught).expect("the taught shape parses");
+        let card = &parsed.cards[0];
+        assert_eq!(
+            vec!["wrong".to_string(), "also wrong".to_string()],
+            card.authored_distractors,
+            "the invocation binds the option list it sits under: {card:?}"
+        );
+        assert_eq!(
+            Some("the mistaken premise"),
+            card.note.as_deref(),
+            "and the note after it is still a note: {card:?}"
+        );
+
+        let inverted = "## Pick one\n- [x] right\n- [ ] wrong\n- [ ] also wrong\n\
+                        > [!NOTE]\n> the mistaken premise\n<!-- choices-single -->\n";
+        assert!(
+            parser::parse("deck.md", inverted).is_err(),
+            "and the other order does not parse, which is why the order is taught"
+        );
+    }
+
+    #[test]
+    fn readme_quickstart_does_not_teach_the_retired_bare_note_shape() {
+        let readme = include_str!("../README.md");
+        let explanation = readme
+            .split_once("The front is the `## ` line")
+            .map(|(_, tail)| tail.lines().take(5).collect::<Vec<_>>().join("\n"))
+            .expect("the quickstart explanation remains present");
+
+        assert!(
+            explanation.contains("[!NOTE]"),
+            "the prose below the badged example must name the badge: {explanation}"
+        );
+        assert!(
+            !explanation.contains("A `> ` line\nis a note"),
+            "a bare blockquote is answer quotation now, not a note: {explanation}"
+        );
     }
 
     #[test]

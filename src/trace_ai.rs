@@ -125,6 +125,7 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          <a key point a correct answer hits>\n\
          <another key point>\n\
          <!-- at: <locator> -->\n\
+         > [!NOTE]\n\
          > <one connecting insight, shown after the reveal>\n\n\
          The `## ` front (column 0, never indented) is the QUESTION. The \
          `<!-- given: ... -->` lines (repeatable, optional) name off-screen symbols \
@@ -462,6 +463,16 @@ mod tests {
         assert!(p.contains("EVERY instance travels"));
         assert!(p.contains("self-documenting"));
         assert!(!p.contains("WebFetch"));
+    }
+
+    #[test]
+    fn build_prompt_example_writes_a_badged_note() {
+        let prompt = build_prompt("how X becomes Y", ".", false, &TraceConfig::default());
+
+        assert!(
+            prompt.contains("> [!NOTE]\n> <one connecting insight, shown after the reveal>"),
+            "the example must model the note grammar the prose requires: {prompt}"
+        );
     }
 
     #[test]

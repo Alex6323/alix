@@ -1014,6 +1014,7 @@ fn remediation_prompt(gaps: &[String]) -> String {
          Both bindings would otherwise point at the same heap buffer.\n\
          Dropping both would free it twice (a double free).\n\
          So Rust invalidates the source instead of allowing two owners.\n\
+         > [!NOTE]\n\
          > A move, not a shallow copy you can keep using.\n\n\
          Before finishing, re-read your cards as a set and merge any two that test \
          the same idea, so every card is distinct.\n\
@@ -1292,6 +1293,16 @@ mod tests {
         assert!(p.contains("the aliasing rule"));
         assert!(p.contains("understanding card"));
         assert!(p.contains("Output ONLY the deck text"));
+    }
+
+    #[test]
+    fn remediation_prompt_example_writes_a_badged_note() {
+        let prompt = remediation_prompt(&["the aliasing rule".to_string()]);
+
+        assert!(
+            prompt.contains("> [!NOTE]\n> A move, not a shallow copy you can keep using."),
+            "the example must model the note grammar the prose requires: {prompt}"
+        );
     }
 
     #[test]
