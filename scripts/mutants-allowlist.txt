@@ -3,7 +3,7 @@
 # miss matches an entry here. Entries document argued residuals; the
 # mutants still run every sweep, so red means NEW information.
 #
-# Current contents: EIGHT argued groups, down from twenty-four. Alex ruled
+# Current contents: SEVEN argued groups, down from twenty-four. Alex ruled
 # 2026-08-06 that the only admissible reason is "it really cannot be
 # tested", so everything merely awkward was seamed and killed instead:
 # the uuid mixer became a pure function of its seed (11 killed), the
@@ -79,11 +79,6 @@ src/ask.rs: replace | with ^ in random_uuid
 # before this condition, so no single-empty state can reach it and
 # the two operators are indistinguishable from any input.
 src/ask.rs: replace || with && in parse_drafted_card
-
-# EQUIVALENT. AskConfig::default().model is already None,
-# so deleting the explicit field from the helper's struct expression
-# builds the identical value.
-src/ask.rs: delete field model from struct AskConfig expression in tests::config
 
 # DEAD-PATH. synthesize_virtual stores this line number only on the Card, and
 # WarmItem::from_card discards it before any output is generated; the

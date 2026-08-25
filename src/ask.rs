@@ -1346,7 +1346,6 @@ mod tests {
     fn config(command: &std::path::Path, timeout_secs: u64) -> AskConfig {
         AskConfig {
             command: command.to_str().unwrap().to_string(),
-            model: None,
             timeout_secs,
             ..AskConfig::default()
         }
