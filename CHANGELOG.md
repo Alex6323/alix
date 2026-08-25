@@ -14,8 +14,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   back tests transcription, not understanding, so the learner types the
   answer's own prose while the quote stands as supporting content. A `>` line
   inside a fence or a display-math block is that block's source and is graded
-  like any other answer line. Badge styling and the line-reveal step for
-  quotes come next.
+  like any other answer line, and a card whose whole answer is a quotation has
+  nothing to type, so Reconstruct explains it rather than asking for text.
+  Badge styling and the line-reveal step for quotes come next.
 
 - Links display as their labels (decision 8, first slice):
   `[label](destination)` renders the label styled as an inert link on

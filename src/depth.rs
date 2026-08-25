@@ -65,11 +65,16 @@ impl Reveal {
     }
 }
 
-/// A cloze card's back lines are its hidden spans, exact text however many
-/// spans it asks. Any other multi-line answer is key points, which is
-/// explained rather than typed.
-fn asks_for_exact_text(card: &Card) -> bool {
-    card.hole.is_some() || card.back.len() == 1
+/// How many answer lines a Reconstruct check would grade. A cloze card's
+/// target is its hidden spans, however many it asks, not its back lines.
+fn gradeable_count(card: &Card) -> usize {
+    if card.hole.is_some() {
+        return 1;
+    }
+    crate::render::quote_line_flags(&card.back)
+        .iter()
+        .filter(|quoted| !**quoted)
+        .count()
 }
 
 pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
@@ -79,15 +84,11 @@ pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
             Reveal::Flip => Mode::Flip,
             Reveal::Line => Mode::LineByLine,
         },
-        Depth::Reconstruct => match reveal {
-            Reveal::Line => Mode::TypeLine,
-            Reveal::Flip => {
-                if asks_for_exact_text(card) {
-                    Mode::Typing
-                } else {
-                    Mode::Explain
-                }
-            }
+        Depth::Reconstruct => match gradeable_count(card) {
+            0 => Mode::Explain,
+            1 if reveal == Reveal::Flip => Mode::Typing,
+            _ if reveal == Reveal::Line => Mode::TypeLine,
+            _ => Mode::Explain,
         },
     }
 }
@@ -313,6 +314,45 @@ mod tests {
             Mode::TypeLine,
             check_for(Reveal::Line, Depth::Reconstruct, &card("a\n    b"))
         );
+    }
+
+    /// A quotation is not part of the typed target, so it can never be what a
+    /// Reconstruct check asks the learner to produce.
+    #[test]
+    fn reconstruct_depth_counts_only_the_answer_the_learner_must_produce() {
+        let rows: Vec<(Reveal, &str, Mode, &str)> = vec![
+            (
+                Reveal::Flip,
+                "> the whole answer is a quotation",
+                Mode::Explain,
+                "nothing gradeable is left, so no typing mode",
+            ),
+            (
+                Reveal::Line,
+                "> the whole answer is a quotation",
+                Mode::Explain,
+                "the same holds line by line",
+            ),
+            (
+                Reveal::Flip,
+                "> a quoted passage\nthe answer's own prose",
+                Mode::Typing,
+                "one gradeable line is an atom, whatever stands beside it",
+            ),
+            (
+                Reveal::Line,
+                "> a quoted passage\npoint a\npoint b",
+                Mode::TypeLine,
+                "two gradeable lines still type line by line",
+            ),
+        ];
+        for (reveal, back, expected, why) in rows {
+            assert_eq!(
+                expected,
+                check_for(reveal, Depth::Reconstruct, &card(back)),
+                "{why}"
+            );
+        }
     }
 
     #[test]

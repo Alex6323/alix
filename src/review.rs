@@ -595,17 +595,28 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
     let mode = depth::check_for(card.reveal.unwrap_or_default(), session.depth(), card);
     // A quotation is supporting content, not the answer's own prose: typing it
     // back tests transcription rather than understanding.
-    let quotes = crate::render::quote_line_flags(&card.back);
-    let expected: Vec<String> = card
+    let quoted = crate::render::quote_line_flags(&card.back);
+    if quoted.iter().all(|line_is_quote| *line_is_quote) {
+        return Some(CheckFeedback {
+            results: Vec::new(),
+            passed: false,
+        });
+    }
+    let stripped: Vec<String> = card
         .back
         .iter()
-        .zip(quotes)
-        .filter(|(_, quoted)| !quoted)
-        .map(|(line, _)| crate::inline::strip_inline_with(line, &card.definitions))
+        .map(|line| crate::inline::strip_inline_with(line, &card.definitions))
         .collect();
     let results = if mode == Mode::TypeLine {
-        answer::grade_lines_ordered(lines, &expected)
+        let graded: Vec<bool> = quoted.iter().map(|line_is_quote| !line_is_quote).collect();
+        answer::grade_lines_ordered(lines, &stripped, &graded)
     } else {
+        let expected: Vec<String> = stripped
+            .iter()
+            .zip(&quoted)
+            .filter(|(_, line_is_quote)| !**line_is_quote)
+            .map(|(line, _)| line.clone())
+            .collect();
         answer::grade_lines_unordered(lines, &expected)
     };
     let passed = results.iter().all(|r| r.passed);
@@ -1503,6 +1514,38 @@ mod tests {
             1,
             feedback.results.len(),
             "one gradeable line, not three: {:?}",
+            feedback.results
+        );
+    }
+
+    #[test]
+    fn a_blank_submission_never_proves_reconstruction_of_a_quote_only_answer() {
+        let (mut store, _augment, _dir) = fixtures();
+        let cards = parse("## q\n> the whole answer is a quotation\n");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+
+        let feedback = check_typed(&session, &[String::new()]).expect("feedback");
+        assert!(
+            !feedback.passed,
+            "a blank submission must not prove reconstruction: {:?}",
+            feedback.results
+        );
+    }
+
+    #[test]
+    fn a_leading_quotation_does_not_shift_the_typed_fields() {
+        let (mut store, _augment, _dir) = fixtures();
+        let cards =
+            parse("## q\n> a quoted passage\nthe answer's own prose\n<!-- reveal: line -->\n");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+
+        let typed = vec![String::new(), "the answer's own prose".to_string()];
+        let feedback = check_typed(&session, &typed).expect("feedback");
+        assert!(
+            feedback.passed,
+            "the learner left the quote's field blank and typed the prose into its own field: {:?}",
             feedback.results
         );
     }
