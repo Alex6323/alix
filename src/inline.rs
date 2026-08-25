@@ -1290,8 +1290,12 @@ fn footprint_end(glyph: &Glyph) -> usize {
 }
 
 /// Where a glyph's authored footprint begins: an escape starts at its
-/// backslash.
+/// backslash. An entity carries `escaped` too, to protect it, but its
+/// `raw_index` is already the `&`, so it starts exactly there.
 fn footprint_start(glyph: &Glyph) -> usize {
+    if glyph.entity_end.is_some() {
+        return glyph.raw_index;
+    }
     glyph.raw_index - usize::from(glyph.escaped && !glyph.code)
 }
 
@@ -1343,11 +1347,17 @@ fn emphasis_delimiters(glyphs: &[Glyph]) -> Vec<Delimiter> {
         let previous_adjacent =
             previous.is_some_and(|item| authored_adjacent(item, &glyphs[index]));
         let next_adjacent = next.is_some_and(|item| authored_adjacent(&glyphs[end - 1], item));
-        let letter_before = previous_adjacent && previous.is_some_and(|i| i.ch.is_alphanumeric());
-        let letter_after = next_adjacent && next.is_some_and(|i| i.ch.is_alphanumeric());
+        // CommonMark judges flanking BEFORE decoding, so an entity's authored
+        // boundary is `&` or `;`: punctuation, whatever it decoded to. Reading
+        // its decoded `ch` would let `&Aopf;` pose as a letter and `&nbsp;` as
+        // a space.
+        let letter = |item: &Glyph| item.entity_end.is_none() && item.ch.is_alphanumeric();
+        let space = |item: &Glyph| item.entity_end.is_none() && item.ch.is_whitespace();
+        let letter_before = previous_adjacent && previous.is_some_and(letter);
+        let letter_after = next_adjacent && next.is_some_and(letter);
         let intraword = glyph.ch == '_' && letter_before && letter_after;
-        let opens = next.is_some_and(|item| !next_adjacent || !item.ch.is_whitespace());
-        let closes = previous.is_some_and(|item| !previous_adjacent || !item.ch.is_whitespace());
+        let opens = next.is_some_and(|item| !next_adjacent || !space(item));
+        let closes = previous.is_some_and(|item| !previous_adjacent || !space(item));
         delimiters.push(Delimiter {
             start: index,
             len,
@@ -2185,6 +2195,76 @@ mod tests {
                     .map(|run| run.text.as_str())
                     .collect::<String>(),
                 "({source}): {runs:?}"
+            );
+        }
+    }
+
+    /// The two halves of a footprint are one fact, so they are pinned
+    /// together: every glyph covers a non-empty authored range, and the ranges
+    /// tile the line in order without overlapping. An entity spans its whole
+    /// `&...;`, which is the case a per-character rule gets wrong.
+    #[test]
+    fn footprints_tile_the_authored_line_in_order() {
+        for source in [
+            "&Aopf;_x_",
+            "_&nbsp;x_",
+            "a \\* b",
+            "Tom &amp; Jerry",
+            "x<sup>_2_</sup>",
+            "`code` &#65; *em*",
+        ] {
+            let chars: Vec<char> = source.chars().collect();
+            let glyphs = scan_glyphs(&chars, &[]);
+            let mut previous_end = 0;
+            for glyph in &glyphs {
+                let start = footprint_start(glyph);
+                let end = footprint_end(glyph);
+                assert!(
+                    start < end,
+                    "a glyph covers at least one authored char ({source}): {start}..{end}"
+                );
+                assert!(
+                    start >= previous_end,
+                    "footprints never overlap ({source}): {start} after {previous_end}"
+                );
+                assert!(
+                    end <= chars.len(),
+                    "and never run past the line ({source}): {end} > {}",
+                    chars.len()
+                );
+                previous_end = end;
+            }
+        }
+    }
+
+    #[test]
+    fn an_entity_flanks_as_the_punctuation_it_was_authored_as() {
+        // CommonMark judges flanking BEFORE decoding, so an entity's authored
+        // boundary is `&` on the left and `;` on the right: punctuation both
+        // ways, whatever it decodes to.
+        for (source, shown, why) in [
+            (
+                "&Aopf;_x_",
+                "\u{1D538}x",
+                "a decoded LETTER must not make the run intraword",
+            ),
+            (
+                "_&nbsp;x_",
+                "\u{a0}x",
+                "and a decoded SPACE must not stop the run flanking",
+            ),
+        ] {
+            let runs = parse_inline(source);
+            assert_eq!(
+                shown,
+                runs.iter().map(|run| run.text.as_str()).collect::<String>(),
+                "{why} ({source}): {runs:?}"
+            );
+            assert!(
+                runs.iter()
+                    .filter(|run| run.text.contains('x'))
+                    .all(|run| run.italic),
+                "{why} ({source}): {runs:?}"
             );
         }
     }
