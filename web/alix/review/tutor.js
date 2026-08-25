@@ -9,6 +9,7 @@ export function createTutor({
   ui,
 }) {
   const {
+    appendQuote,
     appendRuns,
     appendRunsOrText,
     chip,
@@ -314,11 +315,19 @@ export function createTutor({
           "ask-card-ctx",
           referenceDiagram,
         );
-        for (let index = 0; index < card.back.length; index++) {
-          const answer = el("div", "ask-card-a");
-          if (card.back_runs && card.back_runs[index]) appendRuns(answer, card.back_runs[index]);
-          else answer.textContent = card.back[index];
-          reference.appendChild(answer);
+        // Walk the answer's steps, so a quotation shows as quoted content
+        // rather than as its `>` markers.
+        for (const step of card.answer_steps || []) {
+          if (step.kind === "quote") {
+            appendQuote(reference, step.units);
+            continue;
+          }
+          for (let index = step.back_from; index < step.back_to; index++) {
+            const answer = el("div", "ask-card-a");
+            if (card.back_runs && card.back_runs[index]) appendRuns(answer, card.back_runs[index]);
+            else answer.textContent = card.back[index];
+            reference.appendChild(answer);
+          }
         }
         scroll.appendChild(reference);
       }

@@ -714,6 +714,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The tutor's reference card shows a quotation as quoted content rather than
+  as its `>` markers. The reference walked raw answer lines, so it kept the
+  markup the review surfaces had already stopped showing.
+
 - A one-line quotation renders as quoted content in the kids client too. The
   render path was chosen from the raw answer line count, so a card whose whole
   answer is a single `>` line took the plain-text branch and the child read the

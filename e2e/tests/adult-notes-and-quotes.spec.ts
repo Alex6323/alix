@@ -135,3 +135,52 @@ The point is about what a passing suite cannot prove.
   await page.getByRole("button", { name: "Reveal" }).click();
   await expect(revealed).toHaveCount(2);
 });
+
+// The tutor's reference card shows the learner what they were asked, so a
+// quotation must read as one there too. Found while sweeping for the
+// `back.length` derivations Codex's kids finding pointed at.
+test("the tutor reference shows a quotation as quoted content", async ({ page }) => {
+  fs.mkdirSync(path.join(NOTES_WORKSPACE, "decks"), { recursive: true });
+  fs.writeFileSync(path.join(NOTES_WORKSPACE, "alix.toml"), 'title = "Notes And Quotes"\n');
+  fs.writeFileSync(
+    path.join(NOTES_WORKSPACE, "decks", "dijkstra.md"),
+    `---
+format-version: 1
+id: "deck-00000000000000000000000014"
+title: "Dijkstra"
+---
+## What did Dijkstra say about testing?
+That it shows the presence of bugs, never their absence.
+> Program testing can be used to show the presence of bugs, but never
+> to show their absence.
+<!-- id: card-quotetutor1 -->
+`,
+  );
+
+  await page.route("**/api/ask", (route) =>
+    route.fulfill({
+      json: {
+        transcript: [{ q: "Why?", a: "Because the source says so." }],
+        thinking: false,
+        status: null,
+        error: null,
+        draft: null,
+      },
+    }),
+  );
+
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Notes And Quotes").click();
+  await adultDeckRow(page, "Dijkstra").click();
+  await page.getByTitle("choose a depth").click();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/select")),
+    page.getByRole("button", { name: /^Recall/ }).click(),
+  ]);
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await page.getByRole("button", { name: "Ask tutor" }).click();
+
+  const quote = page.locator(".ask-card blockquote.quote");
+  await expect(quote).toHaveCount(1);
+  await expect(page.locator(".ask-card")).not.toContainText(">");
+});

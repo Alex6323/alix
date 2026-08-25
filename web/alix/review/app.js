@@ -211,6 +211,7 @@ const tutor = createTutor({
   },
   ui: {
     appendContext,
+    appendQuote,
     appendRuns,
     appendRunsOrText,
     chip,
