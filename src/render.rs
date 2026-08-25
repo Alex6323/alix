@@ -203,6 +203,16 @@ pub(crate) fn quote_line_flags(lines: &[String]) -> Vec<bool> {
     flags
 }
 
+/// Which of a card's answer lines are quotation rather than its own prose. A
+/// cloze card's back lines are its hidden spans, so a span that IS `>` is
+/// exact text the learner must reproduce, never authored quotation syntax.
+pub(crate) fn card_quote_flags(card: &crate::card::Card) -> Vec<bool> {
+    if card.hole.is_some() {
+        return vec![false; card.back.len()];
+    }
+    quote_line_flags(&card.back)
+}
+
 /// A quote line's body. Only a bare `>` reaches an answer: a badge opens a
 /// note, which the parser routes away from content.
 pub(crate) fn quote_body(line: &str) -> Option<&str> {

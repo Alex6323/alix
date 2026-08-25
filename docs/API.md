@@ -131,10 +131,13 @@ so is every client.
    For typed checks call `POST /api/check {lines}`; whether the lines pair
    by position (`typeline`) or match in any order is derived server-side
    from the card's mode, never sent by the client. A position-paired check
-   returns one result per `back` line, quote lines included: a quote is not
-   part of the typed target, so its position passes whatever was sent there.
-   A card whose whole answer is a quotation has nothing to type and never
-   reaches a typing mode. For a choice pick call
+   grades the submitted prefix: it returns one result per line SENT, in the
+   same positions, so a client submitting one field at a time can tell
+   progress from completion, and `passed` stays false until the last line is
+   in. A quote line is not part of the typed target, so its position passes
+   whatever was sent there. A card whose whole answer is a quotation has
+   nothing to type and never reaches a typing mode; a cloze card's hidden
+   spans are exact text even when a span is `>`. For a choice pick call
    `POST /api/choose {index, card}` (single answer) or
    `POST /api/choose {indices, card}` (select-all, when the state carried
    `choices_multiple`), where `card` is the `card.id`

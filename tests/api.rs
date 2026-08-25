@@ -2796,6 +2796,32 @@ fn post_api_check_derives_orderedness_from_the_mode_not_the_client() {
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(false, body["passed"], "body: {body}");
+
+    // The client submits one field at a time and reads the result count to
+    // decide whether another field is owed. A first line must come back as
+    // progress, never as a finished card with the rest marked wrong.
+    let resp = post_gated(&base, "/api/check", r#"{"lines":["one"]}"#);
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        1,
+        body["results"].as_array().expect("results").len(),
+        "one submitted line owes one result: {body}"
+    );
+    assert_eq!(
+        false, body["passed"],
+        "one line cannot finish a two-line answer: {body}"
+    );
+
+    let resp = post_gated(&base, "/api/check", r#"{"lines":["one","two"]}"#);
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        2,
+        body["results"].as_array().expect("results").len(),
+        "the closing submission covers every line: {body}"
+    );
+    assert_eq!(true, body["passed"], "both lines in order pass: {body}");
 }
 
 #[test]

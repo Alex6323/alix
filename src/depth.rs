@@ -71,7 +71,7 @@ fn gradeable_count(card: &Card) -> usize {
     if card.hole.is_some() {
         return 1;
     }
-    crate::render::quote_line_flags(&card.back)
+    crate::render::card_quote_flags(card)
         .iter()
         .filter(|quoted| !**quoted)
         .count()

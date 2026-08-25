@@ -595,7 +595,7 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
     let mode = depth::check_for(card.reveal.unwrap_or_default(), session.depth(), card);
     // A quotation is supporting content, not the answer's own prose: typing it
     // back tests transcription rather than understanding.
-    let quoted = crate::render::quote_line_flags(&card.back);
+    let quoted = crate::render::card_quote_flags(card);
     if quoted.iter().all(|line_is_quote| *line_is_quote) {
         return Some(CheckFeedback {
             results: Vec::new(),
@@ -607,9 +607,19 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
         .iter()
         .map(|line| crate::inline::strip_inline_with(line, &card.definitions))
         .collect();
-    let results = if mode == Mode::TypeLine {
-        let graded: Vec<bool> = quoted.iter().map(|line_is_quote| !line_is_quote).collect();
-        answer::grade_lines_ordered(lines, &stripped, &graded)
+    let (results, passed) = if mode == Mode::TypeLine {
+        // One field at a time: the reply covers the prefix the learner has
+        // actually submitted, so the client can tell progress from completion.
+        let attempted = lines.len().min(stripped.len());
+        let graded: Vec<bool> = quoted[..attempted]
+            .iter()
+            .map(|line_is_quote| !line_is_quote)
+            .collect();
+        let results =
+            answer::grade_lines_ordered(&lines[..attempted], &stripped[..attempted], &graded);
+        let complete = attempted == stripped.len();
+        let passed = complete && results.iter().all(|r| r.passed);
+        (results, passed)
     } else {
         let expected: Vec<String> = stripped
             .iter()
@@ -617,9 +627,10 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
             .filter(|(_, line_is_quote)| !**line_is_quote)
             .map(|(line, _)| line.clone())
             .collect();
-        answer::grade_lines_unordered(lines, &expected)
+        let results = answer::grade_lines_unordered(lines, &expected);
+        let passed = results.iter().all(|r| r.passed);
+        (results, passed)
     };
-    let passed = results.iter().all(|r| r.passed);
     Some(CheckFeedback { results, passed })
 }
 
@@ -1548,6 +1559,40 @@ mod tests {
             "the learner left the quote's field blank and typed the prose into its own field: {:?}",
             feedback.results
         );
+    }
+
+    #[test]
+    fn a_cloze_answer_that_is_a_greater_than_sign_is_exact_text_not_a_quote() {
+        let (mut store, _augment, _dir) = fixtures();
+        let cards = parse("## comparison\nleft \\blank{>} right\n");
+        assert!(cards[0].hole.is_some(), "the parser produced a cloze card");
+        assert_eq!([">"], cards[0].back.as_slice());
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+
+        let feedback = check_typed(&session, &[">".to_string()]).expect("feedback");
+        assert!(
+            feedback.passed,
+            "the literal hidden span must remain gradeable: {:?}",
+            feedback.results
+        );
+    }
+
+    #[test]
+    fn a_typeline_check_returns_only_the_prefix_the_learner_has_attempted() {
+        let (mut store, _augment, _dir) = fixtures();
+        let cards = parse("## q\none\ntwo\n<!-- reveal: line -->\n");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+
+        let feedback = check_typed(&session, &["one".to_string()]).expect("feedback");
+        assert_eq!(
+            1,
+            feedback.results.len(),
+            "the client decides from the result count whether another field is owed: {:?}",
+            feedback.results
+        );
+        assert!(!feedback.passed, "one line cannot finish a two-line answer");
     }
 
     #[test]

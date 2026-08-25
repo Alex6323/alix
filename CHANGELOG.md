@@ -692,6 +692,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A `reveal: line` card at Reconstruct asks for every line, not just the
+  first. The check returned a result for every answer line however few the
+  learner had submitted, and the client reads that count to decide whether
+  another field is owed, so the first line closed the card and marked every
+  remaining line wrong without ever offering its field. The reply now covers
+  the submitted prefix, and a card passes only once its last line is in.
+  Found by Codex during reciprocal review.
+
 - A cloze card keeps its block's `at:` source citation, found by Codex during
   reciprocal review: the expansion built one card per hole and copied every
   other field but the citations, so a generated or hand-written cloze block
