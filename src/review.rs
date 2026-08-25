@@ -615,9 +615,8 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
             .iter()
             .map(|line_is_quote| !line_is_quote)
             .collect();
-        let results =
-            answer::grade_lines_ordered(&lines[..attempted], &stripped[..attempted], &graded);
-        let complete = attempted == stripped.len();
+        let results = answer::grade_lines_ordered(lines, &stripped[..attempted], &graded);
+        let complete = lines.len() == stripped.len();
         let passed = complete && results.iter().all(|r| r.passed);
         (results, passed)
     } else {
@@ -1593,6 +1592,48 @@ mod tests {
             feedback.results
         );
         assert!(!feedback.passed, "one line cannot finish a two-line answer");
+    }
+
+    #[test]
+    fn a_typeline_surplus_input_is_a_failed_result_not_a_silent_pass() {
+        let (mut store, _augment, _dir) = fixtures();
+        let cards = parse("## q\none\ntwo\n<!-- reveal: line -->\n");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+
+        let feedback = check_typed(
+            &session,
+            &["one".to_string(), "two".to_string(), "surplus".to_string()],
+        )
+        .expect("feedback");
+        assert!(
+            !feedback.passed,
+            "surplus input was silently accepted as a correct complete answer: {:?}",
+            feedback.results
+        );
+        assert_eq!(3, feedback.results.len(), "one result per line sent");
+        assert_eq!("", feedback.results[2].expected);
+        assert!(!feedback.results[2].passed);
+
+        // A BLANK surplus line grades as passing on its own (nothing against
+        // nothing), so completeness has to be measured on what was sent, not
+        // on the prefix the answer could absorb.
+        let blank_surplus = check_typed(
+            &session,
+            &["one".to_string(), "two".to_string(), String::new()],
+        )
+        .expect("feedback");
+        assert!(
+            blank_surplus.results.iter().all(|r| r.passed),
+            "every result passes on its own: {:?}",
+            blank_surplus.results
+        );
+        assert!(
+            !blank_surplus.passed,
+            "and the card still does not complete, because a field too many is \
+             a client out of step: {:?}",
+            blank_surplus.results
+        );
     }
 
     #[test]

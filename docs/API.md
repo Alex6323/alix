@@ -133,8 +133,10 @@ so is every client.
    from the card's mode, never sent by the client. A position-paired check
    grades the submitted prefix: it returns one result per line SENT, in the
    same positions, so a client submitting one field at a time can tell
-   progress from completion, and `passed` stays false until the last line is
-   in. A quote line is not part of the typed target, so its position passes
+   progress from completion, and `passed` stays false until the sent count
+   equals the answer's line count. A line sent beyond that count is not
+   truncated away: it comes back with an empty `expected` and `passed:
+   false`, so a client one field out of step sees the mismatch. A quote line is not part of the typed target, so its position passes
    whatever was sent there. A card whose whole answer is a quotation has
    nothing to type and never reaches a typing mode; a cloze card's hidden
    spans are exact text even when a span is `>`. For a choice pick call

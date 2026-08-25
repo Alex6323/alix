@@ -2822,6 +2822,25 @@ fn post_api_check_derives_orderedness_from_the_mode_not_the_client() {
         "the closing submission covers every line: {body}"
     );
     assert_eq!(true, body["passed"], "both lines in order pass: {body}");
+
+    // One result per line SENT, surplus included: a client one field out of
+    // step must see the mismatch rather than a clean pass over a truncated
+    // request.
+    let resp = post_gated(&base, "/api/check", r#"{"lines":["one","two","surplus"]}"#);
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let results = body["results"].as_array().expect("results");
+    assert_eq!(
+        3,
+        results.len(),
+        "the surplus line owes a result too: {body}"
+    );
+    assert_eq!("", results[2]["expected"], "it matches nothing: {body}");
+    assert_eq!(false, results[2]["passed"], "and it fails: {body}");
+    assert_eq!(
+        false, body["passed"],
+        "a surplus line is not a complete answer: {body}"
+    );
 }
 
 #[test]

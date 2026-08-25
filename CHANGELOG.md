@@ -697,8 +697,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   learner had submitted, and the client reads that count to decide whether
   another field is owed, so the first line closed the card and marked every
   remaining line wrong without ever offering its field. The reply now covers
-  the submitted prefix, and a card passes only once its last line is in.
-  Found by Codex during reciprocal review.
+  the submitted prefix, and a card passes only once the number of lines sent
+  matches the answer. A line sent beyond that comes back failing instead of
+  being discarded, so a client one field out of step sees the mismatch rather
+  than a clean pass. Found by Codex during reciprocal review.
 
 - A cloze card keeps its block's `at:` source citation, found by Codex during
   reciprocal review: the expansion built one card per hole and copied every
