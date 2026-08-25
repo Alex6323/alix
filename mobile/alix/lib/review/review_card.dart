@@ -95,7 +95,7 @@ class ReviewCardView extends StatelessWidget {
 
   bool _lineDone(ReviewCardModel card) {
     return state.mode == ReviewMode.lineByLine &&
-        revealedLines >= card.back.length;
+        revealedLines >= card.answerSteps.length;
   }
 
   @override
@@ -591,15 +591,10 @@ class ReviewCardView extends StatelessWidget {
     if (_isDrawing) return _sketchBody(context, card, tokens);
     if (state.mode == ReviewMode.lineByLine &&
         (!state.introducing || revealed)) {
-      final visible = state.introducing ? card.back.length : revealedLines;
-      return _revealLines(
-        context,
-        card.back.take(visible).toList(),
-        card.backRuns.take(visible).toList(),
-        tokens,
-        stanza: false,
-        units: card.backUnits,
-      );
+      final visible = state.introducing
+          ? card.answerSteps.length
+          : revealedLines;
+      return _revealSteps(context, card, visible, tokens);
     }
     if (_isTyping && !state.introducing) return _typing(context, card, tokens);
     if (_isExplain) return _explainBody(context, card, tokens);
@@ -638,6 +633,76 @@ class ReviewCardView extends StatelessWidget {
         ],
       ],
     );
+  }
+
+  /// Line reveal walks the answer's STEPS, not its physical lines: a
+  /// quotation is one step and reveals whole, as its own block rather than
+  /// as `>` text.
+  Widget _revealSteps(
+    BuildContext context,
+    ReviewCardModel card,
+    int visible,
+    AlixTokens tokens,
+  ) {
+    final style = TextStyle(
+      fontFamily: _mono,
+      fontWeight: FontWeight.w500,
+      fontSize: 18,
+      height: 1.5,
+      color: Theme.of(context).colorScheme.onSurface,
+    );
+    final children = <Widget>[];
+    void gap() {
+      if (children.isNotEmpty) children.add(const SizedBox(height: 6));
+    }
+
+    var fenceIndex = 0;
+    var index = 0;
+    while (index < visible && index < card.answerSteps.length) {
+      final step = card.answerSteps[index];
+      if (step is ReviewAnswerQuoteModel) {
+        gap();
+        children.add(_quote(step.units, tokens, style, TextAlign.center));
+        index++;
+        continue;
+      }
+      final from = step.backFrom;
+      var to = step.backTo;
+      index++;
+      while (index < visible &&
+          index < card.answerSteps.length &&
+          card.answerSteps[index] is ReviewAnswerLineModel) {
+        to = card.answerSteps[index].backTo;
+        index++;
+      }
+      final lines = card.back.sublist(from, to);
+      final runLines = card.backRuns.sublist(from, to);
+      fenceIndex = _walkFences(
+        lines,
+        card.backUnits,
+        fenceStart: fenceIndex,
+        onFence: (code, unit, closed) {
+          gap();
+          if (closed && unit is ReviewDiagramModel) {
+            children.add(_diagram(unit, answered: true));
+          } else {
+            children.add(_codeBlock(code, style.color ?? tokens.text));
+          }
+        },
+        onLine: (line) {
+          gap();
+          children.add(
+            _runsOrText(
+              line < runLines.length ? runLines[line] : null,
+              lines[line],
+              textAlign: TextAlign.center,
+              style: style,
+            ),
+          );
+        },
+      );
+    }
+    return Column(children: children);
   }
 
   Widget _revealLines(
@@ -789,7 +854,10 @@ class ReviewCardView extends StatelessWidget {
   // the nth fence consumes the nth unit, and a resolved diagram replaces
   // its fence only once the closing marker is within the walked lines; a
   // partial fence stays a code block.
-  void _walkFences(
+  /// `fenceStart` lets a caller render an answer in several passes (a
+  /// quotation splits it) without a later pass pairing a fence with an
+  /// earlier unit; it returns where the next pass resumes.
+  int _walkFences(
     List<String> lines,
     List<ReviewNoteUnitModel> units, {
     required void Function(
@@ -799,12 +867,13 @@ class ReviewCardView extends StatelessWidget {
     )
     onFence,
     required void Function(int index) onLine,
+    int fenceStart = 0,
   }) {
     final fenceUnits = [
       for (final unit in units)
         if (unit is ReviewCodeModel || unit is ReviewDiagramModel) unit,
     ];
-    var fenceIndex = 0;
+    var fenceIndex = fenceStart;
     var index = 0;
     while (index < lines.length) {
       final opener = _fenceOpener(lines[index]);
@@ -827,6 +896,7 @@ class ReviewCardView extends StatelessWidget {
       onLine(index);
       index++;
     }
+    return fenceIndex;
   }
 
   Widget _options(AlixTokens tokens) {
@@ -1015,7 +1085,7 @@ class ReviewCardView extends StatelessWidget {
       );
     }
     final onSurface = Theme.of(context).colorScheme.onSurface;
-    final fields = card.back.length;
+    final fields = card.gradeableSteps.length;
     OutlineInputBorder border(Color color) => OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
       borderSide: BorderSide(color: color),
@@ -1448,7 +1518,9 @@ class ReviewCardView extends StatelessWidget {
             kind: ReviewChipKind.primary,
             onTap: () {
               onCheck([
-                for (var index = 0; index < card.back.length; index++)
+                for (var index = 0;
+                    index < card.gradeableSteps.length;
+                    index++)
                   typedControllers[index].text,
               ]);
             },

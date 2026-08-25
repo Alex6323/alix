@@ -121,25 +121,13 @@ pub fn grade_lines_unordered(inputs: &[String], expected: &[String]) -> Vec<Type
     results
 }
 
-/// `graded[i] == false` marks a position the card does not grade. It still
-/// owes a result, so a caller pairing by position keeps one entry per line.
-pub fn grade_lines_ordered(
-    inputs: &[String],
-    expected: &[String],
-    graded: &[bool],
-) -> Vec<TypedResult> {
+pub fn grade_lines_ordered(inputs: &[String], expected: &[String]) -> Vec<TypedResult> {
     (0..inputs.len().max(expected.len()))
         .map(|i| {
-            let input = inputs.get(i).map_or("", String::as_str);
-            if graded.get(i).copied().unwrap_or(true) {
-                grade_typed(input, expected.get(i).map_or("", String::as_str))
-            } else {
-                TypedResult {
-                    input: input.trim().to_string(),
-                    expected: String::new(),
-                    passed: true,
-                }
-            }
+            grade_typed(
+                inputs.get(i).map_or("", String::as_str),
+                expected.get(i).map_or("", String::as_str),
+            )
         })
         .collect()
 }
@@ -205,7 +193,7 @@ mod tests {
     #[test]
     fn ordered_grading_fails_an_expected_line_nobody_answered() {
         let expected = lines(&["one", "two", "three"]);
-        let results = grade_lines_ordered(&lines(&["one"]), &expected, &[]);
+        let results = grade_lines_ordered(&lines(&["one"]), &expected);
         assert_eq!(expected.len(), results.len());
         assert!(!results.iter().all(|result| result.passed));
         assert_eq!("two", results[1].expected);
@@ -276,14 +264,14 @@ mod tests {
     #[test]
     fn ordered_line_grading_respects_position() {
         let expected = lines(&["red", "green"]);
-        let swapped = grade_lines_ordered(&lines(&["green", "red"]), &expected, &[]);
+        let swapped = grade_lines_ordered(&lines(&["green", "red"]), &expected);
         assert!(!swapped[0].passed, "green vs red");
         assert!(!swapped[1].passed, "red vs green");
         assert_eq!("red", swapped[0].expected);
         assert_eq!("green", swapped[1].expected);
-        let in_order = grade_lines_ordered(&expected, &expected, &[]);
+        let in_order = grade_lines_ordered(&expected, &expected);
         assert!(in_order.iter().all(|r| r.passed));
-        let extra = grade_lines_ordered(&lines(&["red", "green", "blue"]), &expected, &[]);
+        let extra = grade_lines_ordered(&lines(&["red", "green", "blue"]), &expected);
         assert!(!extra[2].passed);
         assert_eq!("", extra[2].expected);
     }

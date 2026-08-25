@@ -24,6 +24,7 @@ function state() {
       back: ["Rayleigh scattering"],
       back_runs: [[{ text: "Rayleigh scattering" }]],
       back_units: [{ kind: "sentence", text: "Rayleigh scattering" }],
+      answer_steps: [{ kind: "line", back_from: 0, back_to: 1 }],
       reshaped: false,
       note: [],
       images: [],

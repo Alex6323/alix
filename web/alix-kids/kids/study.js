@@ -54,7 +54,6 @@ function syncStudyModel(next) {
   studyModel = next;
   ({ state, revealed, chosen, selected } = studyModel);
 }
-function backCount() { return model.backCount(studyModel); }
 function isChoiceMode() { return model.choiceMode(studyModel); }
 function isMultiMode() { return model.multiMode(studyModel); }
 // Has the answer been fully revealed (so the mascot "why" + rate bar show)?
@@ -255,7 +254,7 @@ function answerFill(card) {
   const lines = card.back || [];
   if (lines.length > 1) {
     const stack = el("div", "rev-answer-stack");
-    appendBackLines(stack, card, lines.length, "span", "rev-answer-fill");
+    appendBackSteps(stack, card, (card.answer_steps || []).length, "span", "rev-answer-fill");
     a.appendChild(stack);
   } else {
     const answer = el("span", "rev-answer-fill");
@@ -274,9 +273,8 @@ function blankEl() {
 // Line mode: the back lines revealed so far.
 function renderLines(card) {
   const wrap = el("div", "rev-lines");
-  const lines = card.back || [];
-  const shown = Math.min(revealed, lines.length);
-  appendBackLines(wrap, card, shown, "div", "rev-line");
+  const steps = (card.answer_steps || []).length;
+  appendBackSteps(wrap, card, Math.min(revealed, steps), "div", "rev-line");
   return wrap;
 }
 
@@ -291,12 +289,12 @@ function closesFence(line, marker) {
 // place once its closing marker is within the walked lines, and
 // everything else renders its own interior as code. `onLine(i)` draws a
 // non-fence line in the caller's own style.
-function walkFences(parent, lines, shown, units, onLine, makeDiagram) {
+function walkFences(parent, lines, from, shown, units, onLine, makeDiagram, fenceStart) {
   const fenceUnits = (units || []).filter(
     (u) => u.kind === "code" || u.kind === "diagram"
   );
-  let fenceIndex = 0;
-  let i = 0;
+  let fenceIndex = fenceStart || 0;
+  let i = from;
   while (i < shown) {
     const fence = lines[i].trim().match(/^(`{3,}|~{3,})/);
     if (fence) {
@@ -323,16 +321,38 @@ function walkFences(parent, lines, shown, units, onLine, makeDiagram) {
     onLine(i);
     i++;
   }
+  return fenceIndex;
 }
 
-function appendBackLines(parent, card, shown, tag, cls) {
+// The answer's steps, up to `shown` of them: a gradeable line in the caller's
+// own style, a quotation as one block whatever it spans.
+function appendBackSteps(parent, card, shown, tag, cls) {
   const lines = card.back || [];
   const runs = card.back_runs || [];
-  walkFences(parent, lines, shown, card.back_units, (i) => {
+  const steps = card.answer_steps || [];
+  const onLine = (i) => {
     const line = el(tag, cls);
     if (runs[i]) appendRuns(line, runs[i]); else line.textContent = lines[i];
     parent.appendChild(line);
-  });
+  };
+  let fenceIndex = 0;
+  let index = 0;
+  while (index < shown && index < steps.length) {
+    if (steps[index].kind === "quote") {
+      appendQuote(parent, steps[index].units);
+      index++;
+      continue;
+    }
+    const from = steps[index].back_from;
+    let to = steps[index].back_to;
+    index++;
+    while (index < shown && index < steps.length && steps[index].kind === "line") {
+      to = steps[index].back_to;
+      index++;
+    }
+    fenceIndex = walkFences(parent, lines, from, to, card.back_units, onLine,
+      undefined, fenceIndex);
+  }
 }
 
 function plainDiagram(unit) {

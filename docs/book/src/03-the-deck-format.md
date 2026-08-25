@@ -330,6 +330,14 @@ That it shows the presence of bugs, never their absence.
 > to show their absence.
 ```
 
+A quotation is one block however many `>` lines you wrapped it across. Under
+`<!-- reveal: line -->` it takes a single reveal rather than arriving a marker
+line at a time, and at Reconstruct you are never asked to type it: typing
+someone else's words back tests transcription, not understanding, so you type
+the answer's own prose while the quotation stands beside it. A card whose whole
+answer is a quotation has nothing to type, so Reconstruct asks you to explain
+it instead.
+
 A badge alix does not recognize, a badge in the wrong case, or a badge with
 text after it on the same line is a quote, exactly as on GitHub. That is a
 quiet change of meaning, so `alix doctor` names it rather than leaving you to

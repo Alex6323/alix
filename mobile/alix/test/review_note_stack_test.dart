@@ -23,6 +23,7 @@ void main() {
       back: const ['Answer'],
       backRuns: const [[]],
       backUnits: const [],
+      answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 1)],
       reshaped: false,
       note: [
         ReviewNoteModel(

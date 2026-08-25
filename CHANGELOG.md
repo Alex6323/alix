@@ -16,7 +16,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inside a fence or a display-math block is that block's source and is graded
   like any other answer line, and a card whose whole answer is a quotation has
   nothing to type, so Reconstruct explains it rather than asking for text.
-  Badge styling and the line-reveal step for quotes come next.
+
+- A card carries `answer_steps`: the steps a client walks its answer in, one
+  per gradeable line and one per quotation run. Reveal counts every step and
+  typing counts only the gradeable ones, so a two-line quotation now reveals
+  as ONE block under `reveal: line` (adult, kids, and mobile) instead of a
+  marker line at a time, and no typed field is drawn for it on any client.
+  The `>` markers no longer reach the line-reveal surfaces either.
 
 - Links display as their labels (decision 8, first slice):
   `[label](destination)` renders the label styled as an inert link on
@@ -361,6 +367,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- **`POST /api/check` takes one line per gradeable step, not one per answer
+  line.** A quotation owns no field, so a client that sent a blank for it is
+  now one field too many rather than a position that silently passes. Clients
+  in this repository are updated together; anything else reading the API needs
+  the same change.
 
 - A display reshape is keyed on the notes it was generated from. Adding a
   second alert to an already reshaped card used to leave the older reshape in

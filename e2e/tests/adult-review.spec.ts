@@ -103,6 +103,11 @@ function longContentState({
       back: answerLines,
       back_runs: answerLines.map((text) => [{ text }]),
       back_units: answerLines.map((text) => ({ kind: "sentence", text })),
+      answer_steps: answerLines.map((_line, index) => ({
+        kind: "line",
+        back_from: index,
+        back_to: index + 1,
+      })),
       reshaped: false,
       note: note.length === 0 ? [] : [{ units: note }],
       images: [],

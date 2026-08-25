@@ -12,6 +12,342 @@ part of 'review.dart';
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
+mixin _$AnswerStep {
+
+ BigInt get backFrom; BigInt get backTo;
+/// Create a copy of AnswerStep
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AnswerStepCopyWith<AnswerStep> get copyWith => _$AnswerStepCopyWithImpl<AnswerStep>(this as AnswerStep, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AnswerStep&&(identical(other.backFrom, backFrom) || other.backFrom == backFrom)&&(identical(other.backTo, backTo) || other.backTo == backTo));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,backFrom,backTo);
+
+@override
+String toString() {
+  return 'AnswerStep(backFrom: $backFrom, backTo: $backTo)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AnswerStepCopyWith<$Res>  {
+  factory $AnswerStepCopyWith(AnswerStep value, $Res Function(AnswerStep) _then) = _$AnswerStepCopyWithImpl;
+@useResult
+$Res call({
+ BigInt backFrom, BigInt backTo
+});
+
+
+
+
+}
+/// @nodoc
+class _$AnswerStepCopyWithImpl<$Res>
+    implements $AnswerStepCopyWith<$Res> {
+  _$AnswerStepCopyWithImpl(this._self, this._then);
+
+  final AnswerStep _self;
+  final $Res Function(AnswerStep) _then;
+
+/// Create a copy of AnswerStep
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? backFrom = null,Object? backTo = null,}) {
+  return _then(_self.copyWith(
+backFrom: null == backFrom ? _self.backFrom : backFrom // ignore: cast_nullable_to_non_nullable
+as BigInt,backTo: null == backTo ? _self.backTo : backTo // ignore: cast_nullable_to_non_nullable
+as BigInt,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [AnswerStep].
+extension AnswerStepPatterns on AnswerStep {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( AnswerStep_Line value)?  line,TResult Function( AnswerStep_Quote value)?  quote,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case AnswerStep_Line() when line != null:
+return line(_that);case AnswerStep_Quote() when quote != null:
+return quote(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( AnswerStep_Line value)  line,required TResult Function( AnswerStep_Quote value)  quote,}){
+final _that = this;
+switch (_that) {
+case AnswerStep_Line():
+return line(_that);case AnswerStep_Quote():
+return quote(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( AnswerStep_Line value)?  line,TResult? Function( AnswerStep_Quote value)?  quote,}){
+final _that = this;
+switch (_that) {
+case AnswerStep_Line() when line != null:
+return line(_that);case AnswerStep_Quote() when quote != null:
+return quote(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( BigInt backFrom,  BigInt backTo)?  line,TResult Function( BigInt backFrom,  BigInt backTo,  List<NoteUnit> units)?  quote,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case AnswerStep_Line() when line != null:
+return line(_that.backFrom,_that.backTo);case AnswerStep_Quote() when quote != null:
+return quote(_that.backFrom,_that.backTo,_that.units);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( BigInt backFrom,  BigInt backTo)  line,required TResult Function( BigInt backFrom,  BigInt backTo,  List<NoteUnit> units)  quote,}) {final _that = this;
+switch (_that) {
+case AnswerStep_Line():
+return line(_that.backFrom,_that.backTo);case AnswerStep_Quote():
+return quote(_that.backFrom,_that.backTo,_that.units);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( BigInt backFrom,  BigInt backTo)?  line,TResult? Function( BigInt backFrom,  BigInt backTo,  List<NoteUnit> units)?  quote,}) {final _that = this;
+switch (_that) {
+case AnswerStep_Line() when line != null:
+return line(_that.backFrom,_that.backTo);case AnswerStep_Quote() when quote != null:
+return quote(_that.backFrom,_that.backTo,_that.units);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class AnswerStep_Line extends AnswerStep {
+  const AnswerStep_Line({required this.backFrom, required this.backTo}): super._();
+  
+
+@override final  BigInt backFrom;
+@override final  BigInt backTo;
+
+/// Create a copy of AnswerStep
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AnswerStep_LineCopyWith<AnswerStep_Line> get copyWith => _$AnswerStep_LineCopyWithImpl<AnswerStep_Line>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AnswerStep_Line&&(identical(other.backFrom, backFrom) || other.backFrom == backFrom)&&(identical(other.backTo, backTo) || other.backTo == backTo));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,backFrom,backTo);
+
+@override
+String toString() {
+  return 'AnswerStep.line(backFrom: $backFrom, backTo: $backTo)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AnswerStep_LineCopyWith<$Res> implements $AnswerStepCopyWith<$Res> {
+  factory $AnswerStep_LineCopyWith(AnswerStep_Line value, $Res Function(AnswerStep_Line) _then) = _$AnswerStep_LineCopyWithImpl;
+@override @useResult
+$Res call({
+ BigInt backFrom, BigInt backTo
+});
+
+
+
+
+}
+/// @nodoc
+class _$AnswerStep_LineCopyWithImpl<$Res>
+    implements $AnswerStep_LineCopyWith<$Res> {
+  _$AnswerStep_LineCopyWithImpl(this._self, this._then);
+
+  final AnswerStep_Line _self;
+  final $Res Function(AnswerStep_Line) _then;
+
+/// Create a copy of AnswerStep
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? backFrom = null,Object? backTo = null,}) {
+  return _then(AnswerStep_Line(
+backFrom: null == backFrom ? _self.backFrom : backFrom // ignore: cast_nullable_to_non_nullable
+as BigInt,backTo: null == backTo ? _self.backTo : backTo // ignore: cast_nullable_to_non_nullable
+as BigInt,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class AnswerStep_Quote extends AnswerStep {
+  const AnswerStep_Quote({required this.backFrom, required this.backTo, required final  List<NoteUnit> units}): _units = units,super._();
+  
+
+@override final  BigInt backFrom;
+@override final  BigInt backTo;
+ final  List<NoteUnit> _units;
+ List<NoteUnit> get units {
+  if (_units is EqualUnmodifiableListView) return _units;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_units);
+}
+
+
+/// Create a copy of AnswerStep
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AnswerStep_QuoteCopyWith<AnswerStep_Quote> get copyWith => _$AnswerStep_QuoteCopyWithImpl<AnswerStep_Quote>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AnswerStep_Quote&&(identical(other.backFrom, backFrom) || other.backFrom == backFrom)&&(identical(other.backTo, backTo) || other.backTo == backTo)&&const DeepCollectionEquality().equals(other._units, _units));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,backFrom,backTo,const DeepCollectionEquality().hash(_units));
+
+@override
+String toString() {
+  return 'AnswerStep.quote(backFrom: $backFrom, backTo: $backTo, units: $units)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AnswerStep_QuoteCopyWith<$Res> implements $AnswerStepCopyWith<$Res> {
+  factory $AnswerStep_QuoteCopyWith(AnswerStep_Quote value, $Res Function(AnswerStep_Quote) _then) = _$AnswerStep_QuoteCopyWithImpl;
+@override @useResult
+$Res call({
+ BigInt backFrom, BigInt backTo, List<NoteUnit> units
+});
+
+
+
+
+}
+/// @nodoc
+class _$AnswerStep_QuoteCopyWithImpl<$Res>
+    implements $AnswerStep_QuoteCopyWith<$Res> {
+  _$AnswerStep_QuoteCopyWithImpl(this._self, this._then);
+
+  final AnswerStep_Quote _self;
+  final $Res Function(AnswerStep_Quote) _then;
+
+/// Create a copy of AnswerStep
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? backFrom = null,Object? backTo = null,Object? units = null,}) {
+  return _then(AnswerStep_Quote(
+backFrom: null == backFrom ? _self.backFrom : backFrom // ignore: cast_nullable_to_non_nullable
+as BigInt,backTo: null == backTo ? _self.backTo : backTo // ignore: cast_nullable_to_non_nullable
+as BigInt,units: null == units ? _self._units : units // ignore: cast_nullable_to_non_nullable
+as List<NoteUnit>,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$NoteUnit {
 
 

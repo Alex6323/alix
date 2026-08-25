@@ -8,7 +8,7 @@ pub use alix::{
     depth::Depth,
     inline::InlineRun,
     math::MathView,
-    render::{CellAlign, ChecklistItem, NoteUnit},
+    render::{AnswerStep, CellAlign, ChecklistItem, NoteUnit},
     card::Badge,
     review::{CardView, CheckFeedback, ChoiceFeedback, CropView, ImageView, MultiChoiceFeedback, NoteView, RegionRole, RegionView, ReviewState},
     session::RecognizeGap,
@@ -88,6 +88,19 @@ pub enum _NoteUnit {
     Quote { units: Vec<NoteUnit> },
 }
 
+#[flutter_rust_bridge::frb(mirror(AnswerStep))]
+pub enum _AnswerStep {
+    Line {
+        back_from: usize,
+        back_to: usize,
+    },
+    Quote {
+        back_from: usize,
+        back_to: usize,
+        units: Vec<NoteUnit>,
+    },
+}
+
 #[flutter_rust_bridge::frb(mirror(CellAlign))]
 pub enum _CellAlign {
     None,
@@ -161,6 +174,7 @@ pub struct _CardView {
     pub back: Vec<String>,
     pub back_runs: Vec<Vec<InlineRun>>,
     pub back_units: Vec<NoteUnit>,
+    pub answer_steps: Vec<AnswerStep>,
     pub reshaped: bool,
     pub note: Vec<NoteView>,
     pub images: Vec<ImageView>,

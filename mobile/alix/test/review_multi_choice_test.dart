@@ -17,6 +17,7 @@ ReviewCardModel _card() {
     back: const ['two', 'four'],
     backRuns: const [[], []],
     backUnits: const [],
+    answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 1), ReviewAnswerLineModel(backFrom: 1, backTo: 2)],
     reshaped: false,
     note: const [],
     images: const [],

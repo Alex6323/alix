@@ -240,11 +240,14 @@ function closesFence(line, marker) {
 // once the closing marker is within the walked lines; a partial fence
 // stays code. `onLine(index)` renders a non-fence line in the caller's
 // own style.
-function walkFences(parent, lines, units, onLine, makeDiagram) {
+// `fenceStart` lets a caller render an answer in several passes (line reveal
+// splits it at the revealed point) without the second pass pairing a later
+// fence with the first fence unit; it returns where the next pass resumes.
+function walkFences(parent, lines, units, onLine, makeDiagram, fenceStart) {
   const fenceUnits = (units || []).filter(
     (u) => u.kind === "code" || u.kind === "diagram"
   );
-  let fenceIndex = 0;
+  let fenceIndex = fenceStart || 0;
   let index = 0;
   while (index < lines.length) {
     const fence = lines[index].trim().match(/^(`{3,}|~{3,})/);
@@ -272,6 +275,7 @@ function walkFences(parent, lines, units, onLine, makeDiagram) {
       index++;
     }
   }
+  return fenceIndex;
 }
 
 // The bare diagram img; a caller with masking policy wraps it (the
@@ -353,14 +357,14 @@ function isRuleLine(line) {
   );
 }
 
-export function appendReveal(parent, lines, runs, isList, units, makeDiagram) {
-  walkFences(parent, lines, units, (index) => {
+export function appendReveal(parent, lines, runs, isList, units, makeDiagram, fenceStart) {
+  return walkFences(parent, lines, units, (index) => {
     const line = el("div", "answer");
     if (isList) line.appendChild(document.createTextNode("• "));
     if (runs && runs[index]) appendRuns(line, runs[index]);
     else line.appendChild(document.createTextNode(lines[index]));
     parent.appendChild(line);
-  }, makeDiagram);
+  }, makeDiagram, fenceStart);
 }
 
 export function appendContext(parent, lines, runs, units, cls, makeDiagram) {

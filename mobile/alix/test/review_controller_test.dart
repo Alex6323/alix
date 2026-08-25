@@ -116,6 +116,7 @@ ReviewStateModel _state({int remaining = 2, bool finished = false}) {
       back: const ['answer'],
       backRuns: const [[]],
       backUnits: const [],
+      answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 1)],
       reshaped: false,
       note: const [],
       images: const [],

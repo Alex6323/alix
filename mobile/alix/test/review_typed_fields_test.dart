@@ -6,7 +6,8 @@ import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/sketch.dart';
 import 'package:alix_mobile/theme.dart';
 
-ReviewCardModel _card(List<String> back) => ReviewCardModel(
+ReviewCardModel _card(List<String> back, {List<ReviewAnswerStepModel>? steps}) =>
+    ReviewCardModel(
   front: 'Question',
   frontRuns: const [],
   context: const [],
@@ -16,6 +17,12 @@ ReviewCardModel _card(List<String> back) => ReviewCardModel(
   back: back,
   backRuns: [for (final _ in back) const []],
   backUnits: const [],
+  answerSteps:
+      steps ??
+      [
+        for (var i = 0; i < back.length; i++)
+          ReviewAnswerLineModel(backFrom: i, backTo: i + 1),
+      ],
   reshaped: false,
   note: const [],
   images: const [],
@@ -48,7 +55,7 @@ Future<List<String>> _pumpAndSubmit(
   final attempt = TextEditingController();
   addTearDown(attempt.dispose);
   final typed = [
-    for (final _ in card.back) TextEditingController(),
+    for (final _ in card.gradeableSteps) TextEditingController(),
   ];
   for (final controller in typed) {
     addTearDown(controller.dispose);
@@ -98,7 +105,7 @@ Future<List<String>> _pumpAndSubmit(
   );
 
   for (var index = 0; index < typed.length; index++) {
-    typed[index].text = card.back[index];
+    typed[index].text = card.back[card.gradeableSteps[index].backFrom];
   }
   await tester.tap(find.text('Submit'));
   await tester.pump();
@@ -129,5 +136,30 @@ void main() {
 
     expect(find.byType(TextField), findsOneWidget);
     expect(sent, const ['Paris']);
+  });
+
+  // A quotation is answer content the learner reads, never a field: the
+  // fields follow the gradeable steps, so a quote between them must neither
+  // claim one nor shift what the next field answers.
+  testWidgets('a quotation between two answer lines claims no typed field', (
+    tester,
+  ) async {
+    final card = _card(
+      const ['alpha', '> quoted', 'beta'],
+      steps: [
+        const ReviewAnswerLineModel(backFrom: 0, backTo: 1),
+        ReviewAnswerQuoteModel(
+          backFrom: 1,
+          backTo: 2,
+          units: [ReviewSentenceModel(text: 'quoted', runs: const [])],
+        ),
+        const ReviewAnswerLineModel(backFrom: 2, backTo: 3),
+      ],
+    );
+
+    final sent = await _pumpAndSubmit(tester, card, ReviewMode.typing);
+
+    expect(find.byType(TextField), findsNWidgets(2));
+    expect(sent, const ['alpha', 'beta']);
   });
 }

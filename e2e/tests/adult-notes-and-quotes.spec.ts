@@ -84,9 +84,54 @@ That it shows the presence of bugs, never their absence.
   await expect(notes.nth(1)).toContainText("It is not a claim that testing is useless.");
 });
 
-// Disabled, not aspirational: the `reveal: line` answer path renders `back`
-// LINES through `walkFences`, which consumes only fence-shaped units, so the
-// `quote` unit never reaches it and the learner reads the `>` markers. The
-// flip path above renders units and is correct. Enable this when the
-// `answer_steps` projection lands (blockquote slice 2, increment 5).
-test.fixme("a quotation reveals as one block under `reveal: line`", () => {});
+// Line reveal walks the answer's STEPS, so a two-line quotation is one
+// reveal action and arrives as a block, not as two `>` lines.
+test("a quotation reveals as one block under `reveal: line`", async ({ page }) => {
+  fs.mkdirSync(path.join(NOTES_WORKSPACE, "decks"), { recursive: true });
+  fs.writeFileSync(path.join(NOTES_WORKSPACE, "alix.toml"), 'title = "Notes And Quotes"\n');
+  fs.writeFileSync(
+    path.join(NOTES_WORKSPACE, "decks", "dijkstra.md"),
+    `---
+format-version: 1
+id: "deck-00000000000000000000000014"
+title: "Dijkstra"
+---
+## What did Dijkstra say about testing?
+That it shows the presence of bugs, never their absence.
+> Program testing can be used to show the presence of bugs, but never
+> to show their absence.
+The point is about what a passing suite cannot prove.
+<!-- reveal: line -->
+<!-- id: card-quoteline1 -->
+`,
+  );
+
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Notes And Quotes").click();
+  await adultDeckRow(page, "Dijkstra").click();
+  await page.getByTitle("choose a depth").click();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/select")),
+    page.getByRole("button", { name: /^Recall/ }).click(),
+  ]);
+
+  const revealed = page.locator("#ansRegion .reveal.line > .answer:not(.pending):not(.line-reserve)");
+  // The unrevealed tail renders as `.line-reserve` to hold the layout, so a
+  // revealed quotation is the one that is NOT reserve.
+  const quote = page.locator("#ansRegion blockquote.quote:not(.line-reserve)");
+
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await expect(revealed).toHaveCount(1);
+  await expect(quote).toHaveCount(0);
+
+  // ONE more reveal takes the whole two-line quotation, as a block.
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await expect(quote).toHaveCount(1);
+  await expect(quote).toHaveText(
+    "Program testing can be used to show the presence of bugs, but never to show their absence.",
+  );
+  await expect(page.locator("#ansRegion")).not.toContainText(">");
+
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await expect(revealed).toHaveCount(2);
+});

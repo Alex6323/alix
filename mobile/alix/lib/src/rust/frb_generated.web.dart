@@ -86,6 +86,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  AnswerStep dco_decode_answer_step(dynamic raw);
+
+  @protected
   Badge dco_decode_badge(dynamic raw);
 
   @protected
@@ -198,6 +201,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<AnswerStep> dco_decode_list_answer_step(dynamic raw);
 
   @protected
   List<CellAlign> dco_decode_list_cell_align(dynamic raw);
@@ -439,6 +445,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  AnswerStep sse_decode_answer_step(SseDeserializer deserializer);
+
+  @protected
   Badge sse_decode_badge(SseDeserializer deserializer);
 
   @protected
@@ -561,6 +570,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<AnswerStep> sse_decode_list_answer_step(SseDeserializer deserializer);
 
   @protected
   List<CellAlign> sse_decode_list_cell_align(SseDeserializer deserializer);
@@ -839,6 +851,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_answer_step(AnswerStep self, SseSerializer serializer);
+
+  @protected
   void sse_encode_badge(Badge self, SseSerializer serializer);
 
   @protected
@@ -990,6 +1005,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_answer_step(
+    List<AnswerStep> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_cell_align(

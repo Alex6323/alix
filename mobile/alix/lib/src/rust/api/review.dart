@@ -102,6 +102,21 @@ abstract class WalkSession implements RustOpaqueInterface {
   WalkState state();
 }
 
+@freezed
+sealed class AnswerStep with _$AnswerStep {
+  const AnswerStep._();
+
+  const factory AnswerStep.line({
+    required BigInt backFrom,
+    required BigInt backTo,
+  }) = AnswerStep_Line;
+  const factory AnswerStep.quote({
+    required BigInt backFrom,
+    required BigInt backTo,
+    required List<NoteUnit> units,
+  }) = AnswerStep_Quote;
+}
+
 enum Badge { note, tip, important, warning, caution }
 
 class CardView {
@@ -118,6 +133,7 @@ class CardView {
   final List<String> back;
   final List<List<InlineRun>> backRuns;
   final List<NoteUnit> backUnits;
+  final List<AnswerStep> answerSteps;
   final bool reshaped;
   final List<NoteView> note;
   final List<ImageView> images;
@@ -138,6 +154,7 @@ class CardView {
     required this.back,
     required this.backRuns,
     required this.backUnits,
+    required this.answerSteps,
     required this.reshaped,
     required this.note,
     required this.images,
@@ -160,6 +177,7 @@ class CardView {
       back.hashCode ^
       backRuns.hashCode ^
       backUnits.hashCode ^
+      answerSteps.hashCode ^
       reshaped.hashCode ^
       note.hashCode ^
       images.hashCode ^
@@ -184,6 +202,7 @@ class CardView {
           back == other.back &&
           backRuns == other.backRuns &&
           backUnits == other.backUnits &&
+          answerSteps == other.answerSteps &&
           reshaped == other.reshaped &&
           note == other.note &&
           images == other.images &&

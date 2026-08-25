@@ -78,7 +78,6 @@ study = createKidsStudy({
     clear: clearKidsStudyState,
     choose: chooseKidsAnswer,
     reveal: revealKidsAnswer,
-    backCount: kidsBackCount,
     choiceMode: kidsChoiceMode,
     multiMode: kidsMultiMode,
     toggle: toggleKidsChoice,

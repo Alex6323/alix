@@ -5,7 +5,7 @@ use crate::{
     answer::TypedResult,
     inline::InlineRun,
     math::MathView,
-    render::{CellAlign, ChecklistItem, NoteUnit},
+    render::{AnswerStep, CellAlign, ChecklistItem, NoteUnit},
     session::{CardTier, Cell},
 };
 
@@ -119,6 +119,12 @@ fn statedto_review_phase_wire_shape() {
                 text: "every value has one owner".to_string(),
                 runs: crate::inline::parse_inline("every value has one owner"),
             }],
+            answer_steps: vec![
+                AnswerStep::Line {
+                    back_from: 0,
+                    back_to: 1,
+                },
+            ],
             reshaped: true,
             note: vec![NoteDto {
                 badge: Some(crate::card::Badge::Note),
@@ -276,6 +282,9 @@ fn statedto_review_phase_wire_shape() {
                     "text": "every value has one owner",
                     "runs": [{"text": "every value has one owner"}]
                 }],
+                "answer_steps": [
+                    {"kind": "line", "back_from": 0, "back_to": 1}
+                ],
                 "reshaped": true,
                 "note": [{
                     "badge": "note",
@@ -854,6 +863,9 @@ fn carddto_sectioned_wire_shape() {
             "images": [],
             "images_back": [],
             "note": [],
+            "answer_steps": [
+                {"kind": "line", "back_from": 0, "back_to": 1}
+            ],
             "reshaped": false,
             "section_context": [
                 "*Ownership* rules",
@@ -945,6 +957,16 @@ fn carddto_wire_shape() {
                 text: "Use **x** France".to_string(),
                 runs: crate::inline::parse_inline("Use `**x**` *France*"),
             }],
+            answer_steps: vec![
+                AnswerStep::Line {
+                    back_from: 0,
+                    back_to: 1,
+                },
+                AnswerStep::Line {
+                    back_from: 1,
+                    back_to: 2,
+                },
+            ],
             reshaped: false,
             note: vec![crate::review::NoteView {
                 badge: Some(crate::card::Badge::Note),
@@ -1011,6 +1033,10 @@ fn carddto_wire_shape() {
                     {"text": "France", "italic": true}
                 ]
             }],
+            "answer_steps": [
+                {"kind": "line", "back_from": 0, "back_to": 1},
+                {"kind": "line", "back_from": 1, "back_to": 2}
+            ],
             "reshaped": false,
             "note": [{
                 "badge": "note",
@@ -1083,6 +1109,10 @@ fn carddto_math_wire_shape() {
                 ..InlineRun::default()
             }],
         }],
+        answer_steps: vec![AnswerStep::Line {
+            back_from: 0,
+            back_to: 1,
+        }],
         reshaped: false,
         note: Vec::new(),
         images: Vec::new(),
@@ -1132,6 +1162,9 @@ fn carddto_math_wire_shape() {
                     }
                 }]
             }],
+            "answer_steps": [
+                {"kind": "line", "back_from": 0, "back_to": 1}
+            ],
             "reshaped": false,
             "note": [],
             "images": [],
@@ -1178,6 +1211,20 @@ fn carddto_quote_wire_shape() {
                 }],
             },
         ],
+        answer_steps: vec![
+            AnswerStep::Line {
+                back_from: 0,
+                back_to: 1,
+            },
+            AnswerStep::Quote {
+                back_from: 1,
+                back_to: 3,
+                units: vec![NoteUnit::Sentence {
+                    text: "Program testing can be used to show the presence of bugs, but never to show their absence.".to_string(),
+                    runs: crate::inline::parse_inline("Program testing can be used to show the presence of bugs, but never to show their absence."),
+                }],
+            },
+        ],
         reshaped: false,
         note: Vec::new(),
         images: Vec::new(),
@@ -1214,6 +1261,19 @@ fn carddto_quote_wire_shape() {
                 },
                 {
                     "kind": "quote",
+                    "units": [{
+                        "kind": "sentence",
+                        "text": "Program testing can be used to show the presence of bugs, but never to show their absence.",
+                        "runs": [{"text": "Program testing can be used to show the presence of bugs, but never to show their absence."}]
+                    }]
+                }
+            ],
+            "answer_steps": [
+                {"kind": "line", "back_from": 0, "back_to": 1},
+                {
+                    "kind": "quote",
+                    "back_from": 1,
+                    "back_to": 3,
                     "units": [{
                         "kind": "sentence",
                         "text": "Program testing can be used to show the presence of bugs, but never to show their absence.",
@@ -1275,6 +1335,20 @@ fn carddto_table_wire_shape() {
                 Vec::new(),
             ]],
         }],
+        answer_steps: vec![
+            AnswerStep::Line {
+                back_from: 0,
+                back_to: 1,
+            },
+            AnswerStep::Line {
+                back_from: 1,
+                back_to: 2,
+            },
+            AnswerStep::Line {
+                back_from: 2,
+                back_to: 3,
+            },
+        ],
         reshaped: true,
         note: Vec::new(),
         images: Vec::new(),
@@ -1319,6 +1393,11 @@ fn carddto_table_wire_shape() {
                     []
                 ]]
             }],
+            "answer_steps": [
+                {"kind": "line", "back_from": 0, "back_to": 1},
+                {"kind": "line", "back_from": 1, "back_to": 2},
+                {"kind": "line", "back_from": 2, "back_to": 3}
+            ],
             "reshaped": true,
             "note": [],
             "images": [],
@@ -1636,6 +1715,10 @@ fn browsedto_wire_shape() {
                 text: "a".to_string(),
                 runs: crate::inline::parse_inline("a"),
             }],
+            answer_steps: vec![AnswerStep::Line {
+                back_from: 0,
+                back_to: 1,
+            }],
             reshaped: false,
             note: Vec::new(),
             images: Vec::new(),
@@ -1665,6 +1748,9 @@ fn browsedto_wire_shape() {
                     "text": "a",
                     "runs": [{"text": "a"}]
                 }],
+                "answer_steps": [
+                    {"kind": "line", "back_from": 0, "back_to": 1}
+                ],
                 "reshaped": false,
                 "note": [],
                 "images": [],
@@ -2659,4 +2745,56 @@ fn diagram_card() -> crate::card::Card {
         },
     });
     card
+}
+
+#[test]
+fn every_carddto_carries_answer_steps_covering_its_back_exactly_once() {
+    let backs = [
+        "plain",
+        "a\n> q",
+        "> q\n> r\nb",
+        "a\n> q\n> r\nb",
+        "a\n> q\nb\n> r",
+        "| a | b |\n| --- | --- |\n| 1 | 2 |",
+        "```text\n> q\n```",
+        r"left \blank{>} right",
+    ];
+    for back in backs {
+        let cards = crate::parser::parse_str("t.md", &format!("## q\n{back}\n"))
+            .unwrap_or_else(|e| panic!("{back:?} parses: {e}"));
+        let dto = card_dto(crate::review::CardView::from(&cards[0]), None);
+        let value = serde_json::to_value(&dto).unwrap();
+        let steps = value["answer_steps"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{back:?}: answer_steps is always present, never elided"))
+            .clone();
+        assert!(
+            !steps.is_empty(),
+            "{back:?}: an answer with lines has at least one step"
+        );
+
+        let mut next = 0;
+        for step in &steps {
+            let kind = step["kind"].as_str().expect("a step names its kind");
+            assert!(
+                kind == "line" || kind == "quote",
+                "{back:?}: unknown step kind {kind:?}"
+            );
+            let from = step["back_from"].as_u64().expect("a step spans the back");
+            let to = step["back_to"].as_u64().expect("a step spans the back");
+            assert_eq!(next, from, "{back:?}: {kind} starts where the last ended");
+            assert!(from < to, "{back:?}: {kind} spans at least one line");
+            assert_eq!(
+                kind == "quote",
+                step.get("units").is_some(),
+                "{back:?}: only a quote carries units, and every quote carries them"
+            );
+            next = to;
+        }
+        assert_eq!(
+            dto.back.len() as u64,
+            next,
+            "{back:?}: the steps reach the end of the back, leaving no line unwalked"
+        );
+    }
 }

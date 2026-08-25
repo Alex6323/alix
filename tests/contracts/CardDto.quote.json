@@ -1,4 +1,27 @@
 {
+  "answer_steps": [
+    {
+      "back_from": 0,
+      "back_to": 1,
+      "kind": "line"
+    },
+    {
+      "back_from": 1,
+      "back_to": 3,
+      "kind": "quote",
+      "units": [
+        {
+          "kind": "sentence",
+          "runs": [
+            {
+              "text": "Program testing can be used to show the presence of bugs, but never to show their absence."
+            }
+          ],
+          "text": "Program testing can be used to show the presence of bugs, but never to show their absence."
+        }
+      ]
+    }
+  ],
   "back": [
     "That it shows the presence of bugs.",
     "> Program testing can be used to show the presence of bugs,",

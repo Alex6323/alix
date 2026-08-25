@@ -79,7 +79,7 @@ class ReviewController extends ChangeNotifier {
 
   bool lineDone(ReviewCardModel card) {
     return state.mode == ReviewMode.lineByLine &&
-        _revealedLines >= card.back.length;
+        _revealedLines >= card.answerSteps.length;
   }
 
   void setServerLive(bool live) {

@@ -100,6 +100,11 @@ pub struct CardView {
     pub back_runs: Vec<Vec<InlineRun>>,
     #[serde(default)]
     pub back_units: Vec<NoteUnit>,
+    /// The steps a client walks the answer in: one per gradeable line, one
+    /// per quotation run. Reveal counts every step; typing counts only the
+    /// gradeable ones.
+    #[serde(default)]
+    pub answer_steps: Vec<crate::render::AnswerStep>,
     pub reshaped: bool,
     pub note: Vec<NoteView>,
     pub images: Vec<ImageView>,
@@ -203,6 +208,7 @@ impl CardView {
         let (back, back_runs) = project_lines(card.back_for_display(), projector);
         let back_units =
             render::answer_units_with(card.back_for_display(), projector, &card.resolved_diagrams);
+        let answer_steps = render::card_answer_steps(card, projector);
         let section_context_runs = card
             .section_context
             .iter()
@@ -222,6 +228,7 @@ impl CardView {
             back,
             back_runs,
             back_units,
+            answer_steps,
             reshaped: card.display_back.is_some(),
             note: render::note_views_with(card, projector),
             images: {
@@ -596,36 +603,28 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
     // A quotation is supporting content, not the answer's own prose: typing it
     // back tests transcription rather than understanding.
     let quoted = crate::render::card_quote_flags(card);
-    if quoted.iter().all(|line_is_quote| *line_is_quote) {
+    let expected: Vec<String> = card
+        .back_for_display()
+        .iter()
+        .zip(&quoted)
+        .filter(|(_, line_is_quote)| !**line_is_quote)
+        .map(|(line, _)| crate::inline::strip_inline_with(line, &card.definitions))
+        .collect();
+    if expected.is_empty() {
         return Some(CheckFeedback {
             results: Vec::new(),
             passed: false,
         });
     }
-    let stripped: Vec<String> = card
-        .back_for_display()
-        .iter()
-        .map(|line| crate::inline::strip_inline_with(line, &card.definitions))
-        .collect();
     let (results, passed) = if mode == Mode::TypeLine {
         // One field at a time: the reply covers the prefix the learner has
         // actually submitted, so the client can tell progress from completion.
-        let attempted = lines.len().min(stripped.len());
-        let graded: Vec<bool> = quoted[..attempted]
-            .iter()
-            .map(|line_is_quote| !line_is_quote)
-            .collect();
-        let results = answer::grade_lines_ordered(lines, &stripped[..attempted], &graded);
-        let complete = lines.len() == stripped.len();
+        let attempted = lines.len().min(expected.len());
+        let results = answer::grade_lines_ordered(lines, &expected[..attempted]);
+        let complete = lines.len() == expected.len();
         let passed = complete && results.iter().all(|r| r.passed);
         (results, passed)
     } else {
-        let expected: Vec<String> = stripped
-            .iter()
-            .zip(&quoted)
-            .filter(|(_, line_is_quote)| !**line_is_quote)
-            .map(|(line, _)| line.clone())
-            .collect();
         let results = answer::grade_lines_unordered(lines, &expected);
         let passed = results.iter().all(|r| r.passed);
         (results, passed)
@@ -1551,11 +1550,24 @@ mod tests {
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
 
-        let typed = vec![String::new(), "the answer's own prose".to_string()];
-        let feedback = check_typed(&session, &typed).expect("feedback");
+        let feedback =
+            check_typed(&session, &["the answer's own prose".to_string()]).expect("feedback");
         assert!(
             feedback.passed,
-            "the learner left the quote's field blank and typed the prose into its own field: {:?}",
+            "the one gradeable line is asked in the one field: {:?}",
+            feedback.results
+        );
+        assert_eq!(
+            1,
+            feedback.results.len(),
+            "a quotation owns no typed field, so it owes no result"
+        );
+
+        let padded = vec![String::new(), "the answer's own prose".to_string()];
+        let feedback = check_typed(&session, &padded).expect("feedback");
+        assert!(
+            !feedback.passed,
+            "a field for the quotation is one field too many, not a blank to skip: {:?}",
             feedback.results
         );
     }
@@ -1575,6 +1587,48 @@ mod tests {
             "the literal hidden span must remain gradeable: {:?}",
             feedback.results
         );
+    }
+
+    /// Under `reveal: line` the client sends one field per gradeable line, so
+    /// a quotation anywhere in the answer must neither claim a field nor shift
+    /// which expected line the next field is graded against.
+    #[test]
+    fn a_quotation_owns_no_typed_field_wherever_it_sits() {
+        let rows: Vec<(&str, &str)> = vec![
+            ("> quoted\nalpha\nbeta", "a quotation first"),
+            (
+                "alpha\n> quoted\nbeta",
+                "a quotation between the gradeable lines",
+            ),
+            ("alpha\nbeta\n> quoted", "a quotation last"),
+            (
+                "alpha\n> quoted\n> still quoted\nbeta",
+                "a two-line quotation is one block and still no field",
+            ),
+        ];
+        for (back, why) in rows {
+            let (mut store, _augment, _dir) = fixtures();
+            let cards = parse(&format!("## q\n{back}\n<!-- reveal: line -->\n"));
+            seen(&mut store, &cards);
+            let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+
+            let feedback = check_typed(&session, &["alpha".to_string(), "beta".to_string()])
+                .expect("feedback");
+            assert!(feedback.passed, "{why}: {:?}", feedback.results);
+            assert_eq!(
+                2,
+                feedback.results.len(),
+                "{why}: one result per gradeable line"
+            );
+
+            let swapped = check_typed(&session, &["beta".to_string(), "alpha".to_string()])
+                .expect("feedback");
+            assert!(
+                !swapped.passed,
+                "{why}: the fields are ordered, so a swap must not pass: {:?}",
+                swapped.results
+            );
+        }
     }
 
     #[test]

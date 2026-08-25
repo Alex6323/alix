@@ -1436,6 +1436,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  AnswerStep dco_decode_answer_step(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return AnswerStep_Line(
+          backFrom: dco_decode_usize(raw[1]),
+          backTo: dco_decode_usize(raw[2]),
+        );
+      case 1:
+        return AnswerStep_Quote(
+          backFrom: dco_decode_usize(raw[1]),
+          backTo: dco_decode_usize(raw[2]),
+          units: dco_decode_list_note_unit(raw[3]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
   Badge dco_decode_badge(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return Badge.values[raw as int];
@@ -1555,8 +1575,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   CardView dco_decode_card_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 18)
-      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
+    if (arr.length != 19)
+      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
     return CardView(
       front: dco_decode_String(arr[0]),
       frontRuns: dco_decode_list_inline_run(arr[1]),
@@ -1571,11 +1591,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       back: dco_decode_list_String(arr[10]),
       backRuns: dco_decode_list_list_inline_run(arr[11]),
       backUnits: dco_decode_list_note_unit(arr[12]),
-      reshaped: dco_decode_bool(arr[13]),
-      note: dco_decode_list_note_view(arr[14]),
-      images: dco_decode_list_image_view(arr[15]),
-      imagesBack: dco_decode_list_image_view(arr[16]),
-      citations: dco_decode_list_String(arr[17]),
+      answerSteps: dco_decode_list_answer_step(arr[13]),
+      reshaped: dco_decode_bool(arr[14]),
+      note: dco_decode_list_note_view(arr[15]),
+      images: dco_decode_list_image_view(arr[16]),
+      imagesBack: dco_decode_list_image_view(arr[17]),
+      citations: dco_decode_list_String(arr[18]),
     );
   }
 
@@ -1777,6 +1798,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<String> dco_decode_list_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_String).toList();
+  }
+
+  @protected
+  List<AnswerStep> dco_decode_list_answer_step(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_answer_step).toList();
   }
 
   @protected
@@ -2423,6 +2450,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  AnswerStep sse_decode_answer_step(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_backFrom = sse_decode_usize(deserializer);
+        var var_backTo = sse_decode_usize(deserializer);
+        return AnswerStep_Line(backFrom: var_backFrom, backTo: var_backTo);
+      case 1:
+        var var_backFrom = sse_decode_usize(deserializer);
+        var var_backTo = sse_decode_usize(deserializer);
+        var var_units = sse_decode_list_note_unit(deserializer);
+        return AnswerStep_Quote(
+          backFrom: var_backFrom,
+          backTo: var_backTo,
+          units: var_units,
+        );
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
   Badge sse_decode_badge(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
@@ -2567,6 +2618,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_back = sse_decode_list_String(deserializer);
     var var_backRuns = sse_decode_list_list_inline_run(deserializer);
     var var_backUnits = sse_decode_list_note_unit(deserializer);
+    var var_answerSteps = sse_decode_list_answer_step(deserializer);
     var var_reshaped = sse_decode_bool(deserializer);
     var var_note = sse_decode_list_note_view(deserializer);
     var var_images = sse_decode_list_image_view(deserializer);
@@ -2586,6 +2638,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       back: var_back,
       backRuns: var_backRuns,
       backUnits: var_backUnits,
+      answerSteps: var_answerSteps,
       reshaped: var_reshaped,
       note: var_note,
       images: var_images,
@@ -2812,6 +2865,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <String>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<AnswerStep> sse_decode_list_answer_step(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <AnswerStep>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_answer_step(deserializer));
     }
     return ans_;
   }
@@ -3734,6 +3799,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_answer_step(AnswerStep self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case AnswerStep_Line(backFrom: final backFrom, backTo: final backTo):
+        sse_encode_i_32(0, serializer);
+        sse_encode_usize(backFrom, serializer);
+        sse_encode_usize(backTo, serializer);
+      case AnswerStep_Quote(
+        backFrom: final backFrom,
+        backTo: final backTo,
+        units: final units,
+      ):
+        sse_encode_i_32(1, serializer);
+        sse_encode_usize(backFrom, serializer);
+        sse_encode_usize(backTo, serializer);
+        sse_encode_list_note_unit(units, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_badge(Badge self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
@@ -3902,6 +3987,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_String(self.back, serializer);
     sse_encode_list_list_inline_run(self.backRuns, serializer);
     sse_encode_list_note_unit(self.backUnits, serializer);
+    sse_encode_list_answer_step(self.answerSteps, serializer);
     sse_encode_bool(self.reshaped, serializer);
     sse_encode_list_note_view(self.note, serializer);
     sse_encode_list_image_view(self.images, serializer);
@@ -4062,6 +4148,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_answer_step(
+    List<AnswerStep> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_answer_step(item, serializer);
     }
   }
 

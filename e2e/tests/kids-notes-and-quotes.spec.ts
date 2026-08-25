@@ -72,12 +72,7 @@ test("every badged note is spoken, in authored order", async ({ page }) => {
   ]);
 });
 
-// Disabled, not aspirational: `appendBackLines` walks `back` LINES and
-// consumes only fence-shaped units, so the `quote` unit never reaches it and
-// the child reads the `>` markers. The adult `reveal: line` path has the same
-// shape; its FLIP path renders units and is correct. Enable this when the
-// `answer_steps` projection lands (blockquote slice 2, increment 5).
-test.fixme("a quotation renders as quoted content, not as `>` lines", async ({ page }) => {
+test("a quotation renders as quoted content, not as `>` lines", async ({ page }) => {
   writeWorkspace();
   await revealTheAnswer(page);
 

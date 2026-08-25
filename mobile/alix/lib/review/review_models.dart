@@ -168,6 +168,30 @@ class ReviewQuoteModel extends ReviewNoteUnitModel {
   final List<ReviewNoteUnitModel> units;
 }
 
+/// One step of an answer as the client walks it: a gradeable line the learner
+/// must produce, or a quotation run that reveals whole and is never typed.
+/// Spans are half-open into `back`.
+sealed class ReviewAnswerStepModel {
+  const ReviewAnswerStepModel({required this.backFrom, required this.backTo});
+
+  final int backFrom;
+  final int backTo;
+}
+
+class ReviewAnswerLineModel extends ReviewAnswerStepModel {
+  const ReviewAnswerLineModel({required super.backFrom, required super.backTo});
+}
+
+class ReviewAnswerQuoteModel extends ReviewAnswerStepModel {
+  ReviewAnswerQuoteModel({
+    required super.backFrom,
+    required super.backTo,
+    required Iterable<ReviewNoteUnitModel> units,
+  }) : units = List.unmodifiable(units);
+
+  final List<ReviewNoteUnitModel> units;
+}
+
 class ReviewCardModel {
   ReviewCardModel({
     required this.front,
@@ -180,6 +204,7 @@ class ReviewCardModel {
     required Iterable<String> back,
     required Iterable<Iterable<InlineRunModel>> backRuns,
     required Iterable<ReviewNoteUnitModel> backUnits,
+    required Iterable<ReviewAnswerStepModel> answerSteps,
     required this.reshaped,
     required Iterable<ReviewNoteModel> note,
     required Iterable<ReviewImageModel> images,
@@ -192,6 +217,7 @@ class ReviewCardModel {
        back = List.unmodifiable(back),
        backRuns = _freezeRunLines(backRuns),
        backUnits = List.unmodifiable(backUnits),
+       answerSteps = List.unmodifiable(answerSteps),
        note = List.unmodifiable(note),
        images = List.unmodifiable(images),
        imagesBack = List.unmodifiable(imagesBack);
@@ -212,6 +238,12 @@ class ReviewCardModel {
   final List<String> back;
   final List<List<InlineRunModel>> backRuns;
   final List<ReviewNoteUnitModel> backUnits;
+
+  /// TWO counts, never one: reveal walks every step, typing asks only the
+  /// gradeable ones.
+  final List<ReviewAnswerStepModel> answerSteps;
+  List<ReviewAnswerStepModel> get gradeableSteps =>
+      answerSteps.whereType<ReviewAnswerLineModel>().toList(growable: false);
   final bool reshaped;
   final List<ReviewNoteModel> note;
   final List<ReviewImageModel> images;

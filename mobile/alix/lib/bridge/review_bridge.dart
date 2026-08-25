@@ -223,6 +223,7 @@ ReviewCardModel _cardFromBridge(bridge.CardView card) {
     back: card.back,
     backRuns: [for (final runs in card.backRuns) inlineRunsFromBridge(runs)],
     backUnits: [for (final unit in card.backUnits) _noteFromBridge(unit)],
+    answerSteps: [for (final step in card.answerSteps) _stepFromBridge(step)],
     reshaped: card.reshaped,
     note: [
       for (final note in card.note)
@@ -234,6 +235,19 @@ ReviewCardModel _cardFromBridge(bridge.CardView card) {
     images: [for (final image in card.images) _imageFromBridge(image)],
     imagesBack: [for (final image in card.imagesBack) _imageFromBridge(image)],
   );
+}
+
+ReviewAnswerStepModel _stepFromBridge(bridge.AnswerStep step) {
+  return switch (step) {
+    bridge.AnswerStep_Line(:final backFrom, :final backTo) =>
+      ReviewAnswerLineModel(backFrom: backFrom.toInt(), backTo: backTo.toInt()),
+    bridge.AnswerStep_Quote(:final backFrom, :final backTo, :final units) =>
+      ReviewAnswerQuoteModel(
+        backFrom: backFrom.toInt(),
+        backTo: backTo.toInt(),
+        units: [for (final unit in units) _noteFromBridge(unit)],
+      ),
+  };
 }
 
 ReviewRegionModel _regionFromBridge(bridge.RegionView region) {

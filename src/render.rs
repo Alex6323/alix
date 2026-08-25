@@ -57,6 +57,24 @@ pub enum NoteUnit {
     },
 }
 
+/// One step of an answer as a client walks it: a line the learner must
+/// produce, or a quotation run that reveals as one block and is never typed.
+/// A quote carries its own units so a client never parses quote syntax, and
+/// spans are half-open into the DISPLAYED back.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum AnswerStep {
+    Line {
+        back_from: usize,
+        back_to: usize,
+    },
+    Quote {
+        back_from: usize,
+        back_to: usize,
+        units: Vec<NoteUnit>,
+    },
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CellAlign {
@@ -214,6 +232,47 @@ pub(crate) fn card_quote_flags(card: &crate::card::Card) -> Vec<bool> {
         return vec![false; back.len()];
     }
     quote_line_flags(back)
+}
+
+/// The steps a client walks a card's answer in, over the lines it is SHOWN.
+/// One place decides what is quoted, so the displayed stream, the reveal
+/// count, and the typed target can never disagree.
+pub(crate) fn card_answer_steps(
+    card: &crate::card::Card,
+    projector: &mut DisplayProjector,
+) -> Vec<AnswerStep> {
+    let lines = card.back_for_display();
+    let quoted = card_quote_flags(card);
+    let mut steps = Vec::new();
+    let mut index = 0;
+    while index < quoted.len() {
+        if !quoted[index] {
+            steps.push(AnswerStep::Line {
+                back_from: index,
+                back_to: index + 1,
+            });
+            index += 1;
+            continue;
+        }
+        let back_from = index;
+        let mut body = Vec::new();
+        while index < quoted.len() && quoted[index] {
+            body.push(
+                lines
+                    .get(index)
+                    .and_then(|line| quote_body(line))
+                    .unwrap_or_default()
+                    .to_string(),
+            );
+            index += 1;
+        }
+        steps.push(AnswerStep::Quote {
+            back_from,
+            back_to: index,
+            units: text_units_with(&body.join("\n"), projector, false, &card.resolved_diagrams),
+        });
+    }
+    steps
 }
 
 /// A quote line's body. Only a bare `>` reaches an answer: a badge opens a
@@ -813,6 +872,149 @@ mod tests {
                 "{why}: the typed target reads the same lines"
             );
         }
+    }
+
+    fn parsed(back: &str) -> Card {
+        crate::parser::parse_str("t.md", &format!("## q\n{back}\n"))
+            .unwrap()
+            .remove(0)
+    }
+
+    type Span = (&'static str, usize, usize);
+
+    fn spans(steps: &[AnswerStep]) -> Vec<Span> {
+        steps
+            .iter()
+            .map(|step| match step {
+                AnswerStep::Line { back_from, back_to } => ("line", *back_from, *back_to),
+                AnswerStep::Quote {
+                    back_from, back_to, ..
+                } => ("quote", *back_from, *back_to),
+            })
+            .collect()
+    }
+
+    type StepRow = (&'static str, Vec<Span>, &'static str);
+
+    fn step_rows() -> Vec<StepRow> {
+        vec![
+            ("plain", vec![("line", 0, 1)], "no quotation at all"),
+            (
+                "a\n> q",
+                vec![("line", 0, 1), ("quote", 1, 2)],
+                "a quotation last",
+            ),
+            (
+                "> q\n> r\nb",
+                vec![("quote", 0, 2), ("line", 2, 3)],
+                "a quotation first, spanning two lines",
+            ),
+            (
+                "a\n> q\n> r\nb",
+                vec![("line", 0, 1), ("quote", 1, 3), ("line", 3, 4)],
+                "a quotation between prose",
+            ),
+            (
+                "a\n> q\nb\n> r",
+                vec![
+                    ("line", 0, 1),
+                    ("quote", 1, 2),
+                    ("line", 2, 3),
+                    ("quote", 3, 4),
+                ],
+                "two quotations do not merge across the prose between them",
+            ),
+            (
+                "```text\n> q\n```",
+                vec![("line", 0, 1), ("line", 1, 2), ("line", 2, 3)],
+                "a fence's interior is source, never quotation",
+            ),
+        ]
+    }
+
+    #[test]
+    fn a_quotation_run_is_one_step_wherever_it_sits() {
+        for (back, expected, why) in step_rows() {
+            let card = parsed(back);
+            let mut projector = DisplayProjector::default();
+            assert_eq!(
+                expected,
+                spans(&card_answer_steps(&card, &mut projector)),
+                "{why}"
+            );
+        }
+    }
+
+    #[test]
+    fn answer_steps_cover_the_displayed_back_exactly_once() {
+        for (back, _, why) in step_rows() {
+            let card = parsed(back);
+            let mut projector = DisplayProjector::default();
+            let steps = card_answer_steps(&card, &mut projector);
+            let mut next = 0;
+            for (kind, from, to) in spans(&steps) {
+                assert_eq!(next, from, "{why}: {kind} starts where the last step ended");
+                assert!(from < to, "{why}: {kind} spans at least one line");
+                next = to;
+            }
+            assert_eq!(
+                card.back_for_display().len(),
+                next,
+                "{why}: the steps reach the end of the displayed back"
+            );
+        }
+    }
+
+    #[test]
+    fn a_quote_step_carries_the_quotation_units_not_its_marker_lines() {
+        let card = parsed("the answer\n> a quoted passage\n> its second line");
+        let mut projector = DisplayProjector::default();
+        let steps = card_answer_steps(&card, &mut projector);
+
+        assert_eq!(
+            vec![
+                AnswerStep::Line {
+                    back_from: 0,
+                    back_to: 1
+                },
+                AnswerStep::Quote {
+                    back_from: 1,
+                    back_to: 3,
+                    units: vec![sentence("a quoted passage its second line")],
+                },
+            ],
+            steps,
+            "the marker never reaches a client, and the run joins as prose does"
+        );
+    }
+
+    #[test]
+    fn a_cloze_span_that_is_a_greater_than_sign_is_a_gradeable_line() {
+        let card = parsed("left \\blank{>} right");
+        assert!(card.hole.is_some(), "the fixture is a cloze card");
+        let mut projector = DisplayProjector::default();
+
+        assert_eq!(
+            vec![("line", 0, 1)],
+            spans(&card_answer_steps(&card, &mut projector)),
+            "a hidden span is exact text to reproduce, never quotation syntax"
+        );
+    }
+
+    #[test]
+    fn answer_steps_follow_the_displayed_back_when_a_reshape_replaced_it() {
+        let mut card = parsed("one authored line");
+        card.display_back = Some(vec![
+            "reshaped prose".to_string(),
+            "> a quotation the author never wrote".to_string(),
+        ]);
+        let mut projector = DisplayProjector::default();
+
+        assert_eq!(
+            vec![("line", 0, 1), ("quote", 1, 2)],
+            spans(&card_answer_steps(&card, &mut projector)),
+            "a reshape replaces the answer on every surface, so it decides the steps"
+        );
     }
 
     #[test]

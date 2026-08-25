@@ -50,6 +50,7 @@ void main() {
           back: const ['answer'],
           backRuns: const [[]],
           backUnits: const [],
+          answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 1)],
           reshaped: false,
           note: const [],
           images: const [],
@@ -189,6 +190,10 @@ void main() {
         contextUnits: const [],
         back: back,
         backRuns: [for (final _ in back) const <InlineRunModel>[]],
+        answerSteps: [
+          for (var i = 0; i < back.length; i++)
+            ReviewAnswerLineModel(backFrom: i, backTo: i + 1),
+        ],
         backUnits: [
           ReviewDiagramModel(
             src: source,
@@ -293,6 +298,7 @@ void main() {
       back: const ['answer'],
       backRuns: const [[]],
       backUnits: const [],
+      answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 1)],
       reshaped: false,
       note: const [],
       images: const [],
@@ -397,6 +403,7 @@ void main() {
       back: const ['Cache'],
       backRuns: const [[]],
       backUnits: const [],
+      answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 1)],
       reshaped: false,
       note: const [],
       images: const [],
@@ -489,6 +496,7 @@ void main() {
       contextUnits: const [],
       back: const ['```mermaid', 'flowchart LR', ' A-->B', '```'],
       backRuns: const [[], [], [], []],
+      answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 1), ReviewAnswerLineModel(backFrom: 1, backTo: 2), ReviewAnswerLineModel(backFrom: 2, backTo: 3), ReviewAnswerLineModel(backFrom: 3, backTo: 4)],
       backUnits: [
         ReviewDiagramModel(
           src: source,

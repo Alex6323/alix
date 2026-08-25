@@ -300,7 +300,7 @@ export function createStudy({
     const lines = typelineChecked.map(r => r.input).concat([value]);
     api("/api/check", post({ lines })).then(f => {
       typelineChecked = f.results;
-      if (typelineChecked.length >= backCount()) feedback = f;
+      if (typelineChecked.length >= gradeableSteps().length) feedback = f;
       rerender();
     });
   }
@@ -312,8 +312,12 @@ export function createStudy({
   }
 
   // The drawer's open/close height animation: quick.
-  function backCount() { return state.card ? state.card.back.length : 0; }
-  function fullyRevealed() { return backCount() === 0 || revealed >= backCount(); }
+  // TWO counts, never one: reveal walks every step (a quotation is one), while
+  // typing asks only the gradeable ones.
+  function answerSteps() { return (state.card && state.card.answer_steps) || []; }
+  function stepCount() { return answerSteps().length; }
+  function gradeableSteps() { return answerSteps().filter(s => s.kind === "line"); }
+  function fullyRevealed() { return stepCount() === 0 || revealed >= stepCount(); }
   function stopDuePoll() { if (duePoll) { timers.clearInterval(duePoll); duePoll = null; } }
   // The summary is a stopping point: when the poll finds the cooldown spent it
   // arms the Continue chip and repaints the countdown, and the learner decides
@@ -847,10 +851,11 @@ export function createStudy({
     }
   }
 
-  // Typing: an input per answer line, submitted with Enter or the chip.
+  // Typing: an input per gradeable step, submitted with Enter or the chip. A
+  // quotation is answer content the learner reads, never a field.
   function renderInput(a) {
     const wrap = el("div", "inputs");
-    state.card.back.forEach(() => {
+    gradeableSteps().forEach(() => {
       const inp = el("input", "field");
       inp.type = "text"; inp.autocomplete = "off"; inp.spellcheck = false;
       inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submitCheck(); } });
@@ -1001,7 +1006,7 @@ export function createStudy({
   function explainReveal() {
     const ta = doc.querySelector(".explain-input");
     if (ta) explainInput = ta.value;
-    revealed = backCount();
+    revealed = stepCount();
     fillBottom();
     renderLegend();
   }
@@ -1119,7 +1124,7 @@ export function createStudy({
   // then reveal. Use max(1, …) so an image-only answer (no back lines) still reveals.
   function drawReveal() {
     drawSnapshot = drawCanvasEl ? drawCanvasEl.toDataURL() : null;
-    revealed = Math.max(1, backCount());
+    revealed = Math.max(1, stepCount());
     rerender();
   }
   function frozenDrawImg(dataUrl) {
@@ -1199,21 +1204,49 @@ export function createStudy({
     appendImages(a, c.images_back);
   }
 
+  // Line reveal walks the answer's STEPS, not its physical lines: a quotation
+  // is one step and reveals whole, as its own block rather than as `>` text.
+  // Returns the fence index the next pass resumes at, so splitting the render
+  // at the revealed point cannot pair a later fence with an earlier unit.
+  function appendStepRange(sec, c, fromStep, toStep, fenceStart) {
+    const steps = c.answer_steps || [];
+    let fence = fenceStart || 0;
+    let index = fromStep;
+    while (index < toStep && index < steps.length) {
+      if (steps[index].kind === "quote") {
+        appendQuote(sec, steps[index].units);
+        index++;
+        continue;
+      }
+      const from = steps[index].back_from;
+      let to = steps[index].back_to;
+      index++;
+      while (index < toStep && index < steps.length && steps[index].kind === "line") {
+        to = steps[index].back_to;
+        index++;
+      }
+      fence = appendReveal(sec, c.back.slice(from, to),
+        c.back_runs && c.back_runs.slice(from, to), false, c.back_units, undefined, fence);
+    }
+    return fence;
+  }
+
   function fillAnswer(a) {
     if (!a) return;
     // fillBottom already cleared the region and added the mode badge; don't wipe it.
     if (revealed === 0) return; // stays empty until revealed
 
     const c = state.card;
-    const shown = state.mode === "line" ? Math.min(revealed, c.back.length) : c.back.length;
+    const steps = stepCount();
+    const shown = state.mode === "line" ? Math.min(revealed, steps) : steps;
     const sec = el("div", "reveal" + (state.mode === "line" ? " line" : leftAlignAnswer(c) ? " list" : ""));
     if (state.mode === "line") {
-      appendReveal(sec, c.back.slice(0, shown), c.back_runs && c.back_runs.slice(0, shown), false, c.back_units);
-      const pending = el("div", "answer pending" + (shown < c.back.length ? "" : " complete"), "···");
+      const fence = appendStepRange(sec, c, 0, shown, 0);
+      const pending = el("div", "answer pending" + (shown < steps ? "" : " complete"), "···");
       pending.setAttribute("aria-hidden", "true");
       sec.appendChild(pending);
       const reserveStart = sec.children.length;
-      appendReveal(sec, c.back.slice(shown), c.back_runs && c.back_runs.slice(shown), false, c.back_units);
+      appendStepRange(sec, c, shown, steps, fence);
       for (const child of Array.from(sec.children).slice(reserveStart)) {
         child.classList.add("line-reserve");
         child.setAttribute("aria-hidden", "true");
@@ -1563,7 +1596,7 @@ export function createStudy({
 
   function reveal() {
     const firstLook = revealed === 0;
-    revealed = state.mode === "line" ? Math.min(revealed + 1, backCount()) : backCount();
+    revealed = state.mode === "line" ? Math.min(revealed + 1, stepCount()) : stepCount();
     // Seeing a new card's answer IS the encounter: record it server-side so
     // abandoning the session here does not re-introduce the card as new.
     // Fire-and-forget: a lost mark degrades to the old behavior, nothing worse.

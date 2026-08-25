@@ -1,4 +1,11 @@
 {
+  "answer_steps": [
+    {
+      "back_from": 0,
+      "back_to": 1,
+      "kind": "line"
+    }
+  ],
   "back": [
     "\\frac{1"
   ],

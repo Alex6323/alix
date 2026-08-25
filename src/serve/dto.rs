@@ -39,6 +39,7 @@ pub(super) struct CardDto {
     pub(super) back: Vec<String>,
     pub(super) back_runs: Vec<Vec<InlineRun>>,
     pub(super) back_units: Vec<NoteUnit>,
+    pub(super) answer_steps: Vec<crate::render::AnswerStep>,
     pub(super) reshaped: bool,
     pub(super) note: Vec<NoteDto>,
     pub(super) images: Vec<ImageDto>,
@@ -1329,6 +1330,22 @@ pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
         back: view.back,
         back_runs: view.back_runs,
         back_units: web_units(view.back_units),
+        answer_steps: view
+            .answer_steps
+            .into_iter()
+            .map(|step| match step {
+                crate::render::AnswerStep::Quote {
+                    back_from,
+                    back_to,
+                    units,
+                } => crate::render::AnswerStep::Quote {
+                    back_from,
+                    back_to,
+                    units: web_units(units),
+                },
+                line => line,
+            })
+            .collect(),
         reshaped: view.reshaped,
         note: view
             .note

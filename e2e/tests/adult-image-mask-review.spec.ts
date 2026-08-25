@@ -28,6 +28,7 @@ function state(imageRegions = regions, crop = null) {
       back: ["answer"],
       back_runs: [[{ text: "answer" }]],
       back_units: [{ kind: "sentence", text: "answer" }],
+      answer_steps: [{ kind: "line", back_from: 0, back_to: 1 }],
       reshaped: false,
       note: [],
       images: [{ src: IMAGE, alt: "mask geometry probe", regions: imageRegions, crop }],

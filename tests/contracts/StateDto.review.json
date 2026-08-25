@@ -1,6 +1,13 @@
 {
   "can_restart": true,
   "card": {
+    "answer_steps": [
+      {
+        "back_from": 0,
+        "back_to": 1,
+        "kind": "line"
+      }
+    ],
     "back": [
       "every value has one owner"
     ],

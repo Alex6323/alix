@@ -134,11 +134,13 @@ so is every client.
    grades the submitted prefix: it returns one result per line SENT, in the
    same positions, so a client submitting one field at a time can tell
    progress from completion, and `passed` stays false until the sent count
-   equals the answer's line count. A line sent beyond that count is not
-   truncated away: it comes back with an empty `expected` and `passed:
-   false`, so a client one field out of step sees the mismatch. A quote line is not part of the typed target, so its position passes
-   whatever was sent there. A card whose whole answer is a quotation has
-   nothing to type and never reaches a typing mode; a cloze card's hidden
+   equals the number of `line` steps in `answer_steps`. A line sent beyond
+   that count is not truncated away: it comes back with an empty `expected`
+   and `passed: false`, so a client one field out of step sees the mismatch.
+   **`lines` carries one entry per gradeable `line` step, not per `back`
+   line**: a quotation owns no field, so sending a blank for it is one field
+   too many, not a position to skip. A card whose whole answer is a quotation
+   has nothing to type and never reaches a typing mode; a cloze card's hidden
    spans are exact text even when a span is `>`. For a choice pick call
    `POST /api/choose {index, card}` (single answer) or
    `POST /api/choose {indices, card}` (select-all, when the state carried
@@ -645,12 +647,37 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `context_units` | [NoteUnitDto] | The context's structural blocks in source order: raw fences yield `code`, `diagram`, or display-math `sentence` units, and each closed, nonempty bare-`$$` block yields a display-math `sentence`. Context prose keeps its per-line rendering. An unmatched `$$` stays literal and consumes no unit. Empty when the context has no structural block. |
 | `back` | [string] | Answer-line content with inline Markdown markers stripped (may be a reshaped view). |
 | `back_runs` | [[InlineRun]] | Display projection per answer line. |
-| `back_units` | [NoteUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, checklists, and pipe tables remain structural units. Line reveal and typing continue to use `back` / `back_runs`. |
+| `back_units` | [NoteUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, checklists, and pipe tables remain structural units. Full reveal renders these. |
+| `answer_steps` | [AnswerStepDto] | The steps a client walks the answer in: reveal counts every step, typing asks only the gradeable ones. Always present. |
 | `reshaped` | bool | `back` is the `format` augment's display shape. The typed check and the mode follow `back` as sent, so a reshape is what the learner types. |
 | `note` | [NoteDto] | Post-answer notes, in authored order. Empty when the card has none. |
 | `images` / `images_back` | [ImageDto] | Front / back images, rendered as ordered blocks on that side. Empty when none. |
 | `citations` | [CitationDto] | Ordered `<!-- at: -->` citations. Empty when none. |
 | `crumb` | CrumbDto? | Topology breadcrumb (region heatmap). |
+
+### AnswerStepDto
+
+The answer as a client walks it, so the reveal count, the field count, and the
+typed target all come from one stream instead of three derivations of `back`.
+A tagged union on `kind`, always present, always covering `back` exactly once:
+the spans are half-open, ordered, and non-overlapping, and `back_from` of the
+first step is 0 while `back_to` of the last equals `back.length`.
+
+| kind | keys | meaning |
+| --- | --- | --- |
+| `line` | `back_from`, `back_to` | One gradeable answer line: the learner must produce it, and it spans exactly one wire line. |
+| `quote` | `back_from`, `back_to`, `units` | A quotation run: never typed, revealed as ONE step whatever it spans, and carrying its own `[NoteUnitDto]` so a client never parses quote syntax. |
+
+TWO counts, never one. `answer_steps.length` is what a line-by-line reveal
+walks; the number of `line` steps is how many fields a typed check asks for
+and how many entries `POST /api/check` expects. Collapsing them turns a quoted
+card from "one ignored field" into a card that never completes.
+
+`answer_steps` and `back_units` are separate streams with no 1:1 relationship
+and no shared index: full reveal renders `back_units`, and a partial reveal
+walks `answer_steps`. Indexes address the DISPLAYED `back` (a reshape included),
+never an authored line the client was not sent. Example payload:
+`tests/contracts/CardDto.quote.json`.
 
 ### NoteDto
 
@@ -761,8 +788,9 @@ blockquote whose first line is a GitHub alert badge is a `NoteDto` instead).
 It carries its own `units`, so a quotation can hold prose, code, or a list,
 and the `>` markers never reach a client. A quote is ONE block: it is
 excluded from the typed target, since typing a quotation back tests
-transcription rather than understanding, and `back` / `back_runs` still carry
-its raw lines for the line-reveal path. Example payload:
+transcription rather than understanding, and it reveals whole rather than a
+marker line at a time (see `AnswerStepDto`). `back` / `back_runs` still carry
+its raw lines, which a client slices by a step's span. Example payload:
 `tests/contracts/CardDto.quote.json`.
 
 A `diagram` unit is a frozen mermaid fence, rendered: it occupies the

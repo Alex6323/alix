@@ -1,4 +1,16 @@
 {
+  "answer_steps": [
+    {
+      "back_from": 0,
+      "back_to": 1,
+      "kind": "line"
+    },
+    {
+      "back_from": 1,
+      "back_to": 2,
+      "kind": "line"
+    }
+  ],
   "back": [
     "Use **x**",
     "France"
