@@ -876,10 +876,16 @@ mod tests {
     }
 
     /// Where the sentence carrying `from` ends, as an index into `chars`.
+    ///
+    /// A lowercase word after the stop means an abbreviation, not a sentence
+    /// end. Without that, `i.e.` inside an invocation's own rule ends its
+    /// sentence early and hands the rest of it to the next subject.
     fn sentence_end(chars: &[char], from: usize) -> usize {
         chars[from..]
-            .windows(2)
-            .position(|pair| matches!(pair[0], '.' | '!' | '?') && pair[1] == ' ')
+            .windows(3)
+            .position(|run| {
+                matches!(run[0], '.' | '!' | '?') && run[1] == ' ' && !run[2].is_lowercase()
+            })
             .map_or(chars.len(), |at| from + at + 2)
     }
 
@@ -987,6 +993,12 @@ mod tests {
                 "- `<!-- choices-single -->` takes a `> [!NOTE]` note after it. \
                  - `<!-- cards -->` remains the table invocation and takes only \
                  card directives.",
+            ),
+            (
+                "the same clarification, with an abbreviation inside the choice rule",
+                "- `<!-- choices-single -->` takes, i.e. requires, a `> [!NOTE]` \
+                 note after it. - `<!-- cards -->` remains the table invocation \
+                 and takes only card directives.",
             ),
         ] {
             assert!(
