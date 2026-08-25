@@ -714,6 +714,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A one-line quotation renders as quoted content in the kids client too. The
+  render path was chosen from the raw answer line count, so a card whose whole
+  answer is a single `>` line took the plain-text branch and the child read the
+  marker. The shortest quotation is the common one (a definition, a warning, an
+  aphorism), and multi-line quotes happened to work, so nothing caught it.
+  Found by Codex.
+
 - TypeLine on a phone asks for one answer line at a time, as it always has in
   a browser. Mobile opened every gradeable field at once and submitted them
   all on the first Check, so an ordered answer could be read ahead and

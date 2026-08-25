@@ -252,9 +252,14 @@ function cardImg(im, done) {
 function answerFill(card) {
   const a = el("div", "rev-answer");
   const lines = card.back || [];
-  if (lines.length > 1) {
+  const steps = card.answer_steps || [];
+  // The plain span is for an atom: exactly one gradeable line. Anything else,
+  // a quotation included, keeps its structure -- a one-line quotation read
+  // from `back.length` would take the plain branch and show its `>` marker.
+  const atom = steps.length === 1 && steps[0].kind === "line";
+  if (!atom) {
     const stack = el("div", "rev-answer-stack");
-    appendBackSteps(stack, card, (card.answer_steps || []).length, "span", "rev-answer-fill");
+    appendBackSteps(stack, card, steps.length, "span", "rev-answer-fill");
     a.appendChild(stack);
   } else {
     const answer = el("span", "rev-answer-fill");
