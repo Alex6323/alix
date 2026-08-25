@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ops::Range,
     path::{Path, PathBuf},
 };
@@ -648,10 +648,13 @@ pub fn set_source_citations(path: &Path, ats: &[AtRewrite]) -> Result<(), DeckEr
     };
     let existing = std::fs::read_to_string(path).map_err(io_err)?;
     let (new_text, rewritten) = rewrite_source_citations(&existing, ats);
-    if rewritten != ats.len() {
+    if rewritten != ats_by_line(ats).len() {
         return Err(io_err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("rewrote {rewritten} of {} source citations", ats.len()),
+            format!(
+                "rewrote {rewritten} of {} source citations",
+                ats_by_line(ats).len()
+            ),
         )));
     }
     write_deck_text(path, &new_text)
@@ -680,13 +683,21 @@ fn format_at_rewrite(indent: &str, rewrite: &AtRewrite) -> String {
     )
 }
 
+/// Addressed by line, never by position. A deck's cards do not arrive in file
+/// order once a card table is present, so a sequential walk stamps the first
+/// citation and abandons the rest; and a card table's rows are several cards
+/// sharing ONE physical `at:` line, so the number of citations to stamp is the
+/// number of distinct lines, never the number of cards.
+fn ats_by_line(ats: &[AtRewrite]) -> HashMap<usize, &AtRewrite> {
+    ats.iter().map(|at| (at.line, at)).collect()
+}
+
 fn rewrite_source_citations(text: &str, ats: &[AtRewrite]) -> (String, usize) {
+    let by_line = ats_by_line(ats);
     let mut rewritten = 0;
     let mut out = Vec::new();
     for (index, line) in text.lines().enumerate() {
-        let lineno = index + 1;
-        if let Some(rewrite) = ats.get(rewritten)
-            && rewrite.line == lineno
+        if let Some(rewrite) = by_line.get(&(index + 1))
             && let Some(indent) = at_indent(line)
         {
             out.push(format_at_rewrite(indent, rewrite));
@@ -786,6 +797,7 @@ pub(crate) fn rewrite_frozen_assets(
     let Some((open, close)) = frontmatter_span else {
         return Ok(rewrite_source_citations(&text, ats).0);
     };
+    let by_line = ats_by_line(ats);
     let mut inserted = source.is_none();
     let mut skipping = false;
     let mut at_index = 0;
@@ -816,11 +828,10 @@ pub(crate) fn rewrite_frozen_assets(
             push_replacement_source(&mut out, source);
             inserted = true;
         }
-        if at_index < ats.len()
-            && ats[at_index].line == line_number
+        if let Some(rewrite) = by_line.get(&line_number)
             && let Some(indent) = at_indent(line)
         {
-            out.push(format_at_rewrite(indent, &ats[at_index]));
+            out.push(format_at_rewrite(indent, rewrite));
             at_index += 1;
         } else {
             out.push(line.to_string());
@@ -830,12 +841,12 @@ pub(crate) fn rewrite_frozen_assets(
     if text.ends_with('\n') && !joined.ends_with('\n') {
         joined.push('\n');
     }
-    if at_index != ats.len() {
+    if at_index != by_line.len() {
         return Err(DeckError::Io {
             path: PathBuf::from("deck.md"),
             source: std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("rewrote {at_index} of {} source citations", ats.len()),
+                format!("rewrote {at_index} of {} source citations", by_line.len()),
             ),
         });
     }
@@ -2206,6 +2217,69 @@ mod tests {
         assert_eq!(None, deck.settings.reveal);
         assert_eq!(None, deck.settings.input);
         assert_eq!(None, deck.settings.order);
+    }
+
+    /// `deck.cards` is not file order once a card table is present, so the
+    /// rewrites arrive later-line-first. Both entry points must still stamp
+    /// every citation.
+    #[test]
+    fn every_citation_stamps_whatever_order_the_cards_supply_them() {
+        let text = "---\nsource: ../src\n---\n## one\na\n<!-- at: src/lib.rs:1 -->\n## two\nb\n<!-- at: src/lib.rs:2 -->\n";
+        let ats = [
+            AtRewrite {
+                at: "src/lib.rs:2".into(),
+                fingerprint: Some(2),
+                asset: None,
+                line: 9,
+            },
+            AtRewrite {
+                at: "src/lib.rs:1".into(),
+                fingerprint: Some(1),
+                asset: None,
+                line: 6,
+            },
+        ];
+
+        let (out, rewritten) = rewrite_source_citations(text, &ats);
+        assert_eq!(2, rewritten, "both citations stamp out of order: {out}");
+
+        // A card table's rows are several cards sharing ONE `at:` line, so the
+        // work is counted in lines, not in cards.
+        let shared = [
+            AtRewrite {
+                at: "src/lib.rs:1".into(),
+                fingerprint: Some(1),
+                asset: None,
+                line: 6,
+            },
+            AtRewrite {
+                at: "src/lib.rs:1".into(),
+                fingerprint: Some(1),
+                asset: None,
+                line: 6,
+            },
+        ];
+        let (shared_out, shared_rewritten) = rewrite_source_citations(text, &shared);
+        assert_eq!(
+            ats_by_line(&shared).len(),
+            shared_rewritten,
+            "two cards citing one line is one rewrite, and satisfied: {shared_out}"
+        );
+        for expected in [
+            "<!-- at: src/lib.rs:1 fingerprint: xxh64-0000000000000001 -->",
+            "<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000002 -->",
+        ] {
+            assert!(out.contains(expected), "missing {expected}: {out}");
+        }
+
+        let parsed = parser::parse("t.md", text).unwrap();
+        let frozen = rewrite_frozen_assets(text, parsed.frontmatter_span, None, &ats, &[]).unwrap();
+        for expected in [
+            "<!-- at: src/lib.rs:1 fingerprint: xxh64-0000000000000001 -->",
+            "<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000002 -->",
+        ] {
+            assert!(frozen.contains(expected), "missing {expected}: {frozen}");
+        }
     }
 
     #[test]

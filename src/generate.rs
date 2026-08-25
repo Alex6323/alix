@@ -96,8 +96,9 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
              option. Without that line the options stay a literal checklist instead of \
              becoming a card. Add a `> [!NOTE]` note explaining their mistaken premises.\n\
              - A card table starts with `| front | back | note |`, then \
-             `| --- | --- | --- |`, then one row per pair. Omit the note column when it is \
-             unused.\n\
+             `| --- | --- | --- |`, then one row per pair, then `<!-- cards -->` on the \
+             line DIRECTLY below the last row, with no blank line between. Omit the note \
+             column when it is unused.\n\
              - For ordered steps, write one step per answer line and put `<!-- reveal: line -->` below the \
              last answer line.\n\
              - For a card needed in both directions, put `<!-- direction: both -->` after \
@@ -149,8 +150,9 @@ the answer lines. A blockquote whose first line is NOT one of `[!NOTE]`, \
 `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]` is a QUOTATION and \
 belongs to the answer, so never write a bare `> ` note.
 - Every `<!-- ... -->` line TRAILS its card: put it below the card's LAST \
-content line. Nothing belonging to the card may follow a directive, so never \
-place one above an answer line, an option list, or a table.
+content line, with NO blank line between them. Nothing belonging to the card \
+may follow a directive, so never place one above an answer line, an option \
+list, or a table.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
@@ -227,8 +229,9 @@ whose answer maps to a specific, contiguous range of lines — read the real \
 lines, never guess the numbers — so the learner can flip the card to its \
 source on reveal. Omit it for a card that synthesizes across several places.
 - Every `<!-- ... -->` line TRAILS its card: put it below the card's LAST \
-content line. Nothing belonging to the card may follow a directive, so never \
-place one above an answer line, an option list, or a table.
+content line, with NO blank line between them. Nothing belonging to the card \
+may follow a directive, so never place one above an answer line, an option \
+list, or a table.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
