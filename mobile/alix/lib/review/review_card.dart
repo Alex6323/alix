@@ -291,7 +291,30 @@ class ReviewCardView extends StatelessWidget {
       ReviewDiagramModel() => _diagram(unit, answered: true),
       ReviewChecklistModel(:final items) => _checklist(items, tokens, style),
       ReviewTableModel() => _table(unit, tokens, style),
+      ReviewQuoteModel(:final units) => _quote(units, tokens, style, textAlign),
     };
+  }
+
+  /// A quoted block, its own units stacked behind a rule. Increment 5 styles
+  /// it; this is what keeps a quotation visible until then.
+  Widget _quote(
+    List<ReviewNoteUnitModel> units,
+    AlixTokens tokens,
+    TextStyle style,
+    TextAlign textAlign,
+  ) {
+    return Container(
+      padding: const EdgeInsets.only(left: 12),
+      decoration: BoxDecoration(
+        border: Border(left: BorderSide(color: tokens.dim, width: 3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final unit in units) _unit(unit, tokens, style, textAlign),
+        ],
+      ),
+    );
   }
 
   Widget _table(ReviewTableModel unit, AlixTokens tokens, TextStyle style) {
@@ -1282,6 +1305,12 @@ class ReviewCardView extends StatelessWidget {
                 note,
                 tokens,
                 TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
+              ),
+              ReviewQuoteModel(:final units) => _quote(
+                units,
+                tokens,
+                TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
+                TextAlign.start,
               ),
             },
           ],

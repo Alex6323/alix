@@ -730,7 +730,8 @@ LaTeX renderer.
 "alt": string, "regions"?: [RegionDto], "revealed_alt"?: string}`, or
 `{"kind":"checklist", "items": [ChecklistItemDto]}`, or
 `{"kind":"table", "aligns": [string], "header": [[InlineRun]],
-"rows": [[[InlineRun]]]}`. Sentence `text` remains
+"rows": [[[InlineRun]]]}`, or
+`{"kind":"quote", "units": [NoteUnitDto]}`. Sentence `text` remains
 the authored text; `runs` is its display projection. `ChecklistItemDto` is
 `{checked: bool, text: string, runs: [InlineRun]}`; `text` is the content
 projection and `runs` preserves inline formatting for display.
@@ -745,6 +746,15 @@ display (only the mapped-card table enforces widths). Table units appear in
 `section_context_units` carry only raw fences and closed bare-math blocks.
 Example payload:
 `tests/contracts/CardDto.table.json`.
+
+A `quote` unit is a bare blockquote run: quoted content, never a note (a
+blockquote whose first line is a GitHub alert badge is a `NoteDto` instead).
+It carries its own `units`, so a quotation can hold prose, code, or a list,
+and the `>` markers never reach a client. A quote is ONE block: it is
+excluded from the typed target, since typing a quotation back tests
+transcription rather than understanding, and `back` / `back_runs` still carry
+its raw lines for the line-reveal path. Example payload:
+`tests/contracts/CardDto.quote.json`.
 
 A `diagram` unit is a frozen mermaid fence, rendered: it occupies the
 fence's own position in the unit stream. `src` is a `/img/<key>` URL (see

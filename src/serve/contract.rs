@@ -1143,6 +1143,95 @@ fn carddto_math_wire_shape() {
 }
 
 #[test]
+fn carddto_quote_wire_shape() {
+    let dto = CardDto {
+        id: Some("card-8k3p1vzr5n".to_string()),
+        front: "What did Dijkstra say about testing?".to_string(),
+        front_runs: crate::inline::parse_inline("What did Dijkstra say about testing?"),
+        front_units: None,
+        section_context: Vec::new(),
+        section_context_runs: Vec::new(),
+        section_context_units: Vec::new(),
+        context: Vec::new(),
+        context_leads: false,
+        context_runs: Vec::new(),
+        context_units: Vec::new(),
+        back: vec![
+            "That it shows the presence of bugs.".to_string(),
+            "> Program testing can be used to show the presence of bugs,".to_string(),
+            "> but never to show their absence.".to_string(),
+        ],
+        back_runs: vec![
+            crate::inline::parse_inline("That it shows the presence of bugs."),
+            crate::inline::parse_inline("> Program testing can be used to show the presence of bugs,"),
+            crate::inline::parse_inline("> but never to show their absence."),
+        ],
+        back_units: vec![
+            NoteUnit::Sentence {
+                text: "That it shows the presence of bugs.".to_string(),
+                runs: crate::inline::parse_inline("That it shows the presence of bugs."),
+            },
+            NoteUnit::Quote {
+                units: vec![NoteUnit::Sentence {
+                    text: "Program testing can be used to show the presence of bugs, but never to show their absence.".to_string(),
+                    runs: crate::inline::parse_inline("Program testing can be used to show the presence of bugs, but never to show their absence."),
+                }],
+            },
+        ],
+        reshaped: false,
+        note: Vec::new(),
+        images: Vec::new(),
+        images_back: Vec::new(),
+        citations: Vec::new(),
+        crumb: None,
+    };
+    pin(
+        "CardDto.quote",
+        &dto,
+        json!({
+            "id": "card-8k3p1vzr5n",
+            "front": "What did Dijkstra say about testing?",
+            "front_runs": [{"text": "What did Dijkstra say about testing?"}],
+            "context": [],
+            "context_leads": false,
+            "context_runs": [],
+            "context_units": [],
+            "back": [
+                "That it shows the presence of bugs.",
+                "> Program testing can be used to show the presence of bugs,",
+                "> but never to show their absence."
+            ],
+            "back_runs": [
+                [{"text": "That it shows the presence of bugs."}],
+                [{"text": "> Program testing can be used to show the presence of bugs,"}],
+                [{"text": "> but never to show their absence."}]
+            ],
+            "back_units": [
+                {
+                    "kind": "sentence",
+                    "text": "That it shows the presence of bugs.",
+                    "runs": [{"text": "That it shows the presence of bugs."}]
+                },
+                {
+                    "kind": "quote",
+                    "units": [{
+                        "kind": "sentence",
+                        "text": "Program testing can be used to show the presence of bugs, but never to show their absence.",
+                        "runs": [{"text": "Program testing can be used to show the presence of bugs, but never to show their absence."}]
+                    }]
+                }
+            ],
+            "reshaped": false,
+            "note": [],
+            "images": [],
+            "images_back": [],
+            "citations": [],
+            "crumb": null
+        }),
+    );
+}
+
+#[test]
 fn carddto_table_wire_shape() {
     let dto = CardDto {
         id: Some("card-9w2c7xkq4m".to_string()),

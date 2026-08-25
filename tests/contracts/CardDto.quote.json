@@ -1,0 +1,66 @@
+{
+  "back": [
+    "That it shows the presence of bugs.",
+    "> Program testing can be used to show the presence of bugs,",
+    "> but never to show their absence."
+  ],
+  "back_runs": [
+    [
+      {
+        "text": "That it shows the presence of bugs."
+      }
+    ],
+    [
+      {
+        "text": "> Program testing can be used to show the presence of bugs,"
+      }
+    ],
+    [
+      {
+        "text": "> but never to show their absence."
+      }
+    ]
+  ],
+  "back_units": [
+    {
+      "kind": "sentence",
+      "runs": [
+        {
+          "text": "That it shows the presence of bugs."
+        }
+      ],
+      "text": "That it shows the presence of bugs."
+    },
+    {
+      "kind": "quote",
+      "units": [
+        {
+          "kind": "sentence",
+          "runs": [
+            {
+              "text": "Program testing can be used to show the presence of bugs, but never to show their absence."
+            }
+          ],
+          "text": "Program testing can be used to show the presence of bugs, but never to show their absence."
+        }
+      ]
+    }
+  ],
+  "citations": [],
+  "context": [],
+  "context_leads": false,
+  "context_runs": [],
+  "context_units": [],
+  "crumb": null,
+  "front": "What did Dijkstra say about testing?",
+  "front_runs": [
+    {
+      "text": "What did Dijkstra say about testing?"
+    }
+  ],
+  "id": "card-8k3p1vzr5n",
+  "images": [],
+  "images_back": [],
+  "note": [],
+  "reshaped": false
+}

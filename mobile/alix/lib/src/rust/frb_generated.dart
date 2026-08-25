@@ -1945,6 +1945,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           header: dco_decode_list_list_inline_run(raw[2]),
           rows: dco_decode_list_list_list_inline_run(raw[3]),
         );
+      case 5:
+        return NoteUnit_Quote(units: dco_decode_list_note_unit(raw[1]));
       default:
         throw Exception("unreachable");
     }
@@ -3075,6 +3077,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           header: var_header,
           rows: var_rows,
         );
+      case 5:
+        var var_units = sse_decode_list_note_unit(deserializer);
+        return NoteUnit_Quote(units: var_units);
       default:
         throw UnimplementedError('');
     }
@@ -4321,6 +4326,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_list_cell_align(aligns, serializer);
         sse_encode_list_list_inline_run(header, serializer);
         sse_encode_list_list_list_inline_run(rows, serializer);
+      case NoteUnit_Quote(units: final units):
+        sse_encode_i_32(5, serializer);
+        sse_encode_list_note_unit(units, serializer);
     }
   }
 

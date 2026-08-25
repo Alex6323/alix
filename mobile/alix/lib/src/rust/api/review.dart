@@ -495,6 +495,8 @@ sealed class NoteUnit with _$NoteUnit {
     required List<List<InlineRun>> header,
     required List<List<List<InlineRun>>> rows,
   }) = NoteUnit_Table;
+  const factory NoteUnit.quote({required List<NoteUnit> units}) =
+      NoteUnit_Quote;
 }
 
 class NoteView {

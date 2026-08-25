@@ -170,6 +170,8 @@ function frontPrompt(card) {
       appendChecklist(prompt, unit.items);
     } else if (unit.kind === "table") {
       appendTable(prompt, unit);
+    } else if (unit.kind === "quote") {
+      appendQuote(prompt, unit.units);
     }
   }
   return prompt;
@@ -186,5 +188,29 @@ function mascotEl(extra) {
   return m;
 }
 
-return { appendChecklist, appendRuns, appendTable, contextLine, el, frontPrompt, mascot: mascotEl };
+// A quoted block renders as its own units inside a blockquote, so a quote
+// never shows its `>` marker as text.
+function appendQuote(parent, units) {
+  const quote = el("blockquote", "quote");
+  for (const unit of units || []) {
+    if (unit.kind === "sentence") {
+      const paragraph = el("p");
+      if (unit.runs) appendRuns(paragraph, unit.runs); else paragraph.textContent = unit.text || "";
+      quote.appendChild(paragraph);
+    } else if (unit.kind === "code") {
+      const pre = el("pre", "why-code");
+      pre.appendChild(el("code", null, (unit.lines || []).join("\n")));
+      quote.appendChild(pre);
+    } else if (unit.kind === "checklist") {
+      appendChecklist(quote, unit.items);
+    } else if (unit.kind === "table") {
+      appendTable(quote, unit);
+    } else if (unit.kind === "quote") {
+      appendQuote(quote, unit.units);
+    }
+  }
+  parent.appendChild(quote);
+}
+
+return { appendChecklist, appendQuote, appendRuns, appendTable, contextLine, el, frontPrompt, mascot: mascotEl };
 }

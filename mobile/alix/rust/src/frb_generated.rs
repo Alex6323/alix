@@ -1681,6 +1681,9 @@ const _: fn() = || {
             let _: Vec<Vec<crate::api::review::InlineRun>> = header;
             let _: Vec<Vec<Vec<crate::api::review::InlineRun>>> = rows;
         }
+        crate::api::review::NoteUnit::Quote { units } => {
+            let _: Vec<crate::api::review::NoteUnit> = units;
+        }
     }
     {
         let NoteView = None::<crate::api::review::NoteView>.unwrap();
@@ -2438,6 +2441,10 @@ impl SseDecode for crate::api::review::NoteUnit {
                     header: var_header,
                     rows: var_rows,
                 };
+            }
+            5 => {
+                let mut var_units = <Vec<crate::api::review::NoteUnit>>::sse_decode(deserializer);
+                return crate::api::review::NoteUnit::Quote { units: var_units };
             }
             _ => {
                 unimplemented!("");
@@ -3629,6 +3636,9 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::NoteUnit> 
                 rows.into_into_dart().into_dart(),
             ]
             .into_dart(),
+            crate::api::review::NoteUnit::Quote { units } => {
+                [5.into_dart(), units.into_into_dart().into_dart()].into_dart()
+            }
             _ => {
                 unimplemented!("");
             }
@@ -4521,6 +4531,10 @@ impl SseEncode for crate::api::review::NoteUnit {
                 <Vec<crate::api::review::CellAlign>>::sse_encode(aligns, serializer);
                 <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(header, serializer);
                 <Vec<Vec<Vec<crate::api::review::InlineRun>>>>::sse_encode(rows, serializer);
+            }
+            crate::api::review::NoteUnit::Quote { units } => {
+                <i32>::sse_encode(5, serializer);
+                <Vec<crate::api::review::NoteUnit>>::sse_encode(units, serializer);
             }
             _ => {
                 unimplemented!("");

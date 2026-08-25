@@ -146,6 +146,31 @@ export function appendTable(parent, unit) {
   parent.appendChild(scroll);
 }
 
+/// A quoted block: its own units inside a blockquote, so a quote never
+/// renders its `>` marker as text.
+export function appendQuote(parent, units) {
+  const quote = el("blockquote", "quote");
+  for (const unit of units || []) {
+    if (unit.kind === "sentence") {
+      const paragraph = el("p");
+      if (unit.runs) appendRuns(paragraph, unit.runs);
+      else paragraph.textContent = unit.text || "";
+      quote.appendChild(paragraph);
+    } else if (unit.kind === "code") {
+      const pre = el("pre");
+      pre.appendChild(el("code", null, (unit.lines || []).join("\n")));
+      quote.appendChild(pre);
+    } else if (unit.kind === "checklist") {
+      appendChecklist(quote, unit.items);
+    } else if (unit.kind === "table") {
+      appendTable(quote, unit);
+    } else if (unit.kind === "quote") {
+      appendQuote(quote, unit.units);
+    }
+  }
+  parent.appendChild(quote);
+}
+
 export function frontEl(text, runs, units) {
   if (units) {
     const wrap = el("div", "front-text multi");
@@ -168,6 +193,8 @@ export function frontEl(text, runs, units) {
         appendChecklist(wrap, unit.items);
       } else if (unit.kind === "table") {
         appendTable(wrap, unit);
+      } else if (unit.kind === "quote") {
+        appendQuote(wrap, unit.units);
       }
     }
     return wrap;
@@ -463,6 +490,8 @@ function renderNoteBlock(parent, badge, units) {
       appendChecklist(note, unit.items);
     } else if (unit.kind === "table") {
       appendTable(note, unit);
+    } else if (unit.kind === "quote") {
+      appendQuote(note, unit.units);
     }
   }
   parent.appendChild(note);

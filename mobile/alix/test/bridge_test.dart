@@ -171,6 +171,7 @@ void main() {
         case NoteUnit_Code():
         case NoteUnit_Diagram():
         case NoteUnit_Table():
+        case NoteUnit_Quote():
           break;
       }
     }

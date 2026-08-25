@@ -85,6 +85,7 @@ pub enum _NoteUnit {
         header: Vec<Vec<InlineRun>>,
         rows: Vec<Vec<Vec<InlineRun>>>,
     },
+    Quote { units: Vec<NoteUnit> },
 }
 
 #[flutter_rust_bridge::frb(mirror(CellAlign))]
@@ -998,9 +999,10 @@ mod tests {
                 NoteUnit::Checklist { items } => {
                     items.iter().flat_map(|item| item.runs.iter()).collect()
                 }
-                NoteUnit::Code { .. } | NoteUnit::Diagram { .. } | NoteUnit::Table { .. } => {
-                    Vec::new()
-                }
+                NoteUnit::Code { .. }
+                | NoteUnit::Diagram { .. }
+                | NoteUnit::Table { .. }
+                | NoteUnit::Quote { .. } => Vec::new(),
             })
             .collect();
         assert!(note_runs.iter().any(|run| run.text == "E = mc^2"));

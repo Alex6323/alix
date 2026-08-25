@@ -12,6 +12,7 @@ export function createKidsStudy({
 const {
   actionbar,
   appendChecklist,
+  appendQuote,
   appendRuns,
   appendTable,
   contextLine,
@@ -467,6 +468,7 @@ function renderWhy(parent, card) {
     }
     else if (u.kind === "checklist") appendChecklist(txt, u.items);
     else if (u.kind === "table") appendTable(txt, u);
+    else if (u.kind === "quote") appendQuote(txt, u.units);
   }
   if (keypoints.length) {
     const list = el("ul", "rev-keypoints");

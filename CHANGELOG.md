@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- A bare blockquote in an answer is a quotation, and every client renders it
+  as one. `back_units` gains a `quote` unit carrying its own units, so a
+  quotation can hold prose, code, or a list, and the `>` markers no longer
+  render as text. A quotation is excluded from the typed target: typing one
+  back tests transcription, not understanding, so the learner types the
+  answer's own prose while the quote stands as supporting content. A `>` line
+  inside a fence or a display-math block is that block's source and is graded
+  like any other answer line. Badge styling and the line-reveal step for
+  quotes come next.
+
 - Links display as their labels (decision 8, first slice):
   `[label](destination)` renders the label styled as an inert link on
   every card surface, with the brackets, parentheses, and destination

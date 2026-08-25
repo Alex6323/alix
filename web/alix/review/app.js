@@ -86,6 +86,7 @@ study = createStudy({
   ui: {
     appendChecklist,
     appendChoiceOptions,
+    appendQuote,
     appendContext,
     appendKeypointList,
     appendReveal,

@@ -160,6 +160,14 @@ class ReviewTableModel extends ReviewNoteUnitModel {
   final List<List<List<InlineRunModel>>> rows;
 }
 
+/// A quoted block: its own units, never a note. Increment 5 styles it.
+class ReviewQuoteModel extends ReviewNoteUnitModel {
+  ReviewQuoteModel(Iterable<ReviewNoteUnitModel> units)
+    : units = List.unmodifiable(units);
+
+  final List<ReviewNoteUnitModel> units;
+}
+
 class ReviewCardModel {
   ReviewCardModel({
     required this.front,

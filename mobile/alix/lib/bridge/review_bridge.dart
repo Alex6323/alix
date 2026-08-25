@@ -309,6 +309,9 @@ ReviewNoteUnitModel _noteFromBridge(bridge.NoteUnit unit) {
             [for (final cell in row) inlineRunsFromBridge(cell)],
         ],
       ),
+    bridge.NoteUnit_Quote(:final units) => ReviewQuoteModel([
+      for (final unit in units) _noteFromBridge(unit),
+    ]),
   };
 }
 

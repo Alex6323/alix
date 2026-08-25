@@ -593,10 +593,15 @@ pub fn choose_multi(
 pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback> {
     let card = session.current()?;
     let mode = depth::check_for(card.reveal.unwrap_or_default(), session.depth(), card);
+    // A quotation is supporting content, not the answer's own prose: typing it
+    // back tests transcription rather than understanding.
+    let quotes = crate::render::quote_line_flags(&card.back);
     let expected: Vec<String> = card
         .back
         .iter()
-        .map(|line| crate::inline::strip_inline_with(line, &card.definitions))
+        .zip(quotes)
+        .filter(|(_, quoted)| !quoted)
+        .map(|(line, _)| crate::inline::strip_inline_with(line, &card.definitions))
         .collect();
     let results = if mode == Mode::TypeLine {
         answer::grade_lines_ordered(lines, &expected)
@@ -1471,6 +1476,50 @@ mod tests {
         assert!(
             !feedback.passed,
             "one submitted line cannot pass a two-span card"
+        );
+    }
+
+    #[test]
+    fn a_quotation_is_not_part_of_the_typed_target() {
+        let (mut store, _augment, _dir) = fixtures();
+        let cards = parse("## q\nthe answer's own prose\n> a quoted passage\n> its second line\n");
+        assert_eq!(
+            3,
+            cards[0].back.len(),
+            "the quote is answer content and stays in back: {:?}",
+            cards[0].back
+        );
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+
+        let feedback =
+            check_typed(&session, &["the answer's own prose".to_string()]).expect("feedback");
+        assert!(
+            feedback.passed,
+            "typing the answer's prose passes without transcribing the quotation: {:?}",
+            feedback.results
+        );
+        assert_eq!(
+            1,
+            feedback.results.len(),
+            "one gradeable line, not three: {:?}",
+            feedback.results
+        );
+    }
+
+    #[test]
+    fn a_quote_marker_inside_a_fence_is_still_typed_content() {
+        let (mut store, _augment, _dir) = fixtures();
+        let cards = parse("## q\n```text\n> not a quotation\n```\n");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+
+        let feedback = check_typed(&session, &["```text".to_string()]).expect("feedback");
+        assert_eq!(
+            3,
+            feedback.results.len(),
+            "a fence's interior is source, so its `>` line is graded: {:?}",
+            feedback.results
         );
     }
 

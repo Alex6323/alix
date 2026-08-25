@@ -55,7 +55,7 @@ extension NoteUnitPatterns on NoteUnit {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( NoteUnit_Sentence value)?  sentence,TResult Function( NoteUnit_Code value)?  code,TResult Function( NoteUnit_Diagram value)?  diagram,TResult Function( NoteUnit_Checklist value)?  checklist,TResult Function( NoteUnit_Table value)?  table,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( NoteUnit_Sentence value)?  sentence,TResult Function( NoteUnit_Code value)?  code,TResult Function( NoteUnit_Diagram value)?  diagram,TResult Function( NoteUnit_Checklist value)?  checklist,TResult Function( NoteUnit_Table value)?  table,TResult Function( NoteUnit_Quote value)?  quote,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case NoteUnit_Sentence() when sentence != null:
@@ -63,7 +63,8 @@ return sentence(_that);case NoteUnit_Code() when code != null:
 return code(_that);case NoteUnit_Diagram() when diagram != null:
 return diagram(_that);case NoteUnit_Checklist() when checklist != null:
 return checklist(_that);case NoteUnit_Table() when table != null:
-return table(_that);case _:
+return table(_that);case NoteUnit_Quote() when quote != null:
+return quote(_that);case _:
   return orElse();
 
 }
@@ -81,7 +82,7 @@ return table(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( NoteUnit_Sentence value)  sentence,required TResult Function( NoteUnit_Code value)  code,required TResult Function( NoteUnit_Diagram value)  diagram,required TResult Function( NoteUnit_Checklist value)  checklist,required TResult Function( NoteUnit_Table value)  table,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( NoteUnit_Sentence value)  sentence,required TResult Function( NoteUnit_Code value)  code,required TResult Function( NoteUnit_Diagram value)  diagram,required TResult Function( NoteUnit_Checklist value)  checklist,required TResult Function( NoteUnit_Table value)  table,required TResult Function( NoteUnit_Quote value)  quote,}){
 final _that = this;
 switch (_that) {
 case NoteUnit_Sentence():
@@ -89,7 +90,8 @@ return sentence(_that);case NoteUnit_Code():
 return code(_that);case NoteUnit_Diagram():
 return diagram(_that);case NoteUnit_Checklist():
 return checklist(_that);case NoteUnit_Table():
-return table(_that);}
+return table(_that);case NoteUnit_Quote():
+return quote(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -103,7 +105,7 @@ return table(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( NoteUnit_Sentence value)?  sentence,TResult? Function( NoteUnit_Code value)?  code,TResult? Function( NoteUnit_Diagram value)?  diagram,TResult? Function( NoteUnit_Checklist value)?  checklist,TResult? Function( NoteUnit_Table value)?  table,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( NoteUnit_Sentence value)?  sentence,TResult? Function( NoteUnit_Code value)?  code,TResult? Function( NoteUnit_Diagram value)?  diagram,TResult? Function( NoteUnit_Checklist value)?  checklist,TResult? Function( NoteUnit_Table value)?  table,TResult? Function( NoteUnit_Quote value)?  quote,}){
 final _that = this;
 switch (_that) {
 case NoteUnit_Sentence() when sentence != null:
@@ -111,7 +113,8 @@ return sentence(_that);case NoteUnit_Code() when code != null:
 return code(_that);case NoteUnit_Diagram() when diagram != null:
 return diagram(_that);case NoteUnit_Checklist() when checklist != null:
 return checklist(_that);case NoteUnit_Table() when table != null:
-return table(_that);case _:
+return table(_that);case NoteUnit_Quote() when quote != null:
+return quote(_that);case _:
   return null;
 
 }
@@ -128,14 +131,15 @@ return table(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text,  List<InlineRun> runs)?  sentence,TResult Function( List<String> lines)?  code,TResult Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)?  diagram,TResult Function( List<ChecklistItem> items)?  checklist,TResult Function( List<CellAlign> aligns,  List<List<InlineRun>> header,  List<List<List<InlineRun>>> rows)?  table,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text,  List<InlineRun> runs)?  sentence,TResult Function( List<String> lines)?  code,TResult Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)?  diagram,TResult Function( List<ChecklistItem> items)?  checklist,TResult Function( List<CellAlign> aligns,  List<List<InlineRun>> header,  List<List<List<InlineRun>>> rows)?  table,TResult Function( List<NoteUnit> units)?  quote,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case NoteUnit_Sentence() when sentence != null:
 return sentence(_that.text,_that.runs);case NoteUnit_Code() when code != null:
 return code(_that.lines);case NoteUnit_Diagram() when diagram != null:
 return diagram(_that.src,_that.width,_that.height,_that.alt,_that.regions,_that.revealedAlt);case NoteUnit_Checklist() when checklist != null:
 return checklist(_that.items);case NoteUnit_Table() when table != null:
-return table(_that.aligns,_that.header,_that.rows);case _:
+return table(_that.aligns,_that.header,_that.rows);case NoteUnit_Quote() when quote != null:
+return quote(_that.units);case _:
   return orElse();
 
 }
@@ -153,14 +157,15 @@ return table(_that.aligns,_that.header,_that.rows);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text,  List<InlineRun> runs)  sentence,required TResult Function( List<String> lines)  code,required TResult Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)  diagram,required TResult Function( List<ChecklistItem> items)  checklist,required TResult Function( List<CellAlign> aligns,  List<List<InlineRun>> header,  List<List<List<InlineRun>>> rows)  table,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text,  List<InlineRun> runs)  sentence,required TResult Function( List<String> lines)  code,required TResult Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)  diagram,required TResult Function( List<ChecklistItem> items)  checklist,required TResult Function( List<CellAlign> aligns,  List<List<InlineRun>> header,  List<List<List<InlineRun>>> rows)  table,required TResult Function( List<NoteUnit> units)  quote,}) {final _that = this;
 switch (_that) {
 case NoteUnit_Sentence():
 return sentence(_that.text,_that.runs);case NoteUnit_Code():
 return code(_that.lines);case NoteUnit_Diagram():
 return diagram(_that.src,_that.width,_that.height,_that.alt,_that.regions,_that.revealedAlt);case NoteUnit_Checklist():
 return checklist(_that.items);case NoteUnit_Table():
-return table(_that.aligns,_that.header,_that.rows);}
+return table(_that.aligns,_that.header,_that.rows);case NoteUnit_Quote():
+return quote(_that.units);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -174,14 +179,15 @@ return table(_that.aligns,_that.header,_that.rows);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text,  List<InlineRun> runs)?  sentence,TResult? Function( List<String> lines)?  code,TResult? Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)?  diagram,TResult? Function( List<ChecklistItem> items)?  checklist,TResult? Function( List<CellAlign> aligns,  List<List<InlineRun>> header,  List<List<List<InlineRun>>> rows)?  table,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text,  List<InlineRun> runs)?  sentence,TResult? Function( List<String> lines)?  code,TResult? Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)?  diagram,TResult? Function( List<ChecklistItem> items)?  checklist,TResult? Function( List<CellAlign> aligns,  List<List<InlineRun>> header,  List<List<List<InlineRun>>> rows)?  table,TResult? Function( List<NoteUnit> units)?  quote,}) {final _that = this;
 switch (_that) {
 case NoteUnit_Sentence() when sentence != null:
 return sentence(_that.text,_that.runs);case NoteUnit_Code() when code != null:
 return code(_that.lines);case NoteUnit_Diagram() when diagram != null:
 return diagram(_that.src,_that.width,_that.height,_that.alt,_that.regions,_that.revealedAlt);case NoteUnit_Checklist() when checklist != null:
 return checklist(_that.items);case NoteUnit_Table() when table != null:
-return table(_that.aligns,_that.header,_that.rows);case _:
+return table(_that.aligns,_that.header,_that.rows);case NoteUnit_Quote() when quote != null:
+return quote(_that.units);case _:
   return null;
 
 }
@@ -571,6 +577,78 @@ aligns: null == aligns ? _self._aligns : aligns // ignore: cast_nullable_to_non_
 as List<CellAlign>,header: null == header ? _self._header : header // ignore: cast_nullable_to_non_nullable
 as List<List<InlineRun>>,rows: null == rows ? _self._rows : rows // ignore: cast_nullable_to_non_nullable
 as List<List<List<InlineRun>>>,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class NoteUnit_Quote extends NoteUnit {
+  const NoteUnit_Quote({required final  List<NoteUnit> units}): _units = units,super._();
+  
+
+ final  List<NoteUnit> _units;
+ List<NoteUnit> get units {
+  if (_units is EqualUnmodifiableListView) return _units;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_units);
+}
+
+
+/// Create a copy of NoteUnit
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$NoteUnit_QuoteCopyWith<NoteUnit_Quote> get copyWith => _$NoteUnit_QuoteCopyWithImpl<NoteUnit_Quote>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit_Quote&&const DeepCollectionEquality().equals(other._units, _units));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_units));
+
+@override
+String toString() {
+  return 'NoteUnit.quote(units: $units)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $NoteUnit_QuoteCopyWith<$Res> implements $NoteUnitCopyWith<$Res> {
+  factory $NoteUnit_QuoteCopyWith(NoteUnit_Quote value, $Res Function(NoteUnit_Quote) _then) = _$NoteUnit_QuoteCopyWithImpl;
+@useResult
+$Res call({
+ List<NoteUnit> units
+});
+
+
+
+
+}
+/// @nodoc
+class _$NoteUnit_QuoteCopyWithImpl<$Res>
+    implements $NoteUnit_QuoteCopyWith<$Res> {
+  _$NoteUnit_QuoteCopyWithImpl(this._self, this._then);
+
+  final NoteUnit_Quote _self;
+  final $Res Function(NoteUnit_Quote) _then;
+
+/// Create a copy of NoteUnit
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? units = null,}) {
+  return _then(NoteUnit_Quote(
+units: null == units ? _self._units : units // ignore: cast_nullable_to_non_nullable
+as List<NoteUnit>,
   ));
 }
 

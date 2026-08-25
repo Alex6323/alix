@@ -35,6 +35,7 @@ export function createStudy({
   const {
     appendChecklist,
     appendChoiceOptions,
+    appendQuote,
     appendKeypointList,
     appendReveal,
     appendRuns,
@@ -1170,6 +1171,10 @@ export function createStudy({
         appendChecklist(sec, unit.items);
       } else if (unit.kind === "table") {
         appendTable(sec, unit);
+      } else if (unit.kind === "quote") {
+        const quote = el("blockquote", "quote");
+        appendAnswerUnits(quote, unit.units);
+        sec.appendChild(quote);
       }
     }
   }

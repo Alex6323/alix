@@ -49,6 +49,12 @@ pub enum NoteUnit {
         header: Vec<Vec<crate::inline::InlineRun>>,
         rows: Vec<Vec<Vec<crate::inline::InlineRun>>>,
     },
+    /// A bare blockquote run: quoted content, never a note. It carries its own
+    /// units so a quotation can hold prose, code, or a list, and it is one
+    /// block rather than a sequence of gradeable lines.
+    Quote {
+        units: Vec<NoteUnit>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -163,6 +169,47 @@ fn fence_unit(
     NoteUnit::Code { lines }
 }
 
+/// Which answer lines a quote block owns. A `>` inside a fence or a display
+/// math block is that block's source, so it is answer text like any other.
+pub(crate) fn quote_line_flags(lines: &[String]) -> Vec<bool> {
+    let mut flags = Vec::with_capacity(lines.len());
+    let mut fence: Option<(char, usize)> = None;
+    let mut math = false;
+    for line in lines {
+        if let Some((marker, run)) = fence_marker(line) {
+            fence = match fence {
+                Some((open, open_run))
+                    if crate::parser::closes_fence(line.trim_start(), open, open_run) =>
+                {
+                    None
+                }
+                None => Some((marker, run)),
+                open => open,
+            };
+            flags.push(false);
+            continue;
+        }
+        if fence.is_some() {
+            flags.push(false);
+            continue;
+        }
+        if line.trim() == "$$" {
+            math = !math;
+            flags.push(false);
+            continue;
+        }
+        flags.push(!math && quote_body(line).is_some());
+    }
+    flags
+}
+
+/// A quote line's body. Only a bare `>` reaches an answer: a badge opens a
+/// note, which the parser routes away from content.
+pub(crate) fn quote_body(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix('>')?;
+    Some(rest.strip_prefix(' ').unwrap_or(rest))
+}
+
 fn text_units_with(
     text: &str,
     projector: &mut DisplayProjector,
@@ -269,6 +316,24 @@ fn text_units_with(
             });
             continue;
         }
+        if let Some(first) = quote_body(logical) {
+            flush_checklist(&mut checklist, &mut units);
+            flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
+            let mut body = vec![first.to_string()];
+            while let Some(next) = lines.get(index).and_then(|line| quote_body(line)) {
+                body.push(next.to_string());
+                index += 1;
+            }
+            units.push(NoteUnit::Quote {
+                units: text_units_with(
+                    &body.join("\n"),
+                    projector,
+                    split_prose_sentences,
+                    diagrams,
+                ),
+            });
+            continue;
+        }
         let trimmed = logical.trim();
         if trimmed.is_empty() {
             flush_checklist(&mut checklist, &mut units);
@@ -331,7 +396,7 @@ pub(crate) fn front_units_with(
             NoteUnit::Sentence { runs, .. } => runs
                 .iter()
                 .any(|run| run.math.as_ref().is_some_and(|math| math.display)),
-            NoteUnit::Code { .. } | NoteUnit::Diagram { .. } => true,
+            NoteUnit::Code { .. } | NoteUnit::Diagram { .. } | NoteUnit::Quote { .. } => true,
         })
         .then_some(units)
 }
@@ -681,6 +746,59 @@ mod tests {
         NoteUnit::Sentence {
             text: text.into(),
             runs: crate::inline::parse_inline(text),
+        }
+    }
+
+    #[test]
+    fn a_bare_blockquote_run_is_one_quote_unit_carrying_its_own_units() {
+        let mut projector = DisplayProjector::default();
+        let lines = vec![
+            "the answer".to_string(),
+            "> a quoted passage".to_string(),
+            "> its second line".to_string(),
+        ];
+
+        assert_eq!(
+            vec![
+                sentence("the answer"),
+                NoteUnit::Quote {
+                    units: vec![sentence("a quoted passage its second line")],
+                },
+            ],
+            answer_units_with(&lines, &mut projector, &[]),
+            "the run is one block, the marker never renders, and the quote's own \
+             prose joins as prose does anywhere else"
+        );
+    }
+
+    /// `quote_line_flags` and the unit scanner must agree about what a quote
+    /// is, since the typed target reads one and the display reads the other.
+    #[test]
+    fn the_typed_target_and_the_display_agree_on_what_a_quote_is() {
+        let rows: Vec<(Vec<&str>, bool, &str)> = vec![
+            (vec!["plain"], false, "no blockquote at all"),
+            (vec!["a", "> q"], true, "a bare run after prose"),
+            (vec!["> q", "> r"], true, "a run of two lines"),
+            (
+                vec!["```text", "> q", "```"],
+                false,
+                "a fence's interior is source",
+            ),
+            (vec!["$$", "> q", "$$"], false, "display math is source"),
+        ];
+        for (lines, expected, why) in rows {
+            let owned: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
+            let mut projector = DisplayProjector::default();
+            let units = answer_units_with(&owned, &mut projector, &[]);
+            let has_quote_unit = units
+                .iter()
+                .any(|unit| matches!(unit, NoteUnit::Quote { .. }));
+            let flagged = quote_line_flags(&owned).iter().any(|quoted| *quoted);
+            assert_eq!(expected, has_quote_unit, "{why}: display units");
+            assert_eq!(
+                expected, flagged,
+                "{why}: the typed target reads the same lines"
+            );
         }
     }
 
