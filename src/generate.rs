@@ -996,9 +996,9 @@ mod tests {
     /// Advisory, not a sweep. It reads every surface a generator reads, but a
     /// character window cannot attribute prose to a subject, and five versions
     /// of it were defeated before the backward reach was withdrawn rather than
-    /// tuned again. What it still buys is the cheap case: a
-    /// badge written next to the table invocation, which is how the
-    /// contradiction has actually appeared each time.
+    /// tuned again. What it still buys is the cheap case: a badge written next
+    /// to the table invocation, which is how the contradiction has actually
+    /// appeared each time.
     ///
     /// `make shape-eval` is the instrument that asks whether the guide steers
     /// the generator. Replacing this scanner with one structured source for
