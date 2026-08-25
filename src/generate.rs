@@ -875,40 +875,27 @@ mod tests {
             .collect()
     }
 
-    /// Where the sentence carrying `from` ends, as an index into `chars`.
+    /// The text around each table-invocation mention: forward until the next
+    /// invocation or the end of reach, and backward only when no other
+    /// invocation lies within reach behind it.
     ///
-    /// A lowercase word after the stop means an abbreviation, not a sentence
-    /// end. Without that, `i.e.` inside an invocation's own rule ends its
-    /// sentence early and hands the rest of it to the next subject.
-    fn sentence_end(chars: &[char], from: usize) -> usize {
-        chars[from..]
-            .windows(3)
-            .position(|run| {
-                matches!(run[0], '.' | '!' | '?') && run[1] == ' ' && !run[2].is_lowercase()
-            })
-            .map_or(chars.len(), |at| from + at + 2)
-    }
-
-    /// The text around each table-invocation mention: within reach, never
-    /// across another invocation, and never back into the sentence that
-    /// belongs to the invocation before it.
+    /// Five weaker units were defeated in turn, and every one of them tried to
+    /// read backward ACROSS another invocation. A rule-sized window let one
+    /// legal exception phrase immunize every contradiction sharing the rule. A
+    /// sentence-sized window let a two-sentence table cell split subject from
+    /// tail. Stopping at the previous invocation TOKEN took the note that
+    /// invocation legitimately grants, because an instruction FOLLOWS its
+    /// subject. Stopping at the end of that subject's sentence needed a
+    /// sentence scan, and both `i.e. requires` and `cf. GFM` fooled it: no
+    /// casing or abbreviation test decides where an instruction ends.
     ///
-    /// Three weaker units were defeated in turn. A rule-sized window let one
-    /// legal exception phrase immunize every contradiction sharing the rule.
-    /// A sentence-sized window let a two-sentence table cell put the subject
-    /// in one sentence and the forbidden tail in the next. Bounding the
-    /// backward reach at the previous invocation TOKEN handed this subject the
-    /// note that invocation legitimately grants, because an instruction
-    /// follows its subject: the prose after that token is still the previous
-    /// subject's, up to the end of its sentence.
+    /// So the backward reach is not repaired, it is withdrawn wherever another
+    /// subject could own the prose. What it still buys is the tail stated
+    /// before its only subject, which no forward window can see.
     ///
     /// The window carries no exception phrase at all, which is why the
     /// prohibition is worded without naming a badge: a badge NEAR the table
     /// invocation is the defect, whether the sentence grants or forbids.
-    ///
-    /// Deliberately unseen: a contradiction written INSIDE another
-    /// invocation's sentence, before the table mention. Reading that as the
-    /// table's is the false positive this bound exists to stop.
     fn table_invocation_windows(text: &str) -> Vec<String> {
         let chars: Vec<char> = text
             .split_whitespace()
@@ -917,35 +904,24 @@ mod tests {
             .chars()
             .collect();
         let tables = occurrences(&chars, TABLE_INVOCATION);
-        let mut subjects: Vec<(usize, usize)> = tables
-            .iter()
-            .map(|at| (*at, at + TABLE_INVOCATION.chars().count()))
-            .collect();
-        subjects.extend(
-            occurrences(&chars, CHOICE_INVOCATION)
-                .into_iter()
-                .map(|at| (at, at + CHOICE_INVOCATION.chars().count())),
-        );
+        let mut subjects = tables.clone();
+        subjects.extend(occurrences(&chars, CHOICE_INVOCATION));
         tables
             .iter()
             .map(|at| {
                 let end = at + TABLE_INVOCATION.chars().count();
                 let reach = at.saturating_sub(SUBJECT_REACH);
-                let start = subjects
-                    .iter()
-                    .filter(|(other, _)| other < at)
-                    .max()
-                    .map_or(reach, |(_, previous)| {
-                        sentence_end(&chars, *previous).max(reach)
-                    });
+                let shared = subjects.iter().any(|other| (reach..*at).contains(other));
+                let start = if shared { *at } else { reach };
                 let stop = subjects
                     .iter()
-                    .filter(|(other, _)| other > at)
+                    .filter(|other| *other > at)
                     .min()
-                    .map_or(chars.len(), |(other, _)| *other)
+                    .copied()
+                    .unwrap_or(chars.len())
                     .min(end + SUBJECT_REACH)
                     .min(chars.len());
-                chars[start.min(*at)..stop.max(end)].iter().collect()
+                chars[start..stop.max(end)].iter().collect()
             })
             .collect()
     }
@@ -1000,6 +976,12 @@ mod tests {
                  note after it. - `<!-- cards -->` remains the table invocation \
                  and takes only card directives.",
             ),
+            (
+                "an abbreviation before a named format, which no casing test survives",
+                "- `<!-- choices-single -->` takes a note after it; cf. GFM's \
+                 `> [!NOTE]` blockquote. - `<!-- cards -->` takes only card \
+                 directives.",
+            ),
         ] {
             assert!(
                 table_invocation_windows(text)
@@ -1013,7 +995,8 @@ mod tests {
 
     /// Advisory, not a sweep. It reads every surface a generator reads, but a
     /// character window cannot attribute prose to a subject, and five versions
-    /// of it have now been defeated. What it still buys is the cheap case: a
+    /// of it were defeated before the backward reach was withdrawn rather than
+    /// tuned again. What it still buys is the cheap case: a
     /// badge written next to the table invocation, which is how the
     /// contradiction has actually appeared each time.
     ///
@@ -1052,11 +1035,12 @@ mod tests {
     }
 
     /// What the window does NOT see, each shape verified against the detector
-    /// it is recorded under. Codex found all three. Kept executable and
+    /// it is recorded under. Codex found all four. Kept executable and
     /// ignored so a structural replacement has a target to turn green.
     #[test]
     #[ignore = "a character window cannot attribute prose: `make shape-eval` is the instrument"]
     fn a_badge_attributed_to_the_table_beyond_the_window_is_missed() {
+        let mut unseen = Vec::new();
         for (shape, text) in [
             (
                 "a long table cell, the badge past the forward reach",
@@ -1075,20 +1059,23 @@ mod tests {
                  invocation.",
             ),
             (
+                "two rules collapsed into one parallel sentence",
+                "- `<!-- choices-single -->` takes a `> [!NOTE]` note after it, \
+                 and a card table takes that same note after `<!-- cards -->`.",
+            ),
+            (
                 "one rule quantifying over both invocations",
                 "`<!-- cards -->` closes a table; `<!-- choices-single -->` closes \
                  an option list. Either invocation may take a `> [!NOTE]` \
                  blockquote after it.",
             ),
         ] {
-            assert!(
-                table_invocation_windows(text)
-                    .iter()
-                    .any(|window| window.contains("[!NOTE]")),
-                "{shape} is not seen: {:#?}",
-                table_invocation_windows(text)
-            );
+            let windows = table_invocation_windows(text);
+            if !windows.iter().any(|window| window.contains("[!NOTE]")) {
+                unseen.push(format!("{shape}: {windows:#?}"));
+            }
         }
+        assert!(unseen.is_empty(), "{unseen:#?}");
     }
 
     /// The narrow half of the same rule: a table invocation must keep the
