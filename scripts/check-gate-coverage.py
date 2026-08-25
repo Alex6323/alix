@@ -9,12 +9,20 @@ This walks the repository for units a change can break, then requires each to
 be either reachable from a local gate (`check` or `preflight`) or listed in
 CI_ONLY below with a reason AND a marker that proves a workflow runs it. A new
 crate or suite is in neither, so it fails until someone decides which.
+
+A unit is discovered from evidence rather than from a list of known places: a
+project manifest, a directory named for tests, or a directory holding files
+named the way test files are named. The residual is the naming conventions
+themselves, so a suite whose files match no pattern below is still invisible.
 """
 
 from __future__ import annotations
 
+import os
 import re
+import shlex
 import sys
+from fnmatch import fnmatch
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -22,7 +30,34 @@ MAKEFILE = REPO_ROOT / "Makefile"
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 LOCAL_GATES = ("check", "preflight")
 
-SKIP_DIRS = {"target", "node_modules", ".git", "build", ".dart_tool"}
+SKIP_DIRS = {
+    "target",
+    "node_modules",
+    ".git",
+    "build",
+    ".dart_tool",
+    "__pycache__",
+    ".venv",
+}
+MANIFESTS = ("Cargo.toml", "pyproject.toml")
+TEST_DIR_NAMES = {"test", "tests", "spec", "__tests__", "integration_test"}
+TEST_FILE_PATTERNS = (
+    "test_*.py",
+    "*_test.py",
+    "*.test.mjs",
+    "*.test.js",
+    "*.test.ts",
+    "*.spec.mjs",
+    "*.spec.js",
+    "*.spec.ts",
+    "*_test.dart",
+    "*_test.go",
+)
+CARGO_SUBDIRS = {"tests", "benches", "examples"}
+
+# A marker must run in a workflow that gates a push to main or a pull request.
+# These units are the deliberate exception, where a schedule is the point.
+SCHEDULED = {"fuzz/Cargo.toml"}
 
 # A unit `make check` and `make preflight` deliberately do not run. Each needs
 # the workflow marker that proves something else does; a stale exception whose
@@ -39,7 +74,21 @@ CI_ONLY = {
     ),
     "fuzz/Cargo.toml": (
         "cargo-fuzz needs nightly and runs on a weekly schedule, never per push.",
-        "cargo-fuzz",
+        "make fuzz-stamp",
+    ),
+    "mobile/alix/integration_test": (
+        "The integration suite needs a Linux window, so preflight runs the "
+        "unit half and CI runs this one under xvfb.",
+        "flutter test integration_test",
+    ),
+    "orchestrator/pyproject.toml": (
+        "The orchestrator is a standalone uv project outside Cargo, "
+        "type-checked in its own CI job.",
+        "--config-file orchestrator/pyproject.toml",
+    ),
+    "orchestrator/tests": (
+        "Same project: its suite runs under uv in CI, not from the Makefile.",
+        "-s orchestrator/tests",
     ),
 }
 
@@ -91,49 +140,170 @@ def expand_cd(line: str) -> str:
     return f"{line}\n{joined}"
 
 
+def commands(text: str) -> list[list[str]]:
+    """Recipe text as argument lists, so a path counts only where it is one."""
+    parsed: list[list[str]] = []
+    for line in text.splitlines():
+        line = line.lstrip("\t").lstrip("@-").rstrip("\\")
+        for part in re.split(r"&&|\|\||;|(?<!\|)\|(?!\|)", line):
+            try:
+                tokens = shlex.split(part, comments=False)
+            except ValueError:
+                tokens = part.split()
+            if tokens:
+                parsed.append(tokens)
+    return parsed
+
+
+def names_path(command: list[str], unit: str) -> bool:
+    return any(token.rstrip("/") == unit for token in command)
+
+
+def is_whole_crate_test(command: list[str]) -> bool:
+    """`cargo test` over the root crate, which a --manifest-path run is not."""
+    words = [token for token in command if "=" not in token or token.startswith("-")]
+    if not words or words[0] != "cargo":
+        return False
+    subcommands = [token for token in words[1:] if not token.startswith("-")]
+    if not subcommands or subcommands[0] not in {"test", "nextest"}:
+        return False
+    return not any(token.split("=")[0] == "--manifest-path" for token in command)
+
+
 def units() -> list[str]:
     """Repo-relative paths of every unit a change can break."""
-    found = []
-    for manifest in REPO_ROOT.rglob("Cargo.toml"):
-        relative = manifest.relative_to(REPO_ROOT)
-        if SKIP_DIRS & set(relative.parts):
+    manifests, test_dirs = walk()
+    crates = {
+        Path(manifest).parent.as_posix()
+        for manifest in manifests
+        if Path(manifest).name == "Cargo.toml"
+    }
+    found = set(manifests)
+    for directory in test_dirs:
+        path = Path(directory)
+        if path.name in CARGO_SUBDIRS and path.parent.as_posix() in crates:
             continue
-        found.append(relative.as_posix())
-    for suite in ("e2e/unit", "e2e/tests"):
-        if (REPO_ROOT / suite).is_dir():
-            found.append(suite)
-    for app in sorted((REPO_ROOT / "mobile").glob("*/test")):
-        found.append(app.relative_to(REPO_ROOT).as_posix())
+        found.add(directory)
     return sorted(found)
 
 
-def workflow_text() -> str:
-    return "\n".join(path.read_text() for path in sorted(WORKFLOWS.glob("*.yml")))
+def walk() -> tuple[set[str], set[str]]:
+    """One pruned pass: manifest paths, and directories that hold tests."""
+    manifests: set[str] = set()
+    test_dirs: set[str] = set()
+    for parent, directories, files in os.walk(REPO_ROOT):
+        directories[:] = [name for name in directories if name not in SKIP_DIRS]
+        relative = Path(parent).relative_to(REPO_ROOT)
+        for name in files:
+            if name in MANIFESTS:
+                manifests.add((relative / name).as_posix())
+        if relative == Path("."):
+            continue
+        holds_tests = relative.name in TEST_DIR_NAMES or any(
+            fnmatch(name, pattern) for name in files for pattern in TEST_FILE_PATTERNS
+        )
+        if holds_tests:
+            test_dirs.add(relative.as_posix())
+    return manifests, test_dirs
+
+
+def workflow_text(blocking_only: bool = False) -> str:
+    """Only what a workflow executes: `run:` scalars and blocks, no prose."""
+    executable: list[str] = []
+    for path in sorted(WORKFLOWS.glob("*.yml")) + sorted(WORKFLOWS.glob("*.yaml")):
+        text = path.read_text()
+        if blocking_only and not gates_a_push(text):
+            continue
+        executable.extend(run_values(text))
+    return "\n".join(executable)
+
+
+def gates_a_push(text: str) -> bool:
+    """A workflow that runs on a push to main or a pull request, not a tag."""
+    triggers = trigger_block(text)
+    if "pull_request" in triggers:
+        return True
+    return "push" in triggers and set(triggers["push"]) != {"tags"}
+
+
+def trigger_block(text: str) -> dict[str, list[str]]:
+    triggers: dict[str, list[str]] = {}
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        inline = re.match(r"^on:\s*(.*)$", line)
+        if not inline:
+            continue
+        for name in re.findall(r"[A-Za-z_]+", inline.group(1)):
+            triggers[name] = []
+        current: str | None = None
+        for body in lines[index + 1 :]:
+            if body.strip() and not body.startswith(" "):
+                break
+            indent = len(body) - len(body.lstrip())
+            key = re.match(r"^\s*([A-Za-z_]+):", body)
+            if not key or not body.strip() or body.lstrip().startswith("#"):
+                continue
+            if indent == 2:
+                current = key.group(1)
+                triggers.setdefault(current, [])
+            elif indent == 4 and current:
+                triggers[current].append(key.group(1))
+        break
+    return triggers
+
+
+def run_values(text: str) -> list[str]:
+    values: list[str] = []
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        match = re.match(r"^(\s*)(?:-\s+)?run:\s*(.*?)\s*$", lines[index])
+        index += 1
+        if not match:
+            continue
+        indent, inline = match.groups()
+        if inline and not re.fullmatch(r"[|>][-+0-9]*", inline):
+            values.append(inline)
+            continue
+        while index < len(lines):
+            body = lines[index]
+            if body.strip() and len(body) - len(body.lstrip()) <= len(indent):
+                break
+            if not body.lstrip().startswith("#"):
+                values.append(body)
+            index += 1
+    return values
 
 
 def main() -> int:
-    recipes = reachable_recipes(make_targets(MAKEFILE.read_text()), LOCAL_GATES)
-    workflows = workflow_text()
+    targets = make_targets(MAKEFILE.read_text())
+    recipes = commands(reachable_recipes(targets, LOCAL_GATES))
+    blocking = workflow_text(blocking_only=True)
+    scheduled = workflow_text()
+    inventory = units()
     ungated, stale = [], []
 
-    for unit in units():
-        # The root manifest is what a bare `cargo` command builds.
+    for unit in inventory:
         if unit == "Cargo.toml":
-            if "cargo test" in recipes:
+            if any(is_whole_crate_test(command) for command in recipes):
                 continue
             ungated.append(f"{unit} (no bare `cargo test` reachable from a local gate)")
             continue
-        if unit in recipes:
+        if any(names_path(command, unit) for command in recipes):
             continue
         if unit in CI_ONLY:
             reason, marker = CI_ONLY[unit]
+            workflows = scheduled if unit in SCHEDULED else blocking
             if marker not in workflows:
-                stale.append(f"{unit}: no workflow runs `{marker}` any more ({reason})")
+                where = "scheduled" if unit in SCHEDULED else "push-gating"
+                stale.append(
+                    f"{unit}: no {where} workflow runs `{marker}` any more ({reason})"
+                )
             continue
         ungated.append(unit)
 
     for unit in sorted(CI_ONLY):
-        if unit not in units():
+        if unit not in inventory:
             stale.append(f"{unit}: listed as CI-only but no longer exists")
 
     for problem in stale:
@@ -152,7 +322,7 @@ def main() -> int:
         )
         return 1
 
-    print(f"gate-coverage: {len(units())} units, each locally gated or named CI-only")
+    print(f"gate-coverage: {len(inventory)} units, each locally gated or named CI-only")
     return 0
 
 
