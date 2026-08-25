@@ -203,14 +203,17 @@ pub(crate) fn quote_line_flags(lines: &[String]) -> Vec<bool> {
     flags
 }
 
-/// Which of a card's answer lines are quotation rather than its own prose. A
+/// Which of a card's answer lines are quotation rather than its own prose,
+/// over the lines a client is SHOWN: a reshape replaces the authored answer
+/// on every surface, so grading the authored one asks for text nobody read. A
 /// cloze card's back lines are its hidden spans, so a span that IS `>` is
 /// exact text the learner must reproduce, never authored quotation syntax.
 pub(crate) fn card_quote_flags(card: &crate::card::Card) -> Vec<bool> {
+    let back = card.back_for_display();
     if card.hole.is_some() {
-        return vec![false; card.back.len()];
+        return vec![false; back.len()];
     }
-    quote_line_flags(&card.back)
+    quote_line_flags(back)
 }
 
 /// A quote line's body. Only a bare `>` reaches an answer: a badge opens a

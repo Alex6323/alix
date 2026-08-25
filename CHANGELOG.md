@@ -692,6 +692,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A card whose answer an AI reshape replaced can be typed again. Every client
+  shows `display_back`, while the check graded the authored answer, so a
+  learner typing exactly what was on screen could not pass a reshaped card at
+  Reconstruct, and the mode was chosen from a line count nobody saw. The check
+  and the mode now both follow the displayed answer. The Explain rubric still
+  falls back to the authored lines, which is what keeps it truthful. Found by
+  Codex during reciprocal review.
+
 - A `reveal: line` card at Reconstruct asks for every line, not just the
   first. The check returned a result for every answer line however few the
   learner had submitted, and the client reads that count to decide whether

@@ -646,7 +646,7 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `back` | [string] | Answer-line content with inline Markdown markers stripped (may be a reshaped view). |
 | `back_runs` | [[InlineRun]] | Display projection per answer line. |
 | `back_units` | [NoteUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, checklists, and pipe tables remain structural units. Line reveal and typing continue to use `back` / `back_runs`. |
-| `reshaped` | bool | `back` is the `format` augment's display shape. |
+| `reshaped` | bool | `back` is the `format` augment's display shape. The typed check and the mode follow `back` as sent, so a reshape is what the learner types. |
 | `note` | [NoteDto] | Post-answer notes, in authored order. Empty when the card has none. |
 | `images` / `images_back` | [ImageDto] | Front / back images, rendered as ordered blocks on that side. Empty when none. |
 | `citations` | [CitationDto] | Ordered `<!-- at: -->` citations. Empty when none. |

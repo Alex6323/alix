@@ -603,7 +603,7 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
         });
     }
     let stripped: Vec<String> = card
-        .back
+        .back_for_display()
         .iter()
         .map(|line| crate::inline::strip_inline_with(line, &card.definitions))
         .collect();
@@ -1637,6 +1637,31 @@ mod tests {
     }
 
     #[test]
+    fn a_reshaped_typeline_grades_the_same_steps_the_client_displays() {
+        let (mut store, _augment, _dir) = fixtures();
+        let mut cards = parse("## q\nA, B, C\n<!-- reveal: line -->\n");
+        cards[0].display_back = Some(vec!["A".into(), "B".into(), "C".into()]);
+        assert_eq!(
+            ["A", "B", "C"],
+            cards[0].back_for_display(),
+            "these are the three fields the clients derive from the wire"
+        );
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+
+        let feedback = check_typed(
+            &session,
+            &["A".to_string(), "B".to_string(), "C".to_string()],
+        )
+        .expect("feedback");
+        assert!(
+            feedback.passed,
+            "typing every displayed reshape step must pass: {:?}",
+            feedback.results
+        );
+    }
+
+    #[test]
     fn a_quote_marker_inside_a_fence_is_still_typed_content() {
         let (mut store, _augment, _dir) = fixtures();
         let cards = parse("## q\n```text\n> not a quotation\n```\n");
@@ -1710,7 +1735,7 @@ mod tests {
         let mut cards = parse("## q\nfirst fact\nsecond fact\n");
         seen(&mut store, &cards);
 
-        cards[0].display_back = Some(vec!["a reshaped answer".into()]);
+        cards[0].display_back = Some(vec!["a reshaped".into(), "answer".into()]);
         let session = session_at(cards.clone(), &mut store, Depth::Reconstruct, NOW);
         let fallback = state(&session, &store, &augment, Some(NOW));
         assert_eq!(fallback.mode, Mode::Explain);

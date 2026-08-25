@@ -355,6 +355,27 @@ mod tests {
         }
     }
 
+    /// A reshape replaces the authored answer on every surface a learner
+    /// sees, so the check has to be chosen for what is shown.
+    #[test]
+    fn reconstruct_depth_counts_the_displayed_answer_when_a_reshape_replaced_it() {
+        let mut collapsed = card("first fact\nsecond fact");
+        collapsed.display_back = Some(vec!["one reshaped line".into()]);
+        assert_eq!(
+            Mode::Typing,
+            check_for(Reveal::Flip, Depth::Reconstruct, &collapsed),
+            "one displayed line is an atom, however many the author wrote"
+        );
+
+        let mut expanded = card("A, B, C");
+        expanded.display_back = Some(vec!["A".into(), "B".into(), "C".into()]);
+        assert_eq!(
+            Mode::Explain,
+            check_for(Reveal::Flip, Depth::Reconstruct, &expanded),
+            "and three displayed lines are key points, however few the author wrote"
+        );
+    }
+
     #[test]
     fn depth_serializes_lowercase_and_defaults_to_recall() {
         assert_eq!(Depth::default(), Depth::Recall);
