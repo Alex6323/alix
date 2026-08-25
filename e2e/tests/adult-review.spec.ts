@@ -1004,10 +1004,11 @@ test("focusing a deck opens the drawer with its description, size and heatmap, n
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click(); // focuses the row → opens the drawer
 
-  // A sibling row's drawer may still be animating closed (or re-rendering
-  // from its in-flight fetch) as wild's opens, so scope every assertion to
-  // wild's own drawer instead of counting drawers globally.
-  const drawer = page.locator(".drawer").filter({ hasText: "2 cards" });
+  // A sibling row's drawer stays in the DOM for its close animation, and
+  // filtering by "2 cards" matched it too whenever the runner was slow enough:
+  // the text is not unique. The open drawer is the one after the FOCUSED row,
+  // which the closing one no longer is.
+  const drawer = page.locator(".deckrow:focus + .drawer-wrap .drawer");
   await expect(drawer).toHaveCount(1);
   await expect(drawer.locator(".drawer-description")).toHaveText(/wild animals/i);
   // The progress funnel, top-right: both wild cards counted lib-side. The
@@ -1026,7 +1027,7 @@ test("focusing a deck opens the drawer with its description, size and heatmap, n
 test("filtering a focused deck out closes its drawer", async ({ page }) => {
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click();
-  await expect(page.locator(".drawer").filter({ hasText: "2 cards" })).toHaveCount(1);
+  await expect(page.locator(".deckrow:focus + .drawer-wrap .drawer")).toHaveCount(1);
 
   await page.locator("#barFilter").fill("no deck has this name");
 
@@ -1092,12 +1093,10 @@ test("a card merely shown in an earlier session stays an untouched empty cell", 
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "fronts").click();
 
-  // A sibling drawer can linger mid-close and re-render between
-  // assertions; waiting for the TOTAL drawer count to settle at one turns
-  // that race into a wait (the count assertion retries), and only then are
-  // the content assertions unambiguous.
-  await expect(page.locator(".drawer")).toHaveCount(1);
-  const drawer = page.locator(".drawer").filter({ hasText: "1 card" });
+  // A sibling drawer can linger mid-close, and its card count is no more
+  // unique than any other deck's. The open drawer is the one after the
+  // FOCUSED row, which the closing one no longer is.
+  const drawer = page.locator(".deckrow:focus + .drawer-wrap .drawer");
   await expect(drawer).toHaveCount(1);
   await expect(drawer.locator(".drawer-size")).toHaveText("1 card");
   await expect(drawer.locator(".crumb-cell.seen")).toHaveCount(0);
@@ -1272,7 +1271,7 @@ test("a gated sub-card's cell is outlined, not filled, and its parent's is not",
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "gated").click(); // focuses the row -> opens the drawer
 
-  const drawer = page.locator(".drawer").filter({ hasText: "2 cards" }).last();
+  const drawer = page.locator(".deckrow:focus + .drawer-wrap .drawer");
   await expect(drawer.locator(".crumb-cell")).toHaveCount(2);
   // Neither card has been reviewed, so both are `unseen`. Locked is a
   // SEPARATE axis: the sub-card waits on its parent graduating, and folding
