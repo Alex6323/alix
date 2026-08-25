@@ -1974,6 +1974,29 @@ mod tests {
     }
 
     #[test]
+    fn pruning_one_card_keeps_records_owned_by_a_sibling_schedule() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let fingerprint = hf(1, 10);
+        store.get_or_insert("card-shared").total_reviews = 3;
+        store.get_or_insert("card-shared-0").total_reviews = 2;
+        store.ensure_records_raw("card-shared", &[fingerprint]);
+
+        let known_cards: HashSet<String> = ["card-shared-0".to_string()].into_iter().collect();
+        let orphans = store.orphans(&known_cards, &HashSet::new());
+        assert_eq!(["card-shared"], orphans.cards.as_slice());
+
+        store.prune_orphans(&orphans);
+
+        assert!(store.get("card-shared").is_none());
+        assert!(store.get("card-shared-0").is_some());
+        assert!(
+            store.records("card-shared").is_some(),
+            "the sibling schedule still owns the token's shared records"
+        );
+    }
+
+    #[test]
     fn wipe_deck_clears_every_family_for_its_tokens_and_spares_the_rest() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
@@ -2093,6 +2116,50 @@ mod tests {
             sync_conflicts(&dir.path().join("missing/progress/deck1.json")),
             Vec::<PathBuf>::new()
         );
+
+        let wrong_extension = dir.path().join("progress/deck2.txt");
+        std::fs::write(&wrong_extension, "{}").unwrap();
+        std::fs::write(
+            dir.path()
+                .join("progress/deck2.sync-conflict-20260714-phone.txt"),
+            "{}",
+        )
+        .unwrap();
+        assert!(sync_conflicts(&wrong_extension).is_empty());
+
+        std::fs::create_dir(dir.path().join("elsewhere")).unwrap();
+        let wrong_parent = dir.path().join("elsewhere/deck3.json");
+        std::fs::write(&wrong_parent, "{}").unwrap();
+        std::fs::write(
+            dir.path()
+                .join("elsewhere/deck3.sync-conflict-20260714-phone.json"),
+            "{}",
+        )
+        .unwrap();
+        assert!(sync_conflicts(&wrong_parent).is_empty());
+    }
+
+    #[test]
+    #[cfg(feature = "full")]
+    fn progress_stamp_ignores_every_non_document_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let baseline = progress_dir_stamp(dir.path());
+
+        std::fs::create_dir(dir.path().join("folder.json")).unwrap();
+        assert_eq!(baseline, progress_dir_stamp(dir.path()));
+
+        std::fs::write(dir.path().join("notes.txt"), "not progress").unwrap();
+        assert_eq!(baseline, progress_dir_stamp(dir.path()));
+
+        std::fs::write(
+            dir.path().join("deck.sync-conflict-20260714-phone.json"),
+            "{}",
+        )
+        .unwrap();
+        assert_eq!(baseline, progress_dir_stamp(dir.path()));
+
+        std::fs::write(dir.path().join("deck.json"), "{}").unwrap();
+        assert_ne!(baseline, progress_dir_stamp(dir.path()));
     }
 
     #[test]
@@ -2122,6 +2189,39 @@ mod tests {
         );
         std::fs::write(dir.path().join("device"), "desktop\n").unwrap();
         assert_eq!(device_label_in(dir.path()).unwrap(), "desktop");
+    }
+
+    #[test]
+    fn process_data_paths_child() {
+        let Some(root) = std::env::var_os("ALIX_STORE_PATH_CHILD") else {
+            return;
+        };
+        let expected = PathBuf::from(root).join("alix");
+        assert_eq!(Some(expected.clone()), default_store_path());
+
+        let label = device_label().expect("the process data directory yields a device label");
+        assert!(
+            label.starts_with("alix-") && label.len() == 9,
+            "generated label shape: {label:?}"
+        );
+        assert!(expected.join("device").is_file());
+    }
+
+    #[test]
+    fn process_data_paths_use_the_configured_data_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "store::tests::process_data_paths_child",
+                "--nocapture",
+            ])
+            .env("ALIX_STORE_PATH_CHILD", dir.path())
+            .env("XDG_DATA_HOME", dir.path())
+            .env("HOME", dir.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
     }
 
     #[test]
@@ -2417,10 +2517,14 @@ mod tests {
     }
 
     #[test]
-    fn cooldown_remaining_is_none_once_the_window_has_elapsed() {
+    fn cooldown_remaining_is_none_at_and_after_the_window_boundary() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         store.set_exam_failed("t", 1_000);
+        assert_eq!(
+            None,
+            cooldown_remaining_ms(&store, "t", 3600, 1_000 + 3_600_000)
+        );
         assert_eq!(
             None,
             cooldown_remaining_ms(&store, "t", 3600, 1_000 + 3_600_001)
@@ -2784,22 +2888,30 @@ mod tests {
     }
 
     #[test]
-    fn mint_tutor_card_rejects_an_empty_side() {
+    fn mint_tutor_card_rejects_either_empty_side_before_parsing() {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let deck = dir.path().join("geo.md");
-        let err = mint_tutor_card(
-            &mut store,
-            &deck,
-            "geo.md",
-            "  ",
-            &["Paris".to_string()],
-            100,
-            &HashSet::new(),
-        )
-        .unwrap_err();
-        assert!(matches!(err, MintError::Malformed(_)));
+        for (front, back) in [
+            ("  ", vec!["Paris".to_string()]),
+            ("capital?", vec!["  ".to_string()]),
+        ] {
+            let err = mint_tutor_card(
+                &mut store,
+                &deck,
+                "geo.md",
+                front,
+                &back,
+                100,
+                &HashSet::new(),
+            )
+            .unwrap_err();
+            let MintError::Malformed(message) = err else {
+                panic!("an empty side must be malformed: {err:?}");
+            };
+            assert_eq!("front and back must both be non-empty", message);
+        }
     }
 
     #[test]
@@ -3347,6 +3459,11 @@ mod tests {
 
         assert!(store.get("card-b1").is_some());
         assert_eq!(Some(Depth::Recall), store.last_depth("deck-b"));
+
+        store.set_last_depth("deck-b", Depth::Reconstruct);
+        store.save().unwrap();
+        let reloaded = Store::open(dir.path()).unwrap();
+        assert_eq!(Some(Depth::Reconstruct), reloaded.last_depth("deck-b"));
     }
 
     #[test]
