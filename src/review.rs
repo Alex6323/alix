@@ -1711,25 +1711,54 @@ mod tests {
     fn a_typed_mode_is_served_the_authored_answer_and_a_reveal_mode_the_reshape() {
         let (mut store, augment, _dir) = fixtures();
         let rows = [
-            (Depth::Reconstruct, Mode::Typing, "PCIe generation", false),
-            (Depth::Recall, Mode::Flip, "Bus generation: PCIe", true),
+            (
+                "",
+                Depth::Reconstruct,
+                Mode::Typing,
+                "PCIe generation",
+                false,
+            ),
+            (
+                "<!-- reveal: line -->\n",
+                Depth::Reconstruct,
+                Mode::TypeLine,
+                "PCIe generation",
+                false,
+            ),
+            ("", Depth::Recall, Mode::Flip, "Bus generation: PCIe", true),
+            (
+                "<!-- reveal: line -->\n",
+                Depth::Recall,
+                Mode::LineByLine,
+                "Bus generation: PCIe",
+                true,
+            ),
         ];
-        for (depth, expected_mode, expected_back, expected_reshaped) in rows {
-            let mut cards = parse("## What does the number after PCIe mean?\nPCIe generation\n");
+        for (directive, depth, expected_mode, expected_back, expected_reshaped) in rows {
+            let mut cards = parse(&format!(
+                "## What does the number after PCIe mean?\nPCIe generation\n{directive}"
+            ));
             cards[0].display_back = Some(vec!["Bus generation: PCIe".into()]);
             seen(&mut store, &cards);
             let session = session_at(cards, &mut store, depth, NOW);
 
             let served = state(&session, &store, &augment, Some(NOW));
-            assert_eq!(expected_mode, served.mode, "{depth:?}");
+            assert_eq!(expected_mode, served.mode, "{expected_mode:?}");
             let card = served.card.expect("a card is served");
-            assert_eq!([expected_back], card.back.as_slice(), "{depth:?}: back");
+            assert_eq!(
+                [expected_back],
+                card.back.as_slice(),
+                "{expected_mode:?}: back"
+            );
             assert_eq!(
                 expected_reshaped, card.reshaped,
-                "{depth:?}: reshaped must describe what was actually served"
+                "{expected_mode:?}: reshaped must describe what was actually served"
             );
-            let steps = card.answer_steps.len();
-            assert_eq!(1, steps, "{depth:?}: one line, one step");
+            assert_eq!(
+                1,
+                card.answer_steps.len(),
+                "{expected_mode:?}: one line, one step"
+            );
         }
     }
 
