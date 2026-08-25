@@ -3,7 +3,7 @@
 # miss matches an entry here. Entries document argued residuals; the
 # mutants still run every sweep, so red means NEW information.
 #
-# Current contents: EIGHT argued groups, down from twenty-four. Alex ruled
+# Current contents: NINE argued groups, down from twenty-four. Alex ruled
 # 2026-08-06 that the only admissible reason is "it really cannot be
 # tested", so everything merely awkward was seamed and killed instead:
 # the uuid mixer became a pure function of its seed (11 killed), the
@@ -102,14 +102,6 @@ src/cli/deck.rs: replace + with * in augment_cmd
 # The decision it feeds IS tested, via announce_with taking the address
 # as a value; the match-arm mutant there is killed.
 src/cli/launch.rs: replace local_lan_ip -> Option<std::net::IpAddr> with None
-
-# The table end_line init is observable only for a table with no rows
-# and no directive comments, and such a table mints no container id;
-# every other table overwrites the init before any use. Line-pinned
-# because scan() holds many other additions.
-src/parser/mod.rs:557: replace + with - in scan
-src/parser/mod.rs:557: replace + with * in scan
-
 
 # EQUIVALENT, provably. The line above already sets `dropped[index]`, and
 # `quoted_run_end` starts its scan at `marker + 1` and only grows, so it
