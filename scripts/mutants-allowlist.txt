@@ -3,7 +3,7 @@
 # miss matches an entry here. Entries document argued residuals; the
 # mutants still run every sweep, so red means NEW information.
 #
-# Current contents: NINE argued groups, down from twenty-four. Alex ruled
+# Current contents: EIGHT argued groups, down from twenty-four. Alex ruled
 # 2026-08-06 that the only admissible reason is "it really cannot be
 # tested", so everything merely awkward was seamed and killed instead:
 # the uuid mixer became a pure function of its seed (11 killed), the
@@ -84,11 +84,6 @@ src/ask.rs: replace || with && in parse_drafted_card
 # so deleting the explicit field from the helper's struct expression
 # builds the identical value.
 src/ask.rs: delete field model from struct AskConfig expression in tests::config
-
-# EQUIVALENT. The mutated private counter is re-capped by the .take(remaining)
-# that follows and reset on every edit; no observable hint output or
-# state differs under the substitution.
-src/answer.rs: replace - with + in TypingValidator::hint
 
 # DEAD-PATH. synthesize_virtual stores this line number only on the Card, and
 # WarmItem::from_card discards it before any output is generated; the
