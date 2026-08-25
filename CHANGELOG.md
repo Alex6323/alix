@@ -638,7 +638,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   source, silently, while the authored Markdown still carried the line.
   `alix doctor` also reports one authored locator once now, however many cards
   its block produced, instead of repeating the same finding per row or per
-  hole.
+  hole, and it checks each of a card's locators separately, so a healthy one
+  no longer hides a stale sibling on the same card.
 
 - A deck or store file reached through a symlink survives being saved: the
   replacement lands on the link's target instead of renaming over the link
