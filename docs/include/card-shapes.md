@@ -40,6 +40,8 @@ Rules that hold whatever the shape:
 - Most cards deserve a `> [!NOTE]` note: an example, a caveat, a mnemonic,
   or why it matters. Never a restatement of the answer. The badge line is
   required; a blockquote without one is a quotation and belongs to the answer.
+  A card table is the exception: its note is the note COLUMN, and a
+  blockquote below a table does not parse at all.
 - A choice card's note names the option's claim or mistaken premise, never
   its number, letter, or screen position. Options shuffle between appearances.
 - Every `<!-- ... -->` line trails its card: it goes directly below the

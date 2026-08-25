@@ -98,7 +98,8 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
              - A card table starts with `| front | back | note |`, then \
              `| --- | --- | --- |`, then one row per pair, then `<!-- cards -->` on the \
              line DIRECTLY below the last row, with no blank line between. Omit the note \
-             column when it is unused.\n\
+             column when it is unused. A card table's note is that column: a \
+             `> [!NOTE]` blockquote below a table does not parse.\n\
              - For ordered steps, write one step per answer line and put `<!-- reveal: line -->` below the \
              last answer line.\n\
              - For a card needed in both directions, put `<!-- direction: both -->` after \
@@ -806,6 +807,51 @@ mod tests {
             parser::parse("deck.md", inverted).is_err(),
             "and the other order does not parse, which is why the order is taught"
         );
+    }
+
+    /// The same question the authored-choice contract failed: can a card obey
+    /// every rule the prompts state about it at once? A card table cannot
+    /// carry a blockquote note in EITHER position, so the note rule has to
+    /// name its exception or a generated deck fails to open.
+    #[test]
+    fn a_card_table_carries_its_note_in_a_column_and_nowhere_else() {
+        let column = "## T\n| front | back | note |\n| --- | --- | --- |\n| a | b | n |\n\
+                      <!-- cards -->\n";
+        let parsed = parser::parse("deck.md", column).expect("the note column parses");
+        assert_eq!(
+            Some("n"),
+            parsed.cards[0].note.as_deref(),
+            "a card table's note is its column: {parsed:?}"
+        );
+
+        for (position, text) in [
+            (
+                "below the invocation",
+                "## T\n| front | back |\n| --- | --- |\n| a | b |\n<!-- cards -->\n\
+                 > [!NOTE]\n> why\n",
+            ),
+            (
+                "between the table and its invocation",
+                "## T\n| front | back |\n| --- | --- |\n| a | b |\n> [!NOTE]\n> why\n\
+                 <!-- cards -->\n",
+            ),
+        ] {
+            assert!(
+                parser::parse("deck.md", text).is_err(),
+                "a blockquote note {position} does not parse, which is why the \
+                 prompts name the exception"
+            );
+        }
+
+        for prompt in [
+            build_prompt("https://example.org/page", true, &cfg(12), &spec()),
+            build_prompt("src/lib.rs", false, &cfg(12), &spec()),
+        ] {
+            assert!(
+                prompt.contains("A card table's note is that column"),
+                "and the prompt teaching card tables states it: {prompt}"
+            );
+        }
     }
 
     #[test]
