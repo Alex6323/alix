@@ -536,9 +536,7 @@ fn bracket_links(
                     .checked_sub(1)
                     .and_then(|before| glyphs.get(before))
                     .is_some_and(|glyph| {
-                        plain(glyph)
-                            && glyph.ch == '!'
-                            && glyph.raw_index + 1 == glyphs[index].raw_index
+                        plain(glyph) && glyph.ch == '!' && authored_adjacent(glyph, &glyphs[index])
                     });
                 openers.push((index, image));
                 index += 1;
@@ -553,10 +551,9 @@ fn bracket_links(
                     index = close + 1;
                     continue;
                 }
-                if glyphs
-                    .get(close + 1)
-                    .is_some_and(|glyph| plain(glyph) && glyph.ch == '(')
-                    && let Some(close_paren) = link_tail_end(glyphs, close + 2)
+                if glyphs.get(close + 1).is_some_and(|glyph| {
+                    plain(glyph) && glyph.ch == '(' && authored_adjacent(&glyphs[close], glyph)
+                }) && let Some(close_paren) = link_tail_end(glyphs, close + 2)
                 {
                     links.push(BracketLink {
                         open,
@@ -572,10 +569,9 @@ fn bracket_links(
                     continue;
                 };
                 let label = raw_span(open, close);
-                if glyphs
-                    .get(close + 1)
-                    .is_some_and(|glyph| plain(glyph) && glyph.ch == '[')
-                {
+                if glyphs.get(close + 1).is_some_and(|glyph| {
+                    plain(glyph) && glyph.ch == '[' && authored_adjacent(&glyphs[close], glyph)
+                }) {
                     let Some(reference_close) = bracket_close(close + 2) else {
                         index = close + 1;
                         continue;
@@ -1287,6 +1283,26 @@ fn scan_glyphs(chars: &[char], spans: &[MathSpan]) -> Vec<Glyph> {
     glyphs
 }
 
+/// One past a glyph's authored footprint: an entity spans its whole
+/// reference, everything else a single char.
+fn footprint_end(glyph: &Glyph) -> usize {
+    glyph.entity_end.unwrap_or(glyph.raw_index + 1)
+}
+
+/// Where a glyph's authored footprint begins: an escape starts at its
+/// backslash.
+fn footprint_start(glyph: &Glyph) -> usize {
+    glyph.raw_index - usize::from(glyph.escaped && !glyph.code)
+}
+
+/// Projection deletes authored characters, so two glyphs adjacent in the
+/// projected stream need not have been adjacent in the source. Every
+/// predicate that asks a question about a NEIGHBOUR has to ask it of the
+/// authored text, or removed markup silently manufactures the adjacency.
+fn authored_adjacent(before: &Glyph, after: &Glyph) -> bool {
+    footprint_end(before) == footprint_start(after)
+}
+
 fn emphasis_delimiters(glyphs: &[Glyph]) -> Vec<Delimiter> {
     let mut delimiters = Vec::new();
     let mut index = 0;
@@ -1320,15 +1336,24 @@ fn emphasis_delimiters(glyphs: &[Glyph]) -> Vec<Delimiter> {
         }
         let previous = index.checked_sub(1).and_then(|pos| glyphs.get(pos));
         let next = glyphs.get(end);
-        let intraword = glyph.ch == '_'
-            && previous.is_some_and(|item| item.ch.is_alphanumeric())
-            && next.is_some_and(|item| item.ch.is_alphanumeric());
+        // Characters the projector removed (a tag marker, a math delimiter)
+        // still stood between these glyphs in the source. That makes them a
+        // neighbour of PUNCTUATION: never a letter, so no run is intraword
+        // across one, and never whitespace, so the delimiter still flanks.
+        let previous_adjacent =
+            previous.is_some_and(|item| authored_adjacent(item, &glyphs[index]));
+        let next_adjacent = next.is_some_and(|item| authored_adjacent(&glyphs[end - 1], item));
+        let letter_before = previous_adjacent && previous.is_some_and(|i| i.ch.is_alphanumeric());
+        let letter_after = next_adjacent && next.is_some_and(|i| i.ch.is_alphanumeric());
+        let intraword = glyph.ch == '_' && letter_before && letter_after;
+        let opens = next.is_some_and(|item| !next_adjacent || !item.ch.is_whitespace());
+        let closes = previous.is_some_and(|item| !previous_adjacent || !item.ch.is_whitespace());
         delimiters.push(Delimiter {
             start: index,
             len,
             marker: glyph.ch,
-            can_open: !intraword && next.is_some_and(|item| !item.ch.is_whitespace()),
-            can_close: !intraword && previous.is_some_and(|item| !item.ch.is_whitespace()),
+            can_open: !intraword && opens,
+            can_close: !intraword && closes,
         });
         index = end;
     }
@@ -2094,6 +2119,92 @@ mod tests {
                 .collect::<String>(),
             "bar"
         );
+    }
+
+    #[test]
+    fn a_link_tail_must_be_adjacent_in_the_authored_stream() {
+        // Whatever separates a label from its tail, the tail is not a tail:
+        // a space, an ordinary character, and a tag the projector REMOVES
+        // must all behave the same way.
+        for (source, shown) in [
+            ("Use [array] (1).", "Use [array] (1)."),
+            ("Use [array]x(1).", "Use [array]x(1)."),
+            ("Use [array]<sup>(1)</sup>.", "Use [array](1)."),
+        ] {
+            let runs = parse_inline(source);
+            assert_eq!(
+                shown,
+                runs.iter().map(|run| run.text.as_str()).collect::<String>(),
+                "a separated tail is display content, not link syntax ({source}): {runs:?}"
+            );
+            assert!(
+                runs.iter().all(|run| !run.link),
+                "nothing links when the tail is not authored-adjacent ({source}): {runs:?}"
+            );
+        }
+
+        let runs = parse_inline("Use [array](1).");
+        assert_eq!(
+            "Use array.",
+            runs.iter().map(|run| run.text.as_str()).collect::<String>(),
+            "the law still lets a real, adjacent tail link: {runs:?}"
+        );
+
+        // The same law for a reference tail. A defined label standing alone
+        // is still a shortcut reference, which is why the tail case is about
+        // ADJACENCY and not about suppressing the second bracket pair.
+        for (source, shown, linked) in [
+            (
+                "Claim [one] [citation].",
+                "Claim [one] citation.",
+                "citation",
+            ),
+            (
+                "Claim [one]x[citation].",
+                "Claim [one]xcitation.",
+                "citation",
+            ),
+            (
+                "Claim [one]<sup>[citation]</sup>.",
+                "Claim [one]citation.",
+                "citation",
+            ),
+            ("Claim [one][citation].", "Claim one.", "one"),
+        ] {
+            let mut projector = DisplayProjector::with_definitions(["citation"]);
+            let runs = projector.project(source);
+            assert_eq!(
+                shown,
+                runs.iter().map(|run| run.text.as_str()).collect::<String>(),
+                "({source}): {runs:?}"
+            );
+            assert_eq!(
+                linked,
+                runs.iter()
+                    .filter(|run| run.link)
+                    .map(|run| run.text.as_str())
+                    .collect::<String>(),
+                "({source}): {runs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn underscore_flanking_is_judged_on_the_authored_stream() {
+        for (source, shown) in [("x<sup>_2_</sup>", "x2"), ("<sup>_2_</sup>x", "2x")] {
+            let runs = parse_inline(source);
+            assert_eq!(
+                shown,
+                runs.iter().map(|run| run.text.as_str()).collect::<String>(),
+                "the tag boundary keeps the underscore delimiter out of an intraword run: {source:?}: {runs:?}"
+            );
+            assert!(
+                runs.iter()
+                    .filter(|run| run.text.contains('2'))
+                    .all(|run| run.italic && run.sup),
+                "nested supported styles compose across authored tag boundaries: {source:?}: {runs:?}"
+            );
+        }
     }
 
     /// CommonMark stacks link openers and image openers as distinct kinds:
