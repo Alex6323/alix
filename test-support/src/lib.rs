@@ -213,8 +213,10 @@ mod tests {
         const SIDECAR_ID: &str = "card-aaaaaaaaaaaaaaaaaaaaaaaaaa";
         const PROGRESS_ID: &str = "card-bbbbbbbbbbbbbbbbbbbbbbbbbb";
 
-        let root = PathBuf::from(std::env::var("TMPDIR").expect("TMPDIR is set for the repro"))
-            .join(format!("alix-parity-id-repro-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!(
+            "alix-parity-id-repro-{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(root.join("progress")).unwrap();
         let deck = seed(&root);
         std::fs::write(
