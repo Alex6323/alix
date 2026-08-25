@@ -1260,10 +1260,15 @@ fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
+fn repair_after_explicit_path(path: Option<&Path>) -> bool {
+    path.is_none_or(|path| !workspace::is_workspace(path))
+}
+
 // Exits non-zero only on a hard fail; a missing optional binary (a warn)
 // never breaks a script.
 pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     use alix::doctor::{self, Status};
+    let repair_after_explicit_path = repair_after_explicit_path(args.dir.as_deref());
     if let Some(path) = &args.dir {
         if path.is_file() {
             if args.repair_source_locators {
@@ -1315,44 +1320,19 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             (dir, store)
         }
     };
-    if args.repair_source_locators
-        && !args
-            .dir
-            .as_deref()
-            .is_some_and(alix::workspace::is_workspace)
-    {
+    if args.repair_source_locators && repair_after_explicit_path {
         repair_source_locators(&alix::workspace::deck_files(&decks_dir))?;
     }
-    if args.repair_positions
-        && !args
-            .dir
-            .as_deref()
-            .is_some_and(alix::workspace::is_workspace)
-    {
+    if args.repair_positions && repair_after_explicit_path {
         repair_positions(&alix::workspace::deck_files(&decks_dir))?;
     }
-    if args.repair_diagrams
-        && !args
-            .dir
-            .as_deref()
-            .is_some_and(alix::workspace::is_workspace)
-    {
+    if args.repair_diagrams && repair_after_explicit_path {
         repair_diagrams(&alix::workspace::deck_files(&decks_dir))?;
     }
-    if args.repair_frontmatter_order
-        && !args
-            .dir
-            .as_deref()
-            .is_some_and(alix::workspace::is_workspace)
-    {
+    if args.repair_frontmatter_order && repair_after_explicit_path {
         repair_frontmatter_order(&alix::workspace::deck_files(&decks_dir))?;
     }
-    if args.repair_comment_order
-        && !args
-            .dir
-            .as_deref()
-            .is_some_and(alix::workspace::is_workspace)
-    {
+    if args.repair_comment_order && repair_after_explicit_path {
         repair_comment_order(&alix::workspace::deck_files(&decks_dir))?;
     }
     if args.remove_backup_files {
@@ -1499,6 +1479,17 @@ mod tests {
         )
         .unwrap();
         path
+    }
+
+    #[test]
+    fn explicit_workspace_repairs_are_not_scheduled_twice() {
+        let workspace_dir = tempfile::tempdir().unwrap();
+        std::fs::write(workspace_dir.path().join(workspace::MANIFEST), "").unwrap();
+        let plain_dir = tempfile::tempdir().unwrap();
+
+        assert!(!repair_after_explicit_path(Some(workspace_dir.path())));
+        assert!(repair_after_explicit_path(Some(plain_dir.path())));
+        assert!(repair_after_explicit_path(None));
     }
 
     /// Ruled D13(ii): a filename-named deck is sanctioned, so doctor must
