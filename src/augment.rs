@@ -60,7 +60,7 @@ pub struct Augmentation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keypoints_fp: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub format_fp: Option<u64>,
+    pub format_input_fp: Option<u64>,
 }
 
 impl Augmentation {
@@ -745,14 +745,14 @@ impl AugmentCache {
     pub fn format(&self, card_id: &str, fingerprint: u64) -> Option<&Format> {
         self.cards
             .get(card_id)
-            .filter(|aug| aug.format_fp == Some(fingerprint))
+            .filter(|aug| aug.format_input_fp == Some(fingerprint))
             .and_then(|aug| aug.format.as_ref())
     }
 
     pub fn set_format(&mut self, card_id: &str, format: Format, fingerprint: u64) {
         let aug = self.cards.entry(card_id.to_string()).or_default();
         aug.format = Some(format);
-        aug.format_fp = Some(fingerprint);
+        aug.format_input_fp = Some(fingerprint);
     }
 
     pub fn variants(&self, card_id: &str, fingerprint: u64) -> Option<&[String]> {
@@ -943,7 +943,7 @@ impl AugmentCache {
             }),
             format: coverage(&plain, &|c| {
                 c.id()
-                    .is_some_and(|id| self.format(&id, c.content_fingerprint).is_some())
+                    .is_some_and(|id| self.format(&id, c.format_fingerprint()).is_some())
             }),
             topologies: self
                 .topologies_for(deck_tokens)
@@ -1021,7 +1021,7 @@ impl AugmentCache {
             |c| c.hash_lines.is_none(),
             |c| {
                 c.id()
-                    .is_some_and(|id| self.format(&id, c.content_fingerprint).is_some())
+                    .is_some_and(|id| self.format(&id, c.format_fingerprint()).is_some())
             },
         )
     }
@@ -1076,7 +1076,7 @@ impl AugmentCache {
     pub fn apply_format(&self, card: &mut Card) {
         let Some(fmt) = card
             .id()
-            .and_then(|id| self.format(&id, card.content_fingerprint))
+            .and_then(|id| self.format(&id, card.format_fingerprint()))
         else {
             return;
         };
@@ -2222,7 +2222,7 @@ mod tests {
                 note: None,
                 mode: Some(Mode::LineByLine),
             },
-            card.content_fingerprint,
+            card.format_fingerprint(),
         );
         cache.apply_format(&mut card);
         assert_eq!(card.front, "Name the parts");
@@ -2253,7 +2253,7 @@ mod tests {
                 note: Some("as reshaped".to_string()),
                 ..Default::default()
             },
-            card.content_fingerprint,
+            card.format_fingerprint(),
         );
         cache.apply_format(&mut card);
         assert_eq!(
@@ -2294,7 +2294,7 @@ mod tests {
                 note: Some("as reshaped".to_string()),
                 ..Default::default()
             },
-            card.content_fingerprint,
+            card.format_fingerprint(),
         );
         cache.apply_format(&mut card);
         assert_eq!(
@@ -2302,6 +2302,60 @@ mod tests {
             card.notes,
             "the reshape is of every note flattened, so it replaces the stack \
              without claiming either author's badge"
+        );
+    }
+
+    #[test]
+    fn a_note_added_after_a_reshape_makes_that_reshape_stale() {
+        use std::sync::Arc;
+        let mut card = Card::plain(
+            Arc::from("d.md"),
+            "f".into(),
+            vec!["a".into()],
+            vec![crate::card::Note {
+                badge: Some(crate::card::Badge::Warning),
+                body: "first".to_string(),
+            }],
+            1,
+        );
+        card.token = Some(Arc::from("qfmt5"));
+        let id = cid(&card);
+        let scheduling = card.content_fingerprint;
+        let mut cache = AugmentCache::open(std::env::temp_dir().join("nonexistent-deck5.json"));
+        cache.set_format(
+            &id,
+            Format {
+                note: Some("old reshape of first".to_string()),
+                ..Default::default()
+            },
+            card.format_fingerprint(),
+        );
+
+        card.notes.push(crate::card::Note {
+            badge: Some(crate::card::Badge::Tip),
+            body: "new second note".to_string(),
+        });
+        cache.apply_format(&mut card);
+
+        assert_eq!(
+            vec![
+                crate::card::Note {
+                    badge: Some(crate::card::Badge::Warning),
+                    body: "first".to_string(),
+                },
+                crate::card::Note {
+                    badge: Some(crate::card::Badge::Tip),
+                    body: "new second note".to_string(),
+                },
+            ],
+            card.notes,
+            "a reshape generated before the second note was authored is stale, and a \
+             stale reshape must not stand in for what the author wrote"
+        );
+        assert_eq!(
+            scheduling, card.content_fingerprint,
+            "the note edit must not move scheduling identity: that is what the \
+             separate format fingerprint exists to avoid"
         );
     }
 
@@ -2327,7 +2381,7 @@ mod tests {
                 note: None,
                 mode: Some(Mode::LineByLine),
             },
-            card.content_fingerprint,
+            card.format_fingerprint(),
         );
         cache.apply_format(&mut card);
         assert_eq!(card.reveal, Some(Reveal::Flip));
@@ -2400,7 +2454,7 @@ mod tests {
                 back: vec!["reshaped".into()],
                 ..Default::default()
             },
-            card.content_fingerprint ^ 1,
+            card.format_fingerprint() ^ 1,
         );
         let summary = cache.summarize(
             std::slice::from_ref(card),

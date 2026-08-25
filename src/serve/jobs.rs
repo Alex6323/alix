@@ -1027,6 +1027,11 @@ impl Augmenting {
             .iter()
             .filter_map(|c| c.id().map(|id| (id, c.content_fingerprint)))
             .collect();
+        let format_fp_by_id: HashMap<String, u64> = self
+            .cards
+            .iter()
+            .filter_map(|c| c.id().map(|id| (id, c.format_fingerprint())))
+            .collect();
         match outcome {
             augment_ai::Outcome::Choices(map) => {
                 for (id, v) in map {
@@ -1059,7 +1064,7 @@ impl Augmenting {
             augment_ai::Outcome::Topology(t) => self.cache.add_topology(t),
             augment_ai::Outcome::Format(map) => {
                 for (id, v) in map {
-                    if let Some(&fingerprint) = fp_by_id.get(&id) {
+                    if let Some(&fingerprint) = format_fp_by_id.get(&id) {
                         self.cache.set_format(&id, v, fingerprint);
                     }
                 }

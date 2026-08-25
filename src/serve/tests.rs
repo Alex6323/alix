@@ -276,6 +276,39 @@ fn card_dto_structures_the_note() {
 }
 
 #[test]
+fn parser_note_origins_and_multi_note_order_reach_the_wire() {
+    let table = crate::parser::parse(
+        "table.md",
+        "| front | back | note |\n|---|---|---|\n| q | a | table body |\n<!-- cards -->\n",
+    )
+    .expect("the table parses");
+    let alert = crate::parser::parse("alert.md", "## q\na\n> [!WARNING]\n> alert body\n")
+        .expect("the alert card parses");
+
+    let table_dto = card_dto((&table.cards[0]).into(), table.cards[0].id());
+    assert_eq!(
+        None, table_dto.note[0].badge,
+        "a table note stays badgeless"
+    );
+
+    let mut card = alert.cards[0].clone();
+    card.notes.push(Note::bare("personal body".to_string()));
+    let dto = card_dto((&card).into(), card.id());
+    assert_eq!(2, dto.note.len(), "each source becomes its own wire note");
+    assert_eq!(Some(crate::card::Badge::Warning), dto.note[0].badge);
+    assert_eq!(None, dto.note[1].badge);
+    let bodies = dto
+        .note
+        .iter()
+        .map(|note| match note.units.as_slice() {
+            [NoteUnit::Sentence { text, .. }] => text.as_str(),
+            other => panic!("expected one sentence, got {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(["alert body", "personal body"], bodies.as_slice());
+}
+
+#[test]
 fn card_dto_exposes_image_urls_and_registry_matches() {
     let mut card = Card::plain(
         Arc::from("s.md"),

@@ -49,6 +49,15 @@ pub fn content_fingerprint(front: &str, back: &[String]) -> u64 {
     hasher.finish()
 }
 
+/// A second input folded into an existing fingerprint, for a cache key that
+/// keys on more than a card's content.
+pub fn mix_fingerprint(fingerprint: u64, extra: &str) -> u64 {
+    let mut hasher = XxHash64::default();
+    hasher.write_u64(fingerprint);
+    hasher.write(extra.as_bytes());
+    hasher.finish()
+}
+
 pub(super) fn hash64(s: &str) -> u64 {
     let mut hasher = XxHash64::default();
     hasher.write(s.as_bytes());

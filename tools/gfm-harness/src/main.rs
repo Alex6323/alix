@@ -43,7 +43,7 @@ struct CardMeasurement {
     back: Vec<String>,
     front_plain: String,
     back_plain: Vec<String>,
-    note: Option<String>,
+    notes: Vec<NoteMeasurement>,
     section_context: Vec<String>,
     context: Vec<String>,
     authored_distractors: Vec<String>,
@@ -62,6 +62,14 @@ struct CardMeasurement {
 struct ImageMeasurement {
     src: String,
     alt: Option<String>,
+}
+
+/// The badge is measured beside the body so a corpus change that alters which
+/// blockquote opens a note cannot pass as an unchanged baseline.
+#[derive(Debug, Serialize)]
+struct NoteMeasurement {
+    badge: Option<String>,
+    body: String,
 }
 
 fn decision_groups(section: &str, markdown: &str) -> Vec<u8> {
@@ -166,7 +174,14 @@ fn card_measurement(card: &Card) -> CardMeasurement {
             .iter()
             .map(|line| inline::strip_inline(line))
             .collect(),
-        note: card.notes_text(),
+        notes: card
+            .notes
+            .iter()
+            .map(|note| NoteMeasurement {
+                badge: note.badge.map(|badge| format!("{badge:?}")),
+                body: note.body.clone(),
+            })
+            .collect(),
         section_context: card.section_context.clone(),
         context: card.context.clone(),
         authored_distractors: card.authored_distractors.clone(),
@@ -255,7 +270,7 @@ fn measure(corpus: &str, example: SpecExample) -> Measurement {
             if !deck.tables.is_empty() {
                 reasons.push(format!("{} card table(s)", deck.tables.len()));
             }
-            if cards.iter().any(|card| card.note.is_some()) {
+            if cards.iter().any(|card| !card.notes.is_empty()) {
                 reasons.push("blockquote content became an Alix note".to_owned());
             }
             if cards

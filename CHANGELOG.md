@@ -351,6 +351,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A display reshape is keyed on the notes it was generated from. Adding a
+  second alert to an already reshaped card used to leave the older reshape in
+  place, which after the multi-note change meant the new note was silently
+  omitted from review and browse while the deck file still held it. The
+  format augmentation now has its own input fingerprint over the question,
+  the answer, and the ordered note stack, so a note-only edit makes the
+  reshape stale and it regenerates. Scheduling identity is untouched, so no
+  other augmentation is invalidated. The cached field is renamed
+  (`format_fp` becomes `format_input_fp`), so an augmentation document
+  written before this release no longer loads. Codex found this.
+
 - A card carries several notes rather than one. A second badged
   blockquote used to be swallowed into the first note's body, with the
   last badge silently winning; each badged run is now its own note, in

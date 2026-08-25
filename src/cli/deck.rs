@@ -405,7 +405,7 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             let map = augment_ai::generate_format(&items, guidance, &ask_cfg, None)?;
             let format_fp_by_id: std::collections::HashMap<String, u64> = plain
                 .iter()
-                .filter_map(|card| card.id().map(|id| (id, card.content_fingerprint)))
+                .filter_map(|card| card.id().map(|id| (id, card.format_fingerprint())))
                 .collect();
             for (id, fmt) in &map {
                 if let Some(&fingerprint) = format_fp_by_id.get(id) {

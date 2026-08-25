@@ -19,7 +19,7 @@ pub mod region;
 mod sidecar;
 mod stream;
 
-pub use canonical::{canonical_content, content_fingerprint};
+pub use canonical::{canonical_content, content_fingerprint, mix_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
 use cloze::{Hole, Seg, Side, hash_repr, hole_fingerprints, scan_markers, seg_display};
 pub use frontmatter::{

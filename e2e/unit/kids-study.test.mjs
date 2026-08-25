@@ -312,3 +312,32 @@ test("kids renders a diagram unit on answer reveal", () => {
   assert.equal(image?.src, "/img/0123456789abcdef");
   assert.equal(image?.alt, "flowchart LR\n A-->B");
 });
+
+test("kids unwraps every note body in authored order", () => {
+  const original = review({
+    card: {
+      id: "card-1",
+      front: "Question",
+      back: ["Answer"],
+      context: [],
+      images: [],
+      images_back: [],
+      note: [
+        { badge: "warning", units: [{ kind: "sentence", text: "First." }] },
+        { units: [{ kind: "sentence", text: "Second." }] },
+      ],
+    },
+  });
+  const run = harness(original);
+  run.study.render();
+  const reveal = find(run.actionbar, (node) => node.textContent === "Show me 👀");
+  reveal.click();
+  run.stage.children.length = 0;
+  run.study.render();
+
+  const why = find(run.stage, (node) => node.className === "rev-why-text");
+  assert.deepEqual(
+    why.children.map((node) => node.textContent),
+    ["First.", "Second."],
+  );
+});

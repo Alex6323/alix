@@ -1587,7 +1587,7 @@ it reads line two\n\
                 note: None,
                 mode: Some(Mode::LineByLine),
             },
-            synth.content_fingerprint,
+            synth.format_fingerprint(),
         );
         cache.apply_format(&mut synth);
 
@@ -1624,7 +1624,7 @@ it reads line two\n\
                 note: None,
                 mode: None,
             },
-            personal_card.content_fingerprint,
+            personal_card.format_fingerprint(),
         );
         cache.save().unwrap();
 
@@ -1774,7 +1774,7 @@ it reads line two\n\
                 note: None,
                 mode: None,
             },
-            raw.cards[0].content_fingerprint,
+            raw.cards[0].format_fingerprint(),
         );
         cache.set_note(
             &id,

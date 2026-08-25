@@ -367,6 +367,28 @@ impl Card {
         ))
     }
 
+    /// What a display reshape was generated from: the card's content plus the
+    /// notes it was asked to rewrite. `content_fingerprint` is scheduling
+    /// identity and deliberately excludes notes, so a note-only edit has to
+    /// move this instead.
+    pub fn format_fingerprint(&self) -> u64 {
+        let mut input = String::new();
+        for note in &self.notes {
+            input.push_str(match note.badge {
+                Some(Badge::Note) => "note",
+                Some(Badge::Tip) => "tip",
+                Some(Badge::Important) => "important",
+                Some(Badge::Warning) => "warning",
+                Some(Badge::Caution) => "caution",
+                None => "",
+            });
+            input.push('\u{1f}');
+            input.push_str(&note.body);
+            input.push('\u{1e}');
+        }
+        crate::parser::mix_fingerprint(self.content_fingerprint, &input)
+    }
+
     /// Every note's body as one block, for the payloads that carry a card as
     /// plain text.
     pub fn notes_text(&self) -> Option<String> {
@@ -570,6 +592,56 @@ mod tests {
             c.notes,
             "an appended note stands beside the authored one rather than joining a \
              block its badge speaks for"
+        );
+    }
+
+    #[test]
+    fn the_format_fingerprint_separates_a_badge_from_a_body() {
+        let stack = |notes: Vec<Note>| {
+            let mut c = card("d.md", "front", &["back"], None);
+            c.notes = notes;
+            c.format_fingerprint()
+        };
+        let badged = stack(vec![Note {
+            badge: Some(Badge::Tip),
+            body: "x".to_string(),
+        }]);
+        let bare = stack(vec![Note::bare("tipx".to_string())]);
+        assert_ne!(
+            badged, bare,
+            "a badge and a body must not run together, or a stale reshape of one \
+             stack applies to a different one"
+        );
+        let split = stack(vec![
+            Note::bare("one".to_string()),
+            Note::bare("two".to_string()),
+        ]);
+        let joined = stack(vec![Note::bare("one\ntwo".to_string())]);
+        assert_ne!(
+            split, joined,
+            "two notes and one note carrying both lines are different authored input"
+        );
+        assert_eq!(
+            stack(Vec::new()),
+            stack(Vec::new()),
+            "a card with no notes still has a stable format fingerprint"
+        );
+        let two = stack(vec![
+            Note {
+                badge: Some(Badge::Tip),
+                body: "a".to_string(),
+            },
+            Note::bare("b".to_string()),
+        ]);
+        let one = stack(vec![Note {
+            badge: Some(Badge::Tip),
+            body: "a\u{1f}b".to_string(),
+        }]);
+        assert_ne!(
+            two, one,
+            "nobody types a unit separator, but without the record separator these \
+             two stacks hash the same, and the encoding has to be unambiguous rather \
+             than unambiguous for realistic input"
         );
     }
 

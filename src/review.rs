@@ -1109,7 +1109,7 @@ mod tests {
                 back: vec!["a stale reshaped line".into()],
                 ..Default::default()
             },
-            card.content_fingerprint ^ 1,
+            card.format_fingerprint() ^ 1,
         );
 
         cache.apply_format(&mut card);
@@ -1124,7 +1124,7 @@ mod tests {
                 back: vec!["a fresh reshaped line".into()],
                 ..Default::default()
             },
-            fresh.content_fingerprint,
+            fresh.format_fingerprint(),
         );
         cache.apply_format(&mut fresh);
         let fresh = CardView::from(&fresh);

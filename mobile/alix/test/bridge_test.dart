@@ -4,7 +4,7 @@
 // Time is injected through the bridge's nowMs, so nothing here sleeps.
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Badge;
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -150,6 +150,12 @@ void main() {
       nowMs: t0,
     ).state();
     final choiceCard = choice.card!;
+    expect(choiceCard.note.single.badge, Badge.note);
+    final mappedChoice = const ReviewBridgeFactory()
+        .open(deckPath: choiceDeck, rootDir: root.path)
+        .state
+        .card!;
+    expect(mappedChoice.note.single.badge, ReviewBadge.note);
     expectMathRun(choiceCard.frontRuns, 'E = mc^2');
     expectMathRun(
       choice.choiceRuns!.expand((runs) => runs).toList(),
