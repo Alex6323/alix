@@ -3,7 +3,7 @@
 # miss matches an entry here. Entries document argued residuals; the
 # mutants still run every sweep, so red means NEW information.
 #
-# Current contents: SEVEN argued groups, down from twenty-four. Alex ruled
+# Current contents: SIX argued groups, down from twenty-four. Alex ruled
 # 2026-08-06 that the only admissible reason is "it really cannot be
 # tested", so everything merely awkward was seamed and killed instead:
 # the uuid mixer became a pure function of its seed (11 killed), the
@@ -106,9 +106,3 @@ src/parser/sidecar.rs:39: replace + with * in without_notes
 # `id` 21; under `* 2` id becomes 38, and no key can rank inside (21, 38),
 # so every pairwise comparison is unchanged for every input.
 src/parser/frontmatter.rs:368: replace + with * in key_rank
-
-# EQUIVALENT, provably. At exactly HISTORY_CAP, `excess` is zero and
-# `drain(..0)` changes nothing. Above the cap both comparisons enter with
-# the same positive excess; below it both skip. Output is identical for
-# every history length.
-src/store.rs: replace > with >= in CardState::record_review

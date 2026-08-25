@@ -148,10 +148,8 @@ impl CardState {
             depth,
             propagated,
         });
-        if self.history.len() > HISTORY_CAP {
-            let excess = self.history.len() - HISTORY_CAP;
-            self.history.drain(..excess);
-        }
+        let excess = self.history.len().saturating_sub(HISTORY_CAP);
+        self.history.drain(..excess);
     }
 }
 
