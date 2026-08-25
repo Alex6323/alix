@@ -1690,9 +1690,10 @@ mod tests {
             .expect("the authored card is still there");
         assert!(
             deck_card
-                .first_note()
-                .is_some_and(|note| note.body.contains("mine to remember")),
-            "the personal note reaches the authored card: {:?}",
+                .notes
+                .iter()
+                .any(|note| note.body.contains("mine to remember")),
+            "the personal note reaches the authored card, as a note of its own: {:?}",
             deck_card.notes
         );
     }
