@@ -351,6 +351,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Emphasis follows CommonMark's flanking rule on both sides of a run, so
+  `*` and `_` next to punctuation no longer style text GitHub leaves
+  literal. `a**.tail**`, `a*.tail*`, and `a**(x) y**` render as written
+  now; before, alix bolded or italicized them. `_` also gets the spec's
+  stricter rule, so an underscore between two word characters stays a
+  literal underscore in more places. A deck relying on the old behaviour
+  will show the markers instead of the styling. One known deviation, named in
+  the code:
+  CommonMark's punctuation class is Unicode category P or S, and alix
+  approximates it as neither alphanumeric nor whitespace, so an accent typed
+  as a separate character, or an emoji's invisible presentation selector,
+  reads as punctuation when it sits immediately before a marker. The accent
+  case is a regression: `*cafe` + combining acute + `*s` used to italicize by
+  luck and now renders literally. Only that position is affected; the same
+  accent anywhere else in the run, and the ordinary precomposed spelling, are
+  unchanged.
+
 - BREAKING: a note is a badged blockquote, and every other blockquote is a
   quote. A blockquote whose first line is exactly one of GitHub's five alert
   badges (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`,

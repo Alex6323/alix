@@ -1306,6 +1306,39 @@ fn authored_adjacent(before: &Glyph, after: &Glyph) -> bool {
     footprint_end(before) == footprint_start(after)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Neighbour {
+    Whitespace,
+    Punctuation,
+    Other,
+}
+
+/// The class CommonMark's flanking rules ask about, taken from the AUTHORED
+/// text rather than the projection. The line's edge counts as whitespace. A
+/// character the projector removed (a tag marker, a math delimiter, a code
+/// fence, link syntax) counts as punctuation, which it was. An entity is the
+/// `&` or `;` it was written as, whatever it decoded to, so `&Aopf;` cannot
+/// pose as a letter nor `&nbsp;` as a space.
+///
+/// Punctuation is approximated as neither alphanumeric nor whitespace; the
+/// spec's class is Unicode P or S, which needs a general-category table alix
+/// does not carry.
+fn neighbour_class(glyph: Option<&Glyph>, adjacent: bool) -> Neighbour {
+    let Some(glyph) = glyph else {
+        return Neighbour::Whitespace;
+    };
+    if !adjacent || glyph.entity_end.is_some() {
+        return Neighbour::Punctuation;
+    }
+    if glyph.ch.is_whitespace() {
+        Neighbour::Whitespace
+    } else if glyph.ch.is_alphanumeric() {
+        Neighbour::Other
+    } else {
+        Neighbour::Punctuation
+    }
+}
+
 fn emphasis_delimiters(glyphs: &[Glyph]) -> Vec<Delimiter> {
     let mut delimiters = Vec::new();
     let mut index = 0;
@@ -1339,30 +1372,29 @@ fn emphasis_delimiters(glyphs: &[Glyph]) -> Vec<Delimiter> {
         }
         let previous = index.checked_sub(1).and_then(|pos| glyphs.get(pos));
         let next = glyphs.get(end);
-        // Characters the projector removed (a tag marker, a math delimiter)
-        // still stood between these glyphs in the source. That makes them a
-        // neighbour of PUNCTUATION: never a letter, so no run is intraword
-        // across one, and never whitespace, so the delimiter still flanks.
         let previous_adjacent =
             previous.is_some_and(|item| authored_adjacent(item, &glyphs[index]));
         let next_adjacent = next.is_some_and(|item| authored_adjacent(&glyphs[end - 1], item));
-        // CommonMark judges flanking BEFORE decoding, so an entity's authored
-        // boundary is `&` or `;`: punctuation, whatever it decoded to. Reading
-        // its decoded `ch` would let `&Aopf;` pose as a letter and `&nbsp;` as
-        // a space.
-        let letter = |item: &Glyph| item.entity_end.is_none() && item.ch.is_alphanumeric();
-        let space = |item: &Glyph| item.entity_end.is_none() && item.ch.is_whitespace();
-        let letter_before = previous_adjacent && previous.is_some_and(letter);
-        let letter_after = next_adjacent && next.is_some_and(letter);
-        let intraword = glyph.ch == '_' && letter_before && letter_after;
-        let opens = next.is_some_and(|item| !next_adjacent || !space(item));
-        let closes = previous.is_some_and(|item| !previous_adjacent || !space(item));
+        let before = neighbour_class(previous, previous_adjacent);
+        let after = neighbour_class(next, next_adjacent);
+        let left_flanking = after != Neighbour::Whitespace
+            && (after != Neighbour::Punctuation || before != Neighbour::Other);
+        let right_flanking = before != Neighbour::Whitespace
+            && (before != Neighbour::Punctuation || after != Neighbour::Other);
+        let (can_open, can_close) = if glyph.ch == '_' {
+            (
+                left_flanking && (!right_flanking || before == Neighbour::Punctuation),
+                right_flanking && (!left_flanking || after == Neighbour::Punctuation),
+            )
+        } else {
+            (left_flanking, right_flanking)
+        };
         delimiters.push(Delimiter {
             start: index,
             len,
             marker: glyph.ch,
-            can_open: !intraword && opens,
-            can_close: !intraword && closes,
+            can_open,
+            can_close,
         });
         index = end;
     }
@@ -2287,6 +2319,139 @@ mod tests {
     /// standing on the side of the run that DECIDES: a delimiter flanks
     /// against a removed character as though against punctuation, never as
     /// though against nothing, so the run still opens and still closes.
+    /// The other half of the same rule, and the half that was missing
+    /// entirely: punctuation on the deciding side does NOT flank when the
+    /// run's opposite side is an ordinary letter. Same five families, both
+    /// directions, so neither half can be satisfied by breaking the other.
+    /// A KNOWN deviation, kept red on purpose rather than described in a
+    /// commit nobody re-reads. CommonMark's punctuation class is Unicode
+    /// general category P or S; `neighbour_class` approximates it as neither
+    /// alphanumeric nor whitespace, which wrongly captures category M. So a
+    /// decomposed `*café*s` (an IME, a filesystem normalization, a paste)
+    /// sees the combining acute as punctuation and refuses to close, where
+    /// CommonMark emphasizes. Closing it means a general-category table,
+    /// which is a dependency decision.
+    ///
+    /// The emoji rows are the same class, reached by an invisible character
+    /// keyboards and web pages insert on their own, and they also rule out
+    /// classifying by the grapheme's base: the base is U+2615 in both, while
+    /// CommonMark answers them differently.
+    #[test]
+    #[ignore = "needs a Unicode general-category table: a dependency decision"]
+    fn a_category_m_neighbour_is_ordinary_text_beside_a_delimiter() {
+        let mut wrong = Vec::new();
+        for (source, subject, italic, why) in [
+            (
+                "*cafe\u{301}*s",
+                'c',
+                true,
+                "the combining acute is category M, so the run closes against it",
+            ),
+            (
+                "\u{2615}_b_",
+                'b',
+                true,
+                "U+2615 is category S, so the underscore opens against it",
+            ),
+            (
+                "\u{2615}\u{fe0f}_b_",
+                'b',
+                false,
+                "U+FE0F is category M, so the same underscore does not",
+            ),
+        ] {
+            let runs = parse_inline(source);
+            let got = runs
+                .iter()
+                .filter(|run| run.text.contains(subject))
+                .all(|run| run.italic);
+            if got != italic {
+                wrong.push(format!("{why}: {runs:?}"));
+            }
+        }
+        assert!(wrong.is_empty(), "{wrong:#?}");
+    }
+
+    /// The deviation above costs exactly one position, and these rows are what
+    /// bounds it: a repair that reaches a combining mark must leave them
+    /// alone, and so must any future change to the approximation.
+    #[test]
+    fn an_accent_away_from_the_delimiter_leaves_the_run_alone() {
+        let mut wrong = Vec::new();
+        for (source, subject, where_it_sits) in [
+            (
+                "*caf\u{e9}*s",
+                'c',
+                "precomposed, so the neighbour is a letter",
+            ),
+            (
+                "*cafe\u{301} au lait*",
+                'c',
+                "decomposed, but not beside a marker",
+            ),
+            ("*H\u{e4}user*n", 'H', "decomposed, inside the run"),
+        ] {
+            let runs = parse_inline(source);
+            if !runs
+                .iter()
+                .filter(|run| run.text.contains(subject))
+                .all(|run| run.italic)
+            {
+                wrong.push(format!("{where_it_sits}: {runs:?}"));
+            }
+        }
+        assert!(wrong.is_empty(), "{wrong:#?}");
+    }
+
+    #[test]
+    fn punctuation_does_not_flank_against_a_letter_on_the_other_side() {
+        let mut misflanked = Vec::new();
+        for (source, subject, boundary) in [
+            ("a**$y$ tail**", "tail", "opening math delimiter"),
+            ("a**`c` tail**", "tail", "opening code delimiter"),
+            (
+                "a**<https://e.test> tail**",
+                "tail",
+                "opening autolink angle",
+            ),
+            ("a**[t](u) tail**", "tail", "opening link bracket"),
+            ("a**<sup>z</sup> tail**", "tail", "opening subset-tag angle"),
+            ("**head $y$**b", "head", "closing math delimiter"),
+            ("**head `c`**b", "head", "closing code delimiter"),
+            (
+                "**head <https://e.test>**b",
+                "head",
+                "closing autolink angle",
+            ),
+            ("**head [t](u)**b", "head", "closing link tail"),
+            ("**head <sup>z</sup>**b", "head", "closing subset-tag angle"),
+            (
+                "a**.tail**",
+                "tail",
+                "ordinary adjacent punctuation, opening",
+            ),
+            (
+                "**head.**b",
+                "head",
+                "ordinary adjacent punctuation, closing",
+            ),
+        ] {
+            let runs = parse_inline(source);
+            if runs
+                .iter()
+                .filter(|run| run.text.contains(subject))
+                .any(|run| run.bold)
+            {
+                misflanked.push(format!("{boundary} ({source}): {runs:?}"));
+            }
+        }
+        assert!(
+            misflanked.is_empty(),
+            "a punctuation neighbour flanks only when the run's other side is \
+             whitespace or punctuation too: {misflanked:#?}"
+        );
+    }
+
     #[test]
     fn every_removed_boundary_flanks_as_authored_punctuation() {
         let mut unflanked = Vec::new();
