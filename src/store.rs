@@ -2196,15 +2196,26 @@ mod tests {
         let Some(root) = std::env::var_os("ALIX_STORE_PATH_CHILD") else {
             return;
         };
-        let expected = PathBuf::from(root).join("alix");
-        assert_eq!(Some(expected.clone()), default_store_path());
+        let root = PathBuf::from(root);
+        let path = default_store_path().expect("the process yields a data path");
+        // The layout BETWEEN them is the platform's, not ours: macOS resolves
+        // a data home to `Library/Application Support`, so asserting
+        // `root/alix` would pass only on Linux.
+        assert!(
+            path.starts_with(&root),
+            "the configured data home roots the store path: {path:?} not under {root:?}"
+        );
+        assert!(
+            path.ends_with("alix"),
+            "and alix keeps its own directory there: {path:?}"
+        );
 
         let label = device_label().expect("the process data directory yields a device label");
         assert!(
             label.starts_with("alix-") && label.len() == 9,
             "generated label shape: {label:?}"
         );
-        assert!(expected.join("device").is_file());
+        assert!(path.join("device").is_file());
     }
 
     #[test]
