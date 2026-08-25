@@ -79,6 +79,8 @@ function longContentState({
 }: {
   answerLines: string[];
   choices?: string[] | null;
+  // Note UNITS: the builder wraps them in the one NoteDto the wire carries,
+  // so a wire-shape change lands here rather than in every caller.
   note?: Array<{ kind: string; text: string }>;
   citations?: Array<{
     locator: string;
@@ -102,7 +104,7 @@ function longContentState({
       back_runs: answerLines.map((text) => [{ text }]),
       back_units: answerLines.map((text) => ({ kind: "sentence", text })),
       reshaped: false,
-      note,
+      note: note.length === 0 ? [] : [{ units: note }],
       images: [],
       images_back: [],
       citations,

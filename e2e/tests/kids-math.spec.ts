@@ -98,11 +98,14 @@ test("kids keeps the content of a bare table note visible", async ({ page, reque
       choices: null,
       card: {
         ...reviewState.card,
+        // A table's note column opens no badge, which is the case under test.
         note: [{
-          kind: "table",
-          aligns: ["none", "none"],
-          header: [[{ text: "reason" }], [{ text: "detail" }]],
-          rows: [[[{ text: "mass" }], [{ text: "energy" }]]],
+          units: [{
+            kind: "table",
+            aligns: ["none", "none"],
+            header: [[{ text: "reason" }], [{ text: "detail" }]],
+            rows: [[[{ text: "mass" }], [{ text: "energy" }]]],
+          }],
         }],
       },
     });
