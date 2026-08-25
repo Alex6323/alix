@@ -42,6 +42,10 @@ Rules that hold whatever the shape:
   required; a blockquote without one is a quotation and belongs to the answer.
 - A choice card's note names the option's claim or mistaken premise, never
   its number, letter, or screen position. Options shuffle between appearances.
+- Every `<!-- ... -->` line trails its card: it goes below the card's
+  last content line. Nothing belonging to the card may follow a
+  directive, so never place one above an answer line, an option list,
+  or a table.
 - One idea per card. Split compound facts rather than nesting them.
 - No two cards may test the same fact. Vary what is asked; do not
   rephrase.
