@@ -1272,6 +1272,10 @@ test("a gated sub-card's cell is outlined, not filled, and its parent's is not",
   await adultDeckRow(page, "gated").click(); // focuses the row -> opens the drawer
 
   const drawer = page.locator(".deckrow:focus + .drawer-wrap .drawer");
+  // Assert the drawer itself first: without this, a lost focus resolves the
+  // locator to zero and the crumb-cell count below reports "0, expected 2",
+  // which names the wrong cause.
+  await expect(drawer).toHaveCount(1);
   await expect(drawer.locator(".crumb-cell")).toHaveCount(2);
   // Neither card has been reviewed, so both are `unseen`. Locked is a
   // SEPARATE axis: the sub-card waits on its parent graduating, and folding
