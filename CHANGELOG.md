@@ -358,9 +358,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   format augmentation now has its own input fingerprint over the question,
   the answer, and the ordered note stack, so a note-only edit makes the
   reshape stale and it regenerates. Scheduling identity is untouched, so no
-  other augmentation is invalidated. The cached field is renamed
-  (`format_fp` becomes `format_input_fp`), so an augmentation document
-  written before this release no longer loads. Codex found this.
+  other augmentation is invalidated, and a reshape cached before this release
+  simply misses and regenerates on demand. Codex found this.
 
 - A card carries several notes rather than one. A second badged
   blockquote used to be swallowed into the first note's body, with the

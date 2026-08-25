@@ -60,7 +60,7 @@ pub struct Augmentation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keypoints_fp: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub format_input_fp: Option<u64>,
+    pub format_fp: Option<u64>,
 }
 
 impl Augmentation {
@@ -745,14 +745,14 @@ impl AugmentCache {
     pub fn format(&self, card_id: &str, fingerprint: u64) -> Option<&Format> {
         self.cards
             .get(card_id)
-            .filter(|aug| aug.format_input_fp == Some(fingerprint))
+            .filter(|aug| aug.format_fp == Some(fingerprint))
             .and_then(|aug| aug.format.as_ref())
     }
 
     pub fn set_format(&mut self, card_id: &str, format: Format, fingerprint: u64) {
         let aug = self.cards.entry(card_id.to_string()).or_default();
         aug.format = Some(format);
-        aug.format_input_fp = Some(fingerprint);
+        aug.format_fp = Some(fingerprint);
     }
 
     pub fn variants(&self, card_id: &str, fingerprint: u64) -> Option<&[String]> {
