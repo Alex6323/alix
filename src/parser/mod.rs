@@ -3338,6 +3338,7 @@ fn build_card_inner(
             }
         }
         card.block_holes = block_holes.clone();
+        card.citations = directives.citations.clone();
         card.images = images.clone();
         card.images_back = images_back.clone();
         card.span_regions = span_regions.clone();
@@ -5381,6 +5382,29 @@ a
             choices.cards[0].authored_distractors,
             "a choices invocation below its task list maps the card"
         );
+    }
+
+    /// The block's locator belongs to every card the block produces. A cloze
+    /// block produces one card per hole, and each is a review card an author
+    /// flips to its source on reveal.
+    #[test]
+    fn every_cloze_card_carries_the_blocks_source_citation() {
+        let deck = parse(
+            "## Complete the sentence\nThe owner is \\blank{dropped} at \\blank{scope} end.\n\
+             <!-- at: src/lib.rs:3-4 -->\n> [!NOTE]\n> deterministic cleanup\n",
+        );
+        assert_eq!(2, deck.cards.len(), "one card per hole: {deck:?}");
+        for card in &deck.cards {
+            assert_eq!(
+                vec!["src/lib.rs:3-4"],
+                card.citations
+                    .iter()
+                    .map(|citation| citation.locator.as_str())
+                    .collect::<Vec<_>>(),
+                "hole {:?} keeps the block's locator: {card:?}",
+                card.hole
+            );
+        }
     }
 
     #[test]

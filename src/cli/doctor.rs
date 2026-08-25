@@ -503,8 +503,16 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
     }
     if source_assets_valid {
         let base = SourceBase::for_deck(deck);
+        // One authored `at:` line serves every card its block produced (a
+        // table's rows, a cloze block's holes), so the report is per citation,
+        // not per card.
+        let mut reported = std::collections::HashSet::new();
         for card in &deck.cards {
             for citation in &card.citations {
+                if !reported.insert((card.line, citation.locator.as_str())) {
+                    continue;
+                }
+
                 let detail = match base.inspect_citation(citation) {
                     Ok(CitationIntegrity::Current(_)) => None,
                     Ok(CitationIntegrity::Unfingerprinted { .. }) => Some(
@@ -2039,6 +2047,35 @@ mod tests {
             truncated: false,
         };
         alix::source::format_locator_fingerprint(alix::source::excerpt_fingerprint(&excerpt))
+    }
+
+    #[test]
+    fn one_authored_locator_is_diagnosed_once_however_many_cards_it_serves() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "source.txt", "first\nsecond\n");
+        w(
+            dir.path(),
+            "cloze.md",
+            "---\nformat-version: 1\nid: deck-cloze\nsource: .\n---\n\
+             ## q\nthe \\blank{first} and the \\blank{second}\n\
+             <!-- at: source.txt:1-2 -->\n<!-- id: card-q -->\n",
+        );
+        let deck = Deck::load(dir.path().join("cloze.md")).unwrap();
+        assert_eq!(2, deck.cards.len(), "one card per hole: {deck:?}");
+
+        let mut report = Report::default();
+        deck_resource_findings(&deck, &mut report);
+
+        let citation_warnings = report
+            .warnings
+            .iter()
+            .filter(|warning| warning.contains("at: source.txt:1-2"))
+            .count();
+        assert_eq!(
+            1, citation_warnings,
+            "two cards share one authored `at:` line, so it is reported once: {:#?}",
+            report.warnings
+        );
     }
 
     #[test]
