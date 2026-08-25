@@ -35,8 +35,7 @@ pub fn without_notes(text: &str) -> String {
         if marker_target(trim_ws(line)).is_none() {
             continue;
         }
-        dropped[index] = true;
-        dropped[index + 1..quoted_run_end(&lines, index)].fill(true);
+        dropped[index..quoted_run_end(&lines, index)].fill(true);
         // A label the reader wrote above their own note; alix never writes one.
         if index > 0
             && super::heading_depth(trim_ws(lines[index - 1]))

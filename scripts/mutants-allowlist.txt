@@ -118,14 +118,6 @@ src/cli/launch.rs: replace local_lan_ip -> Option<std::net::IpAddr> with None
 # of the dotfile rule.
 src/paired.rs:286: replace || with && in check_entry_name
 
-# EQUIVALENT, provably. The line above already sets `dropped[index]`, and
-# `quoted_run_end` starts its scan at `marker + 1` and only grows, so it
-# never returns less than `index + 1`. The mutant widens the fill by the
-# one element that is already `true`; every other element is untouched.
-# Output is identical for every input. Line-pinned because the marker
-# scan holds other arithmetic.
-src/parser/sidecar.rs:39: replace + with * in without_notes
-
 # UNOBSERVABLE. `RawTable` is created only when `invocation_below` finds a
 # Cards invocation in its contiguous trailing zone. Every row overwrites
 # `end_line` at 1795, and every trailing machinery comment overwrites it at
