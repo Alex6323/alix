@@ -99,7 +99,7 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
              `| --- | --- | --- |`, then one row per pair, then `<!-- cards -->` on the \
              line DIRECTLY below the last row, with no blank line between. Omit the note \
              column when it is unused. A card table's note is that column: a \
-             `> [!NOTE]` blockquote below a table does not parse.\n\
+             blockquote below a table does not parse.\n\
              - For ordered steps, write one step per answer line and put `<!-- reveal: line -->` below the \
              last answer line.\n\
              - For a card needed in both directions, put `<!-- direction: both -->` after \
@@ -154,10 +154,10 @@ belongs to the answer, so never write a bare `> ` note.
 content line, with NO blank line between them, and never above an answer line, \
 an option list, or a table.
 - An invocation binds the block directly above it, so it sits on the line \
-immediately below the last option or row. `<!-- choices-single -->` takes a \
-`> [!NOTE]` note after it. `<!-- cards -->` takes card directives after it, an \
-`at:` locator or a reveal mode, but never a blockquote: a card table's note is \
-its note column.
+immediately below the last option or row. \
+`<!-- cards -->` takes card directives after it, an `at:` locator or a reveal \
+mode, but never a blockquote: a card table's note is its note column. \
+`<!-- choices-single -->` takes a `> [!NOTE]` note after it.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
@@ -237,10 +237,10 @@ source on reveal. Omit it for a card that synthesizes across several places.
 content line, with NO blank line between them, and never above an answer line, \
 an option list, or a table.
 - An invocation binds the block directly above it, so it sits on the line \
-immediately below the last option or row. `<!-- choices-single -->` takes a \
-`> [!NOTE]` note after it. `<!-- cards -->` takes card directives after it, an \
-`at:` locator or a reveal mode, but never a blockquote: a card table's note is \
-its note column.
+immediately below the last option or row. \
+`<!-- cards -->` takes card directives after it, an `at:` locator or a reveal \
+mode, but never a blockquote: a card table's note is its note column. \
+`<!-- choices-single -->` takes a `> [!NOTE]` note after it.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
@@ -858,44 +858,118 @@ mod tests {
         }
     }
 
-    /// Every SENTENCE naming the table invocation, wrapping normalized away.
-    /// A rule-sized window is too coarse: a correct exception and a
-    /// contradicting paragraph cancel each other inside the check without
-    /// cancelling each other for a model reading the prompt.
-    fn table_invocation_sentences(text: &str) -> Vec<String> {
-        text.split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-            .split(". ")
-            .filter(|sentence| sentence.contains("<!-- cards -->"))
-            .map(str::to_owned)
+    const TABLE_INVOCATION: &str = "<!-- cards -->";
+    const CHOICE_INVOCATION: &str = "<!-- choices-single -->";
+    /// How far a reader carries an instruction's subject, in characters. A
+    /// tuning knob and named as one: there is no structural boundary in prose
+    /// that answers "is this sentence still about the table invocation".
+    const SUBJECT_REACH: usize = 120;
+
+    fn occurrences(chars: &[char], needle: &str) -> Vec<usize> {
+        let needle: Vec<char> = needle.chars().collect();
+        chars
+            .windows(needle.len())
+            .enumerate()
+            .filter(|(_, window)| *window == needle.as_slice())
+            .map(|(at, _)| at)
             .collect()
     }
 
-    /// The detector's own red-first contract: a correct table sentence beside
-    /// a contradicting one, where a rule-sized check reports nothing.
-    #[test]
-    fn the_table_sentence_detector_is_not_silenced_by_a_correct_neighbour() {
-        let text = "- An invocation binds the block above it. \
-                    `<!-- cards -->` takes card directives after it but never a \
-                    blockquote: a card table's note is its note column.\n\
-                    - A separate paragraph says `<!-- cards -->` takes a \
-                    `> [!NOTE]` blockquote.\n";
-        let flagged: Vec<_> = table_invocation_sentences(text)
-            .into_iter()
-            .filter(|sentence| sentence.contains("[!NOTE]"))
+    /// The text around each table-invocation mention: within reach, and never
+    /// across another invocation, since that is where a reader starts
+    /// attributing the instruction to a different subject.
+    ///
+    /// Two weaker units were defeated in turn. A rule-sized window let one
+    /// legal exception phrase immunize every contradiction sharing the rule.
+    /// A sentence-sized window let a two-sentence table cell put the subject
+    /// in one sentence and the forbidden tail in the next. This one carries no
+    /// exception phrase at all, which is why the prohibition is worded without
+    /// naming a badge: a badge NEAR the table invocation is the defect,
+    /// whether the sentence grants or forbids.
+    fn table_invocation_windows(text: &str) -> Vec<String> {
+        let chars: Vec<char> = text
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
             .collect();
-        assert_eq!(
-            1,
-            flagged.len(),
-            "exactly the contradicting sentence is caught, and the correct one \
-             beside it neither hides it nor is flagged itself: {flagged:#?}"
+        let tables = occurrences(&chars, TABLE_INVOCATION);
+        let mut subjects = tables.clone();
+        subjects.extend(occurrences(&chars, CHOICE_INVOCATION));
+        tables
+            .iter()
+            .map(|at| {
+                let end = at + TABLE_INVOCATION.chars().count();
+                let start = subjects
+                    .iter()
+                    .filter(|other| **other < *at)
+                    .max()
+                    .map_or(0, |other| other + TABLE_INVOCATION.chars().count())
+                    .max(at.saturating_sub(SUBJECT_REACH));
+                let stop = subjects
+                    .iter()
+                    .filter(|other| **other > *at)
+                    .min()
+                    .copied()
+                    .unwrap_or(chars.len())
+                    .min(end + SUBJECT_REACH)
+                    .min(chars.len());
+                chars[start.min(*at)..stop.max(end)].iter().collect()
+            })
+            .collect()
+    }
+
+    /// The detector's own red-first contract, one row per unit that defeated
+    /// an earlier version of it.
+    #[test]
+    fn the_table_detector_survives_every_shape_that_defeated_an_earlier_one() {
+        for (shape, text) in [
+            (
+                "a contradiction sharing a rule with the correct exception",
+                "- `<!-- cards -->` takes card directives but never a blockquote: \
+                 its note is its note column. A separate paragraph says \
+                 `<!-- cards -->` takes a `> [!NOTE]` blockquote.",
+            ),
+            (
+                "a table cell splitting subject and tail across two sentences",
+                "| A table with extra context. | Close it with `<!-- cards -->`. \
+                 Use a `> [!NOTE]` blockquote after the invocation. | judgement |",
+            ),
+            (
+                "the tail stated before its subject",
+                "| Put a `> [!NOTE]` blockquote after `<!-- cards -->`. |",
+            ),
+        ] {
+            assert!(
+                table_invocation_windows(text)
+                    .iter()
+                    .any(|window| window.contains("[!NOTE]")),
+                "{shape} must be caught: {:#?}",
+                table_invocation_windows(text)
+            );
+        }
+
+        let correct = "- An invocation binds the block above it. `<!-- cards -->` takes \
+                       card directives after it but never a blockquote: a card table's \
+                       note is its note column. `<!-- choices-single -->` takes a \
+                       `> [!NOTE]` note after it.";
+        assert!(
+            table_invocation_windows(correct)
+                .iter()
+                .all(|window| !window.contains("[!NOTE]")),
+            "and the correct wording is not flagged, or the law cannot be satisfied: {:#?}",
+            table_invocation_windows(correct)
         );
     }
 
     /// The exception is worth nothing while another live rule grants the note
-    /// it forbids, and it can be stated once while the contradiction survives
+    /// it forbids, and it can be stated once while a contradiction survives
     /// elsewhere. So this sweeps every surface a generator reads.
+    ///
+    /// It is a text law over prose, which is a weak instrument by nature:
+    /// three versions of it have been defeated by a shape nobody thought of.
+    /// `make shape-eval` is the instrument that actually asks whether the
+    /// guide steers the generator.
     #[test]
     fn no_live_rule_offers_a_card_table_the_note_its_grammar_refuses() {
         let mut conflicts = Vec::new();
@@ -913,16 +987,16 @@ mod tests {
                 build_prompt("src/lib.rs", false, &cfg(12), &spec()),
             ),
         ] {
-            for sentence in table_invocation_sentences(&text) {
-                if sentence.contains("[!NOTE]") {
-                    conflicts.push(format!("{surface}: {sentence}"));
+            for window in table_invocation_windows(&text) {
+                if window.contains("[!NOTE]") {
+                    conflicts.push(format!("{surface}: {window}"));
                 }
             }
         }
         assert!(
             conflicts.is_empty(),
-            "a sentence pairs `<!-- cards -->` with a blockquote note, so a model \
-             can obey it and write a deck that cannot open: {conflicts:#?}"
+            "a badge is named beside the table invocation, so a model can read it \
+             as permission and write a deck that cannot open: {conflicts:#?}"
         );
     }
 

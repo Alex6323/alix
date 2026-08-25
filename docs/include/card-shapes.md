@@ -48,10 +48,10 @@ Rules that hold whatever the shape:
   card's last content line, with no blank line between them, and never
   above an answer line, an option list, or a table.
 - An invocation binds the block directly above it, so it sits on the line
-  immediately below the last option or row. `<!-- choices-single -->` takes
-  a `> [!NOTE]` note after it. `<!-- cards -->` takes card directives after
-  it, an `at:` locator or a reveal mode, but never a blockquote: a card
-  table's note is its note column.
+  immediately below the last option or row. `<!-- cards -->` takes card
+  directives after it, an `at:` locator or a reveal mode, but never a
+  blockquote: a card table's note is its note column. `<!-- choices-single -->`
+  takes a `> [!NOTE]` note after it.
 - One idea per card. Split compound facts rather than nesting them.
 - No two cards may test the same fact. Vary what is asked; do not
   rephrase.
