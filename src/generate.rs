@@ -1011,16 +1011,18 @@ mod tests {
         }
     }
 
-    /// The exception is worth nothing while another live rule grants the note
-    /// it forbids, and it can be stated once while a contradiction survives
-    /// elsewhere. So this sweeps every surface a generator reads.
+    /// Advisory, not a sweep. It reads every surface a generator reads, but a
+    /// character window cannot attribute prose to a subject, and five versions
+    /// of it have now been defeated. What it still buys is the cheap case: a
+    /// badge written next to the table invocation, which is how the
+    /// contradiction has actually appeared each time.
     ///
-    /// It is a text law over prose, which is a weak instrument by nature:
-    /// three versions of it have been defeated by a shape nobody thought of.
-    /// `make shape-eval` is the instrument that actually asks whether the
-    /// guide steers the generator.
+    /// `make shape-eval` is the instrument that asks whether the guide steers
+    /// the generator. Replacing this scanner with one structured source for
+    /// the invocation rules, rendered into the docs and both prompts, is the
+    /// open item.
     #[test]
-    fn no_live_rule_offers_a_card_table_the_note_its_grammar_refuses() {
+    fn no_live_rule_names_a_badge_within_reach_of_the_table_invocation() {
         let mut conflicts = Vec::new();
         for (surface, text) in [
             (
@@ -1047,6 +1049,46 @@ mod tests {
             "a badge is named beside the table invocation, so a model can read it \
              as permission and write a deck that cannot open: {conflicts:#?}"
         );
+    }
+
+    /// What the window does NOT see, each shape verified against the detector
+    /// it is recorded under. Codex found all three. Kept executable and
+    /// ignored so a structural replacement has a target to turn green.
+    #[test]
+    #[ignore = "a character window cannot attribute prose: `make shape-eval` is the instrument"]
+    fn a_badge_attributed_to_the_table_beyond_the_window_is_missed() {
+        for (shape, text) in [
+            (
+                "a long table cell, the badge past the forward reach",
+                "| A table with supplemental context. | Close it with \
+                 `<!-- cards -->` and keep the required locator, reveal mode, \
+                 compact wording, stable row order, learner-facing terminology, \
+                 and every other directive directly beneath the invocation. Then \
+                 put a `> [!NOTE]` blockquote after it. | judgement |",
+            ),
+            (
+                "prose that re-attributes the subject after a long explanation",
+                "Close the table with `<!-- cards -->`. Its rows may span several \
+                 topics, use three columns, carry citations, and need a detailed \
+                 explanation of why the directive order matters. The same table is \
+                 still the subject: put a `> [!NOTE]` blockquote after that \
+                 invocation.",
+            ),
+            (
+                "one rule quantifying over both invocations",
+                "`<!-- cards -->` closes a table; `<!-- choices-single -->` closes \
+                 an option list. Either invocation may take a `> [!NOTE]` \
+                 blockquote after it.",
+            ),
+        ] {
+            assert!(
+                table_invocation_windows(text)
+                    .iter()
+                    .any(|window| window.contains("[!NOTE]")),
+                "{shape} is not seen: {:#?}",
+                table_invocation_windows(text)
+            );
+        }
     }
 
     /// The narrow half of the same rule: a table invocation must keep the
