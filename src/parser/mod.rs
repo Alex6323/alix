@@ -683,7 +683,7 @@ struct RawCard {
     /// binding, which first-answer-content would misplace for a directive
     /// sitting between the divider and the first content line.
     divider_line: Option<usize>,
-    note: Option<String>,
+    notes: Vec<Note>,
     directives: CardDirectives,
     mapping: Option<Mapping>,
     /// What opened this card's trailing machinery run; content arriving
@@ -695,7 +695,9 @@ struct RawCard {
     /// The same rule for the note stream: a `> $$` opener, tracked on the
     /// stripped note text.
     open_note_math: Option<usize>,
-    note_badge: Option<Badge>,
+    /// The badge of the note run being scanned, until a body line opens the
+    /// note it belongs to.
+    pending_badge: Option<Badge>,
 }
 
 /// What opened a card's trailing machinery run, and where.
@@ -1109,7 +1111,7 @@ fn scan(
                 && card.depth > 2
                 && card.front_extra.is_empty()
                 && card.back.is_empty()
-                && card.note.is_none()
+                && card.notes.is_empty()
                 && !card.divided
             {
                 return Err(ParseError::SubCardTableTitle(card.line));
@@ -1117,7 +1119,7 @@ fn scan(
             if let Some(card) = take_card(&mut current)? {
                 if card.front_extra.is_empty()
                     && card.back.is_empty()
-                    && card.note.is_none()
+                    && card.notes.is_empty()
                     && !card.divided
                 {
                     card.machinery_stays_trailing()?;
@@ -1226,13 +1228,13 @@ fn scan(
                 back: Vec::new(),
                 divided: false,
                 divider_line: None,
-                note: None,
+                notes: Vec::new(),
                 directives,
                 mapping: None,
                 machinery: None,
                 open_math: None,
                 open_note_math: None,
-                note_badge: None,
+                pending_badge: None,
             });
             prev_blank = false;
             prev_heading = true;
@@ -1350,7 +1352,7 @@ fn scan(
                     // quote, which is answer content and reveals with it.
                     let run = run_above.unwrap_or_else(|| match Badge::parse(trim_ws(text)) {
                         Some(badge) => {
-                            card.note_badge = Some(badge);
+                            card.pending_badge = Some(badge);
                             QuoteRun::Note
                         }
                         None => {
@@ -2335,12 +2337,19 @@ fn note_run_is_empty(lines: &[&str], from: usize) -> bool {
 }
 
 fn append_note(card: &mut RawCard, text: &str) {
-    match &mut card.note {
+    if let Some(badge) = card.pending_badge.take() {
+        card.notes.push(Note {
+            badge: Some(badge),
+            body: text.to_string(),
+        });
+        return;
+    }
+    match card.notes.last_mut() {
         Some(note) => {
-            note.push('\n');
-            note.push_str(text);
+            note.body.push('\n');
+            note.body.push_str(text);
         }
-        slot => *slot = Some(text.to_string()),
+        None => card.notes.push(Note::bare(text.to_string())),
     }
 }
 
@@ -2607,10 +2616,6 @@ fn build_card(
     out
 }
 
-fn card_notes(body: Option<String>, badge: Option<Badge>) -> Vec<Note> {
-    Vec::from_iter(body.map(|body| Note { badge, body }))
-}
-
 fn build_card_inner(
     subject: &Arc<str>,
     deck_id: &Arc<str>,
@@ -2631,13 +2636,13 @@ fn build_card_inner(
         back,
         divided,
         divider_line,
-        note,
+        notes,
         directives,
         mapping,
         machinery: _,
         open_math: _,
         open_note_math: _,
-        note_badge,
+        pending_badge: _,
     } = raw;
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
     {
@@ -2957,7 +2962,10 @@ fn build_card_inner(
             });
         }
         let checked_count = options.iter().filter(|(checked, _)| *checked).count();
-        if note.as_deref().is_some_and(choice::note_names_position) {
+        if notes
+            .iter()
+            .any(|note| choice::note_names_position(&note.body))
+        {
             lints.push(Lint {
                 line: choice_line,
                 kind: LintKind::ChoiceNoteNamesPosition,
@@ -3001,13 +3009,7 @@ fn build_card_inner(
                 }
             }
         }
-        let mut card = Card::plain(
-            Arc::clone(subject),
-            front,
-            correct,
-            card_notes(note, note_badge),
-            line,
-        );
+        let mut card = Card::plain(Arc::clone(subject), front, correct, notes, line);
         card.deck_id = Arc::clone(deck_id);
         card.token = directives.token.as_deref().map(Arc::from);
         card.images = images;
@@ -3042,6 +3044,13 @@ fn build_card_inner(
             let after = note_lower[at + hit.len()..].chars().next();
             !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
         })
+    }
+
+    /// One authored note after its hole-addressed lines are separated out.
+    struct SplitNote {
+        badge: Option<Badge>,
+        block: Option<String>,
+        addressed: Vec<(String, bool, String)>,
     }
 
     /// A `>` line addressed to one hole of this block: `name: text` replaces
@@ -3170,13 +3179,7 @@ fn build_card_inner(
             .filter(|segments| !image_only(segments))
             .map(|segments| seg_display(segments))
             .collect();
-        let mut card = Card::plain(
-            Arc::clone(subject),
-            front,
-            back_lines,
-            card_notes(note, note_badge),
-            line,
-        );
+        let mut card = Card::plain(Arc::clone(subject), front, back_lines, notes, line);
         card.deck_id = Arc::clone(deck_id);
         card.token = directives.token.as_deref().map(Arc::from);
         card.reveal = directives.reveal;
@@ -3217,18 +3220,36 @@ fn build_card_inner(
             kind: LintKind::RevealOnCloze,
         });
     }
-    let (block_note, addressed) = split_note(note.as_deref(), &named, line, lints);
-    let hole_notes: Vec<Option<String>> = groups
+    let split: Vec<SplitNote> = notes
         .iter()
-        .map(|group| resolve_note(block_note.as_deref(), &addressed, holes[group[0]].name))
+        .map(|note| {
+            let (block, addressed) = split_note(Some(note.body.as_str()), &named, line, lints);
+            SplitNote {
+                badge: note.badge,
+                block,
+                addressed,
+            }
+        })
+        .collect();
+    let hole_notes: Vec<Vec<Note>> = groups
+        .iter()
+        .map(|group| {
+            let name = holes[group[0]].name;
+            split
+                .iter()
+                .filter_map(|note| {
+                    resolve_note(note.block.as_deref(), &note.addressed, name).map(|body| Note {
+                        badge: note.badge,
+                        body,
+                    })
+                })
+                .collect()
+        })
         .collect();
     for (n, group) in groups.iter().enumerate() {
         for hole in group.iter().map(|h| &holes[*h]) {
-            let shown_elsewhere = hole_notes.iter().enumerate().any(|(other, note)| {
-                other != n
-                    && note
-                        .as_deref()
-                        .is_some_and(|note| names_answer(note, hole.text))
+            let shown_elsewhere = hole_notes.iter().enumerate().any(|(other, notes)| {
+                other != n && notes.iter().any(|note| names_answer(&note.body, hole.text))
             });
             if shown_elsewhere {
                 lints.push(Lint {
@@ -3309,7 +3330,7 @@ fn build_card_inner(
             Arc::clone(subject),
             front.clone(),
             asked.iter().map(|hole| hole.text.to_string()).collect(),
-            card_notes(hole_notes[n].clone(), note_badge),
+            hole_notes[n].clone(),
             line,
         );
         card.deck_id = Arc::clone(deck_id);
@@ -5645,6 +5666,41 @@ a
                     if word == "choices-single"
             ),
             "the fence is the directly preceding block, so the older task list cannot bind: {error:?}"
+        );
+    }
+
+    #[test]
+    fn each_badged_blockquote_run_is_its_own_note() {
+        let deck =
+            parse("## Q\nanswer\n> [!NOTE]\n> first\n> still first\n\n> [!WARNING]\n> second\n");
+
+        assert_eq!(
+            vec![
+                Note {
+                    badge: Some(Badge::Note),
+                    body: "first\nstill first".to_string(),
+                },
+                Note {
+                    badge: Some(Badge::Warning),
+                    body: "second".to_string(),
+                },
+            ],
+            deck.cards[0].notes,
+            "a blank line ends a note run, and the next badge opens another"
+        );
+    }
+
+    #[test]
+    fn a_badge_line_inside_an_open_note_run_is_body_text() {
+        let deck = parse("## Q\nanswer\n> [!NOTE]\n> first\n> [!WARNING]\n> still first\n");
+
+        assert_eq!(
+            vec![Note {
+                badge: Some(Badge::Note),
+                body: "first\n[!WARNING]\nstill first".to_string(),
+            }],
+            deck.cards[0].notes,
+            "a badge opens a note only at the start of a run, as GitHub reads it"
         );
     }
 

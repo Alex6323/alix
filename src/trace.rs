@@ -100,7 +100,7 @@ impl Trace {
                     prompt: c.front.clone(),
                     points: c.back.clone(),
                     givens: c.givens.clone(),
-                    note: c.first_note().map(|note| note.body.clone()),
+                    note: c.notes_text(),
                     locator: citation.map(|citation| citation.locator.clone()),
                     fingerprint: citation.and_then(|citation| citation.fingerprint),
                     asset: citation.and_then(|citation| citation.asset.clone()),

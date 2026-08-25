@@ -367,31 +367,26 @@ impl Card {
         ))
     }
 
-    /// The readers that still take a single note. Deleting this method is how
-    /// the change that lets notes stack enumerates every one of them.
-    pub fn first_note(&self) -> Option<&Note> {
-        self.notes.first()
+    /// Every note's body as one block, for the payloads that carry a card as
+    /// plain text.
+    pub fn notes_text(&self) -> Option<String> {
+        let bodies: Vec<&str> = self.notes.iter().map(|note| note.body.as_str()).collect();
+        (!bodies.is_empty()).then(|| bodies.join("\n\n"))
     }
 
+    /// A note alix adds rather than the author: it stands beside theirs
+    /// instead of joining a block their badge speaks for.
     pub fn append_note(&mut self, notes: &[String]) {
         if notes.is_empty() {
             return;
         }
-        let addition = notes.join("\n");
-        match self.notes.last_mut() {
-            Some(note) => {
-                note.body.push('\n');
-                note.body.push_str(&addition);
-            }
-            None => self.notes.push(Note::bare(addition)),
-        }
+        self.notes.push(Note::bare(notes.join("\n")));
     }
 }
 
 #[cfg(test)]
 impl Card {
-    /// Panics on a second note rather than reading past it, so a change that
-    /// lets notes stack has to revisit every caller.
+    /// Panics on a second note, so a test meaning "the only note" says so.
     pub(crate) fn only_note(&self) -> Option<&str> {
         match self.notes.as_slice() {
             [] => None,
@@ -540,18 +535,24 @@ mod tests {
     }
 
     #[test]
-    fn append_note_creates_then_joins_with_newlines() {
+    fn append_note_stacks_one_note_per_call() {
         let mut c = card("d.md", "front", &["back"], None);
         c.append_note(&[]);
-        assert_eq!(None, c.only_note());
+        assert!(c.notes.is_empty(), "nothing to append adds no note");
         c.append_note(&["first".to_string()]);
-        assert_eq!(Some("first"), c.only_note());
         c.append_note(&["second".to_string(), "third".to_string()]);
-        assert_eq!(Some("first\nsecond\nthird"), c.only_note());
+        assert_eq!(
+            vec![
+                Note::bare("first".to_string()),
+                Note::bare("second\nthird".to_string()),
+            ],
+            c.notes,
+            "each call adds one bare note, and the lines of one call join"
+        );
     }
 
     #[test]
-    fn an_appended_note_joins_the_badged_one_and_leaves_its_badge_alone() {
+    fn an_appended_note_stands_beside_the_badged_one() {
         let mut c = card("d.md", "front", &["back"], None);
         c.notes.push(Note {
             badge: Some(Badge::Warning),
@@ -559,37 +560,36 @@ mod tests {
         });
         c.append_note(&["from the sidecar".to_string()]);
         assert_eq!(
-            vec![Note {
-                badge: Some(Badge::Warning),
-                body: "authored\nfrom the sidecar".to_string()
-            }],
+            vec![
+                Note {
+                    badge: Some(Badge::Warning),
+                    body: "authored".to_string(),
+                },
+                Note::bare("from the sidecar".to_string()),
+            ],
             c.notes,
-            "an appended note joins the authored one rather than stacking beside it"
+            "an appended note stands beside the authored one rather than joining a \
+             block its badge speaks for"
         );
     }
 
     #[test]
-    fn every_single_note_reader_takes_the_first_of_several() {
+    fn every_note_reaches_the_text_payloads_and_the_projection() {
         let mut c = card("d.md", "front", &["back"], Some("first"));
         c.notes.push(Note {
             badge: Some(Badge::Caution),
             body: "second".to_string(),
         });
         assert_eq!(
-            Some("first"),
-            c.first_note().map(|note| note.body.as_str()),
-            "the readers that still take one note take the first"
+            Some("first\n\nsecond".to_string()),
+            c.notes_text(),
+            "a card carried as plain text carries every note, blank line between"
         );
+        let views = crate::render::note_views(&c);
         assert_eq!(
-            vec![crate::render::NoteUnit::Sentence {
-                text: "first".to_string(),
-                runs: vec![crate::inline::InlineRun {
-                    text: "first".to_string(),
-                    ..Default::default()
-                }],
-            }],
-            crate::render::note_views(&c)[0].units,
-            "the display projection is the first note's, and the second shows nowhere"
+            vec![None, Some(Badge::Caution)],
+            views.iter().map(|view| view.badge).collect::<Vec<_>>(),
+            "the projection is one view per note, each with its own badge"
         );
     }
 

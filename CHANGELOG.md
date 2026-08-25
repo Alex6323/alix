@@ -351,6 +351,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A card carries several notes rather than one. A second badged
+  blockquote used to be swallowed into the first note's body, with the
+  last badge silently winning; each badged run is now its own note, in
+  authored order, and every client renders one block per note. A badge
+  line only opens a note at the start of a blockquote run, so a
+  `> [!WARNING]` inside an open note stays body text, matching how
+  GitHub reads alerts. A note alix adds rather than the author (an AI
+  augmentation, a personal sidecar note) now stands beside the authored
+  note as its own unbadged block instead of joining the author's, where
+  it would have read as part of whatever their badge was saying. An
+  AI-reshaped note replaces the whole stack, keeping the badge only when
+  there was exactly one note to reshape.
+
 - A card's note carries its GitHub alert badge to every client.
   `CardDto.note` is now a list of note objects (`{badge, units}`) rather
   than a flat list of display units, so a `> [!WARNING]` and a `> [!NOTE]`

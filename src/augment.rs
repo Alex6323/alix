@@ -1084,10 +1084,17 @@ impl AugmentCache {
             card.front = front.clone();
         }
         if let Some(note) = &fmt.note {
-            match card.notes.first_mut() {
-                Some(first) => first.body = note.clone(),
-                None => card.notes.push(crate::card::Note::bare(note.clone())),
-            }
+            // The reshape is of every note flattened, so it replaces the
+            // stack; several notes cannot keep a badge without attributing one
+            // author's badge to another's text.
+            let badge = match card.notes.as_slice() {
+                [only] => only.badge,
+                _ => None,
+            };
+            card.notes = vec![crate::card::Note {
+                badge,
+                body: note.clone(),
+            }];
         }
         if !fmt.back.is_empty() {
             card.display_back = Some(fmt.back.clone());
@@ -1218,7 +1225,7 @@ impl WarmItem {
             id: card.id().unwrap_or_default(),
             question: card.front.clone(),
             answer: card.back.join("\n"),
-            note: card.first_note().map(|note| note.body.clone()),
+            note: card.notes_text(),
         }
     }
 }
@@ -2256,6 +2263,45 @@ mod tests {
             }],
             card.notes,
             "a reshaped note replaces the body of the one note and never stacks beside it"
+        );
+    }
+
+    #[test]
+    fn a_formatted_note_replaces_a_stack_of_notes_and_carries_no_badge() {
+        use std::sync::Arc;
+        let mut card = Card::plain(
+            Arc::from("d.md"),
+            "f".into(),
+            vec!["a".into()],
+            vec![
+                crate::card::Note {
+                    badge: Some(crate::card::Badge::Warning),
+                    body: "first".to_string(),
+                },
+                crate::card::Note {
+                    badge: Some(crate::card::Badge::Tip),
+                    body: "second".to_string(),
+                },
+            ],
+            1,
+        );
+        card.token = Some(Arc::from("qfmt4"));
+        let id = cid(&card);
+        let mut cache = AugmentCache::open(std::env::temp_dir().join("nonexistent-deck4.json"));
+        cache.set_format(
+            &id,
+            Format {
+                note: Some("as reshaped".to_string()),
+                ..Default::default()
+            },
+            card.content_fingerprint,
+        );
+        cache.apply_format(&mut card);
+        assert_eq!(
+            vec![crate::card::Note::bare("as reshaped".to_string())],
+            card.notes,
+            "the reshape is of every note flattened, so it replaces the stack \
+             without claiming either author's badge"
         );
     }
 
