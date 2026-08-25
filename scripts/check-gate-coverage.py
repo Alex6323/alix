@@ -52,12 +52,34 @@ TEST_FILE_PATTERNS = (
     "*.spec.ts",
     "*_test.dart",
     "*_test.go",
+    "test-*.sh",
+    "test_*.sh",
+    "*_test.sh",
 )
 CARGO_SUBDIRS = {"tests", "benches", "examples"}
 
 # A marker must run in a workflow that gates a push to main or a pull request.
 # These units are the deliberate exception, where a schedule is the point.
 SCHEDULED = {"fuzz/Cargo.toml"}
+MAIN = "main"
+# A cargo command carrying any of these runs part of the crate, not the crate.
+SELECTION_FLAGS = {
+    "--lib",
+    "--bin",
+    "--bins",
+    "--test",
+    "--tests",
+    "--bench",
+    "--benches",
+    "--example",
+    "--examples",
+    "--doc",
+    "--doctests",
+    "-p",
+    "--package",
+    "--exclude",
+    "--manifest-path",
+}
 
 # A unit `make check` and `make preflight` deliberately do not run. Each needs
 # the workflow marker that proves something else does; a stale exception whose
@@ -160,14 +182,14 @@ def names_path(command: list[str], unit: str) -> bool:
 
 
 def is_whole_crate_test(command: list[str]) -> bool:
-    """`cargo test` over the root crate, which a --manifest-path run is not."""
+    """`cargo test` over the whole root crate, which a narrowed run is not."""
     words = [token for token in command if "=" not in token or token.startswith("-")]
     if not words or words[0] != "cargo":
         return False
     subcommands = [token for token in words[1:] if not token.startswith("-")]
     if not subcommands or subcommands[0] not in {"test", "nextest"}:
         return False
-    return not any(token.split("=")[0] == "--manifest-path" for token in command)
+    return not any(token.split("=")[0] in SELECTION_FLAGS for token in command)
 
 
 def units() -> list[str]:
@@ -219,37 +241,64 @@ def workflow_text(blocking_only: bool = False) -> str:
 
 
 def gates_a_push(text: str) -> bool:
-    """A workflow that runs on a push to main or a pull request, not a tag."""
-    triggers = trigger_block(text)
-    if "pull_request" in triggers:
-        return True
-    return "push" in triggers and set(triggers["push"]) != {"tags"}
+    """Runs on every push to main, or on every pull request: no filter."""
+    return any(
+        reaches_main(name, filters) for name, filters in trigger_block(text).items()
+    )
 
 
-def trigger_block(text: str) -> dict[str, list[str]]:
-    triggers: dict[str, list[str]] = {}
+def reaches_main(trigger: str, filters: dict[str, list[str]]) -> bool:
+    if trigger not in {"push", "pull_request"}:
+        return False
+    if filters.get("paths") or filters.get("paths-ignore"):
+        return False
+    if any(fnmatch(MAIN, pattern) for pattern in filters.get("branches-ignore", [])):
+        return False
+    branches = filters.get("branches")
+    if branches:
+        return any(fnmatch(MAIN, pattern) for pattern in branches)
+    return not filters.get("tags")
+
+
+def trigger_block(text: str) -> dict[str, dict[str, list[str]]]:
+    """Each `on:` trigger with the branch and path values that narrow it."""
+    triggers: dict[str, dict[str, list[str]]] = {}
     lines = text.splitlines()
     for index, line in enumerate(lines):
-        inline = re.match(r"^on:\s*(.*)$", line)
-        if not inline:
+        header = re.match(r"^on:\s*(.*)$", line)
+        if not header:
             continue
-        for name in re.findall(r"[A-Za-z_]+", inline.group(1)):
-            triggers[name] = []
-        current: str | None = None
+        for name in yaml_values(header.group(1)):
+            triggers.setdefault(name, {})
+        trigger: str | None = None
+        narrowed: str | None = None
         for body in lines[index + 1 :]:
             if body.strip() and not body.startswith(" "):
                 break
-            indent = len(body) - len(body.lstrip())
-            key = re.match(r"^\s*([A-Za-z_]+):", body)
-            if not key or not body.strip() or body.lstrip().startswith("#"):
+            if not body.strip() or body.lstrip().startswith("#"):
                 continue
-            if indent == 2:
-                current = key.group(1)
-                triggers.setdefault(current, [])
-            elif indent == 4 and current:
-                triggers[current].append(key.group(1))
+            indent = len(body) - len(body.lstrip())
+            key = re.match(r"^\s*([A-Za-z_-]+):\s*(.*?)\s*$", body)
+            item = body.lstrip().startswith("- ")
+            if indent == 2 and key:
+                trigger, narrowed = key.group(1), None
+                triggers.setdefault(trigger, {})
+            elif indent == 4 and key and trigger:
+                narrowed = key.group(1)
+                triggers[trigger][narrowed] = yaml_values(key.group(2))
+            elif indent >= 6 and item and trigger and narrowed:
+                triggers[trigger][narrowed].append(scalar(body.lstrip()[2:]))
         break
     return triggers
+
+
+def yaml_values(text: str) -> list[str]:
+    text = text.strip().removeprefix("[").removesuffix("]")
+    return [scalar(item) for item in text.split(",") if item.strip()]
+
+
+def scalar(text: str) -> str:
+    return text.strip().strip("\"'")
 
 
 def run_values(text: str) -> list[str]:

@@ -179,6 +179,21 @@ class ReadsRecipeCommands(unittest.TestCase):
         self.assertEqual(["cd", "mobile/alix"], parsed[0])
         self.assertEqual(["flutter", "test", "test/"], parsed[1])
 
+    def test_a_target_filtered_run_is_not_a_whole_crate_test(self):
+        narrowed = (
+            "cargo test --lib",
+            "cargo test --test format_properties",
+            "cargo test --doc",
+            "cargo test -p alix-test-support",
+            "cargo nextest run -p alix-test-support",
+        )
+        for line in narrowed:
+            with self.subTest(line=line):
+                self.assertFalse(
+                    gate.is_whole_crate_test(gate.commands(line)[0]),
+                    f"`{line}` selects only part of the root suite",
+                )
+
 
 class ReadsWorkflowExecution(unittest.TestCase):
     def test_only_executed_text_is_extracted(self):
@@ -231,14 +246,43 @@ class DiscoversUnitsFromEvidence(unittest.TestCase):
                 f"{manifest} came from a directory the walk must prune",
             )
 
+    def test_the_repositorys_shell_test_naming_shape_is_discovered(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite = root / "quality"
+            suite.mkdir()
+            (suite / "test-inventory.sh").write_text("#!/bin/sh\nexit 0\n")
+            with mock.patch.object(gate, "REPO_ROOT", root):
+                _manifests, test_dirs = gate.walk()
+            self.assertIn(
+                "quality",
+                test_dirs,
+                "test-inventory.sh is an existing test-file shape in this repository",
+            )
+
 
 class SeparatesBlockingFromScheduled(unittest.TestCase):
+    def test_a_branch_workflow_that_excludes_main_is_not_a_main_or_pr_gate(self):
+        workflow = (gate.WORKFLOWS / "mutants-branch.yml").read_text()
+        self.assertFalse(
+            gate.gates_a_push(workflow),
+            "mutants-branch.yml has branches-ignore: main and no pull_request trigger",
+        )
+
+    def test_a_path_filtered_pages_workflow_is_not_a_universal_push_gate(self):
+        workflow = (gate.WORKFLOWS / "pages.yml").read_text()
+        self.assertFalse(
+            gate.gates_a_push(workflow),
+            "pages.yml does not run when a non-site CI-only unit changes",
+        )
+
     def test_each_workflow_is_classified_by_what_actually_triggers_it(self):
         rows = [
             ("ci.yml", True),
             ("fuzz-weekly.yml", False),
             ("mobile-release.yml", False),
-            ("mutants-branch.yml", True),
+            ("mutants-branch.yml", False),
+            ("pages.yml", False),
         ]
         for name, expected in rows:
             with self.subTest(workflow=name):
