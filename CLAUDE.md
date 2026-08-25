@@ -108,6 +108,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make build` | Compile. |
 | `make test` | Run the test suite (the primary gate). |
 | `make test-inventory` | Derive current default, ignored, and total Rust test counts from Cargo; never copy the output into evergreen prose. |
+| `make gate-coverage` | Assert every crate and test suite in the tree is reachable from `check`/`preflight`, or named CI-only in `scripts/check-gate-coverage.py` with the workflow marker proving CI runs it. Part of `make check`. |
 | `make lint` | `cargo clippy --all-targets -- -D warnings` (denies warnings, matching CI, so a warning fails locally instead of on the pushed main). |
 | `make deps-check` | Reject newly introduced incompatible dependency families against the reviewed baseline; run before and after changing dependencies. |
 | `make pre-1-0-check` | Reject backwards-compatibility vocabulary in production code while the package is `0.x`. |
@@ -119,7 +120,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make fmt-check` | Verify formatting without writing. |
 | `make fmt-changelog` | Normalize `CHANGELOG.md` (~80-column wrap, one blank line between entries; idempotent), then run `changelog-check`. |
 | `make changelog-check` | Structural CHANGELOG guard (one Unreleased first, no duplicate headings, standard subsection names under Unreleased, count never decreases vs HEAD); part of `make check`. |
-| `make check` | The inner-loop gate bundle (`fmt-check`, `pre-1-0-check`, `deps-check`, `changelog-check`, `lint`, `lean-check`, `test`, `site-media-check`, `docs-audit-manifest-check`, `toolchain-check`), cheap checks first; run before considering work done. `lean-check` denies warnings on the no-default-features lib, the mobile core's build shape. Lenient on rustc warnings (no `-Dwarnings`); `make ci` / `make preflight` reproduce CI's strict gate. |
+| `make check` | The inner-loop gate bundle (`fmt-check`, `pre-1-0-check`, `deps-check`, `changelog-check`, `adr-check`, `gate-coverage`, `lint`, `lean-check`, `test`, `site-media-check`, `example-media-check`, `docs-audit-manifest-check`, `toolchain-check`, `tooling-test`), cheap checks first; run before considering work done. `lean-check` denies warnings on the no-default-features lib, the mobile core's build shape. Lenient on rustc warnings (no `-Dwarnings`); `make ci` / `make preflight` reproduce CI's strict gate. |
 | `make mutants` | What the CI mutation workflows invoke (`GATE_JOBS` parallelism, `MUTANTS_BASE` diff base, `MUTANTS_SHARD` one 0-indexed shard such as `0/6`; misses reconcile against `scripts/mutants-allowlist.txt`). Refuses to start while another cargo-mutants runs anywhere on the machine. **Not for local use**: it saturates the machine for hours. |
 | `make ci` | The Rust CI bundle: `fmt-check` + `check` and lean-core build under `-Dwarnings` + `coverage`. GitHub separately gates the bridge, Flutter, JavaScript, and Playwright jobs. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |

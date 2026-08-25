@@ -27,9 +27,12 @@ build-core:
 lean-check:
 	cargo rustc --no-default-features --lib -- -Dwarnings
 
-# Run the test suite — the primary gate.
+# Run the test suite — the primary gate. `alix-test-support` is a path
+# dependency rather than a workspace member, so a bare `cargo test` compiles it
+# and never runs its own tests; `make gate-coverage` is what caught that.
 test:
 	cargo test
+	cargo test --locked --manifest-path test-support/Cargo.toml
 
 # Derive the live host-side Rust test inventory instead of copying a count into
 # prose, where normal suite growth makes it stale immediately.
@@ -39,6 +42,12 @@ test-inventory:
 # Unit-test dependency-free build and CI tooling.
 tooling-test:
 	@python3 -m unittest discover -s scripts -p 'test_*.py'
+
+# Every crate and suite in the tree is reachable from a local gate or named
+# CI-only with the workflow marker that proves CI runs it. Pure file reading,
+# so it costs nothing in the inner loop.
+gate-coverage:
+	@python3 scripts/check-gate-coverage.py
 
 # Regenerate the committed GFM/CommonMark corpus baselines
 # (tools/gfm-harness/baseline/*.jsonl) against the current parser, then show
@@ -172,7 +181,7 @@ roadmap:
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
-check: fmt-check pre-1-0-check deps-check changelog-check adr-check lint lean-check test site-media-check example-media-check docs-audit-manifest-check toolchain-check tooling-test
+check: fmt-check pre-1-0-check deps-check changelog-check adr-check gate-coverage lint lean-check test site-media-check example-media-check docs-audit-manifest-check toolchain-check tooling-test
 
 # Bump the Rust toolchain across the repo
 bump-rust:
