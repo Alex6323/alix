@@ -5172,7 +5172,10 @@ fn a_relative_deck_path_resolves_the_same_workspace_as_an_absolute_one() {
 /// echoes the path it was handed, so only the resolved lines can be compared.
 #[test]
 fn a_relative_decks_dir_resolves_the_same_store_as_an_absolute_one() {
-    let dir = TempDir::new().unwrap();
+    let temp_root = TempDir::new().unwrap();
+    let poisoned_root = temp_root.path().join("store-in-path");
+    std::fs::create_dir(&poisoned_root).unwrap();
+    let dir = TempDir::new_in(&poisoned_root).unwrap();
     // Canonical, because a process started in `ws` reports its resolved cwd:
     // macOS symlinks its temp dir, so the two spellings would print different
     // paths for the same store.
@@ -5192,12 +5195,15 @@ id: deck-relativerelativerelativ
 A1
 ",
     );
-    let home = TempDir::new().unwrap();
+    let home = TempDir::new_in(&poisoned_root).unwrap();
 
     let store_line = |out: &Output| {
         String::from_utf8_lossy(&out.stdout)
             .lines()
-            .find(|line| line.contains("store"))
+            .find(|line| {
+                let mut columns = line.split_whitespace();
+                matches!(columns.next(), Some("✓" | "!" | "✗")) && columns.next() == Some("store")
+            })
             .unwrap_or_default()
             .to_string()
     };
