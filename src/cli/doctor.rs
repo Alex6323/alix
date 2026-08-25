@@ -504,12 +504,14 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
     if source_assets_valid {
         let base = SourceBase::for_deck(deck);
         // One authored `at:` line serves every card its block produced (a
-        // table's rows, a cloze block's holes), so the report is per citation,
-        // not per card.
+        // table's rows, a cloze block's holes), so the report is per authored
+        // citation. Its identity is its own directive line: a card may carry
+        // several `at:` lines, and keying on the card would let a healthy one
+        // hide a stale sibling.
         let mut reported = std::collections::HashSet::new();
         for card in &deck.cards {
             for citation in &card.citations {
-                if !reported.insert((card.line, citation.locator.as_str())) {
+                if !reported.insert(citation.line) {
                     continue;
                 }
 
@@ -2074,6 +2076,37 @@ mod tests {
         assert_eq!(
             1, citation_warnings,
             "two cards share one authored `at:` line, so it is reported once: {:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn a_healthy_citation_never_hides_a_stale_one_on_the_same_card() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "source.txt", "first\n");
+        w(
+            dir.path(),
+            "twin.md",
+            &format!(
+                "---\nformat-version: 1\nid: deck-twin\nsource: .\n---\n\
+                 ## q\na\n<!-- at: source.txt:1 fingerprint: {} -->\n\
+                 <!-- at: source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
+                one_line_fingerprint("first"),
+                one_line_fingerprint("gone"),
+            ),
+        );
+        let deck = Deck::load(dir.path().join("twin.md")).unwrap();
+
+        let mut report = Report::default();
+        deck_resource_findings(&deck, &mut report);
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("changed or disappeared")),
+            "the healthy first citation must not silence the stale second \
+             authored line: {:#?}",
             report.warnings
         );
     }
