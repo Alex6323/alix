@@ -255,6 +255,16 @@ impl Note {
     }
 }
 
+/// Which answer a client is served. A typed check grades exact text, so it
+/// gets the deck's authored words: the `format` augment reshapes how a card
+/// is SHOWN, and a typing surface shows blank fields, so a reshape the
+/// learner never saw must never become what they have to reproduce.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnswerSpace {
+    Displayed,
+    Authored,
+}
+
 impl Card {
     pub fn plain(
         subject: Arc<str>,
@@ -311,6 +321,13 @@ impl Card {
 
     pub fn back_for_display(&self) -> &[String] {
         self.display_back.as_deref().unwrap_or(&self.back)
+    }
+
+    pub fn answer_lines(&self, space: AnswerSpace) -> &[String] {
+        match space {
+            AnswerSpace::Displayed => self.back_for_display(),
+            AnswerSpace::Authored => &self.back,
+        }
     }
 
     pub fn reversed(&self) -> Card {

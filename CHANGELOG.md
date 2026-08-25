@@ -367,6 +367,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- A `format` reshape changes what a card SHOWS, never what a typed check
+  expects, which is what the manual has always promised. A card is now served
+  in one answer space: a reveal mode gets the reshape, a typed mode gets the
+  deck's authored answer, and `back`, `back_units`, `answer_steps`, and
+  `reshaped` all describe the same text. Nothing validates the model's reshape
+  and the prompt explicitly permits relabelling, so an accepted reshape could
+  otherwise become the exact text a learner had to reproduce. A typing surface
+  shows blank fields, so the learner could not see the substitution before
+  submitting and would simply fail on the deck's own correct wording. Found by
+  Codex with a deterministic red test against the shipped commit.
+
 - **`POST /api/check` takes one line per gradeable step, not one per answer
   line.** A quotation owns no field, so a client that sent a blank for it is
   now one field too many rather than a position that silently passes. Clients

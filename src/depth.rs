@@ -65,13 +65,15 @@ impl Reveal {
     }
 }
 
-/// How many answer lines a Reconstruct check would grade. A cloze card's
-/// target is its hidden spans, however many it asks, not its back lines.
+/// How many answer lines a Reconstruct check would grade, counted in the
+/// space that check grades: the deck's AUTHORED answer, never the `format`
+/// augment's reshape. A cloze card's target is its hidden spans, however many
+/// it asks, not its back lines.
 fn gradeable_count(card: &Card) -> usize {
     if card.hole.is_some() {
         return 1;
     }
-    crate::render::card_quote_flags(card)
+    crate::render::card_quote_flags(card, crate::card::AnswerSpace::Authored)
         .iter()
         .filter(|quoted| !**quoted)
         .count()
@@ -358,21 +360,21 @@ mod tests {
     /// A reshape replaces the authored answer on every surface a learner
     /// sees, so the check has to be chosen for what is shown.
     #[test]
-    fn reconstruct_depth_counts_the_displayed_answer_when_a_reshape_replaced_it() {
+    fn reconstruct_depth_counts_the_authored_answer_whatever_the_reshape_displays() {
         let mut collapsed = card("first fact\nsecond fact");
         collapsed.display_back = Some(vec!["one reshaped line".into()]);
         assert_eq!(
-            Mode::Typing,
+            Mode::Explain,
             check_for(Reveal::Flip, Depth::Reconstruct, &collapsed),
-            "one displayed line is an atom, however many the author wrote"
+            "two authored lines are key points, however few the reshape shows"
         );
 
         let mut expanded = card("A, B, C");
         expanded.display_back = Some(vec!["A".into(), "B".into(), "C".into()]);
         assert_eq!(
-            Mode::Explain,
+            Mode::Typing,
             check_for(Reveal::Flip, Depth::Reconstruct, &expanded),
-            "and three displayed lines are key points, however few the author wrote"
+            "and one authored line is an atom, however many the reshape shows"
         );
     }
 

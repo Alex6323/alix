@@ -141,7 +141,9 @@ so is every client.
    line**: a quotation owns no field, so sending a blank for it is one field
    too many, not a position to skip. A card whose whole answer is a quotation
    has nothing to type and never reaches a typing mode; a cloze card's hidden
-   spans are exact text even when a span is `>`. For a choice pick call
+   spans are exact text even when a span is `>`. The target is the deck's
+   authored answer: a `format` reshape changes what a reveal mode shows, never
+   what a typed check expects. For a choice pick call
    `POST /api/choose {index, card}` (single answer) or
    `POST /api/choose {indices, card}` (select-all, when the state carried
    `choices_multiple`), where `card` is the `card.id`
@@ -649,7 +651,7 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `back_runs` | [[InlineRun]] | Display projection per answer line. |
 | `back_units` | [NoteUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, checklists, and pipe tables remain structural units. Full reveal renders these. |
 | `answer_steps` | [AnswerStepDto] | The steps a client walks the answer in: reveal counts every step, typing asks only the gradeable ones. Always present. |
-| `reshaped` | bool | `back` is the `format` augment's display shape. The typed check and the mode follow `back` as sent, so a reshape is what the learner types. |
+| `reshaped` | bool | `back` is the `format` augment's display shape. True only on a reveal mode: a typed mode is served the deck's AUTHORED answer, so `reshaped` is false there and `back` is what the check grades. |
 | `note` | [NoteDto] | Post-answer notes, in authored order. Empty when the card has none. |
 | `images` / `images_back` | [ImageDto] | Front / back images, rendered as ordered blocks on that side. Empty when none. |
 | `citations` | [CitationDto] | Ordered `<!-- at: -->` citations. Empty when none. |
@@ -675,8 +677,13 @@ card from "one ignored field" into a card that never completes.
 
 `answer_steps` and `back_units` are separate streams with no 1:1 relationship
 and no shared index: full reveal renders `back_units`, and a partial reveal
-walks `answer_steps`. Indexes address the DISPLAYED `back` (a reshape included),
-never an authored line the client was not sent. Example payload:
+walks `answer_steps`. Indexes address `back` as sent, never a line the client was not
+served. A card is projected in ONE answer space: a reveal mode is served the
+`format` augment's reshape, and a typed mode is served the deck's authored
+answer, so `back`, `back_runs`, `back_units`, `answer_steps`, and `reshaped`
+always describe the same text. A typed check grades exact words, and a typing
+surface shows blank fields, so a reshape the learner never saw must never
+become what they have to reproduce. Example payload:
 `tests/contracts/CardDto.quote.json`.
 
 ### NoteDto

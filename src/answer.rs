@@ -14,6 +14,15 @@ pub enum Mode {
 }
 
 impl Mode {
+    /// Whether the mode asks the learner to reproduce the answer as text.
+    /// Those modes grade exact words, so they are served the deck's authored
+    /// answer rather than the `format` augment's reshape.
+    pub fn is_typed(self) -> bool {
+        matches!(self, Mode::Typing | Mode::TypeLine)
+    }
+}
+
+impl Mode {
     pub fn parse(value: &str) -> Option<Self> {
         match value.to_ascii_lowercase().as_str() {
             "flip" => Some(Self::Flip),

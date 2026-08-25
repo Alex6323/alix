@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     answer::{self, Input, Mode},
     augment::AugmentCache,
-    card::Card,
+    card::{AnswerSpace, Card},
     choice::{self, ChoiceQuestion},
     depth::{self, Depth},
     inline::{DisplayProjector, InlineRun},
@@ -197,6 +197,14 @@ impl From<&Card> for CardView {
 
 impl CardView {
     pub fn project(card: &Card, projector: &mut DisplayProjector) -> Self {
+        Self::project_in(card, projector, AnswerSpace::Displayed)
+    }
+
+    /// One card, served in ONE answer space. Every answer-bearing field moves
+    /// together: a typed check grades what it serves, so serving a reshape it
+    /// does not grade is what let an unvalidated model relabel become the
+    /// exact target (Codex, 2026-08-25).
+    pub fn project_in(card: &Card, projector: &mut DisplayProjector, space: AnswerSpace) -> Self {
         projector.set_definitions(card.definitions.clone());
         let (front, front_runs) = project_block(&card.front, projector);
         let front_units = render::front_units_with(&card.front, projector, &card.resolved_diagrams);
@@ -205,10 +213,10 @@ impl CardView {
             .iter()
             .map(|line| projector.project_context(line))
             .collect();
-        let (back, back_runs) = project_lines(card.back_for_display(), projector);
-        let back_units =
-            render::answer_units_with(card.back_for_display(), projector, &card.resolved_diagrams);
-        let answer_steps = render::card_answer_steps(card, projector);
+        let lines = card.answer_lines(space);
+        let (back, back_runs) = project_lines(lines, projector);
+        let back_units = render::answer_units_with(lines, projector, &card.resolved_diagrams);
+        let answer_steps = render::card_answer_steps(card, projector, space);
         let section_context_runs = card
             .section_context
             .iter()
@@ -229,7 +237,7 @@ impl CardView {
             back_runs,
             back_units,
             answer_steps,
-            reshaped: card.display_back.is_some(),
+            reshaped: space == AnswerSpace::Displayed && card.display_back.is_some(),
             note: render::note_views_with(card, projector),
             images: {
                 let stamps = asked_stamps(card);
@@ -438,7 +446,12 @@ pub fn state(
         None
     };
     let mut projector = DisplayProjector::default();
-    let card_view = card.map(|card| CardView::project(card, &mut projector));
+    let space = if mode.is_typed() {
+        AnswerSpace::Authored
+    } else {
+        AnswerSpace::Displayed
+    };
+    let card_view = card.map(|card| CardView::project_in(card, &mut projector, space));
     let choice_runs = choices.as_ref().map(|choices| {
         choices
             .iter()
@@ -602,9 +615,9 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
     let mode = depth::check_for(card.reveal.unwrap_or_default(), session.depth(), card);
     // A quotation is supporting content, not the answer's own prose: typing it
     // back tests transcription rather than understanding.
-    let quoted = crate::render::card_quote_flags(card);
+    let quoted = crate::render::card_quote_flags(card, AnswerSpace::Authored);
     let expected: Vec<String> = card
-        .back_for_display()
+        .answer_lines(AnswerSpace::Authored)
         .iter()
         .zip(&quoted)
         .filter(|(_, line_is_quote)| !**line_is_quote)
@@ -1690,28 +1703,76 @@ mod tests {
         );
     }
 
+    /// One card, one answer space. A typed mode grades exact words, so every
+    /// answer-bearing field it is served must be the deck's own: serving the
+    /// reshape while grading the authored answer is the split that let an
+    /// unvalidated relabel become the target.
     #[test]
-    fn a_reshaped_typeline_grades_the_same_steps_the_client_displays() {
+    fn a_typed_mode_is_served_the_authored_answer_and_a_reveal_mode_the_reshape() {
+        let (mut store, augment, _dir) = fixtures();
+        let rows = [
+            (Depth::Reconstruct, Mode::Typing, "PCIe generation", false),
+            (Depth::Recall, Mode::Flip, "Bus generation: PCIe", true),
+        ];
+        for (depth, expected_mode, expected_back, expected_reshaped) in rows {
+            let mut cards = parse("## What does the number after PCIe mean?\nPCIe generation\n");
+            cards[0].display_back = Some(vec!["Bus generation: PCIe".into()]);
+            seen(&mut store, &cards);
+            let session = session_at(cards, &mut store, depth, NOW);
+
+            let served = state(&session, &store, &augment, Some(NOW));
+            assert_eq!(expected_mode, served.mode, "{depth:?}");
+            let card = served.card.expect("a card is served");
+            assert_eq!([expected_back], card.back.as_slice(), "{depth:?}: back");
+            assert_eq!(
+                expected_reshaped, card.reshaped,
+                "{depth:?}: reshaped must describe what was actually served"
+            );
+            let steps = card.answer_steps.len();
+            assert_eq!(1, steps, "{depth:?}: one line, one step");
+        }
+    }
+
+    #[test]
+    fn a_format_reshape_does_not_change_exact_authored_grading() {
         let (mut store, _augment, _dir) = fixtures();
-        let mut cards = parse("## q\nA, B, C\n<!-- reveal: line -->\n");
-        cards[0].display_back = Some(vec!["A".into(), "B".into(), "C".into()]);
-        assert_eq!(
-            ["A", "B", "C"],
-            cards[0].back_for_display(),
-            "these are the three fields the clients derive from the wire"
-        );
+        let mut cards = parse("## What does the number after PCIe mean?\nPCIe generation\n");
+        cards[0].display_back = Some(vec!["Bus generation: PCIe".into()]);
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
 
-        let feedback = check_typed(
+        let feedback = check_typed(&session, &["PCIe generation".to_string()]).expect("feedback");
+        assert!(
+            feedback.passed,
+            "the deck's authored answer must stay the exact target: {:?}",
+            feedback.results
+        );
+    }
+
+    #[test]
+    fn a_reshaped_typeline_grades_the_authored_answer_it_is_served() {
+        let (mut store, _augment, _dir) = fixtures();
+        let mut cards = parse("## q\nA, B, C\n<!-- reveal: line -->\n");
+        cards[0].display_back = Some(vec!["A".into(), "B".into(), "C".into()]);
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+
+        let feedback = check_typed(&session, &["A, B, C".to_string()]).expect("feedback");
+        assert!(
+            feedback.passed,
+            "the deck's own words are the target: {:?}",
+            feedback.results
+        );
+
+        let displayed = check_typed(
             &session,
             &["A".to_string(), "B".to_string(), "C".to_string()],
         )
         .expect("feedback");
         assert!(
-            feedback.passed,
-            "typing every displayed reshape step must pass: {:?}",
-            feedback.results
+            !displayed.passed,
+            "the reshape's three display lines are not three fields to type: {:?}",
+            displayed.results
         );
     }
 

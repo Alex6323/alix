@@ -221,13 +221,14 @@ pub(crate) fn quote_line_flags(lines: &[String]) -> Vec<bool> {
     flags
 }
 
-/// Which of a card's answer lines are quotation rather than its own prose,
-/// over the lines a client is SHOWN: a reshape replaces the authored answer
-/// on every surface, so grading the authored one asks for text nobody read. A
+/// Which of a card's answer lines are quotation rather than its own prose. A
 /// cloze card's back lines are its hidden spans, so a span that IS `>` is
 /// exact text the learner must reproduce, never authored quotation syntax.
-pub(crate) fn card_quote_flags(card: &crate::card::Card) -> Vec<bool> {
-    let back = card.back_for_display();
+pub(crate) fn card_quote_flags(
+    card: &crate::card::Card,
+    space: crate::card::AnswerSpace,
+) -> Vec<bool> {
+    let back = card.answer_lines(space);
     if card.hole.is_some() {
         return vec![false; back.len()];
     }
@@ -240,9 +241,10 @@ pub(crate) fn card_quote_flags(card: &crate::card::Card) -> Vec<bool> {
 pub(crate) fn card_answer_steps(
     card: &crate::card::Card,
     projector: &mut DisplayProjector,
+    space: crate::card::AnswerSpace,
 ) -> Vec<AnswerStep> {
-    let lines = card.back_for_display();
-    let quoted = card_quote_flags(card);
+    let lines = card.answer_lines(space);
+    let quoted = card_quote_flags(card, space);
     let mut steps = Vec::new();
     let mut index = 0;
     while index < quoted.len() {
@@ -795,6 +797,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::card::AnswerSpace;
 
     fn note_units(card: &Card) -> Vec<NoteUnit> {
         note_views(card)
@@ -939,7 +942,11 @@ mod tests {
             let mut projector = DisplayProjector::default();
             assert_eq!(
                 expected,
-                spans(&card_answer_steps(&card, &mut projector)),
+                spans(&card_answer_steps(
+                    &card,
+                    &mut projector,
+                    AnswerSpace::Displayed
+                )),
                 "{why}"
             );
         }
@@ -950,7 +957,7 @@ mod tests {
         for (back, _, why) in step_rows() {
             let card = parsed(back);
             let mut projector = DisplayProjector::default();
-            let steps = card_answer_steps(&card, &mut projector);
+            let steps = card_answer_steps(&card, &mut projector, AnswerSpace::Displayed);
             let mut next = 0;
             for (kind, from, to) in spans(&steps) {
                 assert_eq!(next, from, "{why}: {kind} starts where the last step ended");
@@ -969,7 +976,7 @@ mod tests {
     fn a_quote_step_carries_the_quotation_units_not_its_marker_lines() {
         let card = parsed("the answer\n> a quoted passage\n> its second line");
         let mut projector = DisplayProjector::default();
-        let steps = card_answer_steps(&card, &mut projector);
+        let steps = card_answer_steps(&card, &mut projector, AnswerSpace::Displayed);
 
         assert_eq!(
             vec![
@@ -996,7 +1003,11 @@ mod tests {
 
         assert_eq!(
             vec![("line", 0, 1)],
-            spans(&card_answer_steps(&card, &mut projector)),
+            spans(&card_answer_steps(
+                &card,
+                &mut projector,
+                AnswerSpace::Displayed
+            )),
             "a hidden span is exact text to reproduce, never quotation syntax"
         );
     }
@@ -1012,7 +1023,11 @@ mod tests {
 
         assert_eq!(
             vec![("line", 0, 1), ("quote", 1, 2)],
-            spans(&card_answer_steps(&card, &mut projector)),
+            spans(&card_answer_steps(
+                &card,
+                &mut projector,
+                AnswerSpace::Displayed
+            )),
             "a reshape replaces the answer on every surface, so it decides the steps"
         );
     }
