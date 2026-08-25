@@ -692,6 +692,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Mobile asks for every blank of a grouped cloze. Two blanks sharing a name
+  are one card asking both spans, and the mobile client sized its typed fields
+  as "one, unless the card reveals line by line", so it drew a single field and
+  the second span had nowhere to go: the card could not be passed on a phone at
+  all. Field count now follows the answer's own lines, as the web clients
+  already did. Found while checking a pre-work item Codex raised during a
+  design review.
+
 - A card whose answer an AI reshape replaced can be typed again. Every client
   shows `display_back`, while the check graded the authored answer, so a
   learner typing exactly what was on screen could not pass a reshaped card at

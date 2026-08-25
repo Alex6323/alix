@@ -1015,7 +1015,7 @@ class ReviewCardView extends StatelessWidget {
       );
     }
     final onSurface = Theme.of(context).colorScheme.onSurface;
-    final fields = state.mode == ReviewMode.typeLine ? card.back.length : 1;
+    final fields = card.back.length;
     OutlineInputBorder border(Color color) => OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
       borderSide: BorderSide(color: color),
@@ -1447,11 +1447,8 @@ class ReviewCardView extends StatelessWidget {
             label: label,
             kind: ReviewChipKind.primary,
             onTap: () {
-              final fields = state.mode == ReviewMode.typeLine
-                  ? card.back.length
-                  : 1;
               onCheck([
-                for (var index = 0; index < fields; index++)
+                for (var index = 0; index < card.back.length; index++)
                   typedControllers[index].text,
               ]);
             },

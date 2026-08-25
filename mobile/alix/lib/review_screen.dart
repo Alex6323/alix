@@ -199,9 +199,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   void _resetInputs() {
     final state = _controller.state;
-    final lines = state.mode == ReviewMode.typeLine
-        ? (state.card?.back.length ?? 1)
-        : 1;
+    final lines = state.card?.back.length ?? 1;
     while (_typed.length < lines) {
       _typed.add(TextEditingController());
     }
