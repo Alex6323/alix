@@ -26,12 +26,15 @@ Scaffold
                           SizedBox(width=null, height=22.0)
                           Column
                             Padding(EdgeInsets(0.0, 3.0, 0.0, 3.0))
-                              Text("first ✓")
-                            Padding(EdgeInsets(0.0, 3.0, 0.0, 3.0))
                               Column
                                 Opacity(0.50)
                                   Text("wrong ✗")
-                                Text("second")
+                                Text("first")
+                            SizedBox(width=null, height=10.0)
+                            ConstrainedBox
+                              TextField(enabled=true, label="", hint="", value="")
+                                SizedBox(width=0.0, height=0.0)
+                                CustomPaint
                   Center
                     Container
                       Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
@@ -42,17 +45,7 @@ Scaffold
                     CustomPaint
                       InkWell(tap=true, longPress=false)
                         Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
-                          Text("Missed it")
-                  Material
-                    CustomPaint
-                      InkWell(tap=true, longPress=false)
-                        Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
-                          Text("Partly")
-                  Material
-                    CustomPaint
-                      InkWell(tap=true, longPress=false)
-                        Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
-                          Text("Got it")
+                          Text("Check")
     ConstrainedBox
       AppBar
         Material

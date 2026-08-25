@@ -24,6 +24,7 @@ class ReviewCardView extends StatelessWidget {
     required this.multiChoice,
     required this.multiSelected,
     required this.checkFeedback,
+    required this.typelineChecked,
     required this.tickedKeypoints,
     required this.sketch,
     required this.onSketchBegin,
@@ -58,6 +59,9 @@ class ReviewCardView extends StatelessWidget {
   final ReviewMultiChoiceFeedbackModel? multiChoice;
   final Set<int> multiSelected;
   final ReviewCheckFeedbackModel? checkFeedback;
+
+  /// TypeLine's accepted prefix, rendered above the one current field.
+  final List<ReviewTypedResultModel> typelineChecked;
   final Set<int> tickedKeypoints;
   final Sketch sketch;
   final void Function(Offset point, PointerDeviceKind kind) onSketchBegin;
@@ -1085,13 +1089,20 @@ class ReviewCardView extends StatelessWidget {
       );
     }
     final onSurface = Theme.of(context).colorScheme.onSurface;
-    final fields = card.gradeableSteps.length;
+    // TypeLine reconstructs one gradeable step at a time: the checked prefix
+    // stands above, and exactly one field is open. Ordinary Typing is one
+    // shot, so it opens every gradeable field at once.
+    final progressive = state.mode == ReviewMode.typeLine;
+    final fields = progressive ? 1 : card.gradeableSteps.length;
     OutlineInputBorder border(Color color) => OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
       borderSide: BorderSide(color: color),
     );
     return Column(
       children: [
+        for (final result in typelineChecked) _evidenceLine(result, tokens),
+        if (progressive && typelineChecked.isNotEmpty)
+          const SizedBox(height: 10),
         for (var index = 0; index < fields; index++) ...[
           if (index > 0) const SizedBox(height: 10),
           ConstrainedBox(
@@ -1517,6 +1528,10 @@ class ReviewCardView extends StatelessWidget {
             label: label,
             kind: ReviewChipKind.primary,
             onTap: () {
+              if (state.mode == ReviewMode.typeLine) {
+                onCheck([typedControllers[0].text]);
+                return;
+              }
               onCheck([
                 for (var index = 0;
                     index < card.gradeableSteps.length;

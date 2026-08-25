@@ -90,6 +90,7 @@ void main() {
             multiChoice: null,
             multiSelected: const {},
             checkFeedback: null,
+            typelineChecked: const [],
             tickedKeypoints: const {},
             sketch: Sketch(),
             onSketchBegin: (_, _) {},

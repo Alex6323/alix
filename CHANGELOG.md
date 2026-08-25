@@ -714,6 +714,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- TypeLine on a phone asks for one answer line at a time, as it always has in
+  a browser. Mobile opened every gradeable field at once and submitted them
+  all on the first Check, so an ordered answer could be read ahead and
+  answered in one shot, which is the mode's whole point gone. The checked
+  prefix now stands above the one open field, and the field is emptied only
+  when the server accepts a longer prefix, so a miss stays visible. Found by
+  Codex; the defect predates the `answer_steps` slice.
+
+- A second fenced block after a line-reveal boundary renders its own diagram
+  rather than repeating the first one. The answer was rendered in two passes
+  and the second pass restarted fence pairing at zero.
+
 - Mobile asks for every blank of a grouped cloze. Two blanks sharing a name
   are one card asking both spans, and the mobile client sized its typed fields
   as "one, unless the card reveals line by line", so it drew a single field and

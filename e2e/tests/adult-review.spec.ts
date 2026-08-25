@@ -644,6 +644,70 @@ test("a source answer and its note have a visible separator", async ({ page }, t
   expect(contrast, "the rendered separator must visibly contrast with the card background").toBeGreaterThan(50);
 });
 
+// A second fence AFTER the reveal boundary must consume the SECOND fence
+// unit. Rendering the answer in two passes used to restart fence pairing at
+// zero, so the later fence rendered the earlier unit; `answer_steps` threads a
+// running fence index through both passes. Codex asked for this to be kept
+// deliberately rather than as an incidental repair.
+test("line reveal pairs a fence after the boundary with its own unit", async ({ page }) => {
+  const back = [
+    "```mermaid",
+    "first",
+    "```",
+    "```mermaid",
+    "second",
+    "```",
+  ];
+  const original = longContentState({ answerLines: back });
+  const state = {
+    ...original,
+    mode: "line",
+    card: {
+      ...original.card,
+      back_units: [
+        {
+          kind: "diagram",
+          src: "/img/1111111111111111",
+          width: 188,
+          height: 114,
+          alt: "first",
+        },
+        {
+          kind: "diagram",
+          src: "/img/2222222222222222",
+          width: 188,
+          height: 114,
+          alt: "second",
+        },
+      ],
+    },
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABXvMqOgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  for (const key of ["1111111111111111", "2222222222222222"]) {
+    await page.route(`**/img/${key}`, (route) =>
+      route.fulfill({ body: png, contentType: "image/png" }),
+    );
+  }
+  await openApp(page);
+
+  // Reveal past the first fence only: the second is still in the reserve, so
+  // the render is split exactly at the fence boundary.
+  const reveal = page.getByRole("button", { name: /^Reveal/ });
+  for (let step = 0; step < 3; step++) await reveal.click();
+
+  const diagrams = page.locator(".region.a img.diagram");
+  await expect(diagrams).toHaveCount(2);
+  await expect(diagrams.nth(0)).toHaveAttribute("alt", "first");
+  await expect(diagrams.nth(1)).toHaveAttribute(
+    "alt",
+    "second",
+  );
+});
+
 test("line reveal replaces a complete Mermaid fence with its rendered diagram", async ({ page }) => {
   const back = ["```mermaid", "flowchart LR", " A-->B", "```"];
   const original = longContentState({ answerLines: back });

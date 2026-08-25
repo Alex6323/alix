@@ -50,8 +50,9 @@ ReviewStateModel _state(ReviewCardModel card, ReviewMode mode) =>
 Future<List<String>> _pumpAndSubmit(
   WidgetTester tester,
   ReviewCardModel card,
-  ReviewMode mode,
-) async {
+  ReviewMode mode, {
+  List<ReviewTypedResultModel> checked = const [],
+}) async {
   final attempt = TextEditingController();
   addTearDown(attempt.dispose);
   final typed = [
@@ -74,6 +75,7 @@ Future<List<String>> _pumpAndSubmit(
           multiChoice: null,
           multiSelected: const {},
           checkFeedback: null,
+          typelineChecked: checked,
           tickedKeypoints: const {},
           sketch: Sketch(),
           onSketchBegin: (_, _) {},
@@ -104,10 +106,12 @@ Future<List<String>> _pumpAndSubmit(
     ),
   );
 
-  for (var index = 0; index < typed.length; index++) {
-    typed[index].text = card.back[card.gradeableSteps[index].backFrom];
+  final open = tester.widgetList<TextField>(find.byType(TextField)).length;
+  for (var index = 0; index < open && index < typed.length; index++) {
+    typed[index].text =
+        card.back[card.gradeableSteps[index + checked.length].backFrom];
   }
-  await tester.tap(find.text('Submit'));
+  await tester.tap(find.text(mode == ReviewMode.typeLine ? 'Check' : 'Submit'));
   await tester.pump();
   return sent;
 }
@@ -161,5 +165,42 @@ void main() {
 
     expect(find.byType(TextField), findsNWidgets(2));
     expect(sent, const ['alpha', 'beta']);
+  });
+
+  // TypeLine reconstructs one step at a time. Opening every field at once
+  // lets the learner read ahead and submits the whole answer on the first
+  // Check, which is the mode's whole point gone. Found by Codex against
+  // c5af0a44; the defect predates it (mobile TypeLine was never progressive).
+  testWidgets('typeline opens only the next gradeable step', (tester) async {
+    final card = _card(const ['first step', 'second step']);
+
+    final sent = await _pumpAndSubmit(tester, card, ReviewMode.typeLine);
+
+    expect(find.byType(TextField), findsOneWidget);
+    expect(sent, const ['first step']);
+  });
+
+  testWidgets('typeline keeps the checked prefix above the open field', (
+    tester,
+  ) async {
+    final card = _card(const ['first step', 'second step']);
+    final checked = [
+      ReviewTypedResultModel(
+        input: 'first step',
+        expected: 'first step',
+        passed: true,
+      ),
+    ];
+
+    final sent = await _pumpAndSubmit(
+      tester,
+      card,
+      ReviewMode.typeLine,
+      checked: checked,
+    );
+
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.textContaining('first step'), findsWidgets);
+    expect(sent, const ['second step']);
   });
 }

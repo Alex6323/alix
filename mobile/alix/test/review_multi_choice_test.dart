@@ -65,6 +65,7 @@ Widget _pump({
         multiChoice: multiChoice,
         multiSelected: multiSelected,
         checkFeedback: null,
+        typelineChecked: const [],
         tickedKeypoints: const {},
         sketch: Sketch(),
         onSketchBegin: (_, _) {},

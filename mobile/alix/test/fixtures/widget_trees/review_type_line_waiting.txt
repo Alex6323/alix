@@ -29,11 +29,6 @@ Scaffold
                               TextField(enabled=true, label="", hint="", value="")
                                 SizedBox(width=0.0, height=0.0)
                                 CustomPaint
-                            SizedBox(width=null, height=10.0)
-                            ConstrainedBox
-                              TextField(enabled=true, label="", hint="", value="")
-                                SizedBox(width=0.0, height=0.0)
-                                CustomPaint
                   Center
                     Container
                       Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))

@@ -263,6 +263,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           multiChoice: _controller.multiChoice,
           multiSelected: _controller.multiSelected,
           checkFeedback: _controller.checkFeedback,
+          typelineChecked: _controller.typelineChecked,
           tickedKeypoints: _controller.tickedKeypoints,
           sketch: _controller.sketch,
           onSketchBegin: _controller.sketchBegin,
@@ -285,7 +286,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
           onChoose: _controller.choose,
           onToggleChoice: _controller.toggleChoice,
           onSubmitChoices: _controller.submitChoices,
-          onCheck: _controller.check,
+          onCheck: (lines) {
+            final before = _controller.typelineChecked.length;
+            _controller.check(lines);
+            // TypeLine reuses the one open field, so it is emptied only when
+            // the server actually accepted a longer prefix: a rejected or
+            // failed check leaves the learner's text where they can see it.
+            if (_controller.typelineChecked.length > before) _typed[0].clear();
+          },
           onOpenAttempt: _controller.openAttempt,
           onToggleKeypoint: _controller.toggleKeypoint,
           onReveal: _controller.reveal,

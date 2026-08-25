@@ -41,6 +41,7 @@ class ReviewController extends ChangeNotifier {
   ReviewMultiChoiceFeedbackModel? _multiChoice;
   final Set<int> _multiSelected = {};
   ReviewCheckFeedbackModel? _checkFeedback;
+  List<ReviewTypedResultModel> _typelineChecked = const [];
   final Set<int> _tickedKeypoints = {};
   final Sketch _sketch = Sketch();
   bool _attemptOpen = false;
@@ -60,6 +61,11 @@ class ReviewController extends ChangeNotifier {
   ReviewMultiChoiceFeedbackModel? get multiChoice => _multiChoice;
   Set<int> get multiSelected => Set.unmodifiable(_multiSelected);
   ReviewCheckFeedbackModel? get checkFeedback => _checkFeedback;
+
+  /// TypeLine's accepted prefix: the gradeable steps already checked, which
+  /// the next check resubmits so the server always pairs by true position.
+  List<ReviewTypedResultModel> get typelineChecked =>
+      List.unmodifiable(_typelineChecked);
   Set<int> get tickedKeypoints => Set.unmodifiable(_tickedKeypoints);
   Sketch get sketch => _sketch;
   bool get isDrawing => state.input == ReviewInput.draw;
@@ -109,7 +115,23 @@ class ReviewController extends ChangeNotifier {
   }
 
   void check(List<String> lines) {
-    _checkFeedback = _requirePort().check(lines);
+    if (state.mode == ReviewMode.typeLine) {
+      // One gradeable step at a time. The accepted prefix is resubmitted with
+      // the new line so the server pairs by true position, and its reply IS
+      // the whole result set, so the last one doubles as the closing feedback.
+      final sent = [
+        for (final result in _typelineChecked) result.input,
+        ...lines,
+      ];
+      final feedback = _requirePort().check(sent);
+      if (feedback != null) {
+        _typelineChecked = feedback.results;
+        final owed = state.card?.gradeableSteps.length ?? 0;
+        if (_typelineChecked.length >= owed) _checkFeedback = feedback;
+      }
+    } else {
+      _checkFeedback = _requirePort().check(lines);
+    }
     notifyListeners();
   }
 
@@ -235,6 +257,7 @@ class ReviewController extends ChangeNotifier {
     _multiChoice = null;
     _multiSelected.clear();
     _checkFeedback = null;
+    _typelineChecked = const [];
     _tickedKeypoints.clear();
     _sketch.reset();
     _attemptOpen = false;

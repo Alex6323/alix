@@ -68,6 +68,7 @@ class ReviewView extends StatelessWidget {
     required this.multiChoice,
     required this.multiSelected,
     required this.checkFeedback,
+    required this.typelineChecked,
     required this.tickedKeypoints,
     required this.sketch,
     required this.onSketchBegin,
@@ -110,6 +111,7 @@ class ReviewView extends StatelessWidget {
   final ReviewMultiChoiceFeedbackModel? multiChoice;
   final Set<int> multiSelected;
   final ReviewCheckFeedbackModel? checkFeedback;
+  final List<ReviewTypedResultModel> typelineChecked;
   final Set<int> tickedKeypoints;
   final Sketch sketch;
   final void Function(Offset point, PointerDeviceKind kind) onSketchBegin;
@@ -199,6 +201,7 @@ class ReviewView extends StatelessWidget {
                         multiChoice: multiChoice,
                         multiSelected: multiSelected,
                         checkFeedback: checkFeedback,
+                        typelineChecked: typelineChecked,
                         tickedKeypoints: tickedKeypoints,
                         sketch: sketch,
                         onSketchBegin: onSketchBegin,

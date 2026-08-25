@@ -242,9 +242,10 @@ void main() {
       'review_type_line_waiting',
       root: find.byType(ReviewScreen),
     );
-    final fields = find.byType(TextField);
-    await tester.enterText(fields.at(0), 'first');
-    await tester.enterText(fields.at(1), 'wrong');
+    // TypeLine opens ONE field: the checked state is a recorded miss above a
+    // freshly opened field, not two fields submitted together.
+    expect(find.byType(TextField), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'wrong');
     await tester.tap(find.text('Check'));
     await tester.pump();
     await expectWidgetTree(

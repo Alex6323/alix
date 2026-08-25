@@ -1083,6 +1083,74 @@ void main() {
     );
   });
 
+  // TypeLine against the real core: one field at a time, the checked prefix
+  // retained, and the open field emptied only after the server accepted it.
+  // Codex proved mobile opened every field at once; this walks the whole
+  // sequence rather than one render.
+  testWidgets('typeline reconstructs one step at a time on a phone', (
+    tester,
+  ) async {
+    final root = makeRoot();
+    addTearDown(() => root.deleteSync(recursive: true));
+    final deck = '${root.path}/ordered.md';
+    final backdated = BigInt.from(
+      DateTime.now().millisecondsSinceEpoch - 600000,
+    );
+    writeTestDeck(
+      deck,
+      '---\ntitle: Ordered\n---\n## the two steps?\n'
+          'first step\nsecond step\n'
+          '<!-- reveal: line -->\n<!-- id: card-ordered -->\n',
+    );
+    final session = ReviewSession.open(
+      deckPath: deck,
+      rootDir: root.path,
+      nowMs: backdated,
+    );
+    session.introduce(nowMs: backdated);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReviewScreen(
+          deckPath: deck,
+          rootDir: root.path,
+          depth: ReviewDepth.reconstruct,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byType(TextField),
+      findsOneWidget,
+      reason: 'the first step is asked alone',
+    );
+    await tester.enterText(find.byType(TextField), 'first step');
+    await tester.tap(find.text('Check'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byType(TextField),
+      findsOneWidget,
+      reason: 'the second step is asked alone too',
+    );
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      '',
+      reason: 'an accepted step empties the field it was typed into',
+    );
+    await tester.enterText(find.byType(TextField), 'second step');
+    await tester.tap(find.text('Check'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byType(TextField),
+      findsNothing,
+      reason: 'the final step closes the card',
+    );
+    expect(find.text('Got it'), findsOneWidget);
+  });
+
   testWidgets('review flows from reveal to grade on a due card', (
     tester,
   ) async {
