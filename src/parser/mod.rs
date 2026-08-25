@@ -952,6 +952,7 @@ fn scan(
     let mut prev_heading = false;
     let mut prev_prose = false;
     let mut mappable_block: Option<MappableBlock> = None;
+    let mut literal_table_invocation: Option<usize> = None;
     let mut quote_run: Option<QuoteRun> = None;
     let mut terminated: Option<usize> = None;
     let mut idle_terminators: Vec<usize> = Vec::new();
@@ -1080,17 +1081,24 @@ fn scan(
             continue;
         }
 
-        if raw.starts_with('|')
-            && let Some(next) = lines.get(idx + 1)
-            && next.starts_with('|')
-            && is_delimiter_row(next)
-            && let declared = trailing_table_mapping(lines, idx)
+        let table_header = raw.starts_with('|')
+            && lines
+                .get(idx + 1)
+                .is_some_and(|next| next.starts_with('|') && is_delimiter_row(next));
+        let declared = table_header
+            .then(|| trailing_table_mapping(lines, idx))
+            .flatten();
+        if let Some((line, Mapping::Plain)) = declared {
+            literal_table_invocation = Some(line);
+        }
+        if table_header
             && match declared {
                 Some((_, Mapping::Cards)) => true,
                 Some(_) => false,
                 None => table_default,
             }
         {
+            let next = lines[idx + 1];
             let invocation_line = declared.map(|(line, _)| line);
             // An empty-bodied heading directly above the table is its TITLE,
             // not a card; any content or note keeps it a card.
@@ -1402,6 +1410,7 @@ fn scan(
             if let Some(body) = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->")) {
                 if let Some(mapping) = Mapping::parse(trim_ws(body)) {
                     match (mapping, current.as_mut()) {
+                        (Mapping::Plain, _) if literal_table_invocation == Some(lineno) => {}
                         (Mapping::Plain, None) => {}
                         (Mapping::Cards, _) | (_, None) => {
                             return Err(ParseError::LeadingInvocation {
@@ -5869,13 +5878,73 @@ a
         );
 
         let deck = parse(
-            "---\ntable: cards\n---\n# Reference\n| term | meaning |\n|---|---|\n| one | eins |\n<!-- plain -->\n",
+            "---\ntable: cards\n---\n# Reference\n| term | meaning |\n|---|---|\n| one | eins |\n<!-- plain -->\n\n## q\nanswer\n",
+        );
+        assert_eq!(
+            1,
+            deck.cards.len(),
+            "`plain` below one table is the documented escape from a `table: \
+             cards` default, so the deck loads: {:?}",
+            deck.cards
         );
         assert!(
-            deck.cards.is_empty(),
-            "`plain` below one table is the documented escape from a `table: \
-             cards` default, so the deck loads and the table stays literal: {:?}",
+            deck.cards[0]
+                .section_context
+                .contains(&"| one | eins |".to_string()),
+            "and the escaped table stays literal in the section it sits in, \
+             never silently dropped: {:?}",
+            deck.cards[0].section_context
+        );
+
+        let deck = parse(
+            "---\ntable: cards\n---\n## Compare the terms\n| term | meaning |\n|---|---|\n| one | eins |\n<!-- plain -->\n",
+        );
+        assert_eq!(
+            vec!["| term | meaning |", "|---|---|", "| one | eins |"],
+            deck.cards[0].back,
+            "the same escape holds when the literal table IS a card's answer, \
+             the shape both book chapters show: {:?}",
             deck.cards
+        );
+
+        let error = err("---\ntable: cards\n---\n## Q\nanswer\n<!-- plain -->\n");
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 6, ref word } if word == "plain"
+            ),
+            "a table owns the escape, so `plain` under ordinary answer prose \
+             is still loud: {error:?}"
+        );
+
+        let deck = parse(
+            "---\ntable: cards\n---\n## Two\n| a | b |\n|---|---|\n| 1 | 2 |\n<!-- plain -->\n| c | d |\n|---|---|\n| 3 | 4 |\n<!-- plain -->\n",
+        );
+        assert_eq!(
+            vec![
+                "| a | b |",
+                "|---|---|",
+                "| 1 | 2 |",
+                "| c | d |",
+                "|---|---|",
+                "| 3 | 4 |"
+            ],
+            deck.cards[0].back,
+            "each literal table owns its own trailing `plain`, so one escape \
+             never stands in for the next: {:?}",
+            deck.cards
+        );
+
+        let error = err(
+            "---\ntable: cards\n---\n## Q\n| a | b |\n|---|---|\n| 1 | 2 |\n<!-- plain -->\ntail\n<!-- plain -->\n",
+        );
+        assert!(
+            matches!(
+                error,
+                ParseError::LeadingInvocation { line: 10, ref word } if word == "plain"
+            ),
+            "ownership is one exact line, not a standing licence for the rest \
+             of the card: {error:?}"
         );
     }
 
