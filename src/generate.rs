@@ -875,17 +875,34 @@ mod tests {
             .collect()
     }
 
-    /// The text around each table-invocation mention: within reach, and never
-    /// across another invocation, since that is where a reader starts
-    /// attributing the instruction to a different subject.
+    /// Where the sentence carrying `from` ends, as an index into `chars`.
+    fn sentence_end(chars: &[char], from: usize) -> usize {
+        chars[from..]
+            .windows(2)
+            .position(|pair| matches!(pair[0], '.' | '!' | '?') && pair[1] == ' ')
+            .map_or(chars.len(), |at| from + at + 2)
+    }
+
+    /// The text around each table-invocation mention: within reach, never
+    /// across another invocation, and never back into the sentence that
+    /// belongs to the invocation before it.
     ///
-    /// Two weaker units were defeated in turn. A rule-sized window let one
+    /// Three weaker units were defeated in turn. A rule-sized window let one
     /// legal exception phrase immunize every contradiction sharing the rule.
     /// A sentence-sized window let a two-sentence table cell put the subject
-    /// in one sentence and the forbidden tail in the next. This one carries no
-    /// exception phrase at all, which is why the prohibition is worded without
-    /// naming a badge: a badge NEAR the table invocation is the defect,
-    /// whether the sentence grants or forbids.
+    /// in one sentence and the forbidden tail in the next. Bounding the
+    /// backward reach at the previous invocation TOKEN handed this subject the
+    /// note that invocation legitimately grants, because an instruction
+    /// follows its subject: the prose after that token is still the previous
+    /// subject's, up to the end of its sentence.
+    ///
+    /// The window carries no exception phrase at all, which is why the
+    /// prohibition is worded without naming a badge: a badge NEAR the table
+    /// invocation is the defect, whether the sentence grants or forbids.
+    ///
+    /// Deliberately unseen: a contradiction written INSIDE another
+    /// invocation's sentence, before the table mention. Reading that as the
+    /// table's is the false positive this bound exists to stop.
     fn table_invocation_windows(text: &str) -> Vec<String> {
         let chars: Vec<char> = text
             .split_whitespace()
@@ -894,24 +911,32 @@ mod tests {
             .chars()
             .collect();
         let tables = occurrences(&chars, TABLE_INVOCATION);
-        let mut subjects = tables.clone();
-        subjects.extend(occurrences(&chars, CHOICE_INVOCATION));
+        let mut subjects: Vec<(usize, usize)> = tables
+            .iter()
+            .map(|at| (*at, at + TABLE_INVOCATION.chars().count()))
+            .collect();
+        subjects.extend(
+            occurrences(&chars, CHOICE_INVOCATION)
+                .into_iter()
+                .map(|at| (at, at + CHOICE_INVOCATION.chars().count())),
+        );
         tables
             .iter()
             .map(|at| {
                 let end = at + TABLE_INVOCATION.chars().count();
+                let reach = at.saturating_sub(SUBJECT_REACH);
                 let start = subjects
                     .iter()
-                    .filter(|other| **other < *at)
+                    .filter(|(other, _)| other < at)
                     .max()
-                    .map_or(0, |other| other + TABLE_INVOCATION.chars().count())
-                    .max(at.saturating_sub(SUBJECT_REACH));
+                    .map_or(reach, |(_, previous)| {
+                        sentence_end(&chars, *previous).max(reach)
+                    });
                 let stop = subjects
                     .iter()
-                    .filter(|other| **other > *at)
+                    .filter(|(other, _)| other > at)
                     .min()
-                    .copied()
-                    .unwrap_or(chars.len())
+                    .map_or(chars.len(), |(other, _)| *other)
                     .min(end + SUBJECT_REACH)
                     .min(chars.len());
                 chars[start.min(*at)..stop.max(end)].iter().collect()
@@ -949,17 +974,29 @@ mod tests {
             );
         }
 
-        let correct = "- An invocation binds the block above it. `<!-- cards -->` takes \
-                       card directives after it but never a blockquote: a card table's \
-                       note is its note column. `<!-- choices-single -->` takes a \
-                       `> [!NOTE]` note after it.";
-        assert!(
-            table_invocation_windows(correct)
-                .iter()
-                .all(|window| !window.contains("[!NOTE]")),
-            "and the correct wording is not flagged, or the law cannot be satisfied: {:#?}",
-            table_invocation_windows(correct)
-        );
+        for (shape, text) in [
+            (
+                "the live wording, or the law cannot be satisfied",
+                "- An invocation binds the block above it. `<!-- cards -->` takes \
+                 card directives after it but never a blockquote: a card table's \
+                 note is its note column. `<!-- choices-single -->` takes a \
+                 `> [!NOTE]` note after it.",
+            ),
+            (
+                "a later table clarification after the choice rule that grants the note",
+                "- `<!-- choices-single -->` takes a `> [!NOTE]` note after it. \
+                 - `<!-- cards -->` remains the table invocation and takes only \
+                 card directives.",
+            ),
+        ] {
+            assert!(
+                table_invocation_windows(text)
+                    .iter()
+                    .all(|window| !window.contains("[!NOTE]")),
+                "{shape} must be left alone: {:#?}",
+                table_invocation_windows(text)
+            );
+        }
     }
 
     /// The exception is worth nothing while another live rule grants the note
