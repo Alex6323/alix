@@ -155,8 +155,9 @@ content line, with NO blank line between them, and never above an answer line, \
 an option list, or a table.
 - An invocation binds the block directly above it, so it sits on the line \
 immediately below the last option or row. `<!-- choices-single -->` takes a \
-`> [!NOTE]` note after it. `<!-- cards -->` takes nothing after it: a card \
-table's note is its note column.
+`> [!NOTE]` note after it. `<!-- cards -->` takes card directives after it, an \
+`at:` locator or a reveal mode, but never a blockquote: a card table's note is \
+its note column.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
@@ -237,8 +238,9 @@ content line, with NO blank line between them, and never above an answer line, \
 an option list, or a table.
 - An invocation binds the block directly above it, so it sits on the line \
 immediately below the last option or row. `<!-- choices-single -->` takes a \
-`> [!NOTE]` note after it. `<!-- cards -->` takes nothing after it: a card \
-table's note is its note column.
+`> [!NOTE]` note after it. `<!-- cards -->` takes card directives after it, an \
+`at:` locator or a reveal mode, but never a blockquote: a card table's note is \
+its note column.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
@@ -856,11 +858,44 @@ mod tests {
         }
     }
 
-    /// The card-table exception is worth nothing while another live rule
-    /// grants the note it forbids, and the exception can be stated once while
-    /// the contradiction survives in three places. So this sweeps every rule
-    /// on every surface a generator reads, rather than asserting a sentence
-    /// exists somewhere.
+    /// Every SENTENCE naming the table invocation, wrapping normalized away.
+    /// A rule-sized window is too coarse: a correct exception and a
+    /// contradicting paragraph cancel each other inside the check without
+    /// cancelling each other for a model reading the prompt.
+    fn table_invocation_sentences(text: &str) -> Vec<String> {
+        text.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .split(". ")
+            .filter(|sentence| sentence.contains("<!-- cards -->"))
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// The detector's own red-first contract: a correct table sentence beside
+    /// a contradicting one, where a rule-sized check reports nothing.
+    #[test]
+    fn the_table_sentence_detector_is_not_silenced_by_a_correct_neighbour() {
+        let text = "- An invocation binds the block above it. \
+                    `<!-- cards -->` takes card directives after it but never a \
+                    blockquote: a card table's note is its note column.\n\
+                    - A separate paragraph says `<!-- cards -->` takes a \
+                    `> [!NOTE]` blockquote.\n";
+        let flagged: Vec<_> = table_invocation_sentences(text)
+            .into_iter()
+            .filter(|sentence| sentence.contains("[!NOTE]"))
+            .collect();
+        assert_eq!(
+            1,
+            flagged.len(),
+            "exactly the contradicting sentence is caught, and the correct one \
+             beside it neither hides it nor is flagged itself: {flagged:#?}"
+        );
+    }
+
+    /// The exception is worth nothing while another live rule grants the note
+    /// it forbids, and it can be stated once while the contradiction survives
+    /// elsewhere. So this sweeps every surface a generator reads.
     #[test]
     fn no_live_rule_offers_a_card_table_the_note_its_grammar_refuses() {
         let mut conflicts = Vec::new();
@@ -878,21 +913,51 @@ mod tests {
                 build_prompt("src/lib.rs", false, &cfg(12), &spec()),
             ),
         ] {
-            for rule in text.split("\n- ") {
-                if rule.contains("<!-- cards -->")
-                    && rule.contains("[!NOTE]")
-                    && !rule.contains("note column")
-                {
-                    conflicts.push(format!("{surface}: {rule}"));
+            for sentence in table_invocation_sentences(&text) {
+                if sentence.contains("[!NOTE]") {
+                    conflicts.push(format!("{surface}: {sentence}"));
                 }
             }
         }
         assert!(
             conflicts.is_empty(),
-            "a rule pairs `<!-- cards -->` with a blockquote note and never says \
-             the note is a column, so a model can obey it and write a deck that \
-             cannot open: {conflicts:#?}"
+            "a sentence pairs `<!-- cards -->` with a blockquote note, so a model \
+             can obey it and write a deck that cannot open: {conflicts:#?}"
         );
+    }
+
+    /// The narrow half of the same rule: a table invocation must keep the
+    /// trailing directives the prompts separately REQUIRE, or the repair for
+    /// the note trades a broken deck for a deck missing its provenance.
+    #[test]
+    fn a_card_table_invocation_keeps_the_directives_the_prompts_require() {
+        let cited = parser::parse(
+            "deck.md",
+            "| front | back |\n| --- | --- |\n| a | b |\n<!-- cards -->\n\
+             <!-- at: src/lib.rs:1-2 -->\n",
+        )
+        .expect("a table invocation carries the locator the prompt requires");
+        assert_eq!(
+            "src/lib.rs:1-2", cited.cards[0].citations[0].locator,
+            "the citation survives on a row card: {cited:?}"
+        );
+
+        for (surface, prompt) in [
+            (
+                "the local-source generation prompt",
+                build_prompt("src/lib.rs", false, &cfg(12), &spec()),
+            ),
+            (
+                "the URL generation prompt",
+                build_prompt("https://example.org/page", true, &cfg(12), &spec()),
+            ),
+        ] {
+            assert!(
+                !prompt.contains("takes nothing after it"),
+                "{surface} must not forbid the trailing directives it asks for \
+                 elsewhere: {prompt}"
+            );
+        }
     }
 
     /// The two combinations the earlier probes never put together: a card

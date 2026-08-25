@@ -49,8 +49,9 @@ Rules that hold whatever the shape:
   above an answer line, an option list, or a table.
 - An invocation binds the block directly above it, so it sits on the line
   immediately below the last option or row. `<!-- choices-single -->` takes
-  a `> [!NOTE]` note after it. `<!-- cards -->` takes nothing after it: a
-  card table's note is its note column.
+  a `> [!NOTE]` note after it. `<!-- cards -->` takes card directives after
+  it, an `at:` locator or a reveal mode, but never a blockquote: a card
+  table's note is its note column.
 - One idea per card. Split compound facts rather than nesting them.
 - No two cards may test the same fact. Vary what is asked; do not
   rephrase.
