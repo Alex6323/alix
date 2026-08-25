@@ -999,8 +999,10 @@ fn remediation_prompt(gaps: &[String]) -> String {
     prompt.push_str(
         "\nFORMAT — a Markdown deck, cards one after another. A card is a `## ` \
          front at column 0 (never indented); its answer is the plain \
-         (unindented) line(s) below it; a `> ` line after them adds an optional \
-         note (a caveat, example or why it matters). No frontmatter, no \
+         (unindented) line(s) below it; a `> [!NOTE]` line after them opens an \
+         optional note (a caveat, example or why it matters) whose body lines \
+         each start with `> `. A blockquote with no badge first line is a \
+         quotation and belongs to the answer. No frontmatter, no \
          headings other than the `## ` fronts. One example of each card type:\n\
          ## Recall how a String is laid out in memory.\n\
          A String stores a \\blank{pointer}, \\blank{length} and \

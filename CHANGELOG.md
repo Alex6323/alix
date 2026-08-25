@@ -361,7 +361,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   note. A card that resolves no note carries no badge either, so an addressed
   cloze note never leaves its badge on a sibling hole's card. Sidecar notes in
   a personal file are unaffected: their `<!-- note: card-... -->` marker
-  already declares them.
+  already declares them. Every prompt that writes a deck emits the badge:
+  deck and workspace generation, the deck reviser, the exam's card shapes,
+  the trace generator, and the shared card-shape guide, so generated material
+  carries notes as notes rather than as quotations in the answer.
 
 - BREAKING: comment machinery trails its block (everything-trails).
   A mapping invocation (`<!-- cards -->`, `<!-- plain -->`,

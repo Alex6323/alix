@@ -299,7 +299,7 @@ fn fill_prompt(items: &[Item], spec: &GenerationSpec) -> String {
          - a [trace] → the predict-verify CHECKPOINT cards: each is a `## ` question \
          at column 0 (never indented), then its key points as plain unindented \
          lines, an `<!-- at: file:start-end -->` locator line citing the REAL \
-         lines, and an optional `> ` note. Each hop opens on the previous reveal, \
+         lines, and an optional `> [!NOTE]` note. Each hop opens on the previous reveal, \
          predicts forward, and its key points are grounded in the cited lines.\n\
          - a [deck] → FACT cards: each is a `## ` front at column 0, followed by \
          the required deck-card shape below, plus an `<!-- at: file:start-end -->` \

@@ -133,7 +133,7 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          the revealed source makes (the rubric). `<!-- at: ... -->` is the \
          locator: {locator} — it must point at the REAL lines/passage the key points \
          paraphrase, because alix reads them live at review time as the ground \
-         truth. Cite accurately. The `> ` line is an optional note.\n\n\
+         truth. Cite accurately. A `> [!NOTE]` line opens an optional note, with its body on `> ` lines below it.\n\n\
          SCOPE EACH HOP TO A SELF-CONTAINED UNIT, AND GLOSS WHAT YOU DON'T SHOW. The \
          reader sees ONLY the lines you cite, so an excerpt must read on its own. \
          Prefer hops that are a whole SMALL function/method — its inputs are its \

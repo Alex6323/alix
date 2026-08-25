@@ -94,7 +94,7 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
              front: exactly one checked `- [x]` answer and at least two unchecked `- [ ]` \
              distractors, then `<!-- choices-single -->` on the line directly below the last \
              option. Without that line the options stay a literal checklist instead of \
-             becoming a card. Add a `> ` note explaining their mistaken premises.\n\
+             becoming a card. Add a `> [!NOTE]` note explaining their mistaken premises.\n\
              - A card table starts with `| front | back | note |`, then \
              `| --- | --- | --- |`, then one row per pair. Omit the note column when it is \
              unused.\n\
@@ -125,7 +125,7 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
              below the last option, write `<!-- choices-single -->`; without it the options \
              stay a literal checklist instead of becoming a card. Do not add a separate \
              plain answer or use `\\blank{...}`. Keep options parallel in form and length. \
-             Add a short `> ` note explaining the mistaken premise behind the distractors. \
+             Add a short `> [!NOTE]` note explaining the mistaken premise behind the distractors. \
              For a mapping, make one authored-choice card per pair and use plausible values \
              from the same domain as distractors.",
         ),
@@ -141,10 +141,13 @@ OUTPUT FORMAT — a Markdown deck, one card after another:
 - A block card starts with `## ` at column 0, followed by the question/front on the \
 same line. Never indent a card front.
 {card_format}
-- A `> ` line adds a note shown AFTER answering. Add a note to most cards: a \
-brief elaboration, a concrete example, a mnemonic, or why it matters — one or \
-two short lines, never just restating the answer. Put each note line on its \
-own `> ` line, after the answer lines.
+- A `> [!NOTE]` line opens a note shown AFTER answering, and each note line \
+goes on its own `> ` line below it. Add a note to most cards: a \
+brief elaboration, a concrete example, a mnemonic, or why it matters, one or \
+two short lines, never just restating the answer. The note goes last, below \
+the answer lines. A blockquote whose first line is NOT one of `[!NOTE]`, \
+`[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]` is a QUOTATION and \
+belongs to the answer, so never write a bare `> ` note.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
@@ -168,7 +171,7 @@ CARD QUALITY:
 - The answer must cover exactly what the front asks, no more. If it includes a \
 fact the question did not ask for, either narrow the answer to the question, \
 widen the question to cover the whole answer, or split into separate cards. \
-Extra context goes in the `> ` note, not the answer.
+Extra context goes in the `> [!NOTE]` note, not the answer.
 - Do not cram an enumeration into one prose answer. If the answer is a list of \
 several items, split it into several one-idea cards instead — one card per item \
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
@@ -185,8 +188,8 @@ same question.
 - Fronts must be unambiguous and answerable from memory; avoid yes/no questions.
 - Write original questions and answers in your own words; do not copy long \
 passages verbatim.
-- Give most cards a `> ` note that adds something beyond the answer (context, \
-an example, a caveat, or a memory hook).
+- Give most cards a `> [!NOTE]` note that adds something beyond the answer \
+(context, an example, a caveat, or a memory hook).
 - Order cards from foundational to advanced.
 
 REVISE before finishing: re-read the entire draft as a set and merge or delete \
@@ -207,9 +210,13 @@ OUTPUT FORMAT — a Markdown deck, one card after another:
 - A block card starts with `## ` at column 0, followed by the question/front on the \
 same line. Never indent a card front.
 {card_format}
-- A `> ` line adds a note shown AFTER answering. Add a note to most cards: a \
-brief elaboration, a concrete example, a mnemonic, or why it matters — one or \
-two short lines, never just restating the answer.
+- A `> [!NOTE]` line opens a note shown AFTER answering, and each note line \
+goes on its own `> ` line below it. Add a note to most cards: a \
+brief elaboration, a concrete example, a mnemonic, or why it matters, one or \
+two short lines, never just restating the answer. A blockquote whose first \
+line is NOT one of `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, \
+`[!CAUTION]` is a QUOTATION and belongs to the answer, so never write a bare \
+`> ` note.
 - A `<!-- at: file:start-end -->` line under a card cites where its answer \
 lives in the source (e.g. `<!-- at: src/string.rs:120-128 -->`; the path is \
 relative to the source root — your working directory). Add one to every card \
@@ -241,7 +248,7 @@ CARD QUALITY:
 - The answer must cover exactly what the front asks, no more. If it includes a \
 fact the question did not ask for, either narrow the answer to the question, \
 widen the question to cover the whole answer, or split into separate cards. \
-Extra context goes in the `> ` note, not the answer.
+Extra context goes in the `> [!NOTE]` note, not the answer.
 - Do not cram an enumeration into one prose answer. If the answer is a list of \
 several items, split it into several one-idea cards instead — one card per item \
 or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
@@ -256,7 +263,7 @@ never pad a one-word answer into a list.
 rephrasing the same question.
 - Ground every card in what the source actually shows; do not invent details \
 it doesn't contain. Fronts must be answerable from memory; avoid yes/no questions.
-- Give most cards a `> ` note that adds something beyond the answer.
+- Give most cards a `> [!NOTE]` note that adds something beyond the answer.
 - Order cards from foundational to advanced.
 
 REVISE before finishing: re-read the whole draft and merge or delete any cards \
@@ -272,15 +279,15 @@ returning the improved deck.
 Apply these edits:
 - Remove or MERGE cards that test the same fact or overlap heavily — every \
 card must test something distinct. This is the most important fix.
-- Drop cards that are ambiguous or trivial, or whose `> ` note merely restates \
-the answer.
+- Drop cards that are ambiguous or trivial, or whose `> [!NOTE]` note merely \
+restates the answer.
 - Tighten any card whose answer covers more than its front asks: narrow the \
-answer to the question, move the extra fact to the `> ` note, or split it into \
+answer to the question, move the extra fact to the `> [!NOTE]` note, or split it into \
 distinct cards. A front and its answer must ask and tell the same thing.
 {mapping_review}
 - Keep the EXACT same file format: the leading `---` frontmatter block, cards \
 written as `## ` blocks or card-table rows, plain or task-list answers below \
-block fronts, `> ` notes, and any `<!-- key: value -->` directive lines. A \
+block fronts, `> [!NOTE]` notes, and any `<!-- key: value -->` directive lines. A \
 cloze card keeps its `\\blank{...}` holes in its answer lines.
 - Preserve the good cards and their order; do not invent filler to hit a count.
 
@@ -658,7 +665,7 @@ mod tests {
         assert!(p.contains("NEVER on the front"));
         assert!(p.contains("Every card needs at least one answer line"));
         assert!(p.contains("Add a note to most cards"));
-        assert!(p.contains("Give most cards a `> ` note"));
+        assert!(p.contains("Give most cards a `> [!NOTE]` note"));
         assert!(p.contains("NO TWO CARDS MAY TEST THE SAME FACT"));
         assert!(p.contains("REVISE before finishing"));
         assert!(p.contains("cover exactly what the front asks"));

@@ -37,8 +37,9 @@ badly exactly where thought was needed.
 Rules that hold whatever the shape:
 
 - Every card needs at least one answer line.
-- Most cards deserve a `> ` note: an example, a caveat, a mnemonic, or
-  why it matters. Never a restatement of the answer.
+- Most cards deserve a `> [!NOTE]` note: an example, a caveat, a mnemonic,
+  or why it matters. Never a restatement of the answer. The badge line is
+  required; a blockquote without one is a quotation and belongs to the answer.
 - A choice card's note names the option's claim or mistaken premise, never
   its number, letter, or screen position. Options shuffle between appearances.
 - One idea per card. Split compound facts rather than nesting them.
