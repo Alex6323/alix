@@ -64,8 +64,8 @@ struct ImageMeasurement {
     alt: Option<String>,
 }
 
-/// The badge is measured beside the body so a corpus change that alters which
-/// blockquote opens a note cannot pass as an unchanged baseline.
+/// The badge is measured beside the body. `DigestLine` projects both, since
+/// the digest is what the committed baseline compares.
 #[derive(Debug, Serialize)]
 struct NoteMeasurement {
     badge: Option<String>,
@@ -420,6 +420,11 @@ struct DigestLine {
     cards: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     back: Option<&'static str>,
+    /// One entry per note, `card:badge:body`, in card and authored order. The
+    /// committed digest is the only form the baseline compares, so a badge or
+    /// a note stack that reaches no field here cannot move the gate.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    notes: Vec<String>,
 }
 
 fn digest_line(measurement: &Measurement) -> DigestLine {
@@ -439,6 +444,20 @@ fn digest_line(measurement: &Measurement) -> DigestLine {
                 "div"
             }
         }),
+        notes: measurement
+            .cards
+            .iter()
+            .enumerate()
+            .flat_map(|(index, card)| {
+                card.notes.iter().map(move |note| {
+                    format!(
+                        "{index}:{}:{}",
+                        note.badge.as_deref().unwrap_or("-"),
+                        note.body
+                    )
+                })
+            })
+            .collect(),
     }
 }
 
@@ -503,6 +522,29 @@ mod tests {
         assert!(line.err.is_some(), "a parentless deep heading errors: {line:?}");
         assert_eq!(None, line.cards);
         assert_eq!(None, line.back);
+    }
+
+    #[test]
+    fn the_digest_moves_when_only_a_notes_badge_changes() {
+        let mut warned = measure(
+            "test",
+            example("an answer\n\n> [!WARNING]\n> mind this\n", "Block quotes"),
+        );
+        assert_eq!(
+            vec!["0:Warning:mind this".to_string()],
+            digest_line(&warned).notes,
+            "the measured note reaches the digest: {:?}",
+            warned.cards
+        );
+
+        let before = serde_json::to_string(&digest_line(&warned)).expect("digest");
+        warned.cards[0].notes[0].badge = Some("Tip".to_string());
+        let after = serde_json::to_string(&digest_line(&warned)).expect("digest");
+        assert_ne!(
+            before, after,
+            "a badge-only change must move the committed line, or the baseline \
+             cannot see it"
+        );
     }
 
     #[test]
