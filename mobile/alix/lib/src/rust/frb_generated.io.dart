@@ -84,7 +84,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  Badge dco_decode_badge(dynamic raw);
+
+  @protected
   bool dco_decode_bool(dynamic raw);
+
+  @protected
+  Badge dco_decode_box_autoadd_badge(dynamic raw);
 
   @protected
   bool dco_decode_box_autoadd_bool(dynamic raw);
@@ -219,6 +225,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NoteUnit> dco_decode_list_note_unit(dynamic raw);
 
   @protected
+  List<NoteView> dco_decode_list_note_view(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_prim_u_32_loose(dynamic raw);
 
   @protected
@@ -252,7 +261,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NoteUnit dco_decode_note_unit(dynamic raw);
 
   @protected
+  NoteView dco_decode_note_view(dynamic raw);
+
+  @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  Badge? dco_decode_opt_box_autoadd_badge(dynamic raw);
 
   @protected
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
@@ -422,7 +437,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  Badge sse_decode_badge(SseDeserializer deserializer);
+
+  @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  Badge sse_decode_box_autoadd_badge(SseDeserializer deserializer);
 
   @protected
   bool sse_decode_box_autoadd_bool(SseDeserializer deserializer);
@@ -573,6 +594,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NoteUnit> sse_decode_list_note_unit(SseDeserializer deserializer);
 
   @protected
+  List<NoteView> sse_decode_list_note_view(SseDeserializer deserializer);
+
+  @protected
   List<int> sse_decode_list_prim_u_32_loose(SseDeserializer deserializer);
 
   @protected
@@ -608,7 +632,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NoteUnit sse_decode_note_unit(SseDeserializer deserializer);
 
   @protected
+  NoteView sse_decode_note_view(SseDeserializer deserializer);
+
+  @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  Badge? sse_decode_opt_box_autoadd_badge(SseDeserializer deserializer);
 
   @protected
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
@@ -807,7 +837,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_badge(Badge self, SseSerializer serializer);
+
+  @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_badge(Badge self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer);
@@ -1005,6 +1041,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_note_unit(List<NoteUnit> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_note_view(List<NoteView> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_prim_u_32_loose(
     List<int> self,
     SseSerializer serializer,
@@ -1059,7 +1098,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_note_unit(NoteUnit self, SseSerializer serializer);
 
   @protected
+  void sse_encode_note_view(NoteView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_badge(Badge? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);

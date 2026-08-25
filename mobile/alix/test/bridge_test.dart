@@ -156,7 +156,7 @@ void main() {
       'E = mc^2',
     );
     final noteRuns = <InlineRun>[];
-    for (final unit in choiceCard.note) {
+    for (final unit in choiceCard.note.expand((note) => note.units)) {
       switch (unit) {
         case NoteUnit_Sentence(:final runs):
           noteRuns.addAll(runs);

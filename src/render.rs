@@ -103,15 +103,22 @@ fn checklist_items_with(
     (!items.is_empty()).then_some(items)
 }
 
-pub fn note_units(card: &Card) -> Vec<NoteUnit> {
+pub fn note_views(card: &Card) -> Vec<crate::review::NoteView> {
     let mut projector = DisplayProjector::default();
-    note_units_with(card, &mut projector)
+    note_views_with(card, &mut projector)
 }
 
-pub(crate) fn note_units_with(card: &Card, projector: &mut DisplayProjector) -> Vec<NoteUnit> {
-    card.first_note()
-        .map(|note| text_units_with(&note.body, projector, true, &card.resolved_diagrams))
-        .unwrap_or_default()
+pub(crate) fn note_views_with(
+    card: &Card,
+    projector: &mut DisplayProjector,
+) -> Vec<crate::review::NoteView> {
+    card.notes
+        .iter()
+        .map(|note| crate::review::NoteView {
+            badge: note.badge,
+            units: text_units_with(&note.body, projector, true, &card.resolved_diagrams),
+        })
+        .collect()
 }
 
 pub(crate) fn answer_units_with(
@@ -651,6 +658,14 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+
+    fn note_units(card: &Card) -> Vec<NoteUnit> {
+        note_views(card)
+            .into_iter()
+            .next()
+            .map(|note| note.units)
+            .unwrap_or_default()
+    }
 
     fn card_with_note(note: &str) -> Card {
         Card::plain(

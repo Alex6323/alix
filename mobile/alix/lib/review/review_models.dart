@@ -81,6 +81,17 @@ sealed class ReviewNoteUnitModel {
   const ReviewNoteUnitModel();
 }
 
+/// One post-answer note. [badge] is the GitHub alert badge that opened it,
+/// null for a note no blockquote opened (a table's note column, an AI
+/// augmentation, a personal note).
+class ReviewNoteModel {
+  ReviewNoteModel({this.badge, required Iterable<ReviewNoteUnitModel> units})
+    : units = List.unmodifiable(units);
+
+  final ReviewBadge? badge;
+  final List<ReviewNoteUnitModel> units;
+}
+
 class ReviewSentenceModel extends ReviewNoteUnitModel {
   ReviewSentenceModel({
     required this.text,
@@ -162,7 +173,7 @@ class ReviewCardModel {
     required Iterable<Iterable<InlineRunModel>> backRuns,
     required Iterable<ReviewNoteUnitModel> backUnits,
     required this.reshaped,
-    required Iterable<ReviewNoteUnitModel> note,
+    required Iterable<ReviewNoteModel> note,
     required Iterable<ReviewImageModel> images,
     required Iterable<ReviewImageModel> imagesBack,
   }) : frontRuns = List.unmodifiable(frontRuns),
@@ -194,7 +205,7 @@ class ReviewCardModel {
   final List<List<InlineRunModel>> backRuns;
   final List<ReviewNoteUnitModel> backUnits;
   final bool reshaped;
-  final List<ReviewNoteUnitModel> note;
+  final List<ReviewNoteModel> note;
   final List<ReviewImageModel> images;
   final List<ReviewImageModel> imagesBack;
 }
@@ -287,6 +298,9 @@ class ReviewTutorCardModel {
 /// How the learner answers: typed, or sketched on a canvas. Resolved in the
 /// lib (`review::state`), never inferred here.
 enum ReviewInput { type, draw }
+
+/// GitHub's five alert badges, the closed set that opens a note.
+enum ReviewBadge { note, tip, important, warning, caution }
 
 class ReviewStateModel {
   ReviewStateModel({

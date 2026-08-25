@@ -224,7 +224,13 @@ ReviewCardModel _cardFromBridge(bridge.CardView card) {
     backRuns: [for (final runs in card.backRuns) inlineRunsFromBridge(runs)],
     backUnits: [for (final unit in card.backUnits) _noteFromBridge(unit)],
     reshaped: card.reshaped,
-    note: [for (final unit in card.note) _noteFromBridge(unit)],
+    note: [
+      for (final note in card.note)
+        ReviewNoteModel(
+          badge: note.badge == null ? null : _badgeFromBridge(note.badge!),
+          units: [for (final unit in note.units) _noteFromBridge(unit)],
+        ),
+    ],
     images: [for (final image in card.images) _imageFromBridge(image)],
     imagesBack: [for (final image in card.imagesBack) _imageFromBridge(image)],
   );
@@ -321,6 +327,16 @@ bridge.Depth? _depthToBridge(ReviewDepth? depth) {
     ReviewDepth.recall => bridge.Depth.recall,
     ReviewDepth.reconstruct => bridge.Depth.reconstruct,
     null => null,
+  };
+}
+
+ReviewBadge _badgeFromBridge(bridge.Badge badge) {
+  return switch (badge) {
+    bridge.Badge.note => ReviewBadge.note,
+    bridge.Badge.tip => ReviewBadge.tip,
+    bridge.Badge.important => ReviewBadge.important,
+    bridge.Badge.warning => ReviewBadge.warning,
+    bridge.Badge.caution => ReviewBadge.caution,
   };
 }
 

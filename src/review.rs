@@ -61,6 +61,15 @@ pub struct ImageView {
     pub crop: Option<CropView>,
 }
 
+/// One note as a client renders it: its badge, when a blockquote opened it,
+/// and the display units of its body.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct NoteView {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub badge: Option<crate::card::Badge>,
+    pub units: Vec<NoteUnit>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CardView {
     pub front: String,
@@ -92,7 +101,7 @@ pub struct CardView {
     #[serde(default)]
     pub back_units: Vec<NoteUnit>,
     pub reshaped: bool,
-    pub note: Vec<NoteUnit>,
+    pub note: Vec<NoteView>,
     pub images: Vec<ImageView>,
     pub images_back: Vec<ImageView>,
     pub citations: Vec<String>,
@@ -214,7 +223,7 @@ impl CardView {
             back_runs,
             back_units,
             reshaped: card.display_back.is_some(),
-            note: render::note_units_with(card, projector),
+            note: render::note_views_with(card, projector),
             images: {
                 let stamps = asked_stamps(card);
                 let asked = move |stamp: Option<&str>| {
@@ -909,9 +918,12 @@ mod tests {
         assert_eq!(card.back, ["answer"], "the gap text is the answer");
         assert_eq!(
             card.note,
-            [NoteUnit::Sentence {
-                text: "a note line".into(),
-                runs: crate::inline::parse_inline("a note line"),
+            [NoteView {
+                badge: Some(crate::card::Badge::Note),
+                units: vec![NoteUnit::Sentence {
+                    text: "a note line".into(),
+                    runs: crate::inline::parse_inline("a note line"),
+                }],
             }]
         );
         assert_eq!(
@@ -1029,7 +1041,7 @@ mod tests {
         assert!(view.back_runs[0][0].math.as_ref().unwrap().display);
         assert_eq!(view.back[2], "$x^2$");
         assert!(view.back_runs[2].iter().all(|run| run.math.is_none()));
-        let NoteUnit::Sentence { runs, .. } = &view.note[0] else {
+        let [NoteUnit::Sentence { runs, .. }] = view.note[0].units.as_slice() else {
             panic!("note should remain a sentence");
         };
         assert!(runs.iter().any(|run| run.math.is_some()));
@@ -1058,15 +1070,19 @@ mod tests {
         let plain = CardView::from(&cards[0]);
         assert_eq!(
             plain.note,
-            [
-                NoteUnit::Sentence {
-                    text: "Intro here.".into(),
-                    runs: crate::inline::parse_inline("Intro here."),
-                },
-                NoteUnit::Code {
-                    lines: vec!["let x = 1;".into()]
-                },
-            ]
+            [NoteView {
+                badge: Some(crate::card::Badge::Note),
+                units: vec![
+                    NoteUnit::Sentence {
+                        text: "Intro here.".into(),
+                        runs: crate::inline::parse_inline("Intro here."),
+                    },
+                    NoteUnit::Code {
+                        lines: vec!["let x = 1;".into()]
+                    },
+                ],
+            }],
+            "one badged blockquote is one note, and its badge rides the units"
         );
         assert!(!plain.reshaped, "an authored back is not a reshape");
         assert_eq!(plain.back, ["an answer"]);

@@ -102,6 +102,8 @@ abstract class WalkSession implements RustOpaqueInterface {
   WalkState state();
 }
 
+enum Badge { note, tip, important, warning, caution }
+
 class CardView {
   final String front;
   final List<InlineRun> frontRuns;
@@ -117,7 +119,7 @@ class CardView {
   final List<List<InlineRun>> backRuns;
   final List<NoteUnit> backUnits;
   final bool reshaped;
-  final List<NoteUnit> note;
+  final List<NoteView> note;
   final List<ImageView> images;
   final List<ImageView> imagesBack;
   final List<String> citations;
@@ -493,6 +495,24 @@ sealed class NoteUnit with _$NoteUnit {
     required List<List<InlineRun>> header,
     required List<List<List<InlineRun>>> rows,
   }) = NoteUnit_Table;
+}
+
+class NoteView {
+  final Badge? badge;
+  final List<NoteUnit> units;
+
+  const NoteView({this.badge, required this.units});
+
+  @override
+  int get hashCode => badge.hashCode ^ units.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NoteView &&
+          runtimeType == other.runtimeType &&
+          badge == other.badge &&
+          units == other.units;
 }
 
 class RecognizeGap {

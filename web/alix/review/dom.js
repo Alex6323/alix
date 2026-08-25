@@ -431,9 +431,19 @@ export function contextLine(text, runs, cls) {
   return line;
 }
 
-export function renderNote(parent, units) {
-  if (!units || units.length === 0) return;
+// Each NoteDto is its own `.note` block, so several notes stack as siblings
+// rather than one badge overwriting another. `badge` is absent for a note no
+// blockquote opened (table column, augmentation, personal note).
+export function renderNote(parent, notes) {
+  for (const { badge, units } of notes || []) {
+    renderNoteBlock(parent, badge, units || []);
+  }
+}
+
+function renderNoteBlock(parent, badge, units) {
+  if (units.length === 0) return;
   const note = el("div", "note");
+  if (badge) note.dataset.badge = badge;
   for (const unit of units) {
     if (unit.kind === "sentence") {
       const paragraph = el("p");

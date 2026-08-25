@@ -101,20 +101,25 @@
   "images_back": [],
   "note": [
     {
-      "kind": "sentence",
-      "runs": [
+      "badge": "note",
+      "units": [
         {
-          "text": "A "
-        },
-        {
-          "bold": true,
-          "text": "city"
-        },
-        {
-          "text": "."
+          "kind": "sentence",
+          "runs": [
+            {
+              "text": "A "
+            },
+            {
+              "bold": true,
+              "text": "city"
+            },
+            {
+              "text": "."
+            }
+          ],
+          "text": "A **city**."
         }
-      ],
-      "text": "A **city**."
+      ]
     }
   ],
   "reshaped": false

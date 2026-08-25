@@ -1236,53 +1236,57 @@ class ReviewCardView extends StatelessWidget {
         const SizedBox(height: 18),
         _divider(tokens),
         const SizedBox(height: 14),
-        Container(
-          width: double.infinity,
-          constraints: const BoxConstraints(maxWidth: 600),
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-          decoration: BoxDecoration(
-            color: tokens.noteBorder.withValues(alpha: 0.12),
-            border: Border.all(
-              color: tokens.noteBorder.withValues(alpha: 0.24),
-            ),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final (index, note) in card.note.indexed) ...[
-                if (index > 0) const SizedBox(height: 10),
-                switch (note) {
-                  ReviewSentenceModel(:final text, :final runs) => _runsOrText(
-                    runs,
-                    text,
-                    style: TextStyle(
-                      color: tokens.noteInk,
-                      fontSize: 15,
-                      height: 1.4,
-                    ),
-                  ),
-                  ReviewCodeModel(:final lines) => _codeBlock(
-                    lines,
-                    tokens.text,
-                  ),
-                  ReviewDiagramModel() => _diagram(note, answered: true),
-                  ReviewChecklistModel(:final items) => _checklist(
-                    items,
-                    tokens,
-                    TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
-                  ),
-                  ReviewTableModel() => _table(
-                    note,
-                    tokens,
-                    TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
-                  ),
-                },
-              ],
-            ],
-          ),
-        ),
+        for (final (index, note) in card.note.indexed) ...[
+          if (index > 0) const SizedBox(height: 10),
+          _noteBlock(note, tokens),
+        ],
       ],
+    );
+  }
+
+  // One box per note, so several notes stack instead of merging into one and
+  // losing their badges. The badge itself gets no styling yet.
+  Widget _noteBlock(ReviewNoteModel entry, AlixTokens tokens) {
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(maxWidth: 600),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+      decoration: BoxDecoration(
+        color: tokens.noteBorder.withValues(alpha: 0.12),
+        border: Border.all(color: tokens.noteBorder.withValues(alpha: 0.24)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (index, note) in entry.units.indexed) ...[
+            if (index > 0) const SizedBox(height: 10),
+            switch (note) {
+              ReviewSentenceModel(:final text, :final runs) => _runsOrText(
+                runs,
+                text,
+                style: TextStyle(
+                  color: tokens.noteInk,
+                  fontSize: 15,
+                  height: 1.4,
+                ),
+              ),
+              ReviewCodeModel(:final lines) => _codeBlock(lines, tokens.text),
+              ReviewDiagramModel() => _diagram(note, answered: true),
+              ReviewChecklistModel(:final items) => _checklist(
+                items,
+                tokens,
+                TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
+              ),
+              ReviewTableModel() => _table(
+                note,
+                tokens,
+                TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
+              ),
+            },
+          ],
+        ],
+      ),
     );
   }
 

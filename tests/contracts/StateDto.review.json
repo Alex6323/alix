@@ -139,46 +139,51 @@
     ],
     "note": [
       {
-        "kind": "sentence",
-        "runs": [
+        "badge": "note",
+        "units": [
           {
-            "text": "Ownership frees memory deterministically."
-          }
-        ],
-        "text": "Ownership frees memory deterministically."
-      },
-      {
-        "kind": "code",
-        "lines": [
-          "let s = String::new();"
-        ]
-      },
-      {
-        "items": [
-          {
-            "checked": true,
+            "kind": "sentence",
             "runs": [
               {
-                "text": "Own the "
-              },
-              {
-                "bold": true,
-                "text": "value"
+                "text": "Ownership frees memory deterministically."
               }
             ],
-            "text": "Own the value"
+            "text": "Ownership frees memory deterministically."
           },
           {
-            "checked": false,
-            "runs": [
+            "kind": "code",
+            "lines": [
+              "let s = String::new();"
+            ]
+          },
+          {
+            "items": [
               {
+                "checked": true,
+                "runs": [
+                  {
+                    "text": "Own the "
+                  },
+                  {
+                    "bold": true,
+                    "text": "value"
+                  }
+                ],
+                "text": "Own the value"
+              },
+              {
+                "checked": false,
+                "runs": [
+                  {
+                    "text": "Borrow forever"
+                  }
+                ],
                 "text": "Borrow forever"
               }
             ],
-            "text": "Borrow forever"
+            "kind": "checklist"
           }
-        ],
-        "kind": "checklist"
+        ]
       }
     ],
     "reshaped": true

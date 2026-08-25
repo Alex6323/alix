@@ -1,5 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{answer::Input, depth::Reveal, token};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -209,7 +211,8 @@ pub struct Card {
 
 /// GitHub's five alert badges, the closed set whose presence on a
 /// blockquote's first line makes it a note rather than a quote.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Badge {
     Note,
     Tip,
@@ -585,7 +588,7 @@ mod tests {
                     ..Default::default()
                 }],
             }],
-            crate::render::note_units(&c),
+            crate::render::note_views(&c)[0].units,
             "the display projection is the first note's, and the second shows nowhere"
         );
     }

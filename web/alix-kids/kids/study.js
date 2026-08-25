@@ -436,11 +436,13 @@ function renderOptions() {
   return wrap;
 }
 
-// The mascot speaks the card's note (the "why"). NoteUnitDto is a tagged union:
-// {kind:"sentence",text} → a spoken line; {kind:"code",lines} → a small block.
+// The mascot speaks the card's notes (the "why"). Each NoteDto is
+// {badge,units}; NoteUnitDto is a tagged union: {kind:"sentence",text} → a
+// spoken line; {kind:"code",lines} → a small block. Kids speak every note's
+// body in order and ignore the badge for now, so no badge styling is implied.
 // An empty/absent note shows nothing (no empty bubble).
 function renderWhy(parent, card) {
-  const units = card.note || [];
+  const units = (card.note || []).flatMap((note) => note.units || []);
   const keypoints = state.keypoints || [];
   if (!units.length && !keypoints.length) return;
   const row = el("div", "rev-why");

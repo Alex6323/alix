@@ -40,11 +40,20 @@ pub(super) struct CardDto {
     pub(super) back_runs: Vec<Vec<InlineRun>>,
     pub(super) back_units: Vec<NoteUnit>,
     pub(super) reshaped: bool,
-    pub(super) note: Vec<NoteUnit>,
+    pub(super) note: Vec<NoteDto>,
     pub(super) images: Vec<ImageDto>,
     pub(super) images_back: Vec<ImageDto>,
     pub(super) citations: Vec<CitationDto>,
     pub(super) crumb: Option<CrumbDto>,
+}
+
+/// One note on the wire. `badge` is absent for a note no blockquote opened
+/// (a table's note column, an augmentation, a personal note).
+#[derive(Debug, Serialize)]
+pub(super) struct NoteDto {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) badge: Option<crate::card::Badge>,
+    pub(super) units: Vec<NoteUnit>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1321,7 +1330,14 @@ pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
         back_runs: view.back_runs,
         back_units: web_units(view.back_units),
         reshaped: view.reshaped,
-        note: web_units(view.note),
+        note: view
+            .note
+            .into_iter()
+            .map(|note| NoteDto {
+                badge: note.badge,
+                units: web_units(note.units),
+            })
+            .collect(),
         citations: view
             .citations
             .into_iter()

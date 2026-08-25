@@ -120,7 +120,9 @@ fn statedto_review_phase_wire_shape() {
                 runs: crate::inline::parse_inline("every value has one owner"),
             }],
             reshaped: true,
-            note: vec![
+            note: vec![NoteDto {
+                badge: Some(crate::card::Badge::Note),
+                units: vec![
                 NoteUnit::Sentence {
                     text: "Ownership frees memory deterministically.".to_string(),
                     runs: crate::inline::parse_inline("Ownership frees memory deterministically."),
@@ -142,7 +144,8 @@ fn statedto_review_phase_wire_shape() {
                         },
                     ],
                 },
-            ],
+                ],
+            }],
             images: vec![ImageDto {
                 src: "/img/0123456789abcdef".to_string(),
                 alt: Some("a heap-allocated String".to_string()),
@@ -274,29 +277,32 @@ fn statedto_review_phase_wire_shape() {
                     "runs": [{"text": "every value has one owner"}]
                 }],
                 "reshaped": true,
-                "note": [
-                    {
-                        "kind": "sentence",
-                        "text": "Ownership frees memory deterministically.",
-                        "runs": [{"text": "Ownership frees memory deterministically."}]
-                    },
-                    {"kind": "code", "lines": ["let s = String::new();"]},
-                    {
-                        "kind": "checklist",
-                        "items": [
-                            {
-                                "checked": true,
-                                "text": "Own the value",
-                                "runs": [{"text": "Own the "}, {"text": "value", "bold": true}]
-                            },
-                            {
-                                "checked": false,
-                                "text": "Borrow forever",
-                                "runs": [{"text": "Borrow forever"}]
-                            }
-                        ]
-                    }
-                ],
+                "note": [{
+                    "badge": "note",
+                    "units": [
+                        {
+                            "kind": "sentence",
+                            "text": "Ownership frees memory deterministically.",
+                            "runs": [{"text": "Ownership frees memory deterministically."}]
+                        },
+                        {"kind": "code", "lines": ["let s = String::new();"]},
+                        {
+                            "kind": "checklist",
+                            "items": [
+                                {
+                                    "checked": true,
+                                    "text": "Own the value",
+                                    "runs": [{"text": "Own the "}, {"text": "value", "bold": true}]
+                                },
+                                {
+                                    "checked": false,
+                                    "text": "Borrow forever",
+                                    "runs": [{"text": "Borrow forever"}]
+                                }
+                            ]
+                        }
+                    ]
+                }],
                 "images": [
                     {"src": "/img/0123456789abcdef", "alt": "a heap-allocated String",
                      "regions": [
@@ -940,9 +946,12 @@ fn carddto_wire_shape() {
                 runs: crate::inline::parse_inline("Use `**x**` *France*"),
             }],
             reshaped: false,
-            note: vec![NoteUnit::Sentence {
-                text: "A **city**.".to_string(),
-                runs: crate::inline::parse_inline("A **city**."),
+            note: vec![crate::review::NoteView {
+                badge: Some(crate::card::Badge::Note),
+                units: vec![NoteUnit::Sentence {
+                    text: "A **city**.".to_string(),
+                    runs: crate::inline::parse_inline("A **city**."),
+                }],
             }],
             images: Vec::new(),
             images_back: Vec::new(),
@@ -1004,9 +1013,12 @@ fn carddto_wire_shape() {
             }],
             "reshaped": false,
             "note": [{
-                "kind": "sentence",
-                "text": "A **city**.",
-                "runs": [{"text": "A "}, {"text": "city", "bold": true}, {"text": "."}]
+                "badge": "note",
+                "units": [{
+                    "kind": "sentence",
+                    "text": "A **city**.",
+                    "runs": [{"text": "A "}, {"text": "city", "bold": true}, {"text": "."}]
+                }]
             }],
             "images": [],
             "images_back": [],

@@ -209,7 +209,7 @@ pub fn diagnostics(cards: &[Card], augment: Option<&AugmentCache>) -> Vec<MathDi
         for runs in &view.back_runs {
             collect_run_diagnostics(card.line, "answer", runs, &mut seen, &mut diagnostics);
         }
-        for unit in &view.note {
+        for unit in view.note.iter().flat_map(|note| &note.units) {
             match unit {
                 NoteUnit::Sentence { runs, .. } => {
                     collect_run_diagnostics(card.line, "note", runs, &mut seen, &mut diagnostics)

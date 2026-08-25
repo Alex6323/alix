@@ -638,10 +638,20 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `back_runs` | [[InlineRun]] | Display projection per answer line. |
 | `back_units` | [NoteUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, checklists, and pipe tables remain structural units. Line reveal and typing continue to use `back` / `back_runs`. |
 | `reshaped` | bool | `back` is the `format` augment's display shape. |
-| `note` | [NoteUnitDto] | Post-answer note, as a tagged union. |
+| `note` | [NoteDto] | Post-answer notes, in authored order. Empty when the card has none. |
 | `images` / `images_back` | [ImageDto] | Front / back images, rendered as ordered blocks on that side. Empty when none. |
 | `citations` | [CitationDto] | Ordered `<!-- at: -->` citations. Empty when none. |
 | `crumb` | CrumbDto? | Topology breadcrumb (region heatmap). |
+
+### NoteDto
+
+One post-answer note. `units: [NoteUnitDto]` is its body, the same tagged
+union the other `*_units` fields carry. `badge: string?` is the GitHub alert
+badge that opened it, lowercased: one of `note`, `tip`, `important`,
+`warning`, `caution`. The key is ABSENT (never null) for a note no blockquote
+opened: a card table's note column, an AI augmentation, or a personal note the
+reviewer appended. A client that renders no badge styling still renders
+`units` and loses nothing but colour.
 
 ### CitationDto
 
@@ -731,7 +741,7 @@ line whose next line is a delimiter row, plus the `|` lines that follow.
 from the delimiter row's colons; `header` is one run list per header cell and
 `rows` are the body cells, each padded or truncated to the header width for
 display (only the mapped-card table enforces widths). Table units appear in
-`back_units`, `front_units`, and `note`; `context_units` and
+`back_units`, `front_units`, and each `NoteDto.units`; `context_units` and
 `section_context_units` carry only raw fences and closed bare-math blocks.
 Example payload:
 `tests/contracts/CardDto.table.json`.

@@ -9,7 +9,8 @@ pub use alix::{
     inline::InlineRun,
     math::MathView,
     render::{CellAlign, ChecklistItem, NoteUnit},
-    review::{CardView, CheckFeedback, ChoiceFeedback, CropView, ImageView, MultiChoiceFeedback, RegionRole, RegionView, ReviewState},
+    card::Badge,
+    review::{CardView, CheckFeedback, ChoiceFeedback, CropView, ImageView, MultiChoiceFeedback, NoteView, RegionRole, RegionView, ReviewState},
     session::RecognizeGap,
     trace::Phase as WalkPhase,
 };
@@ -129,6 +130,21 @@ pub struct _ImageView {
     pub crop: Option<CropView>,
 }
 
+#[flutter_rust_bridge::frb(mirror(NoteView))]
+pub struct _NoteView {
+    pub badge: Option<Badge>,
+    pub units: Vec<NoteUnit>,
+}
+
+#[flutter_rust_bridge::frb(mirror(Badge))]
+pub enum _Badge {
+    Note,
+    Tip,
+    Important,
+    Warning,
+    Caution,
+}
+
 #[flutter_rust_bridge::frb(mirror(CardView))]
 pub struct _CardView {
     pub front: String,
@@ -145,7 +161,7 @@ pub struct _CardView {
     pub back_runs: Vec<Vec<InlineRun>>,
     pub back_units: Vec<NoteUnit>,
     pub reshaped: bool,
-    pub note: Vec<NoteUnit>,
+    pub note: Vec<NoteView>,
     pub images: Vec<ImageView>,
     pub images_back: Vec<ImageView>,
     pub citations: Vec<String>,
@@ -976,6 +992,7 @@ mod tests {
         let note_runs: Vec<&InlineRun> = card
             .note
             .iter()
+            .flat_map(|note| &note.units)
             .flat_map(|unit| match unit {
                 NoteUnit::Sentence { runs, .. } => runs.iter().collect(),
                 NoteUnit::Checklist { items } => {

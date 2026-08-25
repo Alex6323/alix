@@ -351,6 +351,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A card's note carries its GitHub alert badge to every client.
+  `CardDto.note` is now a list of note objects (`{badge, units}`) rather
+  than a flat list of display units, so a `> [!WARNING]` and a `> [!NOTE]`
+  are finally distinguishable on the wire. `badge` is lowercase (`note`,
+  `tip`, `important`, `warning`, `caution`) and absent for a note no
+  blockquote opened: a card table's note column, an AI augmentation, or a
+  personal note. Adult, kids, and mobile read the new shape; badge colours
+  and the multi-note stack come next. A client written against the old
+  flat list must unwrap `units`.
+
 - Emphasis follows CommonMark's flanking rule on both sides of a run, so
   `*` and `_` next to punctuation no longer style text GitHub leaves
   literal. `a**.tail**`, `a*.tail*`, and `a**(x) y**` render as written

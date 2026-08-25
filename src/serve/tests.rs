@@ -263,12 +263,13 @@ fn card_dto_structures_the_note() {
 
     assert_eq!(dto.front, "the front");
     assert_eq!(dto.back, vec!["the back".to_string()]);
-    assert_eq!(dto.note.len(), 2);
-    match &dto.note[0] {
+    assert_eq!(dto.note.len(), 1, "one blockquote is one note");
+    assert_eq!(dto.note[0].units.len(), 2);
+    match &dto.note[0].units[0] {
         NoteUnit::Sentence { text, .. } => assert_eq!(text, "Intro here."),
         other => panic!("expected a sentence, got {other:?}"),
     }
-    match &dto.note[1] {
+    match &dto.note[0].units[1] {
         NoteUnit::Code { lines } => assert_eq!(lines, &vec!["fn main() {}".to_string()]),
         other => panic!("expected a code block, got {other:?}"),
     }
