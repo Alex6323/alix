@@ -448,14 +448,18 @@ Three HTML spellings do render, each with a fixed meaning:
   display as subscript, superscript, and underline on every client, tags
   dropped. One element opens at a time on a line, and each pair must close
   in order; a mismatched, doubled, or unclosed pair is a tag-shape error.
-  Grading compares the inner text, so type `H2O` for `H<sub>2</sub>O`.
+  Grading compares the inner text, so type `H2O` for `H<sub>2</sub>O`. A
+  dropped tag still separates what stood on either side of it, so
+  `x<sup>2</sup>_i_` italicizes instead of reading as one word.
 - **Entities.** The full HTML5 named set (`&amp;`, `&euro;`, …) and the
   numeric forms `&#65;` / `&#x41;` decode to their characters on display,
   per CommonMark. Anything that is not a complete, valid entity stays
   literal. A decoded character is content, never markup: `&#42;x&#42;`
   shows `*x*` without italics, and `&lt;div&gt;` shows `<div>` without the
-  tag-shape error. Grading compares the decoded text, and the deck file
-  keeps the entity exactly as you wrote it.
+  tag-shape error. Markup beside an entity is judged on the spelling in
+  the file, where the neighbouring character is `&` or `;`, so
+  `&Aopf;_x_` italicizes `x`. Grading compares the decoded text, and the
+  deck file keeps the entity exactly as you wrote it.
 
 The usual protections apply on top: inline code, fenced blocks, and math
 bodies keep every one of these spellings literal, a whole-line `<!-- -->`

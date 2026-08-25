@@ -70,7 +70,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   valid entity stays literal, and a decoded character is content, not
   markup: `&#42;x&#42;` shows `*x*` without italics and `&lt;div&gt;`
   shows `<div>` without the reserved-tag error. Code spans and math
-  keep entities as written. Grading compares the decoded text, so
+  keep entities as written. Emphasis next to an entity is judged on the
+  spelling in the file, `&` on its left and `;` on its right, so
+  `&Aopf;_x_` italicizes the variable rather than showing the
+  underscores, and `_&nbsp;x_` emphasizes even though the entity decodes
+  to a space. Grading compares the decoded text, so
   typing `Tom & Jerry` answers `Tom &amp; Jerry`; the deck file keeps
   the authored entity untouched.
 
@@ -80,7 +84,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   text. Grading compares the tag-free content, so typing `H2O` answers
   `H<sub>2</sub>O`. Pair interiors keep normal inline scanning
   (emphasis and code inside a pair still render), while code spans and
-  escapes keep the tags literal.
+  escapes keep the tags literal. A dropped tag stays a boundary for the
+  markup around it: `x<sup>2</sup>_i_` italicizes rather than reading as
+  one word, and a superscript citation such as `[array]<sup>(1)</sup>`
+  keeps its brackets instead of taking the superscript's parentheses as
+  a link destination.
 
 - Autolinks render as inert links (decision 10, second slice):
   `<https://...>` and `<user@host>` display as the bracket-free URL,
