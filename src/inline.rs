@@ -2199,13 +2199,16 @@ mod tests {
     }
 
     /// The two halves of a footprint are one fact, so they are pinned
-    /// together: every glyph covers a non-empty authored range, and the ranges
-    /// tile the line in order without overlapping. An entity spans its whole
-    /// `&...;`, which is the case a per-character rule gets wrong.
+    /// together: every glyph names a non-empty authored range inside the line,
+    /// and the ranges run forward. Gaps are legal (projection drops syntax),
+    /// and two consecutive glyphs may name the SAME range, because one entity
+    /// can decode to several scalars. A partial overlap may not happen: no
+    /// glyph starts inside another glyph's range.
     #[test]
-    fn footprints_tile_the_authored_line_in_order() {
+    fn every_glyph_names_an_ordered_authored_range() {
         for source in [
             "&Aopf;_x_",
+            "&NotEqualTilde;",
             "_&nbsp;x_",
             "a \\* b",
             "Tom &amp; Jerry",
@@ -2218,7 +2221,7 @@ mod tests {
         ] {
             let chars: Vec<char> = source.chars().collect();
             let glyphs = scan_glyphs(&chars, &[]);
-            let mut previous_end = 0;
+            let mut previous: Option<(usize, usize)> = None;
             for glyph in &glyphs {
                 let start = footprint_start(glyph);
                 let end = footprint_end(glyph);
@@ -2227,15 +2230,18 @@ mod tests {
                     "a glyph covers at least one authored char ({source}): {start}..{end}"
                 );
                 assert!(
-                    start >= previous_end,
-                    "footprints never overlap ({source}): {start} after {previous_end}"
-                );
-                assert!(
                     end <= chars.len(),
-                    "and never run past the line ({source}): {end} > {}",
+                    "and never runs past the line ({source}): {end} > {}",
                     chars.len()
                 );
-                previous_end = end;
+                if let Some(before) = previous {
+                    assert!(
+                        start >= before.1 || (start, end) == before,
+                        "ranges run forward, sharing one only when a single entity decoded \
+                         to several scalars ({source}): {start}..{end} after {before:?}"
+                    );
+                }
+                previous = Some((start, end));
             }
         }
     }
@@ -2275,6 +2281,41 @@ mod tests {
                 "{why} ({source}): {runs:?}"
             );
         }
+    }
+
+    /// The five syntax families whose characters projection deletes, each
+    /// standing on the side of the run that DECIDES: a delimiter flanks
+    /// against a removed character as though against punctuation, never as
+    /// though against nothing, so the run still opens and still closes.
+    #[test]
+    fn every_removed_boundary_flanks_as_authored_punctuation() {
+        let mut unflanked = Vec::new();
+        for (source, boundary) in [
+            ("**a $y$**", "closing math delimiter"),
+            ("**$y$ a**", "opening math delimiter"),
+            ("**a `c`**", "closing code delimiter"),
+            ("**`c` a**", "opening code delimiter"),
+            ("**a <https://e.test>**", "closing autolink angle"),
+            ("**<https://e.test> a**", "opening autolink angle"),
+            ("**a [t](u)**", "closing link tail"),
+            ("**[t](u) a**", "opening link bracket"),
+            ("**a <sup>z</sup>**", "closing subset-tag angle"),
+            ("**<sup>z</sup> a**", "opening subset-tag angle"),
+        ] {
+            let runs = parse_inline(source);
+            if !runs
+                .iter()
+                .filter(|run| run.text.contains('a'))
+                .all(|run| run.bold)
+            {
+                unflanked.push(format!("{boundary} ({source}): {runs:?}"));
+            }
+        }
+        assert!(
+            unflanked.is_empty(),
+            "a removed character is a punctuation neighbour, so the run still \
+             pairs across it: {unflanked:#?}"
+        );
     }
 
     #[test]
