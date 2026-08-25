@@ -535,7 +535,11 @@ fn bracket_links(
                 let image = index
                     .checked_sub(1)
                     .and_then(|before| glyphs.get(before))
-                    .is_some_and(|glyph| plain(glyph) && glyph.ch == '!');
+                    .is_some_and(|glyph| {
+                        plain(glyph)
+                            && glyph.ch == '!'
+                            && glyph.raw_index + 1 == glyphs[index].raw_index
+                    });
                 openers.push((index, image));
                 index += 1;
             }
@@ -2097,6 +2101,49 @@ mod tests {
     /// inside a link.
     #[test]
     fn an_image_opener_neither_forms_a_link_nor_deactivates_the_one_around_it() {
+        // An image opener is authored `![`. Every one of these drops
+        // characters between the two, so the projected glyphs are adjacent
+        // while the authored ones are not.
+        for (source, shown, linked, why) in [
+            ("![x](/u)", "![x](/u)", "", "authored adjacency IS an image"),
+            (
+                "&excl;[x](/u)",
+                "!x",
+                "x",
+                "an entity is not a structural bang",
+            ),
+            (
+                "*!*[x](/u)",
+                "!x",
+                "x",
+                "dropped emphasis markers are not adjacency",
+            ),
+            (
+                "!`c`[x](/u)",
+                "!cx",
+                "x",
+                "a code span between them is not adjacency",
+            ),
+            (
+                "Wow!<sup>[1](/source)</sup>",
+                "Wow!1",
+                "1",
+                "dropped tag markers are not adjacency",
+            ),
+        ] {
+            let runs = parse_inline(source);
+            let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+            assert_eq!(shown, text, "{why} ({source}): {runs:?}");
+            assert_eq!(
+                linked,
+                runs.iter()
+                    .filter(|run| run.link)
+                    .map(|run| run.text.as_str())
+                    .collect::<String>(),
+                "{why} ({source}): {runs:?}"
+            );
+        }
+
         let runs = parse_inline("[![moon](moon.jpg)](/uri)");
         let text: String = runs.iter().map(|run| run.text.as_str()).collect();
         assert_eq!(
