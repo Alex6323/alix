@@ -377,16 +377,23 @@ const CANONICAL_KEY_ORDER: [&str; 18] = [
     "format-version",
 ];
 
-const UNKNOWN_KEY_RANK: usize = CANONICAL_KEY_ORDER.len();
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum KeyRank {
+    Canonical(usize),
+    Unknown,
+    PersonalParent,
+    Id,
+}
 
-fn key_rank(key: &str) -> usize {
+fn key_rank(key: &str) -> KeyRank {
     match key {
-        PERSONAL_PARENT_KEY => UNKNOWN_KEY_RANK + 1,
-        "id" => UNKNOWN_KEY_RANK + 2,
+        PERSONAL_PARENT_KEY => KeyRank::PersonalParent,
+        "id" => KeyRank::Id,
         _ => CANONICAL_KEY_ORDER
             .iter()
             .position(|k| *k == key)
-            .unwrap_or(UNKNOWN_KEY_RANK),
+            .map(KeyRank::Canonical)
+            .unwrap_or(KeyRank::Unknown),
     }
 }
 
@@ -427,7 +434,7 @@ pub fn reorder_frontmatter(text: &str) -> Reorder {
         return Reorder::Skipped("unclosed frontmatter");
     };
 
-    let mut blocks: Vec<(usize, Vec<&str>)> = Vec::new();
+    let mut blocks: Vec<(KeyRank, Vec<&str>)> = Vec::new();
     for line in &lines[open + 1..close] {
         let content = line_content(line);
         if trim_ws(content).is_empty() {
