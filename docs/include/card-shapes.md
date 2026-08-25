@@ -46,10 +46,11 @@ Rules that hold whatever the shape:
   its number, letter, or screen position. Options shuffle between appearances.
 - Every `<!-- ... -->` line trails its card: it goes directly below the
   card's last content line, with no blank line between them, and never
-  above an answer line, an option list, or a table. An invocation
-  (`<!-- choices-single -->`, `<!-- cards -->`) binds the block directly
-  above it, so it sits on the line immediately below the last option or
-  row, and a `> [!NOTE]` note comes after it.
+  above an answer line, an option list, or a table.
+- An invocation binds the block directly above it, so it sits on the line
+  immediately below the last option or row. `<!-- choices-single -->` takes
+  a `> [!NOTE]` note after it. `<!-- cards -->` takes nothing after it: a
+  card table's note is its note column.
 - One idea per card. Split compound facts rather than nesting them.
 - No two cards may test the same fact. Vary what is asked; do not
   rephrase.

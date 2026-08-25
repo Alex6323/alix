@@ -152,10 +152,11 @@ the answer lines. A blockquote whose first line is NOT one of `[!NOTE]`, \
 belongs to the answer, so never write a bare `> ` note.
 - Every `<!-- ... -->` line TRAILS its card: put it below the card's LAST \
 content line, with NO blank line between them, and never above an answer line, \
-an option list, or a table. An invocation (`<!-- choices-single -->`, \
-`<!-- cards -->`) binds the block directly above it, so it sits on the line \
-immediately below the last option or row, and a `> [!NOTE]` note comes after \
-it.
+an option list, or a table.
+- An invocation binds the block directly above it, so it sits on the line \
+immediately below the last option or row. `<!-- choices-single -->` takes a \
+`> [!NOTE]` note after it. `<!-- cards -->` takes nothing after it: a card \
+table's note is its note column.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
@@ -233,10 +234,11 @@ lines, never guess the numbers — so the learner can flip the card to its \
 source on reveal. Omit it for a card that synthesizes across several places.
 - Every `<!-- ... -->` line TRAILS its card: put it below the card's LAST \
 content line, with NO blank line between them, and never above an answer line, \
-an option list, or a table. An invocation (`<!-- choices-single -->`, \
-`<!-- cards -->`) binds the block directly above it, so it sits on the line \
-immediately below the last option or row, and a `> [!NOTE]` note comes after \
-it.
+an option list, or a table.
+- An invocation binds the block directly above it, so it sits on the line \
+immediately below the last option or row. `<!-- choices-single -->` takes a \
+`> [!NOTE]` note after it. `<!-- cards -->` takes nothing after it: a card \
+table's note is its note column.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
@@ -852,6 +854,45 @@ mod tests {
                 "and the prompt teaching card tables states it: {prompt}"
             );
         }
+    }
+
+    /// The card-table exception is worth nothing while another live rule
+    /// grants the note it forbids, and the exception can be stated once while
+    /// the contradiction survives in three places. So this sweeps every rule
+    /// on every surface a generator reads, rather than asserting a sentence
+    /// exists somewhere.
+    #[test]
+    fn no_live_rule_offers_a_card_table_the_note_its_grammar_refuses() {
+        let mut conflicts = Vec::new();
+        for (surface, text) in [
+            (
+                "the shared card-shape guide",
+                card_shape_guide().to_string(),
+            ),
+            (
+                "the URL generation prompt",
+                build_prompt("https://example.org/page", true, &cfg(12), &spec()),
+            ),
+            (
+                "the local-source generation prompt",
+                build_prompt("src/lib.rs", false, &cfg(12), &spec()),
+            ),
+        ] {
+            for rule in text.split("\n- ") {
+                if rule.contains("<!-- cards -->")
+                    && rule.contains("[!NOTE]")
+                    && !rule.contains("note column")
+                {
+                    conflicts.push(format!("{surface}: {rule}"));
+                }
+            }
+        }
+        assert!(
+            conflicts.is_empty(),
+            "a rule pairs `<!-- cards -->` with a blockquote note and never says \
+             the note is a column, so a model can obey it and write a deck that \
+             cannot open: {conflicts:#?}"
+        );
     }
 
     #[test]
