@@ -2798,3 +2798,27 @@ fn every_carddto_carries_answer_steps_covering_its_back_exactly_once() {
         );
     }
 }
+
+#[test]
+fn every_badge_reaches_the_wire_as_its_own_lowercase_name() {
+    let rows = [
+        (crate::card::Badge::Note, "note"),
+        (crate::card::Badge::Tip, "tip"),
+        (crate::card::Badge::Important, "important"),
+        (crate::card::Badge::Warning, "warning"),
+        (crate::card::Badge::Caution, "caution"),
+    ];
+    for (badge, spelling) in rows {
+        let deck = format!("## q\na\n\n> [!{}]\n> body\n", spelling.to_uppercase());
+        let cards = crate::parser::parse_str("t.md", &deck)
+            .unwrap_or_else(|e| panic!("{spelling}: the deck parses: {e}"));
+        let dto = card_dto(crate::review::CardView::from(&cards[0]), None);
+        let value = serde_json::to_value(&dto).unwrap();
+        assert_eq!(
+            value["note"][0]["badge"],
+            serde_json::json!(spelling),
+            "{badge:?} travels as {spelling:?}; the adult and kids stylesheets \
+             select on that exact string"
+        );
+    }
+}
