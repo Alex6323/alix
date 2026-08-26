@@ -723,6 +723,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A supporting quotation is no longer graded as a claim the learner owes.
+  Three surfaces still derived their gradeable items from the card's raw
+  answer lines: the Explain checklist's fallback (an un-augmented card asked
+  the learner to reproduce the quoted source, and counted it against them), an
+  authored select-all (each quotation line became a correct option to pick),
+  and a trace checkpoint's points (the walk presented the source as a point to
+  predict, and the compression exam's rubric required it). All four grading
+  paths, typing included, now read one shared projection of the answer's own
+  claims. An atomic choice keeps the whole answer as its option, quotation
+  included, but shows it without the `>` marker.
+
 - The tutor's reference card shows a quotation as quoted content rather than
   as its `>` markers. The reference walked raw answer lines, so it kept the
   markup the review surfaces had already stopped showing.

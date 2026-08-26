@@ -430,8 +430,9 @@ pub fn state(
     } else {
         base_mode
     };
-    // Falls back to the card's AUTHORED back lines, never the reshaped
-    // display_back, so the checklist rubric stays truthful.
+    // Falls back to the card's AUTHORED claims, never the reshaped
+    // display_back and never a supporting quotation, so the checklist rubric
+    // stays truthful.
     let keypoints = if !introducing && mode == Mode::Explain {
         card.map(|c| {
             c.id()
@@ -440,7 +441,7 @@ pub fn state(
                         .keypoints(&id, c.content_fingerprint)
                         .map(<[String]>::to_vec)
                 })
-                .unwrap_or_else(|| c.back.clone())
+                .unwrap_or_else(|| crate::render::gradeable_answer_lines(c, AnswerSpace::Authored))
         })
     } else {
         None
@@ -615,13 +616,9 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
     let mode = depth::check_for(card.reveal.unwrap_or_default(), session.depth(), card);
     // A quotation is supporting content, not the answer's own prose: typing it
     // back tests transcription rather than understanding.
-    let quoted = crate::render::card_quote_flags(card, AnswerSpace::Authored);
-    let expected: Vec<String> = card
-        .answer_lines(AnswerSpace::Authored)
+    let expected: Vec<String> = crate::render::gradeable_answer_lines(card, AnswerSpace::Authored)
         .iter()
-        .zip(&quoted)
-        .filter(|(_, line_is_quote)| !**line_is_quote)
-        .map(|(line, _)| crate::inline::strip_inline_with(line, &card.definitions))
+        .map(|line| crate::inline::strip_inline_with(line, &card.definitions))
         .collect();
     if expected.is_empty() {
         return Some(CheckFeedback {
@@ -1906,6 +1903,25 @@ mod tests {
         let introduced = state(&introduction, &fresh, &augment, Some(NOW));
         assert!(introduced.introducing);
         assert_eq!(introduced.keypoints, None);
+    }
+
+    #[test]
+    fn explain_fallback_keypoints_exclude_supporting_quotations() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse(
+            "## q\nfirst claim\nsecond claim\n> supporting quotation\n> continued quotation\n",
+        );
+        seen(&mut store, &cards);
+
+        let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+        let fallback = state(&session, &store, &augment, Some(NOW));
+
+        assert_eq!(fallback.mode, Mode::Explain);
+        assert_eq!(
+            fallback.keypoints,
+            Some(vec!["first claim".to_string(), "second claim".to_string()]),
+            "the checklist grades the answer's claims, not its supporting quotation"
+        );
     }
 
     #[test]

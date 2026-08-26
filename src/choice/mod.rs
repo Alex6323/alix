@@ -66,8 +66,10 @@ pub struct ChoiceQuestion {
     pub correct_set: Vec<usize>,
 }
 
+// The whole answer as one option, so a quotation stays (dropping it would
+// offer a truncated answer as the correct pick) but loses its marker.
 fn answer_text(card: &Card) -> String {
-    card.back.join("\n")
+    crate::render::readable_answer_lines(card, crate::card::AnswerSpace::Authored).join("\n")
 }
 
 fn content(text: &str, card: &Card) -> String {
@@ -159,7 +161,7 @@ pub fn build_authored_multi(
 ) -> Option<ChoiceQuestion> {
     let mut seen = HashSet::new();
     let mut correct_texts = Vec::new();
-    for line in &card.back {
+    for line in &crate::render::gradeable_answer_lines(card, crate::card::AnswerSpace::Authored) {
         let trimmed = line.trim();
         let content = content(trimmed, card);
         if !content.is_empty() && seen.insert(content) {
@@ -319,6 +321,45 @@ mod tests {
         assert_eq!(
             q.correct, q.correct_set[0],
             "correct mirrors the first correct index"
+        );
+    }
+
+    #[test]
+    fn an_atomic_option_keeps_a_supporting_quotation_but_not_its_marker() {
+        let c = card(1, "the claim\n> supporting quotation");
+        let q = build_authored(&c, 7, &ai(&["a distractor"])).unwrap();
+
+        assert_eq!(
+            q.options[q.correct], "the claim\nsupporting quotation",
+            "one option is the WHOLE answer, so the quotation stays; dropping it \
+             would offer a truncated answer as the correct pick"
+        );
+        for option in &q.options {
+            assert!(
+                !option.contains('>'),
+                "no option shows authoring syntax: {option:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_multi_question_does_not_make_supporting_quotation_lines_correct_options() {
+        let c = multi_card(&[
+            "the claim",
+            "> supporting quotation",
+            "> continued quotation",
+        ]);
+        let q = build_authored_multi(&c, 7, &ai(&["distractor one", "distractor two"])).unwrap();
+
+        let correct: Vec<&str> = q
+            .correct_set
+            .iter()
+            .map(|&index| q.options[index].as_str())
+            .collect();
+        assert_eq!(
+            correct,
+            ["the claim"],
+            "a quotation supports the answer but is not itself a gradeable claim"
         );
     }
 

@@ -98,7 +98,10 @@ impl Trace {
                 let citation = c.citations.first();
                 Some(Checkpoint {
                     prompt: c.front.clone(),
-                    points: c.back.clone(),
+                    points: crate::render::gradeable_answer_lines(
+                        c,
+                        crate::card::AnswerSpace::Authored,
+                    ),
                     givens: c.givens.clone(),
                     note: c.notes_text(),
                     locator: citation.map(|citation| citation.locator.clone()),
@@ -615,6 +618,29 @@ mod tests {
                 "it reads lines two and three".to_string(),
             ],
             trace.compression_rubric()
+        );
+    }
+
+    #[test]
+    fn trace_points_and_exam_rubric_exclude_supporting_quotations() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            dir.path(),
+            "quoted.md",
+            "---\ntrace: how it works\n---\n\
+             ## Predict the hop\n\
+             the checkpoint claim\n\
+             > supporting quotation\n\
+             > continued quotation\n",
+        );
+        crate::stamp::stamp_deck(&path).unwrap();
+        let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
+
+        assert_eq!(trace.checkpoints[0].points, ["the checkpoint claim"]);
+        assert_eq!(
+            trace.compression_rubric(),
+            ["the checkpoint claim"],
+            "the final trace exam grades claims, not supporting source prose"
         );
     }
 

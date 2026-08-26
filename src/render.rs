@@ -235,6 +235,45 @@ pub(crate) fn card_quote_flags(
     quote_line_flags(back)
 }
 
+/// The answer lines a check may grade: the learner's own claims, with
+/// supporting quotations dropped. One place decides, so the typed target,
+/// the Explain checklist, an authored select-all, and a trace's points can
+/// never disagree about what a quotation is.
+pub(crate) fn gradeable_answer_lines(
+    card: &crate::card::Card,
+    space: crate::card::AnswerSpace,
+) -> Vec<String> {
+    let quoted = card_quote_flags(card, space);
+    card.answer_lines(space)
+        .iter()
+        .zip(&quoted)
+        .filter(|(_, line_is_quote)| !**line_is_quote)
+        .map(|(line, _)| line.clone())
+        .collect()
+}
+
+/// The answer as a learner READS it: every line kept, a quotation's marker
+/// dropped. For a surface that shows the whole answer as one string rather
+/// than grading its parts, where dropping the quotation would show a
+/// truncated answer.
+pub(crate) fn readable_answer_lines(
+    card: &crate::card::Card,
+    space: crate::card::AnswerSpace,
+) -> Vec<String> {
+    let quoted = card_quote_flags(card, space);
+    card.answer_lines(space)
+        .iter()
+        .zip(&quoted)
+        .map(|(line, line_is_quote)| {
+            if *line_is_quote {
+                quote_body(line).unwrap_or(line).to_string()
+            } else {
+                line.clone()
+            }
+        })
+        .collect()
+}
+
 /// The steps a client walks a card's answer in, over the lines it is SHOWN.
 /// One place decides what is quoted, so the displayed stream, the reveal
 /// count, and the typed target can never disagree.
