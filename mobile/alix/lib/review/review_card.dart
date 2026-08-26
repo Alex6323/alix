@@ -605,16 +605,19 @@ class ReviewCardView extends StatelessWidget {
       if (!card.reshaped) {
         return _answerUnits(context, card.backUnits, tokens);
       }
-      return _revealLines(
-        context,
-        card.back,
-        card.backRuns,
-        tokens,
-        units: card.backUnits,
-      );
+      return _fullAnswer(context, card, tokens);
     }
     return const SizedBox.shrink();
   }
+
+  /// Every surface that shows a WHOLE answer walks the same steps the
+  /// progressive reveal does, so a quotation is a quote block on all of them
+  /// and not only on the one path that was built for it.
+  Widget _fullAnswer(
+    BuildContext context,
+    ReviewCardModel card,
+    AlixTokens tokens,
+  ) => _revealSteps(context, card, card.answerSteps.length, tokens);
 
   Widget _answerUnits(
     BuildContext context,
@@ -705,49 +708,6 @@ class ReviewCardView extends StatelessWidget {
         },
       );
     }
-    return Column(children: children);
-  }
-
-  Widget _revealLines(
-    BuildContext context,
-    List<String> lines,
-    List<List<InlineRunModel>> runLines,
-    AlixTokens tokens, {
-    bool stanza = true,
-    List<ReviewNoteUnitModel> units = const [],
-  }) {
-    final style = TextStyle(
-      fontFamily: _mono,
-      fontWeight: FontWeight.w500,
-      fontSize: 18,
-      height: 1.5,
-      color: Theme.of(context).colorScheme.onSurface,
-    );
-    final gap = stanza && lines.length > 1 ? 22.0 : 6.0;
-    final children = <Widget>[];
-    _walkFences(
-      lines,
-      units,
-      onFence: (code, unit, closed) {
-        if (children.isNotEmpty) children.add(SizedBox(height: gap));
-        if (closed && unit is ReviewDiagramModel) {
-          children.add(_diagram(unit, answered: true));
-        } else {
-          children.add(_codeBlock(code, style.color ?? tokens.text));
-        }
-      },
-      onLine: (index) {
-        if (children.isNotEmpty) children.add(SizedBox(height: gap));
-        children.add(
-          _runsOrText(
-            index < runLines.length ? runLines[index] : null,
-            lines[index],
-            textAlign: TextAlign.center,
-            style: style,
-          ),
-        );
-      },
-    );
     return Column(children: children);
   }
 
@@ -1252,14 +1212,7 @@ class ReviewCardView extends StatelessWidget {
         ],
         _explainLabel('the answer', tokens.dim),
         const SizedBox(height: 6),
-        _revealLines(
-          context,
-          card.back,
-          card.backRuns,
-          tokens,
-          stanza: false,
-          units: card.backUnits,
-        ),
+        _fullAnswer(context, card, tokens),
         const SizedBox(height: 16),
         _explainLabel('did your answer cover these?', tokens.good, small: true),
         const SizedBox(height: 6),

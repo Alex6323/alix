@@ -734,6 +734,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   claims. An atomic choice keeps the whole answer as its option, quotation
   included, but shows it without the `>` marker.
 
+- Mobile does the same: an Explain reveal and a reshaped flip walked raw answer
+  lines, so the same card read correctly line by line and then showed its `>`
+  markers the moment the whole answer appeared.
+
 - Every adult surface that shows a WHOLE answer renders a quotation as a quote
   block. Only the progressive line reveal walked the answer's steps; the
   Explain reveal (with and without cached key points), a reshaped flip, a
