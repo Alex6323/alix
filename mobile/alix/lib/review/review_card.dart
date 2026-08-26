@@ -606,7 +606,7 @@ class ReviewCardView extends StatelessWidget {
       if (!card.reshaped) {
         return _answerUnits(context, card.backUnits, tokens);
       }
-      return _fullAnswer(context, card, tokens);
+      return _fullAnswer(context, card, tokens, stanza: true);
     }
     return const SizedBox.shrink();
   }
@@ -614,11 +614,22 @@ class ReviewCardView extends StatelessWidget {
   /// Every surface that shows a WHOLE answer walks the same steps the
   /// progressive reveal does, so a quotation is a quote block on all of them
   /// and not only on the one path that was built for it.
+  ///
+  /// `stanza` keys on PHYSICAL lines, not steps: a reshaped answer earns its
+  /// wider gap from how many lines the author wrote, and a lone two-line
+  /// quotation is one step over two of them.
   Widget _fullAnswer(
     BuildContext context,
     ReviewCardModel card,
-    AlixTokens tokens,
-  ) => _revealSteps(context, card, card.answerSteps.length, tokens);
+    AlixTokens tokens, {
+    bool stanza = false,
+  }) => _revealSteps(
+    context,
+    card,
+    card.answerSteps.length,
+    tokens,
+    gap: stanza && card.back.length > 1 ? 22 : 6,
+  );
 
   Widget _answerUnits(
     BuildContext context,
@@ -649,8 +660,9 @@ class ReviewCardView extends StatelessWidget {
     BuildContext context,
     ReviewCardModel card,
     int visible,
-    AlixTokens tokens,
-  ) {
+    AlixTokens tokens, {
+    double gap = 6,
+  }) {
     final style = TextStyle(
       fontFamily: _mono,
       fontWeight: FontWeight.w500,
@@ -659,8 +671,8 @@ class ReviewCardView extends StatelessWidget {
       color: Theme.of(context).colorScheme.onSurface,
     );
     final children = <Widget>[];
-    void gap() {
-      if (children.isNotEmpty) children.add(const SizedBox(height: 6));
+    void addGap() {
+      if (children.isNotEmpty) children.add(SizedBox(height: gap));
     }
 
     var fenceIndex = 0;
@@ -668,7 +680,7 @@ class ReviewCardView extends StatelessWidget {
     while (index < visible && index < card.answerSteps.length) {
       final step = card.answerSteps[index];
       if (step is ReviewAnswerQuoteModel) {
-        gap();
+        addGap();
         children.add(_quote(step.units, tokens, style, TextAlign.start));
         index++;
         continue;
@@ -689,7 +701,7 @@ class ReviewCardView extends StatelessWidget {
         card.backUnits,
         fenceStart: fenceIndex,
         onFence: (code, unit, closed) {
-          gap();
+          addGap();
           if (closed && unit is ReviewDiagramModel) {
             children.add(_diagram(unit, answered: true));
           } else {
@@ -697,7 +709,7 @@ class ReviewCardView extends StatelessWidget {
           }
         },
         onLine: (line) {
-          gap();
+          addGap();
           children.add(
             _runsOrText(
               line < runLines.length ? runLines[line] : null,

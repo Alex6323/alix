@@ -144,4 +144,40 @@ void main() {
       );
     },
   );
+
+  testWidgets('a reshaped full answer keeps stanza spacing between steps', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(ReviewMode.flip, reshaped: true));
+
+    final claim = tester.getRect(find.text('the claim').first);
+    final quotation = tester.getRect(
+      find.text('supporting quotation continued quotation'),
+    );
+    expect(
+      quotation.top - claim.bottom,
+      22,
+      reason:
+          'a format reshape is a readable list whose separate items keep the '
+      'established stanza gap even when one item is a quotation',
+    );
+  });
+
+  testWidgets('a reshaped explain answer keeps compact checklist spacing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(ReviewMode.explain, reshaped: true));
+
+    final claim = tester.getRect(find.text('the claim').first);
+    final quotation = tester.getRect(
+      find.text('supporting quotation continued quotation'),
+    );
+    expect(
+      quotation.top - claim.bottom,
+      6,
+      reason:
+          'Explain deliberately used the compact non-stanza layout before '
+          'whole-answer rendering began walking answer steps',
+    );
+  });
 }
