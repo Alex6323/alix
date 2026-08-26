@@ -734,6 +734,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   claims. An atomic choice keeps the whole answer as its option, quotation
   included, but shows it without the `>` marker.
 
+- Every adult surface that shows a WHOLE answer renders a quotation as a quote
+  block. Only the progressive line reveal walked the answer's steps; the
+  Explain reveal (with and without cached key points), a reshaped flip, a
+  reshaped introduction, and deck browse each still walked raw answer lines, so
+  the learner read `>` markers on exactly the flows that show everything at
+  once. All of them now walk the same steps the progressive reveal does.
+
 - The tutor's reference card shows a quotation as quoted content rather than
   as its `>` markers. The reference walked raw answer lines, so it kept the
   markup the review surfaces had already stopped showing.

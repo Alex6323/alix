@@ -458,7 +458,7 @@ export function createStudy({
     appendImages(q, c.images);
 
     const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
-    if (isReshapedList(c)) appendReveal(sec, c.back, c.back_runs, true, c.back_units);
+    if (isReshapedList(c)) appendFullAnswer(sec, c, true);
     else appendAnswerUnits(sec, c.back_units);
     a.appendChild(sec);
     appendImages(a, c.images_back);
@@ -969,7 +969,7 @@ export function createStudy({
       // claims it makes — the key points are a decomposition, not a replacement.
       a.appendChild(el("div", "explain-label", "the answer"));
       const ans = el("div", "reveal");
-      appendReveal(ans, state.card.back, state.card.back_runs, false, state.card.back_units);
+      appendFullAnswer(ans, state.card, false);
       a.appendChild(ans);
       appendKeypointList(a, {
         keypoints: state.keypoints,
@@ -982,7 +982,7 @@ export function createStudy({
     }
     a.appendChild(el("div", "explain-label", "your answer should cover"));
     const pts = el("div", "reveal");
-    appendReveal(pts, state.card.back, state.card.back_runs, true, state.card.back_units);
+    appendFullAnswer(pts, state.card, true);
     a.appendChild(pts);
   }
   // Walk the key-point list: mark the current point yes/no and advance; move the
@@ -1198,7 +1198,7 @@ export function createStudy({
     }
     const c = state.card;
     const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
-    if (isReshapedList(c)) appendReveal(sec, c.back, c.back_runs, true, c.back_units);
+    if (isReshapedList(c)) appendFullAnswer(sec, c, true);
     else appendAnswerUnits(sec, c.back_units);
     a.appendChild(sec);
     appendImages(a, c.images_back);
@@ -1208,7 +1208,7 @@ export function createStudy({
   // is one step and reveals whole, as its own block rather than as `>` text.
   // Returns the fence index the next pass resumes at, so splitting the render
   // at the revealed point cannot pair a later fence with an earlier unit.
-  function appendStepRange(sec, c, fromStep, toStep, fenceStart) {
+  function appendStepRange(sec, c, fromStep, toStep, fenceStart, isList) {
     const steps = c.answer_steps || [];
     let fence = fenceStart || 0;
     let index = fromStep;
@@ -1226,9 +1226,16 @@ export function createStudy({
         index++;
       }
       fence = appendReveal(sec, c.back.slice(from, to),
-        c.back_runs && c.back_runs.slice(from, to), false, c.back_units, undefined, fence);
+        c.back_runs && c.back_runs.slice(from, to), !!isList, c.back_units, undefined, fence);
     }
     return fence;
+  }
+
+  // Every surface that shows a WHOLE answer walks the same steps the
+  // progressive reveal does, so a quotation is a quote block on all of them
+  // and not only on the one path that was built for it.
+  function appendFullAnswer(sec, c, isList) {
+    appendStepRange(sec, c, 0, (c.answer_steps || []).length, 0, isList);
   }
 
   function fillAnswer(a) {
@@ -1252,7 +1259,7 @@ export function createStudy({
         child.setAttribute("aria-hidden", "true");
       }
     } else if (isReshapedList(c)) {
-      appendReveal(sec, c.back, c.back_runs, true, c.back_units);
+      appendFullAnswer(sec, c, true);
     } else {
       appendAnswerUnits(sec, c.back_units);
     }

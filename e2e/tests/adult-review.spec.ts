@@ -953,6 +953,153 @@ test("explain reveal renders the resolved diagram in the authored answer", async
   await expect(diagram).toHaveAttribute("alt", "flowchart LR\n A-->B");
 });
 
+test("explain reveal renders a supporting quotation as a quote block", async ({ page }) => {
+  const back = ["the claim", "> supporting quotation", "> continued quotation"];
+  const original = longContentState({ answerLines: back });
+  const state = {
+    ...original,
+    mode: "explain",
+    depth: "reconstruct",
+    keypoints: ["the claim"],
+    keypoint_runs: [[{ text: "the claim" }]],
+    card: {
+      ...original.card,
+      back_units: [
+        { kind: "sentence", text: "the claim" },
+        {
+          kind: "quote",
+          units: [{ kind: "sentence", text: "supporting quotation continued quotation" }],
+        },
+      ],
+      answer_steps: [
+        { kind: "line", back_from: 0, back_to: 1 },
+        {
+          kind: "quote",
+          back_from: 1,
+          back_to: 3,
+          units: [{ kind: "sentence", text: "supporting quotation continued quotation" }],
+        },
+      ],
+    },
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await openApp(page);
+
+  await page.getByRole("button", { name: "Reveal" }).click();
+  const answer = page.locator(".region.a");
+  await expect(answer.locator("blockquote.quote")).toHaveCount(1);
+  await expect(answer.getByText("> supporting quotation", { exact: true })).toHaveCount(0);
+});
+
+test("a reshaped flip still renders a supporting quotation as a quote block", async ({ page }) => {
+  const back = ["the claim", "> supporting quotation", "> continued quotation"];
+  const original = longContentState({ answerLines: back });
+  const state = {
+    ...original,
+    card: {
+      ...original.card,
+      reshaped: true,
+      back_units: [
+        { kind: "sentence", text: "the claim" },
+        {
+          kind: "quote",
+          units: [{ kind: "sentence", text: "supporting quotation continued quotation" }],
+        },
+      ],
+      answer_steps: [
+        { kind: "line", back_from: 0, back_to: 1 },
+        {
+          kind: "quote",
+          back_from: 1,
+          back_to: 3,
+          units: [{ kind: "sentence", text: "supporting quotation continued quotation" }],
+        },
+      ],
+    },
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await openApp(page);
+
+  await page.getByRole("button", { name: "Reveal" }).click();
+  const answer = page.locator(".region.a");
+  await expect(answer.locator("blockquote.quote")).toHaveCount(1);
+  await expect(answer.getByText("> supporting quotation", { exact: true })).toHaveCount(0);
+});
+
+test("a reshaped introduction renders a supporting quotation as a quote block", async ({ page }) => {
+  const back = ["the claim", "> supporting quotation", "> continued quotation"];
+  const original = longContentState({ answerLines: back });
+  const state = {
+    ...original,
+    introducing: true,
+    card: {
+      ...original.card,
+      reshaped: true,
+      back_units: [
+        { kind: "sentence", text: "the claim" },
+        {
+          kind: "quote",
+          units: [{ kind: "sentence", text: "supporting quotation continued quotation" }],
+        },
+      ],
+      answer_steps: [
+        { kind: "line", back_from: 0, back_to: 1 },
+        {
+          kind: "quote",
+          back_from: 1,
+          back_to: 3,
+          units: [{ kind: "sentence", text: "supporting quotation continued quotation" }],
+        },
+      ],
+    },
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await openApp(page);
+  // An introduction shows its answer on the FIRST reveal, so asserting before
+  // this click reads the pre-reveal hint rather than the answer.
+  await page.getByRole("button", { name: "Reveal" }).click();
+
+  const answer = page.locator(".region.a");
+  await expect(answer.locator("blockquote.quote")).toHaveCount(1);
+  await expect(answer.getByText("> supporting quotation", { exact: true })).toHaveCount(0);
+});
+
+test("browse renders a reshaped supporting quotation as a quote block", async ({ page }) => {
+  const back = ["the claim", "> supporting quotation", "> continued quotation"];
+  const original = longContentState({ answerLines: back });
+  const card = {
+    ...original.card,
+    reshaped: true,
+    back_units: [
+      { kind: "sentence", text: "the claim" },
+      {
+        kind: "quote",
+        units: [{ kind: "sentence", text: "supporting quotation continued quotation" }],
+      },
+    ],
+    answer_steps: [
+      { kind: "line", back_from: 0, back_to: 1 },
+      {
+        kind: "quote",
+        back_from: 1,
+        back_to: 3,
+        units: [{ kind: "sentence", text: "supporting quotation continued quotation" }],
+      },
+    ],
+  };
+  await page.route("**/api/browse", (route) =>
+    route.fulfill({ json: { cards: [card], label: "quoted deck" } }),
+  );
+  await openApp(page);
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "cats").hover();
+  await page.keyboard.press("b");
+
+  const answer = page.locator(".region.a");
+  await expect(answer.locator("blockquote.quote")).toHaveCount(1);
+  await expect(answer.getByText("> supporting quotation", { exact: true })).toHaveCount(0);
+});
+
 // The empty "Nothing due." summary (nothing reviewed or introduced) shows one
 // quiet line saying when the next scheduled card comes due. The server-side
 // production of `next_due_ms` on the done payload is covered by tests/api.rs;
