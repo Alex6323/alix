@@ -1334,7 +1334,10 @@ class ReviewCardView extends StatelessWidget {
     final heavy = badge == ReviewBadge.important;
     final ink = Theme.of(context).colorScheme.onSurface;
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: heavy ? 6 : 7, vertical: 1),
+      padding: EdgeInsets.symmetric(
+        horizontal: heavy ? 6 : 7,
+        vertical: heavy ? 0 : 1,
+      ),
       decoration: BoxDecoration(
         border: Border.all(
           color: heavy ? accent : accent.withValues(alpha: 0.55),

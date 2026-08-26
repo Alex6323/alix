@@ -98,6 +98,13 @@ Finder get _noteBoxes => find.byWidgetPredicate(
   (widget) => widget is Container && widget.constraints?.maxWidth == 600,
 );
 
+Finder _badgeChip(ReviewBadge badge) => find.byWidgetPredicate(
+  (widget) =>
+      widget is Container &&
+      widget.child is Text &&
+      (widget.child! as Text).data == badge.name.toUpperCase(),
+);
+
 Color _boxColour(WidgetTester tester) {
   final box = tester.widget<Container>(_noteBoxes.first);
   return (box.decoration! as BoxDecoration).color!;
@@ -151,6 +158,32 @@ void main() {
         reason: "$badge's chip is inked, not accent-coloured",
       );
     }
+  });
+
+  testWidgets('the heavier important border does not change chip height', (
+    tester,
+  ) async {
+    final attempt = TextEditingController();
+    addTearDown(attempt.dispose);
+
+    await tester.pumpWidget(
+      _card([
+        for (final badge in ReviewBadge.values)
+          _note('Body.', badge: badge),
+      ], attempt),
+    );
+
+    final heights = {
+      for (final badge in ReviewBadge.values)
+        badge.name: tester.getSize(_badgeChip(badge)).height,
+    };
+    expect(
+      heights.values.toSet(),
+      hasLength(1),
+      reason:
+          'a heavier border is a semantic cue, not a reason for IMPORTANT to '
+          'shift its note body or break the shared chip rhythm: $heights',
+    );
   });
 
   testWidgets('a badgeless note keeps the plain note ground and no chip', (
