@@ -41,6 +41,10 @@ a.autolink { color: var(--bolt); text-decoration: underline; cursor: text; }
 .rev-why-text .checklist { display: grid; gap: 5px; margin: 8px 0; }
 .rev-why-text .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
 .rev-why-text .checklist-box { flex: none; font-family: ui-monospace, monospace; }
+/* A quotation keeps its own boundary: a soft rule, never the raw `>` marker. */
+blockquote.quote { margin: 10px 0; padding: 2px 0 2px 12px; border-left: 4px solid #f0c9a0; border-radius: 2px; }
+blockquote.quote p { margin: 0 0 8px; }
+blockquote.quote p:last-child { margin-bottom: 0; }
 /* A smaller Alix face for the reveal row (the standard cell is 64px). */
 .mascot.mascot-sm { width: 48px; height: 48px; box-shadow: 0 6px 14px rgba(255, 138, 61, 0.28); }
 .mascot.mascot-sm .eye { top: 19px; width: 8px; height: 8px; }

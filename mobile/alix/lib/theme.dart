@@ -22,6 +22,7 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
     required this.text,
     required this.noteBorder,
     required this.noteInk,
+    required this.accentInk,
   });
 
   /// The grade trio (--good / --warn / --again): pass green, partial
@@ -46,6 +47,10 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
   final Color noteBorder;
   final Color noteInk;
 
+  /// The ink that sits ON an accent fill (--accent-ink), so a filled chip
+  /// stays readable in every palette.
+  final Color accentInk;
+
   @override
   AlixTokens copyWith({
     Color? good,
@@ -59,6 +64,7 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
     Color? text,
     Color? noteBorder,
     Color? noteInk,
+    Color? accentInk,
   }) {
     return AlixTokens(
       good: good ?? this.good,
@@ -72,6 +78,7 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
       text: text ?? this.text,
       noteBorder: noteBorder ?? this.noteBorder,
       noteInk: noteInk ?? this.noteInk,
+      accentInk: accentInk ?? this.accentInk,
     );
   }
 
@@ -93,6 +100,7 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
       text: mix(text, other.text),
       noteBorder: mix(noteBorder, other.noteBorder),
       noteInk: mix(noteInk, other.noteInk),
+      accentInk: mix(accentInk, other.accentInk),
     );
   }
 }
@@ -681,6 +689,7 @@ AlixTokens _tokensFromVars(ThemeVars v) => AlixTokens(
   text: v.text ?? _darkVars.text!,
   noteBorder: v.noteBorder,
   noteInk: v.noteInk,
+  accentInk: v.accentInk ?? _darkVars.accentInk!,
 );
 
 /// Builds a full ThemeData from a var map: AlixTokens plus a ColorScheme

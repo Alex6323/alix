@@ -462,38 +462,50 @@ function renderOptions() {
   return wrap;
 }
 
-// The mascot speaks the card's notes (the "why"). Each NoteDto is
-// {badge,units}; NoteUnitDto is a tagged union: {kind:"sentence",text} → a
-// spoken line; {kind:"code",lines} → a small block. Kids speak every note's
-// body in order and ignore the badge for now, so no badge styling is implied.
-// An empty/absent note shows nothing (no empty bubble).
-function renderWhy(parent, card) {
-  const units = (card.note || []).flatMap((note) => note.units || []);
-  const keypoints = state.keypoints || [];
-  if (!units.length && !keypoints.length) return;
-  const row = el("div", "rev-why");
-  row.appendChild(mascotEl("mascot-sm"));
-  const txt = el("div", "rev-why-text");
-  for (const u of units) {
+function appendNoteUnits(parent, units) {
+  for (const u of units || []) {
     if (u.kind === "sentence") {
       const paragraph = el("p");
       if (u.runs) appendRuns(paragraph, u.runs); else paragraph.textContent = u.text;
-      txt.appendChild(paragraph);
+      parent.appendChild(paragraph);
     }
     else if (u.kind === "code") {
       const pre = el("pre", "why-code");
       pre.appendChild(el("code", null, (u.lines || []).join("\n")));
-      txt.appendChild(pre);
+      parent.appendChild(pre);
     }
     else if (u.kind === "diagram") {
       const img = el("img", "diagram");
       img.src = u.src; img.alt = u.alt || "";
       img.width = u.width; img.height = u.height;
-      txt.appendChild(img);
+      parent.appendChild(img);
     }
-    else if (u.kind === "checklist") appendChecklist(txt, u.items);
-    else if (u.kind === "table") appendTable(txt, u);
-    else if (u.kind === "quote") appendQuote(txt, u.units);
+    else if (u.kind === "checklist") appendChecklist(parent, u.items);
+    else if (u.kind === "table") appendTable(parent, u);
+    else if (u.kind === "quote") appendQuote(parent, u.units);
+  }
+}
+
+// The mascot speaks the card's notes (the "why"). Each NoteDto is
+// {badge,units}; NoteUnitDto is a tagged union: {kind:"sentence",text} → a
+// spoken line; {kind:"code",lines} → a small block. Several notes stack in
+// authored order; a badged one becomes its own tinted callout, a badgeless
+// one (table column, augmentation, personal note) stays plain speech.
+// An empty/absent note shows nothing (no empty bubble).
+function renderWhy(parent, card) {
+  const notes = (card.note || []).filter((note) => (note.units || []).length);
+  const keypoints = state.keypoints || [];
+  if (!notes.length && !keypoints.length) return;
+  const row = el("div", "rev-why");
+  row.appendChild(mascotEl("mascot-sm"));
+  const txt = el("div", "rev-why-text");
+  for (const note of notes) {
+    if (!note.badge) { appendNoteUnits(txt, note.units); continue; }
+    const box = el("div", "rev-why-note");
+    box.dataset.badge = note.badge;
+    box.appendChild(el("span", "rev-why-badge", note.badge));
+    appendNoteUnits(box, note.units);
+    txt.appendChild(box);
   }
   if (keypoints.length) {
     const list = el("ul", "rev-keypoints");

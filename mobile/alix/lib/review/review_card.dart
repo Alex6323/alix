@@ -299,8 +299,7 @@ class ReviewCardView extends StatelessWidget {
     };
   }
 
-  /// A quoted block, its own units stacked behind a rule. Increment 5 styles
-  /// it; this is what keeps a quotation visible until then.
+  /// A quoted block, its own units stacked behind a rule.
   Widget _quote(
     List<ReviewNoteUnitModel> units,
     AlixTokens tokens,
@@ -666,7 +665,7 @@ class ReviewCardView extends StatelessWidget {
       final step = card.answerSteps[index];
       if (step is ReviewAnswerQuoteModel) {
         gap();
-        children.add(_quote(step.units, tokens, style, TextAlign.center));
+        children.add(_quote(step.units, tokens, style, TextAlign.start));
         index++;
         continue;
       }
@@ -1348,49 +1347,86 @@ class ReviewCardView extends StatelessWidget {
     );
   }
 
+  /// NOTE and IMPORTANT share the accent hue: alix palettes carry four
+  /// semantic hues, not GitHub's five, and the chip's fill separates them.
+  Color _badgeAccent(ReviewBadge? badge, AlixTokens tokens) => switch (badge) {
+    null => tokens.noteBorder,
+    ReviewBadge.note || ReviewBadge.important => tokens.bolt,
+    ReviewBadge.tip => tokens.good,
+    ReviewBadge.warning => tokens.warn,
+    ReviewBadge.caution => tokens.again,
+  };
+
+  Widget _badgeChip(ReviewBadge badge, Color accent, AlixTokens tokens) {
+    final filled = badge == ReviewBadge.important;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+      decoration: BoxDecoration(
+        color: filled ? accent : null,
+        border: Border.all(
+          color: filled ? accent : accent.withValues(alpha: 0.45),
+        ),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(
+        badge.name.toUpperCase(),
+        style: TextStyle(
+          fontFamily: _mono,
+          fontSize: 10,
+          height: 1.5,
+          letterSpacing: 1,
+          color: filled ? tokens.accentInk : accent,
+        ),
+      ),
+    );
+  }
+
   // One box per note, so several notes stack instead of merging into one and
-  // losing their badges. The badge itself gets no styling yet.
+  // losing their badges.
   Widget _noteBlock(ReviewNoteModel entry, AlixTokens tokens) {
+    final badge = entry.badge;
+    final accent = _badgeAccent(badge, tokens);
+    final body = TextStyle(
+      color: badge == null ? tokens.noteInk : tokens.text,
+      fontSize: 15,
+      height: 1.4,
+    );
     return Container(
       width: double.infinity,
       constraints: const BoxConstraints(maxWidth: 600),
       padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
       decoration: BoxDecoration(
-        color: tokens.noteBorder.withValues(alpha: 0.12),
-        border: Border.all(color: tokens.noteBorder.withValues(alpha: 0.24)),
+        color: accent.withValues(alpha: 0.12),
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (badge != null) ...[
+            _badgeChip(badge, accent, tokens),
+            const SizedBox(height: 9),
+          ],
           for (final (index, note) in entry.units.indexed) ...[
             if (index > 0) const SizedBox(height: 10),
             switch (note) {
               ReviewSentenceModel(:final text, :final runs) => _runsOrText(
                 runs,
                 text,
-                style: TextStyle(
-                  color: tokens.noteInk,
-                  fontSize: 15,
-                  height: 1.4,
-                ),
+                style: body,
               ),
               ReviewCodeModel(:final lines) => _codeBlock(lines, tokens.text),
               ReviewDiagramModel() => _diagram(note, answered: true),
               ReviewChecklistModel(:final items) => _checklist(
                 items,
                 tokens,
-                TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
+                body,
               ),
-              ReviewTableModel() => _table(
-                note,
-                tokens,
-                TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
-              ),
+              ReviewTableModel() => _table(note, tokens, body),
               ReviewQuoteModel(:final units) => _quote(
                 units,
                 tokens,
-                TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
+                body,
                 TextAlign.start,
               ),
             },

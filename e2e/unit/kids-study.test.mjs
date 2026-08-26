@@ -339,8 +339,11 @@ test("kids unwraps every note body in authored order", () => {
   run.study.render();
 
   const why = find(run.stage, (node) => node.className === "rev-why-text");
-  assert.deepEqual(
-    why.children.map((node) => node.textContent),
-    ["First.", "Second."],
-  );
+  const [badged, plain] = why.children;
+  assert.equal(badged.className, "rev-why-note", "a badged note is its own callout");
+  assert.equal(badged.dataset.badge, "warning");
+  assert.equal(badged.children[0].className, "rev-why-badge");
+  assert.equal(badged.children[0].textContent, "warning");
+  assert.equal(badged.children[1].textContent, "First.");
+  assert.equal(plain.textContent, "Second.", "a badgeless note stays plain speech");
 });

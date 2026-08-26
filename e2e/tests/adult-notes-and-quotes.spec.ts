@@ -82,6 +82,17 @@ That it shows the presence of bugs, never their absence.
   await expect(notes.nth(0)).toContainText('From "The Humble Programmer", 1972.');
   await expect(notes.nth(1)).toHaveAttribute("data-badge", "warning");
   await expect(notes.nth(1)).toContainText("It is not a claim that testing is useless.");
+
+  // Styled, not merely tagged: each note leads with a chip naming its badge,
+  // the two badges tint their boxes differently, and the quotation carries a
+  // rule rather than a `>`.
+  await expect(notes.nth(0).locator(".note-badge")).toHaveText(/note/i);
+  await expect(notes.nth(1).locator(".note-badge")).toHaveText(/warning/i);
+  const tints = await notes.evaluateAll((boxes) =>
+    boxes.map((box) => getComputedStyle(box).backgroundColor),
+  );
+  expect(new Set(tints).size).toBe(2);
+  await expect(quote).toHaveCSS("border-left-width", "3px");
 });
 
 // Line reveal walks the answer's STEPS, so a two-line quotation is one

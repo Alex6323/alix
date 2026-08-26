@@ -106,6 +106,46 @@
   .note .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
   .note .checklist-box { flex: none; font-family: var(--mono); }
 
+  /* a badged note takes the badge's own accent; every theme already defines
+     the four hues, so no palette needs a new token. NOTE and IMPORTANT share
+     the accent and are told apart by the chip's fill. */
+  .note[data-badge] {
+    background: color-mix(in srgb, var(--badge-ink) 12%, transparent);
+    border-color: color-mix(in srgb, var(--badge-ink) 30%, transparent);
+    color: var(--text);
+  }
+  .note[data-badge="note"], .note[data-badge="important"] { --badge-ink: var(--bolt); }
+  .note[data-badge="tip"] { --badge-ink: var(--good); }
+  .note[data-badge="warning"] { --badge-ink: var(--warn); }
+  .note[data-badge="caution"] { --badge-ink: var(--again); }
+  .note-badge {
+    display: inline-block; margin: 0 0 9px;
+    font-family: var(--mono); font-size: 0.62rem; line-height: 1.5;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--badge-ink);
+    border: 1px solid color-mix(in srgb, var(--badge-ink) 45%, transparent);
+    border-radius: 5px; padding: 1px 7px;
+  }
+  .note[data-badge="important"] .note-badge {
+    background: var(--badge-ink); border-color: var(--badge-ink); color: var(--accent-ink);
+  }
+
+  /* a quotation is content, not chrome: a left rule marks its boundary, the
+     text keeps the answer's own face and size, and the block centres as a
+     whole so its lines still share a left edge */
+  blockquote.quote {
+    width: max-content; max-width: 100%; margin: 10px auto;
+    padding: 2px 0 2px 14px; text-align: left;
+    border-left: 3px solid color-mix(in srgb, var(--dim) 55%, transparent);
+  }
+  blockquote.quote p {
+    margin: 0 0 8px; color: var(--ink);
+    font-family: var(--mono); font-weight: 500;
+    font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  blockquote.quote p:last-child { margin-bottom: 0; }
+  .note blockquote.quote p { color: inherit; font-size: inherit; }
+
   /* multiple-choice options */
   .options { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: min(96vw, 1040px); margin: 0 auto; }
   .option {

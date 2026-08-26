@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Badged notes and quotations are styled. Each of the five badges opens its
+  own callout with a chip naming it, tinted from the theme you are using
+  rather than from GitHub's palette, and several notes stack in authored
+  order instead of sharing one box. A quotation carries a left rule and keeps
+  the answer's own face, so its boundary is visible without a `>`. Kids gets
+  the same five badges on a calmer palette; mobile matches. `[!NOTE]` and
+  `[!IMPORTANT]` share a hue because alix palettes carry four semantic
+  colours, not GitHub's five; the chip's fill tells them apart.
+
 - A bare blockquote in an answer is a quotation, and every client renders it
   as one. `back_units` gains a `quote` unit carrying its own units, so a
   quotation can hold prose, code, or a list, and the `>` markers no longer

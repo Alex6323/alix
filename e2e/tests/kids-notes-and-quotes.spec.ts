@@ -2,9 +2,9 @@
 // exact path independent of the shared fixtures, then removes it even when an
 // assertion fails.
 //
-// Kids deliberately flattens the notes into one mascot bubble and ignores the
-// badge (`renderWhy`, kids/study.js); badge styling and stacked callouts are
-// increment 5's work, so nothing here asserts them.
+// Kids speaks the notes through the mascot (`renderWhy`, kids/study.js). A
+// badged note is its own tinted callout in the bubble; a badgeless one (a
+// table column, an augmentation, a personal note) stays plain speech.
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "./helpers";
@@ -83,6 +83,19 @@ test("every badged note is spoken, in authored order", async ({ page }) => {
     'From "The Humble Programmer", 1972.',
     "It is not a claim that testing is useless.",
   ]);
+
+  // Each badged note is its own callout, named by a chip and tinted by its
+  // own ink, so a NOTE and a WARNING never read as one bubble.
+  const callouts = page.locator(".rev-why-note");
+  await expect(callouts).toHaveCount(2);
+  await expect(callouts.nth(0)).toHaveAttribute("data-badge", "note");
+  await expect(callouts.nth(1)).toHaveAttribute("data-badge", "warning");
+  await expect(callouts.nth(0).locator(".rev-why-badge")).toHaveText(/note/i);
+  await expect(callouts.nth(1).locator(".rev-why-badge")).toHaveText(/warning/i);
+  const tints = await callouts.evaluateAll((boxes) =>
+    boxes.map((box) => getComputedStyle(box).backgroundColor),
+  );
+  expect(new Set(tints).size).toBe(2);
 });
 
 test("a quotation renders as quoted content, not as `>` lines", async ({ page }) => {

@@ -52,8 +52,11 @@ test("a note arrives wrapped in its badge and still renders its body", () => {
   const [note] = parent.children;
   assert.equal(note.className, "note");
   assert.equal(note.dataset.badge, "warning", "the badge reaches the view model");
+  const [chip, body] = note.children;
+  assert.equal(chip.className, "note-badge", "a badged note leads with its chip");
+  assert.equal(chip.textContent, "warning", "the chip carries the wire spelling");
   assert.equal(
-    note.textContent,
+    body.textContent,
     "Back up this directory.",
     "the body renders; an unwrapped NoteUnit would match no arm and render nothing",
   );
@@ -65,6 +68,11 @@ test("a badgeless note renders its body and carries no badge", () => {
 
   const [note] = parent.children;
   assert.equal(note.dataset.badge, undefined, "a table column opens no badge");
+  assert.equal(
+    note.children.some((child) => child.className === "note-badge"),
+    false,
+    "no badge, no chip",
+  );
   assert.equal(note.textContent, "Its note column.");
 });
 
@@ -76,7 +84,13 @@ test("several notes stack as siblings, each keeping its own badge", () => {
   ]);
 
   assert.deepEqual(
-    parent.children.map((note) => [note.dataset.badge, note.textContent]),
+    parent.children.map((note) => [
+      note.dataset.badge,
+      note.children
+        .filter((child) => child.className !== "note-badge")
+        .map((child) => child.textContent)
+        .join(""),
+    ]),
     [
       ["note", "First."],
       ["caution", "Second."],

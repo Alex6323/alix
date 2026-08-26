@@ -315,9 +315,11 @@ To agree on initial sequence numbers in both directions.
 ```
 
 The five are `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, and
-`[!CAUTION]`, spelled exactly as GitHub spells them. They render as GitHub
-renders them, which is the point: a deck pasted from a repository keeps its
-meaning without editing.
+`[!CAUTION]`, spelled exactly as GitHub spells them. Each opens its own
+callout with a chip naming it, coloured from whatever theme you are using
+rather than from GitHub's palette. Several notes on one card stack in the
+order you wrote them. Spelling them GitHub's way is the point: a deck pasted
+from a repository keeps its meaning without editing.
 
 Every **other** blockquote is a quote, and a quote is content. It belongs to
 the answer and reveals with it, so you can finally put someone's actual words
@@ -330,7 +332,9 @@ That it shows the presence of bugs, never their absence.
 > to show their absence.
 ```
 
-A quotation is one block however many `>` lines you wrapped it across. Under
+A quotation is one block however many `>` lines you wrapped it across, and it
+reads as one: a rule down its left edge marks it off, and the `>` markers are
+gone. Under
 `<!-- reveal: line -->` it takes a single reveal rather than arriving a marker
 line at a time, and at Reconstruct you are never asked to type it: typing
 someone else's words back tests transcription, not understanding, so you type

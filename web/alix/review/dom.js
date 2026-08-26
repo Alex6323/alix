@@ -474,7 +474,10 @@ export function renderNote(parent, notes) {
 function renderNoteBlock(parent, badge, units) {
   if (units.length === 0) return;
   const note = el("div", "note");
-  if (badge) note.dataset.badge = badge;
+  if (badge) {
+    note.dataset.badge = badge;
+    note.appendChild(el("span", "note-badge", badge));
+  }
   for (const unit of units) {
     if (unit.kind === "sentence") {
       const paragraph = el("p");
