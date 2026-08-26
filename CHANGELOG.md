@@ -14,7 +14,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the answer's own face, so its boundary is visible without a `>`. Kids gets
   the same five badges on a calmer palette; mobile matches. `[!NOTE]` and
   `[!IMPORTANT]` share a hue because alix palettes carry four semantic
-  colours, not GitHub's five; the chip's fill tells them apart.
+  colours, not GitHub's five; the word and a heavier chip border tell them
+  apart. The accent paints the wash and the borders only, never small text,
+  so a chip's label and its note's body both keep the theme's own ink.
 
 - A bare blockquote in an answer is a quotation, and every client renders it
   as one. `back_units` gains a `quote` unit carrying its own units, so a

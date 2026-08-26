@@ -86,6 +86,16 @@ Color _parseCssColor(String raw) {
   throw FormatException('unparseable CSS color: $raw');
 }
 
+double _contrast(Color first, Color second) {
+  final bright = first.computeLuminance() > second.computeLuminance()
+      ? first.computeLuminance()
+      : second.computeLuminance();
+  final dark = first.computeLuminance() > second.computeLuminance()
+      ? second.computeLuminance()
+      : first.computeLuminance();
+  return (bright + 0.05) / (dark + 0.05);
+}
+
 void main() {
   final css = File(_cssPath).readAsStringSync();
   final js = File(_jsPath).readAsStringSync();
@@ -101,6 +111,39 @@ void main() {
     for (final theme in alixThemes) {
       expect(nonKidsIds, contains(theme.id));
     }
+  });
+
+  // A note's small text (the badge chip at 10 px, the body at 15) is
+  // `onSurface` over the badge accent at 12% alpha. WCAG AA for normal text is
+  // 4.5:1 and this floor is deliberately lower: solarized-dark's own
+  // surface/onSurface pair is 4.75:1, so ANY tinted surface in that palette
+  // sits under AA and reaching it means retuning a shipped theme. The floor is
+  // a regression guard, not an accessibility claim: painting small text in the
+  // accent itself, as the first version of this chip did, measured 2.0:1.
+  test('note small text stays legible over every badge wash in every theme', () {
+    final failures = <String, double>{};
+    for (final theme in alixThemes) {
+      final tokens = theme.data.extension<AlixTokens>()!;
+      final surface = theme.data.colorScheme.surface;
+      final washes = <String, Color>{
+        'note': tokens.bolt,
+        'tip': tokens.good,
+        'important': tokens.bolt,
+        'warning': tokens.warn,
+        'caution': tokens.again,
+        'badgeless': tokens.noteBorder,
+      };
+      for (final entry in washes.entries) {
+        final wash = Color.alphaBlend(
+          entry.value.withValues(alpha: 0.12),
+          surface,
+        );
+        final ratio = _contrast(theme.data.colorScheme.onSurface, wash);
+        if (ratio < 4.0) failures['${theme.id}/${entry.key}'] = ratio;
+      }
+    }
+
+    expect(failures, isEmpty, reason: 'a note wash may not swallow its text');
   });
 
   for (final theme in alixThemes) {

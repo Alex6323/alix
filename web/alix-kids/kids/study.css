@@ -90,17 +90,18 @@
   background: rgba(58, 42, 30, 0.06); font: 14px/1.45 ui-monospace, monospace; color: #5a4a3a;
 }
 /* A badged note becomes its own soft callout. The five inks are muted for
-   the cream ground: the adult app's four theme hues would shout here. */
+   the cream ground (the adult app's four theme hues would shout here) and
+   dark enough that the chip's white label clears 4.5:1 on each of them. */
 .rev-why-note {
   margin: 0 0 10px; padding: 10px 14px; border-radius: 14px;
   background: color-mix(in srgb, var(--badge-ink) 9%, transparent);
   border: 1px solid color-mix(in srgb, var(--badge-ink) 26%, transparent);
 }
 .rev-why-note:last-of-type { margin-bottom: 0; }
-.rev-why-note[data-badge="note"] { --badge-ink: #4a7fa8; }
-.rev-why-note[data-badge="tip"] { --badge-ink: #4e8a5e; }
+.rev-why-note[data-badge="note"] { --badge-ink: #46789f; }
+.rev-why-note[data-badge="tip"] { --badge-ink: #488057; }
 .rev-why-note[data-badge="important"] { --badge-ink: #7a63a8; }
-.rev-why-note[data-badge="warning"] { --badge-ink: #b07d2a; }
+.rev-why-note[data-badge="warning"] { --badge-ink: #976b24; }
 .rev-why-note[data-badge="caution"] { --badge-ink: #b45a4a; }
 .rev-why-badge {
   display: inline-block; margin: 0 0 6px; padding: 1px 9px;

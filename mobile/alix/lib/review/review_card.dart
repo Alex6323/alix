@@ -197,7 +197,8 @@ class ReviewCardView extends StatelessWidget {
             ),
           ),
         ],
-        if (answered && card.note.isNotEmpty) _note(card, tokens),
+        if (answered && card.note.isNotEmpty)
+          _note(context, card, tokens),
       ],
     );
   }
@@ -1286,7 +1287,11 @@ class ReviewCardView extends StatelessWidget {
     );
   }
 
-  Widget _note(ReviewCardModel card, AlixTokens tokens) {
+  Widget _note(
+    BuildContext context,
+    ReviewCardModel card,
+    AlixTokens tokens,
+  ) {
     return Column(
       children: [
         const SizedBox(height: 18),
@@ -1294,14 +1299,17 @@ class ReviewCardView extends StatelessWidget {
         const SizedBox(height: 14),
         for (final (index, note) in card.note.indexed) ...[
           if (index > 0) const SizedBox(height: 10),
-          _noteBlock(note, tokens),
+          _noteBlock(context, note, tokens),
         ],
       ],
     );
   }
 
   /// NOTE and IMPORTANT share the accent hue: alix palettes carry four
-  /// semantic hues, not GitHub's five, and the chip's fill separates them.
+  /// semantic hues, not GitHub's five, and their word plus IMPORTANT's
+  /// heavier chip border separates them. The accent paints borders and the
+  /// wash only, never small text: across the 21 palettes accent-on-its-own-
+  /// wash falls as low as 2.0:1.
   Color _badgeAccent(ReviewBadge? badge, AlixTokens tokens) => switch (badge) {
     null => tokens.noteBorder,
     ReviewBadge.note || ReviewBadge.important => tokens.bolt,
@@ -1310,14 +1318,15 @@ class ReviewCardView extends StatelessWidget {
     ReviewBadge.caution => tokens.again,
   };
 
-  Widget _badgeChip(ReviewBadge badge, Color accent, AlixTokens tokens) {
-    final filled = badge == ReviewBadge.important;
+  Widget _badgeChip(BuildContext context, ReviewBadge badge, Color accent) {
+    final heavy = badge == ReviewBadge.important;
+    final ink = Theme.of(context).colorScheme.onSurface;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+      padding: EdgeInsets.symmetric(horizontal: heavy ? 6 : 7, vertical: 1),
       decoration: BoxDecoration(
-        color: filled ? accent : null,
         border: Border.all(
-          color: filled ? accent : accent.withValues(alpha: 0.45),
+          color: heavy ? accent : accent.withValues(alpha: 0.55),
+          width: heavy ? 2 : 1,
         ),
         borderRadius: BorderRadius.circular(5),
       ),
@@ -1328,7 +1337,7 @@ class ReviewCardView extends StatelessWidget {
           fontSize: 10,
           height: 1.5,
           letterSpacing: 1,
-          color: filled ? tokens.accentInk : accent,
+          color: ink,
         ),
       ),
     );
@@ -1336,11 +1345,17 @@ class ReviewCardView extends StatelessWidget {
 
   // One box per note, so several notes stack instead of merging into one and
   // losing their badges.
-  Widget _noteBlock(ReviewNoteModel entry, AlixTokens tokens) {
+  Widget _noteBlock(
+    BuildContext context,
+    ReviewNoteModel entry,
+    AlixTokens tokens,
+  ) {
     final badge = entry.badge;
     final accent = _badgeAccent(badge, tokens);
     final body = TextStyle(
-      color: badge == null ? tokens.noteInk : tokens.text,
+      color: badge == null
+          ? tokens.noteInk
+          : Theme.of(context).colorScheme.onSurface,
       fontSize: 15,
       height: 1.4,
     );
@@ -1357,7 +1372,7 @@ class ReviewCardView extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (badge != null) ...[
-            _badgeChip(badge, accent, tokens),
+            _badgeChip(context, badge, accent),
             const SizedBox(height: 9),
           ],
           for (final (index, note) in entry.units.indexed) ...[

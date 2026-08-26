@@ -98,6 +98,61 @@ test("every badged note is spoken, in authored order", async ({ page }) => {
   expect(new Set(tints).size).toBe(2);
 });
 
+const FIVE_BADGE_DECK = `---
+format-version: 1
+id: "deck-00000000000000000000000017"
+title: "Badges"
+---
+## What did Dijkstra say about testing?
+That it shows the presence of bugs, never their absence.
+
+> [!NOTE]
+> A note.
+
+> [!TIP]
+> A tip.
+
+> [!IMPORTANT]
+> Something important.
+
+> [!WARNING]
+> A warning.
+
+> [!CAUTION]
+> Take care.
+<!-- id: card-kidsfivebadges -->
+`;
+
+// The kids inks are literals rather than theme tokens, so nothing else can
+// catch one drifting light enough to swallow its own white label.
+test("every badge chip keeps its label legible on its own ink", async ({ page }) => {
+  writeWorkspace(FIVE_BADGE_DECK, "badges.md");
+  await revealTheAnswer(page, "Badges");
+
+  const chips = page.locator(".rev-why-badge");
+  await expect(chips).toHaveCount(5);
+  const pairs = await chips.evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const style = getComputedStyle(node);
+      return { text: node.textContent ?? "", fg: style.color, bg: style.backgroundColor };
+    }),
+  );
+
+  const channel = (value: number) =>
+    value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+  const luminance = (css: string) => {
+    const [r, g, b] = css.match(/\d+(\.\d+)?/g)!.slice(0, 3).map(Number);
+    return 0.2126 * channel(r / 255) + 0.7152 * channel(g / 255) + 0.0722 * channel(b / 255);
+  };
+
+  for (const pair of pairs) {
+    const a = luminance(pair.fg);
+    const b = luminance(pair.bg);
+    const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    expect(ratio, `${pair.text} chip contrast`).toBeGreaterThanOrEqual(4.5);
+  }
+});
+
 test("a quotation renders as quoted content, not as `>` lines", async ({ page }) => {
   writeWorkspace();
   await revealTheAnswer(page);

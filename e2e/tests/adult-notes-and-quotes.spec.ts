@@ -93,6 +93,20 @@ That it shows the presence of bugs, never their absence.
   );
   expect(new Set(tints).size).toBe(2);
   await expect(quote).toHaveCSS("border-left-width", "3px");
+
+  // The accent paints borders and washes, never small text: measured across
+  // the 21 palettes, accent-on-its-own-wash falls to 2.0:1. Each chip takes
+  // the note's own ink and keeps the hue in its border.
+  for (const index of [0, 1]) {
+    const chip = notes.nth(index).locator(".note-badge");
+    const [ink, border, body] = await chip.evaluate((node) => [
+      getComputedStyle(node).color,
+      getComputedStyle(node).borderTopColor,
+      getComputedStyle(node.parentElement as HTMLElement).color,
+    ]);
+    expect(ink).toBe(body);
+    expect(ink).not.toBe(border);
+  }
 });
 
 // Line reveal walks the answer's STEPS, so a two-line quotation is one

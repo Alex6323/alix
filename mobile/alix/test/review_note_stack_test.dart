@@ -143,6 +143,13 @@ void main() {
         accents[badge]!.withValues(alpha: 0.12),
         reason: '$badge tints its box with its own accent',
       );
+      // The accent paints borders and washes, never small text: across the 21
+      // palettes accent-on-its-own-wash measures as low as 2.0:1.
+      expect(
+        tester.widget<Text>(find.text(name)).style!.color,
+        alixDark().colorScheme.onSurface,
+        reason: "$badge's chip is inked, not accent-coloured",
+      );
     }
   });
 
