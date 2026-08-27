@@ -661,9 +661,6 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::UnclosedComment => {
             "a `<!--` line that never closes with `-->` stays content".to_string()
         }
-        LintKind::PointlessTerminator => "this `---` section terminator ends nothing: no card \
-                                           follows before the next heading or the end of the deck"
-            .to_string(),
         LintKind::UnknownInvocation => "this comment names no known invocation, so the block \
              below it stays literal; known names: `choices-single`, `choices-multiple`, \
              `cards`, `plain`"
@@ -2257,7 +2254,7 @@ printf ']}}'
         w(
             dir.path(),
             "facts.md",
-            "---\nformat-version: 1\nid: deck-facts\nsource: .\n---\n## q\na\n<!-- at: source.txt:1 -->\n<!-- id: card-q -->\n",
+            "---\nformat-version: 1\nid: deck-facts\nsource: .\n---\n## q\na\n<!-- at: source.txt:1 -->\n<!-- id: card-q -->\n<!-- reveal: line -->\n",
         );
         let before = std::fs::read_to_string(&deck).unwrap();
         let args = |repair_source_locators| DoctorArgs {

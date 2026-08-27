@@ -98,9 +98,6 @@ pub enum LintKind {
     ClozeInHole,
     UnclosedComment,
     UnclosedFence,
-    /// A blank-surrounded `---` that terminates nothing: no card follows
-    /// before the next `#` heading or the end of the deck.
-    PointlessTerminator,
     ImageMalformed,
     ChoiceAnswerMixed,
     ChoiceNeedsBothSides,
@@ -170,8 +167,10 @@ pub enum ParseError {
         "line {0}: a deck body starts with a heading; open a `# ` section or `## ` card above this line"
     )]
     ProseBeforeFirstHeading(usize),
-    #[error("line {0}: section heading is empty; write the section title after `# `")]
-    EmptySection(usize),
+    #[error(
+        "line {0}: a bare `#` sits attached inside a card, where a context reset has no meaning; leave a blank line above it to reset the section, or write the section title after `# `"
+    )]
+    ContextResetInCard(usize),
     #[error("line {0}: a section heading takes no directives and no card id")]
     SectionDirective(usize),
     #[error("line {0}: this card id belongs to no card")]
@@ -249,13 +248,9 @@ pub enum ParseError {
     #[error("line {0}: only directive comments may follow a card table before the next `## ` card")]
     TableTrailing(usize),
     #[error(
-        "line {0}: this `---` neither divides a front from the answer attached below it nor stands blank-surrounded as a section terminator; escape it (`\\---`) for literal dashes, or put `<!-- plain -->` on the line above for a literal thematic break"
+        "line {0}: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"
     )]
     StrayDivider(usize),
-    #[error(
-        "line {0}: prose after a `---` section terminator belongs to no section; open a heading first"
-    )]
-    ProseAfterTerminator(usize),
     #[error(
         "line {0}: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"
     )]
@@ -277,7 +272,7 @@ pub enum ParseError {
     )]
     NestedQuote(usize),
     #[error(
-        "line {0}: a `***`/`___` break has no meaning inside a card; delete the line, or move the material to a section"
+        "line {0}: a `---`/`***`/`___` break has no meaning inside a card; delete the line, or move the material to a section"
     )]
     CardThematicBreak(usize),
 }
@@ -299,7 +294,7 @@ impl ParseError {
             Self::FrontWithoutAnswer(_) => "front_without_answer",
             Self::OrphanSubCard(_) => "orphan_sub_card",
             Self::ProseBeforeFirstHeading(_) => "prose_before_first_heading",
-            Self::EmptySection(_) => "empty_section",
+            Self::ContextResetInCard(_) => "context_reset_in_card",
             Self::SectionDirective(_) => "section_directive",
             Self::OrphanCardId(_) => "orphan_card_id",
             Self::SubCardTableTitle(_) => "sub_card_table_title",
@@ -324,7 +319,6 @@ impl ParseError {
             Self::TableDuplicateStamp { .. } => "table_duplicate_stamp",
             Self::TableTrailing(_) => "table_trailing",
             Self::StrayDivider(_) => "stray_divider",
-            Self::ProseAfterTerminator(_) => "prose_after_terminator",
             Self::SetextUnderline(_) => "setext_underline",
             Self::UnclosedDisplayMath(_) => "unclosed_display_math",
             Self::TagShape { .. } => "tag_shape",
@@ -341,7 +335,7 @@ impl ParseError {
             | Self::FrontWithoutAnswer(line)
             | Self::OrphanSubCard(line)
             | Self::ProseBeforeFirstHeading(line)
-            | Self::EmptySection(line)
+            | Self::ContextResetInCard(line)
             | Self::SectionDirective(line)
             | Self::OrphanCardId(line)
             | Self::SubCardTableTitle(line)
@@ -355,7 +349,6 @@ impl ParseError {
             | Self::TableCellImage(line)
             | Self::TableTrailing(line)
             | Self::StrayDivider(line)
-            | Self::ProseAfterTerminator(line)
             | Self::SetextUnderline(line)
             | Self::UnclosedDisplayMath(line)
             | Self::IndentedCode(line)
@@ -896,7 +889,6 @@ struct ScannedBody {
 fn section_line(
     section: &mut Vec<String>,
     seen_heading: bool,
-    terminated: Option<usize>,
     lineno: usize,
     line: String,
 ) -> Result<(), ParseError> {
@@ -904,9 +896,6 @@ fn section_line(
     // heading rule either: its lines are notes and personal cards.
     if sidecar_mode() {
         return Ok(());
-    }
-    if terminated.is_some() {
-        return Err(ParseError::ProseAfterTerminator(lineno));
     }
     if !seen_heading {
         return Err(ParseError::ProseBeforeFirstHeading(lineno));
@@ -925,6 +914,10 @@ fn indent_width(raw: &str) -> usize {
         }
     }
     width
+}
+
+fn thematic_break(t: &str) -> bool {
+    t == "---" || thematic_break_shape(t)
 }
 
 fn thematic_break_shape(t: &str) -> bool {
@@ -956,8 +949,6 @@ fn scan(
     let mut mappable_block: Option<MappableBlock> = None;
     let mut literal_table_invocation: Option<usize> = None;
     let mut quote_run: Option<QuoteRun> = None;
-    let mut terminated: Option<usize> = None;
-    let mut idle_terminators: Vec<usize> = Vec::new();
 
     for (idx, raw) in lines.iter().enumerate().skip(start) {
         if skip_lines > 0 {
@@ -1010,13 +1001,7 @@ fn scan(
                 fence = None;
             }
             if current.is_none() {
-                section_line(
-                    &mut section,
-                    seen_heading,
-                    terminated,
-                    lineno,
-                    raw.to_string(),
-                )?;
+                section_line(&mut section, seen_heading, lineno, raw.to_string())?;
                 prev_blank = false;
                 prev_heading = false;
                 continue;
@@ -1066,13 +1051,7 @@ fn scan(
         if let Some((ch, open)) = fence_opener(raw) {
             fence = Some((ch, open, lineno));
             if current.is_none() {
-                section_line(
-                    &mut section,
-                    seen_heading,
-                    terminated,
-                    lineno,
-                    raw.to_string(),
-                )?;
+                section_line(&mut section, seen_heading, lineno, raw.to_string())?;
                 prev_blank = false;
                 prev_heading = false;
                 continue;
@@ -1159,7 +1138,6 @@ fn scan(
                 invocation_line,
             });
             skip_delimiter = true;
-            idle_terminators.clear();
             prev_blank = false;
             prev_heading = false;
             continue;
@@ -1169,6 +1147,7 @@ fn scan(
             && !(sidecar_mode() && depth != 2)
         {
             if depth == 1 {
+                let attached_in_card = current.is_some() && !prev_blank && !prev_heading;
                 if let Some(card) = take_card(&mut current)? {
                     blocks.push(RawBlock::Card(card));
                 }
@@ -1181,19 +1160,13 @@ fn scan(
                     return Err(ParseError::SectionDirective(lineno));
                 }
                 let (text, _) = heading(rest, lineno, lints)?;
-                if trim_ws(&text).is_empty() {
-                    return Err(ParseError::EmptySection(lineno));
+                let resets = trim_ws(&text).is_empty();
+                if resets && attached_in_card {
+                    return Err(ParseError::ContextResetInCard(lineno));
                 }
-                for line in idle_terminators.drain(..) {
-                    lints.push(Lint {
-                        line,
-                        kind: LintKind::PointlessTerminator,
-                    });
-                }
-                terminated = None;
                 open_depths.clear();
                 seen_heading = true;
-                section = vec![text];
+                section = if resets { Vec::new() } else { vec![text] };
                 prev_blank = false;
                 prev_heading = true;
                 continue;
@@ -1215,7 +1188,6 @@ fn scan(
             if front.is_empty() {
                 return Err(ParseError::EmptyFront(lineno));
             }
-            idle_terminators.clear();
             seen_heading = true;
             open_depths.push((depth, lineno));
             current = Some(RawCard {
@@ -1255,9 +1227,6 @@ fn scan(
         if was_prose && indent_width(raw) < 4 && t.chars().all(|c| c == '=') {
             return Err(ParseError::SetextUnderline(lineno));
         }
-        if thematic_break_shape(t) && indent_width(raw) < 4 && current.is_some() {
-            return Err(ParseError::CardThematicBreak(lineno));
-        }
         // Only ever an opener here: the open state is consumed above.
         if t == "$$"
             && let Some(card) = current.as_mut()
@@ -1269,13 +1238,7 @@ fn scan(
             && ESCAPABLE.iter().any(|marker| rest.starts_with(marker))
         {
             if current.is_none() {
-                section_line(
-                    &mut section,
-                    seen_heading,
-                    terminated,
-                    lineno,
-                    rest.to_string(),
-                )?;
+                section_line(&mut section, seen_heading, lineno, rest.to_string())?;
                 prev_blank = false;
                 prev_heading = false;
                 prev_prose = true;
@@ -1288,20 +1251,14 @@ fn scan(
             continue;
         }
 
-        if t == "---" {
+        if thematic_break(t) && indent_width(raw) < 4 {
             let plain_trails =
                 invocation_below(lines, idx + 1).is_some_and(|(_, m)| m == Mapping::Plain);
             if plain_trails {
                 if current.is_none() {
-                    section_line(
-                        &mut section,
-                        seen_heading,
-                        terminated,
-                        lineno,
-                        "---".to_string(),
-                    )?;
+                    section_line(&mut section, seen_heading, lineno, t.to_string())?;
                 } else {
-                    push_content(&mut current, lineno, "---".to_string())?;
+                    push_content(&mut current, lineno, t.to_string())?;
                 }
                 mappable_block = Some(MappableBlock::Divider);
                 prev_blank = false;
@@ -1320,13 +1277,10 @@ fn scan(
                     card.divider_line = Some(lineno);
                 }
             } else if !attached && prev_blank {
-                if let Some(card) = take_card(&mut current)? {
-                    blocks.push(RawBlock::Card(card));
+                if current.is_some() {
+                    return Err(ParseError::CardThematicBreak(lineno));
                 }
-                open_depths.clear();
-                section.clear();
-                terminated = Some(lineno);
-                idle_terminators.push(lineno);
+                section_line(&mut section, seen_heading, lineno, t.to_string())?;
             } else {
                 return Err(ParseError::StrayDivider(lineno));
             }
@@ -1395,13 +1349,7 @@ fn scan(
                 }
                 // A section has no card to own a note, so the line is
                 // ordinary section prose either way.
-                None => section_line(
-                    &mut section,
-                    seen_heading,
-                    terminated,
-                    lineno,
-                    t.to_string(),
-                )?,
+                None => section_line(&mut section, seen_heading, lineno, t.to_string())?,
             }
             prev_blank = false;
             prev_heading = false;
@@ -1497,13 +1445,7 @@ fn scan(
         // has no sections at all (D16), so nothing accumulates there and a
         // personal card stays context-free.
         if current.is_none() {
-            section_line(
-                &mut section,
-                seen_heading,
-                terminated,
-                lineno,
-                t.to_string(),
-            )?;
+            section_line(&mut section, seen_heading, lineno, t.to_string())?;
             prev_blank = false;
             prev_heading = false;
             prev_prose = true;
@@ -1532,12 +1474,6 @@ fn scan(
     }
     if let Some(card) = take_card(&mut current)? {
         blocks.push(RawBlock::Card(card));
-    }
-    for line in idle_terminators {
-        lints.push(Lint {
-            line,
-            kind: LintKind::PointlessTerminator,
-        });
     }
     Ok(ScannedBody {
         blocks,
@@ -3844,8 +3780,13 @@ mod tests {
                 Outcome::Cards(1),
             ),
             (
-                "section break stays legal",
+                "an attached section break is stray, as `---` already was",
                 "# s\n***\n## q\na\n",
+                Outcome::Err(2),
+            ),
+            (
+                "a blank-surrounded section break is a literal rule",
+                "# s\n\n***\n\n## q\na\n",
                 Outcome::Cards(1),
             ),
             (
@@ -4295,9 +4236,9 @@ a
             ),
             // ── empty heading text ──
             (
-                "an empty section heading errors",
+                "an empty section heading resets the context",
                 "#\u{20}\n## q\na\n".into(),
-                Err(1),
+                Cards(1),
             ),
             (
                 "an empty sub-card front errors",
@@ -5092,11 +5033,8 @@ a
         assert_eq!(vec!["a"], deck.cards[0].back);
     }
 
-    /// Spec law (D22 amendment): every `---` is a front divider (attached
-    /// to the answer below it, in divider position), a blank-surrounded
-    /// section terminator, or a loud error. Rows are the error cases.
     #[test]
-    fn a_dash_line_in_neither_divider_nor_terminator_shape_errors() {
+    fn a_break_in_neither_divider_nor_section_position_errors() {
         for (name, text, line) in [
             (
                 "divider then blank then prose (probe p15)",
@@ -5135,85 +5073,156 @@ a
     }
 
     #[test]
-    fn a_blank_surrounded_dash_line_terminates_the_section() {
-        let deck = parse("# S\nctx\n\n## a\nx\n\n---\n\n## b\ny\n");
+    fn a_break_takes_its_meaning_from_position_not_from_its_spelling() {
+        for spelling in ["---", "***", "___"] {
+            let deck = parse(&format!("## a\n{spelling}\nanswer\n"));
+            assert_eq!(
+                vec!["answer".to_string()],
+                deck.cards[0].back,
+                "attached in a card divides the front: {spelling}"
+            );
+
+            let deck = parse(&format!("# S\nctx\n\n{spelling}\n\n## q\na\n"));
+            assert_eq!(
+                vec!["S".to_string(), "ctx".to_string(), spelling.to_string()],
+                deck.cards[0].section_context,
+                "blank-surrounded in a section context is a literal rule: {spelling}"
+            );
+
+            assert_eq!(
+                ParseError::CardThematicBreak(4),
+                err(&format!("## a\nx\n\n{spelling}\n\ny\n")),
+                "blank-surrounded in a card errors: {spelling}"
+            );
+
+            assert_eq!(
+                ParseError::StrayDivider(3),
+                err(&format!("# S\nctx\n{spelling}\n\n## q\na\n")),
+                "attached with no card open is stray: {spelling}"
+            );
+
+            let deck = parse(&format!("## a\n{spelling}\n<!-- plain -->\nanswer\n"));
+            assert_eq!(
+                vec![spelling.to_string(), "answer".to_string()],
+                deck.cards[0].back,
+                "a trailing `<!-- plain -->` keeps the break literal: {spelling}"
+            );
+
+            assert_eq!(
+                ParseError::LeadingInvocation {
+                    line: 2,
+                    word: "plain".to_string()
+                },
+                err(&format!("## a\n<!-- plain -->\n{spelling}\nanswer\n")),
+                "a leading `<!-- plain -->` is machinery out of order: {spelling}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_three_dashes_open_frontmatter() {
+        for spelling in ["***", "___"] {
+            assert_eq!(
+                ParseError::StrayDivider(1),
+                err(&format!(
+                    "{spelling}\nid: \"deck-abc\"\n{spelling}\n\n## q\na\n"
+                )),
+                "a non-dash break on line 1 is not a frontmatter fence: {spelling}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bare_hash_resets_the_section_context() {
+        let deck = parse("# S\nctx\n\n## a\nx\n\n#\n\n## b\ny\n");
         assert_eq!(
             vec!["S".to_string(), "ctx".to_string()],
             deck.cards[0].section_context,
-            "the card before the terminator keeps its context"
+            "the card before the reset keeps its context"
         );
         assert!(
             deck.cards[1].section_context.is_empty(),
-            "the card after the terminator carries none, got {:?}",
+            "the card after the reset carries none, got {:?}",
             deck.cards[1].section_context
         );
-        assert!(deck.lints.is_empty(), "a useful terminator draws no lint");
+        assert!(deck.lints.is_empty(), "a reset draws no lint");
+    }
 
-        let deck = parse("# S\nctx\n\n---\n\n## q\na\n");
-        assert!(
-            deck.cards[0].section_context.is_empty(),
-            "a terminator with no card open still clears the section"
+    #[test]
+    fn a_reset_with_nothing_after_it_changes_no_parse() {
+        for text in ["## a\nx\n\n#\n", "## a\nx\n\n#\n\n#\n"] {
+            let deck = parse(text);
+            assert_eq!(1, deck.cards.len(), "one card: {text:?}");
+            assert_eq!(
+                vec!["x".to_string()],
+                deck.cards[0].back,
+                "the answer is untouched: {text:?}"
+            );
+            assert!(
+                deck.lints.is_empty(),
+                "a reset that resets nothing draws no lint: {text:?}, got {:?}",
+                deck.lints
+            );
+        }
+    }
+
+    #[test]
+    fn a_bare_hash_attached_inside_a_card_errors() {
+        assert_eq!(
+            ParseError::ContextResetInCard(3),
+            err("## a\nmore\n#\n---\nanswer\n")
         );
     }
 
     #[test]
-    fn prose_after_a_terminator_before_any_heading_errors() {
+    fn prose_after_a_reset_joins_the_emptied_section() {
+        let deck = parse("# S\n\n## a\nx\n\n#\n\nstray\n\n## b\ny\n");
         assert_eq!(
-            ParseError::ProseAfterTerminator(8),
-            err("# S\n\n## a\nx\n\n---\n\nstray\n")
+            vec!["stray".to_string()],
+            deck.cards[1].section_context,
+            "prose after a reset opens the new, empty context"
         );
     }
 
     #[test]
-    fn a_card_the_terminator_closes_without_an_answer_errors() {
+    fn a_break_that_closes_a_front_without_an_answer_errors() {
         assert_eq!(
-            ParseError::FrontWithoutAnswer(2),
+            ParseError::CardThematicBreak(4),
             err("# S\n## q\n\n---\n\n## r\ny\n")
         );
     }
 
     #[test]
-    fn a_pointless_terminator_is_a_doctor_finding_not_an_error() {
-        for (name, text, lines) in [
-            ("nothing follows at EOF", "## a\nx\n\n---\n", vec![4]),
-            (
-                "the next heading arrives before any card",
-                "# S\n\n## a\nx\n\n---\n\n# T\n\n## b\ny\n",
-                vec![6],
-            ),
-            (
-                "two in a row, both idle",
-                "## a\nx\n\n---\n\n---\n",
-                vec![4, 6],
-            ),
-        ] {
-            let deck = parse(text);
-            let got: Vec<usize> = deck
-                .lints
-                .iter()
-                .filter(|l| l.kind == LintKind::PointlessTerminator)
-                .map(|l| l.line)
-                .collect();
-            assert_eq!(lines, got, "{name}");
+    fn a_plain_marked_break_line_is_literal_content() {
+        for spelling in ["---", "***", "___"] {
+            let deck = parse(&format!(
+                "## q\nans\n\n{spelling}\n<!-- plain -->\n\nmore\n"
+            ));
+            assert_eq!(
+                vec!["ans", spelling, "more"],
+                deck.cards[0].back,
+                "trailing plain keeps a break literal in a card: {spelling}"
+            );
+
+            let deck = parse(&format!("# S\n\n{spelling}\n<!-- plain -->\n\n## q\na\n"));
+            assert_eq!(
+                vec!["S".to_string(), spelling.to_string()],
+                deck.cards[0].section_context,
+                "trailing plain keeps a break literal in a section: {spelling}"
+            );
         }
     }
 
     #[test]
-    fn a_plain_marked_dash_line_is_literal_content() {
-        let deck = parse("## q\nans\n\n---\n<!-- plain -->\n\nmore\n");
-        assert_eq!(vec!["ans", "---", "more"], deck.cards[0].back);
-
-        let deck = parse("# S\n\n---\n<!-- plain -->\n\n## q\na\n");
-        assert_eq!(
-            vec!["S".to_string(), "---".to_string()],
-            deck.cards[0].section_context
-        );
-    }
-
-    #[test]
-    fn an_eol_terminated_hash_run_is_a_heading_so_empty_text_errors() {
-        assert_eq!(ParseError::EmptySection(1), err("#\n\n## q\na\n"));
-        assert_eq!(ParseError::EmptySection(1), err("# \n\n## q\na\n"));
+    fn an_eol_terminated_hash_run_is_a_heading_so_empty_text_resets() {
+        for text in ["#\n\n## q\na\n", "# \n\n## q\na\n"] {
+            let deck = parse(text);
+            assert!(
+                deck.cards[0].section_context.is_empty(),
+                "a bare `#` opens an empty context, got {:?}",
+                deck.cards[0].section_context
+            );
+        }
         assert_eq!(ParseError::EmptyFront(2), err("# S\n##\n"));
         assert_eq!(
             ParseError::ProseBeforeFirstHeading(1),
@@ -5223,10 +5232,10 @@ a
     }
 
     #[test]
-    fn a_sub_card_chain_does_not_cross_a_terminator() {
+    fn a_sub_card_chain_does_not_cross_a_context_reset() {
         assert_eq!(
             ParseError::OrphanSubCard(8),
-            err("# S\n\n## p\na\n\n---\n\n### s\nb\n")
+            err("# S\n\n## p\na\n\n#\n\n### s\nb\n")
         );
     }
 

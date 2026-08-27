@@ -179,11 +179,17 @@ and without the `---` alix couldn't tell where the question stops and the answer
 starts. (A one-line question needs no divider: the answer just follows on the next
 line, as in the cards above.)
 
-The divider's shape is strict, so a stray `---` fails loudly instead of silently
+The divider's shape is strict, so a stray break fails loudly instead of silently
 joining a card: a front divider sits directly above its answer, with a blank line
-(or the card's own heading) above it, once per card. A `---` anywhere else is
-either a [section terminator](#-section-context) or a parse error; a literal
-`---` line is written `\---` (see [Escaping](#escaping)).
+(or the card's own heading) above it, once per card. `---`, `***`, and `___` are
+interchangeable: the position decides what a break means, never which of the
+three you typed. A break anywhere else is either a literal rule in
+[section context](#-section-context) or a parse error; a literal break line is
+written `\---` (see [Escaping](#escaping)), and a `<!-- plain -->` on the line
+*below* a break also keeps it literal.
+
+A break alone with blank lines on both sides has no meaning inside a card and is
+an error: move the material to a section, or delete the line.
 
 ## Choice cards (task lists)
 
@@ -392,15 +398,17 @@ question stays in place; press it again to return to the answer. The kids client
 does not expose section context.
 
 A section heading is a heading, nothing more. It takes no directives and no card
-ID, and an empty one is an error, because a section owns no card to bind either
-to.
+ID, because a section owns no card to bind either to.
 
-A section runs to the next `#` heading, or to a **terminator**: a `---` alone
-with blank lines on both sides ends the open card and the section early, so the
-cards after it carry no context (a sub-card chain does not cross it either).
-Prose directly after a terminator belongs to no section and is an error; open a
-heading first. A terminator that ends nothing before the next `#` heading or the
-end of the deck still parses, and `alix doctor` points it out.
+A section runs to the next `#` heading. To end one without opening another,
+write a **bare `#`**: a `#` with no title opens an *empty* context, so the cards
+after it carry none until the next titled `#` (a sub-card chain does not cross it
+either). Prose under a bare `#` belongs to the new, empty section, exactly as it
+would under a titled one.
+
+A bare `#` needs a blank line above it, like any other block. Attached directly
+under a card's own lines it is an error, since a reset there would silently
+truncate the card.
 
 ### `###` to `######` — sub-cards
 
@@ -437,11 +445,11 @@ ATX `#`-prefixed heading), four-space/tab indented code opening after a
 blank line or a heading (wrap the code in a ``` fence; ordinary paragraph
 and task-list continuation lines are unaffected), a nested `> >` quote
 (notes are flat, one `>` deep; put literal `>` text in a fence), and a
-`***` or `___` thematic break inside a card (delete it, or move the
-material to a section, where the break renders as a horizontal rule in the
-section view). Inside fenced code every shape is literal, as
-always. A trailing-two-space hard break is not a spelling at all: content
-lines shed trailing whitespace when the deck is read.
+blank-surrounded thematic break inside a card, whichever of `---`, `***`, or
+`___` you type (delete it, or move the material to a section, where the break
+renders as a horizontal rule in the section view). Inside fenced code every
+shape is literal, as always. A trailing-two-space hard break is not a spelling
+at all: content lines shed trailing whitespace when the deck is read.
 
 ## HTML in a deck
 

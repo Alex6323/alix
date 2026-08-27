@@ -1715,6 +1715,14 @@ mod tests {
     }
 
     #[test]
+    fn underscore_delimiters_require_flanking_and_keep_punctuation_exceptions() {
+        assert_eq!(vec![plain(" _ x_")], parse_inline(" _ x_"));
+        assert_eq!(vec![plain("_x _ ")], parse_inline("_x _ "));
+        assert_eq!(vec![plain("."), italic(".")], parse_inline("._._"));
+        assert_eq!(vec![italic("."), plain(".")], parse_inline("_._."));
+    }
+
+    #[test]
     fn double_underscore_is_bold() {
         assert_eq!(vec![bold("bold")], parse_inline("__bold__"));
     }

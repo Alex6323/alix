@@ -378,6 +378,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- **Breaking (deck format): the section terminator is gone; a bare `#` resets
+  the context instead.** A section used to end early at a `---` alone between
+  blank lines. That overloaded `---`, which already served as the frontmatter
+  fence and the front divider, and it meant `***` and `___` could never be its
+  equals. Now a `#` with no title opens an *empty* section context, so the
+  cards after it carry none until the next titled `#`, and prose under a bare
+  `#` joins that empty section like prose under any other heading. Attached
+  directly under a card's own lines a bare `#` is an error, where a reset would
+  silently truncate the card.
+
+- **Breaking (deck format): `---`, `***`, and `___` are interchangeable.**
+  Position decides what a break means, never which of the three you typed: a
+  break attached above an answer divides a front, blank-surrounded between
+  cards it is a literal rule in the section context, and blank-surrounded
+  inside a card it is an error. `***` and `___` gain the front-divider role
+  and the `<!-- plain -->` escape, which previously only `---` had; a break
+  attached under a heading with no card open is now stray for all three, as
+  `---` already was. Decks using a `---` terminator between cards fail loudly
+  as an ordinary break-inside-a-card error.
+
 - A `format` reshape changes what a card SHOWS, never what a typed check
   expects, which is what the manual has always promised. A card is now served
   in one answer space: a reveal mode gets the reshape, a typed mode gets the
@@ -724,7 +744,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
-
 - A supporting quotation is no longer graded as a claim the learner owes.
   Three surfaces still derived their gradeable items from the card's raw
   answer lines: the Explain checklist's fallback (an un-augmented card asked
