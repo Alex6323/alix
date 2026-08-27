@@ -775,8 +775,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that no longer exists. Applying it then either severed a card from its
   progress or moved that progress onto the pasted copy. Each deck is digested
   as it is scanned, and a repair refuses unless every participating file still
-  hashes to what the scan read; one deck's repairs also land in a single write,
-  so no repair can invalidate its siblings' evidence. Found by Codex.
+  hashes to what the scan read. One deck's repairs land in a single write, so
+  no repair can invalidate its siblings' evidence, and the deck about to be
+  written is the last one read, so a save landing during the other reads is not
+  overwritten by text from before it. Found by Codex.
 - A duplicated cloze card or card table is repaired instead of reported as
   already resolved. Duplicate detection compares the composed id a review unit
   answers to, which suffixes the authored `id:` per cloze hole, table row,

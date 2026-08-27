@@ -444,13 +444,15 @@ pub fn replace_card_tokens(
     repairs: &[TokenRepair<'_>],
     digests: &HashMap<PathBuf, u64>,
 ) -> Result<Vec<String>, StampError> {
-    let original = read_as_scanned(loser, digests)?;
+    // The keepers are read first so the loser's text is the last thing
+    // validated before the write that replaces it.
     let mut checked: HashSet<&Path> = HashSet::new();
     for repair in repairs {
         if repair.keeper != loser && checked.insert(repair.keeper) {
             read_as_scanned(repair.keeper, digests)?;
         }
     }
+    let original = read_as_scanned(loser, digests)?;
     // Keyed by start, so two collisions resolving to one id comment are one
     // rewrite rather than a second that would splice over the first.
     let mut spans: BTreeMap<usize, (Range<usize>, String)> = BTreeMap::new();
@@ -1244,6 +1246,58 @@ mod tests {
 
         assert!(matches!(result, Err(StampError::TokenNotFound { .. })));
         assert_eq!(original, fs::read_to_string(&path).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_loser_save_after_its_guard_read_is_not_overwritten() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let old = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        let original = format!("## loser\nold answer\n<!-- id: {old} -->\n");
+        let edited = format!("## loser\nanswer saved by the editor\n<!-- id: {old} -->\n");
+        let loser = write(&dir, "loser.md", &original);
+        let keeper = dir.path().join("keeper.pipe");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&keeper)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let keeper_text = format!("## keeper\nanswer\n<!-- id: {old} -->\n");
+        let digests = HashMap::from([
+            (loser.clone(), crate::dedup::digest(&original)),
+            (keeper.clone(), crate::dedup::digest(&keeper_text)),
+        ]);
+
+        let worker_loser = loser.clone();
+        let worker_keeper = keeper.clone();
+        let repair = std::thread::spawn(move || {
+            replace_card_tokens(
+                &worker_loser,
+                &[TokenRepair {
+                    base_token: old,
+                    block_line: 1,
+                    keeper: &worker_keeper,
+                }],
+                &digests,
+            )
+        });
+
+        let mut keeper_writer = fs::OpenOptions::new().write(true).open(&keeper).unwrap();
+        keeper_writer.write_all(keeper_text.as_bytes()).unwrap();
+        fs::write(&loser, &edited).unwrap();
+        drop(keeper_writer);
+
+        let result = repair.join().unwrap();
+        assert_eq!(
+            edited,
+            fs::read_to_string(&loser).unwrap(),
+            "an editor save after the loser digest check must survive; repair returned {result:?}"
+        );
+        assert!(result.is_err(), "the stale repair was applied: {result:?}");
     }
 
     #[test]
