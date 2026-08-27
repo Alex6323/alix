@@ -18,10 +18,10 @@
 {"e":18,"g":[1],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":19,"g":[1],"cards":1,"back":"ws"}
 {"e":20,"g":[1],"err":"line 2: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
-{"e":21,"g":[1],"cards":1,"back":"ws"}
+{"e":21,"g":[1],"err":"line 2: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
 {"e":22,"g":[1],"err":"line 2: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
-{"e":23,"g":[1],"cards":1,"back":"exact"}
-{"e":24,"g":[1],"cards":1,"back":"ws"}
+{"e":23,"g":[1],"err":"line 2: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
+{"e":24,"g":[1],"err":"line 2: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
 {"e":25,"g":[1],"cards":1,"back":"ws"}
 {"e":26,"g":[1],"cards":1,"back":"ws"}
 {"e":27,"g":[1],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
@@ -50,15 +50,15 @@
 {"e":50,"g":[13],"err":"line 3: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"}
 {"e":51,"g":[13],"err":"line 4: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"}
 {"e":52,"g":[13],"err":"line 4: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"}
-{"e":53,"g":[13],"err":"line 6: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"}
+{"e":53,"g":[13],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
 {"e":54,"g":[1,13],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
 {"e":55,"g":[1,13],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
-{"e":56,"g":[13],"cards":1,"back":"ws"}
+{"e":56,"g":[13],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
 {"e":57,"g":[1,13],"cards":1,"back":"ws"}
-{"e":58,"g":[13],"cards":1,"back":"ws"}
-{"e":59,"g":[13],"cards":1,"back":"ws"}
-{"e":60,"g":[13],"cards":1,"back":"exact"}
-{"e":61,"g":[1,13],"err":"line 6: `<` followed by a letter (column 1) is reserved for HTML, which alix does not render; put literal markup in backticks, or escape the bracket as `\\<`"}
+{"e":58,"g":[13],"err":"line 6: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
+{"e":59,"g":[13],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
+{"e":60,"g":[13],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
+{"e":61,"g":[1,13],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
 {"e":62,"g":[1,13],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
 {"e":63,"g":[13],"err":"line 4: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"}
 {"e":64,"g":[1,13],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
@@ -66,12 +66,12 @@
 {"e":66,"g":[1,13],"err":"line 4: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
 {"e":67,"g":[13],"cards":1,"back":"ws"}
 {"e":68,"g":[1,13],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
-{"e":69,"g":[13],"cards":1,"back":"exact"}
+{"e":69,"g":[13],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
 {"e":70,"g":[1,13],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
-{"e":71,"g":[13],"cards":1,"back":"exact"}
-{"e":72,"g":[13],"cards":1,"back":"div"}
+{"e":71,"g":[13],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
+{"e":72,"g":[13],"err":"line 3: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
 {"e":73,"g":[1,13],"err":"line 5: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
-{"e":74,"g":[1,13],"err":"line 5: a `---`/`***`/`___` break has no meaning inside a card; delete the line, or move the material to a section"}
+{"e":74,"g":[1,13],"err":"line 5: a thematic break line has no meaning inside a card; delete the line, or move the material to a section, or put `<!-- plain -->` below it to keep it literal"}
 {"e":75,"g":[13],"err":"line 4: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"}
 {"e":76,"g":[13],"cards":1,"back":"div"}
 {"e":77,"g":[3,12],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}

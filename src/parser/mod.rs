@@ -274,7 +274,7 @@ pub enum ParseError {
     )]
     NestedQuote(usize),
     #[error(
-        "line {0}: a `---`/`***`/`___` break has no meaning inside a card; delete the line, or move the material to a section"
+        "line {0}: a thematic break line has no meaning inside a card; delete the line, or move the material to a section, or put `<!-- plain -->` below it to keep it literal"
     )]
     CardThematicBreak(usize),
 }
