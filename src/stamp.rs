@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     ops::Range,
     path::{Path, PathBuf},
@@ -43,8 +43,8 @@ pub enum StampError {
     },
     #[error("{path} has no file name")]
     NoFileName { path: PathBuf },
-    #[error("`{token}` is no longer claimed by {keeper}; the duplicate resolved itself")]
-    DuplicateResolved { token: String, keeper: PathBuf },
+    #[error("{path} changed since the scan that proved the duplicate")]
+    DeckChangedSinceScan { path: PathBuf },
     /// Refused even though the enumeration scans already exclude this case:
     /// defends a user's prose file from gaining a frontmatter block if this
     /// path is somehow still reached.
@@ -406,47 +406,77 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     })
 }
 
-/// Whether `path` still holds an id comment carrying `token`.
-pub fn file_claims_token(path: &Path, token: &str) -> bool {
-    fs::read_to_string(path)
-        .ok()
-        .is_some_and(|text| first_id_token_span(&text, token).is_some())
+/// One duplicate resolution the caller's scan authorized.
+pub struct TokenRepair<'a> {
+    /// The authored `id:` value, which is the only spelling a deck file holds:
+    /// a cloze hole, a table row, a reversed half, and a region all suffix it
+    /// to compose their own id, and none of those spellings is written down.
+    pub base_token: &'a str,
+    /// The losing block's 1-based first line. The id comment trails its block,
+    /// so the first match at or after this line is the loser's, while the
+    /// first in the document is the keeper's.
+    pub block_line: usize,
+    /// The deck holding the block that keeps the token; may be the loser.
+    pub keeper: &'a Path,
 }
 
-/// `front_line` is the 1-based front line of the card losing the token: the id
-/// comment trails its card, so the first match at or after that line is the
-/// loser's, while the first in the document is the keeper's. `keeper` is
-/// re-read first, because the scan that named this loser is a directory-wide
-/// read and the duplicate can be resolved by an editor or a sync while it runs.
-pub fn replace_card_token(
-    path: &Path,
-    old_token: &str,
-    front_line: usize,
-    keeper: &Path,
-) -> Result<String, StampError> {
-    if keeper != path && !file_claims_token(keeper, old_token) {
-        return Err(StampError::DuplicateResolved {
-            token: old_token.to_string(),
-            keeper: keeper.to_path_buf(),
-        });
-    }
-    let original = fs::read_to_string(path).map_err(|source| StampError::Read {
+/// A directory-wide scan takes long enough for an editor or a sync to rewrite
+/// a participating deck, which would leave every address and every claim in
+/// the verdict describing text that no longer exists.
+fn read_as_scanned(path: &Path, digests: &HashMap<PathBuf, u64>) -> Result<String, StampError> {
+    let text = fs::read_to_string(path).map_err(|source| StampError::Read {
         path: path.to_path_buf(),
         source,
     })?;
-    let from = line_start_offset(&original, front_line);
-    let span = first_id_token_span(&original[from..], old_token)
-        .map(|range| from + range.start..from + range.end)
-        .ok_or_else(|| StampError::TokenNotFound {
-            token: old_token.to_string(),
-        })?;
-    let fresh = mint_card_id()?;
-    let mut new_text = String::with_capacity(original.len() + fresh.len());
-    new_text.push_str(&original[..span.start]);
-    new_text.push_str(&fresh);
-    new_text.push_str(&original[span.end..]);
-    write_atomic(path, &new_text)?;
-    Ok(fresh)
+    if digests.get(path).copied() != Some(crate::dedup::digest(&text)) {
+        return Err(StampError::DeckChangedSinceScan {
+            path: path.to_path_buf(),
+        });
+    }
+    Ok(text)
+}
+
+/// Applies every repair one scan authorized for one deck in a single write, so
+/// each address is resolved against the exact text the scan proved them in and
+/// no repair can invalidate its siblings' evidence.
+pub fn replace_card_tokens(
+    loser: &Path,
+    repairs: &[TokenRepair<'_>],
+    digests: &HashMap<PathBuf, u64>,
+) -> Result<Vec<String>, StampError> {
+    let original = read_as_scanned(loser, digests)?;
+    let mut checked: HashSet<&Path> = HashSet::new();
+    for repair in repairs {
+        if repair.keeper != loser && checked.insert(repair.keeper) {
+            read_as_scanned(repair.keeper, digests)?;
+        }
+    }
+    // Keyed by start, so two collisions resolving to one id comment are one
+    // rewrite rather than a second that would splice over the first.
+    let mut spans: BTreeMap<usize, (Range<usize>, String)> = BTreeMap::new();
+    for repair in repairs {
+        let from = line_start_offset(&original, repair.block_line);
+        let span = first_id_token_span(&original[from..], repair.base_token)
+            .map(|range| from + range.start..from + range.end)
+            .ok_or_else(|| StampError::TokenNotFound {
+                token: repair.base_token.to_string(),
+            })?;
+        if let std::collections::btree_map::Entry::Vacant(slot) = spans.entry(span.start) {
+            slot.insert((span, mint_card_id()?));
+        }
+    }
+    let mut new_text = String::with_capacity(original.len());
+    let mut cursor = 0;
+    let mut minted = Vec::with_capacity(spans.len());
+    for (span, fresh) in spans.into_values() {
+        new_text.push_str(&original[cursor..span.start]);
+        new_text.push_str(&fresh);
+        cursor = span.end;
+        minted.push(fresh);
+    }
+    new_text.push_str(&original[cursor..]);
+    write_atomic(loser, &new_text)?;
+    Ok(minted)
 }
 
 fn mint_deck_id() -> Result<String, StampError> {
@@ -1108,7 +1138,8 @@ mod tests {
         );
         let path = write(&dir, "deck.md", &original);
 
-        let fresh = replace_card_token(&path, old, 5, &path).unwrap();
+        let digests = scanned(&path);
+        let fresh = one_repair(&path, old, 5, &digests).unwrap().remove(0);
         let output = fs::read_to_string(&path).unwrap();
 
         assert_eq!(
@@ -1120,6 +1151,28 @@ mod tests {
         assert!(!output.contains(old));
         assert!(output.contains(other));
         assert!(output.contains("deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"));
+    }
+
+    fn scanned(path: &Path) -> HashMap<PathBuf, u64> {
+        let text = fs::read_to_string(path).unwrap();
+        HashMap::from([(path.to_path_buf(), crate::dedup::digest(&text))])
+    }
+
+    fn one_repair(
+        path: &Path,
+        base_token: &str,
+        block_line: usize,
+        digests: &HashMap<PathBuf, u64>,
+    ) -> Result<Vec<String>, StampError> {
+        replace_card_tokens(
+            path,
+            &[TokenRepair {
+                base_token,
+                block_line,
+                keeper: path,
+            }],
+            digests,
+        )
     }
 
     #[cfg(unix)]
@@ -1152,7 +1205,8 @@ mod tests {
         let original = "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\na\n";
         let path = write(&dir, "deck.md", original);
 
-        let result = replace_card_token(&path, "card-zzzzzzzzzzzzzzzzzzzzzzzzzz", 1, &path);
+        let digests = scanned(&path);
+        let result = one_repair(&path, "card-zzzzzzzzzzzzzzzzzzzzzzzzzz", 1, &digests);
         assert!(
             matches!(result, Err(StampError::TokenNotFound { .. })),
             "{result:?}"
@@ -1169,7 +1223,8 @@ mod tests {
         );
         let path = write(&dir, "deck.md", &original);
 
-        let fresh = replace_card_token(&path, old, 8, &path).unwrap();
+        let digests = scanned(&path);
+        let fresh = one_repair(&path, old, 8, &digests).unwrap().remove(0);
         let after = fs::read_to_string(&path).unwrap();
 
         assert_eq!(1, after.matches(old).count(), "the keeper remains old");
@@ -1184,7 +1239,8 @@ mod tests {
         let original = format!("## q\na\n<!-- id: {old} -->\n");
         let path = write(&dir, "deck.md", &original);
 
-        let result = replace_card_token(&path, old, usize::MAX, &path);
+        let digests = scanned(&path);
+        let result = one_repair(&path, old, usize::MAX, &digests);
 
         assert!(matches!(result, Err(StampError::TokenNotFound { .. })));
         assert_eq!(original, fs::read_to_string(&path).unwrap());

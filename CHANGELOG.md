@@ -761,10 +761,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Opening a deck resolves every duplicated card in it, not just the first. A
   card pasted twice inside one deck left the second copy sharing an identity
   until some later open happened to catch it. Found by Codex.
-- A duplicate resolved by an editor or a sync while alix was scanning no longer
-  re-mints the card that is left. The directory scan that names a loser takes
-  over a second on a real deck folder, and its verdict was applied without
-  rechecking that the other claim still exists. Found by Codex.
+- A deck that changed while alix was scanning is no longer written on the
+  strength of that scan. The directory scan that names a duplicate's loser
+  takes over a second on a real deck folder, and an editor save or a file sync
+  inside that window can resolve the duplicate, reorder the blocks, or both,
+  which leaves every address and every claim in the verdict describing text
+  that no longer exists. Applying it then either severed a card from its
+  progress or moved that progress onto the pasted copy. Each deck is digested
+  as it is scanned, and a repair refuses unless every participating file still
+  hashes to what the scan read; one deck's repairs also land in a single write,
+  so no repair can invalidate its siblings' evidence. Found by Codex.
+- A duplicated cloze card or card table is repaired instead of reported as
+  already resolved. Duplicate detection compares the composed id a review unit
+  answers to, which suffixes the authored `id:` per cloze hole, table row,
+  reversed half, and region, but a deck file only ever holds the authored value
+  itself. Every repair therefore searched for a spelling no file contains and
+  gave up. Copying a cloze card or a card table into another deck left both
+  copies sharing scheduling identities, so grading one could move the other's
+  progress. Repairs now address the authored value and the authored block: one
+  block is one rewrite, however many review units it expands to. Found by
+  Codex.
 - Removing a card no longer overwrites edits made to the deck since the sitting
   opened. A sitting caches the deck text at open and replays its removals over
   that text, so a deck edited in an editor (or touched by a sync tool) while the

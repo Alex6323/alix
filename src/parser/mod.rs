@@ -3346,6 +3346,60 @@ mod tests {
     }
 
     #[test]
+    fn one_authored_base_id_remains_legal_for_every_derived_or_inert_shape() {
+        let id = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        let cloze = parse(&format!(
+            "## cloze\n\\blank{{alpha}} and \\blank{{beta}}\n<!-- id: {id} -->\n"
+        ));
+        assert_eq!(2, cloze.cards.len(), "cloze holes derive two sub-ids");
+
+        let reversed = parse(&format!(
+            "## reverse\nfront\n\n---\nback\n<!-- direction: both -->\n<!-- id: {id} -->\n"
+        ));
+        assert_eq!(
+            Some(Direction::Both),
+            reversed.cards[0].direction,
+            "the deck layer derives the reversed half from this base id"
+        );
+
+        let region = parse(&format!(
+            "## region\n---\ntarget\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: {id} -->\n"
+        ));
+        assert!(
+            region.cards.iter().any(|card| card.region.is_some()),
+            "a region derives an identity from its parent base"
+        );
+
+        let table = parse(&format!(
+            "| front | back |\n|---|---|\n| q | a | <!-- r:4k2x9w -->\n<!-- cards -->\n<!-- id: {id} -->\n"
+        ));
+        assert_eq!(
+            Some(format!("{id}-t4k2x9w")),
+            table.cards[0].id(),
+            "the row stamp composes with the table container id"
+        );
+
+        let personal = parse_sidecar(
+            "deck.personal.md",
+            &format!(
+                "#### reader label\n## personal\nanswer\n> [!NOTE]\n> context\n<!-- id: {id} -->\n"
+            ),
+        )
+        .unwrap();
+        assert_eq!(Some(id.to_string()), personal[0].id());
+
+        let fenced = parse(&format!(
+            "## fence\n```text\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n```\n<!-- id: {id} -->\n"
+        ));
+        assert_eq!(Some(id.to_string()), fenced.cards[0].id());
+
+        let table_cell = parse(&format!(
+            "| front | back |\n|---|---|\n| q <!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w --> | a | <!-- r:4k2x9w -->\n<!-- cards -->\n<!-- id: {id} -->\n"
+        ));
+        assert_eq!(Some(format!("{id}-t4k2x9w")), table_cell.cards[0].id());
+    }
+
+    #[test]
     fn link_definition_lines_are_deck_metadata_never_answer_content() {
         let deck = parse("## Q\nsee [the ref][r] here\n[r]: https://alix.study\n");
         assert_eq!(

@@ -4,8 +4,11 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    hash::Hasher,
     path::{Path, PathBuf},
 };
+
+use twox_hash::XxHash64;
 
 use crate::parser;
 
@@ -14,9 +17,13 @@ use crate::parser;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CardDupe {
     pub token: String,
-    /// The keeper: (deck file, 1-based front line).
+    /// The `id:` value the deck files hold. `token` suffixes it for a cloze
+    /// hole, a table row, a reversed half, or a region, and only this spelling
+    /// is ever written back.
+    pub base: String,
+    /// The keeper: (deck file, 1-based line of the authored block).
     pub keeper: (PathBuf, usize),
-    /// The losing cards: (deck file, 1-based front line) each.
+    /// The losing blocks: (deck file, 1-based line of the authored block).
     pub losers: Vec<(PathBuf, usize)>,
 }
 
@@ -29,6 +36,15 @@ pub struct DuplicateMap {
     /// Excludes cards from an already-excluded deck: a whole-file copy is one
     /// deck-level finding, not one per card.
     pub card_dupes: Vec<CardDupe>,
+    /// What each scanned deck hashed to while these findings were derived, so
+    /// a repair this scan authorized refuses a file that moved under it.
+    pub digests: HashMap<PathBuf, u64>,
+}
+
+pub fn digest(text: &str) -> u64 {
+    let mut hasher = XxHash64::default();
+    hasher.write(text.as_bytes());
+    hasher.finish()
 }
 
 pub fn scan_dir(dir: &Path) -> DuplicateMap {
@@ -51,7 +67,7 @@ pub fn any_repeated_card_token_fast(dir: &Path) -> bool {
     parsed
         .iter()
         .flat_map(|p| p.cards.iter())
-        .any(|(token, _)| !seen.insert(token.as_str()))
+        .any(|card| !seen.insert(card.id.as_str()))
 }
 
 fn parse_fast(dir: &Path) -> Vec<Parsed> {
@@ -80,15 +96,17 @@ fn parse_fast(dir: &Path) -> Vec<Parsed> {
         parsed.push(Parsed {
             path,
             deck_token,
+            digest: digest(&text),
             cards,
         });
     }
     parsed
 }
 
-/// (deck token, per-card (token, 1-based heading line)) via a fence-aware
-/// line scan mirroring the parser's directive placement rules.
-fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
+/// (deck token, one claim per authored block) via a fence-aware line scan
+/// mirroring the parser's directive placement rules. A line scan sees only
+/// authored spellings, so each claim's composed id is its base.
+fn extract_ids(text: &str) -> (Option<String>, Vec<ScannedCard>) {
     let mut deck_token = None;
     let mut cards = Vec::new();
     let mut fence: Option<char> = None;
@@ -160,7 +178,11 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
                 Some((_, None, None, false, None))
             ) && heading_line > 0
             {
-                let entry = (v.to_string(), heading_line);
+                let entry = ScannedCard {
+                    id: v.to_string(),
+                    base: v.to_string(),
+                    block_line: heading_line,
+                };
                 if !cards.contains(&entry) {
                     cards.push(entry);
                 }
@@ -170,12 +192,22 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<(String, usize)>) {
     (deck_token, cards)
 }
 
+/// One review unit's identity claim: the composed id that has to be unique,
+/// the authored value the deck file holds, and the block that value closes.
+#[derive(PartialEq, Eq)]
+struct ScannedCard {
+    id: String,
+    base: String,
+    block_line: usize,
+}
+
 struct Parsed {
     path: PathBuf,
     deck_token: Option<String>,
-    /// One entry per `## ` heading, even though a cloze card's holes (or a
-    /// reversed twin) share it.
-    cards: Vec<(String, usize)>,
+    digest: u64,
+    /// One entry per composed id, so a cloze card's holes and a table's rows
+    /// each contribute their own claim over one shared block line.
+    cards: Vec<ScannedCard>,
 }
 
 /// Skips unreadable/unparseable decks silently; `doctor` reports those
@@ -193,12 +225,17 @@ pub fn scan(deck_paths: &[PathBuf]) -> DuplicateMap {
         let Ok(deck) = parser::parse(subject, &text) else {
             continue;
         };
-        let mut cards: Vec<(String, usize)> = Vec::new();
+        let mut cards: Vec<ScannedCard> = Vec::new();
         for card in &deck.cards {
-            // The composed id, not the bare token: sibling table rows share
-            // their container token by design and are never duplicates.
-            if let Some(id) = card.id() {
-                let entry = (id, card.line);
+            // The composed id decides uniqueness, since sibling table rows
+            // share their container token by design and are never duplicates.
+            // The base decides what a repair writes.
+            if let (Some(id), Some(base)) = (card.id(), card.token.as_deref()) {
+                let entry = ScannedCard {
+                    id,
+                    base: base.to_string(),
+                    block_line: card.block_line,
+                };
                 if !cards.contains(&entry) {
                     cards.push(entry);
                 }
@@ -207,6 +244,7 @@ pub fn scan(deck_paths: &[PathBuf]) -> DuplicateMap {
         parsed.push(Parsed {
             path: path.clone(),
             deck_token: deck.deck_token.clone(),
+            digest: digest(&text),
             cards,
         });
     }
@@ -220,6 +258,7 @@ fn build_map(parsed: &[Parsed]) -> DuplicateMap {
     DuplicateMap {
         excluded_decks,
         card_dupes,
+        digests: parsed.iter().map(|p| (p.path.clone(), p.digest)).collect(),
     }
 }
 
@@ -263,15 +302,18 @@ fn deck_dupes(parsed: &[Parsed]) -> (Vec<(PathBuf, PathBuf, String)>, Vec<usize>
 fn card_dupes(parsed: &[Parsed], excluded: &[usize]) -> Vec<CardDupe> {
     // token -> the sites claiming it, in scan order (deck order, then line).
     let mut sites: HashMap<&str, Vec<(PathBuf, usize)>> = HashMap::new();
+    // Equal composed ids share a base by construction, so any site names it.
+    let mut bases: HashMap<&str, &str> = HashMap::new();
     for (i, p) in parsed.iter().enumerate() {
         if excluded.contains(&i) {
             continue;
         }
-        for (tok, line) in &p.cards {
+        for card in &p.cards {
             sites
-                .entry(tok.as_str())
+                .entry(card.id.as_str())
                 .or_default()
-                .push((p.path.clone(), *line));
+                .push((p.path.clone(), card.block_line));
+            bases.insert(card.id.as_str(), card.base.as_str());
         }
     }
     let mut out = Vec::new();
@@ -288,6 +330,7 @@ fn card_dupes(parsed: &[Parsed], excluded: &[usize]) -> Vec<CardDupe> {
         }
         out.push(CardDupe {
             token: tok.to_string(),
+            base: bases.get(tok).copied().unwrap_or(tok).to_string(),
             keeper: sites[keeper].clone(),
             losers,
         });
@@ -356,7 +399,7 @@ mod tests {
     fn existing_ids_are_found_at_every_card_depth() {
         let text = "## a\n1\n<!-- id: card-a1 -->\n### b\n2\n<!-- id: card-b1 -->\n#### c\n3\n<!-- id: card-c1 -->\n##### d\n4\n<!-- id: card-d1 -->\n###### e\n5\n<!-- id: card-e1 -->\n";
         let (_, ids) = extract_ids(text);
-        let found: Vec<&str> = ids.iter().map(|(id, _)| id.as_str()).collect();
+        let found: Vec<&str> = ids.iter().map(|card| card.id.as_str()).collect();
         for want in ["card-a1", "card-b1", "card-c1", "card-d1", "card-e1"] {
             assert!(found.contains(&want), "{want} missing from {found:?}");
         }
@@ -388,7 +431,8 @@ mod tests {
 
         assert_eq!(1, full.card_dupes.len(), "the parser sees the copied card");
         assert_eq!(
-            full, fast,
+            (&full.excluded_decks, &full.card_dupes),
+            (&fast.excluded_decks, &fast.card_dupes),
             "review-open must not miss a copied card merely because its legal front is depth six"
         );
     }
@@ -415,7 +459,11 @@ mod tests {
 
         let full = scan_dir(dir.path());
         let fast = scan_dir_fast(dir.path());
-        assert_eq!(full, fast);
+        assert_eq!(
+            (&full.excluded_decks, &full.card_dupes),
+            (&fast.excluded_decks, &fast.card_dupes),
+            "the two scans must agree on findings; a card-less file digested by only one is not one"
+        );
         assert_eq!(1, fast.card_dupes.len());
         assert_eq!("card-shared1", fast.card_dupes[0].token);
     }
@@ -679,9 +727,14 @@ mod tests {
              <!-- id: {accepted} -->\n"
         );
 
+        let (found_deck, cards) = extract_ids(&text);
+        assert_eq!(Some(deck.to_string()), found_deck);
         assert_eq!(
-            (Some(deck.to_string()), vec![(accepted.to_string(), 6)]),
-            extract_ids(&text)
+            vec![(accepted.to_string(), 6)],
+            cards
+                .iter()
+                .map(|card| (card.id.clone(), card.block_line))
+                .collect::<Vec<_>>()
         );
     }
 

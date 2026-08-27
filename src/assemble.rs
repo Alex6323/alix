@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -302,18 +302,31 @@ pub fn resolve_duplicates_at_open(path: &Path) {
     if !crate::dedup::any_repeated_card_token_fast(dir) {
         return;
     }
-    for dupe in crate::dedup::scan_dir(dir).card_dupes {
-        for (_, front_line) in dupe.losers.iter().filter(|(p, _)| p == path) {
-            if let Err(e) =
-                stamp::replace_card_token(path, &dupe.token, *front_line, &dupe.keeper.0)
-            {
-                eprintln!(
-                    "warning: cannot resolve the duplicate token `{}` in {}: {e}",
-                    dupe.token,
-                    path.display()
-                );
-            }
+    let map = crate::dedup::scan_dir(dir);
+    // One authored block holds one `id:`, however many review units it expands
+    // to, so every composed collision over that block is one repair.
+    let mut blocks: BTreeSet<(&str, usize, &Path)> = BTreeSet::new();
+    for dupe in &map.card_dupes {
+        for (_, block_line) in dupe.losers.iter().filter(|(p, _)| p == path) {
+            blocks.insert((&dupe.base, *block_line, &dupe.keeper.0));
         }
+    }
+    let repairs: Vec<stamp::TokenRepair<'_>> = blocks
+        .iter()
+        .map(|(base_token, block_line, keeper)| stamp::TokenRepair {
+            base_token,
+            block_line: *block_line,
+            keeper,
+        })
+        .collect();
+    if repairs.is_empty() {
+        return;
+    }
+    if let Err(e) = stamp::replace_card_tokens(path, &repairs, &map.digests) {
+        eprintln!(
+            "warning: cannot resolve the duplicate identities in {}: {e}",
+            path.display()
+        );
     }
 }
 
@@ -891,8 +904,8 @@ mod tests {
         std::fs::write(&keeper, &keeper_text).unwrap();
         std::fs::write(&loser, &loser_text).unwrap();
 
-        let stale = crate::dedup::scan_dir(dir.path()).card_dupes;
-        let loser_line = stale[0].losers[0].1;
+        let stale = crate::dedup::scan_dir(dir.path());
+        let loser_line = stale.card_dupes[0].losers[0].1;
 
         // An editor or sync save lands after the full directory scan but
         // before its decision is applied. The old token is now unique and
@@ -900,13 +913,157 @@ mod tests {
         std::fs::write(&keeper, keeper_text.replace(shared, other)).unwrap();
         assert!(crate::dedup::scan_dir(dir.path()).card_dupes.is_empty());
 
-        let result = stamp::replace_card_token(&loser, shared, loser_line, &keeper);
+        let result = stamp::replace_card_tokens(
+            &loser,
+            &[stamp::TokenRepair {
+                base_token: shared,
+                block_line: loser_line,
+                keeper: &keeper,
+            }],
+            &stale.digests,
+        );
 
         assert!(
             result.is_err(),
             "a scan result must not authorize changing an identity after its duplicate disappeared"
         );
         assert_eq!(loser_text, std::fs::read_to_string(&loser).unwrap());
+    }
+
+    #[test]
+    fn review_open_resolves_duplicates_whose_ids_are_composed_from_one_base_token() {
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        let cases = [
+            (
+                "cloze siblings",
+                format!(
+                    "## fill both\n\\blank{{alpha}} and \\blank{{beta}}\n<!-- id: {shared} -->\n"
+                ),
+            ),
+            (
+                "table siblings",
+                format!(
+                    "| front | back |\n|---|---|\n| q | a | <!-- r:4k2x9w -->\n| r | b | <!-- r:6v3c7x -->\n<!-- cards -->\n<!-- id: {shared} -->\n"
+                ),
+            ),
+        ];
+        let mut unresolved = Vec::new();
+        for (shape, body) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let keeper = dir.path().join("a-keeper.md");
+            let loser = dir.path().join("b-loser.md");
+            write_initialized(&keeper, &body);
+            write_initialized(&loser, &body);
+            let before = crate::dedup::scan_dir(dir.path()).card_dupes;
+            assert!(
+                before.len() >= 2,
+                "the {shape} fixture expands one duplicated base token into sibling duplicate ids: {before:#?}"
+            );
+
+            resolve_duplicates_at_open(&loser);
+
+            let after = crate::dedup::scan_dir(dir.path()).card_dupes;
+            if !after.is_empty() {
+                unresolved.push((shape, after));
+            }
+        }
+        assert!(
+            unresolved.is_empty(),
+            "one base-token rewrite must resolve every composed sibling id before review loads: {unresolved:#?}"
+        );
+    }
+
+    #[test]
+    fn same_file_revalidation_refuses_after_the_keeper_claim_disappears() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deck.md");
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        let other = "card-6v3c7x4k1m8q3z5t0b2n4d8f9w";
+        let scanned_text = format!(
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## keeper\na\n<!-- id: {shared} -->\n## loser\nb\n<!-- id: {shared} -->\n"
+        );
+        std::fs::write(&path, &scanned_text).unwrap();
+        let stale = crate::dedup::scan_dir(dir.path());
+        let dupe = &stale.card_dupes[0];
+        assert_eq!(dupe.keeper.0, path, "the keeper and loser share one file");
+        let loser_line = dupe.losers[0].1;
+
+        let resolved_text = scanned_text.replacen(shared, other, 1);
+        std::fs::write(&path, &resolved_text).unwrap();
+        assert!(
+            crate::dedup::scan_dir(dir.path()).card_dupes.is_empty(),
+            "the editor save removed the duplicate before the stale write"
+        );
+
+        let result = stamp::replace_card_tokens(
+            &path,
+            &[stamp::TokenRepair {
+                base_token: shared,
+                block_line: loser_line,
+                keeper: &path,
+            }],
+            &stale.digests,
+        );
+
+        assert_eq!(
+            resolved_text,
+            std::fs::read_to_string(&path).unwrap(),
+            "the now-unique card must retain the identity that owns its progress, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn same_file_revalidation_refuses_when_card_blocks_move_after_the_scan() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deck.md");
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        let head = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n";
+        let original = format!("## original\na\n<!-- id: {shared} -->\n");
+        let pasted = format!("## pasted\nb\n<!-- id: {shared} -->\n");
+        std::fs::write(&path, format!("{head}{original}{pasted}")).unwrap();
+        let stale = crate::dedup::scan_dir(dir.path());
+        let dupe = &stale.card_dupes[0];
+        let loser_line = dupe.losers[0].1;
+        assert_eq!(
+            "original",
+            Deck::load(&path).unwrap().cards[0].front,
+            "the original was the scanned keeper"
+        );
+
+        let moved_text = format!("{head}{pasted}{original}");
+        std::fs::write(&path, &moved_text).unwrap();
+        assert_eq!(
+            1,
+            crate::dedup::scan_dir(dir.path()).card_dupes.len(),
+            "the duplicate still exists, but its card addresses moved"
+        );
+
+        let result = stamp::replace_card_tokens(
+            &path,
+            &[stamp::TokenRepair {
+                base_token: shared,
+                block_line: loser_line,
+                keeper: &path,
+            }],
+            &stale.digests,
+        );
+
+        let after = Deck::load(&path).unwrap();
+        let original_after = after
+            .cards
+            .iter()
+            .find(|card| card.front == "original")
+            .unwrap();
+        assert_eq!(
+            Some(shared),
+            original_after.token.as_deref(),
+            "the stale loser line re-minted the moved original and transferred its progress identity to the pasted card, got {result:?}"
+        );
+        assert_eq!(
+            moved_text,
+            std::fs::read_to_string(&path).unwrap(),
+            "the original card must not lose its progress identity after being moved"
+        );
     }
 
     /// Codex's finding, at the public boundary: a deck reorganized so that
