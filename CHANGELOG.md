@@ -753,6 +753,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- A card carrying two `id:` directives is refused instead of half repaired. The
+  parser took the last one as the card's identity while a rewrite targeted the
+  first, so a duplicate that alix appeared to resolve on open was still shared
+  afterwards, silently and permanently. One card holds one identity, and a
+  second `id:` is now a line-numbered error. Found by Codex.
+- Opening a deck resolves every duplicated card in it, not just the first. A
+  card pasted twice inside one deck left the second copy sharing an identity
+  until some later open happened to catch it. Found by Codex.
+- A duplicate resolved by an editor or a sync while alix was scanning no longer
+  re-mints the card that is left. The directory scan that names a loser takes
+  over a second on a real deck folder, and its verdict was applied without
+  rechecking that the other claim still exists. Found by Codex.
 - Removing a card no longer overwrites edits made to the deck since the sitting
   opened. A sitting caches the deck text at open and replays its removals over
   that text, so a deck edited in an editor (or touched by a sync tool) while the

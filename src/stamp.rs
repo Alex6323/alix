@@ -43,6 +43,8 @@ pub enum StampError {
     },
     #[error("{path} has no file name")]
     NoFileName { path: PathBuf },
+    #[error("`{token}` is no longer claimed by {keeper}; the duplicate resolved itself")]
+    DuplicateResolved { token: String, keeper: PathBuf },
     /// Refused even though the enumeration scans already exclude this case:
     /// defends a user's prose file from gaining a frontmatter block if this
     /// path is somehow still reached.
@@ -404,14 +406,30 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     })
 }
 
+/// Whether `path` still holds an id comment carrying `token`.
+pub fn file_claims_token(path: &Path, token: &str) -> bool {
+    fs::read_to_string(path)
+        .ok()
+        .is_some_and(|text| first_id_token_span(&text, token).is_some())
+}
+
 /// `front_line` is the 1-based front line of the card losing the token: the id
 /// comment trails its card, so the first match at or after that line is the
-/// loser's, while the first in the document is the keeper's.
+/// loser's, while the first in the document is the keeper's. `keeper` is
+/// re-read first, because the scan that named this loser is a directory-wide
+/// read and the duplicate can be resolved by an editor or a sync while it runs.
 pub fn replace_card_token(
     path: &Path,
     old_token: &str,
     front_line: usize,
+    keeper: &Path,
 ) -> Result<String, StampError> {
+    if keeper != path && !file_claims_token(keeper, old_token) {
+        return Err(StampError::DuplicateResolved {
+            token: old_token.to_string(),
+            keeper: keeper.to_path_buf(),
+        });
+    }
     let original = fs::read_to_string(path).map_err(|source| StampError::Read {
         path: path.to_path_buf(),
         source,
@@ -1090,7 +1108,7 @@ mod tests {
         );
         let path = write(&dir, "deck.md", &original);
 
-        let fresh = replace_card_token(&path, old, 5).unwrap();
+        let fresh = replace_card_token(&path, old, 5, &path).unwrap();
         let output = fs::read_to_string(&path).unwrap();
 
         assert_eq!(
@@ -1134,11 +1152,41 @@ mod tests {
         let original = "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\na\n";
         let path = write(&dir, "deck.md", original);
 
-        let result = replace_card_token(&path, "card-zzzzzzzzzzzzzzzzzzzzzzzzzz", 1);
+        let result = replace_card_token(&path, "card-zzzzzzzzzzzzzzzzzzzzzzzzzz", 1, &path);
         assert!(
             matches!(result, Err(StampError::TokenNotFound { .. })),
             "{result:?}"
         );
+        assert_eq!(original, fs::read_to_string(&path).unwrap());
+    }
+
+    #[test]
+    fn line_targeting_counts_crlf_bytes_and_preserves_the_keeper() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        let original = format!(
+            "---\r\nformat-version: 1\r\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\r\n---\r\n## keeper\r\na\r\n<!-- id: {old} -->\r\n## loser\r\nb\r\n<!-- id: {old} -->\r\n"
+        );
+        let path = write(&dir, "deck.md", &original);
+
+        let fresh = replace_card_token(&path, old, 8, &path).unwrap();
+        let after = fs::read_to_string(&path).unwrap();
+
+        assert_eq!(1, after.matches(old).count(), "the keeper remains old");
+        assert!(after.contains(&fresh), "the loser receives the fresh token");
+        assert!(after.contains("\r\n"), "line endings stay CRLF");
+    }
+
+    #[test]
+    fn a_front_line_past_eof_refuses_without_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        let original = format!("## q\na\n<!-- id: {old} -->\n");
+        let path = write(&dir, "deck.md", &original);
+
+        let result = replace_card_token(&path, old, usize::MAX, &path);
+
+        assert!(matches!(result, Err(StampError::TokenNotFound { .. })));
         assert_eq!(original, fs::read_to_string(&path).unwrap());
     }
 

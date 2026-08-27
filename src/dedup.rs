@@ -684,4 +684,58 @@ mod tests {
             extract_ids(&text)
         );
     }
+
+    #[test]
+    fn the_raw_gate_covers_every_composed_identity_shape() {
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        let cases = [
+            ("plain", format!("## q\na\n<!-- id: {shared} -->\n")),
+            (
+                "cloze holes",
+                format!("## q\n\\blank{{alpha}} and \\blank{{beta}}\n<!-- id: {shared} -->\n"),
+            ),
+            (
+                "reversed half",
+                format!("## q\na\n<!-- direction: both -->\n<!-- id: {shared} -->\n"),
+            ),
+            (
+                "table row stamp",
+                format!(
+                    "| front | back |\n|---|---|\n| q | a | <!-- r:4k2x9w -->\n<!-- cards -->\n<!-- id: {shared} -->\n"
+                ),
+            ),
+        ];
+        for (shape, body) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            for (name, deck_id) in [
+                ("a.md", "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"),
+                ("b.md", "deck-6v3c7x4k1m8q3z5t0b2n4d8f9w"),
+            ] {
+                std::fs::write(
+                    dir.path().join(name),
+                    format!("---\nformat-version: 1\nid: \"{deck_id}\"\n---\n{body}"),
+                )
+                .unwrap();
+            }
+            assert!(
+                !scan_dir(dir.path()).card_dupes.is_empty(),
+                "the {shape} fixture must contain a real full-parser duplicate"
+            );
+            assert!(
+                any_repeated_card_token_fast(dir.path()),
+                "the raw gate missed the {shape} duplicate"
+            );
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("same-file.md"),
+            format!(
+                "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## first\na\n<!-- id: {shared} -->\n## second\nb\n<!-- id: {shared} -->\n"
+            ),
+        )
+        .unwrap();
+        assert!(!scan_dir(dir.path()).card_dupes.is_empty());
+        assert!(any_repeated_card_token_fast(dir.path()));
+    }
 }

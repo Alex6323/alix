@@ -303,14 +303,16 @@ pub fn resolve_duplicates_at_open(path: &Path) {
         return;
     }
     for dupe in crate::dedup::scan_dir(dir).card_dupes {
-        if let Some((_, front_line)) = dupe.losers.iter().find(|(p, _)| p == path)
-            && let Err(e) = stamp::replace_card_token(path, &dupe.token, *front_line)
-        {
-            eprintln!(
-                "warning: cannot resolve the duplicate token `{}` in {}: {e}",
-                dupe.token,
-                path.display()
-            );
+        for (_, front_line) in dupe.losers.iter().filter(|(p, _)| p == path) {
+            if let Err(e) =
+                stamp::replace_card_token(path, &dupe.token, *front_line, &dupe.keeper.0)
+            {
+                eprintln!(
+                    "warning: cannot resolve the duplicate token `{}` in {}: {e}",
+                    dupe.token,
+                    path.display()
+                );
+            }
         }
     }
 }
@@ -801,6 +803,110 @@ mod tests {
             deck.cards[1].token.as_deref(),
             "the pasted loser must receive the fresh token"
         );
+    }
+
+    #[test]
+    fn review_open_remints_every_loser_in_one_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deck.md");
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        std::fs::write(
+            &path,
+            format!(
+                "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## original\na\n<!-- id: {shared} -->\n## pasted once\nb\n<!-- id: {shared} -->\n## pasted twice\nc\n<!-- id: {shared} -->\n"
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            2,
+            crate::dedup::scan_dir(dir.path()).card_dupes[0]
+                .losers
+                .len(),
+            "the premise: one keeper has two independently addressable losers"
+        );
+
+        resolve_duplicates_at_open(&path);
+
+        let remaining = crate::dedup::scan_dir(dir.path()).card_dupes;
+        assert!(
+            remaining.is_empty(),
+            "one review-open must resolve every pasted loser before the session can grade them: {remaining:#?}"
+        );
+    }
+
+    #[test]
+    fn a_card_carrying_two_id_directives_is_refused_rather_than_half_repaired() {
+        let dir = tempfile::tempdir().unwrap();
+        let keeper = dir.path().join("a-keeper.md");
+        let loser = dir.path().join("b-loser.md");
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        std::fs::write(
+            &keeper,
+            format!(
+                "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## keeper\na\n<!-- id: {shared} -->\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            &loser,
+            format!(
+                "---\nformat-version: 1\nid: \"deck-6v3c7x4k1m8q3z5t0b2n4d8f9w\"\n---\n## loser\nb\n<!-- id: {shared} -->\n<!-- id: {shared} -->\n"
+            ),
+        )
+        .unwrap();
+        // Two id directives used to parse, with the LAST one winning, while a
+        // rewrite targets the first: the repair looked applied and the cards
+        // still shared an identity.
+        let error = Deck::load(&loser).unwrap_err();
+        assert!(
+            format!("{error}").contains("already carries an `id:`"),
+            "a second id directive is refused outright: {error}"
+        );
+
+        resolve_duplicates_at_open(&loser);
+
+        assert!(
+            std::fs::read_to_string(&loser)
+                .unwrap()
+                .matches(shared)
+                .count()
+                == 2,
+            "an unparseable loser is left exactly as authored"
+        );
+    }
+
+    #[test]
+    fn a_stale_full_scan_never_remints_a_card_after_the_duplicate_disappears() {
+        let dir = tempfile::tempdir().unwrap();
+        let keeper = dir.path().join("a-keeper.md");
+        let loser = dir.path().join("b-loser.md");
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        let other = "card-6v3c7x4k1m8q3z5t0b2n4d8f9w";
+        let keeper_text = format!(
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## keeper\na\n<!-- id: {shared} -->\n"
+        );
+        let loser_text = format!(
+            "---\nformat-version: 1\nid: \"deck-6v3c7x4k1m8q3z5t0b2n4d8f9w\"\n---\n## loser\nb\n<!-- id: {shared} -->\n"
+        );
+        std::fs::write(&keeper, &keeper_text).unwrap();
+        std::fs::write(&loser, &loser_text).unwrap();
+
+        let stale = crate::dedup::scan_dir(dir.path()).card_dupes;
+        let loser_line = stale[0].losers[0].1;
+
+        // An editor or sync save lands after the full directory scan but
+        // before its decision is applied. The old token is now unique and
+        // must retain its history.
+        std::fs::write(&keeper, keeper_text.replace(shared, other)).unwrap();
+        assert!(crate::dedup::scan_dir(dir.path()).card_dupes.is_empty());
+
+        let result = stamp::replace_card_token(&loser, shared, loser_line, &keeper);
+
+        assert!(
+            result.is_err(),
+            "a scan result must not authorize changing an identity after its duplicate disappeared"
+        );
+        assert_eq!(loser_text, std::fs::read_to_string(&loser).unwrap());
     }
 
     /// Codex's finding, at the public boundary: a deck reorganized so that

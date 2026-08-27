@@ -245,6 +245,8 @@ pub enum ParseError {
     TableRowStamp { line: usize, value: String },
     #[error("line {line}: row stamp `{value}` appears twice in one table")]
     TableDuplicateStamp { line: usize, value: String },
+    #[error("line {line}: this card already carries an `id:`; one card holds one identity")]
+    DuplicateCardId { line: usize },
     #[error("line {0}: only directive comments may follow a card table before the next `## ` card")]
     TableTrailing(usize),
     #[error(
@@ -317,6 +319,7 @@ impl ParseError {
             Self::TableCellImage(_) => "table_cell_image",
             Self::TableRowStamp { .. } => "table_row_stamp",
             Self::TableDuplicateStamp { .. } => "table_duplicate_stamp",
+            Self::DuplicateCardId { .. } => "duplicate_card_id",
             Self::TableTrailing(_) => "table_trailing",
             Self::StrayDivider(_) => "stray_divider",
             Self::SetextUnderline(_) => "setext_underline",
@@ -374,7 +377,8 @@ impl ParseError {
             | Self::LeadingDirective { line, .. }
             | Self::ContentAfterNote { line }
             | Self::FrontDirective { line, .. }
-            | Self::TableDuplicateStamp { line, .. } => *line,
+            | Self::TableDuplicateStamp { line, .. }
+            | Self::DuplicateCardId { line } => *line,
         }
     }
 }
@@ -2384,6 +2388,9 @@ fn apply_directive(
                 Some((_, None, None, false, None))
             ) {
                 return Err(ParseError::InvalidCardId { line, value });
+            }
+            if directives.token.is_some() {
+                return Err(ParseError::DuplicateCardId { line });
             }
             directives.token = Some(value);
         }
