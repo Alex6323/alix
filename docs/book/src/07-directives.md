@@ -17,7 +17,7 @@ full.
 | `<!-- -->` | anywhere | A comment with no recognized key: ignored. A single-token comment that names no known invocation draws a doctor finding, since a typo'd invocation would otherwise silently leave its block literal. |
 | `choices-single` / `choices-multiple` | card | Invocation comment on the line below a task list: maps it to a [choice card](03-the-deck-format.md#choice-cards-task-lists), one correct answer or select-all-that-apply. A bare task list stays a literal checklist. |
 | `cards` | card | Invocation comment on the line below a pipe table: maps it to a [card table](03-the-deck-format.md#card-tables). A bare table renders literally. |
-| `plain` | card | On the line below a task list, a table, or a `---`/`***`/`___` break: keeps that one shape literal, escaping a deck default (or, for a break, the divider and thematic-break grammar in every position, including where the break would otherwise be an error). |
+| `plain` | card | On the line below a task list, a table, or a thematic break of any spelling: keeps that one shape literal, escaping a deck default (or, for a break, the divider and thematic-break grammar in every position, including where the break would otherwise be an error). |
 | `tasklist` | deck | Deck-wide default task-list mapping: `choices-single` or `choices-multiple`. A per-card invocation overrides it. [→ ch 3](03-the-deck-format.md#choice-cards-task-lists) |
 | `table` | deck | Deck-wide default table mapping: `cards`. [→ ch 3](03-the-deck-format.md#card-tables) |
 | `format-version` | deck | Reserved. The deck **format's** version, not the deck's own. Absence means `1`, so alix never writes it; any number other than `1` is refused rather than guessed at. [→ ch 3](03-the-deck-format.md) |

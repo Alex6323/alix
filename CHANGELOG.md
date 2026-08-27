@@ -378,6 +378,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- A thematic break is one lexical class: three or more of one marker, `-`, `*`,
+  or `_`, with spaces or tabs allowed between them and an indent under four
+  columns. `----`, `-----`, and `- - -` used to be ordinary content while
+  `____` was already a break, which is a distinction no author could predict
+  and one the manual could not justify. GFM reads all of them as breaks, and
+  alix has no reason to differ. A line like `----` sitting in an answer is now
+  a loud stray rather than text, so write `\----` or trail it with
+  `<!-- plain -->`; measured exposure across 1453 Markdown files and 141,049
+  lines of real decks and committed examples was one occurrence, in a product
+  note that alix never parses. A link definition now also stops at a `---`
+  line, as it already stopped at `***`.
+
+  Setext headings stay unsupported, deliberately: a `===` underline is still
+  refused with a message naming the `#`-prefixed form, and a dash underline is
+  simply read by the break rule above. Setext offers two heading levels and
+  alix cards run to six, so it could never express the card grammar.
 - **Breaking: AI walk grading is removed, including its `[trace] auto_grade`
   config key.** A trace walk is self-judged on every client, as the phone
   already was. The feature was config-and-plumbing only: no client ever read

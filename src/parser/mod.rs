@@ -921,11 +921,7 @@ fn indent_width(raw: &str) -> usize {
 }
 
 fn thematic_break(t: &str) -> bool {
-    t == "---" || thematic_break_shape(t)
-}
-
-fn thematic_break_shape(t: &str) -> bool {
-    ['*', '_'].iter().any(|marker| {
+    ['-', '*', '_'].iter().any(|marker| {
         t.chars().all(|c| c == *marker || c == ' ' || c == '\t')
             && t.chars().filter(|c| c == marker).count() >= 3
     })
@@ -1661,7 +1657,7 @@ fn rest_of_line_blank(chars: &[char], from: usize) -> bool {
 
 /// A definition never continues into a line the deck grammar owns.
 fn interrupts_definition(text: &str) -> bool {
-    thematic_break_shape(text)
+    thematic_break(text)
         || text.starts_with('#')
         || text.starts_with('>')
         || text.starts_with('|')
@@ -5079,10 +5075,41 @@ a
         assert_eq!(vec!["the answer"], deck.cards[0].back);
     }
 
+    /// A dash family narrower than the star and underscore families did not
+    /// error on the odd spellings, it silently declined to divide: the question
+    /// text below the heading became answer text, so the card drilled something
+    /// its author never wrote.
     #[test]
-    fn later_dividers_need_the_escape_and_four_dashes_stay_content() {
-        let deck = parse("## Q\n\n---\na\n\\---\n----\nb\n");
+    fn four_dashes_divide_the_same_multiline_front_as_four_underscores() {
+        let expected = parse("## question\nfront detail\n\n____\nanswer\n");
+        let actual = parse("## question\nfront detail\n\n----\nanswer\n");
+        assert_eq!(
+            (&expected.cards[0].front, &expected.cards[0].back),
+            (&actual.cards[0].front, &actual.cards[0].back)
+        );
+    }
+
+    #[test]
+    fn spaced_dashes_divide_the_same_multiline_front_as_spaced_stars() {
+        let expected = parse("## question\nfront detail\n\n* * *\nanswer\n");
+        let actual = parse("## question\nfront detail\n\n- - -\nanswer\n");
+        assert_eq!(
+            (&expected.cards[0].front, &expected.cards[0].back),
+            (&actual.cards[0].front, &actual.cards[0].back)
+        );
+    }
+
+    #[test]
+    fn a_later_break_line_in_an_answer_needs_the_escape() {
+        let deck = parse("## Q\n\n---\na\n\\---\n\\----\nb\n");
         assert_eq!(vec!["a", "---", "----", "b"], deck.cards[0].back);
+        for spelling in ["---", "----", "- - -", "***", "___"] {
+            assert_eq!(
+                ParseError::StrayDivider(5),
+                err(&format!("## Q\n\n---\na\n{spelling}\nb\n")),
+                "an unescaped break below a divided front is a stray: {spelling}"
+            );
+        }
     }
 
     // ── The ruled `---` grammar (element 41 / D22 amendment) ──
@@ -5135,7 +5162,7 @@ a
 
     #[test]
     fn a_break_takes_its_meaning_from_position_not_from_its_spelling() {
-        for spelling in ["---", "***", "___"] {
+        for spelling in ["---", "----", "- - -", "***", "___"] {
             let deck = parse(&format!("## a\n{spelling}\nanswer\n"));
             assert_eq!(
                 vec!["answer".to_string()],
@@ -5182,7 +5209,7 @@ a
 
     #[test]
     fn only_three_dashes_open_frontmatter() {
-        for spelling in ["***", "___"] {
+        for spelling in ["----", "- - -", "***", "___"] {
             assert_eq!(
                 ParseError::StrayDivider(1),
                 err(&format!(

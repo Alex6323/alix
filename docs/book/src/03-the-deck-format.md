@@ -181,12 +181,15 @@ line, as in the cards above.)
 
 The divider's shape is strict, so a stray break fails loudly instead of silently
 joining a card: a front divider sits directly above its answer, with a blank line
-(or the card's own heading) above it, once per card. `---`, `***`, and `___` are
-interchangeable: the position decides what a break means, never which of the
-three you typed. A break anywhere else is either a literal rule in
-[section context](#-section-context) or a parse error; a literal break line is
-written `\---` (see [Escaping](#escaping)), and a `<!-- plain -->` on the line
-*below* a break also keeps it literal.
+(or the card's own heading) above it, once per card. A break is three or more of
+one marker, `-`, `*`, or `_`, with spaces or tabs allowed between them, so
+`---`, `----`, `- - -`, `***`, and `___` are one construct: the position decides
+what a break means, never how you spelled it. A break anywhere else is either a
+literal rule in [section context](#-section-context) or a parse error. A
+`<!-- plain -->` on the line *below* a break keeps it literal whatever its
+spelling. The backslash escape (see [Escaping](#escaping)) covers the dash
+spellings only, so `\---` and `\----` are literal text while `\***` keeps its
+backslash: reach for `<!-- plain -->` with the `*` and `_` spellings.
 
 A break alone with blank lines on both sides has no meaning inside a card and is
 an error: move the material to a section, or delete the line.
@@ -445,9 +448,9 @@ ATX `#`-prefixed heading), four-space/tab indented code opening after a
 blank line or a heading (wrap the code in a ``` fence; ordinary paragraph
 and task-list continuation lines are unaffected), a nested `> >` quote
 (notes are flat, one `>` deep; put literal `>` text in a fence), and a
-blank-surrounded thematic break inside a card, whichever of `---`, `***`, or
-`___` you type (delete it, or move the material to a section, where the break
-renders as a horizontal rule in the section view). Inside fenced code every
+blank-surrounded thematic break inside a card, whatever its spelling (delete it,
+or move the material to a section, where the break renders as a horizontal rule
+in the section view). Inside fenced code every
 shape is literal, as always. A trailing-two-space hard break is not a spelling
 at all: content lines shed trailing whitespace when the deck is read.
 
