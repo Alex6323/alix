@@ -28,7 +28,7 @@ void main() {
       );
       ReviewCardModel card(
         List<String> lines,
-        List<ReviewNoteUnitModel> units,
+        List<ReviewContentUnitModel> units,
       ) {
         return ReviewCardModel(
           front: 'Topic',

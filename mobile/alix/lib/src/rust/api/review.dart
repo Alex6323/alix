@@ -113,7 +113,7 @@ sealed class AnswerStep with _$AnswerStep {
   const factory AnswerStep.quote({
     required BigInt backFrom,
     required BigInt backTo,
-    required List<NoteUnit> units,
+    required List<ContentUnit> units,
   }) = AnswerStep_Quote;
 }
 
@@ -122,17 +122,17 @@ enum Badge { note, tip, important, warning, caution }
 class CardView {
   final String front;
   final List<InlineRun> frontRuns;
-  final List<NoteUnit>? frontUnits;
+  final List<ContentUnit>? frontUnits;
   final List<String> sectionContext;
   final List<List<InlineRun>> sectionContextRuns;
-  final List<NoteUnit> sectionContextUnits;
+  final List<ContentUnit> sectionContextUnits;
   final List<String> context;
   final bool contextLeads;
   final List<List<InlineRun>> contextRuns;
-  final List<NoteUnit> contextUnits;
+  final List<ContentUnit> contextUnits;
   final List<String> back;
   final List<List<InlineRun>> backRuns;
-  final List<NoteUnit> backUnits;
+  final List<ContentUnit> backUnits;
   final List<AnswerStep> answerSteps;
   final bool reshaped;
   final List<NoteView> note;
@@ -276,6 +276,35 @@ class ChoiceFeedback {
           chosen == other.chosen &&
           correct == other.correct &&
           passed == other.passed;
+}
+
+@freezed
+sealed class ContentUnit with _$ContentUnit {
+  const ContentUnit._();
+
+  const factory ContentUnit.sentence({
+    required String text,
+    required List<InlineRun> runs,
+  }) = ContentUnit_Sentence;
+  const factory ContentUnit.code({required List<String> lines}) =
+      ContentUnit_Code;
+  const factory ContentUnit.diagram({
+    required String src,
+    required int width,
+    required int height,
+    required String alt,
+    required List<RegionView> regions,
+    String? revealedAlt,
+  }) = ContentUnit_Diagram;
+  const factory ContentUnit.checklist({required List<ChecklistItem> items}) =
+      ContentUnit_Checklist;
+  const factory ContentUnit.table({
+    required List<CellAlign> aligns,
+    required List<List<InlineRun>> header,
+    required List<List<List<InlineRun>>> rows,
+  }) = ContentUnit_Table;
+  const factory ContentUnit.quote({required List<ContentUnit> units}) =
+      ContentUnit_Quote;
 }
 
 class CropView {
@@ -490,37 +519,9 @@ class MultiChoiceFeedback {
           passed == other.passed;
 }
 
-@freezed
-sealed class NoteUnit with _$NoteUnit {
-  const NoteUnit._();
-
-  const factory NoteUnit.sentence({
-    required String text,
-    required List<InlineRun> runs,
-  }) = NoteUnit_Sentence;
-  const factory NoteUnit.code({required List<String> lines}) = NoteUnit_Code;
-  const factory NoteUnit.diagram({
-    required String src,
-    required int width,
-    required int height,
-    required String alt,
-    required List<RegionView> regions,
-    String? revealedAlt,
-  }) = NoteUnit_Diagram;
-  const factory NoteUnit.checklist({required List<ChecklistItem> items}) =
-      NoteUnit_Checklist;
-  const factory NoteUnit.table({
-    required List<CellAlign> aligns,
-    required List<List<InlineRun>> header,
-    required List<List<List<InlineRun>>> rows,
-  }) = NoteUnit_Table;
-  const factory NoteUnit.quote({required List<NoteUnit> units}) =
-      NoteUnit_Quote;
-}
-
 class NoteView {
   final Badge? badge;
-  final List<NoteUnit> units;
+  final List<ContentUnit> units;
 
   const NoteView({this.badge, required this.units});
 

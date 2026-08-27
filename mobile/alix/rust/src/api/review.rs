@@ -8,7 +8,7 @@ pub use alix::{
     depth::Depth,
     inline::InlineRun,
     math::MathView,
-    render::{AnswerStep, CellAlign, ChecklistItem, NoteUnit},
+    render::{AnswerStep, CellAlign, ChecklistItem, ContentUnit},
     card::Badge,
     review::{CardView, CheckFeedback, ChoiceFeedback, CropView, ImageView, MultiChoiceFeedback, NoteView, RegionRole, RegionView, ReviewState},
     session::RecognizeGap,
@@ -67,8 +67,8 @@ pub struct _ChecklistItem {
     pub runs: Vec<InlineRun>,
 }
 
-#[flutter_rust_bridge::frb(mirror(NoteUnit))]
-pub enum _NoteUnit {
+#[flutter_rust_bridge::frb(mirror(ContentUnit))]
+pub enum _ContentUnit {
     Sentence { text: String, runs: Vec<InlineRun> },
     Code { lines: Vec<String> },
     Diagram {
@@ -85,7 +85,7 @@ pub enum _NoteUnit {
         header: Vec<Vec<InlineRun>>,
         rows: Vec<Vec<Vec<InlineRun>>>,
     },
-    Quote { units: Vec<NoteUnit> },
+    Quote { units: Vec<ContentUnit> },
 }
 
 #[flutter_rust_bridge::frb(mirror(AnswerStep))]
@@ -97,7 +97,7 @@ pub enum _AnswerStep {
     Quote {
         back_from: usize,
         back_to: usize,
-        units: Vec<NoteUnit>,
+        units: Vec<ContentUnit>,
     },
 }
 
@@ -147,7 +147,7 @@ pub struct _ImageView {
 #[flutter_rust_bridge::frb(mirror(NoteView))]
 pub struct _NoteView {
     pub badge: Option<Badge>,
-    pub units: Vec<NoteUnit>,
+    pub units: Vec<ContentUnit>,
 }
 
 #[flutter_rust_bridge::frb(mirror(Badge))]
@@ -163,17 +163,17 @@ pub enum _Badge {
 pub struct _CardView {
     pub front: String,
     pub front_runs: Vec<InlineRun>,
-    pub front_units: Option<Vec<NoteUnit>>,
+    pub front_units: Option<Vec<ContentUnit>>,
     pub section_context: Vec<String>,
     pub section_context_runs: Vec<Vec<InlineRun>>,
-    pub section_context_units: Vec<NoteUnit>,
+    pub section_context_units: Vec<ContentUnit>,
     pub context: Vec<String>,
     pub context_leads: bool,
     pub context_runs: Vec<Vec<InlineRun>>,
-    pub context_units: Vec<NoteUnit>,
+    pub context_units: Vec<ContentUnit>,
     pub back: Vec<String>,
     pub back_runs: Vec<Vec<InlineRun>>,
-    pub back_units: Vec<NoteUnit>,
+    pub back_units: Vec<ContentUnit>,
     pub answer_steps: Vec<AnswerStep>,
     pub reshaped: bool,
     pub note: Vec<NoteView>,
@@ -404,7 +404,6 @@ impl ReviewSession {
         let cfg = alix::assemble::AssembleConfig {
             review: alix::config::ReviewConfig::default(),
             ask: alix::config::AskConfig::default(),
-            trace_auto_grade: false,
             pacing: alix::assemble::Pacing {
                 max_session: 10,
                 new_cards_percent: 30,
@@ -819,11 +818,9 @@ impl WalkSession {
             store.device = device;
         }
         // AssembleConfig has no Default; these are the launch.rs defaults.
-        // trace_auto_grade stays false: the phone walk is always self-graded.
         let cfg = alix::assemble::AssembleConfig {
             review: alix::config::ReviewConfig::default(),
             ask: alix::config::AskConfig::default(),
-            trace_auto_grade: false,
             pacing: alix::assemble::Pacing {
                 max_session: 10,
                 new_cards_percent: 30,
@@ -1009,14 +1006,14 @@ mod tests {
             .iter()
             .flat_map(|note| &note.units)
             .flat_map(|unit| match unit {
-                NoteUnit::Sentence { runs, .. } => runs.iter().collect(),
-                NoteUnit::Checklist { items } => {
+                ContentUnit::Sentence { runs, .. } => runs.iter().collect(),
+                ContentUnit::Checklist { items } => {
                     items.iter().flat_map(|item| item.runs.iter()).collect()
                 }
-                NoteUnit::Code { .. }
-                | NoteUnit::Diagram { .. }
-                | NoteUnit::Table { .. }
-                | NoteUnit::Quote { .. } => Vec::new(),
+                ContentUnit::Code { .. }
+                | ContentUnit::Diagram { .. }
+                | ContentUnit::Table { .. }
+                | ContentUnit::Quote { .. } => Vec::new(),
             })
             .collect();
         assert!(note_runs.iter().any(|run| run.text == "E = mc^2"));

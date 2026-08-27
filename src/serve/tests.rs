@@ -20,7 +20,7 @@ use crate::{
     depth::Depth,
     picker,
     recent::RecentDecks,
-    render::NoteUnit,
+    render::ContentUnit,
     scheduler::{Fsrs, Grade},
     session::{CardTier, Cell, Session, now_ms},
     store::Store,
@@ -84,7 +84,6 @@ fn run_review_remains_alive_until_the_server_is_unblocked() {
         cfg: assemble::AssembleConfig {
             review: config.review,
             ask: config.ask,
-            trace_auto_grade: false,
             pacing: assemble::Pacing {
                 max_session: 10,
                 new_cards_percent: 30,
@@ -266,11 +265,11 @@ fn card_dto_structures_the_note() {
     assert_eq!(dto.note.len(), 1, "one blockquote is one note");
     assert_eq!(dto.note[0].units.len(), 2);
     match &dto.note[0].units[0] {
-        NoteUnit::Sentence { text, .. } => assert_eq!(text, "Intro here."),
+        ContentUnit::Sentence { text, .. } => assert_eq!(text, "Intro here."),
         other => panic!("expected a sentence, got {other:?}"),
     }
     match &dto.note[0].units[1] {
-        NoteUnit::Code { lines } => assert_eq!(lines, &vec!["fn main() {}".to_string()]),
+        ContentUnit::Code { lines } => assert_eq!(lines, &vec!["fn main() {}".to_string()]),
         other => panic!("expected a code block, got {other:?}"),
     }
 }
@@ -301,7 +300,7 @@ fn parser_note_origins_and_multi_note_order_reach_the_wire() {
         .note
         .iter()
         .map(|note| match note.units.as_slice() {
-            [NoteUnit::Sentence { text, .. }] => text.as_str(),
+            [ContentUnit::Sentence { text, .. }] => text.as_str(),
             other => panic!("expected one sentence, got {other:?}"),
         })
         .collect::<Vec<_>>();
@@ -1622,6 +1621,7 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &mut Store, depth: Depth
         base_roots: HashMap::new(),
         source_bases: HashMap::new(),
         topology_name: None,
+        region_name: None,
         augment,
     })
 }
@@ -1892,6 +1892,7 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         base_roots: HashMap::new(),
         source_bases: HashMap::new(),
         topology_name: None,
+        region_name: None,
         augment: crate::augment::AugmentCache::open(deck.with_extension("generated.json")),
     });
     (reviewing, card, deck)
@@ -2073,6 +2074,7 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
         base_roots,
         source_bases,
         topology_name: None,
+        region_name: None,
         augment: crate::augment::AugmentCache::open(dir.path().join("a.generated.json")),
     });
 
@@ -2151,6 +2153,7 @@ fn a_frozen_review_card_with_a_live_local_source_needs_no_fallback_warning() {
         base_roots,
         source_bases,
         topology_name: None,
+        region_name: None,
         augment: AugmentCache::open(dir.path().join("augment.json")),
     });
     let cli = crate::testutil::fake_reply(dir.path(), "answer");
@@ -2250,7 +2253,7 @@ fn walk_dto_tracks_phase_excerpt_and_rail() {
     let trace = walk_deck(dir.path());
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     let walk = Walk::new(trace);
-    let mut w = Walking::new(walk, None);
+    let mut w = Walking::new(walk);
 
     let d = walk_dto(&w);
     assert_eq!("walk", d.kind);
@@ -2275,7 +2278,6 @@ fn walk_dto_tracks_phase_excerpt_and_rail() {
             .any(|run| run.code && run.text == "input")
     );
     assert!(d.excerpt.is_none());
-    assert!(!d.auto_grade);
     assert!(d.path[0].current && d.path[0].delta.is_none());
 
     w.walk.predict("my guess".to_string());
@@ -2319,31 +2321,12 @@ fn walk_dto_tracks_phase_excerpt_and_rail() {
 }
 
 #[test]
-fn walk_dto_surfaces_a_live_grade_and_clears_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let trace = walk_deck(dir.path());
-    let walk = Walk::new(trace);
-    let mut w = Walking::new(walk, Some(AskConfig::default()));
-
-    w.walk.predict("g".to_string());
-    w.grade_result = Some((Delta::Partial, "right idea, missed a detail".to_string()));
-    let d = walk_dto(&w);
-    assert!(d.auto_grade);
-    assert_eq!(Some("partly"), d.verdict); // machine token, not a display label
-    assert_eq!(Some("right idea, missed a detail".to_string()), d.feedback);
-
-    w.clear_grade();
-    let d = walk_dto(&w);
-    assert!(d.verdict.is_none() && d.feedback.is_none() && !d.thinking);
-}
-
-#[test]
 fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
     let dir = tempfile::tempdir().unwrap();
     let trace = walk_deck(dir.path());
     let deck_path = trace.deck_path.clone();
     let walk = Walk::new(trace);
-    let mut w = Walking::new(walk, None);
+    let mut w = Walking::new(walk);
     w.walk.predict("guess".to_string());
 
     let card = w.checkpoint_card().expect("a checkpoint card");
@@ -2399,7 +2382,7 @@ fn a_frozen_walk_checkpoint_with_a_live_local_source_needs_no_fallback_warning()
             .first()
             .is_some_and(|checkpoint| trace.frozen_block(checkpoint).is_some())
     );
-    let mut walking = Walking::new(Walk::new(trace), None);
+    let mut walking = Walking::new(Walk::new(trace));
     let cli = crate::testutil::fake_reply(dir.path(), "answer");
     let mut cfg = crate::testutil::ask_config(&cli);
     cfg.source_access = true;
@@ -2428,7 +2411,7 @@ fn a_frozen_walk_checkpoint_without_reachable_source_warns_about_the_fallback() 
             .first()
             .is_some_and(|checkpoint| trace.frozen_block(checkpoint).is_some())
     );
-    let mut walking = Walking::new(Walk::new(trace), None);
+    let mut walking = Walking::new(Walk::new(trace));
     let cli = crate::testutil::fake_reply(dir.path(), "answer");
     let cfg = crate::testutil::ask_config(&cli);
 
@@ -2734,7 +2717,7 @@ fn a_frozen_diagram_is_reachable_through_the_image_allowlist() {
         .back_units
         .iter()
         .find_map(|unit| match unit {
-            crate::render::NoteUnit::Diagram { src, .. } => Some(src.clone()),
+            crate::render::ContentUnit::Diagram { src, .. } => Some(src.clone()),
             _ => None,
         })
         .expect("the fence slot holds the diagram unit");
@@ -2742,5 +2725,82 @@ fn a_frozen_diagram_is_reachable_through_the_image_allowlist() {
         format!("/img/{key}"),
         unit,
         "the served URL and the allowlist agree on the key"
+    );
+}
+
+/// A crumb paints every region of its topology, including cards the sitting
+/// was scoped away from. The lock axis therefore has to be answered deck-wide;
+/// answering it from the sitting's own slice reports an out-of-slice locked
+/// card as unlocked.
+#[test]
+fn a_scoped_crumb_reports_a_locked_card_outside_the_sitting() {
+    const PARENT: &str = "card-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+    const CHILD: &str = "card-3k5m9q2w7x4c1t8z0v6b2n4d8f";
+    const DECK: &str = "## Parent\nparent answer\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
+
+    let dir = tempfile::tempdir().unwrap();
+    let deck = dir.path().join("d.md");
+    std::fs::write(&deck, DECK).unwrap();
+    std::fs::write(
+        deck.with_extension("generated.json"),
+        format!(
+            r#"{{"version":1,"deck_id":"","revision":1,"cards":{{}},"topologies":[
+                {{"name":"t","principle":"p","edges":[],"walk":[],
+                  "regions":[{{"name":"r1","cards":["{PARENT}"]}},
+                             {{"name":"r2","cards":["{CHILD}"]}}]}}]}}"#
+        ),
+    )
+    .unwrap();
+
+    let all = crate::parser::parse_str("", DECK).expect("the fixture parses");
+    // The sitting is scoped to r1, so the locked child is not in its slice.
+    let slice: Vec<Card> = all
+        .iter()
+        .filter(|c| c.id().as_deref() == Some(PARENT))
+        .cloned()
+        .collect();
+
+    let mut store = Store::open(dir.path().join("p.json")).unwrap();
+    // The gate is a property of the DECK, so the graph is built complete and
+    // the region filter applied after, exactly as `assemble::select` does.
+    let session = Session::from_subset(
+        slice,
+        &mut store,
+        Box::new(Fsrs::default()),
+        crate::session::SessionOptions::default(),
+        now_ms(),
+        crate::session::LockGraph::build(&all),
+    );
+    let augment = AugmentCache::open_deck(deck.with_extension("generated.json"), "")
+        .expect("the fixture augmentation loads");
+    let mut decks = HashMap::new();
+    decks.insert(String::new(), deck);
+    let r = Reviewing::new(SessionBuild {
+        session,
+        label: "d.md".to_string(),
+        decks,
+        load_warnings: Vec::new(),
+        links: HashMap::new(),
+        source_layers: HashMap::new(),
+        base_roots: HashMap::new(),
+        source_bases: HashMap::new(),
+        topology_name: Some("t".to_string()),
+        region_name: Some("r1".to_string()),
+        augment,
+    });
+
+    let dto = review_state(Some(&r), &store, None, 0);
+    let card = dto.card.as_ref().expect("a card is presented");
+    let crumb = card
+        .crumb
+        .as_ref()
+        .expect("the topology gives the card a crumb");
+    let r2 = crumb.cells.last().expect("the second region's cells");
+
+    assert_eq!(1, r2.len(), "r2 holds exactly the child");
+    assert!(
+        r2[0].locked,
+        "the child is gated behind an ungraduated parent, so its crumb cell is locked \
+         even though the sitting was scoped to r1"
     );
 }

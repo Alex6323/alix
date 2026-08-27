@@ -10,7 +10,7 @@ use crate::{
 // newtype variants; wire shape is `{"kind": ..., "text": ...}` (docs/API.md).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
-pub enum NoteUnit {
+pub enum ContentUnit {
     Sentence {
         text: String,
         runs: Vec<crate::inline::InlineRun>,
@@ -53,7 +53,7 @@ pub enum NoteUnit {
     /// units so a quotation can hold prose, code, or a list, and it is one
     /// block rather than a sequence of gradeable lines.
     Quote {
-        units: Vec<NoteUnit>,
+        units: Vec<ContentUnit>,
     },
 }
 
@@ -71,7 +71,7 @@ pub enum AnswerStep {
     Quote {
         back_from: usize,
         back_to: usize,
-        units: Vec<NoteUnit>,
+        units: Vec<ContentUnit>,
     },
 }
 
@@ -149,7 +149,7 @@ pub(crate) fn answer_units_with(
     lines: &[String],
     projector: &mut DisplayProjector,
     diagrams: &[crate::card::ResolvedDiagram],
-) -> Vec<NoteUnit> {
+) -> Vec<ContentUnit> {
     text_units_with(&lines.join("\n"), projector, false, diagrams)
 }
 
@@ -162,10 +162,10 @@ fn fence_unit(
     lines: Vec<String>,
     diagrams: &[crate::card::ResolvedDiagram],
     projector: &mut DisplayProjector,
-) -> NoteUnit {
+) -> ContentUnit {
     if info.eq_ignore_ascii_case("math") && lines.iter().any(|line| !line.trim().is_empty()) {
         let source = lines.join("\n");
-        return NoteUnit::Sentence {
+        return ContentUnit::Sentence {
             runs: projector.project_display_math(&source),
             text: source,
         };
@@ -174,7 +174,7 @@ fn fence_unit(
         let source = lines.join("\n");
         let print = crate::diagram::fingerprint(&source);
         if let Some(resolved) = diagrams.iter().find(|d| d.fingerprint == print) {
-            return NoteUnit::Diagram {
+            return ContentUnit::Diagram {
                 src: resolved.png.display().to_string(),
                 width: resolved.geometry.logical_width,
                 height: resolved.geometry.logical_height,
@@ -184,7 +184,7 @@ fn fence_unit(
             };
         }
     }
-    NoteUnit::Code { lines }
+    ContentUnit::Code { lines }
 }
 
 /// Which answer lines a quote block owns. A `>` inside a fence or a display
@@ -328,7 +328,7 @@ fn text_units_with(
     projector: &mut DisplayProjector,
     split_prose_sentences: bool,
     diagrams: &[crate::card::ResolvedDiagram],
-) -> Vec<NoteUnit> {
+) -> Vec<ContentUnit> {
     let mut units = Vec::new();
     let mut code_fence: Option<(char, usize, String)> = None;
     let mut code: Vec<String> = Vec::new();
@@ -378,7 +378,7 @@ fn text_units_with(
                 let source = std::mem::take(body).join("\n");
                 math_block = None;
                 if !source.trim().is_empty() {
-                    units.push(NoteUnit::Sentence {
+                    units.push(ContentUnit::Sentence {
                         runs: projector.project_display_math(&source),
                         text: source,
                     });
@@ -422,7 +422,7 @@ fn text_units_with(
                 );
                 index += 1;
             }
-            units.push(NoteUnit::Table {
+            units.push(ContentUnit::Table {
                 aligns,
                 header: header.iter().map(|cell| projector.project(cell)).collect(),
                 rows,
@@ -437,7 +437,7 @@ fn text_units_with(
                 body.push(next.to_string());
                 index += 1;
             }
-            units.push(NoteUnit::Quote {
+            units.push(ContentUnit::Quote {
                 units: text_units_with(
                     &body.join("\n"),
                     projector,
@@ -460,7 +460,7 @@ fn text_units_with(
         if crate::inline::is_display_math_line(trimmed) {
             flush_checklist(&mut checklist, &mut units);
             flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
-            units.push(NoteUnit::Sentence {
+            units.push(ContentUnit::Sentence {
                 text: trimmed.to_string(),
                 runs: projector.project(trimmed),
             });
@@ -481,7 +481,7 @@ fn text_units_with(
     if let Some(body) = math_block.take()
         && !body.is_empty()
     {
-        units.push(NoteUnit::Code { lines: body });
+        units.push(ContentUnit::Code { lines: body });
     }
     // An unterminated code fence still yields its gathered lines.
     if !code.is_empty() {
@@ -491,7 +491,7 @@ fn text_units_with(
     units
 }
 
-pub fn front_units(front: &str) -> Option<Vec<NoteUnit>> {
+pub fn front_units(front: &str) -> Option<Vec<ContentUnit>> {
     let mut projector = DisplayProjector::default();
     front_units_with(front, &mut projector, &[])
 }
@@ -500,16 +500,18 @@ pub(crate) fn front_units_with(
     front: &str,
     projector: &mut DisplayProjector,
     diagrams: &[crate::card::ResolvedDiagram],
-) -> Option<Vec<NoteUnit>> {
+) -> Option<Vec<ContentUnit>> {
     let units = text_units_with(front, projector, true, diagrams);
     units
         .iter()
         .any(|unit| match unit {
-            NoteUnit::Checklist { .. } | NoteUnit::Table { .. } => true,
-            NoteUnit::Sentence { runs, .. } => runs
+            ContentUnit::Checklist { .. } | ContentUnit::Table { .. } => true,
+            ContentUnit::Sentence { runs, .. } => runs
                 .iter()
                 .any(|run| run.math.as_ref().is_some_and(|math| math.display)),
-            NoteUnit::Code { .. } | NoteUnit::Diagram { .. } | NoteUnit::Quote { .. } => true,
+            ContentUnit::Code { .. } | ContentUnit::Diagram { .. } | ContentUnit::Quote { .. } => {
+                true
+            }
         })
         .then_some(units)
 }
@@ -522,7 +524,7 @@ pub(crate) fn front_units_with(
 /// record carrying spans or holes stays code until span binding ships.
 /// A math fence needs no record: its displayed (masked) body projects
 /// directly.
-pub(crate) fn context_units_with(card: &Card) -> Vec<NoteUnit> {
+pub(crate) fn context_units_with(card: &Card) -> Vec<ContentUnit> {
     let context = &card.context;
     let diagrams = &card.resolved_diagrams;
     let fences = &card.answer_fences;
@@ -531,7 +533,7 @@ pub(crate) fn context_units_with(card: &Card) -> Vec<NoteUnit> {
     structural_units_with(context, &mut projector, |info, lines, projector| {
         if info.eq_ignore_ascii_case("math") && lines.iter().any(|line| !line.trim().is_empty()) {
             let source = lines.join("\n");
-            NoteUnit::Sentence {
+            ContentUnit::Sentence {
                 runs: projector.project_display_math(&source),
                 text: source,
             }
@@ -546,8 +548,8 @@ pub(crate) fn context_units_with(card: &Card) -> Vec<NoteUnit> {
 fn structural_units_with(
     lines: &[String],
     projector: &mut DisplayProjector,
-    mut fence_unit: impl FnMut(&str, Vec<String>, &mut DisplayProjector) -> NoteUnit,
-) -> Vec<NoteUnit> {
+    mut fence_unit: impl FnMut(&str, Vec<String>, &mut DisplayProjector) -> ContentUnit,
+) -> Vec<ContentUnit> {
     let mut units = Vec::new();
     let mut open: Option<(char, usize, String)> = None;
     let mut interior: Vec<String> = Vec::new();
@@ -558,7 +560,7 @@ fn structural_units_with(
                 let source = std::mem::take(body).join("\n");
                 math_block = None;
                 if !source.trim().is_empty() {
-                    units.push(NoteUnit::Sentence {
+                    units.push(ContentUnit::Sentence {
                         runs: projector.project_display_math(&source),
                         text: source,
                     });
@@ -584,7 +586,7 @@ fn structural_units_with(
         }
     }
     if !interior.is_empty() {
-        units.push(NoteUnit::Code { lines: interior });
+        units.push(ContentUnit::Code { lines: interior });
     }
     units
 }
@@ -592,7 +594,7 @@ fn structural_units_with(
 /// Section prose is never a diagram: nothing freezes a section's fence, so
 /// there is no record to resolve a mermaid body against and it stays code.
 /// Math fences and closed nonempty bare-math blocks need no record.
-pub(crate) fn section_units(lines: &[String]) -> Vec<NoteUnit> {
+pub(crate) fn section_units(lines: &[String]) -> Vec<ContentUnit> {
     let mut projector = DisplayProjector::default();
     structural_units_with(lines, &mut projector, |info, lines, projector| {
         fence_unit(info, lines, &[], projector)
@@ -605,7 +607,7 @@ fn context_fence_unit(
     lines: Vec<String>,
     record: Option<&crate::card::AnswerFence>,
     diagrams: &[crate::card::ResolvedDiagram],
-) -> NoteUnit {
+) -> ContentUnit {
     if mermaid
         && let Some(record) = record
         && !record.holes
@@ -614,7 +616,7 @@ fn context_fence_unit(
             .find(|d| d.fingerprint == record.fingerprint)
     {
         if record.spans.is_empty() {
-            return NoteUnit::Diagram {
+            return ContentUnit::Diagram {
                 src: resolved.png.display().to_string(),
                 width: resolved.geometry.logical_width,
                 height: resolved.geometry.logical_height,
@@ -629,7 +631,7 @@ fn context_fence_unit(
             return unit;
         }
     }
-    NoteUnit::Code { lines }
+    ContentUnit::Code { lines }
 }
 
 /// The masked projection: every span in the fence must validate and bind
@@ -639,7 +641,7 @@ fn masked_diagram_unit(
     card: &Card,
     record: &crate::card::AnswerFence,
     resolved: &crate::card::ResolvedDiagram,
-) -> Option<NoteUnit> {
+) -> Option<ContentUnit> {
     use crate::{
         parser::region::RegionKind,
         review::{RegionRole, RegionView},
@@ -714,7 +716,7 @@ fn masked_diagram_unit(
             }
         })
         .collect();
-    Some(NoteUnit::Diagram {
+    Some(ContentUnit::Diagram {
         src: resolved.png.display().to_string(),
         width: geometry.logical_width,
         height: geometry.logical_height,
@@ -740,9 +742,9 @@ pub(crate) fn fence_info(line: &str, marker: char) -> &str {
     line.trim_start().trim_start_matches(marker).trim()
 }
 
-fn flush_checklist(checklist: &mut Vec<ChecklistItem>, units: &mut Vec<NoteUnit>) {
+fn flush_checklist(checklist: &mut Vec<ChecklistItem>, units: &mut Vec<ContentUnit>) {
     if !checklist.is_empty() {
-        units.push(NoteUnit::Checklist {
+        units.push(ContentUnit::Checklist {
             items: std::mem::take(checklist),
         });
     }
@@ -750,7 +752,7 @@ fn flush_checklist(checklist: &mut Vec<ChecklistItem>, units: &mut Vec<NoteUnit>
 
 fn flush_prose(
     prose: &mut String,
-    units: &mut Vec<NoteUnit>,
+    units: &mut Vec<ContentUnit>,
     projector: &mut DisplayProjector,
     split_prose_sentences: bool,
 ) {
@@ -764,7 +766,7 @@ fn flush_prose(
     for sentence in chunks {
         if !sentence.is_empty() {
             let runs = projector.project(&sentence);
-            units.push(NoteUnit::Sentence {
+            units.push(ContentUnit::Sentence {
                 text: sentence,
                 runs,
             });
@@ -838,7 +840,7 @@ mod tests {
     use super::*;
     use crate::card::AnswerSpace;
 
-    fn note_units(card: &Card) -> Vec<NoteUnit> {
+    fn note_units(card: &Card) -> Vec<ContentUnit> {
         note_views(card)
             .into_iter()
             .next()
@@ -856,8 +858,8 @@ mod tests {
         )
     }
 
-    fn sentence(text: &str) -> NoteUnit {
-        NoteUnit::Sentence {
+    fn sentence(text: &str) -> ContentUnit {
+        ContentUnit::Sentence {
             text: text.into(),
             runs: crate::inline::parse_inline(text),
         }
@@ -875,7 +877,7 @@ mod tests {
         assert_eq!(
             vec![
                 sentence("the answer"),
-                NoteUnit::Quote {
+                ContentUnit::Quote {
                     units: vec![sentence("a quoted passage its second line")],
                 },
             ],
@@ -906,7 +908,7 @@ mod tests {
             let units = answer_units_with(&owned, &mut projector, &[]);
             let has_quote_unit = units
                 .iter()
-                .any(|unit| matches!(unit, NoteUnit::Quote { .. }));
+                .any(|unit| matches!(unit, ContentUnit::Quote { .. }));
             let flagged = quote_line_flags(&owned).iter().any(|quoted| *quoted);
             assert_eq!(expected, has_quote_unit, "{why}: display units");
             assert_eq!(
@@ -1127,7 +1129,7 @@ mod tests {
         let units = note_units(&card_with_note("Before.\n$$x^2$$\nAfter."));
         assert_eq!(units.len(), 3);
         assert_eq!(units[0], sentence("Before."));
-        let NoteUnit::Sentence { text, runs } = &units[1] else {
+        let ContentUnit::Sentence { text, runs } = &units[1] else {
             panic!("display math should be a sentence unit");
         };
         assert_eq!(text, "$$x^2$$");
@@ -1140,7 +1142,7 @@ mod tests {
     fn display_math_makes_front_units_structural() {
         let units = front_units("Before\n$$x^2$$\nAfter").unwrap();
         assert_eq!(units.len(), 3);
-        let NoteUnit::Sentence { runs, .. } = &units[1] else {
+        let ContentUnit::Sentence { runs, .. } = &units[1] else {
             panic!("display math should be a sentence unit");
         };
         assert!(runs[0].math.as_ref().unwrap().display);
@@ -1150,7 +1152,7 @@ mod tests {
     fn a_multi_line_dollar_block_is_one_display_math_unit() {
         let units = note_units(&card_with_note("Before.\n$$\nx^2 +\ny^2\n$$\nAfter."));
         assert_eq!(units.len(), 3, "{units:?}");
-        let NoteUnit::Sentence { text, runs } = &units[1] else {
+        let ContentUnit::Sentence { text, runs } = &units[1] else {
             panic!("a dollar block should be a sentence unit: {units:?}");
         };
         assert_eq!(text, "x^2 +\ny^2", "the body joins, markers drop");
@@ -1175,7 +1177,7 @@ mod tests {
         let card = &deck.cards[0];
         let mut projector = DisplayProjector::default();
         let units = answer_units_with(&card.back, &mut projector, &[]);
-        let [NoteUnit::Sentence { text, runs }] = units.as_slice() else {
+        let [ContentUnit::Sentence { text, runs }] = units.as_slice() else {
             panic!("the complete formula must stay one display unit: {units:?}");
         };
         assert_eq!(
@@ -1205,7 +1207,7 @@ mod tests {
         let units = note_units(&card_with_note("```\n$$\nx^2\n$$\n```"));
         assert_eq!(
             units,
-            vec![NoteUnit::Code {
+            vec![ContentUnit::Code {
                 lines: vec!["$$".into(), "x^2".into(), "$$".into()]
             }]
         );
@@ -1216,7 +1218,7 @@ mod tests {
         let units = note_units(&card_with_note("$$\nx^2"));
         assert_eq!(
             units,
-            vec![NoteUnit::Code {
+            vec![ContentUnit::Code {
                 lines: vec!["x^2".into()]
             }],
             "only free text can reach this: the parser rejects an unclosed card opener"
@@ -1229,7 +1231,7 @@ mod tests {
             "Before.\n```math\nx^2 + y^2\n= z^2\n```\nAfter.",
         ));
         assert_eq!(units.len(), 3, "{units:?}");
-        let NoteUnit::Sentence { text, runs } = &units[1] else {
+        let ContentUnit::Sentence { text, runs } = &units[1] else {
             panic!("a math fence should be a sentence unit: {units:?}");
         };
         assert_eq!(text, "x^2 + y^2\n= z^2", "the body joins as one source");
@@ -1248,7 +1250,7 @@ mod tests {
     #[test]
     fn a_math_fence_body_is_source_not_dollar_scanned() {
         let units = note_units(&card_with_note("```math\n$x^2$\n```"));
-        let NoteUnit::Sentence { text, runs } = &units[0] else {
+        let ContentUnit::Sentence { text, runs } = &units[0] else {
             panic!("expected a sentence unit: {units:?}");
         };
         assert_eq!(text, "$x^2$", "dollars in the body stay source");
@@ -1261,7 +1263,7 @@ mod tests {
         for note in ["```math\n```", "```math\n   \n```"] {
             let units = note_units(&card_with_note(note));
             assert!(
-                matches!(units.as_slice(), [NoteUnit::Code { .. }]),
+                matches!(units.as_slice(), [ContentUnit::Code { .. }]),
                 "{note}: {units:?}"
             );
         }
@@ -1271,7 +1273,7 @@ mod tests {
     fn a_math_fence_makes_front_units_structural() {
         let units = front_units("Ready?\n```math\nx^2\n```").unwrap();
         assert_eq!(units.len(), 2, "{units:?}");
-        let NoteUnit::Sentence { runs, .. } = &units[1] else {
+        let ContentUnit::Sentence { runs, .. } = &units[1] else {
             panic!("expected the math unit: {units:?}");
         };
         assert!(runs[0].math.as_ref().unwrap().display);
@@ -1283,7 +1285,7 @@ mod tests {
             "before\n| h1 | h2 |\n|:---|---:|\n| **a** | b |\n| c |\ntail",
         ));
         assert_eq!(3, units.len(), "{units:?}");
-        let NoteUnit::Table {
+        let ContentUnit::Table {
             aligns,
             header,
             rows,
@@ -1311,7 +1313,7 @@ mod tests {
         );
         assert!(rows[1][1].is_empty(), "the padded cell is empty: {rows:?}");
         assert!(
-            matches!(&units[2], NoteUnit::Sentence { text, .. } if text == "tail"),
+            matches!(&units[2], ContentUnit::Sentence { text, .. } if text == "tail"),
             "prose resumes after the table: {units:?}"
         );
     }
@@ -1322,7 +1324,7 @@ mod tests {
         assert!(
             units
                 .iter()
-                .all(|unit| matches!(unit, NoteUnit::Sentence { .. })),
+                .all(|unit| matches!(unit, ContentUnit::Sentence { .. })),
             "{units:?}"
         );
     }
@@ -1332,7 +1334,7 @@ mod tests {
         let units = note_units(&card_with_note("```\n| a | b |\n|---|---|\n```"));
         assert_eq!(
             units,
-            vec![NoteUnit::Code {
+            vec![ContentUnit::Code {
                 lines: vec!["| a | b |".into(), "|---|---|".into()]
             }]
         );
@@ -1344,7 +1346,7 @@ mod tests {
         assert!(
             units
                 .iter()
-                .all(|unit| matches!(unit, NoteUnit::Sentence { .. })),
+                .all(|unit| matches!(unit, ContentUnit::Sentence { .. })),
             "{units:?}"
         );
     }
@@ -1354,7 +1356,7 @@ mod tests {
         let units = note_units(&card_with_note("````\n```\ncode\n```\n````"));
         assert_eq!(
             units,
-            vec![NoteUnit::Code {
+            vec![ContentUnit::Code {
                 lines: vec!["```".into(), "code".into(), "```".into()]
             }]
         );
@@ -1365,7 +1367,7 @@ mod tests {
         let units = note_units(&card_with_note("````\n````rust\n$x$\n````"));
         assert_eq!(
             units,
-            vec![NoteUnit::Code {
+            vec![ContentUnit::Code {
                 lines: vec!["````rust".into(), "$x$".into()]
             }]
         );
@@ -1378,7 +1380,7 @@ mod tests {
             let units = note_units(&card_with_note(&note));
             assert_eq!(
                 units,
-                vec![NoteUnit::Code {
+                vec![ContentUnit::Code {
                     lines: vec!["$x^2$".into()]
                 }]
             );
@@ -1392,11 +1394,11 @@ mod tests {
         assert_eq!(
             units,
             vec![
-                NoteUnit::Sentence {
+                ContentUnit::Sentence {
                     text: "Given this list:".into(),
                     runs: crate::inline::parse_inline("Given this list:"),
                 },
-                NoteUnit::Checklist {
+                ContentUnit::Checklist {
                     items: vec![
                         ChecklistItem {
                             checked: true,
@@ -1420,11 +1422,11 @@ mod tests {
         assert_eq!(
             units,
             vec![
-                NoteUnit::Sentence {
+                ContentUnit::Sentence {
                     text: "Recall:".into(),
                     runs: crate::inline::parse_inline("Recall:"),
                 },
-                NoteUnit::Checklist {
+                ContentUnit::Checklist {
                     items: vec![
                         ChecklistItem {
                             checked: true,
@@ -1450,7 +1452,7 @@ mod tests {
             units,
             vec![
                 sentence("Intro here."),
-                NoteUnit::Code {
+                ContentUnit::Code {
                     lines: vec!["fn main() {".into(), "    let x = 1;".into(), "}".into(),]
                 },
             ]
@@ -1464,7 +1466,7 @@ mod tests {
         assert_eq!(
             units,
             vec![
-                NoteUnit::Code {
+                ContentUnit::Code {
                     lines: vec!["code".into()]
                 },
                 sentence("After the block."),
@@ -1477,7 +1479,7 @@ mod tests {
         let units = note_units(&card_with_note("```\nlonely line"));
         assert_eq!(
             units,
-            vec![NoteUnit::Code {
+            vec![ContentUnit::Code {
                 lines: vec!["lonely line".into()]
             }]
         );
@@ -1492,14 +1494,14 @@ mod tests {
     #[test]
     fn note_units_serialize_as_the_documented_wire_shape() {
         let units = vec![
-            NoteUnit::Sentence {
+            ContentUnit::Sentence {
                 text: "One owner.".into(),
                 runs: crate::inline::parse_inline("One owner."),
             },
-            NoteUnit::Code {
+            ContentUnit::Code {
                 lines: vec!["let s;".into()],
             },
-            NoteUnit::Checklist {
+            ContentUnit::Checklist {
                 items: vec![ChecklistItem {
                     checked: true,
                     text: "Own it".into(),
@@ -1573,8 +1575,8 @@ mod tests {
         let mut projector = DisplayProjector::default();
         let units = text_units_with(text, &mut projector, false, &resolved(source));
         assert_eq!(3, units.len(), "{units:?}");
-        assert!(matches!(&units[0], NoteUnit::Sentence { text, .. } if text == "before"));
-        let NoteUnit::Diagram {
+        assert!(matches!(&units[0], ContentUnit::Sentence { text, .. } if text == "before"));
+        let ContentUnit::Diagram {
             src,
             width,
             height,
@@ -1591,7 +1593,7 @@ mod tests {
             "logical, not raster, dimensions"
         );
         assert_eq!(source, alt, "the fence source is the accessible text");
-        assert!(matches!(&units[2], NoteUnit::Sentence { text, .. } if text == "after"));
+        assert!(matches!(&units[2], ContentUnit::Sentence { text, .. } if text == "after"));
     }
 
     #[test]
@@ -1601,7 +1603,7 @@ mod tests {
             .map(|s| s.to_string())
             .collect();
         assert_eq!(
-            vec![NoteUnit::Code {
+            vec![ContentUnit::Code {
                 lines: vec!["~~~".into(), "text".into()]
             }],
             section_units(&lines),
@@ -1616,7 +1618,7 @@ mod tests {
             .map(|s| s.to_string())
             .collect();
         assert_eq!(
-            vec![NoteUnit::Code {
+            vec![ContentUnit::Code {
                 lines: vec!["````rust".into(), "x".into()]
             }],
             section_units(&lines),
@@ -1633,7 +1635,7 @@ mod tests {
         let section = section_units(&lines);
         let context = context_units_with(&context_card(&lines, Vec::new(), Vec::new()));
         for (surface, units) in [("section", section), ("context", context)] {
-            let [NoteUnit::Sentence { text, runs }] = units.as_slice() else {
+            let [ContentUnit::Sentence { text, runs }] = units.as_slice() else {
                 panic!("a math fence in {surface} must be display math: {units:?}");
             };
             assert_eq!(text, "x^2");
@@ -1676,7 +1678,7 @@ mod tests {
             for (surface, units) in surfaces {
                 match expected {
                     Some(expected) => {
-                        let [NoteUnit::Sentence { text, runs }] = units.as_slice() else {
+                        let [ContentUnit::Sentence { text, runs }] = units.as_slice() else {
                             panic!("{case} on {surface} must be display math: {units:?}");
                         };
                         assert_eq!(expected, text, "{case} on {surface}");
@@ -1702,7 +1704,7 @@ mod tests {
             .collect();
         let units = context_units_with(&context_card(&context, Vec::new(), Vec::new()));
         assert_eq!(
-            vec![NoteUnit::Code {
+            vec![ContentUnit::Code {
                 lines: vec!["````rust".into(), "x".into()]
             }],
             units,
@@ -1719,7 +1721,7 @@ mod tests {
         let units = context_units_with(&context_card(&context, Vec::new(), Vec::new()));
         assert_eq!(
             units,
-            vec![NoteUnit::Code {
+            vec![ContentUnit::Code {
                 lines: vec!["a".into(), "```".into(), "b".into()]
             }]
         );
@@ -1775,10 +1777,10 @@ mod tests {
         let units = context_units_with(&context_card(&context, resolved(source), fences));
         assert_eq!(2, units.len(), "{units:?}");
         assert!(
-            matches!(&units[0], NoteUnit::Code { lines } if lines == &["let x = 1;"]),
+            matches!(&units[0], ContentUnit::Code { lines } if lines == &["let x = 1;"]),
             "a non-mermaid fence is code and consumes no record: {units:?}"
         );
-        let NoteUnit::Diagram { alt, .. } = &units[1] else {
+        let ContentUnit::Diagram { alt, .. } = &units[1] else {
             panic!("the mermaid fence resolves through its record: {units:?}");
         };
         assert_eq!(source, alt, "the clean interior is the accessible text");
@@ -1812,7 +1814,7 @@ mod tests {
         for (fences, why) in cases {
             let units = context_units_with(&context_card(&context, resolved(source), fences));
             assert!(
-                matches!(&units[0], NoteUnit::Code { .. }),
+                matches!(&units[0], ContentUnit::Code { .. }),
                 "{why}: {units:?}"
             );
         }
@@ -1827,7 +1829,7 @@ mod tests {
             .collect();
         let fences = vec![record(authored)];
         let units = context_units_with(&context_card(&context, resolved(authored), fences));
-        let NoteUnit::Diagram { alt, .. } = &units[0] else {
+        let ContentUnit::Diagram { alt, .. } = &units[0] else {
             panic!(
                 "the record carries the unmasked fingerprint even where the \
                  displayed interior diverges: {units:?}"
@@ -1850,10 +1852,13 @@ mod tests {
         let units = text_units_with(text, &mut projector, false, &resolved(source));
         assert_eq!(2, units.len(), "{units:?}");
         assert!(
-            matches!(&units[0], NoteUnit::Code { lines } if lines.is_empty()),
+            matches!(&units[0], ContentUnit::Code { lines } if lines.is_empty()),
             "the empty fence holds its slot: {units:?}"
         );
-        assert!(matches!(&units[1], NoteUnit::Diagram { .. }), "{units:?}");
+        assert!(
+            matches!(&units[1], ContentUnit::Diagram { .. }),
+            "{units:?}"
+        );
     }
 
     /// The server resolves availability: no resolved stamp, a stale
@@ -1881,7 +1886,7 @@ mod tests {
         for (text, diagrams, why) in cases {
             let units = text_units_with(text, &mut projector, false, &diagrams);
             assert!(
-                matches!(&units[0], NoteUnit::Code { .. }),
+                matches!(&units[0], ContentUnit::Code { .. }),
                 "{why}: must stay a code unit, got {units:?}"
             );
         }

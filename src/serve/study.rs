@@ -1086,16 +1086,12 @@ impl StudyState {
                 let _ = reply.send(out);
             }
             StudyCommand::WalkPoll(reply) => {
-                let dto = self.walking.as_mut().map(|w| {
-                    w.poll();
-                    walk_dto(w)
-                });
+                let dto = self.walking.as_ref().map(walk_dto);
                 let _ = reply.send(dto);
             }
             StudyCommand::WalkPredict { text, reply } => {
                 let dto = self.walking.as_mut().map(|w| {
                     w.walk.predict(text);
-                    w.start_grade();
                     walk_dto(w)
                 });
                 let _ = reply.send(dto);
@@ -1103,31 +1099,26 @@ impl StudyState {
             StudyCommand::WalkGrade { self_delta, reply } => {
                 let out = match self.walking.as_mut() {
                     None => WalkGradeReply::NoWalk,
-                    Some(w) => {
-                        let delta = w.grade_result.as_ref().map(|(d, _)| *d).or(self_delta);
-                        match delta {
-                            Some(delta) => {
-                                w.walk.grade(&mut self.store, delta, now_ms());
-                                flush_mutation(
-                                    &self.store,
-                                    &mut self.store_dirty,
-                                    &mut self.save_error,
-                                );
-                                self.writes = self.writes.wrapping_add(1);
-                                w.clear_grade();
-                                WalkGradeReply::Dto(Box::new(walk_dto(w)))
-                            }
-                            None => WalkGradeReply::NoDelta,
+                    Some(w) => match self_delta {
+                        Some(delta) => {
+                            w.walk.grade(&mut self.store, delta, now_ms());
+                            flush_mutation(
+                                &self.store,
+                                &mut self.store_dirty,
+                                &mut self.save_error,
+                            );
+                            self.writes = self.writes.wrapping_add(1);
+                            WalkGradeReply::Dto(Box::new(walk_dto(w)))
                         }
-                    }
+                        None => WalkGradeReply::NoDelta,
+                    },
                 };
                 let _ = reply.send(out);
             }
             StudyCommand::WalkRestart(reply) => {
                 let dto = self.walking.as_mut().map(|w| {
                     let fresh = Walk::new(w.walk.trace().clone());
-                    let grade = w.grade.take();
-                    *w = Walking::new(fresh, grade);
+                    *w = Walking::new(fresh);
                     walk_dto(w)
                 });
                 let _ = reply.send(dto);
@@ -1265,7 +1256,7 @@ impl StudyState {
             Ok(assemble::Selected::Walk(wb)) => {
                 self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);
-                let w = Walking::new(wb.walk, wb.grade);
+                let w = Walking::new(wb.walk);
                 let dto = walk_dto(&w);
                 self.walking = Some(w);
                 self.reviewing = None;
@@ -1747,6 +1738,7 @@ mod tests {
             base_roots: HashMap::new(),
             source_bases: HashMap::new(),
             topology_name: None,
+            region_name: None,
             augment: AugmentCache::open(deck.with_extension("generated.json")),
         });
         (reviewing, store, card_id, deck_id)
@@ -1762,7 +1754,6 @@ mod tests {
                     cfg: AssembleConfig {
                         review: defaults.review,
                         ask: defaults.ask,
-                        trace_auto_grade: false,
                         pacing: assemble::Pacing {
                             max_session: 10,
                             new_cards_percent: 30,
@@ -1888,7 +1879,6 @@ mod tests {
                 cfg: AssembleConfig {
                     review: defaults.review,
                     ask: defaults.ask,
-                    trace_auto_grade: false,
                     pacing: assemble::Pacing {
                         max_session: 10,
                         new_cards_percent: 30,

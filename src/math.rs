@@ -11,7 +11,7 @@ use crate::{
     card::Card,
     inline::{DisplayProjector, InlineRun},
     parser::{BLANK, HIDDEN},
-    render::NoteUnit,
+    render::ContentUnit,
     review::CardView,
 };
 
@@ -261,30 +261,30 @@ pub fn validate_generated(cards: &[Card]) -> Result<(), MathDiagnostic> {
 /// at the block.
 fn collect_unit_diagnostics(
     line: usize,
-    unit: &NoteUnit,
+    unit: &ContentUnit,
     seen: &mut HashSet<(usize, String, String)>,
     diagnostics: &mut Vec<MathDiagnostic>,
 ) {
     match unit {
-        NoteUnit::Sentence { runs, .. } => {
+        ContentUnit::Sentence { runs, .. } => {
             collect_run_diagnostics(line, "note", runs, seen, diagnostics)
         }
-        NoteUnit::Checklist { items } => {
+        ContentUnit::Checklist { items } => {
             for item in items {
                 collect_run_diagnostics(line, "note checklist", &item.runs, seen, diagnostics);
             }
         }
-        NoteUnit::Table { header, rows, .. } => {
+        ContentUnit::Table { header, rows, .. } => {
             for runs in header.iter().chain(rows.iter().flatten()) {
                 collect_run_diagnostics(line, "note table", runs, seen, diagnostics);
             }
         }
-        NoteUnit::Quote { units } => {
+        ContentUnit::Quote { units } => {
             for unit in units {
                 collect_unit_diagnostics(line, unit, seen, diagnostics);
             }
         }
-        NoteUnit::Code { .. } | NoteUnit::Diagram { .. } => {}
+        ContentUnit::Code { .. } | ContentUnit::Diagram { .. } => {}
     }
 }
 

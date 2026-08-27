@@ -1,9 +1,6 @@
 //! Split out of `trace` so the core trace walk compiles without the AI backend.
 
-use std::{
-    path::PathBuf,
-    sync::mpsc::{Receiver, channel},
-};
+use std::path::PathBuf;
 
 use anyhow::{Result, anyhow, bail};
 
@@ -13,7 +10,6 @@ use crate::{
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
     source::resolve_source,
-    trace::{Checkpoint, Delta},
 };
 
 pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
@@ -330,79 +326,6 @@ pub(crate) fn clean_to_cards(raw: &str) -> String {
     lines[start..end].join("\n")
 }
 
-pub fn grade_prediction(
-    checkpoint: &Checkpoint,
-    prediction: &str,
-    ask_cfg: &AskConfig,
-) -> Result<(Delta, String)> {
-    let run_cfg = AskConfig {
-        allowed_tools: Vec::new(), // grading needs no tools, just the text
-        cwd: None,
-        ..ask_cfg.clone()
-    };
-    let raw = ask::run(&run_cfg, &grade_prompt(checkpoint, prediction), &[])?;
-    parse_grade(&raw)
-}
-
-pub fn spawn_grade(
-    checkpoint: Checkpoint,
-    prediction: String,
-    ask_cfg: AskConfig,
-) -> Receiver<Result<(Delta, String), String>> {
-    let (tx, rx) = channel();
-    std::thread::spawn(move || {
-        let reply =
-            grade_prediction(&checkpoint, &prediction, &ask_cfg).map_err(|e| format!("{e:#}"));
-        let _ = tx.send(reply);
-    });
-    rx
-}
-
-fn grade_prompt(checkpoint: &Checkpoint, prediction: &str) -> String {
-    let points = checkpoint.points.join("\n- ");
-    format!(
-        "A learner is doing a predict-then-verify walk through a source. At this \
-         hop they were asked:\n\n{}\n\nA correct answer hits these KEY POINTS:\n\
-         - {points}\n\nThe learner PREDICTED:\n\n{prediction}\n\nGrade the \
-         prediction against the key points (minor wording differences are fine; \
-         judge the substance). Reply with EXACTLY ONE line: the verdict word, then \
-         a dash and ONE short sentence of feedback naming what was right or \
-         missing. The verdict is one of:\n\
-         PASSED — covers the key points with nothing important wrong\n\
-         PARTLY — some right, but an important point is missed, muddled, or \
-         stated wrongly\n\
-         FAILED — misses the point, or its core claim is wrong\n\
-         Do NOT award PASSED to a prediction that asserts something the key points \
-         CONTRADICT — a confident error is PARTLY at best (FAILED if the core \
-         claim is wrong).\n\
-         Example: `PARTLY — right that it reschedules, but you missed the \
-         streak reset.`",
-        checkpoint.prompt
-    )
-}
-
-/// Errors on anything other than PASSED/PARTLY/FAILED: never fabricates a
-/// grade the model didn't actually give.
-fn parse_grade(raw: &str) -> Result<(Delta, String)> {
-    let line = raw.trim().lines().next().unwrap_or("").trim();
-    let upper = line.to_ascii_uppercase();
-    let delta = if upper.starts_with("PASSED") {
-        Delta::Passed
-    } else if upper.starts_with("PARTLY") {
-        Delta::Partial
-    } else if upper.starts_with("FAILED") {
-        Delta::Failed
-    } else {
-        bail!("the grader did not return a PASSED, PARTLY, or FAILED verdict: {line:?}");
-    };
-    let feedback = line
-        .split_once(['—', '-'])
-        .map(|(_, f)| f.trim().to_string())
-        .filter(|f| !f.is_empty())
-        .unwrap_or_else(|| line.to_string());
-    Ok((delta, feedback))
-}
-
 #[cfg(all(test, unix))]
 mod tests {
     use std::path::Path;
@@ -417,25 +340,6 @@ mod tests {
             let _ = crate::stamp::stamp_deck(&path);
         }
         path
-    }
-
-    #[test]
-    fn parse_grade_reads_verdict_and_feedback() {
-        let (d, f) =
-            parse_grade("PARTLY — right that it reschedules, but missed the clamp.").unwrap();
-        assert_eq!(Delta::Partial, d);
-        assert_eq!("right that it reschedules, but missed the clamp.", f);
-        assert_eq!(Delta::Passed, parse_grade("PASSED — spot on").unwrap().0);
-        assert_eq!(
-            Delta::Failed,
-            parse_grade("FAILED - wrong direction").unwrap().0
-        );
-    }
-
-    #[test]
-    fn parse_grade_errors_on_an_unrecognized_verdict() {
-        assert!(parse_grade("hmm not sure").is_err());
-        assert!(parse_grade("").is_err());
     }
 
     #[test]
@@ -604,55 +508,7 @@ mod tests {
         assert_eq!("## Q1", clean_to_cards("preamble\n## Q1\n\n```"));
     }
 
-    use crate::testutil::{ask_config, exec_lock, fake_cli, fake_reply};
-
-    fn grading_checkpoint() -> Checkpoint {
-        Checkpoint {
-            prompt: "Where does the request go?".to_string(),
-            points: vec!["It enters the owner queue".to_string()],
-            givens: Vec::new(),
-            note: None,
-            locator: None,
-            fingerprint: None,
-            asset: None,
-            card_id: "card-test".to_string(),
-            line: 1,
-        }
-    }
-
-    #[test]
-    fn grade_prompt_carries_the_question_rubric_and_prediction() {
-        let prompt = grade_prompt(&grading_checkpoint(), "It is queued");
-
-        assert!(prompt.contains("Where does the request go?"));
-        assert!(prompt.contains("It enters the owner queue"));
-        assert!(prompt.contains("It is queued"));
-    }
-
-    #[test]
-    fn grade_prediction_clears_inherited_tools_and_working_directory() {
-        let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let wrong_cwd = dir.path().join("wrong-cwd");
-        std::fs::create_dir(&wrong_cwd).unwrap();
-        let cli = fake_cli(
-            dir.path(),
-            "cat >/dev/null; printf 'PASSED - cwd=%s args=%s\\n' \"$PWD\" \"$*\"",
-        );
-        let cfg = AskConfig {
-            command: cli.to_string_lossy().into_owned(),
-            allowed_tools: vec!["WebFetch".to_string()],
-            cwd: Some(wrong_cwd.clone()),
-            timeout_secs: 10,
-            ..AskConfig::default()
-        };
-
-        let (delta, feedback) =
-            grade_prediction(&grading_checkpoint(), "It is queued", &cfg).unwrap();
-        assert_eq!(Delta::Passed, delta);
-        assert!(!feedback.contains(&wrong_cwd.to_string_lossy().into_owned()));
-        assert!(!feedback.contains("--allowedTools"), "{feedback}");
-    }
+    use crate::testutil::{ask_config, exec_lock, fake_reply};
 
     #[test]
     fn build_end_to_end_returns_cleaned_cards() {

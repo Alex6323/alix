@@ -378,6 +378,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- **Breaking: AI walk grading is removed, including its `[trace] auto_grade`
+  config key.** A trace walk is self-judged on every client, as the phone
+  already was. The feature was config-and-plumbing only: no client ever read
+  its wire fields, so nothing on screen changes. `WalkDto` loses `auto_grade`,
+  `thinking`, `verdict`, `feedback`, and `grade_error`. A config still carrying
+  `auto_grade` now fails to parse as an unknown key rather than silently
+  ignoring it. Walk grading will return as a delivered feature rather than a
+  half-wired one.
+
 - **Breaking (deck format): the section terminator is gone; a bare `#` resets
   the context instead.** A section used to end early at a `---` alone between
   blank lines. That overloaded `---`, which already served as the frontmatter
@@ -744,6 +753,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- Removing a card no longer overwrites edits made to the deck since the sitting
+  opened. A sitting caches the deck text at open and replays its removals over
+  that text, so a deck edited in an editor (or touched by a sync tool) while the
+  review screen was open lost those edits on the next Remove, silently, with the
+  exposure lasting the whole sitting. Remove now checks the file first and
+  refuses when it moved: nothing is written, the card keeps its place and its
+  progress, and the reason is reported where a failed save is reported. Found by
+  Codex.
+- Opening a deck can no longer re-mint another deck's card token on the word of
+  the review-open line scan. That scan trades full parses for speed and cannot
+  know a file was refused, so a neighbour the parser rejects outright still
+  claimed its tokens; a valid deck sharing one was then named the loser and
+  rewritten on open, which mints a fresh token and severs that card's review
+  history. The line scan still gates the cost, but it now gates on a repeated
+  raw token, counted before deck-level exclusion can hide one, and a rewrite
+  requires the full parse to agree. Reported by Codex from a fence-law
+  divergence between `dedup` and the parser, and reproduced end to end here: a
+  no-break space on a closing `---` is enough.
 - A supporting quotation is no longer graded as a claim the learner owes.
   Three surfaces still derived their gradeable items from the card's raw
   answer lines: the Explain checklist's fallback (an un-augmented card asked

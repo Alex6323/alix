@@ -1,5 +1,4 @@
 {
-  "auto_grade": false,
   "current": 2,
   "description": "how a String grows",
   "description_runs": [
@@ -9,7 +8,6 @@
   ],
   "excerpt": null,
   "excerpt_error": null,
-  "feedback": null,
   "given_runs": [
     [
       {
@@ -20,7 +18,6 @@
   "givens": [
     "a String at capacity"
   ],
-  "grade_error": null,
   "kind": "walk",
   "locator": "lib.rs:40-52",
   "note": null,
@@ -49,7 +46,5 @@
   ],
   "source": "src/lib.rs",
   "summary": null,
-  "thinking": false,
-  "total": 2,
-  "verdict": null
+  "total": 2
 }

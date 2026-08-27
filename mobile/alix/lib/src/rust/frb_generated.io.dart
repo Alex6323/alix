@@ -159,6 +159,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChoiceFeedback dco_decode_choice_feedback(dynamic raw);
 
   @protected
+  ContentUnit dco_decode_content_unit(dynamic raw);
+
+  @protected
   CropView dco_decode_crop_view(dynamic raw);
 
   @protected
@@ -210,6 +213,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ChecklistItem> dco_decode_list_checklist_item(dynamic raw);
 
   @protected
+  List<ContentUnit> dco_decode_list_content_unit(dynamic raw);
+
+  @protected
   List<DeckEntry> dco_decode_list_deck_entry(dynamic raw);
 
   @protected
@@ -226,9 +232,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<List<List<InlineRun>>> dco_decode_list_list_list_inline_run(dynamic raw);
-
-  @protected
-  List<NoteUnit> dco_decode_list_note_unit(dynamic raw);
 
   @protected
   List<NoteView> dco_decode_list_note_view(dynamic raw);
@@ -262,9 +265,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MultiChoiceFeedback dco_decode_multi_choice_feedback(dynamic raw);
-
-  @protected
-  NoteUnit dco_decode_note_unit(dynamic raw);
 
   @protected
   NoteView dco_decode_note_view(dynamic raw);
@@ -329,13 +329,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String>? dco_decode_opt_list_String(dynamic raw);
 
   @protected
+  List<ContentUnit>? dco_decode_opt_list_content_unit(dynamic raw);
+
+  @protected
   List<InlineRun>? dco_decode_opt_list_inline_run(dynamic raw);
 
   @protected
   List<List<InlineRun>>? dco_decode_opt_list_list_inline_run(dynamic raw);
-
-  @protected
-  List<NoteUnit>? dco_decode_opt_list_note_unit(dynamic raw);
 
   @protected
   RecognizeGap dco_decode_recognize_gap(dynamic raw);
@@ -528,6 +528,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChoiceFeedback sse_decode_choice_feedback(SseDeserializer deserializer);
 
   @protected
+  ContentUnit sse_decode_content_unit(SseDeserializer deserializer);
+
+  @protected
   CropView sse_decode_crop_view(SseDeserializer deserializer);
 
   @protected
@@ -581,6 +584,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<ContentUnit> sse_decode_list_content_unit(SseDeserializer deserializer);
+
+  @protected
   List<DeckEntry> sse_decode_list_deck_entry(SseDeserializer deserializer);
 
   @protected
@@ -601,9 +607,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<List<List<InlineRun>>> sse_decode_list_list_list_inline_run(
     SseDeserializer deserializer,
   );
-
-  @protected
-  List<NoteUnit> sse_decode_list_note_unit(SseDeserializer deserializer);
 
   @protected
   List<NoteView> sse_decode_list_note_view(SseDeserializer deserializer);
@@ -639,9 +642,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MultiChoiceFeedback sse_decode_multi_choice_feedback(
     SseDeserializer deserializer,
   );
-
-  @protected
-  NoteUnit sse_decode_note_unit(SseDeserializer deserializer);
 
   @protected
   NoteView sse_decode_note_view(SseDeserializer deserializer);
@@ -722,15 +722,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String>? sse_decode_opt_list_String(SseDeserializer deserializer);
 
   @protected
+  List<ContentUnit>? sse_decode_opt_list_content_unit(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<InlineRun>? sse_decode_opt_list_inline_run(SseDeserializer deserializer);
 
   @protected
   List<List<InlineRun>>? sse_decode_opt_list_list_inline_run(
     SseDeserializer deserializer,
   );
-
-  @protected
-  List<NoteUnit>? sse_decode_opt_list_note_unit(SseDeserializer deserializer);
 
   @protected
   RecognizeGap sse_decode_recognize_gap(SseDeserializer deserializer);
@@ -963,6 +965,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_content_unit(ContentUnit self, SseSerializer serializer);
+
+  @protected
   void sse_encode_crop_view(CropView self, SseSerializer serializer);
 
   @protected
@@ -1023,6 +1028,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_content_unit(
+    List<ContentUnit> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_deck_entry(
     List<DeckEntry> self,
     SseSerializer serializer,
@@ -1057,9 +1068,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<List<List<InlineRun>>> self,
     SseSerializer serializer,
   );
-
-  @protected
-  void sse_encode_list_note_unit(List<NoteUnit> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_note_view(List<NoteView> self, SseSerializer serializer);
@@ -1114,9 +1122,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     MultiChoiceFeedback self,
     SseSerializer serializer,
   );
-
-  @protected
-  void sse_encode_note_unit(NoteUnit self, SseSerializer serializer);
 
   @protected
   void sse_encode_note_view(NoteView self, SseSerializer serializer);
@@ -1218,6 +1223,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_list_String(List<String>? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_list_content_unit(
+    List<ContentUnit>? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_list_inline_run(
     List<InlineRun>? self,
     SseSerializer serializer,
@@ -1226,12 +1237,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_list_list_inline_run(
     List<List<InlineRun>>? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_list_note_unit(
-    List<NoteUnit>? self,
     SseSerializer serializer,
   );
 

@@ -118,7 +118,6 @@ pub(crate) fn launch(args: LaunchArgs, instance: &str) -> Result<()> {
         cfg: assemble::AssembleConfig {
             review: config.review,
             ask: config.ask.clone(),
-            trace_auto_grade: config.trace.auto_grade,
             pacing,
             instance_store: instance_store.clone(),
         },

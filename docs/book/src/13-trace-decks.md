@@ -84,8 +84,7 @@ So the `[trace]` config defaults the build to the backend's strong model
 (for Claude, `opus`; set `model` to override)
 and high reasoning effort (`effort = "high"`): slower than the other AI features,
 but it runs once and is amortized over many reviews. The suggestions pass
-(`--trace --plan`, below) shares those settings; walk grading (`[trace]
-auto_grade`) does not (it's a light per-hop call at the tutor tier).
+(`--trace --plan`, below) shares those settings.
 
 ## Don't know what to trace? — `--trace --plan`
 
@@ -125,15 +124,11 @@ hop by hop:
 2. **Reveal** — `alix` shows the real excerpt from the source, then the key points
    and note.
 3. **Gap** — you judge yourself **Missed it / Partly / Got it** (the same three
-   grades review uses). Self-judged and offline by default; set **`[trace]
-   auto_grade = true`** in the [config](16-configuration.md) to have the model
-   judge your typed prediction against the key points and return a verdict plus a
-   line of feedback (a model call per hop; a desktop/web setting, since the
-   phone's walk is always self-judged). Either way, a failed or partly hop is
-   a **weak edge** that resurfaces sooner — a failed one resets, a partly
-   shortens its next interval (FSRS *Hard*) — while a passed hop advances and
-   fades. Each checkpoint is an
-   ordinary card underneath, so this is the normal per-card SRS.
+   grades review uses). The walk is self-judged and offline on every client. A
+   failed or partly hop is a **weak edge** that resurfaces sooner: a failed one
+   resets, a partly shortens its next interval (FSRS *Hard*), while a passed hop
+   advances and fades. Each checkpoint is an ordinary card underneath, so this
+   is the normal per-card SRS.
 4. **Done** — after the last hop the walk is complete. That's the *drill*; the
    *verification* (what masters the trace) is its separate **exam**, below.
 

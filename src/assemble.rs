@@ -83,7 +83,6 @@ pub struct Pacing {
 pub struct AssembleConfig {
     pub review: ReviewConfig,
     pub ask: AskConfig,
-    pub trace_auto_grade: bool,
     pub pacing: Pacing,
     pub instance_store: Option<PathBuf>,
 }
@@ -111,12 +110,12 @@ pub struct SessionBuild {
     pub base_roots: HashMap<String, PathBuf>,
     pub source_bases: HashMap<String, SourceBase>,
     pub topology_name: Option<String>,
+    pub region_name: Option<String>,
     pub augment: AugmentCache,
 }
 
 pub struct WalkBuild {
     pub walk: Walk,
-    pub grade: Option<AskConfig>,
 }
 
 #[allow(
@@ -381,7 +380,6 @@ pub fn select(
         let trace = Trace::from_deck(&deck)?;
         return Ok(Selected::Walk(WalkBuild {
             walk: Walk::new(trace),
-            grade: cfg.trace_auto_grade.then(|| cfg.ask.clone()),
         }));
     }
 
@@ -629,6 +627,7 @@ pub fn select(
         base_roots,
         source_bases,
         topology_name,
+        region_name: region_sel.map(str::to_string),
         augment,
     }))
 }
@@ -995,7 +994,6 @@ it reads line two\n\
         AssembleConfig {
             review: ReviewConfig::default(),
             ask: AskConfig::default(),
-            trace_auto_grade: false,
             pacing: Pacing {
                 max_session: 10,
                 new_cards_percent: 30,
@@ -1283,10 +1281,7 @@ it reads line two\n\
         let fact = dir.path().join("f.md");
         write_initialized(&fact, "## q\na\n<!-- id: card-qf -->\n");
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
-        let cfg = AssembleConfig {
-            trace_auto_grade: false,
-            ..test_config()
-        };
+        let cfg = AssembleConfig { ..test_config() };
         match select(vec![trace], &mut store, &cfg, &SelectOptions::default()).unwrap() {
             Selected::Walk(_) => {}
             Selected::Review(_) => panic!("trace deck must walk"),
@@ -1566,6 +1561,12 @@ it reads line two\n\
             panic!("a fact deck must review");
         };
         assert_eq!(1, build.session.initial_size);
+        assert_eq!(
+            Some("r1"),
+            build.region_name.as_deref(),
+            "a region-scoped sitting must retain its region, or continuing widens it to the whole deck"
+        );
+        assert_eq!(Some("auto"), build.topology_name.as_deref());
     }
 
     #[test]

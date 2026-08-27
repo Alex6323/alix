@@ -5,7 +5,7 @@ use crate::{
     answer::TypedResult,
     inline::InlineRun,
     math::MathView,
-    render::{AnswerStep, CellAlign, ChecklistItem, NoteUnit},
+    render::{AnswerStep, CellAlign, ChecklistItem, ContentUnit},
     session::{CardTier, Cell},
 };
 
@@ -29,6 +29,8 @@ fn pin<T: serde::Serialize>(anchor: &str, dto: &T, expected: serde_json::Value) 
 fn statedto_select_phase_wire_shape() {
     let dto = StateDto {
         kind: "review",
+        topology: None,
+        region: None,
         study_revision: 7,
         phase: "select",
         card: None,
@@ -99,6 +101,8 @@ fn statedto_select_phase_wire_shape() {
 fn statedto_review_phase_wire_shape() {
     let dto = StateDto {
         kind: "review",
+        topology: Some("order".to_string()),
+        region: Some("intro".to_string()),
         study_revision: 7,
         phase: "review",
         card: Some(CardDto {
@@ -115,7 +119,7 @@ fn statedto_review_phase_wire_shape() {
             context_units: Vec::new(),
             back: vec!["every value has one owner".to_string()],
             back_runs: vec![crate::inline::parse_inline("every value has one owner")],
-            back_units: vec![NoteUnit::Sentence {
+            back_units: vec![ContentUnit::Sentence {
                 text: "every value has one owner".to_string(),
                 runs: crate::inline::parse_inline("every value has one owner"),
             }],
@@ -129,14 +133,14 @@ fn statedto_review_phase_wire_shape() {
             note: vec![NoteDto {
                 badge: Some(crate::card::Badge::Note),
                 units: vec![
-                NoteUnit::Sentence {
+                ContentUnit::Sentence {
                     text: "Ownership frees memory deterministically.".to_string(),
                     runs: crate::inline::parse_inline("Ownership frees memory deterministically."),
                 },
-                NoteUnit::Code {
+                ContentUnit::Code {
                     lines: vec!["let s = String::new();".to_string()],
                 },
-                NoteUnit::Checklist {
+                ContentUnit::Checklist {
                     items: vec![
                         ChecklistItem {
                             checked: true,
@@ -367,6 +371,8 @@ fn statedto_review_phase_wire_shape() {
             "met_total": 4,
             "deck_total": 9,
             "label": "rust.md",
+            "topology": "order",
+            "region": "intro",
             "save_error": "progress/deck-rust1.json: stale progress revision 3; disk is at 4",
             "load_warnings": ["2 frozen diagram(s) did not resolve and fall back to source; run `alix doctor` for details"]
         }),
@@ -377,6 +383,8 @@ fn statedto_review_phase_wire_shape() {
 fn statedto_done_phase_carries_the_next_due_instant() {
     let dto = StateDto {
         kind: "review",
+        topology: None,
+        region: None,
         study_revision: 7,
         phase: "done",
         card: None,
@@ -450,6 +458,8 @@ fn statedto_done_phase_carries_the_next_due_instant() {
 fn statedto_done_phase_carries_the_recognize_gap() {
     let dto = StateDto {
         kind: "review",
+        topology: None,
+        region: None,
         study_revision: 7,
         phase: "done",
         card: None,
@@ -554,11 +564,6 @@ fn walkdto_predict_phase_wire_shape() {
         point_runs: Vec::new(),
         note: None,
         note_runs: None,
-        auto_grade: false,
-        thinking: false,
-        verdict: None,
-        feedback: None,
-        grade_error: None,
         summary: None,
     };
     pin(
@@ -588,11 +593,6 @@ fn walkdto_predict_phase_wire_shape() {
             "point_runs": [],
             "note": null,
             "note_runs": null,
-            "auto_grade": false,
-            "thinking": false,
-            "verdict": null,
-            "feedback": null,
-            "grade_error": null,
             "summary": null
         }),
     );
@@ -632,11 +632,6 @@ fn walkdto_done_phase_wire_shape() {
         point_runs: vec![crate::inline::parse_inline("amortized doubling")],
         note: Some("see also Vec".to_string()),
         note_runs: Some(crate::inline::parse_inline("see also Vec")),
-        auto_grade: true,
-        thinking: false,
-        verdict: Some("partly"),
-        feedback: Some("half right".to_string()),
-        grade_error: None,
         summary: Some(SummaryDto {
             passed: 1,
             partly: 1,
@@ -675,11 +670,6 @@ fn walkdto_done_phase_wire_shape() {
             "point_runs": [[{"text": "amortized doubling"}]],
             "note": "see also Vec",
             "note_runs": [{"text": "see also Vec"}],
-            "auto_grade": true,
-            "thinking": false,
-            "verdict": "partly",
-            "feedback": "half right",
-            "grade_error": null,
             "summary": {"passed": 1, "partly": 1, "failed": 1, "weak": [2, 3], "total": 3}
         }),
     );
@@ -923,7 +913,8 @@ fn carddto_section_bare_math_is_one_display_sentence() {
     let cards = crate::parser::parse_str("t", text).expect("the fixture parses");
     let dto = card_dto(crate::review::CardView::from(&cards[0]), None);
 
-    let [crate::render::NoteUnit::Sentence { text, runs }] = dto.section_context_units.as_slice()
+    let [crate::render::ContentUnit::Sentence { text, runs }] =
+        dto.section_context_units.as_slice()
     else {
         panic!(
             "the closed section block must be one display sentence: {:?}",
@@ -953,7 +944,7 @@ fn carddto_wire_shape() {
                 crate::inline::parse_inline("Use `**x**`"),
                 crate::inline::parse_inline("*France*"),
             ],
-            back_units: vec![NoteUnit::Sentence {
+            back_units: vec![ContentUnit::Sentence {
                 text: "Use **x** France".to_string(),
                 runs: crate::inline::parse_inline("Use `**x**` *France*"),
             }],
@@ -970,7 +961,7 @@ fn carddto_wire_shape() {
             reshaped: false,
             note: vec![crate::review::NoteView {
                 badge: Some(crate::card::Badge::Note),
-                units: vec![NoteUnit::Sentence {
+                units: vec![ContentUnit::Sentence {
                     text: "A **city**.".to_string(),
                     runs: crate::inline::parse_inline("A **city**."),
                 }],
@@ -1097,7 +1088,7 @@ fn carddto_math_wire_shape() {
         context_units: Vec::new(),
         back: vec![r"\frac{1".to_string()],
         back_runs: vec![vec![error]],
-        back_units: vec![NoteUnit::Sentence {
+        back_units: vec![ContentUnit::Sentence {
             text: r"\frac{1".to_string(),
             runs: vec![InlineRun {
                 text: r"\frac{1".to_string(),
@@ -1200,12 +1191,12 @@ fn carddto_quote_wire_shape() {
             crate::inline::parse_inline("> but never to show their absence."),
         ],
         back_units: vec![
-            NoteUnit::Sentence {
+            ContentUnit::Sentence {
                 text: "That it shows the presence of bugs.".to_string(),
                 runs: crate::inline::parse_inline("That it shows the presence of bugs."),
             },
-            NoteUnit::Quote {
-                units: vec![NoteUnit::Sentence {
+            ContentUnit::Quote {
+                units: vec![ContentUnit::Sentence {
                     text: "Program testing can be used to show the presence of bugs, but never to show their absence.".to_string(),
                     runs: crate::inline::parse_inline("Program testing can be used to show the presence of bugs, but never to show their absence."),
                 }],
@@ -1219,7 +1210,7 @@ fn carddto_quote_wire_shape() {
             AnswerStep::Quote {
                 back_from: 1,
                 back_to: 3,
-                units: vec![NoteUnit::Sentence {
+                units: vec![ContentUnit::Sentence {
                     text: "Program testing can be used to show the presence of bugs, but never to show their absence.".to_string(),
                     runs: crate::inline::parse_inline("Program testing can be used to show the presence of bugs, but never to show their absence."),
                 }],
@@ -1315,7 +1306,7 @@ fn carddto_table_wire_shape() {
             crate::inline::parse_inline("| --- | :-- | :-: | --: |"),
             crate::inline::parse_inline("| 1 | **2** | 3 |"),
         ],
-        back_units: vec![NoteUnit::Table {
+        back_units: vec![ContentUnit::Table {
             aligns: vec![
                 CellAlign::None,
                 CellAlign::Left,
@@ -1711,7 +1702,7 @@ fn browsedto_wire_shape() {
             context_units: Vec::new(),
             back: vec!["a".to_string()],
             back_runs: vec![crate::inline::parse_inline("a")],
-            back_units: vec![NoteUnit::Sentence {
+            back_units: vec![ContentUnit::Sentence {
                 text: "a".to_string(),
                 runs: crate::inline::parse_inline("a"),
             }],
@@ -2576,7 +2567,7 @@ fn carddto_diagram_wire_shape() {
         &mut crate::inline::DisplayProjector::default(),
     );
     let dto = super::dto::card_dto(view, Some("card-9w2c7xkq4m".to_string()));
-    let NoteUnit::Diagram { src, .. } = &dto.back_units[0] else {
+    let ContentUnit::Diagram { src, .. } = &dto.back_units[0] else {
         panic!(
             "the fence slot holds the diagram unit: {:?}",
             dto.back_units
@@ -2618,7 +2609,7 @@ fn carddto_context_diagram_wire_shape() {
     let view =
         crate::review::CardView::project(&card, &mut crate::inline::DisplayProjector::default());
     let dto = super::dto::card_dto(view, Some("card-9w2c7xkq4m".to_string()));
-    let NoteUnit::Diagram { src, .. } = &dto.context_units[0] else {
+    let ContentUnit::Diagram { src, .. } = &dto.context_units[0] else {
         panic!(
             "the context fence slot holds the diagram unit: {:?}",
             dto.context_units
@@ -2686,7 +2677,7 @@ fn carddto_masked_context_diagram_wire_shape() {
     let view =
         crate::review::CardView::project(card, &mut crate::inline::DisplayProjector::default());
     let dto = super::dto::card_dto(view, Some("card-9w2c7xkq4m".to_string()));
-    let NoteUnit::Diagram { src, .. } = &dto.context_units[0] else {
+    let ContentUnit::Diagram { src, .. } = &dto.context_units[0] else {
         panic!("the masked fence projects: {:?}", dto.context_units);
     };
     let src = src.clone();

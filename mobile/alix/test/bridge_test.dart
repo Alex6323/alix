@@ -164,14 +164,14 @@ void main() {
     final noteRuns = <InlineRun>[];
     for (final unit in choiceCard.note.expand((note) => note.units)) {
       switch (unit) {
-        case NoteUnit_Sentence(:final runs):
+        case ContentUnit_Sentence(:final runs):
           noteRuns.addAll(runs);
-        case NoteUnit_Checklist(:final items):
+        case ContentUnit_Checklist(:final items):
           noteRuns.addAll(items.expand((item) => item.runs));
-        case NoteUnit_Code():
-        case NoteUnit_Diagram():
-        case NoteUnit_Table():
-        case NoteUnit_Quote():
+        case ContentUnit_Code():
+        case ContentUnit_Diagram():
+        case ContentUnit_Table():
+        case ContentUnit_Quote():
           break;
       }
     }
@@ -265,7 +265,7 @@ void main() {
       rootDir: root.path,
       nowMs: t0,
     ).state().card!;
-    final table = card.backUnits.whereType<NoteUnit_Table>().single;
+    final table = card.backUnits.whereType<ContentUnit_Table>().single;
     expect(table.aligns, [CellAlign.left, CellAlign.right]);
     expect(
       table.header.map((cell) => cell.map((run) => run.text).join()).toList(),

@@ -11,7 +11,7 @@ use crate::{
     depth::{Depth, depth_name},
     doctor, exam,
     inline::{DisplayProjector, InlineRun},
-    render::NoteUnit,
+    render::ContentUnit,
     review::{self, CardView},
     session::{Cell, now_ms},
     source::{Excerpt, relabel_for_display},
@@ -25,20 +25,20 @@ pub(super) struct CardDto {
     pub(super) front: String,
     pub(super) front_runs: Vec<InlineRun>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) front_units: Option<Vec<NoteUnit>>,
+    pub(super) front_units: Option<Vec<ContentUnit>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) section_context: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) section_context_runs: Vec<Vec<InlineRun>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(super) section_context_units: Vec<NoteUnit>,
+    pub(super) section_context_units: Vec<ContentUnit>,
     pub(super) context: Vec<String>,
     pub(super) context_leads: bool,
     pub(super) context_runs: Vec<Vec<InlineRun>>,
-    pub(super) context_units: Vec<NoteUnit>,
+    pub(super) context_units: Vec<ContentUnit>,
     pub(super) back: Vec<String>,
     pub(super) back_runs: Vec<Vec<InlineRun>>,
-    pub(super) back_units: Vec<NoteUnit>,
+    pub(super) back_units: Vec<ContentUnit>,
     pub(super) answer_steps: Vec<crate::render::AnswerStep>,
     pub(super) reshaped: bool,
     pub(super) note: Vec<NoteDto>,
@@ -54,7 +54,7 @@ pub(super) struct CardDto {
 pub(super) struct NoteDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) badge: Option<crate::card::Badge>,
-    pub(super) units: Vec<NoteUnit>,
+    pub(super) units: Vec<ContentUnit>,
 }
 
 #[derive(Debug, Serialize)]
@@ -146,6 +146,12 @@ pub(super) struct StateDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) recognize_gap: Option<crate::session::RecognizeGap>,
     pub(super) label: String,
+    /// The sitting's scope, so a client that re-selects this deck can ask for
+    /// the same slice instead of silently widening to the whole deck.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) topology: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) region: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) save_error: Option<String>,
     /// Deck-load diagnostics for the open session (a stamped diagram that
@@ -851,11 +857,6 @@ pub(super) struct WalkDto {
     pub(super) point_runs: Vec<Vec<InlineRun>>,
     pub(super) note: Option<String>,
     pub(super) note_runs: Option<Vec<InlineRun>>,
-    pub(super) auto_grade: bool,
-    pub(super) thinking: bool,
-    pub(super) verdict: Option<&'static str>,
-    pub(super) feedback: Option<String>,
-    pub(super) grade_error: Option<String>,
     pub(super) summary: Option<SummaryDto>,
 }
 
@@ -929,11 +930,6 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
         point_runs: Vec::new(),
         note: None,
         note_runs: None,
-        auto_grade: w.grade.is_some(),
-        thinking: w.pending.is_some(),
-        verdict: w.grade_result.as_ref().map(|(d, _)| delta_name(*d)),
-        feedback: w.grade_result.as_ref().map(|(_, f)| f.clone()),
-        grade_error: w.grade_error.clone(),
         summary: None,
     };
 
@@ -1070,6 +1066,8 @@ pub(super) fn review_state(
             deck_total: 0,
             recognize_gap: None,
             label: "select decks".to_string(),
+            topology: None,
+            region: None,
             save_error: save_error.map(str::to_string),
             load_warnings: Vec::new(),
         };
@@ -1117,7 +1115,8 @@ pub(super) fn review_state(
                         .map(|(rg, cur)| (t, rg, cur))
                 })
         {
-            let locked = session.locks(store).locked_ids(session.cards());
+            let locks = session.locks(store);
+            let locked = locks.locked_ids_everywhere();
             dto.crumb = Some(CrumbDto {
                 regions: regions.into_iter().map(str::to_string).collect(),
                 current,
@@ -1127,7 +1126,7 @@ pub(super) fn review_state(
                     .map(|reg| {
                         crate::session::card_cells(
                             &reg.cards,
-                            &locked,
+                            locked,
                             store,
                             now_ms(),
                             session.retire_after_days(),
@@ -1200,6 +1199,8 @@ pub(super) fn review_state(
         deck_total: s.deck_total,
         recognize_gap: s.recognize_gap,
         label: r.label.clone(),
+        topology: r.topology_name.clone(),
+        region: r.region_name.clone(),
         save_error: save_error.map(str::to_string),
         load_warnings: r.load_warnings.clone(),
     }
@@ -1282,18 +1283,18 @@ pub(super) fn deck_drawer_dto(
 /// A Diagram unit's lib-side `src` is an absolute file path (the mobile
 /// projection reads it directly); over HTTP it becomes the same opaque
 /// `/img/<key>` URL every card image uses.
-fn web_units(units: Vec<crate::render::NoteUnit>) -> Vec<crate::render::NoteUnit> {
+fn web_units(units: Vec<crate::render::ContentUnit>) -> Vec<crate::render::ContentUnit> {
     units
         .into_iter()
         .map(|unit| match unit {
-            crate::render::NoteUnit::Diagram {
+            crate::render::ContentUnit::Diagram {
                 src,
                 width,
                 height,
                 alt,
                 regions,
                 revealed_alt,
-            } => crate::render::NoteUnit::Diagram {
+            } => crate::render::ContentUnit::Diagram {
                 src: format!("/img/{}", img_key(Path::new(&src))),
                 width,
                 height,

@@ -1,5 +1,4 @@
 {
-  "auto_grade": true,
   "current": 3,
   "description": "how a String grows",
   "description_runs": [
@@ -18,10 +17,8 @@
     "truncated": true
   },
   "excerpt_error": null,
-  "feedback": "half right",
   "given_runs": [],
   "givens": [],
-  "grade_error": null,
   "kind": "walk",
   "locator": null,
   "note": "see also Vec",
@@ -62,7 +59,5 @@
       3
     ]
   },
-  "thinking": false,
-  "total": 3,
-  "verdict": "partly"
+  "total": 3
 }

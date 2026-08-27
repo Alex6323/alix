@@ -7,7 +7,7 @@ use crate::{
     choice::{self, ChoiceQuestion},
     depth::{self, Depth},
     inline::{DisplayProjector, InlineRun},
-    render::{self, NoteUnit},
+    render::{self, ContentUnit},
     session::{self, Session},
     store::Store,
 };
@@ -67,7 +67,7 @@ pub struct ImageView {
 pub struct NoteView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub badge: Option<crate::card::Badge>,
-    pub units: Vec<NoteUnit>,
+    pub units: Vec<ContentUnit>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -76,7 +76,7 @@ pub struct CardView {
     #[serde(default)]
     pub front_runs: Vec<InlineRun>,
     #[serde(default)]
-    pub front_units: Option<Vec<NoteUnit>>,
+    pub front_units: Option<Vec<ContentUnit>>,
     /// The card's section: its `# ` heading and that section's prose, shown
     /// only on demand. Image syntax inside it stays prose.
     #[serde(default)]
@@ -85,7 +85,7 @@ pub struct CardView {
     pub section_context_runs: Vec<Vec<InlineRun>>,
     /// Fence-shaped units only, in fence order, exactly as `context_units`.
     #[serde(default)]
-    pub section_context_units: Vec<NoteUnit>,
+    pub section_context_units: Vec<ContentUnit>,
     pub context: Vec<String>,
     #[serde(default)]
     pub context_leads: bool,
@@ -94,12 +94,12 @@ pub struct CardView {
     /// The context's fence-shaped units only, in fence order (the nth raw
     /// fence consumes the nth unit); context prose keeps its line rendering.
     #[serde(default)]
-    pub context_units: Vec<NoteUnit>,
+    pub context_units: Vec<ContentUnit>,
     pub back: Vec<String>,
     #[serde(default)]
     pub back_runs: Vec<Vec<InlineRun>>,
     #[serde(default)]
-    pub back_units: Vec<NoteUnit>,
+    pub back_units: Vec<ContentUnit>,
     /// The steps a client walks the answer in: one per gradeable line, one
     /// per quotation run. Reveal counts every step; typing counts only the
     /// gradeable ones.
@@ -782,7 +782,7 @@ mod tests {
             "the rust fence is one unit: {:?}",
             view.section_context_units
         );
-        let NoteUnit::Code { lines } = &view.section_context_units[0] else {
+        let ContentUnit::Code { lines } = &view.section_context_units[0] else {
             panic!(
                 "a section fence is code, never a diagram: {:?}",
                 view.section_context_units
@@ -793,7 +793,7 @@ mod tests {
             !view
                 .section_context_units
                 .iter()
-                .any(|unit| matches!(unit, NoteUnit::Diagram { .. })),
+                .any(|unit| matches!(unit, ContentUnit::Diagram { .. })),
             "nothing freezes a section fence, so it can never resolve to media"
         );
         assert!(
@@ -955,7 +955,7 @@ mod tests {
             card.note,
             [NoteView {
                 badge: Some(crate::card::Badge::Note),
-                units: vec![NoteUnit::Sentence {
+                units: vec![ContentUnit::Sentence {
                     text: "a note line".into(),
                     runs: crate::inline::parse_inline("a note line"),
                 }],
@@ -1076,7 +1076,7 @@ mod tests {
         assert!(view.back_runs[0][0].math.as_ref().unwrap().display);
         assert_eq!(view.back[2], "$x^2$");
         assert!(view.back_runs[2].iter().all(|run| run.math.is_none()));
-        let [NoteUnit::Sentence { runs, .. }] = view.note[0].units.as_slice() else {
+        let [ContentUnit::Sentence { runs, .. }] = view.note[0].units.as_slice() else {
             panic!("note should remain a sentence");
         };
         assert!(runs.iter().any(|run| run.math.is_some()));
@@ -1108,11 +1108,11 @@ mod tests {
             [NoteView {
                 badge: Some(crate::card::Badge::Note),
                 units: vec![
-                    NoteUnit::Sentence {
+                    ContentUnit::Sentence {
                         text: "Intro here.".into(),
                         runs: crate::inline::parse_inline("Intro here."),
                     },
-                    NoteUnit::Code {
+                    ContentUnit::Code {
                         lines: vec!["let x = 1;".into()]
                     },
                 ],
@@ -2260,7 +2260,7 @@ mod tests {
             .expect("the card asking the Cache label");
         card.resolved_diagrams = vec![masked_fence_geometry(Vec::new())];
         let view = CardView::from(&*card);
-        let NoteUnit::Diagram {
+        let ContentUnit::Diagram {
             regions,
             alt,
             revealed_alt,
@@ -2317,7 +2317,7 @@ mod tests {
         card.resolved_diagrams = vec![masked_fence_geometry(Vec::new())];
         let view = CardView::from(&*card);
         assert!(
-            matches!(&view.context_units[0], NoteUnit::Code { .. }),
+            matches!(&view.context_units[0], ContentUnit::Code { .. }),
             "an id-position span never masks a box: {:?}",
             view.context_units
         );
@@ -2345,7 +2345,7 @@ mod tests {
         }])];
         let view = CardView::from(&*card);
         assert!(
-            matches!(&view.context_units[0], NoteUnit::Code { .. }),
+            matches!(&view.context_units[0], ContentUnit::Code { .. }),
             "an out-of-bounds unrelated range falls back: {:?}",
             view.context_units
         );

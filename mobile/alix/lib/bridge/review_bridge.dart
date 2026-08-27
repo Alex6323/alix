@@ -283,14 +283,14 @@ ReviewImageModel _imageFromBridge(bridge.ImageView image) {
   );
 }
 
-ReviewNoteUnitModel _noteFromBridge(bridge.NoteUnit unit) {
+ReviewContentUnitModel _noteFromBridge(bridge.ContentUnit unit) {
   return switch (unit) {
-    bridge.NoteUnit_Sentence(:final text, :final runs) => ReviewSentenceModel(
+    bridge.ContentUnit_Sentence(:final text, :final runs) => ReviewSentenceModel(
       text: text,
       runs: inlineRunsFromBridge(runs),
     ),
-    bridge.NoteUnit_Code(:final lines) => ReviewCodeModel(lines),
-    bridge.NoteUnit_Diagram(
+    bridge.ContentUnit_Code(:final lines) => ReviewCodeModel(lines),
+    bridge.ContentUnit_Diagram(
       :final src,
       :final width,
       :final height,
@@ -306,7 +306,7 @@ ReviewNoteUnitModel _noteFromBridge(bridge.NoteUnit unit) {
         regions: [for (final region in regions) _regionFromBridge(region)],
         revealedAlt: revealedAlt,
       ),
-    bridge.NoteUnit_Checklist(:final items) => ReviewChecklistModel([
+    bridge.ContentUnit_Checklist(:final items) => ReviewChecklistModel([
       for (final item in items)
         ReviewChecklistItemModel(
           checked: item.checked,
@@ -314,7 +314,7 @@ ReviewNoteUnitModel _noteFromBridge(bridge.NoteUnit unit) {
           runs: inlineRunsFromBridge(item.runs),
         ),
     ]),
-    bridge.NoteUnit_Table(:final aligns, :final header, :final rows) =>
+    bridge.ContentUnit_Table(:final aligns, :final header, :final rows) =>
       ReviewTableModel(
         aligns: [for (final align in aligns) _cellAlignFromBridge(align)],
         header: [for (final cell in header) inlineRunsFromBridge(cell)],
@@ -323,7 +323,7 @@ ReviewNoteUnitModel _noteFromBridge(bridge.NoteUnit unit) {
             [for (final cell in row) inlineRunsFromBridge(cell)],
         ],
       ),
-    bridge.NoteUnit_Quote(:final units) => ReviewQuoteModel([
+    bridge.ContentUnit_Quote(:final units) => ReviewQuoteModel([
       for (final unit in units) _noteFromBridge(unit),
     ]),
   };

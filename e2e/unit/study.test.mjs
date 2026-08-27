@@ -55,10 +55,12 @@ function summaryHarness(state, pending) {
   const chips = [];
   const ticks = [];
   const calls = [];
+  const posts = [];
   let study;
   study = createStudy({
-    api: async (path) => {
+    api: async (path, init) => {
       calls.push(path);
+      posts.push(init);
       return pending;
     },
     post: (body) => ({ method: "POST", body }),
@@ -105,7 +107,7 @@ function summaryHarness(state, pending) {
       .filter((c) => c.cls === "row")
       .map((r) => ({ label: r.children[0].textContent, value: r.children[1].textContent }));
   const continueChip = () => chips.find((c) => c.textContent === "Continue");
-  return { study, note, rows, continueChip, tick: () => ticks[0](), calls };
+  return { study, note, rows, continueChip, chips, tick: () => ticks[0](), calls, posts };
 }
 
 const DONE = {
@@ -230,4 +232,31 @@ test("the badge names provenance and the interaction actually on screen", () => 
   for (const [state, want] of cases) {
     assert.equal(modeTag(state), want, `badge for ${JSON.stringify(state)}`);
   }
+});
+
+test("the Recall chip carries the sitting's scope so a re-select cannot widen it", async () => {
+  const run = summaryHarness(
+    {
+      ...DONE,
+      topology: "order",
+      region: "intro",
+      recognize_gap: { recall: 4 },
+      exam_due: [],
+    },
+    DONE,
+  );
+
+  const recall = run.chips.find((c) => c.textContent === "Continue at Recall");
+  assert.ok(recall, "a drained sitting with a Recall gap offers the chip");
+
+  recall.onClick();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(run.calls[run.calls.length - 1], "/api/select");
+  assert.deepEqual(run.posts[run.posts.length - 1].body, {
+    deck: "deck.md",
+    topology: "order",
+    region: "intro",
+    depth: "recall",
+  });
 });

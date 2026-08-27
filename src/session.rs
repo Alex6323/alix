@@ -1066,6 +1066,7 @@ impl LockGraph {
 
     pub fn evaluate(&self, store: &Store) -> Locks {
         let mut blocks: HashMap<Arc<str>, HashSet<usize>> = HashMap::new();
+        let mut everywhere: HashSet<String> = HashSet::new();
         for (deck_id, gating) in &self.decks {
             // Ascending block line, so a parent is always decided before the
             // child that reads it and a locked chain propagates downward.
@@ -1077,13 +1078,14 @@ impl LockGraph {
                 let open = gating.get(&parent).is_some_and(|p| p.graduated(store));
                 if !open || locked.contains(&parent) {
                     locked.insert(*line);
+                    everywhere.extend(block.units.iter().cloned());
                 }
             }
             if !locked.is_empty() {
                 blocks.insert(Arc::clone(deck_id), locked);
             }
         }
-        Locks { blocks }
+        Locks { blocks, everywhere }
     }
 }
 
@@ -1091,6 +1093,7 @@ impl LockGraph {
 #[derive(Clone, Debug, Default)]
 pub struct Locks {
     blocks: HashMap<Arc<str>, HashSet<usize>>,
+    everywhere: HashSet<String>,
 }
 
 impl Locks {
@@ -1105,6 +1108,14 @@ impl Locks {
             .filter(|card| self.is_locked(card))
             .filter_map(|card| card.id())
             .collect()
+    }
+
+    /// Every locked card id across the COMPLETE decks the graph was built
+    /// from. A surface painting cards beyond the sitting's own slice (a crumb
+    /// over a topology's regions) must ask here: `locked_ids` answers only for
+    /// the cards handed to it, so an out-of-slice card comes back unlocked.
+    pub fn locked_ids_everywhere(&self) -> &HashSet<String> {
+        &self.everywhere
     }
 
     pub fn is_locked(&self, card: &Card) -> bool {

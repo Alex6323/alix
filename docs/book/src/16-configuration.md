@@ -188,10 +188,7 @@ settings:
 - **`[trace]`**: `alix generate`'s trace and plan passes: `model` defaults to
   unset, which resolves to the backend's strong model where it defines one
   (Claude: `opus`), and `effort` defaults to `"high"` (the build is
-  correctness-critical and amortized); also
-  `timeout_secs`. `auto_grade` (default `false`) has the model grade your typed
-  predictions during a [trace walk](13-trace-decks.md), a model call per hop,
-  at the `[ask]` tier.
+  correctness-critical and amortized); also `timeout_secs`.
 - **`[ai]`**: [`alix deck augment`](15-the-web-app.md#augmenting-a-deck-from-the-picker)'s
   generation targets: a `model` override, `distractor_count` (3),
   `variant_count` (4), `keypoint_count` (5), and `timeout_secs` (300, sized

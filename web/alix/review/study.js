@@ -1581,7 +1581,14 @@ export function createStudy({
     const deck = lastDeck ? lastDeck() : null;
     if (gap && gap.recall > 0 && deck) {
       chip("Continue at Recall", examDue.length ? "" : "primary", () => {
-        api("/api/select", post({ deck, depth: "recall" })).then(apply).catch(() => load());
+        // Carry the sitting's scope: a re-select without it silently widens a
+        // topology- or region-scoped session to the whole deck.
+        api("/api/select", post({
+          deck,
+          topology: state.topology || null,
+          region: state.region || null,
+          depth: "recall",
+        })).then(apply).catch(() => load());
       }, "enter");
     }
     if (gap && gap.unaugmented > 0 && deck && openAugment) {

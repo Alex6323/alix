@@ -25,8 +25,7 @@ use crate::{
     session::{Session, now_ms},
     share,
     source::SourceBase,
-    trace::{self, Delta, Walk},
-    trace_ai,
+    trace::{self, Walk},
 };
 
 pub(super) fn can_fetch_url_sources(cfg: &AskConfig) -> bool {
@@ -49,6 +48,7 @@ pub(super) struct Reviewing {
     pub(super) present_seq: u64,
     pub(super) original_fronts: HashMap<String, String>,
     pub(super) topology_name: Option<String>,
+    pub(super) region_name: Option<String>,
 }
 
 pub(super) struct Pending {
@@ -521,6 +521,7 @@ impl Reviewing {
             present_seq: now_ms(),
             original_fronts: HashMap::new(),
             topology_name: build.topology_name,
+            region_name: build.region_name,
         }
     }
 
@@ -1306,21 +1307,13 @@ impl Receiving {
 
 pub(super) struct Walking {
     pub(super) walk: Walk,
-    pub(super) grade: Option<AskConfig>,
-    pub(super) pending: Option<Receiver<Result<(Delta, String), String>>>,
-    pub(super) grade_result: Option<(Delta, String)>,
-    pub(super) grade_error: Option<String>,
     pub(super) ask: Ask,
 }
 
 impl Walking {
-    pub(super) fn new(walk: Walk, grade: Option<AskConfig>) -> Self {
+    pub(super) fn new(walk: Walk) -> Self {
         Walking {
             walk,
-            grade,
-            pending: None,
-            grade_result: None,
-            grade_error: None,
             ask: Ask::new(),
         }
     }
@@ -1415,48 +1408,6 @@ impl Walking {
 
     pub(super) fn ask_dto(&self, status: Option<String>, error: Option<String>) -> AskDto {
         self.ask.dto(status, error)
-    }
-
-    pub(super) fn start_grade(&mut self) {
-        self.clear_grade();
-        let Some(ask_cfg) = self.grade.as_ref() else {
-            return;
-        };
-        let Some(checkpoint) = self.walk.checkpoint() else {
-            return;
-        };
-        let prediction = self
-            .walk
-            .prediction(self.walk.current_index())
-            .unwrap_or("")
-            .to_string();
-        let rx = trace_ai::spawn_grade(checkpoint.clone(), prediction, ask_cfg.clone());
-        self.pending = Some(rx);
-    }
-
-    pub(super) fn poll(&mut self) {
-        let Some(rx) = &self.pending else { return };
-        match rx.try_recv() {
-            Ok(Ok((delta, feedback))) => {
-                self.grade_result = Some((delta, feedback));
-                self.pending = None;
-            }
-            Ok(Err(e)) => {
-                self.grade_error = Some(e);
-                self.pending = None;
-            }
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => {
-                self.grade_error = Some("the grading thread ended unexpectedly".to_string());
-                self.pending = None;
-            }
-        }
-    }
-
-    pub(super) fn clear_grade(&mut self) {
-        self.pending = None;
-        self.grade_result = None;
-        self.grade_error = None;
     }
 }
 

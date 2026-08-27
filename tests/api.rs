@@ -240,7 +240,6 @@ fn review_options(base: &str, auth: Option<String>) -> ReviewOptions {
         cfg: AssembleConfig {
             review: config.review,
             ask: config.ask,
-            trace_auto_grade: false,
             pacing: Pacing {
                 max_session: 10,
                 new_cards_percent: 30,
@@ -312,7 +311,6 @@ fn spawn_test_server_impl(
     // own state root.
     let opts = ReviewOptions {
         cfg: AssembleConfig {
-            trace_auto_grade: false,
             pacing: Pacing {
                 max_session: 10,
                 new_cards_percent: 30,
@@ -414,11 +412,9 @@ const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 /// [`TRACE_DECK`] (routed to a real `Walk` by the real
 /// classifier in `assemble::select`, for the walk and trace-exam families).
 ///
-/// `ask_command`, when `Some`, points `[ask] command` at a fake CLI — see this
-/// module's `fake_reply` — so a walk picked here auto-grades
-/// (`AssembleConfig::trace_auto_grade`) instead of self-grading; `None` keeps every AI
-/// path off (self-graded walk, no augmentation), which is what every non-AI
-/// test in this family wants.
+/// `ask_command`, when `Some`, points `[ask] command` at a fake CLI (see this
+/// module's `fake_reply`); `None` keeps every AI path off, which is what every
+/// non-AI test in this family wants.
 fn spawn_full_server(ask_command: Option<&Path>) -> (String, Guard) {
     spawn_full_server_fixture(ask_command, |_dir| {}, |_opts| {})
 }
@@ -493,12 +489,9 @@ fn spawn_full_server_fixture(
     }
     // A picked trace deck now walks (predict → verify) via the real
     // classifier/assembler (`assemble::select`) instead of a hand-rolled
-    // `build_walk` stub — `trace_auto_grade` reproduces what this fixture's
-    // old stub computed itself (`ask_command.is_some()`).
-    let auto_grade = ask_command.is_some();
+    // `build_walk` stub.
     let mut opts = ReviewOptions {
         cfg: AssembleConfig {
-            trace_auto_grade: auto_grade,
             pacing: Pacing {
                 max_session: 10,
                 new_cards_percent: 30,
@@ -5341,7 +5334,6 @@ fn selecting_a_trace_deck_returns_a_walk_dto_not_a_review_state() {
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!("walk", body["kind"], "body: {body}");
     assert_eq!("predict", body["phase"], "body: {body}");
-    assert_eq!(false, body["auto_grade"], "body: {body}");
     assert_eq!(1, body["current"], "body: {body}");
     assert_eq!(2, body["total"], "body: {body}");
     assert_eq!("Predict the first hop", body["prompt"], "body: {body}");
@@ -5404,37 +5396,6 @@ fn get_api_walk_with_no_active_walk_yields_409() {
     let resp = http(&base, "GET", "/api/walk", &[], &[]);
 
     assert_eq!(409, resp.status);
-}
-
-#[test]
-fn walk_predict_with_auto_grade_resolves_a_verdict_via_the_fake_backend() {
-    let _lock = exec_lock();
-    let scripts = TempDir::new().unwrap();
-    let fake = fake_reply(scripts.path(), "PASSED — you got hop one right.\n");
-    let (base, _guard) = spawn_full_server(Some(&fake));
-    let select_resp = post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
-    let select_body: serde_json::Value = serde_json::from_slice(&select_resp.body).unwrap();
-    assert_eq!(true, select_body["auto_grade"], "body: {select_body}");
-
-    post_json(
-        &base,
-        "/api/walk/predict",
-        r#"{"text":"it forwards the line along"}"#,
-    );
-
-    let body = poll_until(&base, "/api/walk", |b| !b["thinking"].as_bool().unwrap());
-    assert_eq!(Some("passed"), body["verdict"].as_str(), "body: {body}");
-    assert!(
-        body["feedback"].as_str().unwrap().contains("hop one right"),
-        "body: {body}"
-    );
-
-    // No client delta needed: the resolved AI verdict is used.
-    let resp = post_json(&base, "/api/walk/grade", "{}");
-    assert_eq!(200, resp.status);
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!("predict", body["phase"], "body: {body}");
-    assert_eq!(2, body["current"], "body: {body}");
 }
 
 // ── Share / Receive (the "wormhole not installed" error phase) ───────────
@@ -5528,7 +5489,6 @@ fn spawn_kids_server() -> (String, Guard) {
     let opts = ReviewOptions {
         audience: Audience::Kids,
         cfg: AssembleConfig {
-            trace_auto_grade: false,
             pacing: Pacing {
                 max_session: 10,
                 new_cards_percent: 30,
@@ -5577,8 +5537,7 @@ fn ask_card_draft_create_round_trips_a_learner_card_into_the_session() {
     // defined above at the `fn poll_until` declaration), a loop on the
     // `thinking` condition bounded by HANG_BUDGET, the same idiom
     // `exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_fake_backend`
-    // and `walk_predict_with_auto_grade_resolves_a_verdict_via_the_fake_backend`
-    // already use to wait on this exact kind of background ask/exam job.
+    // already uses to wait on this exact kind of background ask/exam job.
     let body = poll_until(&base, "/api/ask", |b| !b["thinking"].as_bool().unwrap());
     assert_eq!(
         1,

@@ -277,7 +277,7 @@ class ReviewCardView extends StatelessWidget {
   }
 
   Widget _unit(
-    ReviewNoteUnitModel unit,
+    ReviewContentUnitModel unit,
     AlixTokens tokens,
     TextStyle style,
     TextAlign textAlign,
@@ -302,7 +302,7 @@ class ReviewCardView extends StatelessWidget {
 
   /// A quoted block, its own units stacked behind a rule.
   Widget _quote(
-    List<ReviewNoteUnitModel> units,
+    List<ReviewContentUnitModel> units,
     AlixTokens tokens,
     TextStyle style,
     TextAlign textAlign,
@@ -633,7 +633,7 @@ class ReviewCardView extends StatelessWidget {
 
   Widget _answerUnits(
     BuildContext context,
-    List<ReviewNoteUnitModel> units,
+    List<ReviewContentUnitModel> units,
     AlixTokens tokens,
   ) {
     final style = TextStyle(
@@ -775,10 +775,10 @@ class ReviewCardView extends StatelessWidget {
 
   void _walkContextBlocks(
     List<String> lines,
-    List<ReviewNoteUnitModel> units, {
+    List<ReviewContentUnitModel> units, {
     required void Function(
       List<String> source,
-      ReviewNoteUnitModel? unit,
+      ReviewContentUnitModel? unit,
       bool closed,
     )
     onBlock,
@@ -835,10 +835,10 @@ class ReviewCardView extends StatelessWidget {
   /// earlier unit; it returns where the next pass resumes.
   int _walkFences(
     List<String> lines,
-    List<ReviewNoteUnitModel> units, {
+    List<ReviewContentUnitModel> units, {
     required void Function(
       List<String> code,
-      ReviewNoteUnitModel? unit,
+      ReviewContentUnitModel? unit,
       bool closed,
     )
     onFence,
@@ -1380,7 +1380,9 @@ class ReviewCardView extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.12),
-        border: Border.all(color: accent.withValues(alpha: 0.3)),
+        border: Border.all(
+          color: accent.withValues(alpha: badge == null ? 0.24 : 0.3),
+        ),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(

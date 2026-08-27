@@ -92,7 +92,7 @@ so is every client.
 - **A bare deck name that occurs in more than one container is a 400**
   (ambiguous) — use the qualified `<workspace>/<file>` key instead, which
   always resolves.
-- **The polling pattern** (ask, exam, augment, walk auto-grade): a POST kicks a
+- **The polling pattern** (ask, exam, augment): a POST kicks a
   background thread and returns immediately with `thinking`/`busy` true; poll
   the matching GET until it clears, then read `error` or the results. alix's
   own client polls at ~400 ms. `elapsed` (seconds, nullable) is progress
@@ -180,8 +180,7 @@ so is every client.
 `"predict"` → `"reveal"` → … → `"done"` *(closed)*. Submit a prediction with
 `POST /api/walk/predict {text}`; grade with `POST /api/walk/grade {delta}`
 where `delta` is a single key `"n"|"p"|"f"` (got it / partly / missed it —
-the same letters as the review grade keys). With
-auto-grade on, poll `GET /api/walk` while `thinking`. `POST /api/walk/restart`
+the same letters as the review grade keys). `POST /api/walk/restart`
 rewalks; `POST /api/walk/leave` exits and, like every closer, returns the
 picker `StateDto`.
 
@@ -587,7 +586,7 @@ first, same as a double `POST`.
 | GET | `/img/<key>` | image bytes (content type by extension); 404 unknown key |
 
 `<key>` is an opaque 16-hex hash; the URLs arrive inside `CardDto.images[]` /
-`images_back[]` `src`, in `diagram` content units' `src` (see NoteUnitDto),
+`images_back[]` `src`, in `diagram` content units' `src` (see ContentUnitDto),
 and `DeckItemDto.icon`. Unauthenticated (see §2). Part of the contract.
 Native clients need it to show card images.
 
@@ -626,6 +625,8 @@ The review-session payload; returned by every review action.
 | `met_total` / `deck_total` | number | The deck's lifetime standing, computed only at `done` (0 on a live session): how many of its cards carry any progress at all, out of how many it holds. Independent of the sitting, so a summary can place today's work against the whole deck. |
 | `recognize_gap` | object? | Present only on a `done` Recognize sitting that excluded cards (Recognize schedules pick-capable cards only, so `due_left`/`new_left` cannot see them): `{recall, unaugmented}` — how many of the deck's cards are workable at Recall right now, and how many can build no pick at all. The summary points at those two exits (continue at Recall / augment choices) instead of claiming nothing is due. Absent everywhere else. |
 | `label` | string | Session header label *(presentational)*. |
+| `topology` | string? | The review order this sitting was opened under, absent when none. A client re-selecting this deck echoes it back so the scope survives. |
+| `region` | string? | The region within `topology` this sitting was scoped to, absent when the whole order is in play. Echo it back with `topology`. |
 | `save_error` | string? | Absent while saving works. Set (human-readable reason) once session progress can no longer be persisted, e.g. another writer replaced this deck's progress document; it stays set until a save succeeds, so clients should show it persistently and advise reopening the deck. |
 | `load_warnings` | [string] | Deck-load diagnostics for the open session (absent when none): a stamped diagram that did not resolve falls back to source at review, and this is the loud trace of it. Clients surface it once at session open. |
 
@@ -639,17 +640,17 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `id` | string? | The card's prefixed id (`card-<token>`, `card-<token>-N` for a cloze hole, `card-<token>-r` for a reversed twin), the same spelling `CreateCardResp` returns. Null for a card that carries no id marker yet. Clients compare it to tell whether the served card actually changed, and send it back on `POST /api/choose`; it is stable across edits to the card's text. |
 | `front` | string | The question's plain-text content, with inline Markdown markers stripped. |
 | `front_runs` | [InlineRun] | Display projection of `front`. |
-| `front_units` | [NoteUnitDto]? | Present when the front contains a task list, fenced code, a pipe table, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. |
+| `front_units` | [ContentUnitDto]? | Present when the front contains a task list, fenced code, a pipe table, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. |
 | `section_context` | [string] | The card's section: its `# ` heading and that section's prose, in file order. Present only when the card sits under a section; omitted when empty. It explains the card and is NEVER the question, so a client shows it only on demand and never by default. Image syntax inside it is prose, not a media element. |
 | `section_context_runs` | [[InlineRun]] | Display projection per section line, same shape as `context_runs`. |
-| `section_context_units` | [NoteUnitDto] | The section's structural blocks in source order: one unit per raw fence and per closed, nonempty bare-`$$` block. A math fence or bare-`$$` block yields a display-math `sentence`; other fences yield `code`. Nothing freezes a section's fence, so it never yields a `diagram`. An unmatched `$$` stays in the line projection and consumes no unit. A `***`/`___` break line renders as a horizontal rule; clients detect it from the line, so no unit carries it. |
+| `section_context_units` | [ContentUnitDto] | The section's structural blocks in source order: one unit per raw fence and per closed, nonempty bare-`$$` block. A math fence or bare-`$$` block yields a display-math `sentence`; other fences yield `code`. Nothing freezes a section's fence, so it never yields a `diagram`. An unmatched `$$` stays in the line projection and consumes no unit. A `***`/`___` break line renders as a horizontal rule; clients detect it from the line, so no unit carries it. |
 | `context` | [string] | Context lines: a cloze card's sentence, or a card table's title. |
 | `context_leads` | bool | True when `context` is the question and the front is a topic above it (cloze); false when `context` only labels the front, which keeps the lead (table title). |
 | `context_runs` | [[InlineRun]] | Display projection per cloze context line. |
-| `context_units` | [NoteUnitDto] | The context's structural blocks in source order: raw fences yield `code`, `diagram`, or display-math `sentence` units, and each closed, nonempty bare-`$$` block yields a display-math `sentence`. Context prose keeps its per-line rendering. An unmatched `$$` stays literal and consumes no unit. Empty when the context has no structural block. |
+| `context_units` | [ContentUnitDto] | The context's structural blocks in source order: raw fences yield `code`, `diagram`, or display-math `sentence` units, and each closed, nonempty bare-`$$` block yields a display-math `sentence`. Context prose keeps its per-line rendering. An unmatched `$$` stays literal and consumes no unit. Empty when the context has no structural block. |
 | `back` | [string] | Answer-line content with inline Markdown markers stripped (may be a reshaped view). |
 | `back_runs` | [[InlineRun]] | Display projection per answer line. |
-| `back_units` | [NoteUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, checklists, and pipe tables remain structural units. Full reveal renders these. |
+| `back_units` | [ContentUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, checklists, and pipe tables remain structural units. Full reveal renders these. |
 | `answer_steps` | [AnswerStepDto] | The steps a client walks the answer in: reveal counts every step, typing asks only the gradeable ones. Always present. |
 | `reshaped` | bool | `back` is the `format` augment's display shape. True only on a reveal mode: a typed mode is served the deck's AUTHORED answer, so `reshaped` is false there and `back` is what the check grades. |
 | `note` | [NoteDto] | Post-answer notes, in authored order. Empty when the card has none. |
@@ -668,7 +669,7 @@ first step is 0 while `back_to` of the last equals `back.length`.
 | kind | keys | meaning |
 | --- | --- | --- |
 | `line` | `back_from`, `back_to` | One gradeable answer line: the learner must produce it, and it spans exactly one wire line. |
-| `quote` | `back_from`, `back_to`, `units` | A quotation run: never typed, revealed as ONE step whatever it spans, and carrying its own `[NoteUnitDto]` so a client never parses quote syntax. |
+| `quote` | `back_from`, `back_to`, `units` | A quotation run: never typed, revealed as ONE step whatever it spans, and carrying its own `[ContentUnitDto]` so a client never parses quote syntax. |
 
 TWO counts, never one. `answer_steps.length` is what a line-by-line reveal
 walks; the number of `line` steps is how many fields a typed check asks for
@@ -688,7 +689,7 @@ become what they have to reproduce. Example payload:
 
 ### NoteDto
 
-One post-answer note. `units: [NoteUnitDto]` is its body, the same tagged
+One post-answer note. `units: [ContentUnitDto]` is its body, the same tagged
 union the other `*_units` fields carry. `badge: string?` is the GitHub alert
 badge that opened it, lowercased: one of `note`, `tip`, `important`,
 `warning`, `caution`. The key is ABSENT (never null) for a note no blockquote
@@ -765,7 +766,7 @@ Web clients may import SVG only from `MathView.svg`; authored `text` must never
 enter `innerHTML`. The artifact requires no CDN, runtime font, or client-side
 LaTeX renderer.
 
-### NoteUnitDto *(tagged union — its `kind` is unrelated to StateDto's)*
+### ContentUnitDto *(tagged union — its `kind` is unrelated to StateDto's)*
 
 `{"kind":"sentence", "text": string, "runs": [InlineRun]}`,
 `{"kind":"code", "lines": [string]}`,
@@ -774,7 +775,7 @@ LaTeX renderer.
 `{"kind":"checklist", "items": [ChecklistItemDto]}`, or
 `{"kind":"table", "aligns": [string], "header": [[InlineRun]],
 "rows": [[[InlineRun]]]}`, or
-`{"kind":"quote", "units": [NoteUnitDto]}`. Sentence `text` remains
+`{"kind":"quote", "units": [ContentUnitDto]}`. Sentence `text` remains
 the authored text; `runs` is its display projection. `ChecklistItemDto` is
 `{checked: bool, text: string, runs: [InlineRun]}`; `text` is the content
 projection and `runs` preserves inline formatting for display.
@@ -1184,11 +1185,6 @@ attempted and failed; one target's error doesn't stop the rest from running).
 | `point_runs` | [[InlineRun]] | Display projection of `points`, one run list per point. |
 | `note` | string? | |
 | `note_runs` | [InlineRun]? | Display projection of `note`; null with it. |
-| `auto_grade` | bool | AI judges the prediction. |
-| `thinking` | bool | Poll while an auto-grade is in flight. |
-| `verdict` | string? | The auto-grade's verdict: `passed` \| `partly` \| `failed` *(closed — the same tokens as `HopDto.delta`)*. |
-| `feedback` | string? | |
-| `grade_error` | string? | |
 | `summary` | SummaryDto? | Present at `done`. |
 
 ### HopDto

@@ -151,7 +151,7 @@ return quote(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( BigInt backFrom,  BigInt backTo)?  line,TResult Function( BigInt backFrom,  BigInt backTo,  List<NoteUnit> units)?  quote,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( BigInt backFrom,  BigInt backTo)?  line,TResult Function( BigInt backFrom,  BigInt backTo,  List<ContentUnit> units)?  quote,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case AnswerStep_Line() when line != null:
 return line(_that.backFrom,_that.backTo);case AnswerStep_Quote() when quote != null:
@@ -173,7 +173,7 @@ return quote(_that.backFrom,_that.backTo,_that.units);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( BigInt backFrom,  BigInt backTo)  line,required TResult Function( BigInt backFrom,  BigInt backTo,  List<NoteUnit> units)  quote,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( BigInt backFrom,  BigInt backTo)  line,required TResult Function( BigInt backFrom,  BigInt backTo,  List<ContentUnit> units)  quote,}) {final _that = this;
 switch (_that) {
 case AnswerStep_Line():
 return line(_that.backFrom,_that.backTo);case AnswerStep_Quote():
@@ -191,7 +191,7 @@ return quote(_that.backFrom,_that.backTo,_that.units);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( BigInt backFrom,  BigInt backTo)?  line,TResult? Function( BigInt backFrom,  BigInt backTo,  List<NoteUnit> units)?  quote,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( BigInt backFrom,  BigInt backTo)?  line,TResult? Function( BigInt backFrom,  BigInt backTo,  List<ContentUnit> units)?  quote,}) {final _that = this;
 switch (_that) {
 case AnswerStep_Line() when line != null:
 return line(_that.backFrom,_that.backTo);case AnswerStep_Quote() when quote != null:
@@ -275,13 +275,13 @@ as BigInt,
 
 
 class AnswerStep_Quote extends AnswerStep {
-  const AnswerStep_Quote({required this.backFrom, required this.backTo, required final  List<NoteUnit> units}): _units = units,super._();
+  const AnswerStep_Quote({required this.backFrom, required this.backTo, required final  List<ContentUnit> units}): _units = units,super._();
   
 
 @override final  BigInt backFrom;
 @override final  BigInt backTo;
- final  List<NoteUnit> _units;
- List<NoteUnit> get units {
+ final  List<ContentUnit> _units;
+ List<ContentUnit> get units {
   if (_units is EqualUnmodifiableListView) return _units;
   // ignore: implicit_dynamic_type
   return EqualUnmodifiableListView(_units);
@@ -318,7 +318,7 @@ abstract mixin class $AnswerStep_QuoteCopyWith<$Res> implements $AnswerStepCopyW
   factory $AnswerStep_QuoteCopyWith(AnswerStep_Quote value, $Res Function(AnswerStep_Quote) _then) = _$AnswerStep_QuoteCopyWithImpl;
 @override @useResult
 $Res call({
- BigInt backFrom, BigInt backTo, List<NoteUnit> units
+ BigInt backFrom, BigInt backTo, List<ContentUnit> units
 });
 
 
@@ -340,7 +340,7 @@ class _$AnswerStep_QuoteCopyWithImpl<$Res>
 backFrom: null == backFrom ? _self.backFrom : backFrom // ignore: cast_nullable_to_non_nullable
 as BigInt,backTo: null == backTo ? _self.backTo : backTo // ignore: cast_nullable_to_non_nullable
 as BigInt,units: null == units ? _self._units : units // ignore: cast_nullable_to_non_nullable
-as List<NoteUnit>,
+as List<ContentUnit>,
   ));
 }
 
@@ -348,7 +348,7 @@ as List<NoteUnit>,
 }
 
 /// @nodoc
-mixin _$NoteUnit {
+mixin _$ContentUnit {
 
 
 
@@ -356,7 +356,7 @@ mixin _$NoteUnit {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit);
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ContentUnit);
 }
 
 
@@ -365,20 +365,20 @@ int get hashCode => runtimeType.hashCode;
 
 @override
 String toString() {
-  return 'NoteUnit()';
+  return 'ContentUnit()';
 }
 
 
 }
 
 /// @nodoc
-class $NoteUnitCopyWith<$Res>  {
-$NoteUnitCopyWith(NoteUnit _, $Res Function(NoteUnit) __);
+class $ContentUnitCopyWith<$Res>  {
+$ContentUnitCopyWith(ContentUnit _, $Res Function(ContentUnit) __);
 }
 
 
-/// Adds pattern-matching-related methods to [NoteUnit].
-extension NoteUnitPatterns on NoteUnit {
+/// Adds pattern-matching-related methods to [ContentUnit].
+extension ContentUnitPatterns on ContentUnit {
 /// A variant of `map` that fallback to returning `orElse`.
 ///
 /// It is equivalent to doing:
@@ -391,15 +391,15 @@ extension NoteUnitPatterns on NoteUnit {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( NoteUnit_Sentence value)?  sentence,TResult Function( NoteUnit_Code value)?  code,TResult Function( NoteUnit_Diagram value)?  diagram,TResult Function( NoteUnit_Checklist value)?  checklist,TResult Function( NoteUnit_Table value)?  table,TResult Function( NoteUnit_Quote value)?  quote,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ContentUnit_Sentence value)?  sentence,TResult Function( ContentUnit_Code value)?  code,TResult Function( ContentUnit_Diagram value)?  diagram,TResult Function( ContentUnit_Checklist value)?  checklist,TResult Function( ContentUnit_Table value)?  table,TResult Function( ContentUnit_Quote value)?  quote,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
-case NoteUnit_Sentence() when sentence != null:
-return sentence(_that);case NoteUnit_Code() when code != null:
-return code(_that);case NoteUnit_Diagram() when diagram != null:
-return diagram(_that);case NoteUnit_Checklist() when checklist != null:
-return checklist(_that);case NoteUnit_Table() when table != null:
-return table(_that);case NoteUnit_Quote() when quote != null:
+case ContentUnit_Sentence() when sentence != null:
+return sentence(_that);case ContentUnit_Code() when code != null:
+return code(_that);case ContentUnit_Diagram() when diagram != null:
+return diagram(_that);case ContentUnit_Checklist() when checklist != null:
+return checklist(_that);case ContentUnit_Table() when table != null:
+return table(_that);case ContentUnit_Quote() when quote != null:
 return quote(_that);case _:
   return orElse();
 
@@ -418,15 +418,15 @@ return quote(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( NoteUnit_Sentence value)  sentence,required TResult Function( NoteUnit_Code value)  code,required TResult Function( NoteUnit_Diagram value)  diagram,required TResult Function( NoteUnit_Checklist value)  checklist,required TResult Function( NoteUnit_Table value)  table,required TResult Function( NoteUnit_Quote value)  quote,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ContentUnit_Sentence value)  sentence,required TResult Function( ContentUnit_Code value)  code,required TResult Function( ContentUnit_Diagram value)  diagram,required TResult Function( ContentUnit_Checklist value)  checklist,required TResult Function( ContentUnit_Table value)  table,required TResult Function( ContentUnit_Quote value)  quote,}){
 final _that = this;
 switch (_that) {
-case NoteUnit_Sentence():
-return sentence(_that);case NoteUnit_Code():
-return code(_that);case NoteUnit_Diagram():
-return diagram(_that);case NoteUnit_Checklist():
-return checklist(_that);case NoteUnit_Table():
-return table(_that);case NoteUnit_Quote():
+case ContentUnit_Sentence():
+return sentence(_that);case ContentUnit_Code():
+return code(_that);case ContentUnit_Diagram():
+return diagram(_that);case ContentUnit_Checklist():
+return checklist(_that);case ContentUnit_Table():
+return table(_that);case ContentUnit_Quote():
 return quote(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -441,15 +441,15 @@ return quote(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( NoteUnit_Sentence value)?  sentence,TResult? Function( NoteUnit_Code value)?  code,TResult? Function( NoteUnit_Diagram value)?  diagram,TResult? Function( NoteUnit_Checklist value)?  checklist,TResult? Function( NoteUnit_Table value)?  table,TResult? Function( NoteUnit_Quote value)?  quote,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ContentUnit_Sentence value)?  sentence,TResult? Function( ContentUnit_Code value)?  code,TResult? Function( ContentUnit_Diagram value)?  diagram,TResult? Function( ContentUnit_Checklist value)?  checklist,TResult? Function( ContentUnit_Table value)?  table,TResult? Function( ContentUnit_Quote value)?  quote,}){
 final _that = this;
 switch (_that) {
-case NoteUnit_Sentence() when sentence != null:
-return sentence(_that);case NoteUnit_Code() when code != null:
-return code(_that);case NoteUnit_Diagram() when diagram != null:
-return diagram(_that);case NoteUnit_Checklist() when checklist != null:
-return checklist(_that);case NoteUnit_Table() when table != null:
-return table(_that);case NoteUnit_Quote() when quote != null:
+case ContentUnit_Sentence() when sentence != null:
+return sentence(_that);case ContentUnit_Code() when code != null:
+return code(_that);case ContentUnit_Diagram() when diagram != null:
+return diagram(_that);case ContentUnit_Checklist() when checklist != null:
+return checklist(_that);case ContentUnit_Table() when table != null:
+return table(_that);case ContentUnit_Quote() when quote != null:
 return quote(_that);case _:
   return null;
 
@@ -467,14 +467,14 @@ return quote(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text,  List<InlineRun> runs)?  sentence,TResult Function( List<String> lines)?  code,TResult Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)?  diagram,TResult Function( List<ChecklistItem> items)?  checklist,TResult Function( List<CellAlign> aligns,  List<List<InlineRun>> header,  List<List<List<InlineRun>>> rows)?  table,TResult Function( List<NoteUnit> units)?  quote,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text,  List<InlineRun> runs)?  sentence,TResult Function( List<String> lines)?  code,TResult Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)?  diagram,TResult Function( List<ChecklistItem> items)?  checklist,TResult Function( List<CellAlign> aligns,  List<List<InlineRun>> header,  List<List<List<InlineRun>>> rows)?  table,TResult Function( List<ContentUnit> units)?  quote,required TResult orElse(),}) {final _that = this;
 switch (_that) {
-case NoteUnit_Sentence() when sentence != null:
-return sentence(_that.text,_that.runs);case NoteUnit_Code() when code != null:
-return code(_that.lines);case NoteUnit_Diagram() when diagram != null:
-return diagram(_that.src,_that.width,_that.height,_that.alt,_that.regions,_that.revealedAlt);case NoteUnit_Checklist() when checklist != null:
-return checklist(_that.items);case NoteUnit_Table() when table != null:
-return table(_that.aligns,_that.header,_that.rows);case NoteUnit_Quote() when quote != null:
+case ContentUnit_Sentence() when sentence != null:
+return sentence(_that.text,_that.runs);case ContentUnit_Code() when code != null:
+return code(_that.lines);case ContentUnit_Diagram() when diagram != null:
+return diagram(_that.src,_that.width,_that.height,_that.alt,_that.regions,_that.revealedAlt);case ContentUnit_Checklist() when checklist != null:
+return checklist(_that.items);case ContentUnit_Table() when table != null:
+return table(_that.aligns,_that.header,_that.rows);case ContentUnit_Quote() when quote != null:
 return quote(_that.units);case _:
   return orElse();
 
@@ -493,14 +493,14 @@ return quote(_that.units);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text,  List<InlineRun> runs)  sentence,required TResult Function( List<String> lines)  code,required TResult Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)  diagram,required TResult Function( List<ChecklistItem> items)  checklist,required TResult Function( List<CellAlign> aligns,  List<List<InlineRun>> header,  List<List<List<InlineRun>>> rows)  table,required TResult Function( List<NoteUnit> units)  quote,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text,  List<InlineRun> runs)  sentence,required TResult Function( List<String> lines)  code,required TResult Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)  diagram,required TResult Function( List<ChecklistItem> items)  checklist,required TResult Function( List<CellAlign> aligns,  List<List<InlineRun>> header,  List<List<List<InlineRun>>> rows)  table,required TResult Function( List<ContentUnit> units)  quote,}) {final _that = this;
 switch (_that) {
-case NoteUnit_Sentence():
-return sentence(_that.text,_that.runs);case NoteUnit_Code():
-return code(_that.lines);case NoteUnit_Diagram():
-return diagram(_that.src,_that.width,_that.height,_that.alt,_that.regions,_that.revealedAlt);case NoteUnit_Checklist():
-return checklist(_that.items);case NoteUnit_Table():
-return table(_that.aligns,_that.header,_that.rows);case NoteUnit_Quote():
+case ContentUnit_Sentence():
+return sentence(_that.text,_that.runs);case ContentUnit_Code():
+return code(_that.lines);case ContentUnit_Diagram():
+return diagram(_that.src,_that.width,_that.height,_that.alt,_that.regions,_that.revealedAlt);case ContentUnit_Checklist():
+return checklist(_that.items);case ContentUnit_Table():
+return table(_that.aligns,_that.header,_that.rows);case ContentUnit_Quote():
 return quote(_that.units);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -515,14 +515,14 @@ return quote(_that.units);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text,  List<InlineRun> runs)?  sentence,TResult? Function( List<String> lines)?  code,TResult? Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)?  diagram,TResult? Function( List<ChecklistItem> items)?  checklist,TResult? Function( List<CellAlign> aligns,  List<List<InlineRun>> header,  List<List<List<InlineRun>>> rows)?  table,TResult? Function( List<NoteUnit> units)?  quote,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text,  List<InlineRun> runs)?  sentence,TResult? Function( List<String> lines)?  code,TResult? Function( String src,  int width,  int height,  String alt,  List<RegionView> regions,  String? revealedAlt)?  diagram,TResult? Function( List<ChecklistItem> items)?  checklist,TResult? Function( List<CellAlign> aligns,  List<List<InlineRun>> header,  List<List<List<InlineRun>>> rows)?  table,TResult? Function( List<ContentUnit> units)?  quote,}) {final _that = this;
 switch (_that) {
-case NoteUnit_Sentence() when sentence != null:
-return sentence(_that.text,_that.runs);case NoteUnit_Code() when code != null:
-return code(_that.lines);case NoteUnit_Diagram() when diagram != null:
-return diagram(_that.src,_that.width,_that.height,_that.alt,_that.regions,_that.revealedAlt);case NoteUnit_Checklist() when checklist != null:
-return checklist(_that.items);case NoteUnit_Table() when table != null:
-return table(_that.aligns,_that.header,_that.rows);case NoteUnit_Quote() when quote != null:
+case ContentUnit_Sentence() when sentence != null:
+return sentence(_that.text,_that.runs);case ContentUnit_Code() when code != null:
+return code(_that.lines);case ContentUnit_Diagram() when diagram != null:
+return diagram(_that.src,_that.width,_that.height,_that.alt,_that.regions,_that.revealedAlt);case ContentUnit_Checklist() when checklist != null:
+return checklist(_that.items);case ContentUnit_Table() when table != null:
+return table(_that.aligns,_that.header,_that.rows);case ContentUnit_Quote() when quote != null:
 return quote(_that.units);case _:
   return null;
 
@@ -534,8 +534,8 @@ return quote(_that.units);case _:
 /// @nodoc
 
 
-class NoteUnit_Sentence extends NoteUnit {
-  const NoteUnit_Sentence({required this.text, required final  List<InlineRun> runs}): _runs = runs,super._();
+class ContentUnit_Sentence extends ContentUnit {
+  const ContentUnit_Sentence({required this.text, required final  List<InlineRun> runs}): _runs = runs,super._();
   
 
  final  String text;
@@ -547,17 +547,17 @@ class NoteUnit_Sentence extends NoteUnit {
 }
 
 
-/// Create a copy of NoteUnit
+/// Create a copy of ContentUnit
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-$NoteUnit_SentenceCopyWith<NoteUnit_Sentence> get copyWith => _$NoteUnit_SentenceCopyWithImpl<NoteUnit_Sentence>(this, _$identity);
+$ContentUnit_SentenceCopyWith<ContentUnit_Sentence> get copyWith => _$ContentUnit_SentenceCopyWithImpl<ContentUnit_Sentence>(this, _$identity);
 
 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit_Sentence&&(identical(other.text, text) || other.text == text)&&const DeepCollectionEquality().equals(other._runs, _runs));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ContentUnit_Sentence&&(identical(other.text, text) || other.text == text)&&const DeepCollectionEquality().equals(other._runs, _runs));
 }
 
 
@@ -566,15 +566,15 @@ int get hashCode => Object.hash(runtimeType,text,const DeepCollectionEquality().
 
 @override
 String toString() {
-  return 'NoteUnit.sentence(text: $text, runs: $runs)';
+  return 'ContentUnit.sentence(text: $text, runs: $runs)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $NoteUnit_SentenceCopyWith<$Res> implements $NoteUnitCopyWith<$Res> {
-  factory $NoteUnit_SentenceCopyWith(NoteUnit_Sentence value, $Res Function(NoteUnit_Sentence) _then) = _$NoteUnit_SentenceCopyWithImpl;
+abstract mixin class $ContentUnit_SentenceCopyWith<$Res> implements $ContentUnitCopyWith<$Res> {
+  factory $ContentUnit_SentenceCopyWith(ContentUnit_Sentence value, $Res Function(ContentUnit_Sentence) _then) = _$ContentUnit_SentenceCopyWithImpl;
 @useResult
 $Res call({
  String text, List<InlineRun> runs
@@ -585,17 +585,17 @@ $Res call({
 
 }
 /// @nodoc
-class _$NoteUnit_SentenceCopyWithImpl<$Res>
-    implements $NoteUnit_SentenceCopyWith<$Res> {
-  _$NoteUnit_SentenceCopyWithImpl(this._self, this._then);
+class _$ContentUnit_SentenceCopyWithImpl<$Res>
+    implements $ContentUnit_SentenceCopyWith<$Res> {
+  _$ContentUnit_SentenceCopyWithImpl(this._self, this._then);
 
-  final NoteUnit_Sentence _self;
-  final $Res Function(NoteUnit_Sentence) _then;
+  final ContentUnit_Sentence _self;
+  final $Res Function(ContentUnit_Sentence) _then;
 
-/// Create a copy of NoteUnit
+/// Create a copy of ContentUnit
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') $Res call({Object? text = null,Object? runs = null,}) {
-  return _then(NoteUnit_Sentence(
+  return _then(ContentUnit_Sentence(
 text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
 as String,runs: null == runs ? _self._runs : runs // ignore: cast_nullable_to_non_nullable
 as List<InlineRun>,
@@ -608,8 +608,8 @@ as List<InlineRun>,
 /// @nodoc
 
 
-class NoteUnit_Code extends NoteUnit {
-  const NoteUnit_Code({required final  List<String> lines}): _lines = lines,super._();
+class ContentUnit_Code extends ContentUnit {
+  const ContentUnit_Code({required final  List<String> lines}): _lines = lines,super._();
   
 
  final  List<String> _lines;
@@ -620,17 +620,17 @@ class NoteUnit_Code extends NoteUnit {
 }
 
 
-/// Create a copy of NoteUnit
+/// Create a copy of ContentUnit
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-$NoteUnit_CodeCopyWith<NoteUnit_Code> get copyWith => _$NoteUnit_CodeCopyWithImpl<NoteUnit_Code>(this, _$identity);
+$ContentUnit_CodeCopyWith<ContentUnit_Code> get copyWith => _$ContentUnit_CodeCopyWithImpl<ContentUnit_Code>(this, _$identity);
 
 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit_Code&&const DeepCollectionEquality().equals(other._lines, _lines));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ContentUnit_Code&&const DeepCollectionEquality().equals(other._lines, _lines));
 }
 
 
@@ -639,15 +639,15 @@ int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(
 
 @override
 String toString() {
-  return 'NoteUnit.code(lines: $lines)';
+  return 'ContentUnit.code(lines: $lines)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $NoteUnit_CodeCopyWith<$Res> implements $NoteUnitCopyWith<$Res> {
-  factory $NoteUnit_CodeCopyWith(NoteUnit_Code value, $Res Function(NoteUnit_Code) _then) = _$NoteUnit_CodeCopyWithImpl;
+abstract mixin class $ContentUnit_CodeCopyWith<$Res> implements $ContentUnitCopyWith<$Res> {
+  factory $ContentUnit_CodeCopyWith(ContentUnit_Code value, $Res Function(ContentUnit_Code) _then) = _$ContentUnit_CodeCopyWithImpl;
 @useResult
 $Res call({
  List<String> lines
@@ -658,17 +658,17 @@ $Res call({
 
 }
 /// @nodoc
-class _$NoteUnit_CodeCopyWithImpl<$Res>
-    implements $NoteUnit_CodeCopyWith<$Res> {
-  _$NoteUnit_CodeCopyWithImpl(this._self, this._then);
+class _$ContentUnit_CodeCopyWithImpl<$Res>
+    implements $ContentUnit_CodeCopyWith<$Res> {
+  _$ContentUnit_CodeCopyWithImpl(this._self, this._then);
 
-  final NoteUnit_Code _self;
-  final $Res Function(NoteUnit_Code) _then;
+  final ContentUnit_Code _self;
+  final $Res Function(ContentUnit_Code) _then;
 
-/// Create a copy of NoteUnit
+/// Create a copy of ContentUnit
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') $Res call({Object? lines = null,}) {
-  return _then(NoteUnit_Code(
+  return _then(ContentUnit_Code(
 lines: null == lines ? _self._lines : lines // ignore: cast_nullable_to_non_nullable
 as List<String>,
   ));
@@ -680,8 +680,8 @@ as List<String>,
 /// @nodoc
 
 
-class NoteUnit_Diagram extends NoteUnit {
-  const NoteUnit_Diagram({required this.src, required this.width, required this.height, required this.alt, required final  List<RegionView> regions, this.revealedAlt}): _regions = regions,super._();
+class ContentUnit_Diagram extends ContentUnit {
+  const ContentUnit_Diagram({required this.src, required this.width, required this.height, required this.alt, required final  List<RegionView> regions, this.revealedAlt}): _regions = regions,super._();
   
 
  final  String src;
@@ -697,17 +697,17 @@ class NoteUnit_Diagram extends NoteUnit {
 
  final  String? revealedAlt;
 
-/// Create a copy of NoteUnit
+/// Create a copy of ContentUnit
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-$NoteUnit_DiagramCopyWith<NoteUnit_Diagram> get copyWith => _$NoteUnit_DiagramCopyWithImpl<NoteUnit_Diagram>(this, _$identity);
+$ContentUnit_DiagramCopyWith<ContentUnit_Diagram> get copyWith => _$ContentUnit_DiagramCopyWithImpl<ContentUnit_Diagram>(this, _$identity);
 
 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit_Diagram&&(identical(other.src, src) || other.src == src)&&(identical(other.width, width) || other.width == width)&&(identical(other.height, height) || other.height == height)&&(identical(other.alt, alt) || other.alt == alt)&&const DeepCollectionEquality().equals(other._regions, _regions)&&(identical(other.revealedAlt, revealedAlt) || other.revealedAlt == revealedAlt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ContentUnit_Diagram&&(identical(other.src, src) || other.src == src)&&(identical(other.width, width) || other.width == width)&&(identical(other.height, height) || other.height == height)&&(identical(other.alt, alt) || other.alt == alt)&&const DeepCollectionEquality().equals(other._regions, _regions)&&(identical(other.revealedAlt, revealedAlt) || other.revealedAlt == revealedAlt));
 }
 
 
@@ -716,15 +716,15 @@ int get hashCode => Object.hash(runtimeType,src,width,height,alt,const DeepColle
 
 @override
 String toString() {
-  return 'NoteUnit.diagram(src: $src, width: $width, height: $height, alt: $alt, regions: $regions, revealedAlt: $revealedAlt)';
+  return 'ContentUnit.diagram(src: $src, width: $width, height: $height, alt: $alt, regions: $regions, revealedAlt: $revealedAlt)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $NoteUnit_DiagramCopyWith<$Res> implements $NoteUnitCopyWith<$Res> {
-  factory $NoteUnit_DiagramCopyWith(NoteUnit_Diagram value, $Res Function(NoteUnit_Diagram) _then) = _$NoteUnit_DiagramCopyWithImpl;
+abstract mixin class $ContentUnit_DiagramCopyWith<$Res> implements $ContentUnitCopyWith<$Res> {
+  factory $ContentUnit_DiagramCopyWith(ContentUnit_Diagram value, $Res Function(ContentUnit_Diagram) _then) = _$ContentUnit_DiagramCopyWithImpl;
 @useResult
 $Res call({
  String src, int width, int height, String alt, List<RegionView> regions, String? revealedAlt
@@ -735,17 +735,17 @@ $Res call({
 
 }
 /// @nodoc
-class _$NoteUnit_DiagramCopyWithImpl<$Res>
-    implements $NoteUnit_DiagramCopyWith<$Res> {
-  _$NoteUnit_DiagramCopyWithImpl(this._self, this._then);
+class _$ContentUnit_DiagramCopyWithImpl<$Res>
+    implements $ContentUnit_DiagramCopyWith<$Res> {
+  _$ContentUnit_DiagramCopyWithImpl(this._self, this._then);
 
-  final NoteUnit_Diagram _self;
-  final $Res Function(NoteUnit_Diagram) _then;
+  final ContentUnit_Diagram _self;
+  final $Res Function(ContentUnit_Diagram) _then;
 
-/// Create a copy of NoteUnit
+/// Create a copy of ContentUnit
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') $Res call({Object? src = null,Object? width = null,Object? height = null,Object? alt = null,Object? regions = null,Object? revealedAlt = freezed,}) {
-  return _then(NoteUnit_Diagram(
+  return _then(ContentUnit_Diagram(
 src: null == src ? _self.src : src // ignore: cast_nullable_to_non_nullable
 as String,width: null == width ? _self.width : width // ignore: cast_nullable_to_non_nullable
 as int,height: null == height ? _self.height : height // ignore: cast_nullable_to_non_nullable
@@ -762,8 +762,8 @@ as String?,
 /// @nodoc
 
 
-class NoteUnit_Checklist extends NoteUnit {
-  const NoteUnit_Checklist({required final  List<ChecklistItem> items}): _items = items,super._();
+class ContentUnit_Checklist extends ContentUnit {
+  const ContentUnit_Checklist({required final  List<ChecklistItem> items}): _items = items,super._();
   
 
  final  List<ChecklistItem> _items;
@@ -774,17 +774,17 @@ class NoteUnit_Checklist extends NoteUnit {
 }
 
 
-/// Create a copy of NoteUnit
+/// Create a copy of ContentUnit
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-$NoteUnit_ChecklistCopyWith<NoteUnit_Checklist> get copyWith => _$NoteUnit_ChecklistCopyWithImpl<NoteUnit_Checklist>(this, _$identity);
+$ContentUnit_ChecklistCopyWith<ContentUnit_Checklist> get copyWith => _$ContentUnit_ChecklistCopyWithImpl<ContentUnit_Checklist>(this, _$identity);
 
 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit_Checklist&&const DeepCollectionEquality().equals(other._items, _items));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ContentUnit_Checklist&&const DeepCollectionEquality().equals(other._items, _items));
 }
 
 
@@ -793,15 +793,15 @@ int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(
 
 @override
 String toString() {
-  return 'NoteUnit.checklist(items: $items)';
+  return 'ContentUnit.checklist(items: $items)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $NoteUnit_ChecklistCopyWith<$Res> implements $NoteUnitCopyWith<$Res> {
-  factory $NoteUnit_ChecklistCopyWith(NoteUnit_Checklist value, $Res Function(NoteUnit_Checklist) _then) = _$NoteUnit_ChecklistCopyWithImpl;
+abstract mixin class $ContentUnit_ChecklistCopyWith<$Res> implements $ContentUnitCopyWith<$Res> {
+  factory $ContentUnit_ChecklistCopyWith(ContentUnit_Checklist value, $Res Function(ContentUnit_Checklist) _then) = _$ContentUnit_ChecklistCopyWithImpl;
 @useResult
 $Res call({
  List<ChecklistItem> items
@@ -812,17 +812,17 @@ $Res call({
 
 }
 /// @nodoc
-class _$NoteUnit_ChecklistCopyWithImpl<$Res>
-    implements $NoteUnit_ChecklistCopyWith<$Res> {
-  _$NoteUnit_ChecklistCopyWithImpl(this._self, this._then);
+class _$ContentUnit_ChecklistCopyWithImpl<$Res>
+    implements $ContentUnit_ChecklistCopyWith<$Res> {
+  _$ContentUnit_ChecklistCopyWithImpl(this._self, this._then);
 
-  final NoteUnit_Checklist _self;
-  final $Res Function(NoteUnit_Checklist) _then;
+  final ContentUnit_Checklist _self;
+  final $Res Function(ContentUnit_Checklist) _then;
 
-/// Create a copy of NoteUnit
+/// Create a copy of ContentUnit
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') $Res call({Object? items = null,}) {
-  return _then(NoteUnit_Checklist(
+  return _then(ContentUnit_Checklist(
 items: null == items ? _self._items : items // ignore: cast_nullable_to_non_nullable
 as List<ChecklistItem>,
   ));
@@ -834,8 +834,8 @@ as List<ChecklistItem>,
 /// @nodoc
 
 
-class NoteUnit_Table extends NoteUnit {
-  const NoteUnit_Table({required final  List<CellAlign> aligns, required final  List<List<InlineRun>> header, required final  List<List<List<InlineRun>>> rows}): _aligns = aligns,_header = header,_rows = rows,super._();
+class ContentUnit_Table extends ContentUnit {
+  const ContentUnit_Table({required final  List<CellAlign> aligns, required final  List<List<InlineRun>> header, required final  List<List<List<InlineRun>>> rows}): _aligns = aligns,_header = header,_rows = rows,super._();
   
 
  final  List<CellAlign> _aligns;
@@ -860,17 +860,17 @@ class NoteUnit_Table extends NoteUnit {
 }
 
 
-/// Create a copy of NoteUnit
+/// Create a copy of ContentUnit
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-$NoteUnit_TableCopyWith<NoteUnit_Table> get copyWith => _$NoteUnit_TableCopyWithImpl<NoteUnit_Table>(this, _$identity);
+$ContentUnit_TableCopyWith<ContentUnit_Table> get copyWith => _$ContentUnit_TableCopyWithImpl<ContentUnit_Table>(this, _$identity);
 
 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit_Table&&const DeepCollectionEquality().equals(other._aligns, _aligns)&&const DeepCollectionEquality().equals(other._header, _header)&&const DeepCollectionEquality().equals(other._rows, _rows));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ContentUnit_Table&&const DeepCollectionEquality().equals(other._aligns, _aligns)&&const DeepCollectionEquality().equals(other._header, _header)&&const DeepCollectionEquality().equals(other._rows, _rows));
 }
 
 
@@ -879,15 +879,15 @@ int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(
 
 @override
 String toString() {
-  return 'NoteUnit.table(aligns: $aligns, header: $header, rows: $rows)';
+  return 'ContentUnit.table(aligns: $aligns, header: $header, rows: $rows)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $NoteUnit_TableCopyWith<$Res> implements $NoteUnitCopyWith<$Res> {
-  factory $NoteUnit_TableCopyWith(NoteUnit_Table value, $Res Function(NoteUnit_Table) _then) = _$NoteUnit_TableCopyWithImpl;
+abstract mixin class $ContentUnit_TableCopyWith<$Res> implements $ContentUnitCopyWith<$Res> {
+  factory $ContentUnit_TableCopyWith(ContentUnit_Table value, $Res Function(ContentUnit_Table) _then) = _$ContentUnit_TableCopyWithImpl;
 @useResult
 $Res call({
  List<CellAlign> aligns, List<List<InlineRun>> header, List<List<List<InlineRun>>> rows
@@ -898,17 +898,17 @@ $Res call({
 
 }
 /// @nodoc
-class _$NoteUnit_TableCopyWithImpl<$Res>
-    implements $NoteUnit_TableCopyWith<$Res> {
-  _$NoteUnit_TableCopyWithImpl(this._self, this._then);
+class _$ContentUnit_TableCopyWithImpl<$Res>
+    implements $ContentUnit_TableCopyWith<$Res> {
+  _$ContentUnit_TableCopyWithImpl(this._self, this._then);
 
-  final NoteUnit_Table _self;
-  final $Res Function(NoteUnit_Table) _then;
+  final ContentUnit_Table _self;
+  final $Res Function(ContentUnit_Table) _then;
 
-/// Create a copy of NoteUnit
+/// Create a copy of ContentUnit
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') $Res call({Object? aligns = null,Object? header = null,Object? rows = null,}) {
-  return _then(NoteUnit_Table(
+  return _then(ContentUnit_Table(
 aligns: null == aligns ? _self._aligns : aligns // ignore: cast_nullable_to_non_nullable
 as List<CellAlign>,header: null == header ? _self._header : header // ignore: cast_nullable_to_non_nullable
 as List<List<InlineRun>>,rows: null == rows ? _self._rows : rows // ignore: cast_nullable_to_non_nullable
@@ -922,29 +922,29 @@ as List<List<List<InlineRun>>>,
 /// @nodoc
 
 
-class NoteUnit_Quote extends NoteUnit {
-  const NoteUnit_Quote({required final  List<NoteUnit> units}): _units = units,super._();
+class ContentUnit_Quote extends ContentUnit {
+  const ContentUnit_Quote({required final  List<ContentUnit> units}): _units = units,super._();
   
 
- final  List<NoteUnit> _units;
- List<NoteUnit> get units {
+ final  List<ContentUnit> _units;
+ List<ContentUnit> get units {
   if (_units is EqualUnmodifiableListView) return _units;
   // ignore: implicit_dynamic_type
   return EqualUnmodifiableListView(_units);
 }
 
 
-/// Create a copy of NoteUnit
+/// Create a copy of ContentUnit
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-$NoteUnit_QuoteCopyWith<NoteUnit_Quote> get copyWith => _$NoteUnit_QuoteCopyWithImpl<NoteUnit_Quote>(this, _$identity);
+$ContentUnit_QuoteCopyWith<ContentUnit_Quote> get copyWith => _$ContentUnit_QuoteCopyWithImpl<ContentUnit_Quote>(this, _$identity);
 
 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is NoteUnit_Quote&&const DeepCollectionEquality().equals(other._units, _units));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ContentUnit_Quote&&const DeepCollectionEquality().equals(other._units, _units));
 }
 
 
@@ -953,18 +953,18 @@ int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(
 
 @override
 String toString() {
-  return 'NoteUnit.quote(units: $units)';
+  return 'ContentUnit.quote(units: $units)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $NoteUnit_QuoteCopyWith<$Res> implements $NoteUnitCopyWith<$Res> {
-  factory $NoteUnit_QuoteCopyWith(NoteUnit_Quote value, $Res Function(NoteUnit_Quote) _then) = _$NoteUnit_QuoteCopyWithImpl;
+abstract mixin class $ContentUnit_QuoteCopyWith<$Res> implements $ContentUnitCopyWith<$Res> {
+  factory $ContentUnit_QuoteCopyWith(ContentUnit_Quote value, $Res Function(ContentUnit_Quote) _then) = _$ContentUnit_QuoteCopyWithImpl;
 @useResult
 $Res call({
- List<NoteUnit> units
+ List<ContentUnit> units
 });
 
 
@@ -972,19 +972,19 @@ $Res call({
 
 }
 /// @nodoc
-class _$NoteUnit_QuoteCopyWithImpl<$Res>
-    implements $NoteUnit_QuoteCopyWith<$Res> {
-  _$NoteUnit_QuoteCopyWithImpl(this._self, this._then);
+class _$ContentUnit_QuoteCopyWithImpl<$Res>
+    implements $ContentUnit_QuoteCopyWith<$Res> {
+  _$ContentUnit_QuoteCopyWithImpl(this._self, this._then);
 
-  final NoteUnit_Quote _self;
-  final $Res Function(NoteUnit_Quote) _then;
+  final ContentUnit_Quote _self;
+  final $Res Function(ContentUnit_Quote) _then;
 
-/// Create a copy of NoteUnit
+/// Create a copy of ContentUnit
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') $Res call({Object? units = null,}) {
-  return _then(NoteUnit_Quote(
+  return _then(ContentUnit_Quote(
 units: null == units ? _self._units : units // ignore: cast_nullable_to_non_nullable
-as List<NoteUnit>,
+as List<ContentUnit>,
   ));
 }
 

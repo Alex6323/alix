@@ -77,22 +77,22 @@ class ReviewChecklistItemModel {
   final List<InlineRunModel> runs;
 }
 
-sealed class ReviewNoteUnitModel {
-  const ReviewNoteUnitModel();
+sealed class ReviewContentUnitModel {
+  const ReviewContentUnitModel();
 }
 
 /// One post-answer note. [badge] is the GitHub alert badge that opened it,
 /// null for a note no blockquote opened (a table's note column, an AI
 /// augmentation, a personal note).
 class ReviewNoteModel {
-  ReviewNoteModel({this.badge, required Iterable<ReviewNoteUnitModel> units})
+  ReviewNoteModel({this.badge, required Iterable<ReviewContentUnitModel> units})
     : units = List.unmodifiable(units);
 
   final ReviewBadge? badge;
-  final List<ReviewNoteUnitModel> units;
+  final List<ReviewContentUnitModel> units;
 }
 
-class ReviewSentenceModel extends ReviewNoteUnitModel {
+class ReviewSentenceModel extends ReviewContentUnitModel {
   ReviewSentenceModel({
     required this.text,
     required Iterable<InlineRunModel> runs,
@@ -102,13 +102,13 @@ class ReviewSentenceModel extends ReviewNoteUnitModel {
   final List<InlineRunModel> runs;
 }
 
-class ReviewCodeModel extends ReviewNoteUnitModel {
+class ReviewCodeModel extends ReviewContentUnitModel {
   ReviewCodeModel(Iterable<String> lines) : lines = List.unmodifiable(lines);
 
   final List<String> lines;
 }
 
-class ReviewDiagramModel extends ReviewNoteUnitModel {
+class ReviewDiagramModel extends ReviewContentUnitModel {
   ReviewDiagramModel({
     required this.src,
     required this.width,
@@ -135,7 +135,7 @@ class ReviewDiagramModel extends ReviewNoteUnitModel {
   final String? revealedAlt;
 }
 
-class ReviewChecklistModel extends ReviewNoteUnitModel {
+class ReviewChecklistModel extends ReviewContentUnitModel {
   ReviewChecklistModel(Iterable<ReviewChecklistItemModel> items)
     : items = List.unmodifiable(items);
 
@@ -144,7 +144,7 @@ class ReviewChecklistModel extends ReviewNoteUnitModel {
 
 enum ReviewCellAlign { none, left, center, right }
 
-class ReviewTableModel extends ReviewNoteUnitModel {
+class ReviewTableModel extends ReviewContentUnitModel {
   ReviewTableModel({
     required Iterable<ReviewCellAlign> aligns,
     required Iterable<Iterable<InlineRunModel>> header,
@@ -161,11 +161,11 @@ class ReviewTableModel extends ReviewNoteUnitModel {
 }
 
 /// A quoted block: its own units, never a note. Increment 5 styles it.
-class ReviewQuoteModel extends ReviewNoteUnitModel {
-  ReviewQuoteModel(Iterable<ReviewNoteUnitModel> units)
+class ReviewQuoteModel extends ReviewContentUnitModel {
+  ReviewQuoteModel(Iterable<ReviewContentUnitModel> units)
     : units = List.unmodifiable(units);
 
-  final List<ReviewNoteUnitModel> units;
+  final List<ReviewContentUnitModel> units;
 }
 
 /// One step of an answer as the client walks it: a gradeable line the learner
@@ -186,24 +186,24 @@ class ReviewAnswerQuoteModel extends ReviewAnswerStepModel {
   ReviewAnswerQuoteModel({
     required super.backFrom,
     required super.backTo,
-    required Iterable<ReviewNoteUnitModel> units,
+    required Iterable<ReviewContentUnitModel> units,
   }) : units = List.unmodifiable(units);
 
-  final List<ReviewNoteUnitModel> units;
+  final List<ReviewContentUnitModel> units;
 }
 
 class ReviewCardModel {
   ReviewCardModel({
     required this.front,
     required Iterable<InlineRunModel> frontRuns,
-    Iterable<ReviewNoteUnitModel>? frontUnits,
+    Iterable<ReviewContentUnitModel>? frontUnits,
     required Iterable<String> context,
     required this.contextLeads,
     required Iterable<Iterable<InlineRunModel>> contextRuns,
-    required Iterable<ReviewNoteUnitModel> contextUnits,
+    required Iterable<ReviewContentUnitModel> contextUnits,
     required Iterable<String> back,
     required Iterable<Iterable<InlineRunModel>> backRuns,
-    required Iterable<ReviewNoteUnitModel> backUnits,
+    required Iterable<ReviewContentUnitModel> backUnits,
     required Iterable<ReviewAnswerStepModel> answerSteps,
     required this.reshaped,
     required Iterable<ReviewNoteModel> note,
@@ -224,7 +224,7 @@ class ReviewCardModel {
 
   final String front;
   final List<InlineRunModel> frontRuns;
-  final List<ReviewNoteUnitModel>? frontUnits;
+  final List<ReviewContentUnitModel>? frontUnits;
   final List<String> context;
 
   /// Whether `context` is the question (a cloze sentence) or a label for the
@@ -234,10 +234,10 @@ class ReviewCardModel {
 
   /// The context's raw fences and closed bare-math blocks, in source order.
   /// Context prose keeps its line rendering.
-  final List<ReviewNoteUnitModel> contextUnits;
+  final List<ReviewContentUnitModel> contextUnits;
   final List<String> back;
   final List<List<InlineRunModel>> backRuns;
-  final List<ReviewNoteUnitModel> backUnits;
+  final List<ReviewContentUnitModel> backUnits;
 
   /// TWO counts, never one: reveal walks every step, typing asks only the
   /// gradeable ones.

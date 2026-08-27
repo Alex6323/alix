@@ -361,7 +361,6 @@ pub struct TraceConfig {
     pub effort: Option<String>,
     pub timeout_secs: u64,
     pub extra: Option<String>,
-    pub auto_grade: bool,
 }
 
 impl Default for TraceConfig {
@@ -371,7 +370,6 @@ impl Default for TraceConfig {
             effort: Some("high".to_string()),
             timeout_secs: 600,
             extra: None,
-            auto_grade: false,
         }
     }
 }
@@ -652,7 +650,6 @@ struct RawTrace {
     effort: Option<String>,
     timeout_secs: Option<u64>,
     extra: Option<String>,
-    auto_grade: Option<bool>,
 }
 
 #[derive(Deserialize, Default)]
@@ -894,9 +891,6 @@ impl Config {
             trace.timeout_secs = secs;
         }
         trace.extra = raw.trace.extra.filter(|s| !s.trim().is_empty());
-        if let Some(auto_grade) = raw.trace.auto_grade {
-            trace.auto_grade = auto_grade;
-        }
 
         let mut ai = AiConfig::default();
         if let Some(model) = raw.ai.model.filter(|m| !m.trim().is_empty()) {
@@ -1229,7 +1223,6 @@ pub fn default_config_toml() -> &'static str {
 # effort = "high"               # default; --effort: low|medium|high|xhigh|max
 # timeout_secs = 600            # exploring a source is the slowest call
 # extra = ""                    # extra guidance appended to the build prompt
-# auto_grade = false            # AI-grade walk predictions (a model call per hop)
 
 # AI deck augmentation (`alix deck augment <deck>`). Generates choice-mode
 # distractors (and notes) into that deck's augmentation document; review reads
