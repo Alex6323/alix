@@ -220,6 +220,20 @@ pub fn deck_files(dir: &Path) -> Vec<PathBuf> {
     members(dir).unwrap_or_default()
 }
 
+/// `deck_files`, plus every workspace nested under `dir`, which is the reach a
+/// check has: a folder of workspaces is a legal target, so a repair stopping at
+/// the top level would fix none of what the check just reported.
+pub fn deck_files_including_nested(dir: &Path) -> Vec<PathBuf> {
+    let mut files = deck_files(dir);
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() && is_workspace(&path) {
+            files.extend(deck_files_including_nested(&path));
+        }
+    }
+    files
+}
+
 pub fn has_manifest(path: &Path) -> bool {
     path.join(MANIFEST).is_file()
 }
@@ -455,6 +469,47 @@ mod tests {
 
     fn deck(id: &str, body: &str) -> String {
         format!("---\nformat-version: 1\nid: \"deck-{id}\"\n---\n{body}")
+    }
+
+    /// A repair is offered by a check, so it has to reach every deck the check
+    /// walked; a folder of workspaces is where the two scopes came apart.
+    #[test]
+    fn nested_workspace_decks_are_reachable_from_a_plain_parent_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join("loose.md"), &deck("loose", "## a\n1\n"));
+        let plain = dir.path().join("plain-folder");
+        std::fs::create_dir(&plain).unwrap();
+        write(&plain.join("ignored.md"), &deck("ignored", "## b\n2\n"));
+        let nested = dir.path().join("ws");
+        std::fs::create_dir_all(nested.join(DECKS)).unwrap();
+        write(&nested.join(MANIFEST), "title = \"Nested\"\n");
+        write(
+            &nested.join(DECKS).join("inner.md"),
+            &deck("inner", "## c\n3\n"),
+        );
+        let deeper = nested.join("deeper");
+        std::fs::create_dir_all(deeper.join(DECKS)).unwrap();
+        write(&deeper.join(MANIFEST), "title = \"Deeper\"\n");
+        write(
+            &deeper.join(DECKS).join("deep.md"),
+            &deck("deep", "## d\n4\n"),
+        );
+
+        let mut names: Vec<String> = deck_files_including_nested(dir.path())
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+
+        assert_eq!(
+            vec![
+                "deep.md".to_string(),
+                "inner.md".to_string(),
+                "loose.md".to_string()
+            ],
+            names,
+            "every workspace under the folder is reached, and a plain directory is not"
+        );
     }
 
     #[test]

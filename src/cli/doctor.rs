@@ -1297,19 +1297,19 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
         }
         if alix::workspace::is_workspace(path) {
             if args.repair_source_locators {
-                repair_source_locators(&alix::workspace::deck_files(path))?;
+                repair_source_locators(&alix::workspace::deck_files_including_nested(path))?;
             }
             if args.repair_positions {
-                repair_positions(&alix::workspace::deck_files(path))?;
+                repair_positions(&alix::workspace::deck_files_including_nested(path))?;
             }
             if args.repair_diagrams {
-                repair_diagrams(&alix::workspace::deck_files(path))?;
+                repair_diagrams(&alix::workspace::deck_files_including_nested(path))?;
             }
             if args.repair_frontmatter_order {
-                repair_frontmatter_order(&alix::workspace::deck_files(path))?;
+                repair_frontmatter_order(&alix::workspace::deck_files_including_nested(path))?;
             }
             if args.repair_comment_order {
-                repair_comment_order(&alix::workspace::deck_files(path))?;
+                repair_comment_order(&alix::workspace::deck_files_including_nested(path))?;
             }
             check(vec![path.clone()])?;
         }
@@ -1328,19 +1328,19 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
         }
     };
     if args.repair_source_locators && repair_after_explicit_path {
-        repair_source_locators(&alix::workspace::deck_files(&decks_dir))?;
+        repair_source_locators(&alix::workspace::deck_files_including_nested(&decks_dir))?;
     }
     if args.repair_positions && repair_after_explicit_path {
-        repair_positions(&alix::workspace::deck_files(&decks_dir))?;
+        repair_positions(&alix::workspace::deck_files_including_nested(&decks_dir))?;
     }
     if args.repair_diagrams && repair_after_explicit_path {
-        repair_diagrams(&alix::workspace::deck_files(&decks_dir))?;
+        repair_diagrams(&alix::workspace::deck_files_including_nested(&decks_dir))?;
     }
     if args.repair_frontmatter_order && repair_after_explicit_path {
-        repair_frontmatter_order(&alix::workspace::deck_files(&decks_dir))?;
+        repair_frontmatter_order(&alix::workspace::deck_files_including_nested(&decks_dir))?;
     }
     if args.repair_comment_order && repair_after_explicit_path {
-        repair_comment_order(&alix::workspace::deck_files(&decks_dir))?;
+        repair_comment_order(&alix::workspace::deck_files_including_nested(&decks_dir))?;
     }
     if args.remove_backup_files {
         let baks = doctor::backup_files(&decks_dir);
