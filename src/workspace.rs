@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     io,
     path::{Path, PathBuf},
 };
@@ -220,16 +220,48 @@ pub fn deck_files(dir: &Path) -> Vec<PathBuf> {
     members(dir).unwrap_or_default()
 }
 
-/// `deck_files`, plus every workspace nested under `dir`, which is the reach a
-/// check has: a folder of workspaces is a legal target, so a repair stopping at
-/// the top level would fix none of what the check just reported.
-pub fn deck_files_including_nested(dir: &Path) -> Vec<PathBuf> {
-    let mut files = deck_files(dir);
-    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        let path = entry.path();
-        if path.is_dir() && is_workspace(&path) {
-            files.extend(deck_files_including_nested(&path));
-        }
+/// `dir` and every workspace nested under it, each physical directory once and
+/// in a stable order. `is_dir` follows directory symlinks, so an alias pointing
+/// back into the tree would otherwise reach one workspace again and again until
+/// the kernel refuses.
+pub fn roots_under(dir: &Path) -> Vec<PathBuf> {
+    let mut visited = HashSet::new();
+    let mut roots = Vec::new();
+    collect_roots(dir, &mut visited, &mut roots);
+    roots
+}
+
+fn collect_roots(dir: &Path, visited: &mut HashSet<PathBuf>, roots: &mut Vec<PathBuf>) {
+    let Ok(identity) = std::fs::canonicalize(dir) else {
+        return;
+    };
+    if !visited.insert(identity) {
+        return;
+    }
+    roots.push(dir.to_path_buf());
+    let mut nested: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir() && is_workspace(path))
+        .collect();
+    nested.sort();
+    for path in nested {
+        collect_roots(&path, visited, roots);
+    }
+}
+
+/// Every deck-shaped file a check walks under `dir`: initialized members and
+/// uninitialized drafts alike, in `dir` and in every workspace nested under it.
+/// A repair is only ever offered by the check that found the problem, so a
+/// narrower set here means the printed remedy does nothing.
+pub fn diagnosable_deck_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for root in roots_under(dir) {
+        let (initialized, uninitialized) = classified_deck_files(&root).unwrap_or_default();
+        files.extend(initialized);
+        files.extend(uninitialized);
     }
     files
 }
@@ -472,7 +504,8 @@ mod tests {
     }
 
     /// A repair is offered by a check, so it has to reach every deck the check
-    /// walked; a folder of workspaces is where the two scopes came apart.
+    /// walked; a folder of workspaces is where the two scopes came apart, and
+    /// an uninitialized draft is where they came apart a second time.
     #[test]
     fn nested_workspace_decks_are_reachable_from_a_plain_parent_folder() {
         let dir = tempfile::tempdir().unwrap();
@@ -487,15 +520,16 @@ mod tests {
             &nested.join(DECKS).join("inner.md"),
             &deck("inner", "## c\n3\n"),
         );
+        write(&nested.join(DECKS).join("draft.md"), "## d\n4\n");
         let deeper = nested.join("deeper");
         std::fs::create_dir_all(deeper.join(DECKS)).unwrap();
         write(&deeper.join(MANIFEST), "title = \"Deeper\"\n");
         write(
             &deeper.join(DECKS).join("deep.md"),
-            &deck("deep", "## d\n4\n"),
+            &deck("deep", "## e\n5\n"),
         );
 
-        let mut names: Vec<String> = deck_files_including_nested(dir.path())
+        let mut names: Vec<String> = diagnosable_deck_files(dir.path())
             .iter()
             .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
@@ -504,11 +538,39 @@ mod tests {
         assert_eq!(
             vec![
                 "deep.md".to_string(),
+                "draft.md".to_string(),
                 "inner.md".to_string(),
                 "loose.md".to_string()
             ],
             names,
-            "every workspace under the folder is reached, and a plain directory is not"
+            "every workspace under the folder is reached, drafts included, and a plain directory is not"
+        );
+    }
+
+    /// `is_dir` follows directory symlinks, so an alias pointing back into the
+    /// tree reaches one physical workspace over and over.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_cycle_yields_each_physical_workspace_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("ws");
+        std::fs::create_dir_all(nested.join(DECKS)).unwrap();
+        write(&nested.join(MANIFEST), "title = \"Nested\"\n");
+        write(
+            &nested.join(DECKS).join("inner.md"),
+            &deck("inner", "## c\n3\n"),
+        );
+        std::os::unix::fs::symlink(&nested, nested.join("loop")).unwrap();
+
+        assert_eq!(
+            2,
+            roots_under(dir.path()).len(),
+            "the parent and the one workspace it holds, however many aliases reach it"
+        );
+        assert_eq!(
+            1,
+            diagnosable_deck_files(dir.path()).len(),
+            "one physical deck must not be scheduled once per alias"
         );
     }
 

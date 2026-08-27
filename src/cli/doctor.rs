@@ -795,6 +795,17 @@ fn orphan_note_findings(sidecar: &Path, report: &mut Report) {
 
 fn workspace_findings(dir: &Path) -> Report {
     let mut report = Report::default();
+    for root in alix::workspace::roots_under(dir) {
+        let nested = findings_in(&root);
+        report.errors.extend(nested.errors);
+        report.warnings.extend(nested.warnings);
+        report.notes.extend(nested.notes);
+    }
+    report
+}
+
+fn findings_in(dir: &Path) -> Report {
+    let mut report = Report::default();
     if alix::workspace::has_manifest(dir)
         && let Err(error) = alix::workspace::Workspace::load(dir)
     {
@@ -951,16 +962,6 @@ fn workspace_findings(dir: &Path) -> Report {
             conflict.display()
         ));
     }
-    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        let path = entry.path();
-        if path.is_dir() && alix::workspace::is_workspace(&path) {
-            let nested = workspace_findings(&path);
-            report.errors.extend(nested.errors);
-            report.warnings.extend(nested.warnings);
-            report.notes.extend(nested.notes);
-        }
-    }
-
     report
 }
 
@@ -1297,19 +1298,19 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
         }
         if alix::workspace::is_workspace(path) {
             if args.repair_source_locators {
-                repair_source_locators(&alix::workspace::deck_files_including_nested(path))?;
+                repair_source_locators(&alix::workspace::diagnosable_deck_files(path))?;
             }
             if args.repair_positions {
-                repair_positions(&alix::workspace::deck_files_including_nested(path))?;
+                repair_positions(&alix::workspace::diagnosable_deck_files(path))?;
             }
             if args.repair_diagrams {
-                repair_diagrams(&alix::workspace::deck_files_including_nested(path))?;
+                repair_diagrams(&alix::workspace::diagnosable_deck_files(path))?;
             }
             if args.repair_frontmatter_order {
-                repair_frontmatter_order(&alix::workspace::deck_files_including_nested(path))?;
+                repair_frontmatter_order(&alix::workspace::diagnosable_deck_files(path))?;
             }
             if args.repair_comment_order {
-                repair_comment_order(&alix::workspace::deck_files_including_nested(path))?;
+                repair_comment_order(&alix::workspace::diagnosable_deck_files(path))?;
             }
             check(vec![path.clone()])?;
         }
@@ -1328,19 +1329,19 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
         }
     };
     if args.repair_source_locators && repair_after_explicit_path {
-        repair_source_locators(&alix::workspace::deck_files_including_nested(&decks_dir))?;
+        repair_source_locators(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
     }
     if args.repair_positions && repair_after_explicit_path {
-        repair_positions(&alix::workspace::deck_files_including_nested(&decks_dir))?;
+        repair_positions(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
     }
     if args.repair_diagrams && repair_after_explicit_path {
-        repair_diagrams(&alix::workspace::deck_files_including_nested(&decks_dir))?;
+        repair_diagrams(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
     }
     if args.repair_frontmatter_order && repair_after_explicit_path {
-        repair_frontmatter_order(&alix::workspace::deck_files_including_nested(&decks_dir))?;
+        repair_frontmatter_order(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
     }
     if args.repair_comment_order && repair_after_explicit_path {
-        repair_comment_order(&alix::workspace::deck_files_including_nested(&decks_dir))?;
+        repair_comment_order(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
     }
     if args.remove_backup_files {
         let baks = doctor::backup_files(&decks_dir);

@@ -756,9 +756,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `alix doctor`'s repair flags reach every deck the check walked. Pointed at a
   folder that holds workspaces rather than decks, the check descends into each
   one and reports its findings, but all five repairs looked only at the top
-  level and silently changed nothing. Since a repair is offered by the warning
-  that found the problem, the remedy the warning named did nothing at the scope
-  people run it in, `alix doctor` with no argument included.
+  level, and even there only at decks that had been initialized, while the check
+  also diagnoses uninitialized drafts. Since a repair is only ever offered by
+  the warning that found the problem, the remedy the warning named did nothing
+  at the scope people run it in, `alix doctor` with no argument included.
+  Checking and repairing share one traversal now, which visits each physical
+  directory once: a symlink pointing back into the tree used to print a single
+  finding dozens of times and schedule one deck's repair as often. The
+  initialized-only set and the symlink cycle were found by Codex.
 - A card carrying two `id:` directives is refused instead of half repaired. The
   parser took the last one as the card's identity while a rewrite targeted the
   first, so a duplicate that alix appeared to resolve on open was still shared

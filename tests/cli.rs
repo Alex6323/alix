@@ -7050,3 +7050,65 @@ fn doctor_repair_frontmatter_order_moves_machine_lines_last() {
         stdout(&out)
     );
 }
+
+/// A repair is offered by the check that found the problem, so the two must
+/// walk the same files: a draft that has not been initialized yet is ordinary
+/// input the check already diagnoses.
+#[test]
+fn doctor_repairs_the_uninitialized_nested_deck_it_diagnoses() {
+    let root = TempDir::new().unwrap();
+    let workspace = root.path().join("nested");
+    let decks = workspace.join("decks");
+    std::fs::create_dir_all(&decks).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "title = \"Nested\"\n").unwrap();
+    let deck = decks.join("draft.md");
+    std::fs::write(
+        &deck,
+        "## q\n---\ntarget and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 position:1 -->\n",
+    )
+    .unwrap();
+
+    let check = alix(&["doctor", root.path().to_str().unwrap()]);
+    assert!(
+        stderr(&check).contains("--repair-positions"),
+        "the check must diagnose this exact deck first: {}",
+        stderr(&check)
+    );
+
+    let repair = alix(&[
+        "doctor",
+        root.path().to_str().unwrap(),
+        "--repair-positions",
+    ]);
+    assert!(repair.status.success(), "stderr: {}", stderr(&repair));
+    let text = std::fs::read_to_string(&deck).unwrap();
+    assert!(
+        text.contains("occurrence=2 b:a1b2c3 position:12 -->"),
+        "the offered repair silently skipped the diagnosed deck: {text}"
+    );
+}
+
+/// `is_dir` follows directory symlinks, so an alias pointing back into the tree
+/// reaches one physical workspace over and over until the kernel gives up.
+#[cfg(unix)]
+#[test]
+fn doctor_reports_a_symlinked_workspace_cycle_only_once() {
+    let root = TempDir::new().unwrap();
+    let workspace = root.path().join("nested");
+    let decks = workspace.join("decks");
+    std::fs::create_dir_all(&decks).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "title = \"Nested\"\n").unwrap();
+    std::fs::write(
+        decks.join("cards.md"),
+        "## q\n---\ntarget and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 position:1 -->\n",
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(&workspace, workspace.join("loop")).unwrap();
+
+    let out = alix(&["doctor", root.path().to_str().unwrap()]);
+    let occurrences = stderr(&out).matches("--repair-positions").count();
+    assert_eq!(
+        1, occurrences,
+        "one physical finding must not be repeated through a directory cycle"
+    );
+}
