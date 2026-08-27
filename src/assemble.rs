@@ -297,9 +297,14 @@ pub fn resolve_duplicates_at_open(path: &Path) {
     let Some(dir) = path.parent() else {
         return;
     };
-    for dupe in crate::dedup::scan_dir_fast(dir).card_dupes {
-        if dupe.losers.iter().any(|(p, _)| p == path)
-            && let Err(e) = stamp::replace_card_token(path, &dupe.token)
+    // The line scan over-claims, so it may gate the cost but never authorize
+    // the write.
+    if !crate::dedup::any_repeated_card_token_fast(dir) {
+        return;
+    }
+    for dupe in crate::dedup::scan_dir(dir).card_dupes {
+        if let Some((_, front_line)) = dupe.losers.iter().find(|(p, _)| p == path)
+            && let Err(e) = stamp::replace_card_token(path, &dupe.token, *front_line)
         {
             eprintln!(
                 "warning: cannot resolve the duplicate token `{}` in {}: {e}",
@@ -685,6 +690,117 @@ mod tests {
             format!("---\nformat-version: 1\nid: \"deck-{id}\"\n---\n{text}"),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn review_open_never_reasons_a_token_the_parser_never_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let broken = dir.path().join("a.md");
+        let good = dir.path().join("b.md");
+        // A no-break space on the closing fence: the parser never closes the
+        // frontmatter, so it refuses the file and it claims no token at all.
+        std::fs::write(
+            &broken,
+            "---\nformat-version: 1\nid: \"deck-dtok1\"\n---\u{a0}\n## q1\nanswer\n<!-- id: card-shared1 -->\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &good,
+            "---\nformat-version: 1\nid: \"deck-dtok2\"\n---\n## q2\nanswer\n<!-- id: card-shared1 -->\n",
+        )
+        .unwrap();
+
+        assert!(
+            crate::parser::parse("a.md", &std::fs::read_to_string(&broken).unwrap()).is_err(),
+            "the premise: the parser refuses the neighbour"
+        );
+
+        resolve_duplicates_at_open(&good);
+
+        assert!(
+            std::fs::read_to_string(&good)
+                .unwrap()
+                .contains("card-shared1"),
+            "opening a valid deck re-minted its card token, severing its review \
+             history, because an unparseable neighbour claimed the same token"
+        );
+    }
+
+    #[test]
+    fn a_fast_deck_overclaim_never_suppresses_a_real_card_duplicate() {
+        let dir = tempfile::tempdir().unwrap();
+        let broken = dir.path().join("a-broken.md");
+        let keeper = dir.path().join("b-keeper.md");
+        let loser = dir.path().join("c-loser.md");
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+
+        std::fs::write(
+            &broken,
+            "---\nformat-version: 1\nid: \"deck-shared\"\n---\u{a0}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &keeper,
+            format!(
+                "---\nformat-version: 1\nid: \"deck-shared\"\n---\n## keeper\na\n<!-- id: {shared} -->\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            &loser,
+            format!(
+                "---\nformat-version: 1\nid: \"deck-other\"\n---\n## loser\nb\n<!-- id: {shared} -->\n"
+            ),
+        )
+        .unwrap();
+
+        assert!(Deck::load(&broken).is_err(), "the neighbour is unparseable");
+        assert!(
+            crate::dedup::scan_dir_fast(dir.path())
+                .card_dupes
+                .is_empty(),
+            "the invalid deck's deck-token claim excludes the real keeper from the fast card map"
+        );
+        assert_eq!(
+            1,
+            crate::dedup::scan_dir(dir.path()).card_dupes.len(),
+            "the full parser skips the invalid over-claim and sees the real duplicate"
+        );
+
+        resolve_duplicates_at_open(&loser);
+
+        assert!(
+            !std::fs::read_to_string(&loser).unwrap().contains(shared),
+            "the fast gate returned early, so the real duplicate still fuses two cards' progress"
+        );
+    }
+
+    #[test]
+    fn a_same_file_duplicate_remints_the_loser_not_the_keeper() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deck.md");
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        std::fs::write(
+            &path,
+            format!(
+                "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## original\na\n<!-- id: {shared} -->\n## pasted\nb\n<!-- id: {shared} -->\n"
+            ),
+        )
+        .unwrap();
+
+        resolve_duplicates_at_open(&path);
+
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(
+            Some(shared),
+            deck.cards[0].token.as_deref(),
+            "the original card is the keeper and must retain its review history"
+        );
+        assert_ne!(
+            Some(shared),
+            deck.cards[1].token.as_deref(),
+            "the pasted loser must receive the fresh token"
+        );
     }
 
     /// Codex's finding, at the public boundary: a deck reorganized so that

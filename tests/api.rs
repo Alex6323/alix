@@ -4322,6 +4322,44 @@ fn remove_drops_the_current_card_from_the_session_and_the_deck_file() {
     );
 }
 
+#[test]
+fn remove_refuses_and_keeps_the_card_when_the_deck_changed_on_disk() {
+    let (base, guard) = spawn_test_server();
+    select_fixture(&base);
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let before: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+    let front = before["card"]["front"].as_str().unwrap().to_string();
+
+    let deck_path = guard.dir().join("sample.md");
+    let edited = format!(
+        "{}\n## edited while reviewing\nan answer\n",
+        std::fs::read_to_string(&deck_path).unwrap()
+    );
+    std::fs::write(&deck_path, &edited).unwrap();
+
+    let resp = post_gated(&base, "/api/remove", "{}");
+    assert_eq!(200, resp.status);
+    let after: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+
+    assert!(
+        after["save_error"].is_string(),
+        "the conflict reaches the learner rather than warning to stderr: {after}"
+    );
+    assert_eq!(
+        front, after["card"]["front"],
+        "the card stays in the sitting, so its progress was never dropped: {after}"
+    );
+    let deck = std::fs::read_to_string(&deck_path).unwrap();
+    assert!(
+        deck.contains("## edited while reviewing"),
+        "the editor's save survives: {deck}"
+    );
+    assert!(
+        deck.contains(&front),
+        "and the card is still authored, so nothing was half-removed: {deck}"
+    );
+}
+
 /// The sixteenth review pass's P1, at the user's own route: removing a
 /// REGION card deletes exactly its directive line; the block's heading,
 /// divider, and answer stay in the file for the re-exposed plain card.

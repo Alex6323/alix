@@ -1544,6 +1544,13 @@ impl StudyState {
 
     fn remove(&mut self) -> Option<StateDto> {
         let r = self.reviewing.as_mut()?;
+        if let Some(deck_id) = r.session.current().map(|card| card.deck_id.to_string())
+            && let Err(e) = r.files.check_writable(&deck_id)
+        {
+            self.save_error = Some(e);
+            return Some(self.review_dto());
+        }
+        let r = self.reviewing.as_mut()?;
         let dropped = r.session.remove_current(&mut self.store, now_ms());
         if let Some(first) = dropped.first() {
             let deck_id = first.deck_id.to_string();
@@ -1556,9 +1563,12 @@ impl StudyState {
             }
             flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
             self.writes = self.writes.wrapping_add(1);
-            match region_lines {
+            let rewritten = match region_lines {
                 Some(lines) => r.files.remove_region_lines(&deck_id, &lines),
                 None => r.files.remove_block(&deck_id, line),
+            };
+            if let Err(e) = rewritten {
+                self.save_error = Some(e);
             }
         }
         self.writes = self.writes.wrapping_add(1);

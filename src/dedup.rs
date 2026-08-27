@@ -3,7 +3,7 @@
 //! session-open.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -36,9 +36,25 @@ pub fn scan_dir(dir: &Path) -> DuplicateMap {
 }
 
 /// scan_dir on a token-extracting line scan instead of full parses: the
-/// review-open hot path. Divergence from the parser is biased to missing a
-/// dup (no resolution, doctor still warns), never to inventing one.
+/// review-open hot path. It diverges from the parser in BOTH directions: a
+/// file the parser refuses outright still yields its tokens here, so a caller
+/// that writes must confirm a finding against `scan_dir` before it does.
 pub fn scan_dir_fast(dir: &Path) -> DuplicateMap {
+    build_map(&parse_fast(dir))
+}
+
+/// True when the line scan sees one card token claimed twice, counted BEFORE
+/// deck-level exclusion so an over-claimed deck token cannot hide one.
+pub fn any_repeated_card_token_fast(dir: &Path) -> bool {
+    let mut seen: HashSet<&str> = HashSet::new();
+    let parsed = parse_fast(dir);
+    parsed
+        .iter()
+        .flat_map(|p| p.cards.iter())
+        .any(|(token, _)| !seen.insert(token.as_str()))
+}
+
+fn parse_fast(dir: &Path) -> Vec<Parsed> {
     let member_dir = crate::workspace::member_dir(dir);
     let mut paths: Vec<PathBuf> = std::fs::read_dir(member_dir)
         .map(|entries| {
@@ -67,7 +83,7 @@ pub fn scan_dir_fast(dir: &Path) -> DuplicateMap {
             cards,
         });
     }
-    build_map(&parsed)
+    parsed
 }
 
 /// (deck token, per-card (token, 1-based heading line)) via a fence-aware
@@ -402,6 +418,39 @@ mod tests {
         assert_eq!(full, fast);
         assert_eq!(1, fast.card_dupes.len());
         assert_eq!("card-shared1", fast.card_dupes[0].token);
+    }
+
+    /// The fast scan's known over-claim, pinned so nothing writes on its word.
+    #[test]
+    fn the_fast_scan_claims_tokens_from_a_deck_the_parser_refuses() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("a.md"),
+            "---\nformat-version: 1\nid: \"deck-dtok1\"\n---\n## q1\nanswer\n<!-- id: card-shared1 -->\n",
+        )
+        .unwrap();
+        // The closing fence carries a no-break space, so the parser never
+        // closes the frontmatter and refuses the whole file.
+        std::fs::write(
+            dir.path().join("b.md"),
+            "---\nformat-version: 1\nid: \"deck-dtok2\"\n---\u{a0}\n## q2\nanswer\n<!-- id: card-shared1 -->\n",
+        )
+        .unwrap();
+
+        let full = scan_dir(dir.path());
+        let fast = scan_dir_fast(dir.path());
+
+        assert!(
+            full.card_dupes.is_empty(),
+            "the parser refuses b.md, so it claims no token: {:?}",
+            full.card_dupes
+        );
+        assert_eq!(
+            1,
+            fast.card_dupes.len(),
+            "the line scan cannot know the file was refused, so it over-claims; \
+             `resolve_duplicates_at_open` is what must not act on this"
+        );
     }
 
     fn table_deck(deck_id: &str, container: &str) -> String {

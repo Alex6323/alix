@@ -771,6 +771,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   requires the full parse to agree. Reported by Codex from a fence-law
   divergence between `dedup` and the parser, and reproduced end to end here: a
   no-break space on a closing `---` is enough.
+- Copying a card inside one deck no longer detaches the original from its
+  review history. The duplicate resolver addressed the losing card by token
+  alone, and the first id comment carrying that token in document order is the
+  card that KEPT it, so opening the deck re-minted the original and left the
+  pasted copy holding its identity. The loser is now addressed by its own front
+  line. Found by Codex.
+- A region- or topology-scoped sitting's crumb no longer reports a locked card
+  as unlocked. The crumb paints every region of its topology, including cards
+  the sitting was scoped away from, but it read the lock axis from the
+  sitting's own slice, and that answer covers only the cards in it. Any locked
+  card outside the scope therefore came back unlocked. The lock graph was
+  always the complete deck's, so the fix reads the deck-wide answer
+  (`Locks::locked_ids_everywhere`) for a surface that paints beyond its slice.
+
+
+- Continuing at Recall from the summary keeps the sitting's scope. A session
+  opened on one review order, or on one region of it, was re-selected without
+  either, so the next sitting silently widened to the whole deck. The review
+  state now carries `topology` and `region`, and the summary's Continue action
+  echoes them back.
+
 - A supporting quotation is no longer graded as a claim the learner owes.
   Three surfaces still derived their gradeable items from the card's raw
   answer lines: the Explain checklist's fallback (an un-augmented card asked

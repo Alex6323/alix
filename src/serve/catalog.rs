@@ -37,6 +37,9 @@ pub(super) struct DeckFiles {
     /// Absent for a deck whose text couldn't be read (it can't have cards
     /// removed then).
     snapshots: HashMap<String, String>,
+    /// What this sitting last wrote, so anything else on disk is someone
+    /// else's edit and the snapshot must not be replayed over it.
+    written: HashMap<String, String>,
     removed: HashMap<String, BTreeSet<usize>>,
     removed_region_lines: HashMap<String, BTreeSet<usize>>,
 }
@@ -54,6 +57,7 @@ impl DeckFiles {
         Self {
             paths,
             snapshots,
+            written: HashMap::new(),
             removed: HashMap::new(),
             removed_region_lines: HashMap::new(),
         }
@@ -72,42 +76,69 @@ impl DeckFiles {
         crate::personal::append_note(path, deck_id, card_id, notes).map_err(|e| e.to_string())
     }
 
-    /// Best-effort: a rewrite failure only warns, never propagates.
-    pub(super) fn remove_block(&mut self, deck_id: &str, line: usize) {
+    /// Err before anything else is mutated when the deck moved under this
+    /// sitting: a removal replays the session-start text, which would carry
+    /// that text over whatever is on disk now.
+    pub(super) fn check_writable(&self, deck_id: &str) -> Result<(), String> {
+        let (Some(path), Some(original)) = (self.paths.get(deck_id), self.snapshots.get(deck_id))
+        else {
+            return Ok(());
+        };
+        let current = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        if current == *self.written.get(deck_id).unwrap_or(original) {
+            return Ok(());
+        }
+        Err(format!(
+            "{} changed on disk since this sitting opened; reopen the deck before removing cards",
+            path.display()
+        ))
+    }
+
+    pub(super) fn remove_block(&mut self, deck_id: &str, line: usize) -> Result<(), String> {
         self.removed
             .entry(deck_id.to_string())
             .or_default()
             .insert(line);
-        self.rewrite(deck_id);
+        self.rewrite(deck_id)
     }
 
     /// A region card's removal address: exact directive lines inside a
     /// surviving block, never a block boundary.
-    pub(super) fn remove_region_lines(&mut self, deck_id: &str, lines: &[usize]) {
+    pub(super) fn remove_region_lines(
+        &mut self,
+        deck_id: &str,
+        lines: &[usize],
+    ) -> Result<(), String> {
         self.removed_region_lines
             .entry(deck_id.to_string())
             .or_default()
             .extend(lines.iter().copied());
-        self.rewrite(deck_id);
+        self.rewrite(deck_id)
     }
 
-    fn rewrite(&mut self, deck_id: &str) {
-        if let (Some(path), Some(original)) = (self.paths.get(deck_id), self.snapshots.get(deck_id))
-        {
-            let blocks: Vec<usize> = self
-                .removed
-                .get(deck_id)
-                .map(|set| set.iter().copied().collect())
-                .unwrap_or_default();
-            let exact: Vec<usize> = self
-                .removed_region_lines
-                .get(deck_id)
-                .map(|set| set.iter().copied().collect())
-                .unwrap_or_default();
-            if let Err(e) = deck::rewrite_without(path, original, &blocks, &exact) {
-                eprintln!("warning: could not update {}: {e}", path.display());
-            }
-        }
+    fn rewrite(&mut self, deck_id: &str) -> Result<(), String> {
+        self.check_writable(deck_id)?;
+        let (Some(path), Some(original)) = (self.paths.get(deck_id), self.snapshots.get(deck_id))
+        else {
+            return Ok(());
+        };
+        let blocks: Vec<usize> = self
+            .removed
+            .get(deck_id)
+            .map(|set| set.iter().copied().collect())
+            .unwrap_or_default();
+        let exact: Vec<usize> = self
+            .removed_region_lines
+            .get(deck_id)
+            .map(|set| set.iter().copied().collect())
+            .unwrap_or_default();
+        deck::rewrite_without(path, original, &blocks, &exact)
+            .map_err(|e| format!("could not update {}: {e}", path.display()))?;
+        let written = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        self.written.insert(deck_id.to_string(), written);
+        Ok(())
     }
 }
 
@@ -137,6 +168,53 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             "the authored deck is never rewritten"
         );
+    }
+
+    #[test]
+    fn removing_a_card_never_overwrites_external_edits_since_session_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deck.md");
+        let deck_id = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## remove\na\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n## keep\nold answer\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n";
+        std::fs::write(&path, original).unwrap();
+        let mut paths = HashMap::new();
+        paths.insert(deck_id.to_string(), path.clone());
+        let mut files = DeckFiles::new(paths);
+
+        let externally_edited = original.replace("old answer", "edited while reviewing");
+        std::fs::write(&path, externally_edited).unwrap();
+
+        let outcome = files.remove_block(deck_id, 5);
+
+        assert!(outcome.is_err(), "the conflict is reported, not swallowed");
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            after.contains("edited while reviewing"),
+            "the session-start snapshot overwrote a newer editor save:\n{after}"
+        );
+    }
+
+    #[test]
+    fn a_second_removal_replays_over_this_sittings_own_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deck.md");
+        let deck_id = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## one\na\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n## two\nb\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n## three\nc\n<!-- id: card-3f7k2m9q1x8w5z0t6v4b2n8d7c -->\n";
+        std::fs::write(&path, original).unwrap();
+        let mut paths = HashMap::new();
+        paths.insert(deck_id.to_string(), path.clone());
+        let mut files = DeckFiles::new(paths);
+
+        assert!(files.remove_block(deck_id, 5).is_ok(), "the first removal");
+        assert!(
+            files.remove_block(deck_id, 8).is_ok(),
+            "our own write is not a conflict"
+        );
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(!after.contains("## one"), "first card gone:\n{after}");
+        assert!(!after.contains("## two"), "second card gone:\n{after}");
+        assert!(after.contains("## three"), "third card kept:\n{after}");
     }
 }
 

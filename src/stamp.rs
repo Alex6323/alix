@@ -404,15 +404,22 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     })
 }
 
-/// If the token appears in more than one id comment, only the first
-/// (document order) is replaced.
-pub fn replace_card_token(path: &Path, old_token: &str) -> Result<String, StampError> {
+/// `front_line` is the 1-based front line of the card losing the token: the id
+/// comment trails its card, so the first match at or after that line is the
+/// loser's, while the first in the document is the keeper's.
+pub fn replace_card_token(
+    path: &Path,
+    old_token: &str,
+    front_line: usize,
+) -> Result<String, StampError> {
     let original = fs::read_to_string(path).map_err(|source| StampError::Read {
         path: path.to_path_buf(),
         source,
     })?;
-    let span =
-        first_id_token_span(&original, old_token).ok_or_else(|| StampError::TokenNotFound {
+    let from = line_start_offset(&original, front_line);
+    let span = first_id_token_span(&original[from..], old_token)
+        .map(|range| from + range.start..from + range.end)
+        .ok_or_else(|| StampError::TokenNotFound {
             token: old_token.to_string(),
         })?;
     let fresh = mint_card_id()?;
@@ -673,6 +680,17 @@ fn nth_line_start(text: &str, line: usize) -> Option<usize> {
 
 /// A `target` matching only inert fenced text is a theoretical collision a
 /// 26-char random token makes vanishingly unlikely.
+fn line_start_offset(text: &str, line: usize) -> usize {
+    if line <= 1 {
+        return 0;
+    }
+    text.split_inclusive('\n')
+        .take(line - 1)
+        .map(str::len)
+        .sum::<usize>()
+        .min(text.len())
+}
+
 fn first_id_token_span(text: &str, target: &str) -> Option<Range<usize>> {
     let mut cursor = 0;
     while let Some(rel) = text[cursor..].find("<!--") {
@@ -1072,7 +1090,7 @@ mod tests {
         );
         let path = write(&dir, "deck.md", &original);
 
-        let fresh = replace_card_token(&path, old).unwrap();
+        let fresh = replace_card_token(&path, old, 5).unwrap();
         let output = fs::read_to_string(&path).unwrap();
 
         assert_eq!(
@@ -1116,7 +1134,7 @@ mod tests {
         let original = "## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\na\n";
         let path = write(&dir, "deck.md", original);
 
-        let result = replace_card_token(&path, "card-zzzzzzzzzzzzzzzzzzzzzzzzzz");
+        let result = replace_card_token(&path, "card-zzzzzzzzzzzzzzzzzzzzzzzzzz", 1);
         assert!(
             matches!(result, Err(StampError::TokenNotFound { .. })),
             "{result:?}"
