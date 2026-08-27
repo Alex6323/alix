@@ -777,6 +777,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   card that KEPT it, so opening the deck re-minted the original and left the
   pasted copy holding its identity. The loser is now addressed by its own front
   line. Found by Codex.
+- Two shipped documentation examples that did not parse are corrected. The
+  README's headline deck wrote `A Vec<u8>, its bytes on the heap.`, which the
+  HTML doctrine refuses because `<u` is a tag shape, so the first deck a reader
+  copies failed to load; it is now backticked, matching the book's own spelling
+  of the same line. The manual's front-image example put a `---` directly under
+  a content line, which has been a `StrayDivider` error since dividers took
+  their meaning from position, and the paragraph above it described the old
+  behavior. Found by extracting every deck-shaped fenced block from the manual
+  and the root guides and parsing each one; the committed example decks under
+  `docs/examples/` were swept the same way and all parse.
 - A region- or topology-scoped sitting's crumb no longer reports a locked card
   as unlocked. The crumb paints every region of its topology, including cards
   the sitting was scoped away from, but it read the lock axis from the

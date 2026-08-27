@@ -124,9 +124,10 @@ back image, and a card can carry more than one per side. An image sharing a
 line with prose is rejected: alix displays images as media beside the text,
 not inline within a sentence, so a mixed line would silently lose its shape.
 
-A one-line front needs a blank line before the `---` divider to carry an
-image (otherwise the divider is just more content, and the image lands on
-the back):
+A front image sits between the heading and the divider, so the front has more
+than the heading line and the divider needs a blank line above it. Attached
+directly under a content line the break is in no valid position and fails
+loudly, naming the line:
 
 ```
 ## What phase is the moon in?
@@ -137,6 +138,7 @@ Waxing gibbous
 
 ## Play this chord:
 G major
+
 ---
 The open-position shape.
 ![](g-major-tab.png)
