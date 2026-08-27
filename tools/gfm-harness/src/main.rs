@@ -577,13 +577,11 @@ mod tests {
 
     #[test]
     fn multiline_setext_and_blank_surrounded_thematic_break_are_not_conflated() {
-        // Re-pinned after the ruled `---` grammar landed on main: both shapes
-        // now fail loudly, at distinct lines through distinct rules.
         let setext = measure("test", example("Foo\nBar\n---\n", "Setext headings"));
         let setext_error = setext.parse_error.as_deref().unwrap_or_default();
         assert!(
-            setext_error.starts_with("line 4: this `---` neither divides"),
-            "trailing --- takes the divider diagnosis: {setext_error:?}"
+            setext_error.starts_with("line 4: this break neither divides"),
+            "a break attached under prose is a stray: {setext_error:?}"
         );
 
         let thematic = measure(
@@ -592,8 +590,9 @@ mod tests {
         );
         let thematic_error = thematic.parse_error.as_deref().unwrap_or_default();
         assert!(
-            thematic_error.starts_with("line 7: prose after a `---` section terminator"),
-            "blank-surrounded --- takes the terminator diagnosis: {thematic_error:?}"
+            thematic_error
+                .starts_with("line 5: a `---`/`***`/`___` break has no meaning inside a card"),
+            "a blank-surrounded break inside a card is its own error: {thematic_error:?}"
         );
     }
 
