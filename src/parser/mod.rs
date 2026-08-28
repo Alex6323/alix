@@ -1726,6 +1726,9 @@ fn table_line(
     if heading_depth(raw).is_some() {
         return Ok(false);
     }
+    if thematic_break(t) && indent_width(raw) < 4 {
+        return Ok(false);
+    }
     if let Some(body) = t.strip_prefix("<!--").and_then(|s| s.strip_suffix("-->")) {
         if Mapping::parse(trim_ws(body)).is_some() && tbl.invocation_line != Some(lineno) {
             return Err(ParseError::LeadingInvocation {
@@ -5160,6 +5163,34 @@ a
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn a_break_after_a_card_table_is_read_by_the_outer_grammar() {
+        let table = "# S\n\n| front | back |\n|---|---|\n| one | two |\n<!-- cards -->\n";
+        for spelling in ["---", "----", "- - -", "***", "___"] {
+            assert_eq!(
+                ParseError::StrayDivider(8),
+                err(&format!("{table}\n{spelling}\n\n## q\na\n")),
+                "a blank-surrounded break after a table is reserved, not trailing prose: {spelling}"
+            );
+
+            let deck = parse(&format!("{table}\n{spelling}\n<!-- plain -->\n\n## q\na\n"));
+            assert_eq!(
+                vec!["S".to_string(), spelling.to_string()],
+                deck.cards
+                    .last()
+                    .expect("the deck holds cards")
+                    .section_context,
+                "a plain-marked break after a table is literal section content: {spelling}"
+            );
+        }
+
+        assert_eq!(
+            ParseError::TableTrailing(8),
+            err(&format!("{table}\nprose\n\n## q\na\n")),
+            "ordinary trailing prose after a table is still refused"
+        );
     }
 
     #[test]

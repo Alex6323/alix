@@ -773,6 +773,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- A break line after a card table is read by the break grammar rather than
+  reported as trailing prose. While a table was active the scanner handed the
+  outer grammar only headings, so a rule between a mapped table and the next
+  card was refused with a message about directive comments, and
+  `<!-- plain -->` below it, the sanctioned way to keep the characters, failed
+  to load the deck instead of becoming section content. Found by Codex.
+
 - A removal whose file replacement completed no longer wedges the rest of the
   sitting. A deck is written by renaming a finished temporary over it, and the
   directory sync after that rename can still fail (a network, FUSE, or
