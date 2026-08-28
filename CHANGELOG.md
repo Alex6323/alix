@@ -807,6 +807,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- An AI reply that carries anything after its JSON answer is rejected by name
+  instead of being cut to the last `}`. The exam and the augment passes both
+  sliced from the first `{` to the last `}`, so a trailing sentence was
+  silently discarded when it held no brace and reported as "the model did not
+  return valid JSON" when it did. A reply now parses exactly one JSON answer
+  and allows only whitespace or a closing fence after it; anything else says
+  the backend returned unexpected content after its JSON answer, so a model
+  that retracts a grade in a second object can no longer have its first grade
+  taken. Both copies of the parser are now one.
+
 - A fence marker inside a display-math block is math source, not the start of
   a code block. `$$`, a line of math, a ``` line, then `$$` parses as one
   closed block, but the renderer opened a code fence on the ``` and let it

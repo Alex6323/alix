@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::{
     answer::Mode,
-    ask,
+    ask::{self, parse_json},
     augment::{Format, Topology, TopologyEdge, TopologyRegion, WarmItem},
     choice,
     config::{AiConfig, AskConfig},
@@ -852,19 +852,6 @@ fn clean_distractors(raw: &[String], answer: &str, count: usize) -> Vec<String> 
     out
 }
 
-fn extract_json(raw: &str) -> &str {
-    raw.find('{')
-        .zip(raw.rfind('}'))
-        .and_then(|(start, end)| raw.get(start..=end))
-        .unwrap_or(raw)
-}
-
-fn parse_json<T: for<'de> Deserialize<'de>>(raw: &str) -> Result<T> {
-    let json = extract_json(raw);
-    serde_json::from_str(json)
-        .with_context(|| format!("the model did not return valid JSON:\n{json}"))
-}
-
 #[cfg(all(test, unix))]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -1551,14 +1538,6 @@ mod tests {
         assert!(keypoints.contains("Extra guidance: GUIDANCE"));
         assert!(keypoints.contains("CARDS"));
         assert!(keypoints.contains("Output ONLY JSON"));
-    }
-
-    #[test]
-    fn json_extraction_requires_ordered_distinct_braces() {
-        assert_eq!(r#"{"a":1}"#, extract_json(r#"prefix {"a":1} suffix"#));
-        for raw in ["plain", "only {", "only }", "} reversed {"] {
-            assert_eq!(raw, extract_json(raw));
-        }
     }
 
     #[test]

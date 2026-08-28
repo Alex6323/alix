@@ -415,6 +415,24 @@ impl AskJob {
     }
 }
 
+pub(crate) fn parse_json<T: for<'de> serde::Deserialize<'de>>(raw: &str) -> Result<T> {
+    let body = &raw[raw.find('{').unwrap_or(0)..];
+    let mut values = serde_json::Deserializer::from_str(body).into_iter::<T>();
+    let Some(result) = values.next() else {
+        bail!("the model did not return valid JSON:\n{body}");
+    };
+    let value = result.with_context(|| format!("the model did not return valid JSON:\n{body}"))?;
+    let tail = body[values.byte_offset()..].trim();
+    let tail = tail.strip_prefix("```").unwrap_or(tail).trim();
+    if !tail.is_empty() {
+        bail!(
+            "the backend returned unexpected content after its JSON answer:\n{}",
+            truncate(tail, 300)
+        );
+    }
+    Ok(value)
+}
+
 // The child is spawned as its own process-group leader, so descendants the
 // backend CLI spawns (node, browsers, git) die with it; a direct kill would
 // orphan them with quota and source access. The child is unreaped when this
@@ -855,6 +873,59 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    struct Probe {
+        a: u8,
+    }
+
+    #[test]
+    fn one_json_answer_parses_through_its_supported_wrappers() {
+        for (before, after) in [
+            ("", ""),
+            ("Here is the JSON:\n", ""),
+            ("```json\n", "\n```"),
+            ("", "\n\n"),
+        ] {
+            let raw = format!("{before}{{\"a\":1}}{after}");
+            let probe: Probe = parse_json(&raw)
+                .unwrap_or_else(|e| panic!("wrapper ({before:?}, {after:?}) failed: {e:#}"));
+            assert_eq!(Probe { a: 1 }, probe, "wrapper ({before:?}, {after:?})");
+        }
+    }
+
+    #[test]
+    fn content_after_the_json_answer_is_rejected_rather_than_dropped() {
+        for tail in [
+            "Let me know if you want changes.",
+            "See {#anchor} for the rest.",
+            "Correction: use this grade instead:\n{\"a\":2}",
+        ] {
+            let err = parse_json::<Probe>(&format!("{{\"a\":1}}\n{tail}"))
+                .expect_err(&format!("{tail:?} must not parse"))
+                .to_string();
+            assert!(
+                err.contains("unexpected content after its JSON answer"),
+                "{tail:?} gave: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_reply_with_no_json_value_is_rejected() {
+        for raw in [
+            "not json at all",
+            "  } before {  ",
+            "{\"a\":",
+            "",
+            "{\"a\":\"x\"}",
+        ] {
+            let err = parse_json::<Probe>(raw)
+                .expect_err(&format!("{raw:?} must not parse"))
+                .to_string();
+            assert!(err.contains("valid JSON"), "{raw:?} gave: {err}");
+        }
+    }
 
     fn card() -> Card {
         Card::plain(

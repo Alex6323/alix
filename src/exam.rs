@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 use crate::{
-    ask,
+    ask::{self, parse_json},
     config::{AskConfig, ExamConfig, Strictness},
     deck::{self, Deck, SourceLayers},
     store::Store,
@@ -1024,19 +1024,6 @@ fn remediation_prompt(gaps: &[String]) -> String {
     prompt
 }
 
-fn extract_json(raw: &str) -> &str {
-    raw.find('{')
-        .zip(raw.rfind('}'))
-        .and_then(|(start, end)| raw.get(start..=end))
-        .unwrap_or_else(|| raw.trim())
-}
-
-fn parse_json<T: for<'de> Deserialize<'de>>(raw: &str) -> Result<T> {
-    let json = extract_json(raw);
-    serde_json::from_str(json)
-        .with_context(|| format!("the model did not return valid JSON:\n{json}"))
-}
-
 /// A generated block counts as cards when it carries a front at any card
 /// depth; a section heading alone is prose.
 fn has_card_fronts(text: &str) -> bool {
@@ -1430,9 +1417,7 @@ mod tests {
     }
 
     #[test]
-    fn json_and_deck_cleanup_handle_reversed_empty_and_trailing_boundaries() {
-        assert_eq!("} before {", extract_json("  } before {  "));
-        assert_eq!("{}", extract_json("prefix {} suffix"));
+    fn deck_cleanup_handles_empty_and_trailing_boundaries() {
         assert_eq!("## Q", clean_deck_output("preamble\n## Q\n\n```\n"));
         assert_eq!(
             "## Q\n```not trailing\nA",
