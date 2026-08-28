@@ -174,14 +174,10 @@ fn refuse_link(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn refuse_received_link(path: &Path) -> Result<()> {
+pub fn refuse_received_link(path: &Path, shown: &str) -> Result<()> {
     if is_link(path)? {
-        let name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.display().to_string());
         bail!(
-            "the received archive carries `{name}` as a link rather than a file, and alix \
+            "the received archive carries `{shown}` as a link rather than a file, and alix \
              lands what the archive carries; ask the sender for one that carries the file \
              itself"
         );
@@ -295,11 +291,21 @@ fn stage_augmentation(
 
 pub fn sanitize_received(dir: &Path) -> Result<Vec<String>> {
     let mut removed = Vec::new();
+    sanitize_within(dir, "", &mut removed)?;
+    Ok(removed)
+}
+
+fn sanitize_within(dir: &Path, prefix: &str, removed: &mut Vec<String>) -> Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = entry.path();
-        refuse_received_link(&path)?;
+        let shown = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}/{name}")
+        };
+        refuse_received_link(&path, &shown)?;
         let private = PERSONAL.contains(&name.as_str())
             || crate::workspace::is_sidecar_name(&name)
             || crate::workspace::is_conflict_name(&name)
@@ -309,18 +315,16 @@ pub fn sanitize_received(dir: &Path) -> Result<Vec<String>> {
         if private {
             if path.is_dir() {
                 std::fs::remove_dir_all(&path)?;
-                removed.push(name);
+                removed.push(shown);
             } else if path.is_file() {
                 std::fs::remove_file(&path)?;
-                removed.push(name);
+                removed.push(shown);
             }
         } else if path.is_dir() {
-            for inner in sanitize_received(&path)? {
-                removed.push(format!("{name}/{inner}"));
-            }
+            sanitize_within(&path, &shown, removed)?;
         }
     }
-    Ok(removed)
+    Ok(())
 }
 
 pub fn move_into(from: &Path, to: &Path) -> Result<()> {
@@ -568,7 +572,7 @@ pub fn land_received(tmp: &Path, dest_dir: &Path) -> Result<(String, Vec<String>
         .and_then(|n| n.to_str())
         .unwrap_or("received")
         .to_string();
-    refuse_received_link(&got)?;
+    refuse_received_link(&got, &name)?;
     if is_deck_bundle(&got) {
         return land_deck_bundle(&got, dest_dir);
     }

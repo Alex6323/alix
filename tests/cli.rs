@@ -3554,8 +3554,8 @@ fn receiving_refuses_an_archive_carrying_a_link_inside_the_folder() {
     let archive = receiver.path().join("payload.zip");
     zip_with_symlink(
         &archive,
-        &[("shared-decks/ok.md", VALID_DECK)],
-        ("shared-decks/escape", elsewhere.to_str().unwrap()),
+        &[("shared-decks/decks/ok.md", VALID_DECK)],
+        ("shared-decks/decks/escape", elsewhere.to_str().unwrap()),
     );
 
     let received = alix_env(
@@ -3570,8 +3570,8 @@ fn receiving_refuses_an_archive_carrying_a_link_inside_the_folder() {
         stderr(&received)
     );
     assert!(
-        stderr(&received).contains("escape"),
-        "the refusal names the entry the sender has to replace: {}",
+        stderr(&received).contains("decks/escape"),
+        "the refusal names the entry by its place in the archive, not by a bare name: {}",
         stderr(&received)
     );
     assert!(
