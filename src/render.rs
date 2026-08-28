@@ -1221,6 +1221,81 @@ mod tests {
         }
     }
 
+    // Every arrangement of a small line alphabet up to four lines, over the
+    // domain the span consumers actually read: a block unit in an answer a
+    // deck can hold. The parser is the gate rather than a hand-written
+    // filter. Code and math spans are deliberately out of scope, and
+    // {#renderer-math-fence-precedence} says why.
+    #[test]
+    fn a_block_unit_is_rebuildable_from_exactly_the_lines_its_span_claims() {
+        const ALPHABET: [&str; 10] = [
+            "prose",
+            "more prose",
+            "",
+            "> quoted",
+            "| a | b |",
+            "| --- | --- |",
+            "| 1 | 2 |",
+            "```",
+            "$$",
+            "- [x] item",
+        ];
+        let mut cases: Vec<Vec<&str>> = vec![Vec::new()];
+        let mut checked = 0usize;
+        for _ in 0..4 {
+            let mut next = Vec::new();
+            for case in &cases {
+                for line in ALPHABET {
+                    let mut longer = case.clone();
+                    longer.push(line);
+                    next.push(longer);
+                }
+            }
+            for case in &next {
+                let text = case.join("\n");
+                if crate::parser::parse_str("t.md", &format!("## q\n{text}\n")).is_err() {
+                    continue;
+                }
+                let lines: Vec<&str> = text.lines().collect();
+                let mut projector = DisplayProjector::default();
+                for spanned in text_units_spanned(&text, &mut projector, false, &[])
+                    .into_iter()
+                    .filter(|spanned| {
+                        matches!(
+                            spanned.unit,
+                            ContentUnit::Quote { .. } | ContentUnit::Table { .. }
+                        )
+                    })
+                {
+                    // The trailing newline keeps a span that ends on a blank
+                    // line: `"a\n".lines()` drops it, `"a\n\n".lines()` does not.
+                    let slice = format!("{}\n", lines[spanned.from..spanned.to].join("\n"));
+                    let mut alone = DisplayProjector::default();
+                    let rebuilt = text_units_spanned(&slice, &mut alone, false, &[]);
+                    assert_eq!(
+                        1,
+                        rebuilt.len(),
+                        "{text:?}: lines {}..{} claim one unit, alone they build {}",
+                        spanned.from,
+                        spanned.to,
+                        rebuilt.len()
+                    );
+                    assert_eq!(
+                        spanned.unit, rebuilt[0].unit,
+                        "{text:?}: the unit spanning {}..{} is not what those lines build alone",
+                        spanned.from, spanned.to
+                    );
+                    checked += 1;
+                }
+            }
+            cases = next;
+        }
+        assert!(
+            checked > 400,
+            "the sweep checked only {checked} block spans"
+        );
+    }
+
     #[test]
     fn a_table_run_is_one_span_over_its_header_delimiter_and_rows() {
         let mut projector = DisplayProjector::default();
