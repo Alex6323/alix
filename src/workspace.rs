@@ -395,8 +395,6 @@ pub fn listing_with_sidecars(dir: &Path) -> io::Result<Vec<PathBuf>> {
         })
         .collect();
     paths.sort();
-    let mut offered = SeenPaths::default();
-    paths.retain(|path| offered.first_visit(path));
     Ok(paths)
 }
 
@@ -971,6 +969,30 @@ mod tests {
             vec!["spanish.md"],
             names(members_where(dir.path(), |_| true).unwrap()),
             "deck discovery excludes it by design"
+        );
+    }
+
+    /// Codex: the pairing listing is a diagnostic, not an offer, and the
+    /// `.personal.md` spelling is its input, so identity must not collapse the
+    /// two names that doctor has to compare.
+    #[cfg(unix)]
+    #[test]
+    fn the_pairing_listing_keeps_both_spellings_of_one_physical_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("facts.md");
+        std::fs::write(&deck, "## q\na\n").unwrap();
+        std::os::unix::fs::symlink(&deck, dir.path().join("facts.personal.md")).unwrap();
+
+        let names: Vec<String> = listing_with_sidecars(dir.path())
+            .unwrap()
+            .iter()
+            .filter_map(|path| path.file_name()?.to_str().map(str::to_string))
+            .collect();
+
+        assert_eq!(
+            vec!["facts.md", "facts.personal.md"],
+            names,
+            "doctor pairs by name, so it has to see both names"
         );
     }
 
