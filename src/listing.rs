@@ -1250,27 +1250,37 @@ mod tests {
         );
     }
 
-    /// Codex: a linked member is one deck to study, so two rows are two study
-    /// units that share one progress document, and the deadline denominator
-    /// counts it twice.
     #[cfg(unix)]
     #[test]
-    fn a_member_reachable_under_two_names_is_one_row() {
+    fn a_member_reachable_under_two_names_is_one_row_and_one_deadline_unit() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::create_dir_all(root.join("decks")).unwrap();
         write(&root.join("alix.toml"), "");
+        let date = crate::time::local_date(T0) + chrono::Days::new(3);
+        write(
+            &root.join("alix.local.toml"),
+            &format!("[review]\ndeadline = \"{}\"\n", date.format("%Y-%m-%d")),
+        );
         let member = root.join("decks/facts.md");
         write(&member, "## q\na\n<!-- id: card-qfacts -->\n");
         std::os::unix::fs::symlink(&member, root.join("decks/facts-alias.md")).unwrap();
 
-        let rows = list_members(root, root, &ReviewConfig::default(), T0);
+        let review = ReviewConfig::default();
+        let rows = list_members(root, root, &review, T0);
 
         assert_eq!(
             1,
             rows.len(),
             "one physical member is one deck to study: {:?}",
             rows.iter().map(|row| &row.title).collect::<Vec<_>>()
+        );
+
+        let deadline = workspace_deadline(root, root, &review, T0).expect("a set deadline lists");
+        assert_eq!(
+            (0, 1),
+            (deadline.ready, deadline.total),
+            "one physical member is one unit of the deadline denominator"
         );
     }
 
