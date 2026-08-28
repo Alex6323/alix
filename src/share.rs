@@ -156,9 +156,10 @@ fn count_files(dir: &Path) -> Result<usize> {
     let mut count = 0;
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
-        if entry.path().is_dir() {
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
             count += count_files(&entry.path())?;
-        } else {
+        } else if !kind.is_symlink() {
             count += 1;
         }
     }
@@ -181,6 +182,13 @@ pub fn stage_dir(dir: &Path, stage: &Path) -> Result<usize> {
         let from = entry.path();
         if stays_home(&name) {
             continue;
+        }
+        if entry.file_type()?.is_symlink() {
+            bail!(
+                "`{}` is a link, and sharing copies files rather than following a link out of \
+                 the folder; replace it with what it points to, or remove it before sharing",
+                from.display()
+            );
         }
         let to = stage.join(&name);
         if name == "augment" && from.is_dir() {
@@ -685,6 +693,37 @@ mod tests {
 
     fn touch(dir: &Path, name: &str) {
         std::fs::write(dir.join(name), "x").unwrap();
+    }
+
+    /// Codex found the leak: the selected folder is the boundary of what leaves
+    /// the machine, and `is_dir` follows a link straight through it.
+    #[cfg(unix)]
+    #[test]
+    fn staging_refuses_a_link_rather_than_carrying_a_file_out_of_the_selected_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("ws");
+        std::fs::create_dir_all(src.join("decks")).unwrap();
+        std::fs::write(
+            src.join("decks/deck.md"),
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q\na\n<!-- id: card-card1 -->\n",
+        )
+        .unwrap();
+        let outside = dir.path().join("private");
+        std::fs::create_dir(&outside).unwrap();
+        touch(&outside, "secret.txt");
+        std::os::unix::fs::symlink(&outside, src.join("linked-notes")).unwrap();
+
+        let stage = dir.path().join("stage");
+        let error = stage_dir(&src, &stage).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("linked-notes"),
+            "the refusal names the link the user has to resolve: {error:#}"
+        );
+        assert!(
+            !stage.join("linked-notes/secret.txt").exists(),
+            "a file outside the selected folder never reaches the outgoing tree"
+        );
     }
 
     #[test]

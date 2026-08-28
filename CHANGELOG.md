@@ -797,6 +797,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   source carries its token exactly. Resolution rewrote the example, corrupting
   what the learner reads, and left the real duplicate in place. Found by Codex.
 
+- Sharing a folder never carries a file out of it. Staging asked `is_dir`,
+  which follows a link, so a directory link inside the shared folder was
+  recursed into and its contents copied into the outgoing archive or wormhole
+  payload: a workspace that linked a notes, source, or media folder rather than
+  duplicating it sent files the user never selected. A link is now refused by
+  name before anything is staged, since the archive carries files rather than
+  links, and the message says to replace it with what it points to. Found by
+  Codex.
+
 - `alix doctor` counts one physical deck folder once, however many symlinks
   reach it. Exposing a synced or externally located workspace under a deck
   collection through an alias is ordinary, and the deck summary walked every
