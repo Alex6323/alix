@@ -1201,6 +1201,7 @@ mod tests {
 
     #[test]
     fn a_missing_wormhole_binary_errors_with_the_install_hint() {
+        let _lock = crate::testutil::exec_lock();
         let err = wormhole_with("definitely-not-wormhole-xyz", &["send"], None).unwrap_err();
         assert!(
             format!("{err:#}").contains("magic-wormhole installed"),
