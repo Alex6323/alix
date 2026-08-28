@@ -107,13 +107,14 @@ pub(crate) fn workspace_cmd(args: GenerateWorkspaceArgs) -> Result<()> {
 // Resolved before any backend call so a missing workspace or an existing deck
 // fails in milliseconds instead of after a paid generation.
 fn resolve_destination(
-    common: &GenerateCommonArgs,
+    into: Option<&Path>,
+    force: bool,
     config: &Config,
     name: &str,
 ) -> Result<(PathBuf, PathBuf)> {
-    let dir = deck_out_dir(common.into.as_deref(), config)?;
+    let dir = deck_out_dir(into, config)?;
     let target = dir.join(name);
-    if target.exists() && !common.force {
+    if target.exists() && !force {
         bail!(
             "{} already exists; pass --force to overwrite",
             target.display()
@@ -134,7 +135,7 @@ fn canonical_source(source: &str) -> String {
 }
 
 fn workspace_dest(args: &GenerateWorkspaceArgs, config: &Config, source: &str) -> Result<PathBuf> {
-    Ok(match &args.common.into {
+    Ok(match &args.into {
         Some(dir) => dir.clone(),
         None => {
             let name = Path::new(source)
@@ -303,7 +304,12 @@ fn generate_single_deck(
     let destination = if args.print {
         None
     } else {
-        Some(resolve_destination(&args.common, config, &name)?)
+        Some(resolve_destination(
+            args.into.as_deref(),
+            args.common.force,
+            config,
+            &name,
+        )?)
     };
 
     preflight_source(&source, config.ask.preflight_threshold, args.common.yes)?;
@@ -492,9 +498,9 @@ fn generate_trace_walk(
     spec: &generate::GenerationSpec,
 ) -> Result<()> {
     let source = canonical_source(&args.source);
-    let dir = deck_out_dir(args.common.into.as_deref(), config)?;
+    let dir = deck_out_dir(args.into.as_deref(), config)?;
     let raw = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.md".into()));
-    let out = if args.common.into.is_some() {
+    let out = if args.into.is_some() {
         dir.join(&raw)
     } else {
         raw
@@ -568,20 +574,6 @@ mod tests {
 
     use super::*;
 
-    fn common(force: bool) -> GenerateCommonArgs {
-        GenerateCommonArgs {
-            into: None,
-            source_url: None,
-            goal: None,
-            language: None,
-            audience: None,
-            card_style: None,
-            force,
-            yes: false,
-            config: None,
-        }
-    }
-
     #[test]
     fn a_fresh_destination_resolves_and_an_existing_one_demands_force() {
         let dir = TempDir::new().unwrap();
@@ -590,19 +582,19 @@ mod tests {
             ..Config::default()
         };
 
-        let (out_dir, target) = resolve_destination(&common(false), &config, "d.md").unwrap();
+        let (out_dir, target) = resolve_destination(None, false, &config, "d.md").unwrap();
         assert_eq!(dir.path(), out_dir, "the decks dir is the destination");
         assert_eq!(dir.path().join("d.md"), target);
 
         std::fs::write(&target, "existing deck").unwrap();
-        let err = resolve_destination(&common(false), &config, "d.md").unwrap_err();
+        let err = resolve_destination(None, false, &config, "d.md").unwrap_err();
         assert!(
             format!("{err:#}").contains("already exists"),
             "an existing target without --force must refuse: {err:#}"
         );
 
         assert!(
-            resolve_destination(&common(true), &config, "d.md").is_ok(),
+            resolve_destination(None, true, &config, "d.md").is_ok(),
             "--force must allow overwriting the existing target"
         );
     }

@@ -375,10 +375,6 @@ enum GenerateAction {
 /// The options both kinds of generation take.
 #[derive(Args)]
 struct GenerateCommonArgs {
-    /// Where the result lands (default: under the decks dir).
-    #[arg(long, value_name = "DIR")]
-    into: Option<PathBuf>,
-
     /// Public URL recorded as an additional `source:` (the workspace `source`
     /// for a generated workspace) for tutor context and exam grounding.
     #[arg(long, value_name = "URL")]
@@ -423,6 +419,11 @@ struct GenerateDeckArgs {
     /// or a deck that declares `trace:` in its frontmatter.
     source: String,
 
+    /// An existing workspace to write the deck into, rather than the decks
+    /// dir (`alix workspace init <dir>` creates one).
+    #[arg(long, value_name = "DIR")]
+    into: Option<PathBuf>,
+
     /// Author a trace over the source instead of facts cards: a short
     /// predict-and-verify walk over its shape, written as a trace deck.
     #[arg(long)]
@@ -458,6 +459,11 @@ struct GenerateDeckArgs {
 struct GenerateWorkspaceArgs {
     /// The directory to explore for a learning plan.
     source: String,
+
+    /// Where to build the workspace (default: a folder named after the
+    /// source, under the decks dir). It is created if it does not exist.
+    #[arg(long, value_name = "DIR")]
+    into: Option<PathBuf>,
 
     /// Print the plan and stop: build nothing.
     #[arg(long)]

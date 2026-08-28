@@ -59,7 +59,7 @@ alix generate deck <source> -o ownership         # choose the output file name
 alix generate deck <source> --cards 15           # aim for at most 15 cards (a soft ceiling)
 alix generate deck <source> --review             # a 2nd pass that dedups and tightens
 alix generate deck <source> --print              # print to stdout instead of writing a file
-alix generate deck <source> --into ~/decks/rust/ # write it under that workspace's decks/
+alix generate deck <source> --into ~/decks/rust/ # into that existing workspace's decks/
 alix generate deck <source> --goal "pass the citizenship test"
 alix generate deck <source> --language German --audience "new voters"
 alix generate deck <source> --card-style authored-choices
