@@ -414,6 +414,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   directly under a card's own lines a bare `#` is an error, where a reset would
   silently truncate the card.
 
+- The backslash escape reaches every break spelling. `\---` was literal text
+  while `\***` and `\___` kept and displayed their backslash, which split a
+  class the same release had just unified: all of them carry the front-divider
+  meaning, so all of them need the escape. A whole line of break markers is
+  escapable now, spaced spellings included, and the deck importer escapes the
+  same shapes when it writes an imported cell.
+
 - **Breaking (deck format): `---`, `***`, and `___` are interchangeable, and
   a break only divides a front.** Position decides what a break means, never
   which of the three you typed, and dividing a multi-line front from the

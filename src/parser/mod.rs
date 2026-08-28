@@ -914,6 +914,14 @@ fn indent_width(raw: &str) -> usize {
     width
 }
 
+/// A whole line of one break marker: the only shape a break can take, and the
+/// shape the importer has to neutralize when it writes a cell.
+#[cfg(feature = "full")]
+pub(crate) fn is_thematic_break(line: &str) -> bool {
+    let t = trim_ws(line);
+    thematic_break(t) && indent_width(line) < 4
+}
+
 fn thematic_break(t: &str) -> bool {
     ['-', '*', '_'].iter().any(|marker| {
         t.chars().all(|c| c == *marker || c == ' ' || c == '\t')
@@ -1229,7 +1237,7 @@ fn scan(
         }
 
         if let Some(rest) = t.strip_prefix('\\')
-            && ESCAPABLE.iter().any(|marker| rest.starts_with(marker))
+            && (thematic_break(rest) || ESCAPABLE.iter().any(|marker| rest.starts_with(marker)))
         {
             if current.is_none() {
                 section_line(&mut section, seen_heading, lineno, rest.to_string())?;
@@ -5310,6 +5318,25 @@ a
             ParseError::StrayDivider(4),
             err("# S\n## q\n\n---\n\n## r\ny\n")
         );
+    }
+
+    #[test]
+    fn the_backslash_escape_reaches_every_break_spelling() {
+        for spelling in ["---", "----", "- - -", "***", "___"] {
+            let deck = parse(&format!("## q\nans\n\\{spelling}\nmore\n"));
+            assert_eq!(
+                vec!["ans", spelling, "more"],
+                deck.cards[0].back,
+                "a backslash keeps a break line literal, and drops itself: {spelling}"
+            );
+
+            let deck = parse(&format!("# S\n\\{spelling}\n\n## q\na\n"));
+            assert_eq!(
+                vec!["S".to_string(), spelling.to_string()],
+                deck.cards[0].section_context,
+                "the same escape works in a section: {spelling}"
+            );
+        }
     }
 
     #[test]

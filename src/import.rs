@@ -63,7 +63,9 @@ const STRUCTURAL: [&str; 6] = ["##", ">", "---", "<!--", "```", "~~~"];
 // imported prose is never a deliberate hole.
 fn escape_structure(line: &str) -> String {
     let line = line.replace("\\blank", "\\\\blank");
-    if STRUCTURAL.iter().any(|marker| line.starts_with(marker)) {
+    if crate::parser::is_thematic_break(&line)
+        || STRUCTURAL.iter().any(|marker| line.starts_with(marker))
+    {
         format!("\\{line}")
     } else {
         line

@@ -188,10 +188,9 @@ what a break means, never how you spelled it. Dividing a multi-line front is the
 only meaning a break has, so a break anywhere else is a parse error, a break
 alone between blank lines included: alix has no standalone horizontal rule, and
 the shape is reserved. A `<!-- plain -->` on the line *below* a break keeps it
-literal whatever its spelling. The backslash escape (see [Escaping](#escaping))
-covers the dash spellings only, so `\---` and `\----` are literal text while
-`\***` keeps its backslash: reach for `<!-- plain -->` with the `*` and `_`
-spellings.
+literal whatever its spelling, and so does a backslash on the line itself (see
+[Escaping](#escaping)): `\---`, `\----`, `\- - -`, `\***`, and `\___` are all
+literal text.
 
 ## Choice cards (task lists)
 
@@ -543,9 +542,9 @@ block it maps, so a second below the first fails the same way.
 
 ## Escaping
 
-Because `##`, `>`, `---`, and the fence and cloze markers are structural, an answer
-line that must *start* with one literally is escaped with a leading backslash:
-`\##`, `\>`, `\---`. The backslash is consumed; the line displays without it.
+Because `##`, `>`, a break line of any spelling, and the fence and cloze markers
+are structural, an answer line that must *start* with one literally is escaped
+with a leading backslash: `\##`, `\>`, `\---`, `\***`. The backslash is consumed; the line displays without it.
 For a break line of any spelling, `<!-- plain -->` on the line below keeps it as
 content too.
 
