@@ -407,8 +407,8 @@ struct GenerateCommonArgs {
     #[arg(long)]
     force: bool,
 
-    /// Skip confirmations: the large-source pre-flight, and the
-    /// workspace-build go-ahead.
+    /// Skip confirmations: the large-source pre-flight, and any build
+    /// go-ahead.
     #[arg(short, long)]
     yes: bool,
 
