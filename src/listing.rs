@@ -67,10 +67,10 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
         if name.starts_with('.') {
             continue;
         }
-        if !offered.first_visit(&path) {
-            continue;
-        }
-        if path.is_dir() && (workspace::is_workspace(&path) || workspace::has_decks(&path)) {
+        if path.is_dir()
+            && (workspace::is_workspace(&path) || workspace::has_decks(&path))
+            && offered.first_visit(&path)
+        {
             out.push(folder_summary(root, &path, review, now_ms));
         } else if path.is_file()
             && path.extension().is_some_and(|e| e == "md")
@@ -78,6 +78,7 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
             && !workspace::is_conflict_name(name)
             && !workspace::is_sidecar_name(name)
             && workspace::file_is_deck(&path)
+            && offered.first_visit(&path)
         {
             out.push(
                 deck_summary(
@@ -830,6 +831,26 @@ mod tests {
         let titles: Vec<&str> = rows.iter().map(|row| row.title.as_str()).collect();
 
         assert_eq!(["10", "11", "100"], titles.as_slice());
+    }
+
+    /// Codex: identity deduplicates what is OFFERED, so a spelling that never
+    /// becomes a row must not spend the deck's identity on the way past.
+    #[cfg(unix)]
+    #[test]
+    fn an_ineligible_alias_cannot_hide_the_deck_it_points_at() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("z-spanish.md");
+        write(&deck, "## q\na\n<!-- id: card-qz -->\n");
+        std::os::unix::fs::symlink(&deck, dir.path().join("a-not-a-deck.txt")).unwrap();
+
+        let rows = list_root(dir.path(), &ReviewConfig::default(), T0);
+
+        let titles: Vec<&str> = rows.iter().map(|row| row.title.as_str()).collect();
+        assert_eq!(
+            ["z-spanish"],
+            titles.as_slice(),
+            "the alias sorts first and is not a deck, so it must leave the deck listable"
+        );
     }
 
     #[test]
