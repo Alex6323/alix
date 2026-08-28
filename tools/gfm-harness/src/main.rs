@@ -576,24 +576,18 @@ mod tests {
     }
 
     #[test]
-    fn multiline_setext_and_blank_surrounded_thematic_break_are_not_conflated() {
-        let setext = measure("test", example("Foo\nBar\n---\n", "Setext headings"));
-        let setext_error = setext.parse_error.as_deref().unwrap_or_default();
-        assert!(
-            setext_error.starts_with("line 4: this break neither divides"),
-            "a break attached under prose is a stray: {setext_error:?}"
-        );
-
-        let thematic = measure(
-            "test",
-            example("Foo\nbar\n\n---\n\nbaz\n", "Setext headings"),
-        );
-        let thematic_error = thematic.parse_error.as_deref().unwrap_or_default();
-        assert!(
-            thematic_error
-                .starts_with("line 5: a `---`/`***`/`___` break has no meaning inside a card"),
-            "a blank-surrounded break inside a card is its own error: {thematic_error:?}"
-        );
+    fn a_break_under_prose_and_one_blank_surrounded_are_reported_at_their_own_lines() {
+        for (label, text, line) in [
+            ("attached under prose", "Foo\nBar\n---\n", 4),
+            ("blank-surrounded in a card", "Foo\nbar\n\n---\n\nbaz\n", 5),
+        ] {
+            let measured = measure("test", example(text, "Setext headings"));
+            let error = measured.parse_error.as_deref().unwrap_or_default();
+            assert!(
+                error.starts_with(&format!("line {line}:")),
+                "{label} is reported at line {line}: {error:?}"
+            );
+        }
     }
 
     #[test]

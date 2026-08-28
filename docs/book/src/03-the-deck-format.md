@@ -184,15 +184,14 @@ joining a card: a front divider sits directly above its answer, with a blank lin
 (or the card's own heading) above it, once per card. A break is three or more of
 one marker, `-`, `*`, or `_`, with spaces or tabs allowed between them, so
 `---`, `----`, `- - -`, `***`, and `___` are one construct: the position decides
-what a break means, never how you spelled it. A break anywhere else is either a
-literal rule in [section context](#-section-context) or a parse error. A
-`<!-- plain -->` on the line *below* a break keeps it literal whatever its
-spelling. The backslash escape (see [Escaping](#escaping)) covers the dash
-spellings only, so `\---` and `\----` are literal text while `\***` keeps its
-backslash: reach for `<!-- plain -->` with the `*` and `_` spellings.
-
-A break alone with blank lines on both sides has no meaning inside a card and is
-an error: move the material to a section, or delete the line.
+what a break means, never how you spelled it. Dividing a multi-line front is the
+only meaning a break has, so a break anywhere else is a parse error, a break
+alone between blank lines included: alix has no standalone horizontal rule, and
+the shape is reserved. A `<!-- plain -->` on the line *below* a break keeps it
+literal whatever its spelling. The backslash escape (see [Escaping](#escaping))
+covers the dash spellings only, so `\---` and `\----` are literal text while
+`\***` keeps its backslash: reach for `<!-- plain -->` with the `*` and `_`
+spellings.
 
 ## Choice cards (task lists)
 
@@ -448,9 +447,9 @@ ATX `#`-prefixed heading), four-space/tab indented code opening after a
 blank line or a heading (wrap the code in a ``` fence; ordinary paragraph
 and task-list continuation lines are unaffected), a nested `> >` quote
 (notes are flat, one `>` deep; put literal `>` text in a fence), and a
-blank-surrounded thematic break inside a card, whatever its spelling (delete it,
-or move the material to a section, where the break renders as a horizontal rule
-in the section view). Inside fenced code every
+blank-surrounded thematic break, whatever its spelling and wherever it sits
+(delete the line, or keep it literal with `<!-- plain -->` below it). Inside
+fenced code every
 shape is literal, as always. A trailing-two-space hard break is not a spelling
 at all: content lines shed trailing whitespace when the deck is read.
 
@@ -547,8 +546,8 @@ block it maps, so a second below the first fails the same way.
 Because `##`, `>`, `---`, and the fence and cloze markers are structural, an answer
 line that must *start* with one literally is escaped with a leading backslash:
 `\##`, `\>`, `\---`. The backslash is consumed; the line displays without it.
-For a line that is exactly `---`, `<!-- plain -->` on the line below keeps it as
-content too, as a literal thematic break.
+For a break line of any spelling, `<!-- plain -->` on the line below keeps it as
+content too.
 
 ```
 ## How do you write a second-level heading in Markdown?

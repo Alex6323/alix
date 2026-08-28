@@ -394,6 +394,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   refused with a message naming the `#`-prefixed form, and a dash underline is
   simply read by the break rule above. Setext offers two heading levels and
   alix cards run to six, so it could never express the card grammar.
+
 - **Breaking: AI walk grading is removed, including its `[trace] auto_grade`
   config key.** A trace walk is self-judged on every client, as the phone
   already was. The feature was config-and-plumbing only: no client ever read
@@ -413,15 +414,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   directly under a card's own lines a bare `#` is an error, where a reset would
   silently truncate the card.
 
-- **Breaking (deck format): `---`, `***`, and `___` are interchangeable.**
-  Position decides what a break means, never which of the three you typed: a
-  break attached above an answer divides a front, blank-surrounded between
-  cards it is a literal rule in the section context, and blank-surrounded
-  inside a card it is an error. `***` and `___` gain the front-divider role
-  and the `<!-- plain -->` escape, which previously only `---` had; a break
-  attached under a heading with no card open is now stray for all three, as
-  `---` already was. Decks using a `---` terminator between cards fail loudly
-  as an ordinary break-inside-a-card error.
+- **Breaking (deck format): `---`, `***`, and `___` are interchangeable, and
+  a break only divides a front.** Position decides what a break means, never
+  which of the three you typed, and dividing a multi-line front from the
+  answer attached below it is the only meaning a break has: anywhere else it
+  is a line-numbered error, blank-surrounded between cards included. alix has
+  no standalone horizontal rule, and the shape is reserved: section context is
+  a short orienting line authored under a `#`, and a break there occurs zero
+  times across 722 decks and 54,480 lines of real collections, the shared study
+  workspace, the committed examples, and the end-to-end fixtures. Keep the
+  characters with `<!-- plain -->` on the
+  line below, or `\---` for a dash spelling. `***` and `___` gain the
+  front-divider role and the `<!-- plain -->` escape, which previously only
+  `---` had; a break attached under a heading with no card open is stray for
+  all three, as `---` already was. Decks using a `---` terminator between
+  cards fail loudly.
 
 - A `format` reshape changes what a card SHOWS, never what a typed check
   expects, which is what the manual has always promised. A card is now served
@@ -562,12 +569,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Four reserved Markdown shapes are now line-numbered errors with a
   suggested rewrite instead of silently showing their markers as card
   content: setext `===` underlines, indented code blocks, nested `> >`
-  quotes, and `***`/`___` breaks inside a card (paragraph and task-list
-  continuations, fence interiors, and standalone `===` lines stay
-  legal). In the section-context view a `***`/`___` line renders as a
-  horizontal rule, keeping a pasted document's topic separators.
-  Trailing-space hard breaks are a non-spelling: content lines shed
-  trailing whitespace.
+  quotes, and a thematic break of any spelling anywhere but the front
+  divider (paragraph and task-list continuations, fence interiors, and
+  standalone `===` lines stay legal). Trailing-space hard breaks are a
+  non-spelling: content lines shed trailing whitespace.
 
 - Markup-rejection parse errors are onboarding surfaces: every message
   that fires on ordinary pasted Markdown (an answerless heading, a deep
@@ -584,14 +589,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Under an invocation, shape violations that used to be lints (mixed
   content, a wrong `[x]` count, a missing distractor) fail loudly.
 
-- **Every `---` body line has exactly three legal shapes (breaking).** A
-  front divider sits directly above its answer with a blank line or the
-  card's own heading above it; a `---` alone with blank lines on both sides
-  terminates the open card and section; any other `---` is now a loud parse
-  error instead of silently joining the answer as content. A literal `---`
-  line is written `\---`, or kept as content by `<!-- plain -->` on the line
-  above. A bare `#` or `##` with no text after the hashes is now an empty
-  heading, an error, rather than prose.
+- **A break line has exactly one legal shape (breaking).** A front divider
+  sits directly above its answer with a blank line or the card's own heading
+  above it; any other break is now a loud parse error instead of silently
+  joining the answer as content. A literal break line is written `\---` for a
+  dash spelling, or kept as content by `<!-- plain -->` on the line below. A
+  bare `##` with no text after the hashes is now an empty heading, an error,
+  rather than prose.
 
 - Frontmatter alix writes follows one canonical key order: authored keys
   first (`title`, `description`, directives, `source`/`link`), machine lines
@@ -780,14 +784,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   directory once: a symlink pointing back into the tree used to print a single
   finding dozens of times and schedule one deck's repair as often. The
   initialized-only set and the symlink cycle were found by Codex.
+
 - A card carrying two `id:` directives is refused instead of half repaired. The
   parser took the last one as the card's identity while a rewrite targeted the
   first, so a duplicate that alix appeared to resolve on open was still shared
   afterwards, silently and permanently. One card holds one identity, and a
   second `id:` is now a line-numbered error. Found by Codex.
+
 - Opening a deck resolves every duplicated card in it, not just the first. A
   card pasted twice inside one deck left the second copy sharing an identity
   until some later open happened to catch it. Found by Codex.
+
 - A deck that changed while alix was scanning is no longer written on the
   strength of that scan. The directory scan that names a duplicate's loser
   takes over a second on a real deck folder, and an editor save or a file sync
@@ -800,6 +807,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no repair can invalidate its siblings' evidence, and the deck about to be
   written is the last one read, so a save landing during the other reads is not
   overwritten by text from before it. Found by Codex.
+
 - A duplicated cloze card or card table is repaired instead of reported as
   already resolved. Duplicate detection compares the composed id a review unit
   answers to, which suffixes the authored `id:` per cloze hole, table row,
@@ -810,6 +818,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   progress. Repairs now address the authored value and the authored block: one
   block is one rewrite, however many review units it expands to. Found by
   Codex.
+
 - Removing a card no longer overwrites edits made to the deck since the sitting
   opened. A sitting caches the deck text at open and replays its removals over
   that text, so a deck edited in an editor (or touched by a sync tool) while the
@@ -818,6 +827,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   refuses when it moved: nothing is written, the card keeps its place and its
   progress, and the reason is reported where a failed save is reported. Found by
   Codex.
+
 - Opening a deck can no longer re-mint another deck's card token on the word of
   the review-open line scan. That scan trades full parses for speed and cannot
   know a file was refused, so a neighbour the parser rejects outright still
@@ -828,12 +838,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   requires the full parse to agree. Reported by Codex from a fence-law
   divergence between `dedup` and the parser, and reproduced end to end here: a
   no-break space on a closing `---` is enough.
+
 - Copying a card inside one deck no longer detaches the original from its
   review history. The duplicate resolver addressed the losing card by token
   alone, and the first id comment carrying that token in document order is the
   card that KEPT it, so opening the deck re-minted the original and left the
   pasted copy holding its identity. The loser is now addressed by its own front
   line. Found by Codex.
+
 - Two shipped documentation examples that did not parse are corrected. The
   README's headline deck wrote `A Vec<u8>, its bytes on the heap.`, which the
   HTML doctrine refuses because `<u` is a tag shape, so the first deck a reader
@@ -844,6 +856,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   behavior. Found by extracting every deck-shaped fenced block from the manual
   and the root guides and parsing each one; the committed example decks under
   `docs/examples/` were swept the same way and all parse.
+
 - A region- or topology-scoped sitting's crumb no longer reports a locked card
   as unlocked. The crumb paints every region of its topology, including cards
   the sitting was scoped away from, but it read the lock axis from the
@@ -851,7 +864,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   card outside the scope therefore came back unlocked. The lock graph was
   always the complete deck's, so the fix reads the deck-wide answer
   (`Locks::locked_ids_everywhere`) for a surface that paints beyond its slice.
-
 
 - Continuing at Recall from the summary keeps the sitting's scope. A session
   opened on one review order, or on one region of it, was re-selected without

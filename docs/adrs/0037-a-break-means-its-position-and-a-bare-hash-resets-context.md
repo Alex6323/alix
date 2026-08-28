@@ -1,9 +1,8 @@
 # 0037: A break means its position, and a bare `#` resets context
 
-- Status: Accepted
+- Status: Accepted (standalone-rule clause superseded by 0038)
 - Evidence: ContextResetInCard in src/parser/mod.rs
 - Evidence: thematic_break in src/parser/mod.rs
-- Evidence: CardThematicBreak in src/parser/mod.rs
 - Recorded: 2026-08-27
 - Retrospective: No
 

@@ -250,7 +250,7 @@ pub enum ParseError {
     #[error("line {0}: only directive comments may follow a card table before the next `## ` card")]
     TableTrailing(usize),
     #[error(
-        "line {0}: this break neither divides a front from the answer attached below it nor stands blank-surrounded between cards; put `<!-- plain -->` on the line below for a literal thematic break"
+        "line {0}: a thematic break line only divides a multi-line front from the answer attached below it; delete the line, or put `<!-- plain -->` below it to keep it literal"
     )]
     StrayDivider(usize),
     #[error(
@@ -273,10 +273,6 @@ pub enum ParseError {
         "line {0}: quotes do not nest; keep the note one `>` deep, or put literal `>` text in a ``` fence"
     )]
     NestedQuote(usize),
-    #[error(
-        "line {0}: a thematic break line has no meaning inside a card; delete the line, or move the material to a section, or put `<!-- plain -->` below it to keep it literal"
-    )]
-    CardThematicBreak(usize),
 }
 
 impl ParseError {
@@ -327,7 +323,6 @@ impl ParseError {
             Self::TagShape { .. } => "tag_shape",
             Self::IndentedCode(_) => "indented_code",
             Self::NestedQuote(_) => "nested_quote",
-            Self::CardThematicBreak(_) => "card_thematic_break",
         }
     }
 
@@ -355,8 +350,7 @@ impl ParseError {
             | Self::SetextUnderline(line)
             | Self::UnclosedDisplayMath(line)
             | Self::IndentedCode(line)
-            | Self::NestedQuote(line)
-            | Self::CardThematicBreak(line) => *line,
+            | Self::NestedQuote(line) => *line,
             Self::InvalidTitle { line, .. }
             | Self::FrontmatterSyntax { line, .. }
             | Self::NonStringId { line, .. }
@@ -1276,11 +1270,6 @@ fn scan(
                     card.divided = true;
                     card.divider_line = Some(lineno);
                 }
-            } else if !attached && prev_blank {
-                if current.is_some() {
-                    return Err(ParseError::CardThematicBreak(lineno));
-                }
-                section_line(&mut section, seen_heading, lineno, t.to_string())?;
             } else {
                 return Err(ParseError::StrayDivider(lineno));
             }
@@ -3842,9 +3831,9 @@ mod tests {
                 Outcome::Err(2),
             ),
             (
-                "a blank-surrounded section break is a literal rule",
+                "a blank-surrounded section break is reserved",
                 "# s\n\n***\n\n## q\na\n",
-                Outcome::Cards(1),
+                Outcome::Err(3),
             ),
             (
                 "break inside a fence",
@@ -5170,15 +5159,14 @@ a
                 "attached in a card divides the front: {spelling}"
             );
 
-            let deck = parse(&format!("# S\nctx\n\n{spelling}\n\n## q\na\n"));
             assert_eq!(
-                vec!["S".to_string(), "ctx".to_string(), spelling.to_string()],
-                deck.cards[0].section_context,
-                "blank-surrounded in a section context is a literal rule: {spelling}"
+                ParseError::StrayDivider(4),
+                err(&format!("# S\nctx\n\n{spelling}\n\n## q\na\n")),
+                "blank-surrounded in a section errors: {spelling}"
             );
 
             assert_eq!(
-                ParseError::CardThematicBreak(4),
+                ParseError::StrayDivider(4),
                 err(&format!("## a\nx\n\n{spelling}\n\ny\n")),
                 "blank-surrounded in a card errors: {spelling}"
             );
@@ -5275,14 +5263,14 @@ a
     #[test]
     fn a_break_that_closes_a_front_without_an_answer_errors() {
         assert_eq!(
-            ParseError::CardThematicBreak(4),
+            ParseError::StrayDivider(4),
             err("# S\n## q\n\n---\n\n## r\ny\n")
         );
     }
 
     #[test]
     fn a_plain_marked_break_line_is_literal_content() {
-        for spelling in ["---", "***", "___"] {
+        for spelling in ["---", "----", "- - -", "***", "___"] {
             let deck = parse(&format!(
                 "## q\nans\n\n{spelling}\n<!-- plain -->\n\nmore\n"
             ));
