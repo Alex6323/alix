@@ -1232,6 +1232,37 @@ mod tests {
         assert!(!assets.exists(), "the frozen assets directory is gone");
     }
 
+    /// The plan reaches `assets/` and `augment/` by name, and `is_dir` follows
+    /// a link, so removal is one of the paths where a link out of the workspace
+    /// would take somebody's real folder with it.
+    #[cfg(unix)]
+    #[test]
+    fn removing_a_workspace_never_deletes_through_a_linked_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("elsewhere");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("keep.png"), b"png").unwrap();
+        let ws = dir.path().join("ws");
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+        write_deck(&members, "a.md", "da1", "ca1");
+        std::os::unix::fs::symlink(&outside, ws.join("assets")).unwrap();
+        let store = crate::state::open_stores(&[members.join("a.md")], &ws).unwrap();
+
+        remove_workspace(&ws, &store).unwrap();
+
+        assert!(
+            outside.join("keep.png").is_file(),
+            "a link out of the workspace is not the workspace's to delete"
+        );
+        assert!(
+            ws.join("assets").symlink_metadata().is_err(),
+            "the link itself belongs to the workspace and goes with it"
+        );
+        assert!(!ws.exists(), "the workspace is still removed");
+    }
+
     #[test]
     fn removing_a_workspace_deletes_every_owned_artifact_and_preserves_other_files() {
         let dir = tempfile::tempdir().unwrap();
