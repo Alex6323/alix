@@ -797,6 +797,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   source carries its token exactly. Resolution rewrote the example, corrupting
   what the learner reads, and left the real duplicate in place. Found by Codex.
 
+- Two rows of the directives reference told authors their valid decks were
+  invalid. It named `###`/`####` and said nothing goes deeper, while `#####` and
+  `######` have been sub-cards all along (chapter 3 says so), and it gave
+  `plain` a card-only scope while a break plus `<!-- plain -->` is legal in
+  section context and its own description says so. Found by Codex.
+
 - Sharing a folder never carries a file out of it. Staging asked `is_dir`,
   which follows a link, so a directory link inside the shared folder was
   recursed into and its contents copied into the outgoing archive or wormhole
