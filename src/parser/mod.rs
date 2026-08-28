@@ -252,7 +252,7 @@ pub enum ParseError {
     #[error("line {0}: only directive comments may follow a card table before the next `## ` card")]
     TableTrailing(usize),
     #[error(
-        "line {0}: a thematic break line only divides a multi-line front from the answer attached below it; delete the line, or put `<!-- plain -->` below it to keep it literal"
+        "line {0}: a thematic break line only divides a card's front from the answer attached below it; delete the line, or put `<!-- plain -->` below it to keep it literal"
     )]
     StrayDivider(usize),
     #[error(
@@ -5155,6 +5155,18 @@ a
         let deck = parse("## q\n---\na\n");
         assert_eq!("q", deck.cards[0].front);
         assert_eq!(vec!["a"], deck.cards[0].back);
+    }
+
+    #[test]
+    fn the_stray_break_message_never_excludes_a_heading_only_front() {
+        let deck = parse("## q\n---\na\n");
+        assert_eq!("q", deck.cards[0].front, "a one-line front divides");
+
+        let message = err("## q\na\n\n---\n").to_string();
+        assert!(
+            !message.contains("multi-line"),
+            "the message must not name a grammar narrower than the parser accepts: {message}"
+        );
     }
 
     #[test]

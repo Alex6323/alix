@@ -3,6 +3,11 @@
 - Status: Accepted
 - Evidence: StrayDivider in src/parser/mod.rs
 - Recorded: 2026-08-28
+- Clarified 2026-08-28: the decision said "a multi-line front", which is
+  narrower than the parser it describes. A break directly under a card's
+  heading divides a one-line front too
+  (`an_attached_divider_right_under_the_heading_divides`). The decision is
+  unchanged; only the wording was wrong.
 - Retrospective: No
 
 Supersedes the standalone-rule clause of
@@ -40,7 +45,7 @@ parses found matches only in vendored dependency READMEs.
 
 ## Decision
 
-**Dividing a multi-line front from the answer attached below it is the only
+**Dividing a card's front from the answer attached below it is the only
 meaning a thematic break has. Every other position is a line-numbered error,
 blank-surrounded outside a card included. alix has no standalone horizontal
 rule, and the shape is reserved.**

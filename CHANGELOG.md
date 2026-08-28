@@ -437,8 +437,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Breaking (deck format): `---`, `***`, and `___` are interchangeable, and
   a break only divides a front.** Position decides what a break means, never
-  which of the three you typed, and dividing a multi-line front from the
-  answer attached below it is the only meaning a break has: anywhere else it
+  which of the three you typed, and dividing a card's front from the answer
+  attached below it is the only meaning a break has: anywhere else it
   is a line-numbered error, blank-surrounded between cards included. alix has
   no standalone horizontal rule, and the shape is reserved: section context is
   a short orienting line authored under a `#`, and a break there occurs zero

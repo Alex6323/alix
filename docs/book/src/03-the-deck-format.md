@@ -184,8 +184,9 @@ joining a card: a front divider sits directly above its answer, with a blank lin
 (or the card's own heading) above it, once per card. A break is three or more of
 one marker, `-`, `*`, or `_`, with spaces or tabs allowed between them, so
 `---`, `----`, `- - -`, `***`, and `___` are one construct: the position decides
-what a break means, never how you spelled it. Dividing a multi-line front is the
-only meaning a break has, so a break anywhere else is a parse error, a break
+what a break means, never how you spelled it. Dividing a card's front from the
+answer below it is the only meaning a break has, so a break anywhere else is a
+parse error, a break
 alone between blank lines included: alix has no standalone horizontal rule, and
 the shape is reserved. A `<!-- plain -->` on the line *below* a break keeps it
 literal whatever its spelling, and so does a backslash on the line itself (see
