@@ -1258,6 +1258,34 @@ back a
         (staging, dest)
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_forced_merge_over_a_linked_directory_removes_the_link_not_its_target() {
+        let (staging, dest) = merge_test_dirs("linked-dir");
+        fs::create_dir_all(staging.join("notes")).unwrap();
+        fs::write(staging.join("notes/built.txt"), "built\n").unwrap();
+        let outside = dest.with_file_name("outside");
+        let _ = fs::remove_dir_all(&outside);
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("keep.txt"), "keep\n").unwrap();
+        fs::create_dir_all(&dest).unwrap();
+        std::os::unix::fs::symlink(&outside, dest.join("notes")).unwrap();
+
+        let mut store = Store::open(dest.join("deck1.json")).unwrap();
+        merge_built(&staging, &dest, true, &mut store).unwrap();
+
+        assert_eq!(
+            "keep\n",
+            fs::read_to_string(outside.join("keep.txt")).unwrap(),
+            "publishing into a linked name must not reach the link's target"
+        );
+        assert_eq!(
+            "built\n",
+            fs::read_to_string(dest.join("notes/built.txt")).unwrap(),
+            "the built directory takes the name the link held"
+        );
+    }
+
     #[test]
     fn a_clean_merge_moves_every_entry_and_reports_zero_conflicts() {
         let (staging, dest) = merge_test_dirs("clean");

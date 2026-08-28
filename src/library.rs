@@ -787,6 +787,36 @@ pub fn reset_decks<'a>(
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn replacing_a_linked_member_writes_a_file_rather_than_through_the_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let decks = dir.path().join("decks");
+        std::fs::create_dir(&decks).unwrap();
+        let outside = dir.path().join("outside.md");
+        let original = "---\nid: deck-1xpgnc8f1mypv80cgzyxrn2cqf\n---\n\
+                        ## original\nkeep me\n\
+                        <!-- id: card-1xpgnc8f1mypv80cgzyxrn2cqf -->\n";
+        std::fs::write(&outside, original).unwrap();
+        std::os::unix::fs::symlink(&outside, decks.join("x.md")).unwrap();
+        let mut store = crate::state::open_store(&decks.join("x.md"), &decks).unwrap();
+
+        replace_deck(&decks, "x.md", "## new\nreplaced\n", &mut store).unwrap();
+
+        assert_eq!(
+            original,
+            std::fs::read_to_string(&outside).unwrap(),
+            "a replacement must not reach a file outside the decks folder"
+        );
+        assert!(
+            !std::fs::symlink_metadata(decks.join("x.md"))
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "the replacement takes the name as a regular file"
+        );
+    }
+
     #[test]
     fn placing_a_valid_deck_writes_it_and_counts_cards() {
         let dir = tempfile::tempdir().unwrap();
