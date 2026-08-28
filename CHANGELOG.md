@@ -797,6 +797,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   source carries its token exactly. Resolution rewrote the example, corrupting
   what the learner reads, and left the real duplicate in place. Found by Codex.
 
+- `alix doctor` counts one physical deck folder once, however many symlinks
+  reach it. Exposing a synced or externally located workspace under a deck
+  collection through an alias is ordinary, and the deck summary walked every
+  spelling: one workspace with a permission problem reported two unreadable
+  paths, and a readable one had its decks and its folder counted twice. The
+  findings traversal already resolved aliases to one physical directory; the
+  summary now does too. Found by Codex.
+
 - `alix doctor` no longer certifies a decks folder it cannot read as healthy and
   empty. A folder whose permissions changed (a shared drive, a removable disk, a
   restored backup, a synced tree) produced a green `decks` row with zero decks,

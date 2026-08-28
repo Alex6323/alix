@@ -3,6 +3,7 @@
 //! `--remove-backup-files`), never in these functions.
 
 use std::{
+    collections::HashSet,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -141,9 +142,17 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
     let direct_workspace = workspace::is_workspace(decks_dir);
     let mut dirs = usize::from(direct_workspace);
     if !direct_workspace {
-        for entry in std::fs::read_dir(decks_dir).into_iter().flatten().flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
+        let mut children: Vec<PathBuf> = std::fs::read_dir(decks_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect();
+        children.sort();
+        let mut walked: HashSet<PathBuf> = HashSet::new();
+        for path in children {
+            if !walked.insert(path.canonicalize().unwrap_or_else(|_| path.clone())) {
                 continue;
             }
             let found = match workspace::classify_deck_files(&path) {
@@ -341,6 +350,32 @@ pub fn check_backups(root: &Path) -> Option<Finding> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_aliases_do_not_count_one_unreadable_workspace_twice() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let workspace_dir = root.path().join("nested");
+        let decks = workspace_dir.join(workspace::DECKS);
+        std::fs::create_dir_all(&decks).unwrap();
+        std::fs::write(workspace_dir.join(workspace::MANIFEST), "").unwrap();
+        let deck = decks.join("locked.md");
+        std::fs::write(&deck, "## q\na\n").unwrap();
+        std::fs::set_permissions(&deck, std::fs::Permissions::from_mode(0o000)).unwrap();
+        std::os::unix::fs::symlink(&workspace_dir, root.path().join("alias")).unwrap();
+        std::os::unix::fs::symlink(root.path(), workspace_dir.join("back-to-root")).unwrap();
+
+        let finding = check_decks(root.path());
+
+        std::fs::set_permissions(&deck, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(Status::Warn, finding.status, "{finding:?}");
+        assert!(
+            finding.detail.contains("1 path(s) alix cannot read"),
+            "one physical workspace reachable by a symlink alias and cycle must contribute its unreadable member once: {finding:?}"
+        );
+    }
 
     #[test]
     fn backup_scanning_finds_nested_baks_and_stays_silent_when_clean() {
