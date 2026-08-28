@@ -395,6 +395,8 @@ pub fn listing_with_sidecars(dir: &Path) -> io::Result<Vec<PathBuf>> {
         })
         .collect();
     paths.sort();
+    let mut offered = SeenPaths::default();
+    paths.retain(|path| offered.first_visit(path));
     Ok(paths)
 }
 
@@ -420,6 +422,8 @@ fn members_where_in(
         .filter(|p| is_deck(p))
         .collect();
     paths.sort();
+    let mut offered = SeenPaths::default();
+    paths.retain(|path| offered.first_visit(path));
     Ok(paths)
 }
 

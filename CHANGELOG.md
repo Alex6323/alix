@@ -841,6 +841,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   root, so a linked workspace made one conflict file look like two to resolve.
   Same physical-identity rule as the folder listings.
 
+- One physical deck is one row, and one physical sync-conflict document is one
+  thing to resolve, however many names reach it. A workspace or folder holding
+  a deck and a link to that deck offered two study rows backed by one progress
+  document, and a workspace deadline counted that deck twice; two workspaces
+  sharing one `store` reported the same conflict document twice, under the two
+  lexical spellings that reach it. Member discovery and the conflict list now
+  apply the same physical-identity rule as the folder listings, after
+  eligibility rather than before, so an ignored alias can neither add a row nor
+  take one away. Found by Codex.
+
 - A folder listing offers one physical workspace once. Linking a workspace into
   a deck collection is supported, and when the original and the alias were both
   under the configured root, the library listing and the picker catalog showed

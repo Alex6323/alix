@@ -207,7 +207,8 @@ pub fn sync_conflicts_under(root: &Path) -> Vec<PathBuf> {
         }
     }
     out.sort();
-    out.dedup();
+    let mut reported = workspace::SeenPaths::default();
+    out.retain(|path| reported.first_visit(path));
     out
 }
 
@@ -1211,6 +1212,65 @@ mod tests {
             conflict.canonicalize().unwrap(),
             found[0].canonicalize().unwrap(),
             "either spelling is a valid path to the same file, but only one of them is offered"
+        );
+    }
+
+    /// Codex: `store = "../shared"` is a supported layout, and two workspaces
+    /// pointing at one store returned the same document under two lexical
+    /// spellings, so the phone asked for the same conflict to be resolved twice.
+    #[test]
+    fn sync_conflicts_under_counts_one_shared_store_document_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for name in ["a", "b"] {
+            std::fs::create_dir_all(root.join(name).join("decks")).unwrap();
+            write(
+                &root.join(name).join("alix.toml"),
+                "store = \"../shared\"\n",
+            );
+            write(
+                &root.join(name).join("decks/m.md"),
+                "## q\na\n<!-- id: card-qm -->\n",
+            );
+        }
+        std::fs::create_dir_all(root.join("shared/progress")).unwrap();
+        let conflict = root.join("shared/progress/m.sync-conflict-20260715-101112-BBBBBBB.json");
+        write(&conflict, "{}");
+
+        let found = sync_conflicts_under(root);
+
+        assert_eq!(
+            1,
+            found.len(),
+            "one physical document is one conflict to resolve: {found:?}"
+        );
+        assert_eq!(
+            conflict.canonicalize().unwrap(),
+            found[0].canonicalize().unwrap()
+        );
+    }
+
+    /// Codex: a linked member is one deck to study, so two rows are two study
+    /// units that share one progress document, and the deadline denominator
+    /// counts it twice.
+    #[cfg(unix)]
+    #[test]
+    fn a_member_reachable_under_two_names_is_one_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("decks")).unwrap();
+        write(&root.join("alix.toml"), "");
+        let member = root.join("decks/facts.md");
+        write(&member, "## q\na\n<!-- id: card-qfacts -->\n");
+        std::os::unix::fs::symlink(&member, root.join("decks/facts-alias.md")).unwrap();
+
+        let rows = list_members(root, root, &ReviewConfig::default(), T0);
+
+        assert_eq!(
+            1,
+            rows.len(),
+            "one physical member is one deck to study: {:?}",
+            rows.iter().map(|row| &row.title).collect::<Vec<_>>()
         );
     }
 
