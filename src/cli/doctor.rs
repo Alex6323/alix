@@ -845,7 +845,7 @@ fn findings_in(dir: &Path) -> Report {
             .collect();
         report.warn(format!(
             "duplicate card token `{}`: {}:{} keeps the progress; also at {}",
-            dupe.token,
+            dupe.base,
             dupe.keeper.0.display(),
             dupe.keeper.1,
             losers.join(", ")

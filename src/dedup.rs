@@ -12,14 +12,12 @@ use twox_hash::XxHash64;
 
 use crate::parser;
 
-/// A card token claimed by more than one heading; the keeper keeps its
-/// progress, each loser is re-minted at its deck's next review-open.
+/// An authored `id:` value claimed by more than one block; the keeper keeps
+/// its progress, each loser is re-minted at its deck's next review-open.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CardDupe {
-    pub token: String,
-    /// The `id:` value the deck files hold. `token` suffixes it for a cloze
-    /// hole, a table row, a reversed half, or a region, and only this spelling
-    /// is ever written back.
+    /// The `id:` value the deck files hold, which is the only spelling ever
+    /// written back: a composed review-unit id never reaches a deck file.
     pub base: String,
     /// The keeper: (deck file, 1-based line of the authored block).
     pub keeper: (PathBuf, usize),
@@ -298,45 +296,49 @@ fn deck_dupes(parsed: &[Parsed]) -> (Vec<(PathBuf, PathBuf, String)>, Vec<usize>
     (excluded_decks, excluded)
 }
 
-/// Card-token duplicates across the non-excluded decks.
+/// Authored-identity duplicates across the non-excluded decks. One authored
+/// block is ONE claim however many review units it expands to, so a block's
+/// sibling holes, table rows, reversed half, and regions co-own their base
+/// legally while two different blocks never do. Grouping on the composed id
+/// instead would both miss a pair whose shapes differ (a plain card and a
+/// cloze copy of it) and let one block be elected keeper of one unit and
+/// loser of another, which no single `id:` line can satisfy.
 fn card_dupes(parsed: &[Parsed], excluded: &[usize]) -> Vec<CardDupe> {
-    // token -> the sites claiming it, in scan order (deck order, then line).
+    // base -> the authored blocks claiming it, in scan order (deck order,
+    // then line).
     let mut sites: HashMap<&str, Vec<(PathBuf, usize)>> = HashMap::new();
-    // Equal composed ids share a base by construction, so any site names it.
-    let mut bases: HashMap<&str, &str> = HashMap::new();
     for (i, p) in parsed.iter().enumerate() {
         if excluded.contains(&i) {
             continue;
         }
         for card in &p.cards {
-            sites
-                .entry(card.id.as_str())
-                .or_default()
-                .push((p.path.clone(), card.block_line));
-            bases.insert(card.id.as_str(), card.base.as_str());
+            let claim = (p.path.clone(), card.block_line);
+            let claims = sites.entry(card.base.as_str()).or_default();
+            if !claims.contains(&claim) {
+                claims.push(claim);
+            }
         }
     }
     let mut out = Vec::new();
-    for (tok, sites) in sites {
+    for (base, sites) in sites {
         if sites.len() < 2 {
             continue;
         }
         let keeper = keeper_index(&sites.iter().map(|(p, _)| p.as_path()).collect::<Vec<_>>());
-        let mut losers = Vec::new();
-        for (i, site) in sites.iter().enumerate() {
-            if i != keeper {
-                losers.push(site.clone());
-            }
-        }
+        let losers = sites
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != keeper)
+            .map(|(_, site)| site.clone())
+            .collect();
         out.push(CardDupe {
-            token: tok.to_string(),
-            base: bases.get(tok).copied().unwrap_or(tok).to_string(),
+            base: base.to_string(),
             keeper: sites[keeper].clone(),
             losers,
         });
     }
     // Deterministic report order.
-    out.sort_by(|a, b| a.token.cmp(&b.token));
+    out.sort_by(|a, b| a.base.cmp(&b.base));
     out
 }
 
@@ -465,7 +467,7 @@ mod tests {
             "the two scans must agree on findings; a card-less file digested by only one is not one"
         );
         assert_eq!(1, fast.card_dupes.len());
-        assert_eq!("card-shared1", fast.card_dupes[0].token);
+        assert_eq!("card-shared1", fast.card_dupes[0].base);
     }
 
     /// The fast scan's known over-claim, pinned so nothing writes on its word.
@@ -547,7 +549,7 @@ mod tests {
         let map = scan_dir_fast(dir.path());
 
         assert_eq!(1, map.card_dupes.len(), "{map:#?}");
-        assert_eq!(container, map.card_dupes[0].token);
+        assert_eq!(container, map.card_dupes[0].base);
         assert_eq!(
             5, map.card_dupes[0].keeper.1,
             "the container anchors to the table's HEADER line, not a later row"
@@ -618,7 +620,7 @@ mod tests {
         );
         assert_eq!(1, map.card_dupes.len());
         let dupe = &map.card_dupes[0];
-        assert_eq!("card-cshared", dupe.token);
+        assert_eq!("card-cshared", dupe.base);
         assert_eq!((a, 5), dupe.keeper);
         assert_eq!(vec![(b, 5)], dupe.losers);
     }
@@ -701,7 +703,7 @@ mod tests {
         let tokens: Vec<&str> = map
             .card_dupes
             .iter()
-            .map(|dupe| dupe.token.as_str())
+            .map(|dupe| dupe.base.as_str())
             .collect();
 
         assert_eq!(vec![shared], tokens);

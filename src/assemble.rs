@@ -691,6 +691,111 @@ mod tests {
     use super::*;
     use crate::{answer::Mode, scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS};
 
+    #[test]
+    fn plain_and_cloze_copies_do_not_create_duplicate_progress_record_owners() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain_path = dir.path().join("deck.md");
+        let cloze_path = dir.path().join("deck-copy.md");
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        write_initialized(
+            &plain_path,
+            &format!("## original\nanswer\n<!-- id: {shared} -->\n"),
+        );
+        write_initialized(
+            &cloze_path,
+            &format!("## copied and changed\n\\blank{{answer}}\n<!-- id: {shared} -->\n"),
+        );
+
+        resolve_duplicates_at_open(&cloze_path);
+
+        let plain = Deck::load(&plain_path).unwrap();
+        let cloze = Deck::load(&cloze_path).unwrap();
+        let progress = dir.path().join("progress");
+        for deck in [&plain, &cloze] {
+            let deck_id = deck.deck_token.as_deref().unwrap();
+            let mut store = Store::open_deck(
+                progress.join(format!("{deck_id}.json")),
+                deck_id,
+                deck.subject.clone(),
+            )
+            .unwrap();
+            store.ensure_records(&deck.cards[0]);
+            store.save().unwrap();
+        }
+
+        let reopened = Store::open_for_decks(&progress, &[plain, cloze]);
+        assert!(
+            reopened.is_ok(),
+            "review-open must separate the copied authored base before both deck documents claim its hole-remap record: {:?}",
+            reopened.err()
+        );
+    }
+
+    #[test]
+    fn every_composed_duplicate_of_one_base_selects_one_authored_block_as_keeper() {
+        let dir = tempfile::tempdir().unwrap();
+        let one_hole = dir.path().join("deck.md");
+        let two_hole_copy = dir.path().join("deck-copy.md");
+        let two_hole_peer = dir.path().join("z.md");
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        write_initialized(
+            &one_hole,
+            &format!("## one\n\\blank{{alpha}}\n<!-- id: {shared} -->\n"),
+        );
+        let two_holes =
+            format!("## two\n\\blank{{alpha}} and \\blank{{beta}}\n<!-- id: {shared} -->\n");
+        write_initialized(&two_hole_copy, &two_holes);
+        write_initialized(&two_hole_peer, &two_holes);
+
+        let map = crate::dedup::scan_dir(dir.path());
+        let keepers: std::collections::HashSet<_> = map
+            .card_dupes
+            .iter()
+            .filter(|dupe| dupe.base == shared)
+            .map(|dupe| dupe.keeper.0.clone())
+            .collect();
+
+        assert_eq!(
+            1,
+            keepers.len(),
+            "one id comment cannot preserve different keeper files for its derived review units: {:#?}",
+            map.card_dupes
+        );
+    }
+
+    #[test]
+    fn duplicate_resolution_rewrites_the_parsed_id_not_matching_fenced_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let keeper = dir.path().join("deck.md");
+        let loser = dir.path().join("deck-copy.md");
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        write_initialized(
+            &keeper,
+            &format!("## keeper\nanswer\n<!-- id: {shared} -->\n"),
+        );
+        write_initialized(
+            &loser,
+            &format!(
+                "## copied syntax card\n```md\n<!-- id: {shared} -->\n```\nanswer\n<!-- id: {shared} -->\n"
+            ),
+        );
+        assert_eq!(
+            1,
+            crate::dedup::scan_dir(dir.path()).card_dupes.len(),
+            "the parser found the one active duplicate and ignored the fenced example"
+        );
+
+        resolve_duplicates_at_open(&loser);
+
+        let after = std::fs::read_to_string(&loser).unwrap();
+        let live = Deck::load(&loser).unwrap().cards[0].token.clone();
+        assert!(
+            after.contains(&format!("```md\n<!-- id: {shared} -->\n```"))
+                && live.as_deref() != Some(shared),
+            "the authored code example must stay byte-identical and the parsed duplicate must be reminted; live token {live:?}, file:\n{after}"
+        );
+    }
+
     fn write_initialized(path: &Path, text: &str) {
         let id: String = path
             .file_stem()
@@ -955,9 +1060,14 @@ mod tests {
             write_initialized(&keeper, &body);
             write_initialized(&loser, &body);
             let before = crate::dedup::scan_dir(dir.path()).card_dupes;
+            assert_eq!(
+                1,
+                before.len(),
+                "one duplicated base token is ONE claim, however many review units its block expands to: {before:#?}"
+            );
             assert!(
-                before.len() >= 2,
-                "the {shape} fixture expands one duplicated base token into sibling duplicate ids: {before:#?}"
+                Deck::load(&loser).unwrap().cards.len() >= 2,
+                "the {shape} fixture must expand that one block into sibling review units"
             );
 
             resolve_duplicates_at_open(&loser);
@@ -2370,7 +2480,7 @@ it reads line two\n\
         let map = crate::dedup::scan_dir(dir.path());
         assert_eq!(before, std::fs::read_to_string(&loser).unwrap());
         assert_eq!(1, map.card_dupes.len());
-        assert_eq!("card-cshared", map.card_dupes[0].token);
+        assert_eq!("card-cshared", map.card_dupes[0].base);
         assert_eq!(keeper.clone(), map.card_dupes[0].keeper.0);
 
         let mut store = state::open_store(&loser, dir.path()).unwrap();

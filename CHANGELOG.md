@@ -773,6 +773,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- Duplicate card identities are resolved by the `id:` line a deck file actually
+  holds, not by the review-unit ids it expands into. Two consequences, both
+  found by Codex. Copying a reviewed fact card and turning the copy into a cloze
+  left the shared identity in place, because a plain card and a one-hole cloze
+  claim different review-unit ids; the per-deck progress documents then both
+  claimed the same hole-remap record and aggregate progress refused to open,
+  blocking the library and session views until the identity was repaired by
+  hand. And a block could be elected keeper of one of its holes and loser of
+  another in the same scan, a verdict one `id:` line cannot satisfy, which
+  severed the surviving block from the other hole's history.
+
+- A duplicate repair rewrites the identity the parser read, never a matching
+  token inside a fenced example. A card teaching deck syntax can show a complete
+  card source, `id:` line included, and an example copied from that card's own
+  source carries its token exactly. Resolution rewrote the example, corrupting
+  what the learner reads, and left the real duplicate in place. Found by Codex.
+
 - `alix doctor` no longer certifies a decks folder it cannot read as healthy and
   empty. A folder whose permissions changed (a shared drive, a removable disk, a
   restored backup, a synced tree) produced a green `decks` row with zero decks,

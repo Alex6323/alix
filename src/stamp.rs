@@ -728,8 +728,6 @@ fn nth_line_start(text: &str, line: usize) -> Option<usize> {
     None
 }
 
-/// A `target` matching only inert fenced text is a theoretical collision a
-/// 26-char random token makes vanishingly unlikely.
 fn line_start_offset(text: &str, line: usize) -> usize {
     if line <= 1 {
         return 0;
@@ -742,6 +740,7 @@ fn line_start_offset(text: &str, line: usize) -> usize {
 }
 
 fn first_id_token_span(text: &str, target: &str) -> Option<Range<usize>> {
+    let fenced = fenced_spans(text);
     let mut cursor = 0;
     while let Some(rel) = text[cursor..].find("<!--") {
         let body_start = cursor + rel + 4;
@@ -751,12 +750,44 @@ fn first_id_token_span(text: &str, target: &str) -> Option<Range<usize>> {
         let body_end = body_start + rel_end;
         if let Some(range) = id_value_range(body_start, &text[body_start..body_end])
             && &text[range.clone()] == target
+            && !fenced.iter().any(|span| span.contains(&range.start))
         {
             return Some(range);
         }
         cursor = body_end + 3;
     }
     None
+}
+
+/// A card teaching deck syntax can show a complete card source, id line
+/// included, and an example copied from the card's own source carries that
+/// card's token exactly. An unclosed fence runs to the end, matching where
+/// the parser stops reading ids.
+fn fenced_spans(text: &str) -> Vec<Range<usize>> {
+    let mut spans = Vec::new();
+    let mut fence: Option<(char, usize, usize)> = None;
+    let mut offset = 0;
+    for raw in text.split_inclusive('\n') {
+        let line = raw.strip_suffix('\n').unwrap_or(raw);
+        match fence {
+            Some((ch, open, start)) => {
+                if parser::closes_fence(line, ch, open) {
+                    spans.push(start..offset + raw.len());
+                    fence = None;
+                }
+            }
+            None => {
+                if let Some((ch, open)) = parser::fence_opener(line) {
+                    fence = Some((ch, open, offset));
+                }
+            }
+        }
+        offset += raw.len();
+    }
+    if let Some((_, _, start)) = fence {
+        spans.push(start..text.len());
+    }
+    spans
 }
 
 /// Mirrors the parser's `key: value` split and whitespace set, so token spans
