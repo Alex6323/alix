@@ -180,7 +180,11 @@ notes it.
   `alix.local.toml`, temporary files, and conflict or backup files never travel.
   Matching `augment/deck-<token>.json` documents do travel, including when sharing
   one deck. A single frozen deck also carries its complete
-  `assets/deck-<token>/` directory. Tell the receiver the code wormhole prints. No wormhole around?
+  `assets/deck-<token>/` directory. A symbolic link inside what you share is
+  refused by name rather than followed, since the copy carries files and the
+  folder you picked is the boundary of what leaves the machine: replace the link
+  with what it points to, or remove it. Tell the receiver the code wormhole
+  prints. No wormhole around?
   `--zip [--output <path>]` writes the same staged copy as a `.zip` to mail or
   hand over instead.
 - `alix receive <code-or-zip>`: fetch what someone shared, by wormhole code
@@ -189,7 +193,9 @@ notes it.
   decks directory (`--workspace <dir>` puts it inside a workspace; `--force`
   overwrites a same-named deck); a folder lands under its own name beside
   your other decks and is never overwritten. Personal files that leaked from
-  the sender's side are stripped on arrival.
+  the sender's side are stripped on arrival, and an archive carrying a symbolic
+  link is refused before anything lands, so the sender cannot decide what
+  appears in your decks folder: ask them for one that carries the file itself.
 
 ## Config & health
 

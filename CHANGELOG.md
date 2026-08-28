@@ -803,6 +803,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `plain` a card-only scope while a break plus `<!-- plain -->` is legal in
   section context and its own description says so. Found by Codex.
 
+- A shared archive can no longer decide which directory alix deletes files
+  from. A `.zip` can carry a symbolic link and the extractor recreates it, so
+  an archive whose payload was a link to a directory sent the receive-side
+  sanitizer into that directory, where it deleted every entry matching its
+  personal-file patterns (dotfiles, `recent.json`, `progress/`, `-bak` and
+  `.json.tmp` names), and then planted the link among your decks. The rest
+  depended on your filesystem layout: the link landed after a rename, or the
+  fallback copy refused it with a message about sharing and a temporary path
+  you never chose. An archive that carries a link is now refused before
+  anything is deleted, moved, or landed, naming the entry, and the message asks
+  the sender for an archive that carries the file itself.
+
 - The same boundary holds on every path that copies material into an outgoing
   tree, not just the folder walk. Sharing a single deck refuses a linked
   augmentation file or a linked owned-assets folder, and refuses it before the

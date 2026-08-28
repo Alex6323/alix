@@ -3497,6 +3497,89 @@ fn share_zip_honors_an_explicit_output_file() {
     );
 }
 
+#[cfg(unix)]
+fn zip_with_symlink(path: &Path, entries: &[(&str, &str)], link: (&str, &str)) {
+    use std::io::Write;
+    let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+    let options: zip::write::FileOptions<()> = zip::write::FileOptions::default();
+    for (name, body) in entries {
+        writer.start_file(*name, options).unwrap();
+        writer.write_all(body.as_bytes()).unwrap();
+    }
+    writer
+        .add_symlink(link.0, link.1, options)
+        .expect("the archive carries the link an attacker would send");
+    writer.finish().unwrap();
+}
+
+/// The CLI has its own landing flow for a folder, so the lib test for
+/// `land_received` cannot prove this one.
+#[cfg(unix)]
+#[test]
+fn receiving_refuses_an_archive_whose_payload_is_a_link() {
+    let receiver = TempDir::new().unwrap();
+    let elsewhere = receiver.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    let archive = receiver.path().join("payload.zip");
+    zip_with_symlink(&archive, &[], ("shared-decks", elsewhere.to_str().unwrap()));
+
+    let received = alix_env(
+        &["receive", archive.to_str().unwrap()],
+        receiver.path(),
+        &[],
+    );
+
+    assert!(
+        !received.status.success(),
+        "landing a link the sender chose must fail: {}",
+        stderr(&received)
+    );
+    assert!(
+        stderr(&received).contains("shared-decks"),
+        "the refusal names what the archive carried: {}",
+        stderr(&received)
+    );
+    assert!(
+        !receiver.path().join("decks/shared-decks").exists(),
+        "nothing lands when the archive carries a link"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn receiving_refuses_an_archive_carrying_a_link_inside_the_folder() {
+    let receiver = TempDir::new().unwrap();
+    let elsewhere = receiver.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    let archive = receiver.path().join("payload.zip");
+    zip_with_symlink(
+        &archive,
+        &[("shared-decks/ok.md", VALID_DECK)],
+        ("shared-decks/escape", elsewhere.to_str().unwrap()),
+    );
+
+    let received = alix_env(
+        &["receive", archive.to_str().unwrap()],
+        receiver.path(),
+        &[],
+    );
+
+    assert!(
+        !received.status.success(),
+        "landing a link the sender chose must fail: {}",
+        stderr(&received)
+    );
+    assert!(
+        stderr(&received).contains("escape"),
+        "the refusal names the entry the sender has to replace: {}",
+        stderr(&received)
+    );
+    assert!(
+        !receiver.path().join("decks/shared-decks").exists(),
+        "nothing lands when the archive carries a link"
+    );
+}
+
 #[test]
 fn a_single_deck_share_zip_restores_augmentation_without_progress_and_force_replaces_it() {
     let sender = TempDir::new().unwrap();

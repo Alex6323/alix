@@ -244,6 +244,16 @@ matching progress document separately, publishes and validates the destination
 before deleting the source deck, and refuses occupied destination paths or
 stable deck-ID collisions (`src/share.rs`, `src/deck_transfer.rs`).
 
+A symbolic link is refused in both directions rather than followed. Staging
+refuses a link anywhere it would copy material into an outgoing tree, so the
+selected folder bounds what leaves the machine. Landing refuses a received
+archive that carries one, before the sanitizer walks and before anything is
+moved: an extractor recreates a link the archive carries, so following one let
+a sender choose both what appeared in the receiver's decks folder and which
+directory the personal-file sanitizer deleted from. Refusing first also removes
+an earlier dependence on whether the extraction directory and the decks
+directory shared a filesystem.
+
 Received archives, decks, images, URLs, manifests, and source locators remain
 untrusted. Sanitizing personal state does not certify the remaining content as
 safe or accurate.
@@ -312,7 +322,8 @@ The most relevant deterministic checks currently live beside their controls:
 - `src/fsio.rs` and `tests/cli.rs`: permission-preserving, symlink-respecting
   file replacement shared by every deck and progress writer, including each
   `alix doctor` repair;
-- `src/share.rs`: outgoing filtering and defensive receive sanitization;
+- `src/share.rs`: outgoing filtering, defensive receive sanitization, and the
+  refusal of a symbolic link on every staging and landing path;
 - `src/deck_transfer.rs`: local transfer preflight, private progress handling,
   destination-first publication, and source-deletion rollback;
 - `src/state.rs` and `src/workspace.rs`: typed user-file and workspace-file

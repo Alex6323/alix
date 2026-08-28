@@ -156,15 +156,34 @@ fn validate_bundle_material(deck: &crate::deck::Deck, root: &Path) -> Result<()>
     Ok(())
 }
 
-fn refuse_link(path: &Path) -> Result<()> {
-    let kind = std::fs::symlink_metadata(path)
+fn is_link(path: &Path) -> Result<bool> {
+    Ok(std::fs::symlink_metadata(path)
         .with_context(|| format!("cannot read {}", path.display()))?
-        .file_type();
-    if kind.is_symlink() {
+        .file_type()
+        .is_symlink())
+}
+
+fn refuse_link(path: &Path) -> Result<()> {
+    if is_link(path)? {
         bail!(
             "`{}` is a link, and sharing copies files rather than following a link out of \
              the folder; replace it with what it points to, or remove it before sharing",
             path.display()
+        );
+    }
+    Ok(())
+}
+
+pub fn refuse_received_link(path: &Path) -> Result<()> {
+    if is_link(path)? {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        bail!(
+            "the received archive carries `{name}` as a link rather than a file, and alix \
+             lands what the archive carries; ask the sender for one that carries the file \
+             itself"
         );
     }
     Ok(())
@@ -280,6 +299,7 @@ pub fn sanitize_received(dir: &Path) -> Result<Vec<String>> {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = entry.path();
+        refuse_received_link(&path)?;
         let private = PERSONAL.contains(&name.as_str())
             || crate::workspace::is_sidecar_name(&name)
             || crate::workspace::is_conflict_name(&name)
@@ -548,6 +568,7 @@ pub fn land_received(tmp: &Path, dest_dir: &Path) -> Result<(String, Vec<String>
         .and_then(|n| n.to_str())
         .unwrap_or("received")
         .to_string();
+    refuse_received_link(&got)?;
     if is_deck_bundle(&got) {
         return land_deck_bundle(&got, dest_dir);
     }
@@ -1246,6 +1267,65 @@ mod tests {
         assert_eq!(vec!["progress".to_string()], stripped);
         assert!(dest.join("ws/a.txt").exists());
         assert!(!dest.join("ws/progress").exists());
+    }
+
+    /// `zip` recreates a symbolic link an archive carries, and `move_into`
+    /// renames when the extraction directory and the decks directory share a
+    /// filesystem, so without a rule the sender decides what appears in the
+    /// receiver's decks folder.
+    #[cfg(unix)]
+    #[test]
+    fn landing_refuses_a_link_the_sender_put_inside_the_received_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("private");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), "secret\n").unwrap();
+        let tmp = dir.path().join("scratch");
+        std::fs::create_dir_all(tmp.join("shared")).unwrap();
+        std::fs::write(tmp.join("shared/ok.md"), "## q\na\n").unwrap();
+        std::os::unix::fs::symlink(&outside, tmp.join("shared/escape")).unwrap();
+        let dest = dir.path().join("decks");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        let error = land_received(&tmp, &dest).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("escape"),
+            "the refusal names the entry the sender has to replace: {error:#}"
+        );
+        assert!(
+            !format!("{error:#}").contains("sharing"),
+            "the receiver cannot edit the sender's archive, so the remedy is not a sharing one: {error:#}"
+        );
+        assert!(
+            !dest.join("shared").exists(),
+            "nothing lands when the archive carries a link"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn landing_refuses_a_received_folder_that_is_itself_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("private");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), "secret\n").unwrap();
+        let tmp = dir.path().join("scratch");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::os::unix::fs::symlink(&outside, tmp.join("shared")).unwrap();
+        let dest = dir.path().join("decks");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        let error = land_received(&tmp, &dest).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("shared"),
+            "the refusal names what the archive carried: {error:#}"
+        );
+        assert!(
+            !dest.join("shared").exists(),
+            "nothing lands when the archive carries a link"
+        );
     }
 
     #[test]

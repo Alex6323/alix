@@ -63,6 +63,7 @@ pub(crate) fn receive_cmd(args: ReceiveArgs) -> Result<()> {
         .and_then(|n| n.to_str())
         .unwrap_or("received")
         .to_string();
+    alix::share::refuse_received_link(&got)?;
 
     if got.is_dir() && !alix::share::is_deck_bundle(&got) {
         if args.workspace.is_some() {
