@@ -558,13 +558,24 @@ fn resolve_image(base: &Path, image: PathBuf) -> PathBuf {
 }
 
 pub fn write_deck_text(path: &Path, text: &str) -> Result<(), DeckError> {
-    let io_err = |source| DeckError::Io {
-        path: path.to_path_buf(),
-        source,
-    };
+    write_deck_text_reporting(path, text).map_err(|(error, _)| error)
+}
+
+/// The bool is whether the replacement had already committed when the error
+/// arrived: the rename can succeed and the directory sync after it fail, and a
+/// caller tracking what it last wrote owns those bytes either way.
+fn write_deck_text_reporting(path: &Path, text: &str) -> Result<(), (DeckError, bool)> {
     let tmp = path.with_extension("md.tmp");
-    crate::fsio::replace_file(&tmp, path, text.as_bytes()).map_err(io_err)?;
-    Ok(())
+    crate::fsio::replace_file_report(&tmp, path, text.as_bytes()).map_err(|error| {
+        let replaced = error.replaced();
+        (
+            DeckError::Io {
+                path: path.to_path_buf(),
+                source: error.into_source(),
+            },
+            replaced,
+        )
+    })
 }
 
 // Parse knowledge here means a fenced "## " inside an answer is never mistaken for a card front.
@@ -931,9 +942,25 @@ pub fn rewrite_without(
     front_lines: &[usize],
     exact_lines: &[usize],
 ) -> Result<(), DeckError> {
-    let fronts = front_lines_of(path, original)?;
+    rewrite_without_reporting(path, original, front_lines, exact_lines)
+        .map(|_| ())
+        .map_err(|(error, _)| error)
+}
+
+/// The text now on disk, which on failure is `Some` exactly when the
+/// replacement committed before the error.
+pub fn rewrite_without_reporting(
+    path: &Path,
+    original: &str,
+    front_lines: &[usize],
+    exact_lines: &[usize],
+) -> Result<String, (DeckError, Option<String>)> {
+    let fronts = front_lines_of(path, original).map_err(|error| (error, None))?;
     let new_text = remove_blocks_and_lines(original, &fronts, front_lines, exact_lines);
-    write_deck_text(path, &new_text)
+    match write_deck_text_reporting(path, &new_text) {
+        Ok(()) => Ok(new_text),
+        Err((error, replaced)) => Err((error, replaced.then_some(new_text))),
+    }
 }
 
 fn remove_card_blocks(text: &str, fronts: &[usize], front_lines: &[usize]) -> String {

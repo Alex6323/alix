@@ -773,6 +773,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- A removal whose file replacement completed no longer wedges the rest of the
+  sitting. A deck is written by renaming a finished temporary over it, and the
+  directory sync after that rename can still fail (a network, FUSE, or
+  sync-mounted deck folder, or a transient storage error). The rename had
+  already happened, but the sitting recorded nothing, so the next Remove
+  compared the deck against the text it held from session open, saw its own
+  completed write, and refused as "changed on disk". Removal stayed refused
+  until the deck was closed and reopened. The sitting now records what it wrote
+  whenever the replacement committed, while the durability error still reaches
+  the learner. Found by Codex.
+
 - `alix doctor`'s repair flags reach every deck the check walked. Pointed at a
   folder that holds workspaces rather than decks, the check descends into each
   one and reports its findings, but all five repairs looked only at the top

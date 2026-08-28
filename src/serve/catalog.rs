@@ -133,12 +133,18 @@ impl DeckFiles {
             .get(deck_id)
             .map(|set| set.iter().copied().collect())
             .unwrap_or_default();
-        deck::rewrite_without(path, original, &blocks, &exact)
-            .map_err(|e| format!("could not update {}: {e}", path.display()))?;
-        let written = std::fs::read_to_string(path)
-            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-        self.written.insert(deck_id.to_string(), written);
-        Ok(())
+        match deck::rewrite_without_reporting(path, original, &blocks, &exact) {
+            Ok(written) => {
+                self.written.insert(deck_id.to_string(), written);
+                Ok(())
+            }
+            Err((error, committed)) => {
+                if let Some(written) = committed {
+                    self.written.insert(deck_id.to_string(), written);
+                }
+                Err(format!("could not update {}: {error}", path.display()))
+            }
+        }
     }
 }
 
@@ -168,6 +174,44 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             "the authored deck is never rewritten"
         );
+    }
+
+    #[test]
+    fn a_post_rename_error_does_not_make_the_sitting_reject_its_own_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deck.md");
+        let deck_id = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f";
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## one\na\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n## two\nb\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n## three\nc\n<!-- id: card-3f7k2m9q1x8w5z0t6v4b2n8d7c -->\n";
+        std::fs::write(&path, original).unwrap();
+        let mut paths = HashMap::new();
+        paths.insert(deck_id.to_string(), path.clone());
+        let mut files = DeckFiles::new(paths);
+
+        crate::fsio::fault::fail_after(crate::fsio::fault::After::Rename);
+        assert!(
+            files.remove_block(deck_id, 5).is_err(),
+            "directory durability failed after the replacement"
+        );
+        assert!(
+            !std::fs::read_to_string(&path).unwrap().contains("## one"),
+            "the rename already replaced the deck despite the reported error"
+        );
+
+        assert!(
+            files.remove_block(deck_id, 8).is_ok(),
+            "the next ordinary removal must not mistake the first removal's completed rename for an external edit"
+        );
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !after.contains("## one"),
+            "first card remains gone:\n{after}"
+        );
+        assert!(
+            !after.contains("## two"),
+            "second card is removed:\n{after}"
+        );
+        assert!(after.contains("## three"), "third card remains:\n{after}");
     }
 
     #[test]

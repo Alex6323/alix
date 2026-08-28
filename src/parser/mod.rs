@@ -3488,6 +3488,19 @@ mod tests {
     }
 
     #[test]
+    fn a_break_line_stops_a_definition_it_could_otherwise_have_continued() {
+        for spelling in ["---", "----", "- - -", "***", "___"] {
+            assert_eq!(
+                ParseError::StrayDivider(3),
+                err(&format!(
+                    "# Section\n[r]:\n  {spelling}\n## Q\n[reference][r]\n"
+                )),
+                "a bare destination made only of break markers: {spelling}"
+            );
+        }
+    }
+
+    #[test]
     fn link_definition_grammar_accepts_a_label_split_across_lines() {
         let deck = parse("# Section\n[\nr\n]: /target\n## Q\n[reference][r]\n");
 
