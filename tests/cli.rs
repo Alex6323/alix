@@ -2502,6 +2502,7 @@ fn missing_backend_reports_install_hint() {
     );
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
@@ -2537,7 +2538,7 @@ fn oversized_local_source_without_yes_bails_with_guidance() {
         "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
     );
     let src = dir.path().to_str().unwrap();
-    let out = alix(&["generate", src, "--config", &config, "--print"]);
+    let out = alix(&["generate", "deck", src, "--config", &config, "--print"]);
     let err = stderr(&out);
     assert!(!out.status.success(), "should fail without --yes: {err}");
     // The error must name the guard condition and point at the fix.
@@ -2561,7 +2562,9 @@ fn oversized_local_source_with_yes_proceeds_past_the_guard() {
         "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
     );
     let src = dir.path().to_str().unwrap();
-    let out = alix(&["generate", src, "--yes", "--config", &config, "--print"]);
+    let out = alix(&[
+        "generate", "deck", src, "--yes", "--config", &config, "--print",
+    ]);
     let err = stderr(&out);
     // The error must NOT be the guard refusal — it should be the missing-binary
     // hint (or something from the model runner).
@@ -2588,10 +2591,11 @@ fn undersized_local_source_proceeds_without_yes() {
     );
     let out = alix(&[
         "generate",
+        "workspace",
         dir.path().to_str().unwrap(),
         "--config",
         &config,
-        "--print",
+        "--yes",
     ]);
     let err = stderr(&out);
     // Must not hit the guard — passes through to the backend.
@@ -2627,8 +2631,9 @@ fn a_populated_workspace_no_longer_blocks_the_build() {
     );
     let out = alix(&[
         "generate",
+        "workspace",
         src.to_str().unwrap(),
-        "--workspace",
+        "--into",
         ws.to_str().unwrap(),
         "--config",
         &config,
@@ -2667,8 +2672,9 @@ fn a_leftover_staging_dir_blocks_a_headless_rebuild_until_confirmed() {
     // Without --yes: headless (no TTY) — confirm bails before any exploration.
     let out = alix(&[
         "generate",
+        "workspace",
         src.to_str().unwrap(),
-        "--workspace",
+        "--into",
         ws.to_str().unwrap(),
         "--config",
         &config,
@@ -2693,8 +2699,9 @@ fn a_leftover_staging_dir_blocks_a_headless_rebuild_until_confirmed() {
     // (fake) backend failure.
     let out = alix(&[
         "generate",
+        "workspace",
         src.to_str().unwrap(),
-        "--workspace",
+        "--into",
         ws.to_str().unwrap(),
         "--config",
         &config,
@@ -3884,7 +3891,7 @@ fn generate_builds_checkpoints_into_an_existing_trace_stub() {
         "config.toml",
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
-    let out = alix(&["generate", &stub, "--config", &config, "--yes"]);
+    let out = alix(&["generate", "deck", &stub, "--config", &config, "--yes"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         stdout(&out).contains("Wrote 1 checkpoints"),
@@ -3906,7 +3913,7 @@ fn generate_refuses_to_rebuild_trace_checkpoints_without_force() {
     );
     let original = std::fs::read_to_string(&stub).unwrap();
 
-    let out = alix(&["generate", &stub]);
+    let out = alix(&["generate", "deck", &stub]);
 
     assert!(!out.status.success());
     assert!(
@@ -3930,6 +3937,7 @@ fn generate_trace_plan_prints_the_suggestion_menu() {
     );
     let out = alix(&[
         "generate",
+        "deck",
         dir.path().to_str().unwrap(),
         "--trace",
         "--plan",
@@ -3958,6 +3966,7 @@ fn generate_trace_walk_writes_an_explore_deck() {
     let out_path = dir.path().join("walk.md");
     let out = alix(&[
         "generate",
+        "deck",
         dir.path().to_str().unwrap(),
         "--trace",
         "--config",
@@ -3986,6 +3995,7 @@ fn generate_trace_walk_refuses_to_clobber_an_existing_output() {
     write(dir.path(), "walk.md", "already here\n");
     let out = alix(&[
         "generate",
+        "deck",
         dir.path().to_str().unwrap(),
         "--trace",
         "--config",
@@ -4022,7 +4032,7 @@ fn ordinary_text_and_markdown_files_never_enter_trace_building() {
             &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
         );
 
-        let out = alix(&["generate", &source, "--config", &config, "--print"]);
+        let out = alix(&["generate", "deck", &source, "--config", &config, "--print"]);
 
         assert!(out.status.success(), "{name}: {}", stderr(&out));
         assert_eq!(
@@ -4048,6 +4058,7 @@ fn generate_rejects_an_invalid_public_source_url_before_the_backend() {
 
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--source-url",
         "not-a-url",
@@ -4078,10 +4089,11 @@ fn generate_single_deck_writes_a_deck_file() {
     std::fs::write(ws.join("alix.toml"), "").unwrap();
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
-        "--workspace",
+        "--into",
         ws.to_str().unwrap(),
         "--output",
         "gen",
@@ -4109,10 +4121,11 @@ fn generate_keeps_and_warns_about_a_deck_over_max_cards() {
     std::fs::write(ws.join("alix.toml"), "").unwrap();
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
-        "--workspace",
+        "--into",
         ws.to_str().unwrap(),
         "--output",
         "gen",
@@ -4142,6 +4155,7 @@ fn generate_does_not_warn_when_card_count_equals_the_soft_maximum() {
 
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
@@ -4173,6 +4187,7 @@ fn either_review_switch_independently_runs_the_second_generation_pass() {
         );
         let mut args = vec![
             "generate",
+            "deck",
             "https://example.org/page",
             "--config",
             &config,
@@ -4218,6 +4233,7 @@ fn generate_print_normalizes_exactly_one_trailing_newline() {
 
         let out = alix(&[
             "generate",
+            "deck",
             "https://example.org/page",
             "--config",
             &config,
@@ -4244,10 +4260,11 @@ fn generate_over_an_existing_deck_replaces_it_instead_of_writing_a_new_one() {
     let args = |extra: &[&str]| {
         let mut a = vec![
             "generate".to_string(),
+            "deck".to_string(),
             "https://example.org/page".to_string(),
             "--config".to_string(),
             config.clone(),
-            "--workspace".to_string(),
+            "--into".to_string(),
             ws.to_str().unwrap().to_string(),
             "--output".to_string(),
             "gen".to_string(),
@@ -4304,6 +4321,7 @@ printf '%s\n' '{"type":"result","subtype":"success","result":"## Generated Q\nGe
 
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
@@ -4354,6 +4372,7 @@ fn generate_single_deck_passes_goal_language_and_card_style_to_the_model() {
 
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
@@ -4453,10 +4472,11 @@ fn generate_workspace_applies_goal_language_audience_and_card_style() {
 
     let out = alix(&[
         "generate",
+        "workspace",
         source.to_str().unwrap(),
         "--config",
         &config,
-        "--workspace",
+        "--into",
         workspace.to_str().unwrap(),
         "--icon",
         &icon,
@@ -4561,10 +4581,11 @@ fn generated_workspace_reports_one_stub_and_stays_silent_at_zero_frozen_assets()
 
     let out = alix(&[
         "generate",
+        "workspace",
         source.to_str().unwrap(),
         "--config",
         &config,
-        "--workspace",
+        "--into",
         workspace.to_str().unwrap(),
         "--icon",
         &icon,
@@ -4602,12 +4623,13 @@ fn generate_single_deck_records_the_explicit_public_url_as_a_source() {
 
     let out = alix(&[
         "generate",
+        "deck",
         "https://mirror.example/page",
         "--source-url",
         "https://canonical.example/page",
         "--config",
         &config,
-        "--workspace",
+        "--into",
         ws.to_str().unwrap(),
         "--output",
         "gen",
@@ -4635,6 +4657,7 @@ fn generate_single_deck_print_flag_prints_without_writing() {
     );
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
@@ -4663,10 +4686,11 @@ fn generate_single_deck_refuses_to_clobber_without_force_then_force_overwrites()
     std::fs::write(ws.join("alix.toml"), "").unwrap();
     let args = [
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
-        "--workspace",
+        "--into",
         ws.to_str().unwrap(),
         "--output",
         "gen",
@@ -4703,10 +4727,11 @@ fn generate_single_deck_rejects_invalid_math_without_touching_the_destination() 
     let target = write(&ws.join("decks"), "gen.md", "original bytes\n");
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
-        "--workspace",
+        "--into",
         ws.to_str().unwrap(),
         "--output",
         "gen",
@@ -4737,10 +4762,11 @@ fn generate_single_deck_invalid_math_creates_no_new_destination() {
     std::fs::write(ws.join("alix.toml"), "").unwrap();
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
-        "--workspace",
+        "--into",
         ws.to_str().unwrap(),
         "--output",
         "gen",
@@ -4761,6 +4787,7 @@ fn generate_single_deck_prints_invalid_math_with_a_warning_without_writing() {
     );
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
@@ -4790,10 +4817,11 @@ fn generate_single_deck_still_saves_text_that_does_not_parse() {
     std::fs::write(ws.join("alix.toml"), "").unwrap();
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
-        "--workspace",
+        "--into",
         ws.to_str().unwrap(),
         "--output",
         "draft",
@@ -4809,7 +4837,67 @@ fn generate_single_deck_still_saves_text_that_does_not_parse() {
 }
 
 #[test]
-fn generate_on_a_directory_source_explores_then_falls_back_to_a_single_deck() {
+fn generate_deck_takes_a_directory_whole_and_never_explores_it() {
+    let dir = TempDir::new().unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    write(&src, "notes.md", "some source material\n");
+    let cli = fake_claude(dir.path(), "## Q\nA\n");
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&[
+        "generate",
+        "deck",
+        src.to_str().unwrap(),
+        "--config",
+        &config,
+        "--print",
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        !stderr(&out).contains("Exploring"),
+        "asking for a deck must not spend an exploration pass: {}",
+        stderr(&out)
+    );
+    assert!(
+        stderr(&out).contains("Generating a deck from"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn generate_workspace_refuses_a_source_that_is_not_a_directory() {
+    let dir = TempDir::new().unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        "[ask]\ncommand = \"/nonexistent/claude-xyz\"\ntimeout_secs = 5\n",
+    );
+
+    let out = alix(&[
+        "generate",
+        "workspace",
+        "https://example.org/page",
+        "--config",
+        &config,
+    ]);
+
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    let err = stderr(&out);
+    assert!(
+        err.contains("built from a directory") && err.contains("alix generate deck"),
+        "the refusal names the command that fits the source: {err}"
+    );
+}
+
+#[test]
+fn generate_workspace_with_a_one_item_plan_still_builds_a_workspace() {
     use std::os::unix::fs::PermissionsExt;
 
     // A real one-item plan routes to a single deck rather than a multi-item
@@ -4855,13 +4943,13 @@ fn generate_on_a_directory_source_explores_then_falls_back_to_a_single_deck() {
     std::fs::write(ws.join("alix.toml"), "").unwrap();
     let out = alix(&[
         "generate",
+        "workspace",
         src.to_str().unwrap(),
         "--config",
         &config,
-        "--workspace",
+        "--into",
         ws.to_str().unwrap(),
-        "--output",
-        "gen",
+        "--yes",
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
@@ -4869,7 +4957,21 @@ fn generate_on_a_directory_source_explores_then_falls_back_to_a_single_deck() {
         "stderr: {}",
         stderr(&out)
     );
-    assert!(ws.join("decks/gen.md").is_file());
+    assert!(
+        ws.join("alix.toml").is_file(),
+        "the destination is a workspace, not a bare deck"
+    );
+    let members: Vec<_> = std::fs::read_dir(ws.join("decks"))
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".md"))
+        .collect();
+    assert_eq!(
+        1,
+        members.len(),
+        "a one-item plan builds a workspace holding that one deck: {members:?}"
+    );
 }
 
 // ── `alix deck augment`: each target, fake backend ──────────────────────────
@@ -6440,6 +6542,7 @@ fn generate_trace_keeps_a_silent_backends_full_trace_budget() {
 
     let out = alix(&[
         "generate",
+        "deck",
         dir.path().to_str().unwrap(),
         "--trace",
         "--config",
@@ -6546,6 +6649,7 @@ fn generate_reports_the_providers_own_error_not_the_raw_event_stream() {
 
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
@@ -6577,6 +6681,7 @@ fn a_zero_inactivity_limit_does_not_break_every_generation() {
 
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
@@ -6613,6 +6718,7 @@ fn a_wedged_unstructured_backend_still_stops_at_the_inactivity_limit() {
     let started = std::time::Instant::now();
     let out = alix(&[
         "generate",
+        "deck",
         "https://example.org/page",
         "--config",
         &config,
@@ -6681,6 +6787,7 @@ fn a_failed_prerequisite_never_reaches_the_backend() {
         let _ = std::fs::remove_file(&marker);
         let mut argv = vec![
             "generate".to_string(),
+            "deck".to_string(),
             "https://example.org/page".to_string(),
             "--config".to_string(),
             config.clone(),

@@ -88,14 +88,14 @@ enum Command {
     /// optional external CLIs. Add `--backends` to also probe the configured
     /// AI backend end to end (one real, tiny request).
     Doctor(DoctorArgs),
-    /// Generate learning material with AI: a deck, a trace, or a workspace.
+    /// Generate learning material with AI: say `deck` or `workspace`.
     ///
-    /// A web page or file source becomes one deck. A directory source is
-    /// explored first: a one-item plan becomes a deck, a bigger plan becomes
-    /// a workspace (shown and confirmed before building). `--plan` previews,
-    /// `--trace` authors a trace, and naming a deck that declares `trace:` in
-    /// its frontmatter builds its checkpoints in place.
-    Generate(GenerateArgs),
+    /// `deck` turns one source into one deck: a web page, a file, or a
+    /// directory taken as a whole. `workspace` explores a directory for a
+    /// learning plan and builds a workspace from it. Which one you get is
+    /// what you asked for, never what the plan turned out to be.
+    #[command(subcommand)]
+    Generate(GenerateAction),
     /// Show progress statistics for a deck, a folder, or a workspace.
     ///
     /// The target is a path: a single deck file reports that deck; a folder
@@ -273,7 +273,7 @@ struct DoctorArgs {
 #[derive(Subcommand)]
 enum WorkspaceAction {
     /// Initialize an empty workspace: a folder with an `alix.toml` and an
-    /// `assets/` dir, no decks yet. Grow it with `alix generate … --workspace
+    /// `assets/` dir, no decks yet. Grow it with `alix generate deck … --into
     /// <dir>` or `alix deck import … --workspace <dir>`.
     Init(WorkspaceInitArgs),
     /// Reconcile frozen source-backed decks with their live sources. The first
@@ -355,12 +355,29 @@ struct ReceiveArgs {
     force: bool,
 }
 
+#[derive(Subcommand)]
+enum GenerateAction {
+    /// Turn one source into one deck: a web page, a file, or a directory read
+    /// as a whole.
+    ///
+    /// `--trace` authors a predict-and-verify walk instead of facts cards, and
+    /// naming a deck that already declares `trace:` builds its checkpoints in
+    /// place.
+    Deck(GenerateDeckArgs),
+    /// Explore a directory for a learning plan and build a workspace from it.
+    ///
+    /// The plan is shown and confirmed before anything is built. A plan with a
+    /// single item still builds a workspace, so this command never hands back
+    /// a bare deck.
+    Workspace(GenerateWorkspaceArgs),
+}
+
+/// The options both kinds of generation take.
 #[derive(Args)]
-struct GenerateArgs {
-    /// What to generate from: a web page URL, a local file, or a directory,
-    /// or a deck that declares `trace:` in its frontmatter, whose checkpoints
-    /// are then built in place.
-    source: String,
+struct GenerateCommonArgs {
+    /// Where the result lands (default: under the decks dir).
+    #[arg(long, value_name = "DIR")]
+    into: Option<PathBuf>,
 
     /// Public URL recorded as an additional `source:` (the workspace `source`
     /// for a generated workspace) for tutor context and exam grounding.
@@ -386,56 +403,9 @@ struct GenerateArgs {
     #[arg(long, value_enum)]
     card_style: Option<config::GenerateCardStyle>,
 
-    /// Print the plan (directory source) or the trace suggestions (--trace)
-    /// and stop: generate nothing.
-    #[arg(long)]
-    plan: bool,
-
-    /// Author a trace over the source instead of facts decks: a short
-    /// predict-and-verify walk over its shape, written as a trace deck.
-    #[arg(long)]
-    trace: bool,
-
-    /// Force a single deck from a directory source (skip the plan pass).
-    #[arg(long, conflicts_with = "trace")]
-    deck: bool,
-
-    /// The workspace this lands in: the build destination for a directory
-    /// source (default: a folder under the decks dir), or the folder a single
-    /// generated deck is written into.
-    #[arg(long)]
-    workspace: Option<PathBuf>,
-
-    /// Single deck: output name (default: derived from the source). A `.md`
-    /// extension is added if missing.
-    #[arg(short, long)]
-    output: Option<String>,
-
-    /// Single deck: maximum number of cards (overrides the configured default).
-    #[arg(long)]
-    cards: Option<usize>,
-
-    /// Single deck: run a second AI pass that reviews the draft and removes
-    /// redundant cards (an extra call; also `generate.review` in the config).
-    #[arg(long)]
-    review: bool,
-
-    /// Single deck: print it to stdout instead of writing a file.
-    #[arg(long)]
-    print: bool,
-
     /// Overwrite existing output (a deck file, or a non-empty workspace dir).
     #[arg(long)]
     force: bool,
-
-    /// Workspace build: its display title (default: the folder name).
-    #[arg(long)]
-    title: Option<String>,
-
-    /// Workspace build: use this image as the workspace icon instead of
-    /// letting the model draw one. Copied into `assets/`.
-    #[arg(long)]
-    icon: Option<PathBuf>,
 
     /// Skip confirmations: the large-source pre-flight, and the
     /// workspace-build go-ahead.
@@ -449,12 +419,21 @@ struct GenerateArgs {
 
 #[derive(Args)]
 struct GenerateDeckArgs {
-    /// The source to turn into a facts deck: a web page URL, or a local file or
-    /// directory path.
+    /// What to turn into a deck: a web page URL, a local file, a directory,
+    /// or a deck that declares `trace:` in its frontmatter.
     source: String,
 
-    /// Output deck name (default: a slug derived from the URL). Written into
-    /// the decks directory; a `.md` extension is added if missing.
+    /// Author a trace over the source instead of facts cards: a short
+    /// predict-and-verify walk over its shape, written as a trace deck.
+    #[arg(long)]
+    trace: bool,
+
+    /// Print the trace suggestions and stop: generate nothing.
+    #[arg(long, requires = "trace")]
+    plan: bool,
+
+    /// Output name (default: derived from the source). A `.md` extension is
+    /// added if missing.
     #[arg(short, long)]
     output: Option<String>,
 
@@ -463,28 +442,40 @@ struct GenerateDeckArgs {
     cards: Option<usize>,
 
     /// Run a second AI pass that reviews the draft and removes redundant
-    /// cards (an extra call; can also be enabled with `generate.review`).
+    /// cards (an extra call; also `generate.review` in the config).
     #[arg(long)]
     review: bool,
 
-    /// Print the generated deck to stdout instead of writing a file.
+    /// Print the deck to stdout instead of writing a file.
     #[arg(long)]
     print: bool,
 
-    /// Overwrite the output file if it already exists.
-    #[arg(long)]
-    force: bool,
-
-    /// Skip the pre-flight size confirmation for a large local source tree.
-    #[arg(short, long)]
-    yes: bool,
-
-    /// Path of the config file (default: platform config dir).
-    #[arg(long)]
-    config: Option<PathBuf>,
+    #[command(flatten)]
+    common: GenerateCommonArgs,
 }
 
-/// The `alix deck` subcommands: create, augment, or validate a deck.
+#[derive(Args)]
+struct GenerateWorkspaceArgs {
+    /// The directory to explore for a learning plan.
+    source: String,
+
+    /// Print the plan and stop: build nothing.
+    #[arg(long)]
+    plan: bool,
+
+    /// The workspace's display title (default: the folder name).
+    #[arg(long)]
+    title: Option<String>,
+
+    /// Use this image as the workspace icon instead of letting the model draw
+    /// one. Copied into `assets/`.
+    #[arg(long)]
+    icon: Option<PathBuf>,
+
+    #[command(flatten)]
+    common: GenerateCommonArgs,
+}
+
 #[derive(Subcommand)]
 enum DeckAction {
     /// Initialize a hand-authored Markdown file as an Alix deck.
@@ -719,7 +710,10 @@ fn main() -> Result<()> {
         Some(Command::Stats(args)) => progress::stats(args),
         Some(Command::List(args)) => progress::list(args),
         Some(Command::Reset(args)) => progress::reset(args),
-        Some(Command::Generate(args)) => generate::generate_cmd(args),
+        Some(Command::Generate(action)) => match action {
+            GenerateAction::Deck(args) => generate::deck_cmd(args),
+            GenerateAction::Workspace(args) => generate::workspace_cmd(args),
+        },
         Some(Command::Deck(action)) => match action {
             DeckAction::Init(args) => deck::init_cmd(args),
             DeckAction::Copy(args) => deck::copy_cmd(args),

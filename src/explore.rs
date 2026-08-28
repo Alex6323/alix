@@ -533,10 +533,10 @@ pub fn materialize(
             // A stub: header only; the parser ignores the preamble prose.
             None => body.push_str(match item.kind {
                 Kind::Trace => {
-                    "Stub from `alix generate`. Build the path:  alix generate <this file>\n"
+                    "Stub from `alix generate`. Build the path:  alix generate deck <this file>\n"
                 }
                 Kind::Deck => {
-                    "Stub from `alix generate`. Author cards here, or `alix generate` from the source.\n"
+                    "Stub from `alix generate`. Author cards here, or `alix generate deck` from the source.\n"
                 }
             }),
         }

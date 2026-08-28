@@ -4,38 +4,43 @@ use alix::{config::Config, deck::Deck, generate, library, math, parser};
 use anyhow::{Context, Result, bail};
 
 use crate::{
-    GenerateArgs,
+    GenerateCommonArgs, GenerateDeckArgs, GenerateWorkspaceArgs,
     common::{confirm, deck_out_dir, preflight_source, store_for},
 };
 
-pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
-    let mut config = Config::load(args.config.as_deref())?;
+fn prepare(common: &GenerateCommonArgs) -> Result<(Config, generate::GenerationSpec)> {
+    let mut config = Config::load(common.config.as_deref())?;
     config.ask.progress = true;
     config.ask.idle_timeout_secs = config.generate.idle_timeout();
-    if let Some(url) = &args.source_url
+    if let Some(url) = &common.source_url
         && !alix::deck::is_url(url)
     {
         bail!("`--source-url` must be an http or https URL");
     }
-    let goal = args.goal.as_deref().unwrap_or(generate::DEFAULT_GOAL);
+    let goal = common.goal.as_deref().unwrap_or(generate::DEFAULT_GOAL);
     let mut spec = generate::GenerationSpec::from_config(goal, &config.generate);
-    if let Some(language) = args.language.as_deref() {
+    if let Some(language) = common.language.as_deref() {
         let language = language.trim();
         if language.is_empty() {
             bail!("`--language` cannot be empty");
         }
         spec.language = Some(language.to_string());
     }
-    if let Some(audience) = args.audience.as_deref() {
+    if let Some(audience) = common.audience.as_deref() {
         let audience = audience.trim();
         if audience.is_empty() {
             bail!("`--audience` cannot be empty");
         }
         spec.audience = Some(audience.to_string());
     }
-    if let Some(style) = args.card_style {
+    if let Some(style) = common.card_style {
         spec.card_style = style;
     }
+    Ok((config, spec))
+}
+
+pub(crate) fn deck_cmd(args: GenerateDeckArgs) -> Result<()> {
+    let (config, spec) = prepare(&args.common)?;
     let src_path = PathBuf::from(&args.source);
 
     if src_path.is_file()
@@ -45,57 +50,70 @@ pub(crate) fn generate_cmd(args: GenerateArgs) -> Result<()> {
         })
     {
         let deck = Deck::load(&src_path)?;
-        return trace_build(&src_path, &deck, args.yes, args.force, &config);
+        return trace_build(
+            &src_path,
+            &deck,
+            args.common.yes,
+            args.common.force,
+            &config,
+        );
     }
 
     if args.trace {
         if args.plan {
-            return trace_suggest(&args.source, args.yes, &config);
+            return trace_suggest(&args.source, args.common.yes, &config);
         }
         return generate_trace_walk(&args, &config, &spec);
     }
 
-    if src_path.is_dir() && !args.deck {
-        let source = canonical_source(&args.source);
-        // Confirm before any exploration call, so a decline never spends a
-        // paid backend request.
-        if !args.plan {
-            let staging = staging_dir_for(&workspace_dest(&args, &config, &source)?);
-            if !confirm_stale_staging(&staging, args.yes)? {
-                println!("Cancelled.");
-                return Ok(());
-            }
-            let _ = std::fs::remove_dir_all(&staging);
-        }
-        preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
-        eprintln!(
-            "Exploring {source} for a learning plan toward \"{goal}\" (one pass — \
-             this can take a minute)…"
+    generate_single_deck(&args, &config, &spec)
+}
+
+pub(crate) fn workspace_cmd(args: GenerateWorkspaceArgs) -> Result<()> {
+    let (config, spec) = prepare(&args.common)?;
+    if !Path::new(&args.source).is_dir() {
+        bail!(
+            "a workspace is built from a directory of sources; for a single page or file run \
+             `alix generate deck {}`",
+            args.source
         );
-        let plan = alix::explore::explore(&source, &spec, &config.trace, &config.ask)?;
-        let items = alix::explore::parse_plan(&plan).len();
-        println!("{plan}");
-        if args.plan {
+    }
+    let source = canonical_source(&args.source);
+    // Confirm before any exploration call, so a decline never spends a
+    // paid backend request.
+    if !args.plan {
+        let staging = staging_dir_for(&workspace_dest(&args, &config, &source)?);
+        if !confirm_stale_staging(&staging, args.common.yes)? {
+            println!("Cancelled.");
             return Ok(());
         }
-        if items > 1 {
-            return build_workspace(&args, &config, &source, &spec, items);
-        }
-        eprintln!("The plan has one item; generating a single deck.");
+        let _ = std::fs::remove_dir_all(&staging);
     }
-    generate_single_deck(&args, &config, &spec)
+    preflight_source(&source, config.ask.preflight_threshold, args.common.yes)?;
+    eprintln!(
+        "Exploring {source} for a learning plan toward \"{}\" (one pass — \
+         this can take a minute)…",
+        spec.goal
+    );
+    let plan = alix::explore::explore(&source, &spec, &config.trace, &config.ask)?;
+    let items = alix::explore::parse_plan(&plan).len();
+    println!("{plan}");
+    if args.plan {
+        return Ok(());
+    }
+    build_workspace(&args, &config, &source, &spec, items)
 }
 
 // Resolved before any backend call so a missing workspace or an existing deck
 // fails in milliseconds instead of after a paid generation.
 fn resolve_destination(
-    args: &GenerateArgs,
+    common: &GenerateCommonArgs,
     config: &Config,
     name: &str,
 ) -> Result<(PathBuf, PathBuf)> {
-    let dir = deck_out_dir(args.workspace.as_deref(), config)?;
+    let dir = deck_out_dir(common.into.as_deref(), config)?;
     let target = dir.join(name);
-    if target.exists() && !args.force {
+    if target.exists() && !common.force {
         bail!(
             "{} already exists; pass --force to overwrite",
             target.display()
@@ -115,8 +133,8 @@ fn canonical_source(source: &str) -> String {
     }
 }
 
-fn workspace_dest(args: &GenerateArgs, config: &Config, source: &str) -> Result<PathBuf> {
-    Ok(match &args.workspace {
+fn workspace_dest(args: &GenerateWorkspaceArgs, config: &Config, source: &str) -> Result<PathBuf> {
+    Ok(match &args.common.into {
         Some(dir) => dir.clone(),
         None => {
             let name = Path::new(source)
@@ -158,7 +176,7 @@ fn confirm_stale_staging(staging: &Path, yes: bool) -> Result<bool> {
 }
 
 fn build_workspace(
-    args: &GenerateArgs,
+    args: &GenerateWorkspaceArgs,
     config: &Config,
     source: &str,
     spec: &generate::GenerationSpec,
@@ -170,7 +188,7 @@ fn build_workspace(
             "Build {items} items into {} (several AI calls, a few minutes)?",
             dir.display()
         ),
-        args.yes,
+        args.common.yes,
     )? {
         println!("Cancelled. `--plan` prints the plan without building.");
         return Ok(());
@@ -191,7 +209,7 @@ fn build_workspace(
         &spec.goal,
         args.title.as_deref(),
         source,
-        args.source_url.as_deref(),
+        args.common.source_url.as_deref(),
         Some(&filled),
     )?;
     let frozen = alix::explore::freeze_workspace(&staging)?;
@@ -204,7 +222,7 @@ fn build_workspace(
     let existing_decks = alix::workspace::deck_files(&dir);
     let mut store = store_for(&existing_decks, None, config)
         .with_context(|| format!("opening the store for {}", dir.display()))?;
-    let merged = alix::explore::merge_built(&staging, &dir, args.force, &mut store)?;
+    let merged = alix::explore::merge_built(&staging, &dir, args.common.force, &mut store)?;
 
     let total = materialized.traces + materialized.decks;
     let stubs = total - materialized.filled;
@@ -256,7 +274,7 @@ fn build_workspace(
 }
 
 fn generate_single_deck(
-    args: &GenerateArgs,
+    args: &GenerateDeckArgs,
     config: &Config,
     spec: &generate::GenerationSpec,
 ) -> Result<()> {
@@ -285,13 +303,13 @@ fn generate_single_deck(
     let destination = if args.print {
         None
     } else {
-        Some(resolve_destination(args, config, &name)?)
+        Some(resolve_destination(&args.common, config, &name)?)
     };
 
-    preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
+    preflight_source(&source, config.ask.preflight_threshold, args.common.yes)?;
     eprintln!("Generating a deck from {source} (this can take a minute)…");
     let mut text = generate::generate_deck(&source, &gen_cfg, &config.ask, spec)?;
-    if let Some(url) = &args.source_url {
+    if let Some(url) = &args.common.source_url {
         text = alix::deck::with_added_source(&text, url)?;
     }
 
@@ -463,32 +481,32 @@ fn trace_suggest(source: &str, yes: bool, config: &Config) -> Result<()> {
     println!("{menu}");
     println!(
         "\n{DIM}Paste a suggestion into a new deck's frontmatter (its `trace:` + \
-         `source:` keys), then build it:  alix generate <deck>{RESET}"
+         `source:` keys), then build it:  alix generate deck <deck>{RESET}"
     );
     Ok(())
 }
 
 fn generate_trace_walk(
-    args: &GenerateArgs,
+    args: &GenerateDeckArgs,
     config: &Config,
     spec: &generate::GenerationSpec,
 ) -> Result<()> {
     let source = canonical_source(&args.source);
-    let dir = deck_out_dir(args.workspace.as_deref(), config)?;
+    let dir = deck_out_dir(args.common.into.as_deref(), config)?;
     let raw = PathBuf::from(args.output.clone().unwrap_or_else(|| "explore.md".into()));
-    let out = if args.workspace.is_some() {
+    let out = if args.common.into.is_some() {
         dir.join(&raw)
     } else {
         raw
     };
-    if out.exists() && !args.force {
+    if out.exists() && !args.common.force {
         bail!(
             "{} already exists; pass --force to overwrite",
             out.display()
         );
     }
 
-    preflight_source(&source, config.ask.preflight_threshold, args.yes)?;
+    preflight_source(&source, config.ask.preflight_threshold, args.common.yes)?;
     eprintln!(
         "Exploring {source} to build an explore walk (one pass — this can take a \
          minute)…"
@@ -508,7 +526,7 @@ fn generate_trace_walk(
         "---\ntrace: {trace}\nsource: {}\n\n---\n\n{checkpoints}\n",
         parser::yaml_quote(&source)
     );
-    if let Some(url) = &args.source_url {
+    if let Some(url) = &args.common.source_url {
         deck_text = alix::deck::with_added_source(&deck_text, url)?;
     }
     let out_dir = out
@@ -550,25 +568,15 @@ mod tests {
 
     use super::*;
 
-    fn generate_args(force: bool) -> GenerateArgs {
-        GenerateArgs {
-            source: "notes.md".to_string(),
+    fn common(force: bool) -> GenerateCommonArgs {
+        GenerateCommonArgs {
+            into: None,
             source_url: None,
             goal: None,
             language: None,
             audience: None,
             card_style: None,
-            plan: false,
-            trace: false,
-            deck: false,
-            workspace: None,
-            output: None,
-            cards: None,
-            review: false,
-            print: false,
             force,
-            title: None,
-            icon: None,
             yes: false,
             config: None,
         }
@@ -582,20 +590,19 @@ mod tests {
             ..Config::default()
         };
 
-        let (out_dir, target) =
-            resolve_destination(&generate_args(false), &config, "d.md").unwrap();
+        let (out_dir, target) = resolve_destination(&common(false), &config, "d.md").unwrap();
         assert_eq!(dir.path(), out_dir, "the decks dir is the destination");
         assert_eq!(dir.path().join("d.md"), target);
 
         std::fs::write(&target, "existing deck").unwrap();
-        let err = resolve_destination(&generate_args(false), &config, "d.md").unwrap_err();
+        let err = resolve_destination(&common(false), &config, "d.md").unwrap_err();
         assert!(
             format!("{err:#}").contains("already exists"),
             "an existing target without --force must refuse: {err:#}"
         );
 
         assert!(
-            resolve_destination(&generate_args(true), &config, "d.md").is_ok(),
+            resolve_destination(&common(true), &config, "d.md").is_ok(),
             "--force must allow overwriting the existing target"
         );
     }

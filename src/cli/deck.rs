@@ -519,7 +519,7 @@ pub(crate) fn workspace_init_cmd(args: WorkspaceInitArgs) -> Result<()> {
     println!(
         "Initialized {} — alix.toml (shared manifest) and alix.local.toml (your\n\
          personal pacing, never shared) document their keys inline. Add decks:\n\
-         alix generate <source> --workspace {}   or   alix deck import <file.tsv> --workspace {}",
+         alix generate deck <source> --into {}   or   alix deck import <file.tsv> --workspace {}",
         args.dir.display(),
         args.dir.display(),
         args.dir.display(),
