@@ -385,7 +385,12 @@ fn text_units_spanned(
         let logical = lines[index];
         let start = index;
         index += 1;
-        if let Some((marker, run)) = fence_marker(logical) {
+        // Whichever block opened first owns the other's marker until it
+        // closes, which is the parser's own precedence: a `$$` inside a fence
+        // is code, and a fence marker inside a `$$` block is math source.
+        if let Some((marker, run)) = fence_marker(logical)
+            && (code_fence.is_some() || math_block.is_none())
+        {
             match &code_fence {
                 Some((open_marker, open_run, info))
                     if crate::parser::closes_fence(
@@ -1294,6 +1299,30 @@ mod tests {
             checked > 400,
             "the sweep checked only {checked} block spans"
         );
+    }
+
+    #[test]
+    fn an_accepted_math_block_keeps_a_fence_marker_as_math_source() {
+        let card = parsed("$$\nx + 1\n```\n$$");
+        assert_eq!(
+            ["$$", "x + 1", "```", "$$"],
+            card.back_for_display(),
+            "the parser accepts and preserves the complete display-math block"
+        );
+
+        let mut projector = DisplayProjector::default();
+        let units = answer_units_with(card.back_for_display(), &mut projector, &[]);
+        assert_eq!(
+            1,
+            units.len(),
+            "one accepted math block is one rendered unit"
+        );
+        let ContentUnit::Sentence { text, runs } = &units[0] else {
+            panic!("accepted display math must not degrade to code: {units:?}");
+        };
+        assert_eq!("x + 1\n```", text);
+        assert_eq!(1, runs.len());
+        assert!(runs[0].math.as_ref().is_some_and(|math| math.display));
     }
 
     #[test]

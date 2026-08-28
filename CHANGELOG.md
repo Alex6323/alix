@@ -807,6 +807,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- A fence marker inside a display-math block is math source, not the start of
+  a code block. `$$`, a line of math, a ``` line, then `$$` parses as one
+  closed block, but the renderer opened a code fence on the ``` and let it
+  swallow the closing `$$`, so the card arrived as two code blocks instead of
+  one rendered formula. Whichever block opened first now owns the other's
+  marker until it closes, which is what the parser already did: a `$$` inside
+  a fence stays code, and this is its missing other half.
+
 - Both ends of the frontmatter fence now accept the same spellings. `--- `
   (with a trailing space) closed frontmatter but did not open it, because the
   opener was an exact compare while the closer trimmed, so a deck whose first
