@@ -803,11 +803,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `plain` a card-only scope while a break plus `<!-- plain -->` is legal in
   section context and its own description says so. Found by Codex.
 
-- The same boundary now holds on every path that copies material into an
-  outgoing tree, not just the folder walk: one deck's augmentation and a deck
-  bundle's owned assets go through the same refusal. A link in a deck's owned
-  assets was already refused a step earlier, since an object whose name is not
-  its content address is invalid material to bundle.
+- The same boundary holds on every path that copies material into an outgoing
+  tree, not just the folder walk. Sharing a single deck refuses a linked
+  augmentation file or a linked owned-assets folder, and refuses it before the
+  bundle directory exists, so no partial copy is left behind; the workspace
+  walk's augmentation and owned-assets copies refuse a link the same way. A
+  link inside a deck's owned assets was already refused a step earlier, since
+  an object whose name is not its content address is invalid material to
+  bundle. The single-deck half was found by Codex.
 
 - Sharing a folder never carries a file out of it. Staging asked `is_dir`,
   which follows a link, so a directory link inside the shared folder was

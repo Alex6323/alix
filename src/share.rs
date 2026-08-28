@@ -77,10 +77,14 @@ fn deck_bundle_parts(path: &Path) -> Result<Option<DeckBundleParts>> {
     let augmentation = crate::workspace::WorkspaceFiles::new(&content_root).augment_for(deck_id);
     let owned_assets = crate::assets::deck_dir(&content_root, deck_id)?;
     let has_assets = owned_assets.is_dir();
+    if has_assets {
+        refuse_link(&owned_assets)?;
+    }
     if crate::workspace::root_for_deck(path).is_some() || has_assets {
         validate_bundle_material(&deck, &content_root)?;
     }
     if augmentation.is_file() {
+        refuse_link(&augmentation)?;
         crate::augment::read_deck_data(&augmentation, deck_id)?;
     }
     Ok(Some(DeckBundleParts {
@@ -152,12 +156,15 @@ fn validate_bundle_material(deck: &crate::deck::Deck, root: &Path) -> Result<()>
     Ok(())
 }
 
-fn refuse_link(entry: &std::fs::DirEntry) -> Result<()> {
-    if entry.file_type()?.is_symlink() {
+fn refuse_link(path: &Path) -> Result<()> {
+    let kind = std::fs::symlink_metadata(path)
+        .with_context(|| format!("cannot read {}", path.display()))?
+        .file_type();
+    if kind.is_symlink() {
         bail!(
             "`{}` is a link, and sharing copies files rather than following a link out of \
              the folder; replace it with what it points to, or remove it before sharing",
-            entry.path().display()
+            path.display()
         );
     }
     Ok(())
@@ -194,7 +201,7 @@ pub fn stage_dir(dir: &Path, stage: &Path) -> Result<usize> {
         if stays_home(&name) {
             continue;
         }
-        refuse_link(&entry)?;
+        refuse_link(&from)?;
         let to = stage.join(&name);
         if name == "augment" && from.is_dir() {
             staged += stage_augmentation(&from, &to, &deck_ids)?;
@@ -248,7 +255,7 @@ fn stage_augmentation(
         let Some(deck_id) = crate::state::deck_id_from_document(&from) else {
             continue;
         };
-        refuse_link(&entry)?;
+        refuse_link(&from)?;
         if !from.is_file()
             || !deck_ids.contains(deck_id)
             || from
@@ -315,7 +322,7 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
-        refuse_link(&entry)?;
+        refuse_link(&entry.path())?;
         let dest = to.join(entry.file_name());
         if entry.path().is_dir() {
             copy_tree(&entry.path(), &dest)?;
@@ -764,6 +771,66 @@ mod tests {
         assert!(
             !stage.join("augment/deck-m1.json").exists(),
             "nothing outside the folder reached the outgoing tree"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sharing_one_deck_refuses_a_linked_augmentation_rather_than_bundling_its_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("elsewhere");
+        std::fs::create_dir(&outside).unwrap();
+        let foreign = outside.join("deck-m1.json");
+        std::fs::write(
+            &foreign,
+            "{\"version\":1,\"deck_id\":\"deck-m1\",\"revision\":1,\"cards\":{}}",
+        )
+        .unwrap();
+        let root = dir.path().join("ws");
+        workspace_with_one_deck(&root);
+        std::fs::create_dir(root.join("augment")).unwrap();
+        std::os::unix::fs::symlink(&foreign, root.join("augment/deck-m1.json")).unwrap();
+
+        let stage = dir.path().join("stage");
+        let error = stage_deck_bundle(&root.join("decks/m.md"), &stage).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("is a link"),
+            "the refusal names the link the user has to resolve: {error:#}"
+        );
+        assert!(
+            !stage.exists(),
+            "the refusal comes before the bundle exists, so no partial copy is left behind"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sharing_one_deck_refuses_a_linked_assets_folder_rather_than_bundling_its_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("elsewhere");
+        std::fs::create_dir(&outside).unwrap();
+        crate::assets::write_object(&outside, "deck-m1", b"outside\n", "md").unwrap();
+        let root = dir.path().join("ws");
+        workspace_with_one_deck(&root);
+        let owned = crate::assets::deck_dir(&root, "deck-m1").unwrap();
+        std::fs::remove_dir_all(&owned).unwrap();
+        std::os::unix::fs::symlink(
+            crate::assets::deck_dir(&outside, "deck-m1").unwrap(),
+            &owned,
+        )
+        .unwrap();
+
+        let stage = dir.path().join("stage");
+        let error = stage_deck_bundle(&root.join("decks/m.md"), &stage).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("is a link"),
+            "the refusal names the link the user has to resolve: {error:#}"
+        );
+        assert!(
+            !stage.exists(),
+            "the refusal comes before the bundle exists, so no partial copy is left behind"
         );
     }
 
