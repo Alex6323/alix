@@ -2224,6 +2224,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn process_data_paths_use_the_configured_data_home() {
+        #[cfg(all(unix, feature = "full"))]
+        let _lock = crate::testutil::exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([

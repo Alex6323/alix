@@ -1290,13 +1290,17 @@ mod tests {
         let edited = format!("## loser\nanswer saved by the editor\n<!-- id: {old} -->\n");
         let loser = write(&dir, "loser.md", &original);
         let keeper = dir.path().join("keeper.pipe");
-        assert!(
-            std::process::Command::new("mkfifo")
-                .arg(&keeper)
-                .status()
-                .unwrap()
-                .success()
-        );
+        {
+            #[cfg(all(unix, feature = "full"))]
+            let _lock = crate::testutil::exec_lock();
+            assert!(
+                std::process::Command::new("mkfifo")
+                    .arg(&keeper)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
         let keeper_text = format!("## keeper\nanswer\n<!-- id: {old} -->\n");
         let digests = HashMap::from([
             (loser.clone(), crate::dedup::digest(&original)),

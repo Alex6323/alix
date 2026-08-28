@@ -1236,6 +1236,8 @@ mod tests {
 
     #[test]
     fn an_empty_declaration_set_uses_the_default_without_a_disagreement_warning() {
+        #[cfg(all(unix, feature = "full"))]
+        let _lock = crate::testutil::exec_lock();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
@@ -1315,6 +1317,8 @@ mod tests {
 
     #[test]
     fn exclude_unstamped_reports_the_exact_positive_count_and_stays_quiet_at_zero() {
+        #[cfg(all(unix, feature = "full"))]
+        let _lock = crate::testutil::exec_lock();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
