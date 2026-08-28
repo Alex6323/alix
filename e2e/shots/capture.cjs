@@ -525,13 +525,20 @@ async function shot2(page) {
   }
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(400);
-  // Reveal the card first — the "Ask tutor" chip only shows once answered.
-  const revealBtn = page.locator(".chip.primary");
-  if (await revealBtn.count()) await revealBtn.first().click();
-  await page.waitForTimeout(300);
+  // Reveal the card first: Ask tutor is withheld while `!fullyRevealed()`, and
+  // an answer can take several steps (one per gradeable line, one per quotation
+  // or table block), so drive the primary chip until the ask chip appears
+  // rather than clicking it once. Checking for the chip BEFORE each click is
+  // what keeps the loop from clicking a grade chip once the reveal is done.
   const askChip = page.locator(".chip.ask");
+  for (let step = 0; step < 12 && !(await askChip.count()); step++) {
+    const revealBtn = page.locator(".chip.primary");
+    if (!(await revealBtn.count())) break;
+    await revealBtn.first().click();
+    await page.waitForTimeout(200);
+  }
   if (!(await askChip.count())) {
-    log("FAILED shot 2: no .chip.ask visible after reveal");
+    log("FAILED shot 2: no .chip.ask visible after revealing every answer step");
     return false;
   }
   await askChip.first().click();
@@ -802,7 +809,7 @@ async function shot6(page) {
   await page.waitForTimeout(500);
   const field = page.locator(".wfield");
   if (await field.count()) {
-    await field.fill("It moves — s1 is invalidated and s2 becomes the sole owner of the heap data.");
+    await field.fill("It moves: s1 is invalidated and s2 becomes the sole owner of the heap data.");
     await field.press("Shift+Enter");
     await page.waitForTimeout(400);
   }
@@ -954,6 +961,15 @@ async function main() {
   // carry stale-format documents; shots fabricate the state they need).
   fs.rmSync(path.join(DEMO_DIR, "progress"), { recursive: true, force: true });
   fs.rmSync(path.join(DEMO_DIR, "recent.json"), { force: true });
+  // The showcase workspace comes from the repo, never from the personal copy.
+  // ~/alix-demo's is an older vintage with no `title:` and a `#` body heading
+  // that is section context now, so the catalog labels its row from the first
+  // card and shot 6's text match cannot find it.
+  const showcaseDest = path.join(DEMO_DIR, "workspace-showcase");
+  fs.rmSync(showcaseDest, { recursive: true, force: true });
+  fs.cpSync(path.join(REPO_ROOT, "docs", "examples", "workspace-showcase"), showcaseDest, {
+    recursive: true,
+  });
 
   if (wants(1) || wants(2) || wants(3) || wants(8)) ensureAugmented();
 
