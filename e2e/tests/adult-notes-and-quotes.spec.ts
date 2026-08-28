@@ -161,6 +161,58 @@ The point is about what a passing suite cannot prove.
   await expect(revealed).toHaveCount(2);
 });
 
+// A table answer walks the same reference card. Codex found the tutor's
+// `ui` missing `appendTable` after the table step landed, which throws on
+// the step walk rather than degrading, so the panel never opens.
+test("the tutor reference shows a table as a table", async ({ page }) => {
+  fs.mkdirSync(path.join(NOTES_WORKSPACE, "decks"), { recursive: true });
+  fs.writeFileSync(path.join(NOTES_WORKSPACE, "alix.toml"), 'title = "Notes And Quotes"\n');
+  fs.writeFileSync(
+    path.join(NOTES_WORKSPACE, "decks", "ports.md"),
+    `---
+format-version: 1
+id: "deck-00000000000000000000000015"
+title: "Ports"
+---
+## Which ports do these protocols use?
+The well-known assignments:
+| protocol | port |
+| --- | --- |
+| http | 80 |
+| https | 443 |
+<!-- id: card-tabletutor1 -->
+`,
+  );
+
+  await page.route("**/api/ask", (route) =>
+    route.fulfill({
+      json: {
+        transcript: [{ q: "Why?", a: "Because the source says so." }],
+        thinking: false,
+        status: null,
+        error: null,
+        draft: null,
+      },
+    }),
+  );
+
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Notes And Quotes").click();
+  await adultDeckRow(page, "Ports").click();
+  await page.getByTitle("choose a depth").click();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/select")),
+    page.getByRole("button", { name: /^Recall/ }).click(),
+  ]);
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await page.getByRole("button", { name: "Ask tutor" }).click();
+
+  const table = page.locator(".ask-card table");
+  await expect(table).toHaveCount(1);
+  await expect(table).toContainText("443");
+  await expect(page.locator(".ask-card")).not.toContainText("|");
+});
+
 // The tutor's reference card shows the learner what they were asked, so a
 // quotation must read as one there too. Found while sweeping for the
 // `back.length` derivations Codex's kids finding pointed at.

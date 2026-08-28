@@ -214,6 +214,7 @@ const tutor = createTutor({
     appendQuote,
     appendRuns,
     appendRunsOrText,
+    appendTable,
     chip,
     diagramImage,
     document,

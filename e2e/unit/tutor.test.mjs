@@ -1,7 +1,24 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createTutor } from "../../web/alix/review/tutor.js";
+
+test("the adult app wires table rendering into the tutor", async () => {
+  const source = await readFile(
+    new URL("../../web/alix/review/app.js", import.meta.url),
+    "utf8",
+  );
+  const tutorStart = source.indexOf("const tutor = createTutor({");
+  const tutorEnd = source.indexOf("const walk = createWalk({", tutorStart);
+  const tutorWiring = source.slice(tutorStart, tutorEnd);
+
+  assert.match(
+    tutorWiring,
+    /\bappendTable,/,
+    "a table answer crashes the tutor unless app.js injects appendTable",
+  );
+});
 
 test("tutor owns its transcript and chooses the walk endpoint explicitly", async () => {
   const calls = [];
