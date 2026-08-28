@@ -328,7 +328,9 @@ The most relevant deterministic checks currently live beside their controls:
   file replacement shared by every deck and progress writer, including each
   `alix doctor` repair;
 - `src/share.rs`: outgoing filtering, defensive receive sanitization, and the
-  refusal of a symbolic link on every staging and landing path;
+  refusal of a symbolic link on every staging and landing path, held over HTTP
+  by `tests/api.rs` and over the command line by `tests/cli.rs` because each
+  client lands an archive by its own route;
 - `src/deck_transfer.rs`: local transfer preflight, private progress handling,
   destination-first publication, and source-deletion rollback;
 - `src/state.rs` and `src/workspace.rs`: typed user-file and workspace-file

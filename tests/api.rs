@@ -4584,6 +4584,71 @@ fn share_zip_roundtrips_through_receive_zip() {
     assert_eq!("done", body["phase"], "body: {body}");
 }
 
+#[cfg(unix)]
+fn zip_with_symlink(path: &std::path::Path, entries: &[(&str, &str)], link: (&str, &str)) {
+    let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+    let options: zip::write::FileOptions<()> = zip::write::FileOptions::default();
+    for (name, body) in entries {
+        writer.start_file(*name, options).unwrap();
+        writer.write_all(body.as_bytes()).unwrap();
+    }
+    writer
+        .add_symlink(link.0, link.1, options)
+        .expect("the archive carries the link an attacker would send");
+    writer.finish().unwrap();
+}
+
+/// The web landing is a third route into `land_received`, and the sanitizer it
+/// runs deletes by name, so a link the sender chose would delete in the link's
+/// target rather than in the archive.
+#[cfg(unix)]
+#[test]
+fn receiving_a_zip_that_carries_a_link_is_refused_and_deletes_nothing() {
+    let (base, guard) = spawn_test_server();
+    let inbox = guard.dir().join("inbox");
+    std::fs::create_dir(&inbox).unwrap();
+    std::fs::write(inbox.join("alix.toml"), "title = \"Inbox\"\n").unwrap();
+
+    for (shape, entries, link_name) in [
+        ("the whole payload is a link", &[][..], "shared-decks"),
+        (
+            "a link inside the folder",
+            &[("shared-decks/decks/ok.md", FIXTURE_DECK)][..],
+            "shared-decks/decks/escape",
+        ),
+    ] {
+        let elsewhere = guard.dir().join(format!("elsewhere-{}", link_name.len()));
+        std::fs::create_dir(&elsewhere).unwrap();
+        std::fs::write(elsewhere.join("recent.json"), "[]").unwrap();
+        let archive = guard.dir().join("payload.zip");
+        zip_with_symlink(&archive, entries, (link_name, elsewhere.to_str().unwrap()));
+        let bytes = std::fs::read(&archive).unwrap();
+
+        let resp = http(
+            &base,
+            "POST",
+            "/api/receive/zip?dest=inbox",
+            &[("Content-Type", "application/zip")],
+            &bytes,
+        );
+
+        assert_eq!(
+            400,
+            resp.status,
+            "{shape}: landing must be refused, body: {}",
+            String::from_utf8_lossy(&resp.body)
+        );
+        assert!(
+            elsewhere.join("recent.json").exists(),
+            "{shape}: the sanitizer must not reach through the link"
+        );
+        assert!(
+            !inbox.join("decks/shared-decks").exists(),
+            "{shape}: nothing lands when the archive carries a link"
+        );
+    }
+}
+
 #[test]
 fn bug_report_download_is_token_guarded_private_and_identical_to_the_library_bundle() {
     let (base, guard) = spawn_test_server_with(Some("secret"));
