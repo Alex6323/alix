@@ -152,6 +152,17 @@ fn validate_bundle_material(deck: &crate::deck::Deck, root: &Path) -> Result<()>
     Ok(())
 }
 
+fn refuse_link(entry: &std::fs::DirEntry) -> Result<()> {
+    if entry.file_type()?.is_symlink() {
+        bail!(
+            "`{}` is a link, and sharing copies files rather than following a link out of \
+             the folder; replace it with what it points to, or remove it before sharing",
+            entry.path().display()
+        );
+    }
+    Ok(())
+}
+
 fn count_files(dir: &Path) -> Result<usize> {
     let mut count = 0;
     for entry in std::fs::read_dir(dir)? {
@@ -183,13 +194,7 @@ pub fn stage_dir(dir: &Path, stage: &Path) -> Result<usize> {
         if stays_home(&name) {
             continue;
         }
-        if entry.file_type()?.is_symlink() {
-            bail!(
-                "`{}` is a link, and sharing copies files rather than following a link out of \
-                 the folder; replace it with what it points to, or remove it before sharing",
-                from.display()
-            );
-        }
+        refuse_link(&entry)?;
         let to = stage.join(&name);
         if name == "augment" && from.is_dir() {
             staged += stage_augmentation(&from, &to, &deck_ids)?;
@@ -243,6 +248,7 @@ fn stage_augmentation(
         let Some(deck_id) = crate::state::deck_id_from_document(&from) else {
             continue;
         };
+        refuse_link(&entry)?;
         if !from.is_file()
             || !deck_ids.contains(deck_id)
             || from
@@ -309,6 +315,7 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
+        refuse_link(&entry)?;
         let dest = to.join(entry.file_name());
         if entry.path().is_dir() {
             copy_tree(&entry.path(), &dest)?;
@@ -693,6 +700,71 @@ mod tests {
 
     fn touch(dir: &Path, name: &str) {
         std::fs::write(dir.join(name), "x").unwrap();
+    }
+
+    #[cfg(unix)]
+    fn workspace_with_one_deck(root: &Path) {
+        std::fs::create_dir_all(root.join("decks")).unwrap();
+        std::fs::write(root.join("alix.toml"), "title = \"W\"\n").unwrap();
+        std::fs::write(
+            root.join("decks/m.md"),
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\na\n<!-- id: card-m1c1 -->\n",
+        )
+        .unwrap();
+        crate::assets::write_object(root, "deck-m1", b"excerpt\n", "md").unwrap();
+    }
+
+    /// A link in a deck's owned assets is refused before `copy_tree` reaches
+    /// it, because an object whose name is not its content address is already
+    /// invalid material to bundle.
+    #[cfg(unix)]
+    #[test]
+    fn staging_refuses_a_link_in_a_decks_owned_assets() {
+        let dir = tempfile::tempdir().unwrap();
+        let secret = dir.path().join("secret.txt");
+        std::fs::write(&secret, "secret\n").unwrap();
+        let root = dir.path().join("ws");
+        workspace_with_one_deck(&root);
+        let owned = crate::assets::deck_dir(&root, "deck-m1").unwrap();
+        std::os::unix::fs::symlink(&secret, owned.join("linked.md")).unwrap();
+
+        let stage = dir.path().join("stage");
+        let staged = stage_dir(&root, &stage);
+
+        assert!(
+            staged.is_err(),
+            "staging must stop rather than copy what the link points at"
+        );
+        assert!(
+            !stage.join("assets/deck-m1/linked.md").exists(),
+            "nothing outside the folder reached the outgoing tree"
+        );
+    }
+
+    /// `stage_augmentation` copies one file per live deck id, and a link named
+    /// after a live deck is the same boundary as any other.
+    #[cfg(unix)]
+    #[test]
+    fn staging_refuses_a_link_in_one_decks_augmentation() {
+        let dir = tempfile::tempdir().unwrap();
+        let secret = dir.path().join("secret.txt");
+        std::fs::write(&secret, "secret\n").unwrap();
+        let root = dir.path().join("ws");
+        workspace_with_one_deck(&root);
+        std::fs::create_dir(root.join("augment")).unwrap();
+        std::os::unix::fs::symlink(&secret, root.join("augment/deck-m1.json")).unwrap();
+
+        let stage = dir.path().join("stage");
+        let error = stage_dir(&root, &stage).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("is a link"),
+            "the refusal names the link the user has to resolve: {error:#}"
+        );
+        assert!(
+            !stage.join("augment/deck-m1.json").exists(),
+            "nothing outside the folder reached the outgoing tree"
+        );
     }
 
     /// Codex found the leak: the selected folder is the boundary of what leaves
