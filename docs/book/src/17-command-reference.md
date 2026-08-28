@@ -92,31 +92,31 @@ the deck file. There's no separate command for it.
 
 ## The AI features
 
-**`alix generate <source>`** is the one AI-authoring verb. `--source-url <URL>`
-records a public source (added to the deck or workspace `source:`) for later
-tutor and exam context after local evidence is frozen. What generate makes
-follows the source:
+**`alix generate`** is the AI-authoring verb, and its subcommand names what
+you get: `deck` always writes one deck, `workspace` always builds a workspace.
 
-`--goal <TEXT>` scopes what every new deck or workspace teaches.
-`--language <LANGUAGE>` controls learner-facing output, and
-`--audience <TEXT>` controls assumed knowledge and difficulty.
+Both take the same steering options. `--source-url <URL>` records a public
+source (added to the deck or workspace `source:`) for later tutor and exam
+context after local evidence is frozen. `--goal <TEXT>` scopes what the new
+deck or workspace teaches. `--language <LANGUAGE>` controls learner-facing
+output, and `--audience <TEXT>` controls assumed knowledge and difficulty.
 `--card-style mixed|plain|cloze|authored-choices` selects the facts-card shape;
-workspace trace items retain their checkpoint shape.
+workspace trace items retain their checkpoint shape. `--into <dir>` is where
+the result lands, and `--force` overwrites what is already there.
 
-- a **web page URL or a local file** → one
-  [facts deck](11-generating-decks.md) (`-o/--output`, `--cards`, `--review`,
-  `--print`, `--force`; `--workspace <dir>` writes it into that workspace).
-- a **directory** → explored first for an
-  [ordered learning plan](14-explore.md) scoped by the same controls: a
-  one-item plan becomes a single deck, a bigger plan a **workspace build**,
-  confirmed before it runs (`--workspace <dir>` sets the destination,
-  `--title`/`--icon` name and brand it). `--plan` prints the plan and stops;
-  `--deck` forces a single deck from a directory.
-- with **`--trace`** → a [trace](13-trace-decks.md) authored over the source,
-  written as a trace deck (`-o/--output`, default `explore.md`;
-  `--workspace <dir>` places it). `--trace --plan` prints a ranked menu of
-  suggested traces instead.
-- an existing **`trace:` stub deck** → builds its checkpoints in place.
+- **`alix generate deck <source>`** → one deck from a web page URL, a local
+  file, or a directory taken whole, with no planning pass
+  ([facts decks](11-generating-decks.md); `-o/--output`, `--cards`,
+  `--review`, `--print`).
+  - with **`--trace`** → that deck is a [trace](13-trace-decks.md) authored
+    over the source (`-o/--output` defaults to `explore.md`).
+    `--trace --plan` prints a ranked menu of suggested traces instead.
+  - given an existing **`trace:` stub deck** → builds its checkpoints in place.
+- **`alix generate workspace <dir>`** → the directory is explored for an
+  [ordered learning plan](14-explore.md), which is confirmed and then built as
+  a workspace, whatever its size (`--title`/`--icon` name and brand it).
+  `--plan` prints the plan and stops. A source that is not a directory is
+  refused, naming `generate deck` instead.
 
 The rest of the AI-and-deck surface:
 
@@ -153,7 +153,8 @@ The rest of the AI-and-deck surface:
 - `alix workspace init <dir>`: scaffold an empty
   [workspace](08-workspaces.md): an `alix.toml` (`--title` names it), an
   `alix.local.toml` (personal pacing: deadline, retention), and an empty
-  `decks/` plus `assets/`. Grow it with the `--workspace` flags above.
+  `decks/` plus `assets/`. Grow it with `alix generate deck … --into <dir>` or
+  `alix deck import … --workspace <dir>`.
 - `alix workspace update <dir>`: reconcile frozen source-backed members with
   their recorded local sources. The first run stages an exact sibling
   workspace for review; `--apply` publishes it without another model call and

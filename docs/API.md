@@ -254,7 +254,7 @@ upload still exists on the user's device, so nothing is lost.
 web page — the first polled job of this family, following §3's polling
 pattern: poll `GET /api/generate` while `phase:"generating"`, then read
 `error` or the result. `url` must be `http://`/`https://`; the web surface
-generates from URLs only — unlike the CLI's `alix generate`, which also
+generates from URLs only — unlike the CLI's `alix generate deck`, which also
 accepts a local path, since a LAN token holder must not be able to point the
 server's AI at the server's own filesystem. `guidance`, when non-empty,
 replaces the configured `[generate] extra` steer for this job only. `dest`

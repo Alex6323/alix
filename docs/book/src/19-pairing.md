@@ -91,7 +91,7 @@ cards, since a trace is a path, not a card pile.
 
 The Settings page also gains a **Generate deck** row: give it a URL and
 optional guidance, the desktop generates the deck text the same way
-`alix generate` does, then the phone asks where to save it (the same folder
+`alix generate deck` does, then the phone asks where to save it (the same folder
 browser the shared-decks setup uses) and writes it under a collision-free
 file name. It follows the same liveness rule as the two chips: the row
 appears only while the phone has confirmed the paired desktop is reachable

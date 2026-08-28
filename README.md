@@ -50,8 +50,8 @@ read-only tools only, and `alix` stores no API keys. See
 
 ```sh
 # make decks and workspaces from your own material
-alix generate <url-or-file>            # -> a deck
-alix generate <repo> --goal "how X works" --workspace ~/decks/topic   # -> a workspace
+alix generate deck <url-or-file>       # -> one deck
+alix generate workspace <repo> --goal "how X works"   # -> a workspace
 
 # then study, always in the web app (pick a deck or workspace, then a depth)
 alix
@@ -91,7 +91,8 @@ grading and card identity keep using the source text.
 |---|---|
 | `alix` | Open the web app to pick a deck or workspace |
 | `alix profile` | Define and launch a named instance per person (decks, port, kids/adult) |
-| `alix generate <source>` | Draft a deck, a trace (`--trace`), or a whole workspace |
+| `alix generate deck <source>` | Draft one deck from a page, a file, or a folder (`--trace` for a trace) |
+| `alix generate workspace <dir>` | Explore a folder for a learning plan and build a workspace |
 | `alix deck init <deck>` | Initialize a hand-written deck once (mints its stable ids) |
 | `alix deck augment <deck> --target …` | Add distractors, notes, or key points |
 | `alix deck copy\|move <deck> <workspace>` | Transfer one deck and its owned files between workspaces |

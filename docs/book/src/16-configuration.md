@@ -174,7 +174,7 @@ settings:
   may override it, see [the tutor](10-tutor.md)), and `preflight_threshold`
   (warn and confirm before spending a large model call on a local source tree
   bigger than this many bytes; `0` proceeds silently).
-- **`[generate]`**: `alix generate`'s deck drafting: `model`, the absolute
+- **`[generate]`**: `alix generate deck`'s drafting: `model`, the absolute
   `timeout_secs` (3600), and `idle_timeout_secs` (300, or `0` to disable).
   The latter is a resetting inactivity limit for structured-event backends and
   a nonrenewing absolute fallback for unstructured backends. Other controls are
@@ -185,7 +185,8 @@ settings:
   hidden until the result passes validation.
 - **`[exam]`**: the AI exam: `model`, `timeout_secs` (300), `num_questions` (5),
   `pass_threshold` (1.0), `strictness` (`balanced`), `extra`.
-- **`[trace]`**: `alix generate`'s trace and plan passes: `model` defaults to
+- **`[trace]`**: the `generate deck --trace` and `generate workspace` planning
+  passes: `model` defaults to
   unset, which resolves to the backend's strong model where it defines one
   (Claude: `opus`), and `effort` defaults to `"high"` (the build is
   correctness-critical and amortized); also `timeout_secs`.

@@ -64,11 +64,11 @@ so the excerpt stays focused without orphaning the names it needs.
 ## Building it with the model
 
 You don't have to hand-write checkpoints. Declare just the `trace:` and
-`source:`, then name the stub deck as [`alix generate`](11-generating-decks.md)'s
-source:
+`source:`, then name the stub deck as
+[`alix generate deck`](11-generating-decks.md)'s source:
 
 ```sh
-alix generate mytrace.md
+alix generate deck mytrace.md
 ```
 
 The model explores the source — **read-only** `Read`/`Glob`/`Grep`, source root as
@@ -89,7 +89,7 @@ but it runs once and is amortized over many reviews. The suggestions pass
 ## Don't know what to trace? — `--trace --plan`
 
 ```sh
-alix generate . --trace --plan
+alix generate deck . --trace --plan
 ```
 
 does a single read-only recon pass over a source (a repo `.`, a directory, a file,
@@ -99,7 +99,7 @@ a one-line spine sketch, and a suggested `source:` scope. The list is sized by
 as long as the source needs. It also names the *node-shaped* subsystems it skips —
 a config table, a store's on-disk format — as **facts-deck material**, because
 facts are a deck's job and edges are a trace's. It writes nothing: pick one, paste
-its header into a new deck, and `alix generate` it. Knowing *what* is worth tracing (and
+its header into a new deck, and `alix generate deck` it. Knowing *what* is worth tracing (and
 how deep) is the genuinely hard part — it needs you to already understand the
 source — so this hands that judgment to the model.
 

@@ -1,18 +1,20 @@
-# 11 · Generating decks: `alix generate`
+# 11 · Generating decks: `alix generate deck`
 
-Authoring cards by hand is the slow part of any flashcard habit. `alix
-generate` removes it: point it at a source and the model drafts a deck of fact cards
+Authoring cards by hand is the slow part of any flashcard habit. `alix generate
+deck` removes it: point it at a source and the model drafts a deck of fact cards
 for you.
 
 ```sh
-alix generate https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
-alix generate src/scheduler.rs   # a local file
+alix generate deck https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
+alix generate deck src/scheduler.rs   # a local file
 ```
 
-The source is a **web page URL** or a **local file**. It's the one AI-authoring
-verb: the same command with `--trace` builds *traces* from the same kinds of
-source, and a **directory** source is explored for a whole learning plan first
-(both later chapters). Pass `--deck` to force a single deck from a directory.
+The source is a **web page URL**, a **local file**, or a **directory** taken
+whole. `alix generate` has exactly two subcommands, and each one names what you
+get: `deck` always writes one deck, `workspace`
+([chapter 14](14-explore.md)) always explores a directory for a learning plan
+and builds a workspace of decks and traces. Adding `--trace` to `generate deck`
+makes that one deck a *trace* ([chapter 13](13-trace-decks.md)).
 
 While the model works, `alix` prints short progress updates to stderr, such as
 source fetching, source reading, and drafting. Partial generated cards stay
@@ -53,14 +55,14 @@ How the source is recorded depends on its kind, and it matters later:
 ## Useful flags
 
 ```sh
-alix generate <source> -o ownership              # choose the output file name
-alix generate <source> --cards 15                # aim for at most 15 cards (a soft ceiling)
-alix generate <source> --review                  # a 2nd pass that dedups and tightens
-alix generate <source> --print                   # print to stdout instead of writing a file
-alix generate <source> --workspace ~/decks/rust/ # write it under that workspace's decks/
-alix generate <source> --goal "pass the citizenship test"
-alix generate <source> --language German --audience "new voters"
-alix generate <source> --card-style authored-choices
+alix generate deck <source> -o ownership         # choose the output file name
+alix generate deck <source> --cards 15           # aim for at most 15 cards (a soft ceiling)
+alix generate deck <source> --review             # a 2nd pass that dedups and tightens
+alix generate deck <source> --print              # print to stdout instead of writing a file
+alix generate deck <source> --into ~/decks/rust/ # write it under that workspace's decks/
+alix generate deck <source> --goal "pass the citizenship test"
+alix generate deck <source> --language German --audience "new voters"
+alix generate deck <source> --card-style authored-choices
 ```
 
 `--goal` controls what the learner should understand for every new deck or

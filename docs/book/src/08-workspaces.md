@@ -93,7 +93,7 @@ spanish/
 ```
 
 Grow the workspace with
-[`alix generate … --workspace <dir>`](11-generating-decks.md) or
+[`alix generate deck … --into <dir>`](11-generating-decks.md) or
 `alix deck import … --workspace <dir>`, also available from the web UI's ☰
 menu's **Add deck…** sheet. Dependencies (`requires:`) are still edited by
 hand in the deck files.
@@ -270,7 +270,7 @@ chevron, so a long list of similar-named workspaces is quicker to scan. Drop an
 image in the workspace's `assets/` and point `icon = "assets/<file>"` at it in the
 `alix.toml` (or just name it `assets/icon.{svg,png,jpg}` and skip the key); an SVG
 is tinted to the active theme, a raster shows as-is. When you build a workspace
-with `alix generate <source> --workspace <dir>`, the model draws an abstract SVG emblem from
+with `alix generate workspace <dir>`, the model draws an abstract SVG emblem from
 the topic automatically, unless you pass `--icon <file>`.
 
 `alix <dir>` serves a workspace directly: the picker opens drilled into that

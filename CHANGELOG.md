@@ -378,6 +378,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- **Breaking: `alix generate` is split into `alix generate deck` and `alix
+  generate workspace`.** The kind of thing you got used to be decided for you,
+  from the source type and from the size of the model's plan: asking for a
+  workspace over a directory could silently produce a single deck, after the
+  call was already paid for. Now the subcommand names the result. `generate
+  deck` takes a URL, a file, or a directory taken whole and always writes one
+  deck (`--trace` makes that deck a trace, as before, and a `trace:` stub deck
+  still builds in place); `generate workspace` takes a directory, explores it,
+  and always builds a workspace, a one-item plan included. `--deck` is gone
+  because `generate deck` is what it meant, and `--workspace <dir>` is now
+  `--into <dir>` on both subcommands, with one meaning: where the result lands.
+  A source that is not a directory is refused by `generate workspace`, naming
+  the deck command instead.
+
 - A thematic break is one lexical class: three or more of one marker, `-`, `*`,
   or `_`, with spaces or tabs allowed between them and an indent under four
   columns. `----`, `-----`, and `- - -` used to be ordinary content while

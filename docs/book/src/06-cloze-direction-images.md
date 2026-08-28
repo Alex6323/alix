@@ -428,7 +428,7 @@ fact cards. Like every directive, `<!-- at: -->` is not part of a card's identit
 adding a citation never resets its progress.
 
 You rarely write these by hand. Generating a deck from a local source
-([`alix generate <path>`](11-generating-decks.md)) cites the lines each fact came
+([`alix generate deck <path>`](11-generating-decks.md)) cites the lines each fact came
 from and fingerprints every citation. Plain
 [`alix doctor`](17-command-reference.md) reports missing fingerprints and
 fingerprint drift without writing. After reviewing the cited text,

@@ -66,4 +66,4 @@ only the exam waits on the prerequisites.
 This is what turns a folder of decks into a **curriculum**: order the material by
 `requires:`, and `alix` gates each step's exam on passing the last. It's the
 backbone of the AI exam's notion of *mastery* (a later chapter) and of how
-[`alix generate`](14-explore.md) lays out a generated learning plan.
+[`alix generate workspace`](14-explore.md) lays out a generated learning plan.
