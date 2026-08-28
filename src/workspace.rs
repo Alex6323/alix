@@ -972,9 +972,6 @@ mod tests {
         );
     }
 
-    /// Codex: the pairing listing is a diagnostic, not an offer, and the
-    /// `.personal.md` spelling is its input, so identity must not collapse the
-    /// two names that doctor has to compare.
     #[cfg(unix)]
     #[test]
     fn the_pairing_listing_keeps_both_spellings_of_one_physical_file() {

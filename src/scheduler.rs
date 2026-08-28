@@ -403,9 +403,6 @@ mod tests {
 
     #[test]
     fn a_cap_only_deadline_does_not_replace_recognize_retention() {
-        // Codex tenth pass, P1: one resolved tuning fed both engines, so any
-        // workspace deadline silently rescheduled Recognize at Recall's
-        // retention. Cap-only tuning (ramp_progress 0) must leave 0.85 alone.
         let tuned = Fsrs::tuned(
             0.9,
             DEFAULT_RECOGNIZE_RETENTION,

@@ -1016,9 +1016,6 @@ mod tests {
 
     use super::*;
 
-    /// Codex's finding: the reverse half is created after the parser has
-    /// finished, so the builder's section stamp cannot reach it. A reversed
-    /// prompt needs the same framing as the forward one.
     #[test]
     fn a_both_direction_cards_reverse_half_keeps_its_section_context() {
         let dir = tempfile::tempdir().unwrap();
