@@ -6,8 +6,9 @@ use std::{
 
 use crate::config::AskConfig;
 
-/// Serializes tests that write + exec a fake CLI: a concurrent fork would
-/// inherit the briefly write-open script fd and fail `exec` with `ETXTBSY`.
+/// Serializes EVERY process creation in this test binary, not only the
+/// fake-CLI ones: a fork anywhere inherits the briefly write-open script fd
+/// of a concurrent `fake_cli`, whose own `exec` then fails with `ETXTBSY`.
 static EXEC_LOCK: Mutex<()> = Mutex::new(());
 
 /// Acquires [`EXEC_LOCK`], tolerating poison: a panicking test must not

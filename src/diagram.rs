@@ -1647,6 +1647,7 @@ mod tests {
 
     #[test]
     fn a_missing_renderer_names_the_command() {
+        let _guard = exec_lock();
         let out = render_batch(
             "definitely-not-a-real-binary-xyz",
             None,

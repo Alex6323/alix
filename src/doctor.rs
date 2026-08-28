@@ -630,6 +630,8 @@ mod tests {
 
     #[test]
     fn a_missing_binary_warns_with_its_remedy() {
+        #[cfg(all(unix, feature = "full"))]
+        let _lock = crate::testutil::exec_lock();
         let finding = check_binary(
             "share",
             "definitely-not-a-real-binary-xyz",

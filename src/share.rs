@@ -470,10 +470,13 @@ impl Drop for ShareJob {
 
 #[cfg(all(test, unix))]
 pub(crate) fn test_job(events: Receiver<ShareEvent>) -> ShareJob {
-    let mut child = Command::new("/bin/sh")
-        .args(["-c", "exit 0"])
-        .spawn()
-        .expect("spawn inert share test child");
+    let mut child = {
+        let _lock = crate::testutil::exec_lock();
+        Command::new("/bin/sh")
+            .args(["-c", "exit 0"])
+            .spawn()
+            .expect("spawn inert share test child")
+    };
     child.wait().expect("reap inert share test child");
     ShareJob {
         events,

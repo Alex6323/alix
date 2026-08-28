@@ -88,8 +88,8 @@ pub mod workspace;
 #[cfg(feature = "full")]
 pub mod workspace_update;
 
-// Only the AI-facing modules use these fake-CLI helpers, and they're all
-// gated behind `full`. The fakes are /bin/sh scripts, so the module is
-// unix-only; Windows CI runs the persistence suites without it.
+// The fake CLIs are /bin/sh scripts written by the `full`-gated AI modules,
+// so the module is unix-only; Windows CI runs the persistence suites without
+// it. Its exec lock is taken by every forking test, not only those modules'.
 #[cfg(all(test, feature = "full", unix))]
 mod testutil;
