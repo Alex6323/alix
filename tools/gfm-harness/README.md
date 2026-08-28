@@ -31,8 +31,9 @@ runs, images, reasons) for ad-hoc inspection; put those files in `out/`
 empty:
 
 - `e`: spec example number
-- `g`: open-decision groups the example touches (numbering from
-  `docs/research/2026-08-22-gfm-alignment-research.md`)
+- `g`: open-decision groups the example touches; the numbering is assigned by
+  `decision_groups` in `src/main.rs`, which is where to read what each number
+  covers
 - `err`: alix parse error, when the example fails to load
 - `lints`: lint kinds raised
 - `cards`: cards parsed (absent when `err`)

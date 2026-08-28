@@ -13,7 +13,7 @@ full.
 | `##` front | card | Starts a card at column 0; the lines below are the answer. [→ ch 3](03-the-deck-format.md) |
 | `#` heading | section | Opens a section: its text and the prose under it are the shared context of every card below, shown on demand (`c` in the web app), never while you answer. Takes no directives and no card ID. [→ ch 3](03-the-deck-format.md#sections-and-sub-cards) |
 | `###` to `######` front | card | A sub-card of the card one level shallower, withheld from review until that parent graduates. Six hashes is the deepest, since a seventh is prose. [→ ch 3](03-the-deck-format.md#sections-and-sub-cards) |
-| `>` line | card | A note, shown after you answer. [→ ch 3](03-the-deck-format.md) |
+| `>` block | card | A blockquote: a note shown after you answer when its first line is an alert badge (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), otherwise a quotation that belongs to the answer and reveals with it. [→ ch 3](03-the-deck-format.md) |
 | `<!-- -->` | anywhere | A comment with no recognized key: ignored. A single-token comment that names no known invocation draws a doctor finding, since a typo'd invocation would otherwise silently leave its block literal. |
 | `choices-single` / `choices-multiple` | card | Invocation comment on the line below a task list: maps it to a [choice card](03-the-deck-format.md#choice-cards-task-lists), one correct answer or select-all-that-apply. A bare task list stays a literal checklist. |
 | `cards` | card | Invocation comment on the line below a pipe table: maps it to a [card table](03-the-deck-format.md#card-tables). A bare table renders literally. |
@@ -40,6 +40,7 @@ full.
 | `trace` | deck | What a [trace](13-trace-decks.md) walks; its presence makes the deck a trace. |
 | `at` | card | A repeatable named-field locator into the `source` (`at: file:lines fingerprint: xxh64-...`, plus `asset:` once frozen; a range-less path or URL cites the whole source): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
 | `given` | card | A [trace checkpoint's](13-trace-decks.md) off-screen symbol, as `name - meaning` (repeatable). |
+| `diagram` | card | Machine-maintained stamp on the line after a ```` ```mermaid ```` fence, tying the fence text to its frozen image and geometry (`fingerprint:`, `asset:`, `geometry:`). Written by deck init, never hand-authored. [→ ch 6](06-cloze-direction-images.md) |
 | `blank` | card | Masks and asks: a region of the preceding image (`rect x= y= width= height= hidden="..."`, optional `[group]`) or a stored text blank in the answer block (`span hidden="..."`, optional `occurrence=`/`boundary=`). Carries a minted `b:` stamp (and `position:` anchor on a span), maintained by alix like ids. [→ ch 6](06-cloze-direction-images.md) |
 | `cover` | card | Masks without ever asking, for legends and labels that give answers away: `rect` on the preceding image or `span` in the answer block. No group, no stamp, no card. [→ ch 6](06-cloze-direction-images.md) |
 | `crop` | card | A viewport onto the preceding image (`rect x= y= width= height=`, at most one per image); region coordinates stay in full-source space. [→ ch 6](06-cloze-direction-images.md) |

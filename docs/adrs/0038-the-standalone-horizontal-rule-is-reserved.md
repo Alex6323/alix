@@ -37,10 +37,9 @@ teaching three client renderers to use it.
 
 Against that cost stands no demonstrated use. Section context is authored under
 a `#` heading and is meant to be a short orienting line, not a document with
-sections of its own. Measured over every deck file in the maintainer's
-collection, the shared study workspace, the repository examples, and the
-end-to-end fixtures, a blank-surrounded break occurs zero times in 722 decks
-and 54,480 lines. A wider sweep including ordinary Markdown that alix never
+sections of its own. Measured over every deck file available to us, the shared
+study workspace, the repository examples, and the end-to-end fixtures, a
+blank-surrounded break occurs zero times. A wider sweep including ordinary Markdown that alix never
 parses found matches only in vendored dependency READMEs.
 
 ## Decision

@@ -68,7 +68,7 @@ silently instead: the break becomes a literal rule and joins the section, so
 the cards after it gain context they did not have. That silent row is the only
 meaning-to-different-meaning change here; every other row moves from error to
 meaning, which cannot corrupt an existing deck. Exposure was measured at zero
-across 592 deck files in the maintainer's corpora and the repository examples,
+across every deck corpus available to us and the repository examples,
 with the detector proven able to fire against known-positive fixtures first.
 Conversion is disposable tooling outside this repository, per the pre-1.0 rule.
 

@@ -169,7 +169,7 @@ than a check, because no check is happening yet on a card you're only meeting:
 `new · choice` when it offers options, `new · draw` on a sketch card, and
 `new · reveal` otherwise.
 
-## Draw instead of type: `input: draw` *(web only)*
+## Draw instead of type: `input: draw`
 
 `input:` is a third, separate axis: it changes how you *produce* an answer, not
 how it's graded. `draw` swaps the usual typed/reveal input for a canvas: instead
@@ -192,7 +192,8 @@ Grading a draw card is entirely **self-reported**: there's no OCR or vision mode
 reading the canvas, so it works like a self-graded flip/explain card. You judge
 your own drawing against the reveal. In this version `input:` is honored on
 **self-graded** checks only (a `flip` reveal or an explain); it's ignored
-elsewhere.
+elsewhere. One case needs no directive at all: a cloze hole cut out of a
+formula is always sketched rather than typed.
 
 ---
 

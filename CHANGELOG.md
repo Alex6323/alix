@@ -399,9 +399,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and one the manual could not justify. GFM reads all of them as breaks, and
   alix has no reason to differ. A line like `----` sitting in an answer is now
   a loud stray rather than text, so write `\----` or trail it with
-  `<!-- plain -->`; measured exposure across 1453 Markdown files and 141,049
-  lines of real decks and committed examples was one occurrence, in a product
-  note that alix never parses. A link definition now also stops at a `---`
+  `<!-- plain -->`; measured exposure across every deck collection and
+  committed example available to us was one occurrence, in a product note that
+  alix never parses. A link definition now also stops at a `---`
   line, as it already stopped at `***`.
 
   Setext headings stay unsupported, deliberately: a `===` underline is still
@@ -442,8 +442,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is a line-numbered error, blank-surrounded between cards included. alix has
   no standalone horizontal rule, and the shape is reserved: section context is
   a short orienting line authored under a `#`, and a break there occurs zero
-  times across 722 decks and 54,480 lines of real collections, the shared study
-  workspace, the committed examples, and the end-to-end fixtures. Keep the
+  times across every real collection, the shared study workspace, the committed
+  examples, and the end-to-end fixtures. Keep the
   characters with `<!-- plain -->` on the
   line below, or `\---` for a dash spelling. `***` and `___` gain the
   front-divider role and the `<!-- plain -->` escape, which previously only
@@ -720,8 +720,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `alix doctor` now reports a frozen source excerpt whose lines moved, and
   `--repair-source-locators` rebases it. Previously a moved excerpt was found
   anywhere in the file and passed silently, so a card could point a reader at
-  unrelated code while doctor said nothing; on the maintainer's own decks that
-  was true of 29 citations. A rebase corrects the `at:` line numbers only: the
+  unrelated code while doctor said nothing, which was true of dozens of
+  citations in a real workspace. A rebase corrects the `at:` line numbers only:
+  the
   frozen bytes and their fingerprint are untouched, so no card gains a claim it
   did not already have. An excerpt whose content actually changed is still
   reported and never repaired automatically.

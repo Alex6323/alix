@@ -33,7 +33,7 @@ full deck text and a suggested file name; a note condense hands back up to
 three lines. Either way the phone decides where they land: the decks folder
 or the deck file, never the server.
 
-The server side of this ships from 0.6.0; see `docs/API.md`, section 4.10,
+The server side of this ships from 0.6.0; see `docs/API.md`, section 4.11,
 for the wire contract if you're building against it.
 
 ## Pairing the mobile app

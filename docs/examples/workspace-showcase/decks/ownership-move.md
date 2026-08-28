@@ -13,6 +13,7 @@ id: "deck-5w9g21vjyf3xf3kpn9q8cckavs"
 ## A `String` lives partly on the stack and partly on the heap. What are the three parts kept on the stack, and where do the contents live?
 Stack: a pointer, a length, and a capacity.
 Heap: the actual character contents.
+> [!NOTE]
 > Length is bytes currently used; capacity is bytes received from the allocator.
 <!-- at: https://github.com/rust-lang/book/blob/main/src/ch04-01-what-is-ownership.md fingerprint: xxh64-fbc4c018148dac41 asset: sha256-0e01969ffa5628cec10f139bca4404df9debfc317b43cd7fc1ce7c4f1af527cc.md -->
 <!-- id: card-4mwwdfwyeb9nvsm2x03rchknj9 -->
@@ -31,6 +32,7 @@ A double free: both would call `drop` on the same memory, risking corruption.
 ## So how does Rust prevent that double free after `let s2 = s1`?
 It treats the assignment as a move: `s1` is considered no longer valid, so only `s2` frees the memory.
 Using `s1` afterward is a compile-time error.
+> [!NOTE]
 > A move is a shallow copy (pointer, length, capacity) plus invalidation of the source.
 <!-- at: https://github.com/rust-lang/book/blob/main/src/ch04-01-what-is-ownership.md fingerprint: xxh64-e493709594baa752 asset: sha256-2ca3a57a6a89ad30fedd2b25f73203997948a59721215df1d59ee4d666e64bbe.md -->
 <!-- id: card-7778gyq63jd49h6yrbw8w5q8m6 -->

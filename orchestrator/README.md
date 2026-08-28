@@ -139,9 +139,8 @@ the mutation result as `skipped`, never as zero missed mutants.
 Runs retain full agent worktrees, build outputs, neutral review exports, and
 evidence. The first full Alix run used about 7.6 GB. Budget at least 10 GB for a
 comparable run; concurrent agents raise peak usage and can otherwise fail
-mid-run with ENOSPC. This machine sweeps files under `~/tmp` after seven
-untouched days, so put `--run-dir` outside `~/tmp` when the evidence must remain
-inspectable. Build scratch and disposable worktrees may still live there.
+mid-run with ENOSPC. If your system sweeps `~/tmp`, put `--run-dir`
+outside it when the evidence must remain inspectable. Build scratch and disposable worktrees may still live there.
 
 ## Development gates
 

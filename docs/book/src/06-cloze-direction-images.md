@@ -18,8 +18,9 @@ let \blank{mut} x: \blank{u64} = 0;
 ```
 
 This makes two cards. One blanks `mut` and shows the rest; the other blanks `u64`.
-The asked blank shows as `⍰` (a boxed question mark, styled by every client); the *other* blanks are hidden as `⬚`, so no card
-gives away its siblings' answers. You only produce the hidden text.
+The asked blank is marked apart from the *other* blanks, which are hidden as `⬚`, so no card
+gives away its siblings' answers. You only produce the hidden text. The web app
+draws both as chips rather than showing the glyphs themselves.
 
 Braces outside a `\blank{}` are ordinary text, so `let p = Foo {};` is fine in a
 cloze answer. If you need a literal brace *inside* a `\blank{...}`, escape it as

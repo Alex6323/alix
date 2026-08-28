@@ -69,10 +69,9 @@ so is every client.
 - JSON keys are the Rust field names verbatim; no renaming layer.
 - **Documented keys are present by default.** Optional values serialize as
   `null` rather than being dropped ("nullable" in the tables means
-  null-possible), with four exceptions that are omitted entirely when
-  absent: `CardDto.front_units`, and `StateDto`'s `next_due_ms`,
-  `recognize_gap`, and `save_error`. Each of their table rows states when
-  it appears; treat a missing key there as `null`.
+  null-possible). Some keys are omitted entirely when absent instead; each
+  such key says so in its own table row, so read the row rather than a list
+  here, and treat a missing key as `null`.
 - Responses: `Content-Type: application/json; charset=utf-8` and
   `Cache-Control: no-store` on all JSON. No ETags, no conditional requests.
 - **No CORS headers.** A browser-based client must be served by alix itself

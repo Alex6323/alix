@@ -10,6 +10,10 @@
   [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md), which
   replaces the `alix-id` key with `id: deck-<token>` while preserving the
   Markdown-native format.
+- Details evolved 2026-08-24: a blockquote opens a note only when its first
+  line is one of GitHub's five alert badges; an unbadged blockquote is a
+  quotation that belongs to the answer and reveals with it. Evidence in
+  `src/parser/mod.rs`; the Markdown-native decision is unchanged.
 
 ## Decision history
 

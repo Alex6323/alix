@@ -80,22 +80,26 @@ Only the first identity is true; these front checkboxes are not answer choices.
 
 ## Where does inline math render inside a prose note?
 After the answer is revealed.
+> [!NOTE]
 > Euler's identity is $e^{i\pi}+1=0$, inside this sentence note.
 <!-- id: card-6bfwfcyswhv6wy5st7jpfyg8de -->
 
 ## Where does display math render inside a note?
 After the answer is revealed.
+> [!NOTE]
 > $$\sum_{n=1}^{\infty}\frac{1}{n^2}=\frac{\pi^2}{6}$$
 <!-- id: card-4t3qw2grtnar2655gt5hkz5af2 -->
 
 ## Can checklist notes contain formulas?
 Yes.
+> [!NOTE]
 > - [x] Maxwell-Faraday: $\nabla \times \mathbf{E}=-\frac{\partial \mathbf{B}}{\partial t}$
 > - [ ] Coulomb force: $F=k\frac{q_1q_2}{r^2}$
 <!-- id: card-1fxk30e866bbdwv9m4eq52eq2g -->
 
 ## Do dollars inside a fenced note render as math?
 No, fenced code remains verbatim.
+> [!NOTE]
 > ```
 > $x^2$ stays literal inside this note code block.
 > ```

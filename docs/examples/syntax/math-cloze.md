@@ -11,6 +11,7 @@ id: "deck-12x3e6yg9qkhxfjwgg9q4gwp7x"
 
 ## The quadratic formula
 $$x = \frac{-b \pm \sqrt{b^2 - \blank{4ac}}}{2a}$$
+> [!NOTE]
 > One blank, one sub-card. Blank what the learner would type: the hole's
 > content is the expected answer, so `\blank{\pm}` would be asking for
 > the string `\pm` rather than for any understanding.
@@ -22,6 +23,7 @@ $e^{i\pi} + \blank{1} = 0$
 
 ## The derivative of a power
 $$\frac{d}{dx}x^n = \blank{n} x^{\blank{n-1}}$$
+> [!NOTE]
 > Two blanks, two sub-cards, drilled separately. The exponent rule fails
 > in two different places, so it is worth separating them.
 <!-- id: card-6t775j2bw9ymbjky9g9bsy8zne -->
