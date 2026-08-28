@@ -469,13 +469,18 @@ async function shot1(page) {
     else s = await api(DEMO_BASE, "POST", "/api/grade", { grade: "passed" }, s.study_revision);
   }
   if (!s || !Array.isArray(s.keypoints) || s.keypoints.length === 0) {
-    log("SKIP shot 1: no reconstruct-depth card with cached keypoints was reachable");
+    log("FAILED shot 1: no reconstruct-depth card with cached keypoints was reachable");
     return false;
   }
   log("shot 1 card:", s.card.front, "-", s.keypoints.length, "keypoints");
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(400);
-  const answer = (s.card.back || []).join(" ");
+  // The typed target is the gradeable `line` steps only: a quotation is answer
+  // content that is never typed, so joining raw `back` would type its `>`.
+  const answer = (s.card.answer_steps || [])
+    .filter((step) => step.kind === "line")
+    .flatMap((step) => (s.card.back || []).slice(step.back_from, step.back_to))
+    .join(" ");
   await page.locator(".explain-input").fill(answer);
   await page.locator(".explain-input").press("Shift+Enter");
   await page.waitForTimeout(400);
@@ -522,7 +527,7 @@ async function shot2(page) {
   await page.waitForTimeout(300);
   const askChip = page.locator(".chip.ask");
   if (!(await askChip.count())) {
-    log("SKIP shot 2: no .chip.ask visible after reveal");
+    log("FAILED shot 2: no .chip.ask visible after reveal");
     return false;
   }
   await askChip.first().click();
@@ -569,7 +574,7 @@ async function shot3(page) {
     s = await api(DEMO_BASE, "POST", "/api/skip", {}, s.study_revision);
   }
   if (!s || !Array.isArray(s.choices) || s.choices.length < 2) {
-    log("SKIP shot 3: no Recognize card with multiple choices was reachable");
+    log("FAILED shot 3: no Recognize card with multiple choices was reachable");
     return false;
   }
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
@@ -692,14 +697,14 @@ async function shot4(page) {
   // row; its primary chip reads "Take exam" (picker.js examPrimary).
   const row = page.locator(".deckrow", { hasText: "what-is-ownership" });
   if (!(await row.count())) {
-    log("SKIP shot 4: hero row not listed");
+    log("FAILED shot 4: hero row not listed");
     return false;
   }
   await row.first().click();
   await page.waitForTimeout(300);
   const chip = page.locator(".chip.primary", { hasText: "Take exam" });
   if (!(await chip.count())) {
-    log("SKIP shot 4: no Take exam chip (deck not exam-due?)");
+    log("FAILED shot 4: no Take exam chip (deck not exam-due?)");
     return false;
   }
   await chip.first().click();
@@ -733,7 +738,7 @@ async function shot4(page) {
     .then(() => true)
     .catch(() => false);
   if (!arrived) {
-    log("SKIP shot 4: exam did not reach results");
+    log("FAILED shot 4: exam did not reach results");
     return false;
   }
   await page.waitForTimeout(400);
@@ -757,7 +762,7 @@ async function shot5(page) {
   await page.waitForTimeout(250);
   const augBtn = page.getByRole("button", { name: "Augment" });
   if (!(await augBtn.count())) {
-    log("SKIP shot 5: no Augment chip visible for the focused deck");
+    log("FAILED shot 5: no Augment chip visible for the focused deck");
     return false;
   }
   await augBtn.first().click();
@@ -782,7 +787,7 @@ async function shot6(page) {
   await page.waitForTimeout(400);
   const traceRow = page.locator(".deckrow").filter({ hasText: "Rust ownership moves" }).first();
   if (!(await traceRow.count())) {
-    log("SKIP shot 6: trace deck row not found in the drilled workspace");
+    log("FAILED shot 6: trace deck row not found in the drilled workspace");
     return false;
   }
   await traceRow.click();
@@ -798,7 +803,7 @@ async function shot6(page) {
     await page.waitForTimeout(400);
   }
   if (!(await page.locator(".source-excerpt").count())) {
-    log("SKIP shot 6: no .source-excerpt rendered — walk did not reach the reveal phase");
+    log("FAILED shot 6: no .source-excerpt rendered — walk did not reach the reveal phase");
     return false;
   }
   await shot(page, "shot-6-trace.webp", ".source-excerpt");
@@ -840,14 +845,14 @@ async function shot8(page) {
     cram: true,
   });
   if (!s || s.kind !== "review") {
-    log("SKIP shot 8: topology-scoped select did not return a review session");
+    log("FAILED shot 8: topology-scoped select did not return a review session");
     return false;
   }
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(400);
   const crumb = page.locator("#crumbStrip");
   if (!(await crumb.count())) {
-    log("SKIP shot 8: no #crumbStrip rendered for this session");
+    log("FAILED shot 8: no #crumbStrip rendered for this session");
     return false;
   }
   await shot(page, "shot-8-topology.webp", "#crumbStrip");
@@ -880,7 +885,7 @@ async function shot10(page) {
   await page.waitForTimeout(500);
   const box = page.locator(".box").first();
   if (!(await box.count())) {
-    log("SKIP shot 10: no .box on the kids home screen");
+    log("FAILED shot 10: no .box on the kids home screen");
     return false;
   }
   await box.click();
@@ -894,7 +899,7 @@ async function shot10(page) {
   let deckRow = page.locator(".deck-row", { hasText: "wild-animals" }).first();
   if (!(await deckRow.count())) deckRow = page.locator(".deck-row").first();
   if (!(await deckRow.count())) {
-    log("SKIP shot 10: no .deck-row inside the box");
+    log("FAILED shot 10: no .deck-row inside the box");
     return false;
   }
   await deckRow.click();
@@ -906,7 +911,7 @@ async function shot10(page) {
   }
   const opts = page.locator(".opt-btn");
   if (!(await opts.count())) {
-    log("SKIP shot 10: no .opt-btn tap-the-answer options rendered");
+    log("FAILED shot 10: no .opt-btn tap-the-answer options rendered");
     return false;
   }
   // Pick the correct option so the "Got it!" + mascot state shows. The
@@ -979,15 +984,7 @@ async function main() {
       [9, shot9],
       [10, shot10],
     ];
-    for (const [n, fn] of steps) {
-      if (!wants(n)) continue;
-      try {
-        results[n] = await fn(page);
-      } catch (err) {
-        console.error(`[shots] shot ${n} FAILED:`, err.message);
-        results[n] = false;
-      }
-    }
+    Object.assign(results, await runRequested(steps, wants, page));
   } finally {
     await browser.close();
     stopAll();
@@ -1000,19 +997,53 @@ async function main() {
   const kidsChanged = diffSnapshots(beforeKids, afterKids);
 
   log("=== summary ===");
-  for (const [n, ok] of Object.entries(results)) {
-    log(`shot ${n}: ${ok ? "captured" : "SKIPPED"}`);
-  }
+  const { lines, failed } = summarize(results);
+  for (const line of lines) log(line);
   log("~/alix-demo files changed:", demoChanged.length ? demoChanged : "none");
   log("~/alix-kids files changed:", kidsChanged.length ? kidsChanged : "none");
   if (demoChanged.length || kidsChanged.length) {
     console.error("[shots] WARNING: real demo/kids progress files changed — investigate before trusting this run");
     process.exitCode = 1;
   }
+  if (failed.length) {
+    console.error(`[shots] requested shots that did not capture: ${failed.join(", ")}`);
+    process.exitCode = 1;
+  }
 }
 
-main().catch((err) => {
-  console.error(err);
-  stopAll();
-  process.exit(1);
-});
+// `--only` is the mechanism for not requesting a shot, so anything requested
+// ends captured or failed: a `false` return and a thrown error mean the same
+// thing, that the state the slide photographs was never reached.
+async function runRequested(steps, wants, page) {
+  const results = {};
+  for (const [n, fn] of steps) {
+    if (!wants(n)) continue;
+    try {
+      results[n] = await fn(page);
+    } catch (err) {
+      console.error(`[shots] shot ${n} FAILED:`, err.message);
+      results[n] = false;
+    }
+  }
+  return results;
+}
+
+function summarize(results) {
+  const lines = [];
+  const failed = [];
+  for (const [n, ok] of Object.entries(results)) {
+    lines.push(`shot ${n}: ${ok ? "captured" : "FAILED"}`);
+    if (!ok) failed.push(Number(n));
+  }
+  return { lines, failed };
+}
+
+module.exports = { runRequested, summarize };
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    stopAll();
+    process.exit(1);
+  });
+}
