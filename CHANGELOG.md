@@ -794,6 +794,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- Both ends of the frontmatter fence now accept the same spellings. `--- `
+  (with a trailing space) closed frontmatter but did not open it, because the
+  opener was an exact compare while the closer trimmed, so a deck whose first
+  line carried an invisible trailing space failed with a message about front
+  dividers that never mentioned frontmatter. One predicate now decides both
+  ends at all four sites that tested for a fence: a line starting with exactly
+  `---`, spaces or tabs allowed after it, no indentation before it.
+
 - `alix doctor` checks a workspace member's frozen excerpts even when the deck
   still holds an unfrozen `at:` citation. One live citation used to switch off
   the whole per-citation inspection, so a fingerprinted excerpt that had moved,

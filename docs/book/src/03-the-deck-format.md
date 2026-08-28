@@ -491,6 +491,8 @@ brackets (`![diagram](<a b.png>)`) is an address, not a tag.
 
 A deck's name, its deck-wide settings, and its machine-maintained deck ID all
 live in **frontmatter**: a `---`-fenced YAML block at the very top of the file.
+Both fences are the same shape: a line starting with exactly `---`, with spaces
+or tabs allowed after it and no indentation before it.
 
 The name comes from `title:`. A deck without one falls back to a condensed form
 of its `trace:` sentence, and a deck with neither is named by its filename stem.

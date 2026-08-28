@@ -26,7 +26,9 @@ pub use frontmatter::{
     Frontmatter, Mapping, PERSONAL_PARENT_KEY, Reorder, parse_sampling, reorder_frontmatter,
     yaml_quote,
 };
-use frontmatter::{MappableBlock, bad_value, closes_frontmatter, parse_frontmatter, parse_reveal};
+use frontmatter::{
+    MappableBlock, bad_value, is_frontmatter_fence, parse_frontmatter, parse_reveal,
+};
 pub use sidecar::{SidecarNote, notes, without_notes};
 
 // Deliberately not Unicode whitespace; anything outside this set is content.
@@ -471,7 +473,7 @@ fn opens_frontmatter(text: &str) -> bool {
         .unwrap_or(text)
         .lines()
         .find(|line| !trim_ws(line).is_empty())
-        .is_some_and(|line| trim_ws(line) == "---")
+        .is_some_and(is_frontmatter_fence)
 }
 
 pub fn is_deck_content(text: &str) -> bool {
@@ -515,14 +517,14 @@ pub fn image_references(text: &str) -> Vec<ImageReference> {
         let line = line.strip_suffix('\r').unwrap_or(line);
         if !saw_content && !trim_ws(line).is_empty() {
             saw_content = true;
-            if line == "---" {
+            if is_frontmatter_fence(line) {
                 frontmatter = true;
                 offset += segment.len();
                 continue;
             }
         }
         if frontmatter {
-            if closes_frontmatter(line) {
+            if is_frontmatter_fence(line) {
                 frontmatter = false;
             }
             offset += segment.len();
@@ -4510,6 +4512,31 @@ a
             ParseError::UnclosedFrontmatter(1),
             err("---\nformat-version: 1\nid: \"deck-abc\"\n## q\na\n")
         );
+    }
+
+    #[test]
+    fn both_ends_of_the_frontmatter_fence_accept_the_same_spellings() {
+        for fence in ["---", "--- ", "---\t"] {
+            let deck = parse(&format!("{fence}\ntrace: a walk\n{fence}\n## q\na\n"));
+            assert_eq!(
+                Some("a walk".to_string()),
+                deck.frontmatter.trace,
+                "`{fence}` must open and close the fence"
+            );
+            assert_eq!(1, deck.cards.len(), "`{fence}` must leave one card");
+        }
+        for fence in [" ---", "----", "-- -"] {
+            assert_eq!(
+                ParseError::StrayDivider(1),
+                err(&format!("{fence}\ntrace: a walk\n---\n## q\na\n")),
+                "`{fence}` must not open the fence"
+            );
+            assert_eq!(
+                ParseError::UnclosedFrontmatter(1),
+                err(&format!("---\ntrace: a walk\n{fence}\n## q\na\n")),
+                "`{fence}` must not close the fence"
+            );
+        }
     }
 
     #[test]

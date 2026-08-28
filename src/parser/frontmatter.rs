@@ -76,8 +76,8 @@ pub struct Frontmatter {
 }
 
 // Leading indentation doesn't match: a `---` inside a YAML block scalar can't
-// accidentally close the frontmatter.
-pub(super) fn closes_frontmatter(line: &str) -> bool {
+// accidentally open or close the frontmatter.
+pub(super) fn is_frontmatter_fence(line: &str) -> bool {
     line.strip_prefix("---")
         .is_some_and(|rest| rest.chars().all(|c| WHITESPACE.contains(&c)))
 }
@@ -89,12 +89,12 @@ pub(super) fn parse_frontmatter(
     let Some(open) = lines.iter().position(|line| !trim_ws(line).is_empty()) else {
         return Ok((Frontmatter::default(), lines.len(), None));
     };
-    if lines[open] != "---" {
+    if !is_frontmatter_fence(lines[open]) {
         return Ok((Frontmatter::default(), 0, None));
     }
     let Some(close) = lines[open + 1..]
         .iter()
-        .position(|line| closes_frontmatter(line))
+        .position(|line| is_frontmatter_fence(line))
         .map(|i| open + 1 + i)
     else {
         return Err(ParseError::UnclosedFrontmatter(open + 1));
@@ -418,12 +418,12 @@ pub fn reorder_frontmatter(text: &str) -> Reorder {
     else {
         return Reorder::Unchanged;
     };
-    if line_content(lines[open]) != "---" {
+    if !is_frontmatter_fence(line_content(lines[open])) {
         return Reorder::Unchanged;
     }
     let Some(close) = lines[open + 1..]
         .iter()
-        .position(|line| closes_frontmatter(line_content(line)))
+        .position(|line| is_frontmatter_fence(line_content(line)))
         .map(|i| open + 1 + i)
     else {
         return Reorder::Skipped("unclosed frontmatter");
