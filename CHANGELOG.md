@@ -398,7 +398,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   still builds in place); `generate workspace` takes a directory, explores it,
   and always builds a workspace, a one-item plan included. `--deck` is gone
   because `generate deck` is what it meant, and `--workspace <dir>` is now
-  `--into <dir>` on both subcommands, with one meaning: where the result lands.
+  `--into <dir>`, spelled the same on both subcommands and meaning what each
+  one builds: on `deck` it is an existing workspace to write the deck into,
+  and on `workspace` it is the folder to build, created if it is absent.
   A source that is not a directory is refused by `generate workspace`, naming
   the deck command instead.
 
