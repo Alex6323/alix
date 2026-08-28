@@ -917,6 +917,14 @@ async function shot10(page) {
   await page.waitForTimeout(300);
   const tapBtn = page.getByRole("button", { name: "Tap the answer" });
   if (await tapBtn.count()) {
+    // The depth button renders disabled (`.caught-up`) when the deck carries no
+    // recognizable cards, which is honest and not a UI fault. Clicking it anyway
+    // spends 30s in Playwright's retry loop and reports a click timeout instead
+    // of the reason.
+    if (!(await tapBtn.first().isEnabled())) {
+      log("FAILED shot 10: the Tap the answer depth button is disabled for this deck");
+      return false;
+    }
     await tapBtn.click();
     await page.waitForTimeout(400);
   }
