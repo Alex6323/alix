@@ -577,10 +577,6 @@ fn image_references_in_line(line: &str, offset: usize, out: &mut Vec<ImageRefere
     }
 }
 
-/// A structural heading at column 0: `(depth, text)` for one to six `#`
-/// followed by a space. Depth decides the role (1 section, 2 card, 3 and 4
-/// sub-cards, 5 and 6 reserved); the space is required, so `##tight` stays
-/// content.
 /// Does a section heading's tail carry a RECOGNIZED card directive? Asks
 /// `apply_directive` itself rather than keeping a second list that can drift
 /// (that list already omitted `diagram` once): a key is recognized when
