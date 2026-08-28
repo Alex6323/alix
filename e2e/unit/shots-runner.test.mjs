@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import capture from "../shots/capture.cjs";
+import runner from "../shots/runner.cjs";
 
-const { runRequested, summarize } = capture;
+const { runRequested, summarize } = runner;
 
 const steps = (outcomes) =>
   Object.entries(outcomes).map(([n, outcome]) => [
