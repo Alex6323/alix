@@ -30,4 +30,12 @@ function summarize(results) {
   return { lines, failed };
 }
 
-module.exports = { runRequested, summarize };
+// The run's whole exit decision, in one place so it can be pinned: a failed
+// requested shot and a mutation of the real demo or kids stores are
+// independent reasons to fail.
+function exitCodeFor({ failed, demoChanged, kidsChanged }) {
+  const any = (list) => Array.isArray(list) && list.length > 0;
+  return any(failed) || any(demoChanged) || any(kidsChanged) ? 1 : 0;
+}
+
+module.exports = { runRequested, summarize, exitCodeFor };

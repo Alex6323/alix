@@ -26,7 +26,7 @@ const { execFileSync, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
-const { runRequested, summarize } = require("./runner.cjs");
+const { runRequested, summarize, exitCodeFor } = require("./runner.cjs");
 
 const REPO_ROOT = path.join(__dirname, "..", "..");
 const SHOTS_DIR = __dirname;
@@ -181,7 +181,10 @@ function deckId(file) {
 
 function runAugment(target) {
   log("augmenting hero deck --target", target, "(real Claude call, this can take a while)…");
-  execFileSync("alix", ["deck", "augment", HERO_FILE, "--target", target], {
+  // The checkout build, never PATH's `alix`: the server reads the augment cache
+  // with this checkout's fingerprint rule, and a PATH binary one commit behind
+  // writes entries it then refuses as stale.
+  execFileSync(buildAlix(), ["deck", "augment", HERO_FILE, "--target", target], {
     stdio: "inherit",
     cwd: REPO_ROOT,
   });
@@ -1004,12 +1007,11 @@ async function main() {
   log("~/alix-kids files changed:", kidsChanged.length ? kidsChanged : "none");
   if (demoChanged.length || kidsChanged.length) {
     console.error("[shots] WARNING: real demo/kids progress files changed — investigate before trusting this run");
-    process.exitCode = 1;
   }
   if (failed.length) {
     console.error(`[shots] requested shots that did not capture: ${failed.join(", ")}`);
-    process.exitCode = 1;
   }
+  process.exitCode = exitCodeFor({ failed, demoChanged, kidsChanged });
 }
 
 if (require.main === module) {
