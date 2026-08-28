@@ -22,13 +22,12 @@ mod stream;
 pub use canonical::{canonical_content, content_fingerprint, mix_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
 use cloze::{Hole, Seg, Side, hash_repr, hole_fingerprints, scan_markers, seg_display};
+pub(crate) use frontmatter::is_frontmatter_fence;
 pub use frontmatter::{
     Frontmatter, Mapping, PERSONAL_PARENT_KEY, Reorder, parse_sampling, reorder_frontmatter,
     yaml_quote,
 };
-use frontmatter::{
-    MappableBlock, bad_value, is_frontmatter_fence, parse_frontmatter, parse_reveal,
-};
+use frontmatter::{MappableBlock, bad_value, parse_frontmatter, parse_reveal};
 pub use sidecar::{SidecarNote, notes, without_notes};
 
 // Deliberately not Unicode whitespace; anything outside this set is content.

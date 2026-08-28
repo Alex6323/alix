@@ -812,8 +812,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   opener was an exact compare while the closer trimmed, so a deck whose first
   line carried an invisible trailing space failed with a message about front
   dividers that never mentioned frontmatter. One predicate now decides both
-  ends at all four sites that tested for a fence: a line starting with exactly
-  `---`, spaces or tabs allowed after it, no indentation before it.
+  ends at all five sites that tested for a fence: a line starting with exactly
+  `---`, spaces or tabs allowed after it, no indentation before it. The fifth
+  was `generate`'s cleanup of a model reply, which found the deck's start by
+  an exact compare: a reply whose opening fence carried a trailing space lost
+  its whole frontmatter block, so the saved deck dropped `source`, `link`,
+  `tasklist`, its title, and its identity metadata.
 
 - `alix doctor` checks a workspace member's frozen excerpts even when the deck
   still holds an unfrozen `at:` citation. One live citation used to switch off

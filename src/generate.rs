@@ -523,10 +523,9 @@ pub(crate) fn validate_card_style(deck: &str, spec: &GenerationSpec) -> Result<(
 /// answer line.
 fn clean_output(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
-    let Some(start) = lines
-        .iter()
-        .position(|l| *l == "---" || l.starts_with("# ") || l.starts_with("## "))
-    else {
+    let Some(start) = lines.iter().position(|l| {
+        crate::parser::is_frontmatter_fence(l) || l.starts_with("# ") || l.starts_with("## ")
+    }) else {
         return raw.trim().to_string();
     };
     let mut end = lines.len();
@@ -1385,6 +1384,12 @@ mod tests {
     fn clean_strips_leading_commentary() {
         let raw = "Here is your deck:\n\n---\nlink: u\n---\n## Q\nA\n";
         assert_eq!("---\nlink: u\n---\n## Q\nA", clean_output(raw));
+    }
+
+    #[test]
+    fn clean_preserves_the_frontmatter_fence_spellings_the_parser_accepts() {
+        let raw = "Here is your deck:\n\n--- \nlink: u\n---\t\n## Q\nA\n";
+        assert_eq!("--- \nlink: u\n---\t\n## Q\nA", clean_output(raw));
     }
 
     #[test]
