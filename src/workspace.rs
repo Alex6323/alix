@@ -298,6 +298,22 @@ fn root_holding(members: &Path) -> Option<PathBuf> {
     has_manifest(root).then(|| root.to_path_buf())
 }
 
+/// Physical identity for a folder walk: two names for one directory are one
+/// place, and offering it twice offers two rows that mutate the same decks and
+/// the same progress. A path that cannot be resolved keeps its own spelling, so
+/// it is still walked and still reports its own error.
+#[derive(Default)]
+pub struct SeenPaths {
+    seen: HashSet<PathBuf>,
+}
+
+impl SeenPaths {
+    pub fn first_visit(&mut self, path: &Path) -> bool {
+        self.seen
+            .insert(path.canonicalize().unwrap_or_else(|_| path.to_path_buf()))
+    }
+}
+
 pub fn content_root(path: &Path) -> PathBuf {
     root_for_deck(path)
         .or_else(|| path.parent().map(Path::to_path_buf))

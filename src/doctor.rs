@@ -3,7 +3,6 @@
 //! `--remove-backup-files`), never in these functions.
 
 use std::{
-    collections::HashSet,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -150,9 +149,9 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
             .filter(|path| path.is_dir())
             .collect();
         children.sort();
-        let mut walked: HashSet<PathBuf> = HashSet::new();
+        let mut walked = workspace::SeenPaths::default();
         for path in children {
-            if !walked.insert(path.canonicalize().unwrap_or_else(|_| path.clone())) {
+            if !walked.first_visit(&path) {
                 continue;
             }
             let found = match workspace::classify_deck_files(&path) {
@@ -297,8 +296,13 @@ pub fn check_binary(name: &'static str, cmd: &str, purpose: &str, remedy: &str) 
 /// regeneration). Dot-directories are skipped.
 pub fn backup_files(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
+    let mut walked = workspace::SeenPaths::default();
+    let mut collected = workspace::SeenPaths::default();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
+        if !walked.first_visit(&dir) {
+            continue;
+        }
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
@@ -310,7 +314,7 @@ pub fn backup_files(root: &Path) -> Vec<PathBuf> {
                 if !name.starts_with('.') {
                     stack.push(path);
                 }
-            } else if name.ends_with(".bak") {
+            } else if name.ends_with(".bak") && collected.first_visit(&path) {
                 found.push(path);
             }
         }
@@ -350,6 +354,37 @@ pub fn check_backups(root: &Path) -> Option<Finding> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A confirmed cleanup that deletes the file and then fails on its second
+    /// spelling leaves the user unable to tell whether the cleanup completed.
+    #[cfg(unix)]
+    #[test]
+    fn backup_scanning_counts_one_physical_file_once_through_an_alias() {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("facts.md.bak"), "x").unwrap();
+
+        for (shape, link, target) in [
+            ("a directory alias", root.path().join("alias"), real.clone()),
+            (
+                "a file alias",
+                root.path().join("copy.md.bak"),
+                real.join("facts.md.bak"),
+            ),
+        ] {
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+
+            let found = backup_files(root.path());
+
+            assert_eq!(
+                1,
+                found.len(),
+                "{shape}: one physical backup reached under two names is one file to delete: {found:?}"
+            );
+            std::fs::remove_file(&link).unwrap();
+        }
+    }
 
     #[cfg(unix)]
     #[test]

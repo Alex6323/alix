@@ -1,7 +1,4 @@
-use std::{
-    collections::HashSet,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 #[cfg(test)]
 use crate::deck::DeckState;
@@ -65,23 +62,22 @@ fn build_candidates(
     cache: &mut DeckCache,
 ) -> Result<Vec<Candidate>, std::io::Error> {
     let mut out = Vec::new();
-    let mut seen = HashSet::new();
+    let mut seen = workspace::SeenPaths::default();
 
     for entry in recent.entries() {
         let is_workspace = cache.is_workspace(&entry.path) || cache.has_decks(&entry.path);
-        if entry.path.is_file() || is_workspace {
+        if (entry.path.is_file() || is_workspace) && seen.first_visit(&entry.path) {
             out.push(Candidate {
                 name: file_name(&entry.path),
                 path: entry.path.clone(),
                 last_used_ms: Some(entry.last_used_ms),
                 is_workspace,
             });
-            seen.insert(entry.path.clone());
         }
     }
 
     for candidate in dir_candidates(decks_dir, cache)? {
-        if !seen.contains(&candidate.path) {
+        if seen.first_visit(&candidate.path) {
             out.push(candidate);
         }
     }

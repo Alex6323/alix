@@ -806,6 +806,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   links, and the message says to replace it with what it points to. Found by
   Codex.
 
+- A folder listing offers one physical workspace once. Linking a workspace into
+  a deck collection is supported, and when the original and the alias were both
+  under the configured root, the library listing and the picker catalog showed
+  two entries backed by the same decks and the same progress: two choices that
+  look independent and are not. Both routes now share one physical-identity
+  rule, and in the picker it spans the recent entries and the scanned children,
+  so the spelling you last used is the one you are offered. Found by Codex.
+
+- `alix doctor --remove-backup-files` no longer counts one backup twice or
+  fails after deleting it. The scan followed a directory alias a second time and
+  a backup reached under two names was listed twice; the confirmed cleanup then
+  deleted the file under the first name and errored on the second, after the
+  destructive step, so the result no longer told the user whether cleanup had
+  completed. Found by Codex.
+
 - `alix doctor` counts one physical deck folder once, however many symlinks
   reach it. Exposing a synced or externally located workspace under a deck
   collection through an alias is ordinary, and the deck summary walked every

@@ -61,9 +61,13 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
         .then_with(|| left.cmp(right))
     });
     let mut out = Vec::new();
+    let mut offered = workspace::SeenPaths::default();
     for path in names {
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if name.starts_with('.') {
+            continue;
+        }
+        if !offered.first_visit(&path) {
             continue;
         }
         if path.is_dir() && (workspace::is_workspace(&path) || workspace::has_decks(&path)) {

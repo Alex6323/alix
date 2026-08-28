@@ -85,3 +85,42 @@ fn excluding_the_sidecar_does_not_hide_the_deck_beside_it() {
         );
     }
 }
+
+/// One physical workspace reached under two names is one place to study: both
+/// spellings open the same decks and write the same progress, so a listing that
+/// offers both offers a choice that does not exist.
+#[cfg(unix)]
+#[test]
+fn no_folder_listing_offers_one_physical_workspace_twice() {
+    let root = tempfile::tempdir().unwrap();
+    let nested = root.path().join("nested");
+    let decks = nested.join(workspace::DECKS);
+    std::fs::create_dir_all(&decks).unwrap();
+    std::fs::write(nested.join(workspace::MANIFEST), "title = \"Nested\"\n").unwrap();
+    std::fs::write(decks.join("spanish.md"), DECK).unwrap();
+    std::os::unix::fs::symlink(&nested, root.path().join("alias")).unwrap();
+
+    let listed = alix::listing::list_root(root.path(), &ReviewConfig::default(), 0);
+    assert_eq!(
+        1,
+        listed.len(),
+        "listing::list_root offered the same workspace under both names: {:?}",
+        listed
+            .iter()
+            .map(|deck| deck.title.clone())
+            .collect::<Vec<_>>()
+    );
+
+    let mut cache = DeckCache::default();
+    let catalog = picker::catalog(root.path(), &RecentDecks::default(), &mut cache).unwrap();
+    let folders: Vec<String> = catalog
+        .iter()
+        .filter(|entry| entry.is_workspace)
+        .map(|entry| entry.name.clone())
+        .collect();
+    assert_eq!(
+        1,
+        folders.len(),
+        "picker::catalog offered the same workspace under both names: {folders:?}"
+    );
+}
