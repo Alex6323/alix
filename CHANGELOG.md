@@ -812,6 +812,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   links, and the message says to replace it with what it points to. Found by
   Codex.
 
+- The mobile app's sync-conflict list counts one conflict once. The walk behind
+  the bridge's `sync_conflicts` visited every spelling of a workspace under the
+  root, so a linked workspace made one conflict file look like two to resolve.
+  Same physical-identity rule as the folder listings.
+
 - A folder listing offers one physical workspace once. Linking a workspace into
   a deck collection is supported, and when the original and the alias were both
   under the configured root, the library listing and the picker catalog showed

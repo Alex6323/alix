@@ -194,12 +194,13 @@ pub fn sync_conflicts_under(root: &Path) -> Vec<PathBuf> {
         .map(|entries| entries.flatten().map(|e| e.path()).collect())
         .unwrap_or_default();
     entries.sort();
+    let mut walked = workspace::SeenPaths::default();
     for path in entries {
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if name.starts_with('.') {
             continue;
         }
-        if path.is_dir() && workspace::is_workspace(&path) {
+        if path.is_dir() && workspace::is_workspace(&path) && walked.first_visit(&path) {
             out.extend(store::sync_conflicts(&workspace::store_path(&path)));
             out.extend(crate::augment::sync_conflicts(&path));
         }
@@ -1158,6 +1159,37 @@ mod tests {
         assert_eq!(
             sync_conflicts_under(&root.join("nowhere")),
             Vec::<PathBuf>::new()
+        );
+    }
+
+    /// The mobile bridge exposes this list, and one physical conflict named
+    /// twice reads as two files to resolve.
+    #[cfg(unix)]
+    #[test]
+    fn sync_conflicts_under_reports_one_physical_workspace_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
+        write(&root.join("ws/alix.toml"), "");
+        write(
+            &root.join("ws/decks/m.md"),
+            "## q\na\n<!-- id: card-qm -->\n",
+        );
+        std::fs::create_dir(root.join("ws/progress")).unwrap();
+        let conflict = root.join("ws/progress/member.sync-conflict-20260715-101112-BBBBBBB.json");
+        write(&conflict, "{}");
+        std::os::unix::fs::symlink(root.join("ws"), root.join("alias")).unwrap();
+
+        let found = sync_conflicts_under(root);
+        assert_eq!(
+            1,
+            found.len(),
+            "one physical workspace under two names is one conflict to resolve: {found:?}"
+        );
+        assert_eq!(
+            conflict.canonicalize().unwrap(),
+            found[0].canonicalize().unwrap(),
+            "either spelling is a valid path to the same file, but only one of them is offered"
         );
     }
 
