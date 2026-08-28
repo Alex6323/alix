@@ -73,9 +73,9 @@ fn gradeable_count(card: &Card) -> usize {
     if card.hole.is_some() {
         return 1;
     }
-    crate::render::card_quote_flags(card, crate::card::AnswerSpace::Authored)
+    crate::render::card_block_flags(card, crate::card::AnswerSpace::Authored)
         .iter()
-        .filter(|quoted| !**quoted)
+        .filter(|in_block| !**in_block)
         .count()
 }
 
@@ -346,6 +346,18 @@ mod tests {
                 "> a quoted passage\npoint a\npoint b",
                 Mode::TypeLine,
                 "two gradeable lines still type line by line",
+            ),
+            (
+                Reveal::Line,
+                "| a | b |\n| --- | --- |\n| 1 | 2 |",
+                Mode::Explain,
+                "a table is never typed, so a table-only answer has nothing to type",
+            ),
+            (
+                Reveal::Line,
+                "the answer's own prose\n| a | b |\n| --- | --- |\n| 1 | 2 |",
+                Mode::TypeLine,
+                "the prose beside a table is still the learner's own claim",
             ),
         ];
         for (reveal, back, expected, why) in rows {

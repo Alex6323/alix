@@ -1582,6 +1582,15 @@ const _: fn() = || {
             let _: usize = back_to;
             let _: Vec<crate::api::review::ContentUnit> = units;
         }
+        crate::api::review::AnswerStep::Table {
+            back_from,
+            back_to,
+            units,
+        } => {
+            let _: usize = back_from;
+            let _: usize = back_to;
+            let _: Vec<crate::api::review::ContentUnit> = units;
+        }
     }
     {
         let CardView = None::<crate::api::review::CardView>.unwrap();
@@ -1845,6 +1854,17 @@ impl SseDecode for crate::api::review::AnswerStep {
                 let mut var_units =
                     <Vec<crate::api::review::ContentUnit>>::sse_decode(deserializer);
                 return crate::api::review::AnswerStep::Quote {
+                    back_from: var_backFrom,
+                    back_to: var_backTo,
+                    units: var_units,
+                };
+            }
+            2 => {
+                let mut var_backFrom = <usize>::sse_decode(deserializer);
+                let mut var_backTo = <usize>::sse_decode(deserializer);
+                let mut var_units =
+                    <Vec<crate::api::review::ContentUnit>>::sse_decode(deserializer);
+                return crate::api::review::AnswerStep::Table {
                     back_from: var_backFrom,
                     back_to: var_backTo,
                     units: var_units,
@@ -3223,6 +3243,17 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::AnswerStep
                 units.into_into_dart().into_dart(),
             ]
             .into_dart(),
+            crate::api::review::AnswerStep::Table {
+                back_from,
+                back_to,
+                units,
+            } => [
+                2.into_dart(),
+                back_from.into_into_dart().into_dart(),
+                back_to.into_into_dart().into_dart(),
+                units.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -4143,6 +4174,16 @@ impl SseEncode for crate::api::review::AnswerStep {
                 units,
             } => {
                 <i32>::sse_encode(1, serializer);
+                <usize>::sse_encode(back_from, serializer);
+                <usize>::sse_encode(back_to, serializer);
+                <Vec<crate::api::review::ContentUnit>>::sse_encode(units, serializer);
+            }
+            crate::api::review::AnswerStep::Table {
+                back_from,
+                back_to,
+                units,
+            } => {
+                <i32>::sse_encode(2, serializer);
                 <usize>::sse_encode(back_from, serializer);
                 <usize>::sse_encode(back_to, serializer);
                 <Vec<crate::api::review::ContentUnit>>::sse_encode(units, serializer);

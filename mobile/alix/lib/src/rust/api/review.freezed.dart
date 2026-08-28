@@ -87,12 +87,13 @@ extension AnswerStepPatterns on AnswerStep {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( AnswerStep_Line value)?  line,TResult Function( AnswerStep_Quote value)?  quote,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( AnswerStep_Line value)?  line,TResult Function( AnswerStep_Quote value)?  quote,TResult Function( AnswerStep_Table value)?  table,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case AnswerStep_Line() when line != null:
 return line(_that);case AnswerStep_Quote() when quote != null:
-return quote(_that);case _:
+return quote(_that);case AnswerStep_Table() when table != null:
+return table(_that);case _:
   return orElse();
 
 }
@@ -110,12 +111,13 @@ return quote(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( AnswerStep_Line value)  line,required TResult Function( AnswerStep_Quote value)  quote,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( AnswerStep_Line value)  line,required TResult Function( AnswerStep_Quote value)  quote,required TResult Function( AnswerStep_Table value)  table,}){
 final _that = this;
 switch (_that) {
 case AnswerStep_Line():
 return line(_that);case AnswerStep_Quote():
-return quote(_that);}
+return quote(_that);case AnswerStep_Table():
+return table(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -129,12 +131,13 @@ return quote(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( AnswerStep_Line value)?  line,TResult? Function( AnswerStep_Quote value)?  quote,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( AnswerStep_Line value)?  line,TResult? Function( AnswerStep_Quote value)?  quote,TResult? Function( AnswerStep_Table value)?  table,}){
 final _that = this;
 switch (_that) {
 case AnswerStep_Line() when line != null:
 return line(_that);case AnswerStep_Quote() when quote != null:
-return quote(_that);case _:
+return quote(_that);case AnswerStep_Table() when table != null:
+return table(_that);case _:
   return null;
 
 }
@@ -151,11 +154,12 @@ return quote(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( BigInt backFrom,  BigInt backTo)?  line,TResult Function( BigInt backFrom,  BigInt backTo,  List<ContentUnit> units)?  quote,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( BigInt backFrom,  BigInt backTo)?  line,TResult Function( BigInt backFrom,  BigInt backTo,  List<ContentUnit> units)?  quote,TResult Function( BigInt backFrom,  BigInt backTo,  List<ContentUnit> units)?  table,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case AnswerStep_Line() when line != null:
 return line(_that.backFrom,_that.backTo);case AnswerStep_Quote() when quote != null:
-return quote(_that.backFrom,_that.backTo,_that.units);case _:
+return quote(_that.backFrom,_that.backTo,_that.units);case AnswerStep_Table() when table != null:
+return table(_that.backFrom,_that.backTo,_that.units);case _:
   return orElse();
 
 }
@@ -173,11 +177,12 @@ return quote(_that.backFrom,_that.backTo,_that.units);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( BigInt backFrom,  BigInt backTo)  line,required TResult Function( BigInt backFrom,  BigInt backTo,  List<ContentUnit> units)  quote,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( BigInt backFrom,  BigInt backTo)  line,required TResult Function( BigInt backFrom,  BigInt backTo,  List<ContentUnit> units)  quote,required TResult Function( BigInt backFrom,  BigInt backTo,  List<ContentUnit> units)  table,}) {final _that = this;
 switch (_that) {
 case AnswerStep_Line():
 return line(_that.backFrom,_that.backTo);case AnswerStep_Quote():
-return quote(_that.backFrom,_that.backTo,_that.units);}
+return quote(_that.backFrom,_that.backTo,_that.units);case AnswerStep_Table():
+return table(_that.backFrom,_that.backTo,_that.units);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -191,11 +196,12 @@ return quote(_that.backFrom,_that.backTo,_that.units);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( BigInt backFrom,  BigInt backTo)?  line,TResult? Function( BigInt backFrom,  BigInt backTo,  List<ContentUnit> units)?  quote,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( BigInt backFrom,  BigInt backTo)?  line,TResult? Function( BigInt backFrom,  BigInt backTo,  List<ContentUnit> units)?  quote,TResult? Function( BigInt backFrom,  BigInt backTo,  List<ContentUnit> units)?  table,}) {final _that = this;
 switch (_that) {
 case AnswerStep_Line() when line != null:
 return line(_that.backFrom,_that.backTo);case AnswerStep_Quote() when quote != null:
-return quote(_that.backFrom,_that.backTo,_that.units);case _:
+return quote(_that.backFrom,_that.backTo,_that.units);case AnswerStep_Table() when table != null:
+return table(_that.backFrom,_that.backTo,_that.units);case _:
   return null;
 
 }
@@ -337,6 +343,82 @@ class _$AnswerStep_QuoteCopyWithImpl<$Res>
 /// with the given fields replaced by the non-null parameter values.
 @override @pragma('vm:prefer-inline') $Res call({Object? backFrom = null,Object? backTo = null,Object? units = null,}) {
   return _then(AnswerStep_Quote(
+backFrom: null == backFrom ? _self.backFrom : backFrom // ignore: cast_nullable_to_non_nullable
+as BigInt,backTo: null == backTo ? _self.backTo : backTo // ignore: cast_nullable_to_non_nullable
+as BigInt,units: null == units ? _self._units : units // ignore: cast_nullable_to_non_nullable
+as List<ContentUnit>,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class AnswerStep_Table extends AnswerStep {
+  const AnswerStep_Table({required this.backFrom, required this.backTo, required final  List<ContentUnit> units}): _units = units,super._();
+  
+
+@override final  BigInt backFrom;
+@override final  BigInt backTo;
+ final  List<ContentUnit> _units;
+ List<ContentUnit> get units {
+  if (_units is EqualUnmodifiableListView) return _units;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_units);
+}
+
+
+/// Create a copy of AnswerStep
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AnswerStep_TableCopyWith<AnswerStep_Table> get copyWith => _$AnswerStep_TableCopyWithImpl<AnswerStep_Table>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AnswerStep_Table&&(identical(other.backFrom, backFrom) || other.backFrom == backFrom)&&(identical(other.backTo, backTo) || other.backTo == backTo)&&const DeepCollectionEquality().equals(other._units, _units));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,backFrom,backTo,const DeepCollectionEquality().hash(_units));
+
+@override
+String toString() {
+  return 'AnswerStep.table(backFrom: $backFrom, backTo: $backTo, units: $units)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AnswerStep_TableCopyWith<$Res> implements $AnswerStepCopyWith<$Res> {
+  factory $AnswerStep_TableCopyWith(AnswerStep_Table value, $Res Function(AnswerStep_Table) _then) = _$AnswerStep_TableCopyWithImpl;
+@override @useResult
+$Res call({
+ BigInt backFrom, BigInt backTo, List<ContentUnit> units
+});
+
+
+
+
+}
+/// @nodoc
+class _$AnswerStep_TableCopyWithImpl<$Res>
+    implements $AnswerStep_TableCopyWith<$Res> {
+  _$AnswerStep_TableCopyWithImpl(this._self, this._then);
+
+  final AnswerStep_Table _self;
+  final $Res Function(AnswerStep_Table) _then;
+
+/// Create a copy of AnswerStep
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? backFrom = null,Object? backTo = null,Object? units = null,}) {
+  return _then(AnswerStep_Table(
 backFrom: null == backFrom ? _self.backFrom : backFrom // ignore: cast_nullable_to_non_nullable
 as BigInt,backTo: null == backTo ? _self.backTo : backTo // ignore: cast_nullable_to_non_nullable
 as BigInt,units: null == units ? _self._units : units // ignore: cast_nullable_to_non_nullable

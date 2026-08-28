@@ -247,6 +247,12 @@ ReviewAnswerStepModel _stepFromBridge(bridge.AnswerStep step) {
         backTo: backTo.toInt(),
         units: [for (final unit in units) _noteFromBridge(unit)],
       ),
+    bridge.AnswerStep_Table(:final backFrom, :final backTo, :final units) =>
+      ReviewAnswerTableModel(
+        backFrom: backFrom.toInt(),
+        backTo: backTo.toInt(),
+        units: [for (final unit in units) _noteFromBridge(unit)],
+      ),
   };
 }
 

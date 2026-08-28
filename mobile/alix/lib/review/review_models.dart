@@ -169,8 +169,8 @@ class ReviewQuoteModel extends ReviewContentUnitModel {
 }
 
 /// One step of an answer as the client walks it: a gradeable line the learner
-/// must produce, or a quotation run that reveals whole and is never typed.
-/// Spans are half-open into `back`.
+/// must produce, or a block (a quotation run, a table) that reveals whole and
+/// is never typed. Spans are half-open into `back`.
 sealed class ReviewAnswerStepModel {
   const ReviewAnswerStepModel({required this.backFrom, required this.backTo});
 
@@ -184,6 +184,16 @@ class ReviewAnswerLineModel extends ReviewAnswerStepModel {
 
 class ReviewAnswerQuoteModel extends ReviewAnswerStepModel {
   ReviewAnswerQuoteModel({
+    required super.backFrom,
+    required super.backTo,
+    required Iterable<ReviewContentUnitModel> units,
+  }) : units = List.unmodifiable(units);
+
+  final List<ReviewContentUnitModel> units;
+}
+
+class ReviewAnswerTableModel extends ReviewAnswerStepModel {
+  ReviewAnswerTableModel({
     required super.backFrom,
     required super.backTo,
     required Iterable<ReviewContentUnitModel> units,

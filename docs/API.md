@@ -137,12 +137,12 @@ so is every client.
    that count is not truncated away: it comes back with an empty `expected`
    and `passed: false`, so a client one field out of step sees the mismatch.
    **`lines` carries one entry per gradeable `line` step, not per `back`
-   line**: a quotation owns no field, so sending a blank for it is one field
-   too many, not a position to skip. A card whose whole answer is a quotation
-   has nothing to type and never reaches a typing mode; a cloze card's hidden
-   spans are exact text even when a span is `>`. The target is the deck's
-   authored answer: a `format` reshape changes what a reveal mode shows, never
-   what a typed check expects. For a choice pick call
+   line**: a quotation or a table owns no field, so sending a blank for it is
+   one field too many, not a position to skip. A card whose whole answer is a
+   quotation or a table has nothing to type and never reaches a typing mode;
+   a cloze card's hidden spans are exact text even when a span is `>`. The
+   target is the deck's authored answer: a `format` reshape changes what a
+   reveal mode shows, never what a typed check expects. For a choice pick call
    `POST /api/choose {index, card}` (single answer) or
    `POST /api/choose {indices, card}` (select-all, when the state carried
    `choices_multiple`), where `card` is the `card.id`
@@ -669,11 +669,14 @@ first step is 0 while `back_to` of the last equals `back.length`.
 | --- | --- | --- |
 | `line` | `back_from`, `back_to` | One gradeable answer line: the learner must produce it, and it spans exactly one wire line. |
 | `quote` | `back_from`, `back_to`, `units` | A quotation run: never typed, revealed as ONE step whatever it spans, and carrying its own `[ContentUnitDto]` so a client never parses quote syntax. |
+| `table` | `back_from`, `back_to`, `units` | A pipe table: never typed, revealed as ONE step over its header, delimiter row, and body rows, and carrying that single `table` unit in `units` so a client never parses pipe syntax. |
 
 TWO counts, never one. `answer_steps.length` is what a line-by-line reveal
 walks; the number of `line` steps is how many fields a typed check asks for
 and how many entries `POST /api/check` expects. Collapsing them turns a quoted
-card from "one ignored field" into a card that never completes.
+card from "one ignored field" into a card that never completes. A card whose
+answer holds only non-`line` steps has nothing to type, so it is served a
+reveal mode instead of a typed one.
 
 `answer_steps` and `back_units` are separate streams with no 1:1 relationship
 and no shared index: full reveal renders `back_units`, and a partial reveal
@@ -787,7 +790,10 @@ from the delimiter row's colons; `header` is one run list per header cell and
 display (only the mapped-card table enforces widths). Table units appear in
 `back_units`, `front_units`, and each `NoteDto.units`; `context_units` and
 `section_context_units` carry only raw fences and closed bare-math blocks.
-Example payload:
+A table in an answer is ONE block, like a quote: it is excluded from the typed
+target, since typing pipe syntax tests transcription rather than
+understanding, and it reveals whole rather than a row at a time (see
+`AnswerStepDto`). Example payload:
 `tests/contracts/CardDto.table.json`.
 
 A `quote` unit is a bare blockquote run: quoted content, never a note (a

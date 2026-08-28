@@ -1284,6 +1284,26 @@ fn carddto_quote_wire_shape() {
 
 #[test]
 fn carddto_table_wire_shape() {
+    let table = ContentUnit::Table {
+        aligns: vec![
+            CellAlign::None,
+            CellAlign::Left,
+            CellAlign::Center,
+            CellAlign::Right,
+        ],
+        header: vec![
+            crate::inline::parse_inline("a"),
+            crate::inline::parse_inline("b"),
+            crate::inline::parse_inline("c"),
+            crate::inline::parse_inline("d"),
+        ],
+        rows: vec![vec![
+            crate::inline::parse_inline("1"),
+            crate::inline::parse_inline("**2**"),
+            crate::inline::parse_inline("3"),
+            Vec::new(),
+        ]],
+    };
     let dto = CardDto {
         id: Some("card-9w2c7xkq4m".to_string()),
         front: "Name the columns".to_string(),
@@ -1306,40 +1326,12 @@ fn carddto_table_wire_shape() {
             crate::inline::parse_inline("| --- | :-- | :-: | --: |"),
             crate::inline::parse_inline("| 1 | **2** | 3 |"),
         ],
-        back_units: vec![ContentUnit::Table {
-            aligns: vec![
-                CellAlign::None,
-                CellAlign::Left,
-                CellAlign::Center,
-                CellAlign::Right,
-            ],
-            header: vec![
-                crate::inline::parse_inline("a"),
-                crate::inline::parse_inline("b"),
-                crate::inline::parse_inline("c"),
-                crate::inline::parse_inline("d"),
-            ],
-            rows: vec![vec![
-                crate::inline::parse_inline("1"),
-                crate::inline::parse_inline("**2**"),
-                crate::inline::parse_inline("3"),
-                Vec::new(),
-            ]],
+        back_units: vec![table.clone()],
+        answer_steps: vec![AnswerStep::Table {
+            back_from: 0,
+            back_to: 3,
+            units: vec![table],
         }],
-        answer_steps: vec![
-            AnswerStep::Line {
-                back_from: 0,
-                back_to: 1,
-            },
-            AnswerStep::Line {
-                back_from: 1,
-                back_to: 2,
-            },
-            AnswerStep::Line {
-                back_from: 2,
-                back_to: 3,
-            },
-        ],
         reshaped: true,
         note: Vec::new(),
         images: Vec::new(),
@@ -1384,11 +1376,27 @@ fn carddto_table_wire_shape() {
                     []
                 ]]
             }],
-            "answer_steps": [
-                {"kind": "line", "back_from": 0, "back_to": 1},
-                {"kind": "line", "back_from": 1, "back_to": 2},
-                {"kind": "line", "back_from": 2, "back_to": 3}
-            ],
+            "answer_steps": [{
+                "kind": "table",
+                "back_from": 0,
+                "back_to": 3,
+                "units": [{
+                    "kind": "table",
+                    "aligns": ["none", "left", "center", "right"],
+                    "header": [
+                        [{"text": "a"}],
+                        [{"text": "b"}],
+                        [{"text": "c"}],
+                        [{"text": "d"}]
+                    ],
+                    "rows": [[
+                        [{"text": "1"}],
+                        [{"text": "2", "bold": true}],
+                        [{"text": "3"}],
+                        []
+                    ]]
+                }]
+            }],
             "reshaped": true,
             "note": [],
             "images": [],
@@ -2747,6 +2755,7 @@ fn every_carddto_carries_answer_steps_covering_its_back_exactly_once() {
         "a\n> q\n> r\nb",
         "a\n> q\nb\n> r",
         "| a | b |\n| --- | --- |\n| 1 | 2 |",
+        "lead\n| a | b |\n| --- | --- |\n| 1 | 2 |\ntrail",
         "```text\n> q\n```",
         r"left \blank{>} right",
     ];
@@ -2768,7 +2777,7 @@ fn every_carddto_carries_answer_steps_covering_its_back_exactly_once() {
         for step in &steps {
             let kind = step["kind"].as_str().expect("a step names its kind");
             assert!(
-                kind == "line" || kind == "quote",
+                matches!(kind, "line" | "quote" | "table"),
                 "{back:?}: unknown step kind {kind:?}"
             );
             let from = step["back_from"].as_u64().expect("a step spans the back");
@@ -2776,9 +2785,9 @@ fn every_carddto_carries_answer_steps_covering_its_back_exactly_once() {
             assert_eq!(next, from, "{back:?}: {kind} starts where the last ended");
             assert!(from < to, "{back:?}: {kind} spans at least one line");
             assert_eq!(
-                kind == "quote",
+                kind != "line",
                 step.get("units").is_some(),
-                "{back:?}: only a quote carries units, and every quote carries them"
+                "{back:?}: a block step carries its units and a line never does"
             );
             next = to;
         }

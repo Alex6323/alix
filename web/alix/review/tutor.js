@@ -11,6 +11,7 @@ export function createTutor({
   const {
     appendQuote,
     appendRuns,
+    appendTable,
     appendRunsOrText,
     chip,
     appendContext,
@@ -315,11 +316,15 @@ export function createTutor({
           "ask-card-ctx",
           referenceDiagram,
         );
-        // Walk the answer's steps, so a quotation shows as quoted content
-        // rather than as its `>` markers.
+        // Walk the answer's steps, so a quotation or a table shows as its
+        // rendered block rather than as raw markers.
         for (const step of card.answer_steps || []) {
           if (step.kind === "quote") {
             appendQuote(reference, step.units);
+            continue;
+          }
+          if (step.kind === "table") {
+            appendTable(reference, step.units[0]);
             continue;
           }
           for (let index = step.back_from; index < step.back_to; index++) {

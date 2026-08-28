@@ -254,8 +254,9 @@ function answerFill(card) {
   const lines = card.back || [];
   const steps = card.answer_steps || [];
   // The plain span is for an atom: exactly one gradeable line. Anything else,
-  // a quotation included, keeps its structure -- a one-line quotation read
-  // from `back.length` would take the plain branch and show its `>` marker.
+  // a quotation or a table included, keeps its structure -- a one-line
+  // quotation read from `back.length` would take the plain branch and show its
+  // `>` marker.
   const atom = steps.length === 1 && steps[0].kind === "line";
   if (!atom) {
     const stack = el("div", "rev-answer-stack");
@@ -330,7 +331,7 @@ function walkFences(parent, lines, from, shown, units, onLine, makeDiagram, fenc
 }
 
 // The answer's steps, up to `shown` of them: a gradeable line in the caller's
-// own style, a quotation as one block whatever it spans.
+// own style, a quotation or a table as one block whatever it spans.
 function appendBackSteps(parent, card, shown, tag, cls) {
   const lines = card.back || [];
   const runs = card.back_runs || [];
@@ -345,6 +346,11 @@ function appendBackSteps(parent, card, shown, tag, cls) {
   while (index < shown && index < steps.length) {
     if (steps[index].kind === "quote") {
       appendQuote(parent, steps[index].units);
+      index++;
+      continue;
+    }
+    if (steps[index].kind === "table") {
+      appendTable(parent, steps[index].units[0]);
       index++;
       continue;
     }

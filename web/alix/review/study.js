@@ -312,8 +312,8 @@ export function createStudy({
   }
 
   // The drawer's open/close height animation: quick.
-  // TWO counts, never one: reveal walks every step (a quotation is one), while
-  // typing asks only the gradeable ones.
+  // TWO counts, never one: reveal walks every step (a quotation or a table is
+  // one), while typing asks only the gradeable ones.
   function answerSteps() { return (state.card && state.card.answer_steps) || []; }
   function stepCount() { return answerSteps().length; }
   function gradeableSteps() { return answerSteps().filter(s => s.kind === "line"); }
@@ -852,7 +852,7 @@ export function createStudy({
   }
 
   // Typing: an input per gradeable step, submitted with Enter or the chip. A
-  // quotation is answer content the learner reads, never a field.
+  // quotation or a table is answer content the learner reads, never a field.
   function renderInput(a) {
     const wrap = el("div", "inputs");
     gradeableSteps().forEach(() => {
@@ -1205,7 +1205,8 @@ export function createStudy({
   }
 
   // Line reveal walks the answer's STEPS, not its physical lines: a quotation
-  // is one step and reveals whole, as its own block rather than as `>` text.
+  // or a table is one step and reveals whole, as its own block rather than as
+  // raw markers.
   // Returns the fence index the next pass resumes at, so splitting the render
   // at the revealed point cannot pair a later fence with an earlier unit.
   function appendStepRange(sec, c, fromStep, toStep, fenceStart, isList) {
@@ -1215,6 +1216,11 @@ export function createStudy({
     while (index < toStep && index < steps.length) {
       if (steps[index].kind === "quote") {
         appendQuote(sec, steps[index].units);
+        index++;
+        continue;
+      }
+      if (steps[index].kind === "table") {
+        appendTable(sec, steps[index].units[0]);
         index++;
         continue;
       }
@@ -1232,8 +1238,8 @@ export function createStudy({
   }
 
   // Every surface that shows a WHOLE answer walks the same steps the
-  // progressive reveal does, so a quotation is a quote block on all of them
-  // and not only on the one path that was built for it.
+  // progressive reveal does, so a block step renders as its block on all of
+  // them and not only on the one path that was built for it.
   function appendFullAnswer(sec, c, isList) {
     appendStepRange(sec, c, 0, (c.answer_steps || []).length, 0, isList);
   }

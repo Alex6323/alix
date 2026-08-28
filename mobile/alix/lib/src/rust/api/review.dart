@@ -115,6 +115,11 @@ sealed class AnswerStep with _$AnswerStep {
     required BigInt backTo,
     required List<ContentUnit> units,
   }) = AnswerStep_Quote;
+  const factory AnswerStep.table({
+    required BigInt backFrom,
+    required BigInt backTo,
+    required List<ContentUnit> units,
+  }) = AnswerStep_Table;
 }
 
 enum Badge { note, tip, important, warning, caution }

@@ -612,8 +612,8 @@ class ReviewCardView extends StatelessWidget {
   }
 
   /// Every surface that shows a WHOLE answer walks the same steps the
-  /// progressive reveal does, so a quotation is a quote block on all of them
-  /// and not only on the one path that was built for it.
+  /// progressive reveal does, so a block step renders as its block on all of
+  /// them and not only on the one path that was built for it.
   ///
   /// `stanza` keys on PHYSICAL lines, not steps: a reshaped answer earns its
   /// wider gap from how many lines the author wrote, and a lone two-line
@@ -654,8 +654,8 @@ class ReviewCardView extends StatelessWidget {
   }
 
   /// Line reveal walks the answer's STEPS, not its physical lines: a
-  /// quotation is one step and reveals whole, as its own block rather than
-  /// as `>` text.
+  /// quotation or a table is one step and reveals whole, as its own block
+  /// rather than as raw markers.
   Widget _revealSteps(
     BuildContext context,
     ReviewCardModel card,
@@ -682,6 +682,16 @@ class ReviewCardView extends StatelessWidget {
       if (step is ReviewAnswerQuoteModel) {
         addGap();
         children.add(_quote(step.units, tokens, style, TextAlign.start));
+        index++;
+        continue;
+      }
+      if (step is ReviewAnswerTableModel) {
+        addGap();
+        for (final unit in step.units) {
+          if (unit is ReviewTableModel) {
+            children.add(_table(unit, tokens, style));
+          }
+        }
         index++;
         continue;
       }
@@ -830,9 +840,9 @@ class ReviewCardView extends StatelessWidget {
   // the nth fence consumes the nth unit, and a resolved diagram replaces
   // its fence only once the closing marker is within the walked lines; a
   // partial fence stays a code block.
-  /// `fenceStart` lets a caller render an answer in several passes (a
-  /// quotation splits it) without a later pass pairing a fence with an
-  /// earlier unit; it returns where the next pass resumes.
+  /// `fenceStart` lets a caller render an answer in several passes (a block
+  /// step splits it) without a later pass pairing a fence with an earlier
+  /// unit; it returns where the next pass resumes.
   int _walkFences(
     List<String> lines,
     List<ReviewContentUnitModel> units, {

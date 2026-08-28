@@ -58,9 +58,9 @@ pub enum ContentUnit {
 }
 
 /// One step of an answer as a client walks it: a line the learner must
-/// produce, or a quotation run that reveals as one block and is never typed.
-/// A quote carries its own units so a client never parses quote syntax, and
-/// spans are half-open into the DISPLAYED back.
+/// produce, or a block that reveals whole and is never typed, a quotation run
+/// or a table. A block step carries its own units so a client never parses
+/// quote or pipe syntax, and spans are half-open into the DISPLAYED back.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum AnswerStep {
@@ -69,6 +69,13 @@ pub enum AnswerStep {
         back_to: usize,
     },
     Quote {
+        back_from: usize,
+        back_to: usize,
+        units: Vec<ContentUnit>,
+    },
+    /// A pipe table: one block, revealed whole and never typed, carrying the
+    /// aligned table as its single unit.
+    Table {
         back_from: usize,
         back_to: usize,
         units: Vec<ContentUnit>,
@@ -187,85 +194,70 @@ fn fence_unit(
     ContentUnit::Code { lines }
 }
 
-/// Which answer lines a quote block owns. A `>` inside a fence or a display
-/// math block is that block's source, so it is answer text like any other.
-pub(crate) fn quote_line_flags(lines: &[String]) -> Vec<bool> {
-    let mut flags = Vec::with_capacity(lines.len());
-    let mut fence: Option<(char, usize)> = None;
-    let mut math = false;
-    for line in lines {
-        if let Some((marker, run)) = fence_marker(line) {
-            fence = match fence {
-                Some((open, open_run))
-                    if crate::parser::closes_fence(line.trim_start(), open, open_run) =>
-                {
-                    None
-                }
-                None => Some((marker, run)),
-                open => open,
-            };
-            flags.push(false);
-            continue;
+/// One flag per answer line: true when the line belongs to a block that
+/// reveals whole and is never graded, a quotation or a table. Built from the
+/// units, so nothing decides twice what one block is. A cloze card's back
+/// lines are its hidden spans, so a span that IS `>` is exact text the
+/// learner must reproduce, never authored quotation syntax.
+pub(crate) fn card_block_flags(
+    card: &crate::card::Card,
+    space: crate::card::AnswerSpace,
+) -> Vec<bool> {
+    let lines = card.answer_lines(space);
+    let mut flags = vec![false; lines.len()];
+    if card.hole.is_some() {
+        return flags;
+    }
+    let mut projector = DisplayProjector::default();
+    for spanned in text_units_spanned(
+        &lines.join("\n"),
+        &mut projector,
+        false,
+        &card.resolved_diagrams,
+    ) {
+        if matches!(
+            spanned.unit,
+            ContentUnit::Quote { .. } | ContentUnit::Table { .. }
+        ) {
+            for flag in flags.iter_mut().take(spanned.to).skip(spanned.from) {
+                *flag = true;
+            }
         }
-        if fence.is_some() {
-            flags.push(false);
-            continue;
-        }
-        if line.trim() == "$$" {
-            math = !math;
-            flags.push(false);
-            continue;
-        }
-        flags.push(!math && quote_body(line).is_some());
     }
     flags
 }
 
-/// Which of a card's answer lines are quotation rather than its own prose. A
-/// cloze card's back lines are its hidden spans, so a span that IS `>` is
-/// exact text the learner must reproduce, never authored quotation syntax.
-pub(crate) fn card_quote_flags(
-    card: &crate::card::Card,
-    space: crate::card::AnswerSpace,
-) -> Vec<bool> {
-    let back = card.answer_lines(space);
-    if card.hole.is_some() {
-        return vec![false; back.len()];
-    }
-    quote_line_flags(back)
-}
-
 /// The answer lines a check may grade: the learner's own claims, with
-/// supporting quotations dropped. One place decides, so the typed target,
+/// supporting blocks dropped. One place decides, so the typed target,
 /// the Explain checklist, an authored select-all, and a trace's points can
-/// never disagree about what a quotation is.
+/// never disagree about what one block is.
 pub(crate) fn gradeable_answer_lines(
     card: &crate::card::Card,
     space: crate::card::AnswerSpace,
 ) -> Vec<String> {
-    let quoted = card_quote_flags(card, space);
+    let blocked = card_block_flags(card, space);
     card.answer_lines(space)
         .iter()
-        .zip(&quoted)
-        .filter(|(_, line_is_quote)| !**line_is_quote)
+        .zip(&blocked)
+        .filter(|(_, in_block)| !**in_block)
         .map(|(line, _)| line.clone())
         .collect()
 }
 
 /// The answer as a learner READS it: every line kept, a quotation's marker
 /// dropped. For a surface that shows the whole answer as one string rather
-/// than grading its parts, where dropping the quotation would show a
-/// truncated answer.
+/// than grading its parts, where dropping a block would show a truncated
+/// answer.
 pub(crate) fn readable_answer_lines(
     card: &crate::card::Card,
     space: crate::card::AnswerSpace,
 ) -> Vec<String> {
-    let quoted = card_quote_flags(card, space);
+    let blocked = card_block_flags(card, space);
     card.answer_lines(space)
         .iter()
-        .zip(&quoted)
-        .map(|(line, line_is_quote)| {
-            if *line_is_quote {
+        .zip(&blocked)
+        .map(|(line, in_block)| {
+            if *in_block {
                 quote_body(line).unwrap_or(line).to_string()
             } else {
                 line.clone()
@@ -275,45 +267,67 @@ pub(crate) fn readable_answer_lines(
 }
 
 /// The steps a client walks a card's answer in, over the lines it is SHOWN.
-/// One place decides what is quoted, so the displayed stream, the reveal
-/// count, and the typed target can never disagree.
+/// The units decide the grouping, so the displayed stream, the reveal count,
+/// and the typed target can never disagree about what is one block.
 pub(crate) fn card_answer_steps(
     card: &crate::card::Card,
     projector: &mut DisplayProjector,
     space: crate::card::AnswerSpace,
 ) -> Vec<AnswerStep> {
     let lines = card.answer_lines(space);
-    let quoted = card_quote_flags(card, space);
+    let line = |index: usize| AnswerStep::Line {
+        back_from: index,
+        back_to: index + 1,
+    };
+    if card.hole.is_some() {
+        return (0..lines.len()).map(line).collect();
+    }
+    let spanned = text_units_spanned(&lines.join("\n"), projector, false, &card.resolved_diagrams);
+    let mut blocks = spanned.into_iter().filter_map(|spanned| {
+        let (back_from, back_to) = (spanned.from, spanned.to);
+        match spanned.unit {
+            ContentUnit::Quote { units } => Some(AnswerStep::Quote {
+                back_from,
+                back_to,
+                units,
+            }),
+            unit @ ContentUnit::Table { .. } => Some(AnswerStep::Table {
+                back_from,
+                back_to,
+                units: vec![unit],
+            }),
+            _ => None,
+        }
+    });
+    let mut next_block = blocks.next();
     let mut steps = Vec::new();
     let mut index = 0;
-    while index < quoted.len() {
-        if !quoted[index] {
-            steps.push(AnswerStep::Line {
-                back_from: index,
-                back_to: index + 1,
-            });
-            index += 1;
-            continue;
+    while index < lines.len() {
+        match block_span(next_block.as_ref()) {
+            Some((from, to)) if from == index => {
+                steps.extend(next_block.take());
+                next_block = blocks.next();
+                index = to;
+            }
+            _ => {
+                steps.push(line(index));
+                index += 1;
+            }
         }
-        let back_from = index;
-        let mut body = Vec::new();
-        while index < quoted.len() && quoted[index] {
-            body.push(
-                lines
-                    .get(index)
-                    .and_then(|line| quote_body(line))
-                    .unwrap_or_default()
-                    .to_string(),
-            );
-            index += 1;
-        }
-        steps.push(AnswerStep::Quote {
-            back_from,
-            back_to: index,
-            units: text_units_with(&body.join("\n"), projector, false, &card.resolved_diagrams),
-        });
     }
     steps
+}
+
+fn block_span(step: Option<&AnswerStep>) -> Option<(usize, usize)> {
+    match step? {
+        AnswerStep::Quote {
+            back_from, back_to, ..
+        }
+        | AnswerStep::Table {
+            back_from, back_to, ..
+        } => Some((*back_from, *back_to)),
+        AnswerStep::Line { .. } => None,
+    }
 }
 
 /// A quote line's body. Only a bare `>` reaches an answer: a badge opens a
@@ -323,23 +337,53 @@ pub(crate) fn quote_body(line: &str) -> Option<&str> {
     Some(rest.strip_prefix(' ').unwrap_or(rest))
 }
 
+/// A unit with the half-open range of input lines it was built from.
+/// Spans are recorded only so [`card_answer_steps`] can group an answer the
+/// same way the units render it; they are never serialized.
+struct SpannedUnit {
+    unit: ContentUnit,
+    from: usize,
+    to: usize,
+}
+
 fn text_units_with(
     text: &str,
     projector: &mut DisplayProjector,
     split_prose_sentences: bool,
     diagrams: &[crate::card::ResolvedDiagram],
 ) -> Vec<ContentUnit> {
-    let mut units = Vec::new();
+    text_units_spanned(text, projector, split_prose_sentences, diagrams)
+        .into_iter()
+        .map(|spanned| spanned.unit)
+        .collect()
+}
+
+/// With `split_prose_sentences` set, one prose run can yield several units,
+/// and they share that run's span; the answer path, the only caller that
+/// reads spans, passes false.
+fn text_units_spanned(
+    text: &str,
+    projector: &mut DisplayProjector,
+    split_prose_sentences: bool,
+    diagrams: &[crate::card::ResolvedDiagram],
+) -> Vec<SpannedUnit> {
+    let mut units: Vec<ContentUnit> = Vec::new();
+    let mut spans: Vec<(usize, usize)> = Vec::new();
     let mut code_fence: Option<(char, usize, String)> = None;
     let mut code: Vec<String> = Vec::new();
+    let mut code_from = 0;
     let mut math_block: Option<Vec<String>> = None;
+    let mut math_from = 0;
     let mut prose = String::new();
+    let mut prose_from = 0;
     let mut checklist = Vec::new();
+    let mut checklist_from = 0;
 
     let lines: Vec<&str> = text.lines().collect();
     let mut index = 0;
     while index < lines.len() {
         let logical = lines[index];
+        let start = index;
         index += 1;
         if let Some((marker, run)) = fence_marker(logical) {
             match &code_fence {
@@ -354,13 +398,29 @@ fn text_units_with(
                     // fence-shaped unit per closed raw fence.
                     let block = std::mem::take(&mut code);
                     units.push(fence_unit(info, block, diagrams, projector));
+                    spans.push((code_from, index));
                     code_fence = None;
                 }
                 None => {
-                    flush_checklist(&mut checklist, &mut units);
-                    flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
+                    flush_checklist(
+                        &mut checklist,
+                        &mut units,
+                        &mut spans,
+                        checklist_from,
+                        start,
+                    );
+                    flush_prose(
+                        &mut prose,
+                        &mut units,
+                        &mut spans,
+                        prose_from,
+                        start,
+                        projector,
+                        split_prose_sentences,
+                    );
                     let info = fence_info(logical, marker);
                     code_fence = Some((marker, run, info.to_string()));
+                    code_from = start;
                     code.clear();
                 }
                 Some(_) => {
@@ -382,6 +442,7 @@ fn text_units_with(
                         runs: projector.project_display_math(&source),
                         text: source,
                     });
+                    spans.push((math_from, index));
                 }
             } else {
                 body.push(logical.to_string());
@@ -389,9 +450,24 @@ fn text_units_with(
             continue;
         }
         if logical.trim() == "$$" {
-            flush_checklist(&mut checklist, &mut units);
-            flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
+            flush_checklist(
+                &mut checklist,
+                &mut units,
+                &mut spans,
+                checklist_from,
+                start,
+            );
+            flush_prose(
+                &mut prose,
+                &mut units,
+                &mut spans,
+                prose_from,
+                start,
+                projector,
+                split_prose_sentences,
+            );
             math_block = Some(Vec::new());
+            math_from = start;
             continue;
         }
         if logical.starts_with('|')
@@ -402,8 +478,22 @@ fn text_units_with(
             && let Some(delimiter) = crate::parser::split_cells(lines[index])
             && delimiter.len() == header.len()
         {
-            flush_checklist(&mut checklist, &mut units);
-            flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
+            flush_checklist(
+                &mut checklist,
+                &mut units,
+                &mut spans,
+                checklist_from,
+                start,
+            );
+            flush_prose(
+                &mut prose,
+                &mut units,
+                &mut spans,
+                prose_from,
+                start,
+                projector,
+                split_prose_sentences,
+            );
             let aligns = delimiter.iter().map(|cell| cell_align(cell)).collect();
             index += 1;
             let mut rows = Vec::new();
@@ -427,11 +517,26 @@ fn text_units_with(
                 header: header.iter().map(|cell| projector.project(cell)).collect(),
                 rows,
             });
+            spans.push((start, index));
             continue;
         }
         if let Some(first) = quote_body(logical) {
-            flush_checklist(&mut checklist, &mut units);
-            flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
+            flush_checklist(
+                &mut checklist,
+                &mut units,
+                &mut spans,
+                checklist_from,
+                start,
+            );
+            flush_prose(
+                &mut prose,
+                &mut units,
+                &mut spans,
+                prose_from,
+                start,
+                projector,
+                split_prose_sentences,
+            );
             let mut body = vec![first.to_string()];
             while let Some(next) = lines.get(index).and_then(|line| quote_body(line)) {
                 body.push(next.to_string());
@@ -445,36 +550,86 @@ fn text_units_with(
                     diagrams,
                 ),
             });
+            spans.push((start, index));
             continue;
         }
         let trimmed = logical.trim();
         if trimmed.is_empty() {
-            flush_checklist(&mut checklist, &mut units);
+            flush_checklist(
+                &mut checklist,
+                &mut units,
+                &mut spans,
+                checklist_from,
+                start,
+            );
             continue;
         }
         if let Some(mut items) = checklist_items_with(&[logical], projector) {
-            flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
+            flush_prose(
+                &mut prose,
+                &mut units,
+                &mut spans,
+                prose_from,
+                start,
+                projector,
+                split_prose_sentences,
+            );
+            if checklist.is_empty() {
+                checklist_from = start;
+            }
             checklist.append(&mut items);
             continue;
         }
         if crate::inline::is_display_math_line(trimmed) {
-            flush_checklist(&mut checklist, &mut units);
-            flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
+            flush_checklist(
+                &mut checklist,
+                &mut units,
+                &mut spans,
+                checklist_from,
+                start,
+            );
+            flush_prose(
+                &mut prose,
+                &mut units,
+                &mut spans,
+                prose_from,
+                start,
+                projector,
+                split_prose_sentences,
+            );
             units.push(ContentUnit::Sentence {
                 text: trimmed.to_string(),
                 runs: projector.project(trimmed),
             });
+            spans.push((start, index));
             continue;
         }
-        flush_checklist(&mut checklist, &mut units);
-        if !prose.is_empty() {
+        flush_checklist(
+            &mut checklist,
+            &mut units,
+            &mut spans,
+            checklist_from,
+            start,
+        );
+        if prose.is_empty() {
+            prose_from = start;
+        } else {
             prose.push(' ');
         }
         prose.push_str(trimmed);
     }
 
-    flush_checklist(&mut checklist, &mut units);
-    flush_prose(&mut prose, &mut units, projector, split_prose_sentences);
+    let end = lines.len();
+    flush_checklist(&mut checklist, &mut units, &mut spans, checklist_from, end);
+    flush_prose(
+        &mut prose,
+        &mut units,
+        &mut spans,
+        prose_from,
+        end,
+        projector,
+        split_prose_sentences,
+    );
     // The parser rejects an unclosed card `$$`, so this tail only fires on
     // free text: the gathered lines degrade to a code block, like the
     // unterminated fence below.
@@ -482,13 +637,19 @@ fn text_units_with(
         && !body.is_empty()
     {
         units.push(ContentUnit::Code { lines: body });
+        spans.push((math_from, end));
     }
     // An unterminated code fence still yields its gathered lines.
     if !code.is_empty() {
         let info = code_fence.map(|(_, _, info)| info).unwrap_or_default();
         units.push(fence_unit(&info, code, diagrams, projector));
+        spans.push((code_from, end));
     }
     units
+        .into_iter()
+        .zip(spans)
+        .map(|(unit, (from, to))| SpannedUnit { unit, from, to })
+        .collect()
 }
 
 pub fn front_units(front: &str) -> Option<Vec<ContentUnit>> {
@@ -742,17 +903,27 @@ pub(crate) fn fence_info(line: &str, marker: char) -> &str {
     line.trim_start().trim_start_matches(marker).trim()
 }
 
-fn flush_checklist(checklist: &mut Vec<ChecklistItem>, units: &mut Vec<ContentUnit>) {
+fn flush_checklist(
+    checklist: &mut Vec<ChecklistItem>,
+    units: &mut Vec<ContentUnit>,
+    spans: &mut Vec<(usize, usize)>,
+    from: usize,
+    to: usize,
+) {
     if !checklist.is_empty() {
         units.push(ContentUnit::Checklist {
             items: std::mem::take(checklist),
         });
+        spans.push((from, to));
     }
 }
 
 fn flush_prose(
     prose: &mut String,
     units: &mut Vec<ContentUnit>,
+    spans: &mut Vec<(usize, usize)>,
+    from: usize,
+    to: usize,
     projector: &mut DisplayProjector,
     split_prose_sentences: bool,
 ) {
@@ -770,6 +941,7 @@ fn flush_prose(
                 text: sentence,
                 runs,
             });
+            spans.push((from, to));
         }
     }
     prose.clear();
@@ -887,18 +1059,28 @@ mod tests {
         );
     }
 
-    /// `quote_line_flags` and the unit scanner must agree about what a quote
-    /// is, since the typed target reads one and the display reads the other.
+    /// The typed target reads the block flags and the display reads the
+    /// units. They are built from one scan, and this pins that they stay so.
     #[test]
-    fn the_typed_target_and_the_display_agree_on_what_a_quote_is() {
+    fn the_typed_target_and_the_display_agree_on_what_one_block_is() {
         let rows: Vec<(Vec<&str>, bool, &str)> = vec![
-            (vec!["plain"], false, "no blockquote at all"),
-            (vec!["a", "> q"], true, "a bare run after prose"),
-            (vec!["> q", "> r"], true, "a run of two lines"),
+            (vec!["plain"], false, "no block at all"),
+            (vec!["a", "> q"], true, "a bare quote run after prose"),
+            (vec!["> q", "> r"], true, "a quote run of two lines"),
+            (
+                vec!["| a | b |", "| --- | --- |", "| 1 | 2 |"],
+                true,
+                "a table is a block too",
+            ),
             (
                 vec!["```text", "> q", "```"],
                 false,
                 "a fence's interior is source",
+            ),
+            (
+                vec!["```text", "| a | b |", "| --- | --- |", "```"],
+                false,
+                "a fenced table is source",
             ),
             (vec!["$$", "> q", "$$"], false, "display math is source"),
         ];
@@ -906,11 +1088,14 @@ mod tests {
             let owned: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
             let mut projector = DisplayProjector::default();
             let units = answer_units_with(&owned, &mut projector, &[]);
-            let has_quote_unit = units
+            let has_block_unit = units
                 .iter()
-                .any(|unit| matches!(unit, ContentUnit::Quote { .. }));
-            let flagged = quote_line_flags(&owned).iter().any(|quoted| *quoted);
-            assert_eq!(expected, has_quote_unit, "{why}: display units");
+                .any(|unit| matches!(unit, ContentUnit::Quote { .. } | ContentUnit::Table { .. }));
+            let card = parsed(&owned.join("\n"));
+            let flagged = card_block_flags(&card, crate::card::AnswerSpace::Authored)
+                .iter()
+                .any(|blocked| *blocked);
+            assert_eq!(expected, has_block_unit, "{why}: display units");
             assert_eq!(
                 expected, flagged,
                 "{why}: the typed target reads the same lines"
@@ -934,6 +1119,9 @@ mod tests {
                 AnswerStep::Quote {
                     back_from, back_to, ..
                 } => ("quote", *back_from, *back_to),
+                AnswerStep::Table {
+                    back_from, back_to, ..
+                } => ("table", *back_from, *back_to),
             })
             .collect()
     }
@@ -991,6 +1179,67 @@ mod tests {
                 "{why}"
             );
         }
+    }
+
+    #[test]
+    fn every_unit_span_is_ordered_in_bounds_and_never_overlaps() {
+        let cases = [
+            "just prose",
+            "one\ntwo",
+            "| a | b |\n| --- | --- |\n| 1 | 2 |",
+            "lead in\n| a | b |\n| --- | --- |\n| 1 | 2 |\ntrail",
+            "> quoted\n> still quoted\nplain after",
+            "```\n| not | a table |\n```",
+            "- [x] one\n- [ ] two",
+            "$$\nx = 1\n$$",
+            "",
+        ];
+        for text in cases {
+            let mut projector = DisplayProjector::default();
+            let spanned = text_units_spanned(text, &mut projector, false, &[]);
+            let line_count = text.lines().count();
+            let mut previous_end = 0;
+            for unit in &spanned {
+                assert!(
+                    unit.from < unit.to,
+                    "an empty span claims no line: {text:?} {:?}..{:?}",
+                    unit.from,
+                    unit.to
+                );
+                assert!(
+                    unit.from >= previous_end,
+                    "spans must not overlap or go backwards in {text:?}: {:?} after end {previous_end}",
+                    unit.from
+                );
+                assert!(
+                    unit.to <= line_count,
+                    "a span must stay inside the input in {text:?}: {:?} > {line_count}",
+                    unit.to
+                );
+                previous_end = unit.to;
+            }
+        }
+    }
+
+    #[test]
+    fn a_table_run_is_one_span_over_its_header_delimiter_and_rows() {
+        let mut projector = DisplayProjector::default();
+        let spanned = text_units_spanned(
+            "lead in\n| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\ntrail",
+            &mut projector,
+            false,
+            &[],
+        );
+        let table: Vec<_> = spanned
+            .iter()
+            .filter(|unit| matches!(unit.unit, ContentUnit::Table { .. }))
+            .collect();
+        assert_eq!(1, table.len(), "one table, one unit");
+        assert_eq!(
+            (1, 5),
+            (table[0].from, table[0].to),
+            "the span covers header, delimiter, and both rows, and nothing else"
+        );
     }
 
     #[test]

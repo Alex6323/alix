@@ -99,6 +99,11 @@ pub enum _AnswerStep {
         back_to: usize,
         units: Vec<ContentUnit>,
     },
+    Table {
+        back_from: usize,
+        back_to: usize,
+        units: Vec<ContentUnit>,
+    },
 }
 
 #[flutter_rust_bridge::frb(mirror(CellAlign))]

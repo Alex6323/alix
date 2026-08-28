@@ -2,18 +2,62 @@
   "answer_steps": [
     {
       "back_from": 0,
-      "back_to": 1,
-      "kind": "line"
-    },
-    {
-      "back_from": 1,
-      "back_to": 2,
-      "kind": "line"
-    },
-    {
-      "back_from": 2,
       "back_to": 3,
-      "kind": "line"
+      "kind": "table",
+      "units": [
+        {
+          "aligns": [
+            "none",
+            "left",
+            "center",
+            "right"
+          ],
+          "header": [
+            [
+              {
+                "text": "a"
+              }
+            ],
+            [
+              {
+                "text": "b"
+              }
+            ],
+            [
+              {
+                "text": "c"
+              }
+            ],
+            [
+              {
+                "text": "d"
+              }
+            ]
+          ],
+          "kind": "table",
+          "rows": [
+            [
+              [
+                {
+                  "text": "1"
+                }
+              ],
+              [
+                {
+                  "bold": true,
+                  "text": "2"
+                }
+              ],
+              [
+                {
+                  "text": "3"
+                }
+              ],
+              []
+            ]
+          ]
+        }
+      ]
     }
   ],
   "back": [

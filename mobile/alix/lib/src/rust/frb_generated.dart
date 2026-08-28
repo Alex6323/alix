@@ -1450,6 +1450,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           backTo: dco_decode_usize(raw[2]),
           units: dco_decode_list_content_unit(raw[3]),
         );
+      case 2:
+        return AnswerStep_Table(
+          backFrom: dco_decode_usize(raw[1]),
+          backTo: dco_decode_usize(raw[2]),
+          units: dco_decode_list_content_unit(raw[3]),
+        );
       default:
         throw Exception("unreachable");
     }
@@ -2464,6 +2470,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_backTo = sse_decode_usize(deserializer);
         var var_units = sse_decode_list_content_unit(deserializer);
         return AnswerStep_Quote(
+          backFrom: var_backFrom,
+          backTo: var_backTo,
+          units: var_units,
+        );
+      case 2:
+        var var_backFrom = sse_decode_usize(deserializer);
+        var var_backTo = sse_decode_usize(deserializer);
+        var var_units = sse_decode_list_content_unit(deserializer);
+        return AnswerStep_Table(
           backFrom: var_backFrom,
           backTo: var_backTo,
           units: var_units,
@@ -3814,6 +3829,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         units: final units,
       ):
         sse_encode_i_32(1, serializer);
+        sse_encode_usize(backFrom, serializer);
+        sse_encode_usize(backTo, serializer);
+        sse_encode_list_content_unit(units, serializer);
+      case AnswerStep_Table(
+        backFrom: final backFrom,
+        backTo: final backTo,
+        units: final units,
+      ):
+        sse_encode_i_32(2, serializer);
         sse_encode_usize(backFrom, serializer);
         sse_encode_usize(backTo, serializer);
         sse_encode_list_content_unit(units, serializer);

@@ -236,7 +236,11 @@ Flat material at scale (a vocabulary list, countries and capitals, dates) can
 be one Markdown pipe table instead of a `##` block per fact. A bare pipe
 table renders as a real aligned table: the delimiter row's alignment colons
 set each column's alignment, short rows pad with empty cells, and long rows
-truncate to the header width. It never becomes cards on its own;
+truncate to the header width. In an answer it is one block, like a quotation:
+under `<!-- reveal: line -->` it takes a single reveal rather than arriving a
+pipe line at a time, and Reconstruct never asks you to type pipe syntax, so a
+card whose whole answer is a table asks you to explain it instead. It never
+becomes cards on its own;
 `<!-- cards -->` on the line below maps it (or `table:
 cards` in frontmatter maps every table in the deck, with `<!-- plain -->`
 below one table keeping it literal). Each row is a card: first column front,

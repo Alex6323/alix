@@ -378,6 +378,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- A pipe table in an answer is one block, like a quotation. Under
+  `<!-- reveal: line -->` it takes a single reveal instead of arriving a pipe
+  line at a time, and it is excluded from the typed target: typing pipe syntax
+  back tests transcription, not understanding. `answer_steps` gains a `table`
+  step carrying the table unit, so adult, kids, and mobile all draw the
+  aligned table rather than raw `|` lines. The consequence to expect: a card
+  whose whole answer is a table now has nothing to type, so Reconstruct
+  explains it instead of asking for text. Typing the cells themselves is a
+  separate feature and is not in this release.
+
 - **Breaking: `alix generate` is split into `alix generate deck` and `alix
   generate workspace`.** The kind of thing you got used to be decided for you,
   from the source type and from the size of the model's plan: asking for a
