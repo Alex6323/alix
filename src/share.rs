@@ -605,6 +605,11 @@ pub fn land_deck_bundle_with_force(
     dest_dir: &Path,
     force: bool,
 ) -> Result<(String, Vec<String>)> {
+    let name = bundle
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| bundle.display().to_string());
+    refuse_received_link(bundle, &name)?;
     let stripped = sanitize_received(bundle)?;
     let marker_path = bundle.join(DECK_BUNDLE_MARKER);
     let marker: DeckBundle = serde_json::from_str(
@@ -1277,6 +1282,32 @@ mod tests {
     /// renames when the extraction directory and the decks directory share a
     /// filesystem, so without a rule the sender decides what appears in the
     /// receiver's decks folder.
+    /// Codex: the invariant belongs to the public function, not to the callers
+    /// that happen to hand it a real directory today.
+    #[cfg(unix)]
+    #[test]
+    fn deck_bundle_landing_refuses_a_linked_root_before_sanitizing_its_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("private");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("recent.json"), "[]").unwrap();
+        let linked_bundle = dir.path().join("received.alix-deck");
+        std::os::unix::fs::symlink(&outside, &linked_bundle).unwrap();
+        let dest = dir.path().join("decks");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        let error = land_deck_bundle(&linked_bundle, &dest).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("as a link"),
+            "the refusal comes before the marker is looked for: {error:#}"
+        );
+        assert!(
+            outside.join("recent.json").is_file(),
+            "the sanitizer must not have walked the link's target"
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn landing_refuses_a_link_the_sender_put_inside_the_received_folder() {

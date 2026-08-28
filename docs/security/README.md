@@ -247,12 +247,17 @@ stable deck-ID collisions (`src/share.rs`, `src/deck_transfer.rs`).
 A symbolic link is refused in both directions rather than followed. Staging
 refuses a link anywhere it would copy material into an outgoing tree, so the
 selected folder bounds what leaves the machine. Landing refuses a received
-archive that carries one, before the sanitizer walks and before anything is
-moved: an extractor recreates a link the archive carries, so following one let
-a sender choose both what appeared in the receiver's decks folder and which
-directory the personal-file sanitizer deleted from. Refusing first also removes
-an earlier dependence on whether the extraction directory and the decks
-directory shared a filesystem.
+archive that carries one: an extractor recreates a link the archive carries, so
+following one let a sender choose both what appeared in the receiver's decks
+folder and which directory the personal-file sanitizer deleted from. The
+refusal precedes reading or writing anything the link points at, and precedes
+any landing, so no receiver file outside the extraction copy is touched; the
+sanitizer still removes private entries within that throwaway copy as it walks,
+which is not a preflight of the whole tree. The public
+`land_deck_bundle_with_force` holds the same refusal itself rather than
+relying on its current callers (Codex). Refusing first also removes an earlier
+dependence on whether the extraction directory and the decks directory shared a
+filesystem.
 
 Received archives, decks, images, URLs, manifests, and source locators remain
 untrusted. Sanitizing personal state does not certify the remaining content as

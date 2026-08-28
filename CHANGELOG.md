@@ -811,9 +811,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.json.tmp` names), and then planted the link among your decks. The rest
   depended on your filesystem layout: the link landed after a rename, or the
   fallback copy refused it with a message about sharing and a temporary path
-  you never chose. An archive that carries a link is now refused before
-  anything is deleted, moved, or landed, naming the entry, and the message asks
-  the sender for an archive that carries the file itself.
+  you never chose. An archive that carries a link is now refused, naming the
+  entry by its place in the archive, and the message asks the sender for one
+  that carries the file itself. The refusal comes before any path the link
+  points at is read or written and before anything lands, so no file of yours
+  is touched; entries the sanitizer already removed inside the throwaway
+  extraction copy are the only deletions that can precede it.
 
 - The same boundary holds on every path that copies material into an outgoing
   tree, not just the folder walk. Sharing a single deck refuses a linked
