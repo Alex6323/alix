@@ -4900,8 +4900,6 @@ fn generate_workspace_refuses_a_source_that_is_not_a_directory() {
 fn generate_workspace_with_a_one_item_plan_still_builds_a_workspace() {
     use std::os::unix::fs::PermissionsExt;
 
-    // A real one-item plan routes to a single deck rather than a multi-item
-    // workspace build.
     let dir = TempDir::new().unwrap();
     let src = dir.path().join("src");
     std::fs::create_dir(&src).unwrap();
