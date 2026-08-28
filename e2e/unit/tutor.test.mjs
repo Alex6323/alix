@@ -21,7 +21,7 @@ test("the adult app wires table rendering into the tutor", async () => {
 
   assert.match(
     tutorUi,
-    /\bappendTable,/,
+    /^\s*appendTable,\s*$/m,
     "a table answer crashes the tutor unless app.js injects appendTable into its `ui`",
   );
 });
