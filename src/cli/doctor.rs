@@ -423,7 +423,8 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             ));
         }
     }
-    let mut source_assets_valid = true;
+    let mut frozen_assets_valid = true;
+    let mut has_live_citations = false;
     if managed && !deck.sources.is_empty() {
         let live = deck
             .cards
@@ -436,14 +437,14 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
                 "{}: {live} live `at:` citation(s) in an initialized workspace member; initialize or update it to freeze deck-owned excerpts",
                 deck.path.display()
             ));
-            source_assets_valid = false;
+            has_live_citations = true;
         }
         if let Err(error) = alix::assets::validate_member(deck) {
             report.error(format!(
                 "{}: frozen source assets are invalid: {error:#}",
                 deck.path.display()
             ));
-            source_assets_valid = false;
+            frozen_assets_valid = false;
         }
     }
     if managed && let Ok(text) = std::fs::read_to_string(&deck.path) {
@@ -501,7 +502,7 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             Err(e) => report.warn(format!("{}: {e:#}", deck.subject)),
         }
     }
-    if source_assets_valid {
+    if frozen_assets_valid {
         let base = SourceBase::for_deck(deck);
         // One authored `at:` line serves every card its block produced (a
         // table's rows, a cloze block's holes), so the report is per authored
@@ -517,11 +518,13 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
 
                 let detail = match base.inspect_citation(citation) {
                     Ok(CitationIntegrity::Current(_)) => None,
-                    Ok(CitationIntegrity::Unfingerprinted { .. }) => Some(
-                        "has no excerpt fingerprint; review it, then run \
-                         `alix doctor --repair-source-locators`"
-                            .to_string(),
-                    ),
+                    Ok(CitationIntegrity::Unfingerprinted { .. }) => {
+                        (!has_live_citations).then(|| {
+                            "has no excerpt fingerprint; review it, then run \
+                             `alix doctor --repair-source-locators`"
+                                .to_string()
+                        })
+                    }
                     Ok(CitationIntegrity::Relocated { locator, .. }) => Some(format!(
                         "the exact excerpt moved to `{locator}`; run \
                          `alix doctor --repair-source-locators` to rebase it"
@@ -2074,6 +2077,61 @@ mod tests {
         assert_eq!(
             1, citation_warnings,
             "two cards share one authored `at:` line, so it is reported once: {:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn a_live_citation_never_silences_the_drift_check_on_its_frozen_neighbour() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), workspace::MANIFEST, "title = \"WS\"\n");
+        std::fs::create_dir(dir.path().join(workspace::DECKS)).unwrap();
+        w(dir.path(), "source.txt", "first\n");
+        let deck_path = dir.path().join(workspace::DECKS).join("member.md");
+        std::fs::write(
+            &deck_path,
+            format!(
+                "---\nid: deck-1xpgnc8f1mypv80cgzyxrn2cqf\nsource: ..\n---\n\
+                 ## stale\na\n<!-- at: source.txt:1 fingerprint: {} -->\n\
+                 <!-- id: card-1xpgnc8f1mypv80cgzyxrn2cqf -->\n\n\
+                 ## live\nb\n<!-- at: source.txt:1 -->\n\
+                 <!-- id: card-2xpgnc8f1mypv80cgzyxrn2cqf -->\n",
+                one_line_fingerprint("gone"),
+            ),
+        )
+        .unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        assert!(
+            deck.deck_token.is_some(),
+            "the fixture is a member: {deck:?}"
+        );
+
+        let mut report = Report::default();
+        deck_resource_findings(&deck, &mut report);
+
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.contains("live `at:` citation")),
+            "the member still reports its unfrozen citations: {:#?}",
+            report.errors
+        );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("changed or disappeared")),
+            "a live citation elsewhere in the deck must not turn off drift \
+             detection for a fingerprinted one: {:#?}",
+            report.warnings
+        );
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("has no excerpt fingerprint")),
+            "the live citations are already one error, not one warning each: {:#?}",
             report.warnings
         );
     }

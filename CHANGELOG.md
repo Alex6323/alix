@@ -780,6 +780,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- `alix doctor` checks a workspace member's frozen excerpts even when the deck
+  still holds an unfrozen `at:` citation. One live citation used to switch off
+  the whole per-citation inspection, so a fingerprinted excerpt that had moved,
+  changed, or gone ambiguous was never reported and the deck got a single line
+  about freezing instead. The gate now covers only what it was for, an invalid
+  frozen asset, and the live citations stay one counted error rather than
+  becoming a warning each.
+
 - Duplicate card identities are resolved by the `id:` line a deck file actually
   holds, not by the review-unit ids it expands into. Two consequences, both
   found by Codex. Copying a reviewed fact card and turning the copy into a cloze
