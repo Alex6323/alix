@@ -315,7 +315,14 @@ to this codebase. When in doubt, mirror the surrounding code.
   the patch. When the implementation is best understood as a multi-step control
   flow, data flow, lifecycle, or failure path, add a trace deck whose checkpoints
   walk that path through the actual code. Do not force every card into choice
-  format. The deck declares the live project root as `source:`, and every card
+  format. **Every deck carries section context** (user rule, 2026-08-28): its
+  cards sit under `#` headings, never in a flat list, so a learner meeting a
+  card cold is told what it is about. A section title is a short orienting
+  phrase naming what its cards cover, not the deck's own name and not a
+  restatement of one card's question; a deck of a few cards takes one section,
+  a long deck takes one per group of related cards, and a trace deck takes a
+  single section over the whole walk. A sidecar has no sections at all.
+  The deck declares the live project root as `source:`, and every card
   carries a contiguous
   `<!-- at: file:lines fingerprint: xxh64-... -->` locator after its answer and
   notes, followed by its regularly stamped `<!-- id: card-<token> -->`;
