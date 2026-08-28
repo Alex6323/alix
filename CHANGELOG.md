@@ -773,6 +773,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- `alix doctor` no longer certifies a decks folder it cannot read as healthy and
+  empty. A folder whose permissions changed (a shared drive, a removable disk, a
+  restored backup, a synced tree) produced a green `decks` row with zero decks,
+  which is exactly the wrong answer to the command people run when their decks
+  disappear. The target folder now fails with the path and the I/O error, and a
+  subfolder that cannot be read is named in the row instead of counting as zero.
+  Found by Codex.
+
 - A break line after a card table is read by the break grammar rather than
   reported as trailing prose. While a table was active the scanner handed the
   outer grammar only headings, so a rule between a mapped table and the next

@@ -7112,3 +7112,41 @@ fn doctor_reports_a_symlinked_workspace_cycle_only_once() {
         "one physical finding must not be repeated through a directory cycle"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn doctor_does_not_report_an_unreadable_decks_directory_as_empty_and_healthy() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = TempDir::new().unwrap();
+    std::fs::write(root.path().join("cards.md"), VALID_DECK).unwrap();
+    std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o000)).unwrap();
+    let out = alix(&["doctor", root.path().to_str().unwrap()]);
+    std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    let text = format!("{}{}", stdout(&out), stderr(&out));
+    assert!(
+        !out.status.success() || text.contains("permission") || text.contains("cannot read"),
+        "doctor must diagnose the unreadable target instead of calling it empty and healthy: {text}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_names_a_deck_folder_it_cannot_read() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = TempDir::new().unwrap();
+    std::fs::write(root.path().join("cards.md"), VALID_DECK).unwrap();
+    let locked = root.path().join("locked");
+    std::fs::create_dir(&locked).unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let out = alix(&["doctor", root.path().to_str().unwrap()]);
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    let text = format!("{}{}", stdout(&out), stderr(&out));
+    assert!(
+        text.contains("cannot be read") && text.contains("locked"),
+        "a folder alix could not read is named rather than counted as zero decks: {text}"
+    );
+}

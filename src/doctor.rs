@@ -120,17 +120,33 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
             "create it, serve another folder (`alix <dir>`), or set `decks_dir` in the config",
         );
     }
-    let (mut deck_files, mut uninitialized) =
-        workspace::classified_deck_files(decks_dir).unwrap_or_default();
+    let (mut deck_files, mut uninitialized) = match workspace::classified_deck_files(decks_dir) {
+        Ok(found) => found,
+        Err(source) => {
+            return Finding::bad(
+                "decks",
+                Status::Fail,
+                format!("cannot read {}: {source}", decks_dir.display()),
+                "check the folder's permissions, or serve another folder (`alix <dir>`)",
+            );
+        }
+    };
     let direct_workspace = workspace::is_workspace(decks_dir);
     let mut dirs = usize::from(direct_workspace);
+    let mut unreadable = Vec::new();
     if !direct_workspace {
         for entry in std::fs::read_dir(decks_dir).into_iter().flatten().flatten() {
             let path = entry.path();
             if !path.is_dir() {
                 continue;
             }
-            let (members, candidates) = workspace::classified_deck_files(&path).unwrap_or_default();
+            let (members, candidates) = match workspace::classified_deck_files(&path) {
+                Ok(found) => found,
+                Err(source) => {
+                    unreadable.push(format!("{}: {source}", path.display()));
+                    continue;
+                }
+            };
             if !members.is_empty() {
                 dirs += 1;
             }
@@ -162,7 +178,11 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
         dirs,
         decks_dir.display()
     );
-    if broken.is_empty() && malformed_math.is_empty() && uninitialized.is_empty() {
+    if broken.is_empty()
+        && malformed_math.is_empty()
+        && uninitialized.is_empty()
+        && unreadable.is_empty()
+    {
         Finding::ok("decks", counts)
     } else {
         let named = broken
@@ -204,7 +224,18 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
         } else {
             format!("; {} won't parse: {named}", broken.len())
         };
-        let remedy = if uninitialized.is_empty() {
+        let unreadable_detail = if unreadable.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; {} folder(s) cannot be read, first: {}",
+                unreadable.len(),
+                unreadable[0]
+            )
+        };
+        let remedy = if !unreadable.is_empty() {
+            "check the permissions on the folders alix cannot read, then rerun"
+        } else if uninitialized.is_empty() {
             "run `alix doctor <file>` for the exact deck diagnostics"
         } else {
             "run `alix deck init <file>` for each intended deck; leave ordinary Markdown \
@@ -213,7 +244,7 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
         Finding::bad(
             "decks",
             Status::Warn,
-            format!("{counts}{parse_detail}{math_detail}{uninitialized_detail}"),
+            format!("{counts}{parse_detail}{math_detail}{uninitialized_detail}{unreadable_detail}"),
             remedy,
         )
     }
