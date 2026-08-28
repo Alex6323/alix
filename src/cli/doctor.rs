@@ -516,15 +516,15 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
                     continue;
                 }
 
+                let counted_by_the_live_error = has_live_citations && citation.asset.is_none();
                 let detail = match base.inspect_citation(citation) {
                     Ok(CitationIntegrity::Current(_)) => None,
-                    Ok(CitationIntegrity::Unfingerprinted { .. }) => {
-                        (!has_live_citations).then(|| {
+                    Ok(CitationIntegrity::Unfingerprinted { .. }) => (!counted_by_the_live_error)
+                        .then(|| {
                             "has no excerpt fingerprint; review it, then run \
                              `alix doctor --repair-source-locators`"
                                 .to_string()
-                        })
-                    }
+                        }),
                     Ok(CitationIntegrity::Relocated { locator, .. }) => Some(format!(
                         "the exact excerpt moved to `{locator}`; run \
                          `alix doctor --repair-source-locators` to rebase it"
@@ -2132,6 +2132,68 @@ mod tests {
                 .iter()
                 .any(|warning| warning.contains("has no excerpt fingerprint")),
             "the live citations are already one error, not one warning each: {:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn a_frozen_citation_that_lost_its_fingerprint_is_not_covered_by_the_live_error() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), workspace::MANIFEST, "title = \"WS\"\n");
+        std::fs::create_dir(dir.path().join(workspace::DECKS)).unwrap();
+        w(dir.path(), "source.txt", "first\nsecond\n");
+        let deck_path = dir.path().join(workspace::DECKS).join("member.md");
+        std::fs::write(
+            &deck_path,
+            "---\nid: deck-1xpgnc8f1mypv80cgzyxrn2cqf\nsource: ..\n---\n\
+             ## frozen\na\n<!-- at: source.txt:1 -->\n\
+             <!-- id: card-1xpgnc8f1mypv80cgzyxrn2cqf -->\n\n\
+             ## live\nb\n<!-- at: source.txt:2 -->\n\
+             <!-- id: card-2xpgnc8f1mypv80cgzyxrn2cqf -->\n",
+        )
+        .unwrap();
+        alix::assets::freeze_member(&deck_path).unwrap();
+
+        let frozen = std::fs::read_to_string(&deck_path).unwrap();
+        let unfingerprinted: String = frozen
+            .lines()
+            .map(|line| match line.split_once(" fingerprint: ") {
+                Some((head, rest)) if line.contains("source.txt:1") => {
+                    let asset = rest
+                        .split_once(" asset: ")
+                        .expect("freezing wrote an asset")
+                        .1;
+                    format!("{head} asset: {asset}")
+                }
+                _ if line.contains("source.txt:2") => {
+                    let (head, _) = line.split_once(" fingerprint: ").expect("frozen too");
+                    format!("{head} -->")
+                }
+                _ => line.to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&deck_path, format!("{unfingerprinted}\n")).unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+
+        let mut report = Report::default();
+        deck_resource_findings(&deck, &mut report);
+
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.contains("1 live `at:` citation")),
+            "one citation lost both fields, so exactly one is live: {:#?}",
+            report.errors
+        );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("has no excerpt fingerprint")),
+            "the citation that kept its asset is not one of the live ones, so the \
+             deck-level error does not cover it: {:#?}",
             report.warnings
         );
     }
