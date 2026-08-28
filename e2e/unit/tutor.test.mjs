@@ -4,6 +4,8 @@ import test from "node:test";
 
 import { createTutor } from "../../web/alix/review/tutor.js";
 
+// Codex's wiring guard, narrowed to the `ui` object itself after they showed
+// the block-wide match stayed green with `appendTable` moved into `timers`.
 test("the adult app wires table rendering into the tutor", async () => {
   const source = await readFile(
     new URL("../../web/alix/review/app.js", import.meta.url),
@@ -12,11 +14,15 @@ test("the adult app wires table rendering into the tutor", async () => {
   const tutorStart = source.indexOf("const tutor = createTutor({");
   const tutorEnd = source.indexOf("const walk = createWalk({", tutorStart);
   const tutorWiring = source.slice(tutorStart, tutorEnd);
+  const uiStart = tutorWiring.indexOf("\n  ui: {");
+  const uiEnd = tutorWiring.indexOf("\n  },", uiStart);
+  assert.ok(uiStart >= 0 && uiEnd > uiStart, "the tutor is wired with a `ui` object");
+  const tutorUi = tutorWiring.slice(uiStart, uiEnd);
 
   assert.match(
-    tutorWiring,
+    tutorUi,
     /\bappendTable,/,
-    "a table answer crashes the tutor unless app.js injects appendTable",
+    "a table answer crashes the tutor unless app.js injects appendTable into its `ui`",
   );
 });
 
