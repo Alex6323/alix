@@ -61,8 +61,15 @@ SYN-ACK
     page.getByRole("button", { name: /^Reconstruct/ }).click(),
   ]);
   await page.getByRole("button", { name: "Reveal" }).click();
-  await page.getByRole("button", { name: "Seen" }).click();
-  await page.getByRole("button", { name: /^Leave/ }).click();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/introduce")),
+    page.getByRole("button", { name: "Seen" }).click(),
+  ]);
+  await expect(page.getByText("session complete", { exact: true })).toBeVisible();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/deselect")),
+    page.getByRole("button", { name: /^Leave/ }).click(),
+  ]);
 
   await adultDeckRow(page, "Handshake").click();
   await page.getByTitle("choose a depth").click();
