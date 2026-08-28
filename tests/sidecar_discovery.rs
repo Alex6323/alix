@@ -99,6 +99,7 @@ fn no_folder_listing_offers_one_physical_workspace_twice() {
     std::fs::write(nested.join(workspace::MANIFEST), "title = \"Nested\"\n").unwrap();
     std::fs::write(decks.join("spanish.md"), DECK).unwrap();
     std::os::unix::fs::symlink(&nested, root.path().join("alias")).unwrap();
+    std::os::unix::fs::symlink(decks.join("spanish.md"), decks.join("spanish-alias.md")).unwrap();
 
     let listed = alix::listing::list_root(root.path(), &ReviewConfig::default(), 0);
     assert_eq!(
@@ -122,5 +123,28 @@ fn no_folder_listing_offers_one_physical_workspace_twice() {
         1,
         folders.len(),
         "picker::catalog offered the same workspace under both names: {folders:?}"
+    );
+
+    let members: Vec<String> = catalog
+        .iter()
+        .filter(|entry| entry.is_workspace)
+        .flat_map(|entry| entry.members.iter().map(|member| member.name.clone()))
+        .collect();
+    assert_eq!(
+        1,
+        members.len(),
+        "picker::catalog offered the same deck file under both names: {members:?}"
+    );
+
+    let listed_members =
+        alix::listing::list_members(root.path(), &nested, &ReviewConfig::default(), 0);
+    assert_eq!(
+        1,
+        listed_members.len(),
+        "listing::list_members offered the same deck file under both names: {:?}",
+        listed_members
+            .iter()
+            .map(|deck| deck.title.clone())
+            .collect::<Vec<_>>()
     );
 }
