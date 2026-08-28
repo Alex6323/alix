@@ -7146,7 +7146,28 @@ fn doctor_names_a_deck_folder_it_cannot_read() {
 
     let text = format!("{}{}", stdout(&out), stderr(&out));
     assert!(
-        text.contains("cannot be read") && text.contains("locked"),
+        text.contains("cannot read") && text.contains("locked"),
         "a folder alix could not read is named rather than counted as zero decks: {text}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_does_not_call_an_unreadable_deck_file_empty_and_healthy() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = TempDir::new().unwrap();
+    let deck = root.path().join("cards.md");
+    std::fs::write(&deck, VALID_DECK).unwrap();
+    std::fs::set_permissions(&deck, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let out = alix(&["doctor", root.path().to_str().unwrap()]);
+    std::fs::set_permissions(&deck, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let text = format!("{}{}", stdout(&out), stderr(&out));
+    assert!(
+        !out.status.success()
+            || (text.contains("cards.md")
+                && (text.contains("cannot read") || text.contains("permission"))),
+        "doctor must name the unreadable deck instead of issuing a successful zero-deck bill of health: {text}"
     );
 }

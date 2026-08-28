@@ -23,7 +23,7 @@ fn fixture() -> tempfile::TempDir {
 /// Every name a folder listing can offer the user, from every route that builds
 /// one. A new lister joins this list; it does not get its own test.
 fn every_discovered_name(dir: &Path) -> Vec<(&'static str, Vec<String>)> {
-    let (initialized, uninitialized) = workspace::classified_deck_files(dir).unwrap();
+    let found = workspace::classify_deck_files(dir).unwrap();
     let mut cache = DeckCache::default();
     let recent = RecentDecks::default();
     vec![
@@ -35,12 +35,12 @@ fn every_discovered_name(dir: &Path) -> Vec<(&'static str, Vec<String>)> {
                 .collect(),
         ),
         (
-            "workspace::classified_deck_files (initialized)",
-            file_names(&initialized),
+            "workspace::classify_deck_files (initialized)",
+            file_names(&found.initialized),
         ),
         (
-            "workspace::classified_deck_files (uninitialized)",
-            file_names(&uninitialized),
+            "workspace::classify_deck_files (uninitialized)",
+            file_names(&found.uninitialized),
         ),
         (
             "picker::catalog",

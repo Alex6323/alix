@@ -160,7 +160,7 @@ fn library_target(name: String, resolved: Resolved) -> Option<LibraryTarget> {
     match resolved {
         Resolved::One(path) if path.is_file() => Some(LibraryTarget::Deck { name, path }),
         Resolved::One(root) if root.is_dir() && workspace::has_manifest(&root) => {
-            let members = workspace::classified_deck_files(&root).ok()?.0;
+            let members = workspace::classify_deck_files(&root).ok()?.initialized;
             Some(LibraryTarget::Workspace {
                 name,
                 root,

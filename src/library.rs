@@ -376,9 +376,9 @@ fn workspace_removal_plan(
     if !workspace::has_manifest(workspace_root) {
         bail!("{} is not a workspace", workspace_root.display());
     }
-    let members = workspace::classified_deck_files(workspace_root)
+    let members = workspace::classify_deck_files(workspace_root)
         .with_context(|| format!("cannot read {}", workspace_root.display()))?
-        .0;
+        .initialized;
     let mut plan = RemovalPlan::default();
     let mut preview = WorkspaceRemovalPreview {
         files: Vec::new(),

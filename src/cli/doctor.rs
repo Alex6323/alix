@@ -818,8 +818,8 @@ fn findings_in(dir: &Path) -> Report {
             dir.join(alix::workspace::DECKS).display()
         ));
     }
-    let (deck_files, uninitialized) =
-        alix::workspace::classified_deck_files(dir).unwrap_or_default();
+    let found = alix::workspace::classify_deck_files(dir).unwrap_or_default();
+    let (deck_files, uninitialized) = (found.initialized, found.uninitialized);
     for path in &deck_files {
         deck_findings(path, &mut report);
     }

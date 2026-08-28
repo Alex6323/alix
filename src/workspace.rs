@@ -259,9 +259,9 @@ fn collect_roots(dir: &Path, visited: &mut HashSet<PathBuf>, roots: &mut Vec<Pat
 pub fn diagnosable_deck_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for root in roots_under(dir) {
-        let (initialized, uninitialized) = classified_deck_files(&root).unwrap_or_default();
-        files.extend(initialized);
-        files.extend(uninitialized);
+        let found = classify_deck_files(&root).unwrap_or_default();
+        files.extend(found.initialized);
+        files.extend(found.uninitialized);
     }
     files
 }
@@ -312,11 +312,11 @@ pub fn file_is_deck(path: &Path) -> bool {
 }
 
 fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
-    classified_deck_files(dir).map(|(initialized, _)| initialized)
+    classify_deck_files(dir).map(|found| found.initialized)
 }
 
 pub fn uninitialized_deck_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
-    classified_deck_files(dir).map(|(_, uninitialized)| uninitialized)
+    classify_deck_files(dir).map(|found| found.uninitialized)
 }
 
 pub fn misplaced_deck_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
@@ -335,21 +335,35 @@ pub fn misplaced_deck_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
     })
 }
 
-pub fn classified_deck_files(dir: &Path) -> io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+/// A folder's deck-shaped files, split by what a check has to say about each.
+#[derive(Debug, Default)]
+pub struct ClassifiedDecks {
+    pub initialized: Vec<PathBuf>,
+    pub uninitialized: Vec<PathBuf>,
+    /// Candidates whose bytes could not be read. A readable folder holding one
+    /// unreadable file is the common permission boundary, and dropping it would
+    /// report the deck as absent rather than as unreachable.
+    pub unreadable: Vec<(PathBuf, io::Error)>,
+}
+
+pub fn classify_deck_files(dir: &Path) -> io::Result<ClassifiedDecks> {
     let candidates = members_where(dir, |_| true)?;
-    let mut initialized = Vec::new();
-    let mut uninitialized = Vec::new();
+    let mut found = ClassifiedDecks::default();
     for path in candidates {
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(source) => {
+                found.unreadable.push((path, source));
+                continue;
+            }
         };
         if crate::parser::deck_identity(&text).ok().flatten().is_some() {
-            initialized.push(path);
+            found.initialized.push(path);
         } else if crate::parser::is_deck_content(&text) {
-            uninitialized.push(path);
+            found.uninitialized.push(path);
         }
     }
-    Ok((initialized, uninitialized))
+    Ok(found)
 }
 
 /// Every `.md` member of a folder, personal files included. `members_where`

@@ -364,10 +364,14 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
             .store
             .clone()
             .unwrap_or_else(|| workspace::root_store_path(dir));
-        let (initialized, uninitialized) = workspace::classified_deck_files(dir)
+        let found = workspace::classify_deck_files(dir)
             .context("refusing to judge orphans while the target cannot be listed")?;
         Ok((
-            initialized.into_iter().chain(uninitialized).collect(),
+            found
+                .initialized
+                .into_iter()
+                .chain(found.uninitialized)
+                .collect(),
             store,
         ))
     };

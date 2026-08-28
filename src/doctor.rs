@@ -120,7 +120,7 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
             "create it, serve another folder (`alix <dir>`), or set `decks_dir` in the config",
         );
     }
-    let (mut deck_files, mut uninitialized) = match workspace::classified_deck_files(decks_dir) {
+    let found = match workspace::classify_deck_files(decks_dir) {
         Ok(found) => found,
         Err(source) => {
             return Finding::bad(
@@ -131,27 +131,39 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
             );
         }
     };
+    let mut deck_files = found.initialized;
+    let mut uninitialized = found.uninitialized;
+    let mut unreadable: Vec<String> = found
+        .unreadable
+        .iter()
+        .map(|(path, source)| format!("{}: {source}", path.display()))
+        .collect();
     let direct_workspace = workspace::is_workspace(decks_dir);
     let mut dirs = usize::from(direct_workspace);
-    let mut unreadable = Vec::new();
     if !direct_workspace {
         for entry in std::fs::read_dir(decks_dir).into_iter().flatten().flatten() {
             let path = entry.path();
             if !path.is_dir() {
                 continue;
             }
-            let (members, candidates) = match workspace::classified_deck_files(&path) {
+            let found = match workspace::classify_deck_files(&path) {
                 Ok(found) => found,
                 Err(source) => {
                     unreadable.push(format!("{}: {source}", path.display()));
                     continue;
                 }
             };
-            if !members.is_empty() {
+            if !found.initialized.is_empty() {
                 dirs += 1;
             }
-            deck_files.extend(members);
-            uninitialized.extend(candidates);
+            deck_files.extend(found.initialized);
+            uninitialized.extend(found.uninitialized);
+            unreadable.extend(
+                found
+                    .unreadable
+                    .iter()
+                    .map(|(path, source)| format!("{}: {source}", path.display())),
+            );
         }
     }
     let mut broken = Vec::new();
@@ -228,13 +240,13 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
             String::new()
         } else {
             format!(
-                "; {} folder(s) cannot be read, first: {}",
+                "; {} path(s) alix cannot read, first: {}",
                 unreadable.len(),
                 unreadable[0]
             )
         };
         let remedy = if !unreadable.is_empty() {
-            "check the permissions on the folders alix cannot read, then rerun"
+            "check the permissions on the paths alix cannot read, then rerun"
         } else if uninitialized.is_empty() {
             "run `alix doctor <file>` for the exact deck diagnostics"
         } else {
