@@ -199,6 +199,10 @@ test("every capture step is registered once, under the number its producer write
     fn,
   ]);
   assert.ok(rows.length > 0, "the STEPS table has rows");
+  const unparsed = table[1]
+    .replace(/\[(\d+), (\w+)\]/g, "")
+    .replace(/[\s,]/g, "");
+  assert.equal(unparsed, "", `every STEPS row must parse, left over: ${unparsed}`);
   const ids = rows.map(([n]) => n);
   for (const n of ids) {
     assert.ok(n >= 1, `STEPS ids must be positive, got ${n}`);
