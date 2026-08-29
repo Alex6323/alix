@@ -294,10 +294,9 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     let mut inserts: Vec<(usize, u8, usize, String)> = Vec::new();
     for (line, tok) in card_lines.iter().zip(&minted_cards) {
         let anchor = block_end_line(body, *line);
-        let newline = "\n";
         let offset = line_start_of_next(body, anchor).ok_or(StampError::MissingLine(anchor))?;
         let lead = if offset == body.len() && !body.ends_with('\n') {
-            newline
+            "\n"
         } else {
             ""
         };
@@ -305,7 +304,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
             offset,
             AFTER_BLOCK,
             0,
-            format!("{lead}<!-- id: {tok} -->{newline}"),
+            format!("{lead}<!-- id: {tok} -->\n"),
         ));
     }
     for (line, stamp) in &row_mints {
@@ -344,11 +343,10 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         ));
     }
     for (end_line, tok) in &container_mints {
-        let newline = "\n";
         let offset =
             line_start_of_next(body, *end_line).ok_or(StampError::MissingLine(*end_line))?;
         let lead = if offset == body.len() && !body.ends_with('\n') {
-            newline
+            "\n"
         } else {
             ""
         };
@@ -356,7 +354,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
             offset,
             AFTER_BLOCK,
             0,
-            format!("{lead}<!-- id: {tok} -->{newline}"),
+            format!("{lead}<!-- id: {tok} -->\n"),
         ));
     }
     minted_cards.extend(container_mints.iter().map(|(_, tok)| tok.clone()));
