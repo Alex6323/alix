@@ -1253,22 +1253,29 @@ mod tests {
 
     #[test]
     fn a_quoted_reply_never_carries_a_terminal_control_sequence() {
-        for raw in [
-            "\u{1b}[2Jnot a deck",
-            "bel \u{7} here",
-            "del \u{7f} here",
-            "c1 \u{9b}[2J",
-        ] {
-            let excerpt = reply_excerpt(raw);
+        for code in (0..=0x9fu32).chain(std::iter::once(0x7f)) {
+            let ch = char::from_u32(code).expect("every code below 0xa0 is a scalar value");
+            let excerpt = reply_excerpt(&format!("a{ch}b"));
             assert!(
                 !excerpt.chars().any(char::is_control),
-                "{raw:?} rendered a control character: {excerpt:?}"
+                "U+{code:04X} reached the excerpt: {excerpt:?}"
             );
+            if !ch.is_control() {
+                assert!(
+                    excerpt.contains(ch),
+                    "U+{code:04X} is not a control and must survive: {excerpt:?}"
+                );
+            }
         }
         assert_eq!(
             "\\u{1b}[2Jnot a deck",
             reply_excerpt("\u{1b}[2Jnot a deck"),
             "an escape is shown as its own escape, not swallowed"
+        );
+        assert_eq!(
+            "plain text stays plain",
+            reply_excerpt("plain text  stays\n plain"),
+            "ordinary text is only whitespace-collapsed"
         );
     }
 
