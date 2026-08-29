@@ -105,10 +105,10 @@ pub enum LintKind {
     DuplicateChoiceOption,
     ChoiceMultiCorrectUnsupported,
     ChoiceNoteNamesPosition,
-    /// A bare single-token comment that names no known invocation; the
-    /// block below it stays literal, which is silent exactly when the
-    /// author meant to invoke.
-    UnknownInvocation,
+    /// A comment that is not alix machinery. A deck's `<!-- -->` is alix
+    /// vocabulary, so anything else in one is ignored, which is silent
+    /// exactly when the author meant it to do something.
+    UnrecognizedComment,
     /// A blockquote opening with a badge-shaped first line that is not one
     /// of the five: it stays a quote, which is a silent meaning shift.
     BadgeShape {
@@ -1402,19 +1402,23 @@ fn scan(
                                 ),
                             });
                         }
-                        None => {}
+                        None => {
+                            if !is_known_card_key(&key) && key != "diagram" {
+                                lints.push(Lint {
+                                    line: lineno,
+                                    kind: LintKind::UnknownKey { key },
+                                });
+                            }
+                        }
                     }
                     if machinery_rank(t).is_some() {
                         mappable_block = block_above;
                     }
-                } else {
-                    let body = trim_ws(body);
-                    if !body.is_empty() && !body.contains(char::is_whitespace) {
-                        lints.push(Lint {
-                            line: lineno,
-                            kind: LintKind::UnknownInvocation,
-                        });
-                    }
+                } else if !trim_ws(body).is_empty() {
+                    lints.push(Lint {
+                        line: lineno,
+                        kind: LintKind::UnrecognizedComment,
+                    });
                 }
                 prev_blank = false;
                 prev_heading = false;
@@ -6517,7 +6521,7 @@ a
             "the block stays literal"
         );
         assert_eq!(1, deck.lints.len());
-        assert!(matches!(deck.lints[0].kind, LintKind::UnknownInvocation));
+        assert!(matches!(deck.lints[0].kind, LintKind::UnrecognizedComment));
         assert_eq!(2, deck.lints[0].line);
     }
 
@@ -6783,6 +6787,48 @@ a
         assert_eq!(Some(Input::Draw), deck.cards[0].input);
         assert_eq!(Some(Direction::Both), deck.cards[0].direction);
         assert_eq!(vec![unknown(7, "flavor")], deck.lints);
+    }
+
+    /// A deck's `<!-- -->` comments are alix vocabulary, not editorial prose,
+    /// so recognition is what decides the lint. Word count decided it before,
+    /// which split the unrecognized set arbitrarily.
+    #[test]
+    fn every_comment_is_recognized_machinery_or_lints_whatever_its_word_count() {
+        for (comment, recognized, why) in [
+            ("<!-- reveal: line -->", true, "a known directive key"),
+            ("<!-- direction: both -->", true, "another known key"),
+            ("<!-- at: src/x.rs:1-2 -->", true, "a locator"),
+            ("<!-- Transfer -->", false, "a one-word editorial label"),
+            (
+                "<!-- ## About Interfaces -->",
+                false,
+                "a commented-out heading, unrecognized and multi-word",
+            ),
+            (
+                "<!-- Generated 2026-06 from a working session -->",
+                false,
+                "a provenance note, which belongs in `source:` or `description:`",
+            ),
+            (
+                "<!-- % origin: /home/me/dev -->",
+                false,
+                "a key with whitespace is not a directive, so this is not machinery",
+            ),
+            (
+                "<!-- flavor: cherry -->",
+                false,
+                "a directive-shaped unknown key",
+            ),
+        ] {
+            let deck = parse(&format!("## q\n---\na\n{comment}\n"));
+            assert_eq!(
+                recognized,
+                deck.lints.is_empty(),
+                "{why}: {comment} should {} draw a lint, got {:?}",
+                if recognized { "not" } else { "" },
+                deck.lints
+            );
+        }
     }
 
     #[test]

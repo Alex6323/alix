@@ -664,9 +664,10 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::UnclosedComment => {
             "a `<!--` line that never closes with `-->` stays content".to_string()
         }
-        LintKind::UnknownInvocation => "this comment names no known invocation, so the block \
-             below it stays literal; known names: `choices-single`, `choices-multiple`, \
-             `cards`, `plain`"
+        LintKind::UnrecognizedComment => "a deck's `<!-- -->` is alix machinery, and this \
+             one is not recognized, so it is ignored; write a directive (`key: value`), a \
+             locator, or an invocation (`plain`, `cards`, `choices-single`, \
+             `choices-multiple`), and put prose in `description:` or a card"
             .to_string(),
         LintKind::BadgeShape { text } => format!(
             "`{text}` is not one of the five alert badges, so this blockquote is a quote \

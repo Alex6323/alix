@@ -378,6 +378,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- A deck's `<!-- -->` comments are alix machinery, and `alix doctor` now says
+  so uniformly. The finding used to depend on the comment's length: a one-word
+  comment that named no invocation was reported, while a longer one was
+  ignored, so `<!-- Transfer -->` was flagged and `<!-- ## About Interfaces -->`
+  passed unnoticed. Recognition decides it now. Anything that is not a
+  directive, a locator, an id, or an invocation is reported, and a
+  directive-shaped comment with an unknown key is reported before the first
+  card as well as inside one. Decks carrying commented-out outlines or prose
+  will report more than before; a deck's own prose belongs in `description:`
+  and its origin in `source:`.
 
 - `alix workspace update` no longer aborts the whole run when one member's
   proposal is unusable. The member is reported by name with its reason, its
