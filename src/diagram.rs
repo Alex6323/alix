@@ -1851,6 +1851,15 @@ mod tests {
     }
 
     #[test]
+    fn hex_color_expands_a_three_digit_color_and_rejects_any_other_shape() {
+        assert_eq!(Some((0xaa, 0xbb, 0xcc)), hex_color("#abc"));
+        assert_eq!(Some((0x12, 0x34, 0x56)), hex_color("#123456"));
+        for value in ["abc", "#ab", "#abcd", "#abcde", "#abcdefa", "#gg0000"] {
+            assert_eq!(None, hex_color(value), "{value} is not a color");
+        }
+    }
+
+    #[test]
     fn equal_luminances_have_a_contrast_ratio_of_one() {
         for luminance in [0.0, 0.5, 1.0] {
             assert_eq!(
