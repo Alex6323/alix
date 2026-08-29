@@ -3,11 +3,15 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MEDIA_DIR = REPO_ROOT / "site" / "img"
+CAPTURE = REPO_ROOT / "e2e" / "shots" / "capture.cjs"
+STEPS_TABLE = re.compile(r"const STEPS = \[(.*?)\];", re.S)
+STEP_ROW = re.compile(r"\[(\d+), shot\d+\]")
 MEDIA_BUDGET_BYTES = 3 * 1024 * 1024 // 2
 EXPECTED_SHOTS = {
     "shot-1-verify.webp",
@@ -23,6 +27,13 @@ EXPECTED_SHOTS = {
 }
 
 
+def capture_step_numbers() -> set[int]:
+    table = STEPS_TABLE.search(CAPTURE.read_text(encoding="utf-8"))
+    if table is None:
+        return set()
+    return {int(number) for number in STEP_ROW.findall(table.group(1))}
+
+
 def main() -> int:
     media = sorted(path for path in MEDIA_DIR.rglob("*") if path.is_file())
     shot_names = {path.name for path in media if path.name.startswith("shot-")}
@@ -30,7 +41,15 @@ def main() -> int:
     unexpected = sorted(shot_names - EXPECTED_SHOTS)
     total_bytes = sum(path.stat().st_size for path in media)
 
+    step_numbers = capture_step_numbers()
+    expected_numbers = {int(name.split("-")[1]) for name in EXPECTED_SHOTS}
+
     errors = []
+    if step_numbers != expected_numbers:
+        errors.append(
+            "the capture steps and the expected screenshots disagree: "
+            f"steps {sorted(step_numbers)}, expected {sorted(expected_numbers)}"
+        )
     if missing:
         errors.append(f"missing carousel screenshots: {', '.join(missing)}")
     if unexpected:
