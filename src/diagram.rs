@@ -269,6 +269,9 @@ fn fill_declaration(style: &str) -> Option<&str> {
 #[cfg(feature = "full")]
 fn hex_color(value: &str) -> Option<(u8, u8, u8)> {
     let hex = value.strip_prefix('#')?.as_bytes();
+    if !hex.iter().all(u8::is_ascii_hexdigit) {
+        return None;
+    }
     let expand = |part: &[u8]| u8::from_str_radix(std::str::from_utf8(part).ok()?, 16).ok();
     match hex.len() {
         3 => Some((
@@ -1851,10 +1854,28 @@ mod tests {
     }
 
     #[test]
-    fn hex_color_expands_a_three_digit_color_and_rejects_any_other_shape() {
+    fn hex_color_takes_three_or_six_hex_digits_and_nothing_else() {
         assert_eq!(Some((0xaa, 0xbb, 0xcc)), hex_color("#abc"));
+        assert_eq!(Some((0xaa, 0xbb, 0xcc)), hex_color("#ABC"));
         assert_eq!(Some((0x12, 0x34, 0x56)), hex_color("#123456"));
-        for value in ["abc", "#ab", "#abcd", "#abcde", "#abcdefa", "#gg0000"] {
+        for length in [3usize, 6] {
+            for position in 0..length {
+                for byte in 0..=127u8 {
+                    if byte.is_ascii_hexdigit() {
+                        continue;
+                    }
+                    let mut digits = vec![b'a'; length];
+                    digits[position] = byte;
+                    let value = format!("#{}", String::from_utf8(digits).unwrap());
+                    assert_eq!(
+                        None,
+                        hex_color(&value),
+                        "byte {byte:#04x} at position {position} of {length} is not a hex digit"
+                    );
+                }
+            }
+        }
+        for value in ["abc", "#", "#ab", "#abcd", "#abcde", "#abcdefa"] {
             assert_eq!(None, hex_color(value), "{value} is not a color");
         }
     }

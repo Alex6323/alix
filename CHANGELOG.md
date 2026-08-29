@@ -807,6 +807,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- A diagram theme's base fill is read as a colour only when it is one.
+  `hex_color` split the digits and handed each pair to `from_str_radix`,
+  which accepts a leading `+`, so `fill:#+1+2+3` parsed as the colour
+  `(1, 2, 3)` and picked a ground from it instead of being rejected. Every
+  byte after the `#` must now be an ASCII hex digit, so a malformed fill
+  fails with the message that says so.
+
 - A quoted option on an authored choice card keeps its own text. The choice
   builders ran the checked options through the answer-DISPLAY helpers, which
   exist for an answer that carries supporting blocks: `readable_answer_lines`
