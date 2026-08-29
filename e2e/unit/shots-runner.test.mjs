@@ -156,15 +156,18 @@ test("an unknown --only number alone makes the run exit nonzero", async () => {
 // The decision above is only worth anything if the capture actually uses it.
 // `main` needs a browser, so the wiring is guarded at the source, the same way
 // the tutor's renderer wiring is.
-test("the capture derives its exit code from the shared decision", async () => {
+test("both capture exits are set, and both through the shared decision", async () => {
   const source = await readFile(
     new URL("../shots/capture.cjs", import.meta.url),
     "utf8",
   );
-  assert.equal(
-    source.match(/process\.exitCode = exitCodeFor\(/g).length,
-    source.match(/process\.exitCode/g).length,
+  assert.match(source, /process\.exitCode = exitCodeFor\(\{ unknown \}\);/);
+  assert.match(
+    source,
+    /process\.exitCode = exitCodeFor\(\{ failed, demoChanged, kidsChanged \}\);/,
   );
+  assert.equal(source.match(/process\.exitCode/g).length, 2);
+  assert.equal(source.match(/process\.exitCode = exitCodeFor\(/g).length, 2);
 });
 
 // The receipt is only honest if it is written where the file lands, so the
