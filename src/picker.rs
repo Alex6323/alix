@@ -26,7 +26,7 @@ fn dir_candidates(
     }
     let mut cands: Vec<Candidate> = std::fs::read_dir(decks_dir)?
         .filter_map(|r| r.ok().map(|d| d.path()))
-        // Dot-prefixed entries are hidden: `alix generate`'s workspace
+        // Dot-prefixed entries are hidden: `alix workspace generate`'s
         // staging dir uses one and must not surface as a bogus workspace.
         .filter(|path| !file_name(path).starts_with('.'))
         .filter_map(|path| {

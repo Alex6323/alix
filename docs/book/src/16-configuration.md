@@ -150,7 +150,7 @@ you want to use and run its login command once.
 Each backend is granted **read-only tools only** (file reading; web fetch where
 the backend supports it). Codex runs under a network-blocking sandbox rather
 than a tool allowlist, so it can read local source files but can't fetch URLs:
-a URL-based exam or `alix generate` will refuse and tell you to use a local
+a URL-based exam or a `generate` subcommand will refuse and tell you to use a local
 file instead, or switch backends.
 
 Run `alix doctor --backends` to send a quick test request to the configured
@@ -174,7 +174,7 @@ settings:
   may override it, see [the tutor](10-tutor.md)), and `preflight_threshold`
   (warn and confirm before spending a large model call on a local source tree
   bigger than this many bytes; `0` proceeds silently).
-- **`[generate]`**: `alix generate deck`'s drafting: `model`, the absolute
+- **`[generate]`**: `alix deck generate`'s drafting: `model`, the absolute
   `timeout_secs` (3600), and `idle_timeout_secs` (300, or `0` to disable).
   The latter is a resetting inactivity limit for structured-event backends and
   a nonrenewing absolute fallback for unstructured backends. Other controls are
@@ -185,7 +185,7 @@ settings:
   hidden until the result passes validation.
 - **`[exam]`**: the AI exam: `model`, `timeout_secs` (300), `num_questions` (5),
   `pass_threshold` (1.0), `strictness` (`balanced`), `extra`.
-- **`[trace]`**: the `generate deck --trace` and `generate workspace` planning
+- **`[trace]`**: the `generate deck --trace` and `workspace generate` planning
   passes: `model` defaults to
   unset, which resolves to the backend's strong model where it defines one
   (Claude: `opus`), and `effort` defaults to `"high"` (the build is

@@ -1,14 +1,14 @@
 # 14 · Generate a workspace — goals & curricula
 
-[`alix generate deck --trace --plan`](13-trace-decks.md) lists central *traces*.
-**`alix generate workspace`** goes a layer up: give it a directory and a goal
+[`alix deck generate --trace --plan`](13-trace-decks.md) lists central *traces*.
+**`alix workspace generate`** goes a layer up: give it a directory and a goal
 and it explores the source first — one AI planning pass — and prints an ordered
 **learning plan**: the facts decks *and* traces worth authoring to reach that
 goal, dependency-ordered.
 
 ```sh
-alix generate workspace . --plan                                      # a plan to understand the whole source
-alix generate workspace . --plan --goal "how review scheduling works" # a narrow goal → a focused subset
+alix workspace generate . --plan                                      # a plan to understand the whole source
+alix workspace generate . --plan --goal "how review scheduling works" # a narrow goal → a focused subset
 ```
 
 Each item is tagged `[trace]` or `[deck]`, chosen by the **shape of the
@@ -18,20 +18,20 @@ a config's knobs, a store's on-disk format — becomes a facts deck. Each carrie
 first) and a `source:` scope. The `--goal` scopes coverage: a broad goal spans
 every subsystem; a narrow one collapses to its slice and traces it in more detail.
 `--plan` is read-only — it prints the plan and stops, so you can author the items
-yourself (`alix generate deck` [a trace](13-trace-decks.md) or
+yourself (`alix deck generate` [a trace](13-trace-decks.md) or
 [a facts deck](11-generating-decks.md) per item).
 
 ## Building the workspace
 
 ```sh
-alix generate workspace . --goal "how review scheduling works" --into ~/decks/scheduling/
-alix generate workspace . --source-url https://example.com/project --into ~/decks/project/
+alix workspace generate . --goal "how review scheduling works" --into ~/decks/scheduling/
+alix workspace generate . --source-url https://example.com/project --into ~/decks/project/
 ```
 
 Without `--plan`, you always get a workspace, whatever the plan's size: a
 one-item plan still writes the manifest, the assets, and that one deck, ready to
 grow. (For one deck from a directory taken whole, with no planning pass at all,
-run [`alix generate deck <dir>`](11-generating-decks.md).) A **workspace build**
+run [`alix deck generate <dir>`](11-generating-decks.md).) A **workspace build**
 goes like this: the plan prints, `alix` confirms
 (`Build N items into <dir>? [y/N]` — `-y` skips it), then goes all the way — it
 explores the source **once** and reuses that single session to fill every item —
@@ -71,7 +71,7 @@ assembles a dependency-ordered curriculum of facts and traces — gated by
 
 ## The explore walk — `--trace`
 
-Before you even know what to trace, `alix generate deck <source> --trace` builds a
+Before you even know what to trace, `alix deck generate <source> --trace` builds a
 short **tour of the source's shape**, written as a trace deck: you predict what
 kind of program it is (from the manifest), its domain nouns (from the module
 list), how it's driven (the entry point), its spine (the central file), and

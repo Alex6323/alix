@@ -59,7 +59,7 @@ clients (see `docs/API.md`):
 
 - **Add deck…**: one sheet, three ways in, all landing in a chosen
   destination (the library root or a workspace): **generate** a deck from a
-  URL (with optional guidance) the same way `alix generate deck` does, but URL
+  URL (with optional guidance) the same way `alix deck generate` does, but URL
   sources only, a local-file source stays CLI-only, since a LAN token holder
   must not be able to point the server's AI at the server's own filesystem;
   **import** an Anki `.tsv` or an alix `.md` file; or **receive**: paste a

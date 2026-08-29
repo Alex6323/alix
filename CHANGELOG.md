@@ -378,6 +378,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- Generation moved under the noun it produces: `alix generate deck` is now
+  `alix deck generate`, and `alix generate workspace` is now `alix workspace
+  generate`. The top-level `generate` command is gone. Every other command was
+  already `alix <noun> <verb>`, so this was the one that read backwards, and
+  `alix deck --help` now lists everything you can do to a deck instead of
+  hiding half of it under a separate top-level.
+
 - A deck's `<!-- -->` comments are alix machinery, and `alix doctor` now says
   so uniformly. The finding used to depend on the comment's length: a one-word
   comment that named no invocation was reported, while a longer one was

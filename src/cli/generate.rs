@@ -74,7 +74,7 @@ pub(crate) fn workspace_cmd(args: GenerateWorkspaceArgs) -> Result<()> {
     if !Path::new(&args.source).is_dir() {
         bail!(
             "a workspace is built from a directory of sources; for a single page or file run \
-             `alix generate deck {}`",
+             `alix deck generate {}`",
             args.source
         );
     }
@@ -487,7 +487,7 @@ fn trace_suggest(source: &str, yes: bool, config: &Config) -> Result<()> {
     println!("{menu}");
     println!(
         "\n{DIM}Paste a suggestion into a new deck's frontmatter (its `trace:` + \
-         `source:` keys), then build it:  alix generate deck <deck>{RESET}"
+         `source:` keys), then build it:  alix deck generate <deck>{RESET}"
     );
     Ok(())
 }

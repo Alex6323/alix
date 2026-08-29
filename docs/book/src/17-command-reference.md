@@ -92,8 +92,9 @@ the deck file. There's no separate command for it.
 
 ## The AI features
 
-**`alix generate`** is the AI-authoring verb, and its subcommand names what
-you get: `deck` always writes one deck, `workspace` always builds a workspace.
+AI authoring lives under the noun it produces, so the command names what you
+get: **`alix deck generate`** always writes one deck, **`alix workspace
+generate`** always builds a workspace.
 
 Both take the same steering options. `--source-url <URL>` records a public
 source (added to the deck or workspace `source:`) for later tutor and exam
@@ -106,7 +107,7 @@ is already there. Each subcommand takes `--into <dir>`, with the meaning its
 own result needs: for `deck` an existing workspace to write into, for
 `workspace` the folder to build.
 
-- **`alix generate deck <source>`** → one deck from a web page URL, a local
+- **`alix deck generate <source>`** → one deck from a web page URL, a local
   file, or a directory taken whole, with no planning pass
   ([facts decks](11-generating-decks.md); `-o/--output`, `--cards`,
   `--review`, `--print`; `--into <workspace>` writes it into that workspace's
@@ -115,13 +116,13 @@ own result needs: for `deck` an existing workspace to write into, for
     over the source (`-o/--output` defaults to `explore.md`).
     `--trace --plan` prints a ranked menu of suggested traces instead.
   - given an existing **`trace:` stub deck** → builds its checkpoints in place.
-- **`alix generate workspace <dir>`** → the directory is explored for an
+- **`alix workspace generate <dir>`** → the directory is explored for an
   [ordered learning plan](14-explore.md), which is confirmed and then built as
   a workspace, whatever its size (`--title`/`--icon` name and brand it;
   `--into <dir>` is the folder to build, created if absent, defaulting to one
   named after the source under the decks dir). `--plan` prints the plan and
   stops. A source that is not a directory is
-  refused, naming `generate deck` instead.
+  refused, naming `deck generate` instead.
 
 The rest of the AI-and-deck surface:
 
@@ -158,7 +159,7 @@ The rest of the AI-and-deck surface:
 - `alix workspace init <dir>`: scaffold an empty
   [workspace](08-workspaces.md): an `alix.toml` (`--title` names it), an
   `alix.local.toml` (personal pacing: deadline, retention), and an empty
-  `decks/` plus `assets/`. Grow it with `alix generate deck … --into <dir>` or
+  `decks/` plus `assets/`. Grow it with `alix deck generate … --into <dir>` or
   `alix deck import … --workspace <dir>`.
 - `alix workspace update <dir>`: reconcile frozen source-backed members with
   their recorded local sources. The first run stages an exact sibling

@@ -38,7 +38,8 @@ archive and SHA-256 record, and verifies the archive before extracting it.
 Pin a particular release with
 `curl -sSf https://alix.study/install.sh | ALIX_VERSION=v0.7.0 sh`.
 
-The core needs nothing else. The AI features (`generate`, `deck augment`, the
+The core needs nothing else. The AI features (the `generate` subcommands, `deck
+augment`, the
 exam, and the tutor) shell out to a model CLI you
 install and log in to yourself: [Claude Code](https://www.anthropic.com/claude-code)
 by default, or Gemini, Codex, or Copilot via `[ask] backend`. Each backend gets
@@ -50,8 +51,8 @@ read-only tools only, and `alix` stores no API keys. See
 
 ```sh
 # make decks and workspaces from your own material
-alix generate deck <url-or-file>       # -> one deck
-alix generate workspace <repo> --goal "how X works"   # -> a workspace
+alix deck generate <url-or-file>       # -> one deck
+alix workspace generate <repo> --goal "how X works"   # -> a workspace
 
 # then study, always in the web app (pick a deck or workspace, then a depth)
 alix
@@ -91,8 +92,8 @@ grading and card identity keep using the source text.
 |---|---|
 | `alix` | Open the web app to pick a deck or workspace |
 | `alix profile` | Define and launch a named instance per person (decks, port, kids/adult) |
-| `alix generate deck <source>` | Draft one deck from a page, a file, or a folder (`--trace` for a trace) |
-| `alix generate workspace <dir>` | Explore a folder for a learning plan and build a workspace |
+| `alix deck generate <source>` | Draft one deck from a page, a file, or a folder (`--trace` for a trace) |
+| `alix workspace generate <dir>` | Explore a folder for a learning plan and build a workspace |
 | `alix deck init <deck>` | Initialize a hand-written deck once (mints its stable ids) |
 | `alix deck augment <deck> --target …` | Add distractors, notes, or key points |
 | `alix deck copy\|move <deck> <workspace>` | Transfer one deck and its owned files between workspaces |

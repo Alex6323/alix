@@ -1186,7 +1186,7 @@ pub fn default_config_toml() -> &'static str {
 # a local source tree bigger than this many bytes (0 = always proceed silently).
 # preflight_threshold = 5000000
 
-# AI deck generation (`alix generate deck <source>`). Reuses the [ask] command,
+# AI deck generation (`alix deck generate <source>`). Reuses the [ask] command,
 # permission mode and tool allowlist (WebFetch reads the page).
 [generate]
 # model = ""                    # --model override; empty = use [ask] / CLI default
@@ -1214,7 +1214,7 @@ pub fn default_config_toml() -> &'static str {
 # retry_cooldown_secs = 3600    # wait this long before re-sitting a FAILED trace exam (0 = off)
 # extra = ""                    # extra guidance appended to question generation
 
-# Trace building (`alix generate deck <trace-stub>` / `--trace`). Explores the `source:`
+# Trace building (`alix deck generate <trace-stub>` / `--trace`). Explores the `source:`
 # to discover the path and writes the checkpoints back. Reuses the [ask] command,
 # but runs with read-only file tools (Read/Glob/Grep, + WebFetch for a URL
 # source) and the source root as the working directory — never a write/shell tool.

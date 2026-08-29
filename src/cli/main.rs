@@ -88,14 +88,6 @@ enum Command {
     /// optional external CLIs. Add `--backends` to also probe the configured
     /// AI backend end to end (one real, tiny request).
     Doctor(DoctorArgs),
-    /// Generate learning material with AI: say `deck` or `workspace`.
-    ///
-    /// `deck` turns one source into one deck: a web page, a file, or a
-    /// directory taken as a whole. `workspace` explores a directory for a
-    /// learning plan and builds a workspace from it. Which one you get is
-    /// what you asked for, never what the plan turned out to be.
-    #[command(subcommand)]
-    Generate(GenerateAction),
     /// Show progress statistics for a deck, a folder, or a workspace.
     ///
     /// The target is a path: a single deck file reports that deck; a folder
@@ -272,8 +264,14 @@ struct DoctorArgs {
 /// The `alix workspace` subcommands: create and grow workspaces.
 #[derive(Subcommand)]
 enum WorkspaceAction {
+    /// Explore a directory for a learning plan and build a workspace from it
+    /// with AI.
+    ///
+    /// You get a workspace, never a single deck, whatever the plan turns out
+    /// to be. Say `alix deck generate` for the other one.
+    Generate(GenerateWorkspaceArgs),
     /// Initialize an empty workspace: a folder with an `alix.toml` and an
-    /// `assets/` dir, no decks yet. Grow it with `alix generate deck … --into
+    /// `assets/` dir, no decks yet. Grow it with `alix deck generate … --into
     /// <dir>` or `alix deck import … --workspace <dir>`.
     Init(WorkspaceInitArgs),
     /// Reconcile frozen source-backed decks with their live sources. The first
@@ -353,23 +351,6 @@ struct ReceiveArgs {
     /// overwrite; move the old one aside first).
     #[arg(long)]
     force: bool,
-}
-
-#[derive(Subcommand)]
-enum GenerateAction {
-    /// Turn one source into one deck: a web page, a file, or a directory read
-    /// as a whole.
-    ///
-    /// `--trace` authors a predict-and-verify walk instead of facts cards, and
-    /// naming a deck that already declares `trace:` builds its checkpoints in
-    /// place.
-    Deck(GenerateDeckArgs),
-    /// Explore a directory for a learning plan and build a workspace from it.
-    ///
-    /// The plan is shown and confirmed before anything is built. A plan with a
-    /// single item still builds a workspace, so this command never hands back
-    /// a bare deck.
-    Workspace(GenerateWorkspaceArgs),
 }
 
 /// The options both kinds of generation take.
@@ -484,6 +465,12 @@ struct GenerateWorkspaceArgs {
 
 #[derive(Subcommand)]
 enum DeckAction {
+    /// Turn one source into one deck with AI: a web page, a file, or a
+    /// directory read as a whole.
+    ///
+    /// You get a deck, never a workspace, whatever the source turns out to
+    /// hold. Say `alix workspace generate` for the other one.
+    Generate(GenerateDeckArgs),
     /// Initialize a hand-authored Markdown file as an Alix deck.
     Init(DeckInitArgs),
     /// Copy a workspace deck and its shareable files into another workspace.
@@ -716,11 +703,8 @@ fn main() -> Result<()> {
         Some(Command::Stats(args)) => progress::stats(args),
         Some(Command::List(args)) => progress::list(args),
         Some(Command::Reset(args)) => progress::reset(args),
-        Some(Command::Generate(action)) => match action {
-            GenerateAction::Deck(args) => generate::deck_cmd(args),
-            GenerateAction::Workspace(args) => generate::workspace_cmd(args),
-        },
         Some(Command::Deck(action)) => match action {
+            DeckAction::Generate(args) => generate::deck_cmd(args),
             DeckAction::Init(args) => deck::init_cmd(args),
             DeckAction::Copy(args) => deck::copy_cmd(args),
             DeckAction::Move(args) => deck::move_cmd(args),
@@ -730,6 +714,7 @@ fn main() -> Result<()> {
             DeckAction::Restore(args) => deck::restore_cmd(args),
         },
         Some(Command::Workspace(action)) => match action {
+            WorkspaceAction::Generate(args) => generate::workspace_cmd(args),
             WorkspaceAction::Init(args) => deck::workspace_init_cmd(args),
             WorkspaceAction::Update(args) => deck::workspace_update_cmd(args),
             WorkspaceAction::Deadline(args) => deck::workspace_deadline_cmd(args),
