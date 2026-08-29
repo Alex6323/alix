@@ -314,6 +314,17 @@ safe or accurate.
   testing remain open.
 - Provider sandboxes and tool flags differ, and Alix cannot independently prove
   that a provider CLI honored them.
+- Authored text is rendered without filtering the Unicode bidirectional
+  formatting characters. An unterminated `U+202E` in a card answer reverses
+  the rendering of the text after it, across line boundaries, so the learner
+  reads one thing while the grader compares against the logical text. Measured
+  in Chromium against a served deck. Any deck reaching a reader is in scope,
+  including a received or shared workspace and generated output.
+- Characters that carry no visible advance are accepted in card content. A
+  form feed, a vertical tab, a lone carriage return, or a zero-width
+  formatting character makes a card that cannot be answered by typing what is
+  on screen. This is a correctness gap rather than a disclosure one, but it
+  shares the untrusted-rendering boundary with the entry above.
 - Exact direct toolchain and Action pins now reduce release drift, but runner
   images and transitive build inputs are not hermetic. Release signing,
   checksums, SBOMs, and provenance are not yet complete across every
