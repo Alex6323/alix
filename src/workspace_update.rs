@@ -148,46 +148,73 @@ pub fn stage(
 }
 
 /// A backend reply reaches a terminal and `.alix-update-error.txt`, so a
-/// control byte in it would be an escape sequence rather than text. Cutting
-/// mid-escape would leave a dangling backslash, so the cut lands on a
-/// rendered-token boundary.
+/// control byte in it would be an escape sequence rather than text.
+enum Rendered {
+    Literal(char),
+    DoubledBackslash,
+    Escaped(char),
+}
+
+impl Rendered {
+    fn of(ch: char) -> Self {
+        if ch == '\\' {
+            Rendered::DoubledBackslash
+        } else if ch.is_control() {
+            Rendered::Escaped(ch)
+        } else {
+            Rendered::Literal(ch)
+        }
+    }
+
+    fn width(&self) -> usize {
+        match self {
+            Rendered::Literal(_) => 1,
+            Rendered::DoubledBackslash => 2,
+            Rendered::Escaped(ch) => ch.escape_debug().count(),
+        }
+    }
+
+    fn append_to(&self, out: &mut String) {
+        match self {
+            Rendered::Literal(ch) => out.push(*ch),
+            Rendered::DoubledBackslash => out.push_str("\\\\"),
+            Rendered::Escaped(ch) => out.extend(ch.escape_debug()),
+        }
+    }
+}
+
 fn reply_excerpt(reply: &str) -> String {
     const LIMIT: usize = 160;
-    let mut tokens: Vec<String> = Vec::new();
-    for (index, word) in reply.split_whitespace().enumerate() {
-        if index > 0 {
-            tokens.push(" ".to_string());
-        }
-        for ch in word.chars() {
-            tokens.push(if ch == '\\' {
-                "\\\\".to_string()
-            } else if ch.is_control() {
-                ch.escape_debug().to_string()
-            } else {
-                ch.to_string()
-            });
-        }
-    }
-    if tokens
-        .iter()
-        .map(|token| token.chars().count())
-        .sum::<usize>()
-        <= LIMIT
-    {
-        return tokens.concat();
-    }
-    let mut kept = String::new();
+    let tokens = reply
+        .split_whitespace()
+        .enumerate()
+        .flat_map(|(index, word)| {
+            (index > 0)
+                .then_some(Rendered::Literal(' '))
+                .into_iter()
+                .chain(word.chars().map(Rendered::of))
+        });
+    let mut out = String::new();
     let mut width = 0;
-    for token in &tokens {
-        let token_width = token.chars().count();
-        if width + token_width > LIMIT - 1 {
+    let mut boundary = 0;
+    let mut cut = false;
+    for token in tokens {
+        let token_width = token.width();
+        if width + token_width > LIMIT {
+            cut = true;
             break;
         }
-        kept.push_str(token);
+        token.append_to(&mut out);
         width += token_width;
+        if width < LIMIT {
+            boundary = out.len();
+        }
     }
-    kept.push('\u{2026}');
-    kept
+    if cut {
+        out.truncate(boundary);
+        out.push('\u{2026}');
+    }
+    out
 }
 
 fn stage_members(
@@ -1340,6 +1367,23 @@ mod tests {
             reply_excerpt(&exact),
             "a reply exactly at the cap is not marked as cut"
         );
+    }
+
+    #[test]
+    fn nothing_past_the_cap_can_reach_the_excerpt() {
+        let base = "y".repeat(400);
+        let excerpt = reply_excerpt(&base);
+        for (tail, why) in [
+            ("z".to_string(), "one more character"),
+            ("z".repeat(100_000), "a hundred thousand more"),
+            ("\u{1b}[2J".to_string(), "a terminal escape at the end"),
+        ] {
+            assert_eq!(
+                excerpt,
+                reply_excerpt(&format!("{base}{tail}")),
+                "{why} changed an excerpt already past the cap"
+            );
+        }
     }
 
     #[test]
