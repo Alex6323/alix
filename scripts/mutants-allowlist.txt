@@ -3,7 +3,7 @@
 # miss matches an entry here. Entries document argued residuals; the
 # mutants still run every sweep, so red means NEW information.
 #
-# Current contents: SIX argued groups, down from twenty-four. Alex ruled
+# Current contents: SEVEN argued groups, down from twenty-four. Alex ruled
 # 2026-08-06 that the only admissible reason is "it really cannot be
 # tested", so everything merely awkward was seamed and killed instead:
 # the uuid mixer became a pure function of its seed (11 killed), the
@@ -106,3 +106,13 @@ src/parser/sidecar.rs:39: replace + with * in without_notes
 # `id` 21; under `* 2` id becomes 38, and no key can rank inside (21, 38),
 # so every pairwise comparison is unchanged for every input.
 src/parser/frontmatter.rs:368: replace + with * in key_rank
+
+# EQUIVALENT, provably. `ground` reaches this comparison only through
+# `hex_color`, so `ink` is always the luminance of an 8-bit RGB triple.
+# Enumerating all 16,777,216 of them against the shipped `relative_luminance`
+# and `contrast` yields zero exact ties; the closest is `#6c907a`, whose two
+# ratios differ by 0.00000021507230041351. `>` and `>=` therefore select the
+# same ground for every input the function can receive. Were a tie reachable,
+# both grounds would by definition contrast identically, so the tie-break
+# carries no legibility meaning worth pinning either.
+src/diagram.rs: replace > with >= in ground
