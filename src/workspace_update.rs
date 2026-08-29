@@ -190,7 +190,10 @@ pub fn stage(
 /// Every cheap, deterministic member precondition is decided before the first
 /// backend call, so an unfrozen deck cannot cost a proposal for every other
 /// member first.
-fn eligible_members(root: &Path, workspace: &Workspace) -> Result<(Vec<Deck>, Vec<PathBuf>)> {
+fn eligible_members(
+    root: &Path,
+    workspace: &Workspace,
+) -> Result<(Vec<EligibleMember>, Vec<PathBuf>)> {
     let mut eligible = Vec::new();
     let mut live_only = Vec::new();
     for path in &workspace.members {
@@ -208,9 +211,41 @@ fn eligible_members(root: &Path, workspace: &Workspace) -> Result<(Vec<Deck>, Ve
                 path.display()
             );
         }
-        eligible.push(deck);
+        let pointer = reconcile_pointer(&deck)?;
+        eligible.push(EligibleMember {
+            live_source: live_source_expression(&pointer, root)?,
+            relative: relative_member(path, root)?,
+            deck,
+        });
     }
     Ok((eligible, live_only))
+}
+
+struct EligibleMember {
+    deck: Deck,
+    relative: PathBuf,
+    live_source: String,
+}
+
+/// Everything a proposal is judged against is read from the authoritative
+/// workspace, so losing any of it is the workspace failing, not the member's
+/// proposal failing, and it is taken before the recording catch.
+struct MemberBaseline {
+    live_deck: String,
+    baseline: String,
+    augment_baseline: Option<String>,
+}
+
+impl MemberBaseline {
+    fn take(root: &Path, member: &EligibleMember) -> Result<Self> {
+        Ok(MemberBaseline {
+            baseline: digest_file(&member.deck.path)?,
+            augment_baseline: digest_optional(
+                &WorkspaceFiles::new(root).augment_for(deck_id(&member.deck)),
+            )?,
+            live_deck: live_proposal_text(&member.deck, &member.live_source)?,
+        })
+    }
 }
 
 /// A backend reply reaches a terminal and `.alix-update-error.txt`, so a
@@ -287,7 +322,7 @@ fn stage_members(
     root: &Path,
     staging: &Path,
     workspace: &Workspace,
-    eligible: Vec<Deck>,
+    eligible: Vec<EligibleMember>,
     live_only: Vec<PathBuf>,
     generate: &GenerateDeckConfig,
     ask: &AskConfig,
@@ -296,10 +331,10 @@ fn stage_members(
     let mut reports = Vec::new();
     let mut failures: Vec<FailedDeck> = Vec::new();
 
-    for deck in &eligible {
-        let relative = relative_member(&deck.path, root)?;
-        let snapshot = MemberSnapshot::take(staging, &relative, deck_id(deck))?;
-        match stage_member(root, staging, workspace, deck, &relative, generate, ask) {
+    for member in &eligible {
+        let against = MemberBaseline::take(root, member)?;
+        let snapshot = MemberSnapshot::take(staging, &member.relative, deck_id(&member.deck))?;
+        match stage_member(staging, workspace, member, against, generate, ask) {
             Ok((staged, report)) => {
                 staged_decks.push(staged);
                 reports.push(report);
@@ -307,7 +342,7 @@ fn stage_members(
             Err(error) => {
                 snapshot.restore()?;
                 failures.push(FailedDeck {
-                    path: path_string(&relative)?,
+                    path: path_string(&member.relative)?,
                     reason: format!("{error:#}"),
                 });
             }
@@ -445,23 +480,26 @@ fn directory_names(path: &Path) -> Result<BTreeSet<OsString>> {
 }
 
 fn stage_member(
-    root: &Path,
     staging: &Path,
     workspace: &Workspace,
-    deck: &Deck,
-    relative: &Path,
+    member: &EligibleMember,
+    against: MemberBaseline,
     generate: &GenerateDeckConfig,
     ask: &AskConfig,
 ) -> Result<(StagedDeck, DeckUpdateReport)> {
-    let pointer = reconcile_pointer(deck)?;
-    let live_source = live_source_expression(&pointer, root)?;
+    let EligibleMember {
+        deck,
+        relative,
+        live_source,
+    } = member;
+    let MemberBaseline {
+        live_deck,
+        baseline,
+        augment_baseline,
+    } = against;
     let staged_path = staging.join(relative);
-    let baseline = digest_file(&deck.path)?;
-    let augment_path = WorkspaceFiles::new(root).augment_for(deck_id(deck));
-    let augment_baseline = digest_optional(&augment_path)?;
 
-    let live_deck = live_proposal_text(deck, &live_source)?;
-    let proposed = reconcile(&live_deck, &live_source, generate, ask)?;
+    let proposed = reconcile(&live_deck, live_source, generate, ask)?;
     fs::write(&staged_path, proposed.as_bytes())
         .with_context(|| format!("cannot write {}", staged_path.display()))?;
 
@@ -478,7 +516,7 @@ fn stage_member(
             )),
         },
     )?;
-    validate_proposal_metadata(deck, &candidate, &live_source)?;
+    validate_proposal_metadata(deck, &candidate, live_source)?;
     let identity = validate_unstamped_proposal(deck, &candidate)?;
 
     let initialized = assets::initialize(&staged_path)
@@ -1733,6 +1771,107 @@ mod tests {
             fs::read(root.join("decks/other.md")).unwrap(),
             fs::read(report.staging.join("decks/other.md")).unwrap(),
             "the run only reaches Ok because the staged copy came back before every member is loaded again"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_authoritative_member_disappearing_after_discovery_is_fatal() {
+        let _lock = exec_lock();
+        let (_dir, root, source, _) = workspace("Old answer\n");
+        let victim = add_member(&root, &source, "other.md", "deck-deck2", "card-othercard");
+        let good = root.join("good-proposal");
+        fs::write(
+            &good,
+            proposal(
+                &source,
+                "## New question\nNew answer\n<!-- at: code.rs:1 -->\n",
+            ),
+        )
+        .unwrap();
+        let command = fake_cli(
+            &root,
+            &format!(
+                "prompt=$(cat); case \"$prompt\" in *deck-deck1*) rm -f {} ;; esac; cat {}",
+                victim.display(),
+                good.display()
+            ),
+        );
+
+        let error = stage(&root, &GenerateDeckConfig::default(), &ask_config(&command))
+            .expect_err("losing an original member is the workspace failing, not a proposal");
+
+        assert!(
+            format!("{error:#}").contains("other.md"),
+            "the lost member must be named: {error:#}"
+        );
+    }
+
+    #[test]
+    fn a_snapshot_restores_all_three_of_a_member_s_staged_surfaces() {
+        let directory = tempfile::tempdir().unwrap();
+        let staging = directory.path().join("staging");
+        let files = WorkspaceFiles::new(&staging);
+        let deck = staging.join(workspace::DECKS).join("facts.md");
+        let augment = files.augment_for("deck-deck1");
+        let assets = files.assets_for("deck-deck1");
+        for parent in [deck.parent().unwrap(), augment.parent().unwrap(), &assets] {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(&deck, "original deck\n").unwrap();
+        fs::write(&augment, "{\"original\":true}\n").unwrap();
+        fs::write(assets.join("sha256-kept.rs"), "kept\n").unwrap();
+
+        let snapshot =
+            MemberSnapshot::take(&staging, Path::new("decks/facts.md"), "deck-deck1").unwrap();
+        fs::write(&deck, "the rejected proposal\n").unwrap();
+        fs::write(&augment, "{\"pruned\":true}\n").unwrap();
+        fs::write(assets.join("sha256-orphan.rs"), "orphan\n").unwrap();
+
+        snapshot.restore().unwrap();
+
+        assert_eq!("original deck\n", fs::read_to_string(&deck).unwrap());
+        assert_eq!(
+            "{\"original\":true}\n",
+            fs::read_to_string(&augment).unwrap()
+        );
+        assert_eq!(
+            vec![OsString::from("sha256-kept.rs")],
+            directory_names(&assets)
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            "an object written while the proposal was being frozen must not survive it"
+        );
+    }
+
+    #[test]
+    fn a_snapshot_removes_surfaces_that_did_not_exist_before_the_member_ran() {
+        let directory = tempfile::tempdir().unwrap();
+        let staging = directory.path().join("staging");
+        let files = WorkspaceFiles::new(&staging);
+        let deck = staging.join(workspace::DECKS).join("facts.md");
+        fs::create_dir_all(deck.parent().unwrap()).unwrap();
+        fs::write(&deck, "original deck\n").unwrap();
+
+        let snapshot =
+            MemberSnapshot::take(&staging, Path::new("decks/facts.md"), "deck-deck1").unwrap();
+        let augment = files.augment_for("deck-deck1");
+        let assets = files.assets_for("deck-deck1");
+        fs::create_dir_all(augment.parent().unwrap()).unwrap();
+        fs::create_dir_all(&assets).unwrap();
+        fs::write(&augment, "{\"new\":true}\n").unwrap();
+        fs::write(assets.join("sha256-orphan.rs"), "orphan\n").unwrap();
+
+        snapshot.restore().unwrap();
+
+        assert!(
+            !augment.exists(),
+            "a sidecar the member created must go with it"
+        );
+        assert!(
+            !assets.exists(),
+            "so must the directory it created for its objects"
         );
     }
 
