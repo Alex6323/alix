@@ -148,29 +148,46 @@ pub fn stage(
 }
 
 /// A backend reply reaches a terminal and `.alix-update-error.txt`, so a
-/// control byte in it would be an escape sequence rather than text.
+/// control byte in it would be an escape sequence rather than text. Cutting
+/// mid-escape would leave a dangling backslash, so the cut lands on a
+/// rendered-token boundary.
 fn reply_excerpt(reply: &str) -> String {
     const LIMIT: usize = 160;
-    let mut rendered = String::new();
-    for word in reply.split_whitespace() {
-        if !rendered.is_empty() {
-            rendered.push(' ');
+    let mut tokens: Vec<String> = Vec::new();
+    for (index, word) in reply.split_whitespace().enumerate() {
+        if index > 0 {
+            tokens.push(" ".to_string());
         }
         for ch in word.chars() {
-            if ch == '\\' {
-                rendered.push_str("\\\\");
+            tokens.push(if ch == '\\' {
+                "\\\\".to_string()
             } else if ch.is_control() {
-                rendered.extend(ch.escape_debug());
+                ch.escape_debug().to_string()
             } else {
-                rendered.push(ch);
-            }
+                ch.to_string()
+            });
         }
     }
-    if rendered.chars().count() <= LIMIT {
-        return rendered;
+    if tokens
+        .iter()
+        .map(|token| token.chars().count())
+        .sum::<usize>()
+        <= LIMIT
+    {
+        return tokens.concat();
     }
-    let kept: String = rendered.chars().take(LIMIT - 1).collect();
-    format!("{kept}\u{2026}")
+    let mut kept = String::new();
+    let mut width = 0;
+    for token in &tokens {
+        let token_width = token.chars().count();
+        if width + token_width > LIMIT - 1 {
+            break;
+        }
+        kept.push_str(token);
+        width += token_width;
+    }
+    kept.push('\u{2026}');
+    kept
 }
 
 fn stage_members(
@@ -1323,6 +1340,40 @@ mod tests {
             reply_excerpt(&exact),
             "a reply exactly at the cap is not marked as cut"
         );
+    }
+
+    #[test]
+    fn a_cut_keeps_whole_tokens_at_every_interior_position() {
+        const KEEP: usize = 159;
+        for (ch, rendered, why) in [
+            ('\u{1b}', "\\u{1b}", "an escaped escape"),
+            ('\u{0}', "\\0", "an escaped nul"),
+            ('\\', "\\\\", "a doubled backslash"),
+        ] {
+            let width = rendered.chars().count();
+            for prefix in (KEEP - width)..=(KEEP + 2) {
+                for trailing in [0usize, 40] {
+                    let reply = format!("{}{ch}{}", "x".repeat(prefix), "z".repeat(trailing));
+                    let expected = if prefix + width + trailing <= KEEP + 1 {
+                        format!("{}{rendered}{}", "x".repeat(prefix), "z".repeat(trailing))
+                    } else if prefix >= KEEP || prefix + width > KEEP {
+                        format!("{}\u{2026}", "x".repeat(prefix.min(KEEP)))
+                    } else {
+                        let kept = trailing.min(KEEP - prefix - width);
+                        format!(
+                            "{}{rendered}{}\u{2026}",
+                            "x".repeat(prefix),
+                            "z".repeat(kept)
+                        )
+                    };
+                    assert_eq!(
+                        expected,
+                        reply_excerpt(&reply),
+                        "{why}: {prefix} before it, {trailing} after it"
+                    );
+                }
+            }
+        }
     }
 
     #[cfg(unix)]
