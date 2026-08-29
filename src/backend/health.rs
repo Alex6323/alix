@@ -74,12 +74,58 @@ fn check_all(cfg: &AskConfig) -> Result<()> {
 // ask::run already maps the failure to a user-facing message, so don't
 // reformat it here.
 fn probe(cfg: &AskConfig) -> Result<String> {
-    let probe_cfg = AskConfig {
+    ask::run(&probe_config(cfg), "Reply with exactly: OK", &[])
+}
+
+fn probe_config(cfg: &AskConfig) -> AskConfig {
+    AskConfig {
         // No tools: pure reasoning works across every backend's capabilities
         // and completes quickly.
         allowed_tools: vec![],
         timeout_secs: cfg.timeout_secs.min(15),
         ..cfg.clone()
-    };
-    ask::run(&probe_cfg, "Reply with exactly: OK", &[])
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::testutil::{ask_config, exec_lock, fake_cli};
+
+    #[test]
+    fn the_probe_run_is_the_parent_with_no_tools_and_a_fifteen_second_ceiling() {
+        for (parent_timeout, expected_timeout) in [(9, 9), (30, 15)] {
+            let parent = AskConfig {
+                allowed_tools: vec!["ParentTool".to_string()],
+                timeout_secs: parent_timeout,
+                cwd: Some(PathBuf::from("/parent")),
+                source_access: true,
+                model: Some("parent-model".to_string()),
+                ..AskConfig::default()
+            };
+            let expected = AskConfig {
+                allowed_tools: Vec::new(),
+                timeout_secs: expected_timeout,
+                ..parent.clone()
+            };
+
+            assert_eq!(expected, probe_config(&parent));
+        }
+    }
+
+    #[test]
+    fn the_probe_process_observes_the_parent_working_directory() {
+        let _lock = exec_lock();
+        let cwd = tempfile::tempdir().unwrap();
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = fake_cli(cli_dir.path(), "cat >/dev/null; pwd");
+        let cfg = AskConfig {
+            cwd: Some(cwd.path().to_path_buf()),
+            ..ask_config(&cli)
+        };
+
+        assert_eq!(cwd.path().to_string_lossy(), probe(&cfg).unwrap().trim());
+    }
 }
