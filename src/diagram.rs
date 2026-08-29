@@ -1846,12 +1846,14 @@ mod tests {
 
     #[test]
     fn a_diagram_exactly_at_the_per_side_cap_is_rasterized_not_refused() {
-        let svg = format!(
-            r##"<svg xmlns="http://www.w3.org/2000/svg" width="{SIDE_CAP}" height="1"><style>#d1{{fill:#333;}}</style><rect width="{SIDE_CAP}" height="1" fill="#ff0000"/></svg>"##
-        );
-        let pixmap = raster(&svg, "any", 1.0).unwrap();
-        assert_eq!(SIDE_CAP, pixmap.width(), "the cap itself is a legal side");
-        assert_eq!(1, pixmap.height());
+        for (width, height) in [(SIDE_CAP, 1), (1, SIDE_CAP)] {
+            let svg = format!(
+                r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"><style>#d1{{fill:#333;}}</style><rect width="{width}" height="{height}" fill="#ff0000"/></svg>"##
+            );
+            let pixmap = raster(&svg, "any", 1.0).unwrap();
+            assert_eq!(width, pixmap.width(), "{width}x{height} is a legal size");
+            assert_eq!(height, pixmap.height(), "{width}x{height} is a legal size");
+        }
     }
 
     /// Frozen rasters sit on an opaque ground: a transparent PNG would
