@@ -26,7 +26,12 @@ const { execFileSync, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
-const { runRequested, summarize, exitCodeFor } = require("./runner.cjs");
+const {
+  runRequested,
+  summarize,
+  unreceipted,
+  exitCodeFor,
+} = require("./runner.cjs");
 
 const REPO_ROOT = path.join(__dirname, "..", "..");
 const SHOTS_DIR = __dirname;
@@ -357,6 +362,8 @@ async function settleAnimations(page) {
 // rather than left to each shot function to remember. A screen mismatch
 // throws — never writes a WebP of the wrong screen; the caller's try/catch
 // turns that into an honest SKIP in the summary.
+const capturedThisRun = new Set();
+
 async function shot(page, filename, ready) {
   if (path.extname(filename) !== ".webp") {
     throw new Error(`screenshot output must be .webp: ${filename}`);
@@ -376,6 +383,7 @@ async function shot(page, filename, ready) {
     await page.screenshot({ path: png, type: "png" });
     execFileSync("cwebp", ["-quiet", "-lossless", "-z", "9", png, "-o", webp]);
     fs.renameSync(webp, out);
+    capturedThisRun.add(filename);
   } finally {
     fs.rmSync(png, { force: true });
     fs.rmSync(webp, { force: true });
@@ -1027,6 +1035,10 @@ async function main() {
   log("=== summary ===");
   const { lines, failed } = summarize(results);
   for (const line of lines) log(line);
+  const reported = Object.entries(results)
+    .filter(([, ok]) => ok)
+    .map(([n]) => Number(n));
+  const unwritten = unreceipted(reported, capturedThisRun);
   log("~/alix-demo files changed:", demoChanged.length ? demoChanged : "none");
   log("~/alix-kids files changed:", kidsChanged.length ? kidsChanged : "none");
   if (demoChanged.length || kidsChanged.length) {
@@ -1035,7 +1047,10 @@ async function main() {
   if (failed.length) {
     console.error(`[shots] requested shots that did not capture: ${failed.join(", ")}`);
   }
-  process.exitCode = exitCodeFor({ failed, demoChanged, kidsChanged });
+  if (unwritten.length) {
+    console.error(`[shots] shots that reported captured but wrote no file this run: ${unwritten.join(", ")}`);
+  }
+  process.exitCode = exitCodeFor({ failed, demoChanged, kidsChanged, unwritten });
 }
 
 if (require.main === module) {

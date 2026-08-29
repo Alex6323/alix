@@ -30,12 +30,28 @@ function summarize(results) {
   return { lines, failed };
 }
 
-// The run's whole exit decision, in one place so it can be pinned: a failed
-// requested shot and a mutation of the real demo or kids stores are
-// independent reasons to fail.
-function exitCodeFor({ failed, demoChanged, kidsChanged }) {
-  const any = (list) => Array.isArray(list) && list.length > 0;
-  return any(failed) || any(demoChanged) || any(kidsChanged) ? 1 : 0;
+// A shot is proven captured only by a file THIS run wrote, so a WebP left on
+// disk by an earlier run cannot stand in for one that was never taken. Each
+// shotN writes exactly one `shot-N-*.webp`, so the receipt is matched by
+// leading number rather than by a filename list that would go stale against
+// the capture.
+function unreceipted(shots, capturedFilenames) {
+  const wrote = new Set();
+  for (const name of capturedFilenames) {
+    const match = /^shot-(\d+)-.*\.webp$/.exec(name);
+    if (match) wrote.add(Number(match[1]));
+  }
+  return shots.filter((n) => !wrote.has(n));
 }
 
-module.exports = { runRequested, summarize, exitCodeFor };
+// The run's whole exit decision, in one place so it can be pinned: a failed
+// requested shot, a shot that reported success without writing its file, and a
+// mutation of the real demo or kids stores are independent reasons to fail.
+function exitCodeFor({ failed, demoChanged, kidsChanged, unwritten }) {
+  const any = (list) => Array.isArray(list) && list.length > 0;
+  return any(failed) || any(demoChanged) || any(kidsChanged) || any(unwritten)
+    ? 1
+    : 0;
+}
+
+module.exports = { runRequested, summarize, unreceipted, exitCodeFor };
