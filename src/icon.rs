@@ -154,7 +154,7 @@ fn remove_blocks(s: &str, tag: &str) -> String {
     let close = format!("</{tag}>");
     let mut out = String::new();
     let mut i = 0;
-    while i < s.len() {
+    loop {
         if lower[i..].starts_with(&open) {
             match lower[i..].find(&close) {
                 Some(rel) => {
@@ -299,11 +299,52 @@ mod tests {
     }
 
     #[test]
+    fn member_topics_are_each_loaded_decks_trace_or_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("decks")).unwrap();
+        let traced = dir.path().join("decks/a.md");
+        let plain = dir.path().join("decks/b.md");
+        std::fs::write(
+            &traced,
+            "---\ntrace: how bytes cross the wire\n---\n## q\na\n",
+        )
+        .unwrap();
+        std::fs::write(&plain, "## q\nb\n").unwrap();
+        let ws = Workspace {
+            path: dir.path().to_path_buf(),
+            title: None,
+            description: None,
+            settings: Default::default(),
+            source: Vec::new(),
+            members: vec![traced, plain],
+            icon: None,
+        };
+
+        assert_eq!(
+            vec!["how bytes cross the wire".to_string(), "b.md".to_string()],
+            member_topics(&ws)
+        );
+    }
+
+    #[test]
     fn build_prompt_carries_the_user_steer_only_when_given() {
         let steered = build_prompt("Rust", "", &[], Some(" a compass rose "));
         assert!(steered.contains("Style guidance from the user: a compass rose."));
         let plain = build_prompt("Rust", "", &[], None);
         assert!(!plain.contains("Style guidance"));
+    }
+
+    #[test]
+    fn stripped_attributes_end_at_their_values_without_consuming_neighbors() {
+        for (input, expected) in [
+            (
+                r#"<svg onload=   "steal()" viewBox="0 0 24 24">"#,
+                r#"<svg viewBox="0 0 24 24">"#,
+            ),
+            ("<svg onload=   ", "<svg"),
+        ] {
+            assert_eq!(expected, strip_attrs(input), "input: {input:?}");
+        }
     }
 
     #[test]
