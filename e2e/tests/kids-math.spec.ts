@@ -329,9 +329,11 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
   })).toBeTruthy();
   await expect(page.locator(".surface-front .math-standalone")).toHaveCount(0);
 
-  await expect(page.locator(".surface-context-bare .math-display")).toBeVisible();
+  await expect(page.locator(".surface-context-bare svg")).toBeVisible();
+  await expect(page.locator(".surface-context-bare .math-error")).toHaveCount(0);
   await expect(page.locator(".surface-context-bare")).not.toContainText("$$");
-  await expect(page.locator(".surface-context-fence .math-display")).toBeVisible();
+  await expect(page.locator(".surface-context-fence svg")).toBeVisible();
+  await expect(page.locator(".surface-context-fence .math-error")).toHaveCount(0);
   await expect(page.locator(".surface-context-fence")).not.toContainText("```math");
   await expect(page.locator(".surface-context-unclosed")).toContainText("$$");
 

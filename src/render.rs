@@ -228,9 +228,7 @@ pub(crate) fn card_block_flags(
 }
 
 /// The answer lines a check may grade: the learner's own claims, with
-/// supporting blocks dropped. One place decides, so the typed target,
-/// the Explain checklist, and a trace's points can never disagree about
-/// what one block is.
+/// supporting blocks dropped.
 pub(crate) fn gradeable_answer_lines(
     card: &crate::card::Card,
     space: crate::card::AnswerSpace,

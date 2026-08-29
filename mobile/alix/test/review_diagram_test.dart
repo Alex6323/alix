@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:alix_mobile/review/masked_image.dart';
 import 'package:alix_mobile/review/review_card.dart';
@@ -12,7 +13,8 @@ import 'package:alix_mobile/theme.dart';
 
 void main() {
   testWidgets(
-    'context blocks render paired bare math and keep unmatched openers literal',
+    'ReviewCardView renders supplied context math units for paired blocks '
+    'and keeps unmatched openers literal',
     (tester) async {
       final attempt = TextEditingController();
       addTearDown(attempt.dispose);
@@ -124,6 +126,12 @@ void main() {
       ]) {
         await tester.pumpWidget(app(card(lines, [unit])));
         expect(find.bySemanticsLabel('x^2'), findsOneWidget, reason: '$lines');
+        expect(find.byType(SvgPicture), findsOneWidget, reason: '$lines');
+        expect(
+          find.textContaining('math could not render', findRichText: true),
+          findsNothing,
+          reason: '$lines',
+        );
         expect(find.textContaining('\$\$'), findsNothing, reason: '$lines');
         expect(find.textContaining('```'), findsNothing, reason: '$lines');
       }
