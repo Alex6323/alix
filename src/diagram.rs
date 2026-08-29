@@ -1914,6 +1914,11 @@ mod tests {
             let pixmap = raster(&svg, "any", 1.0).unwrap();
             assert_eq!(width, pixmap.width(), "{width}x{height} is a legal size");
             assert_eq!(height, pixmap.height(), "{width}x{height} is a legal size");
+            assert_eq!(
+                (0xff, 0, 0, 255),
+                pixel(&pixmap, 0, 0),
+                "{width}x{height} must carry the rendered rectangle, not a blank canvas"
+            );
         }
     }
 
