@@ -1370,6 +1370,29 @@ mod tests {
     }
 
     #[test]
+    fn a_separator_is_kept_or_dropped_whole_at_the_cap() {
+        for (reply, expected, why) in [
+            (
+                format!("{} z", "x".repeat(158)),
+                format!("{} z", "x".repeat(158)),
+                "exactly at the cap, so nothing is marked",
+            ),
+            (
+                format!("{} z", "x".repeat(159)),
+                format!("{}\u{2026}", "x".repeat(159)),
+                "the separator does not fit, so what follows it cannot either",
+            ),
+            (
+                format!("{} yz", "x".repeat(158)),
+                format!("{} \u{2026}", "x".repeat(158)),
+                "the separator fits as the last whole token",
+            ),
+        ] {
+            assert_eq!(expected, reply_excerpt(&reply), "{why}");
+        }
+    }
+
+    #[test]
     fn nothing_past_the_cap_can_reach_the_excerpt() {
         let base = "y".repeat(400);
         let excerpt = reply_excerpt(&base);
