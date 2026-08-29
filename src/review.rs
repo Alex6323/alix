@@ -2316,10 +2316,19 @@ mod tests {
         let card = &mut cards[0];
         card.resolved_diagrams = vec![masked_fence_geometry(Vec::new())];
         let view = CardView::from(&*card);
-        assert!(
-            matches!(&view.context_units[0], ContentUnit::Code { .. }),
-            "an id-position span never masks a box: {:?}",
-            view.context_units
+        let ContentUnit::Code { lines } = &view.context_units[0] else {
+            panic!(
+                "an id-position span falls back to source: {:?}",
+                view.context_units
+            );
+        };
+        assert_eq!(
+            vec![
+                "flowchart LR".to_string(),
+                "  ⍰[store] --> B[Cache]".to_string(),
+            ],
+            *lines,
+            "the asked source span stays masked in the fallback"
         );
 
         // An UNRELATED label's hostile range fails the whole geometry before
@@ -2344,10 +2353,19 @@ mod tests {
             },
         }])];
         let view = CardView::from(&*card);
-        assert!(
-            matches!(&view.context_units[0], ContentUnit::Code { .. }),
-            "an out-of-bounds unrelated range falls back: {:?}",
-            view.context_units
+        let ContentUnit::Code { lines } = &view.context_units[0] else {
+            panic!(
+                "an out-of-bounds unrelated range falls back to source: {:?}",
+                view.context_units
+            );
+        };
+        assert_eq!(
+            vec![
+                "flowchart LR".to_string(),
+                "  Cache[⬚] --> B[⍰]".to_string(),
+            ],
+            *lines,
+            "asked and sibling source spans stay masked in the fallback"
         );
     }
 

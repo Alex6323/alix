@@ -35,9 +35,11 @@ test("adult context blocks render paired bare math and keep unmatched openers li
     document.getElementById("stage")!.replaceChildren(audit);
   }, mathUnit);
 
-  await expect(page.locator(".surface-bare .math-display")).toBeVisible();
+  await expect(page.locator(".surface-bare svg")).toBeVisible();
+  await expect(page.locator(".surface-bare .math-error")).toHaveCount(0);
   await expect(page.locator(".surface-bare")).not.toContainText("$$");
-  await expect(page.locator(".surface-fence .math-display")).toBeVisible();
+  await expect(page.locator(".surface-fence svg")).toBeVisible();
+  await expect(page.locator(".surface-fence .math-error")).toHaveCount(0);
   await expect(page.locator(".surface-fence")).not.toContainText("```math");
   await expect(page.locator(".surface-unclosed")).toContainText("$$");
   await expect(page.locator(".surface-unclosed")).toContainText(mathUnit.text);
