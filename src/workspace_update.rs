@@ -147,6 +147,15 @@ pub fn stage(
     result
 }
 
+fn reply_excerpt(reply: &str) -> String {
+    const LIMIT: usize = 160;
+    let flat = reply.split_whitespace().collect::<Vec<_>>().join(" ");
+    match flat.char_indices().nth(LIMIT) {
+        Some((cut, _)) => format!("{}...", &flat[..cut]),
+        None => flat,
+    }
+}
+
 fn stage_members(
     root: &Path,
     staging: &Path,
@@ -185,6 +194,13 @@ fn stage_members(
 
         let live_deck = live_proposal_text(&deck, &live_source)?;
         let proposed = reconcile(&live_deck, &live_source, generate, ask)?;
+        if let Err(error) = parser::parse(&relative.display().to_string(), &proposed) {
+            bail!(
+                "{}: the reply is not a deck ({error}); it began: {}",
+                relative.display(),
+                reply_excerpt(&proposed)
+            );
+        }
         fs::write(&staged_path, proposed.as_bytes())
             .with_context(|| format!("cannot write {}", staged_path.display()))?;
 
@@ -1217,6 +1233,35 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(vec![PathBuf::from("decks/plain.md")], report.live_only);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_reply_that_is_not_a_deck_names_the_member_and_quotes_what_came_back() {
+        let _lock = exec_lock();
+        let (_dir, workspace, _source, _) = workspace("Old answer\n");
+        let command = fake_reply(&workspace, "I cannot help with that request.\n");
+
+        let error = stage(
+            &workspace,
+            &GenerateDeckConfig::default(),
+            &ask_config(&command),
+        )
+        .unwrap_err();
+        let message = format!("{error:#}");
+
+        assert!(
+            message.contains("decks/facts.md"),
+            "the member the author wrote must be named, got: {message}"
+        );
+        assert!(
+            !message.contains(".alix-development.updating") && !message.contains(".updating/"),
+            "a staged path the author never wrote must not be the subject, got: {message}"
+        );
+        assert!(
+            message.contains("I cannot help with that request."),
+            "the reply that failed to parse must be quoted, got: {message}"
+        );
     }
 
     #[cfg(unix)]

@@ -807,6 +807,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- `alix workspace update` blames the member you wrote, not a staged path you
+  never saw. When a backend reply is not a deck, the run failed with `cannot
+  load proposed deck <staging>/decks/<name>.md` and a bare parse error, naming
+  a file inside the staging directory and never showing what came back. The
+  reply is now parsed under the member's own relative name before anything is
+  staged, so the failure reads `decks/<name>.md: the reply is not a deck
+  (<reason>); it began: <the reply>`.
+
 - A diagram theme's base fill is read as a colour only when it is one.
   `hex_color` split the digits and handed each pair to `from_str_radix`,
   which accepts a leading `+`, so `fill:#+1+2+3` parsed as the colour
