@@ -3,16 +3,22 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import runner from "../shots/runner.cjs";
+import capture from "../shots/capture.cjs";
 
-const { runRequested, summarize, unknownRequests, exitCodeFor } = runner;
+const { registryProblems, runRequested, summarize, unknownRequests, exitCodeFor } =
+  runner;
+
+const named = (n, fn) =>
+  Object.defineProperty(fn, "name", { value: `shot${n}` });
 
 const steps = (outcomes) =>
   Object.entries(outcomes).map(([n, outcome]) => [
     Number(n),
-    async () => {
+    `shot-${n}-x.webp`,
+    named(n, async () => {
       if (outcome instanceof Error) throw outcome;
       return outcome;
-    },
+    }),
   ]);
 
 const all = () => true;
@@ -78,10 +84,11 @@ test("a real kids store mutation alone makes the run exit nonzero", async () => 
 const writingSteps = (writes) =>
   Object.entries(writes).map(([n, names]) => [
     Number(n),
-    async () => {
+    `shot-${n}-x.webp`,
+    named(n, async () => {
       for (const name of names) receipt.add(name);
       return true;
-    },
+    }),
   ]);
 
 let receipt;
@@ -95,37 +102,41 @@ test("a shot that returns true without writing anything is a failure", async () 
   assert.deepEqual(await failedAfterWriting({ 1: [] }), [1]);
 });
 
-test("a shot that writes its own numbered file passes", async () => {
+test("a shot that writes its declared file passes", async () => {
   assert.deepEqual(
-    await failedAfterWriting({ 1: ["shot-1-verify.webp"], 6: ["shot-6-trace.webp"] }),
+    await failedAfterWriting({ 1: ["shot-1-x.webp"], 6: ["shot-6-x.webp"] }),
     [],
   );
 });
 
+test("a correctly numbered file that is not the declared one fails", async () => {
+  assert.deepEqual(await failedAfterWriting({ 1: ["shot-1-other.webp"] }), [1]);
+});
+
 test("two shots swapping filenames both fail rather than crediting each other", async () => {
   assert.deepEqual(
-    await failedAfterWriting({ 1: ["shot-2-wrong.webp"], 2: ["shot-1-wrong.webp"] }),
+    await failedAfterWriting({ 1: ["shot-2-x.webp"], 2: ["shot-1-x.webp"] }),
     [1, 2],
   );
 });
 
 test("a shot writing a second file fails until the protocol is changed on purpose", async () => {
   assert.deepEqual(
-    await failedAfterWriting({ 1: ["shot-1-a.webp", "shot-1-b.webp"] }),
+    await failedAfterWriting({ 1: ["shot-1-x.webp", "shot-1-b.webp"] }),
     [1],
   );
 });
 
 test("a later shot rewriting an earlier shot's file fails on an empty difference", async () => {
   assert.deepEqual(
-    await failedAfterWriting({ 1: ["shot-1-a.webp"], 2: ["shot-1-a.webp"] }),
+    await failedAfterWriting({ 1: ["shot-1-x.webp"], 2: ["shot-1-x.webp"] }),
     [2],
   );
 });
 
 test("an earlier shot's file never satisfies a later one", async () => {
   assert.deepEqual(
-    await failedAfterWriting({ 1: ["shot-1-verify.webp"], 2: [] }),
+    await failedAfterWriting({ 1: ["shot-1-x.webp"], 2: [] }),
     [2],
   );
 });
@@ -136,7 +147,7 @@ test("without a receipt the attribution is skipped, not silently failed", async 
 });
 
 test("--only naming a shot that does not exist is unknown", () => {
-  assert.deepEqual(unknownRequests([[1, null], [2, null]], new Set([1, 11])), [11]);
+  assert.deepEqual(unknownRequests(steps({ 1: true, 2: true }), new Set([1, 11])), [11]);
 });
 
 test("--only naming only known shots is empty", () => {
@@ -148,7 +159,7 @@ test("no --only at all requests everything and is never unknown", () => {
 });
 
 test("an unknown --only number alone makes the run exit nonzero", async () => {
-  assert.equal(await codeAfter({}, { unknown: [11] }), 1);
+  assert.equal(await codeAfter({ 1: true }, { unknown: [11] }), 1);
 });
 
 test("both capture exits are set, and both through the shared decision", async () => {
@@ -172,7 +183,7 @@ test("the capture records its receipt only after a successful rename", async () 
   );
   assert.match(source, /fs\.renameSync\(webp, out\);\n\s*capturedThisRun\.add\(filename\);/);
   assert.equal(source.match(/capturedThisRun\.add\(/g).length, 1);
-  assert.match(source, /runRequested\(steps, wants, page, capturedThisRun\)/);
+  assert.match(source, /runRequested\(SHOTS, wants, page, capturedThisRun\)/);
 });
 
 test("the capture rejects an unknown --only above the encoder probe", async () => {
@@ -180,64 +191,69 @@ test("the capture rejects an unknown --only above the encoder probe", async () =
     new URL("../shots/capture.cjs", import.meta.url),
     "utf8",
   );
-  const validate = source.indexOf("unknownRequests(STEPS, ONLY)");
+  const validate = source.indexOf("unknownRequests(SHOTS, ONLY)");
   const encoder = source.indexOf("requireWebpEncoder();", source.indexOf("async function main()"));
   assert.ok(validate > 0, "the capture validates --only");
   assert.ok(validate < encoder, "validation must precede the encoder probe");
   assert.equal(source.match(/unknownRequests\(/g).length, 1);
 });
 
-test("every capture step is registered once, under the number and file its producer writes", async () => {
-  const source = await readFile(
-    new URL("../shots/capture.cjs", import.meta.url),
-    "utf8",
-  );
-  const table = source.match(/const SHOTS = \[([\s\S]*?)\];/);
-  assert.ok(table, "capture.cjs declares a SHOTS table");
-  const rows = [...table[1].matchAll(/\[(\d+), "([^"]+)", (\w+)\]/g)].map(
-    ([, n, out, fn]) => [Number(n), out, fn],
-  );
-  assert.ok(rows.length > 0, "the SHOTS table has rows");
-  const unparsed = table[1]
-    .replace(/\[(\d+), "([^"]+)", (\w+)\]/g, "")
-    .replace(/[\s,]/g, "");
-  assert.equal(unparsed, "", `every SHOTS row must parse, left over: ${unparsed}`);
-  const ids = rows.map(([n]) => n);
-  for (const n of ids) {
-    assert.ok(n >= 1, `SHOTS ids must be positive, got ${n}`);
-  }
-  assert.equal(
-    new Set(ids).size,
-    ids.length,
-    `SHOTS ids must be unique, got ${JSON.stringify(ids)}`,
-  );
-  const files = rows.map(([, out]) => out);
-  assert.equal(
-    new Set(files).size,
-    files.length,
-    `every SHOTS row must publish its own file, got ${JSON.stringify(files)}`,
-  );
-  for (const [n, out, fn] of rows) {
-    assert.equal(fn, `shot${n}`, `step ${n} must be produced by shot${n}, not ${fn}`);
-    assert.match(
-      out,
-      new RegExp(`^shot-${n}-[a-z0-9]+\\.webp$`),
-      `step ${n} must publish shot-${n}-<name>.webp, not ${out}`,
+const good = (n) => [n, `shot-${n}-x.webp`, named(n, async () => true)];
+
+test("the runner refuses a registry it cannot trust, row by row", async () => {
+  const cases = [
+    ["an empty registry", []],
+    ["no registry at all", null],
+    ["a row that is not a triple", [[1, "shot-1-x.webp"]]],
+    ["an id of zero", [[0, "shot-0-x.webp", named(0, async () => true)]]],
+    ["a fractional id", [[1.5, "shot-1-x.webp", named(1, async () => true)]]],
+    ["a duplicated id", [good(1), [1, "shot-1-y.webp", named(1, async () => true)]]],
+    ["a file numbered for another shot", [[1, "shot-2-x.webp", named(1, async () => true)]]],
+    ["a file that is not a webp", [[1, "shot-1-x.png", named(1, async () => true)]]],
+    ["a producer that is not shotN", [good(1), [2, "shot-2-x.webp", named(9, async () => true)]]],
+    ["a producer that is not a function", [[1, "shot-1-x.webp", "shot1"]]],
+  ];
+  for (const [label, rows] of cases) {
+    await assert.rejects(
+      () => runRequested(rows, all, null),
+      /the shot registry is invalid/,
+      label,
     );
   }
 });
 
-test("only the registry names a published screenshot", async () => {
-  const source = await readFile(
-    new URL("../shots/capture.cjs", import.meta.url),
-    "utf8",
-  );
-  const table = source.match(/const SHOTS = \[[\s\S]*?\];/);
-  assert.ok(table, "capture.cjs declares a SHOTS table");
-  const elsewhere = source.replace(table[0], "").match(/"shot-\d+-[^"]*\.webp"/g);
-  assert.equal(
-    elsewhere,
-    null,
-    `a producer must take its output from the registry, found ${JSON.stringify(elsewhere)}`,
-  );
+test("a registry the runner accepts reports no problems", () => {
+  assert.deepEqual(registryProblems([good(1), good(10)]), []);
+});
+
+test("the runner hands each producer its declared filename", async () => {
+  const seen = [];
+  const rows = [1, 2].map((n) => [
+    n,
+    `shot-${n}-x.webp`,
+    named(n, async (page, out) => {
+      seen.push([n, page, out]);
+      return true;
+    }),
+  ]);
+  await runRequested(rows, all, "PAGE");
+  assert.deepEqual(seen, [
+    [1, "PAGE", "shot-1-x.webp"],
+    [2, "PAGE", "shot-2-x.webp"],
+  ]);
+});
+
+test("the capture's own registry is one the runner accepts", () => {
+  assert.deepEqual(registryProblems(capture.SHOTS), []);
+});
+
+test("an invalid registry rejects before any producer runs", async () => {
+  const ran = [];
+  const shots = [
+    [1, "shot-1-a.webp", named(1, async () => (ran.push(1), true))],
+    [1, "shot-1-b.webp", named(1, async () => (ran.push("dup"), true))],
+    [2, "shot-2-c.webp", named(2, async () => (ran.push(2), true))],
+  ];
+  await assert.rejects(() => runRequested(shots, () => true, {}, new Set()));
+  assert.deepEqual(ran, [], "no producer may run once the registry is invalid");
 });

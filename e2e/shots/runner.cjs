@@ -3,23 +3,57 @@
  * be tested where `@playwright/test` is not installed (the `unit-js` job).
  */
 
-async function runRequested(steps, wants, page, captured = null) {
+function registryProblems(shots) {
+  if (!Array.isArray(shots) || shots.length === 0) {
+    return ["the shot registry is not a nonempty array"];
+  }
+  const problems = [];
+  const ids = new Set();
+  for (const row of shots) {
+    if (!Array.isArray(row) || row.length !== 3) {
+      problems.push(`a row is not [number, file, producer]: ${JSON.stringify(row)}`);
+      continue;
+    }
+    const [n, out, run] = row;
+    if (!Number.isInteger(n) || n < 1) {
+      problems.push(`a row's id is not a positive integer: ${JSON.stringify(n)}`);
+      continue;
+    }
+    if (ids.has(n)) problems.push(`shot ${n} is registered twice`);
+    ids.add(n);
+    if (typeof out !== "string" || !new RegExp(`^shot-${n}-[a-z0-9]+\\.webp$`).test(out)) {
+      problems.push(`shot ${n} must publish shot-${n}-<name>.webp, not ${JSON.stringify(out)}`);
+    }
+    if (typeof run !== "function" || run.name !== `shot${n}`) {
+      problems.push(`shot ${n} must be produced by shot${n}, not ${run && run.name}`);
+    }
+  }
+  return problems;
+}
+
+async function runRequested(shots, wants, page, captured = null) {
+  const problems = registryProblems(shots);
+  if (problems.length) {
+    for (const problem of problems) {
+      console.error(`[shots] ${problem}`);
+    }
+    throw new Error(`the shot registry is invalid: ${problems.join("; ")}`);
+  }
   const results = {};
-  for (const [n, fn] of steps) {
+  for (const [n, out, run] of shots) {
     if (!wants(n)) continue;
     const before = captured ? new Set(captured) : null;
     try {
-      results[n] = await fn(page);
+      results[n] = await run(page, out);
     } catch (err) {
       console.error(`[shots] shot ${n} FAILED:`, err.message);
       results[n] = false;
     }
     if (!results[n] || !captured) continue;
     const wrote = [...captured].filter((name) => !before.has(name));
-    const mine = `shot-${n}-`;
-    if (wrote.length !== 1 || !wrote[0].startsWith(mine)) {
+    if (wrote.length !== 1 || wrote[0] !== out) {
       console.error(
-        `[shots] shot ${n} reported captured but wrote ${JSON.stringify(wrote)}`,
+        `[shots] shot ${n} reported captured but wrote ${JSON.stringify(wrote)}, not ${out}`,
       );
       results[n] = false;
     }
@@ -27,9 +61,9 @@ async function runRequested(steps, wants, page, captured = null) {
   return results;
 }
 
-function unknownRequests(steps, only) {
+function unknownRequests(shots, only) {
   if (!only) return [];
-  const known = new Set(steps.map(([n]) => n));
+  const known = new Set(shots.map(([n]) => n));
   return [...only].filter((n) => !known.has(n));
 }
 
@@ -50,4 +84,10 @@ function exitCodeFor({ failed, demoChanged, kidsChanged, unknown }) {
     : 0;
 }
 
-module.exports = { runRequested, summarize, unknownRequests, exitCodeFor };
+module.exports = {
+  registryProblems,
+  runRequested,
+  summarize,
+  unknownRequests,
+  exitCodeFor,
+};

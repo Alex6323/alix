@@ -21,7 +21,6 @@
  * directly. Both are copied into e2e/shots/.tmp/ once (reused on later runs
  * unless --fresh) and only the copies are served/graded/augmented.
  */
-const { chromium } = require("@playwright/test");
 const { execFileSync, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -378,7 +377,7 @@ const SHOTS = [
   [9, "shot-9-themes.webp", shot9],
   [10, "shot-10-kids.webp", shot10],
 ];
-const STEPS = SHOTS.map(([n, out, run]) => [n, (page) => run(page, out)]);
+Object.freeze(SHOTS);
 
 async function shot(page, filename, ready) {
   if (path.extname(filename) !== ".webp") {
@@ -980,7 +979,7 @@ async function shot10(page, out) {
 // ---- main ------------------------------------------------------------------
 
 async function main() {
-  const unknown = unknownRequests(STEPS, ONLY);
+  const unknown = unknownRequests(SHOTS, ONLY);
   if (unknown.length) {
     console.error(`[shots] --only named no such shot: ${unknown.join(", ")}`);
     process.exitCode = exitCodeFor({ unknown });
@@ -1018,6 +1017,7 @@ async function main() {
   await waitForServer(DEMO_BASE);
   await waitForServer(KIDS_BASE);
 
+  const { chromium } = require("@playwright/test");
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: SCALE });
   const page = await context.newPage();
@@ -1030,10 +1030,9 @@ async function main() {
       await establishHeroSchedules(page);
     }
 
-    const steps = STEPS;
     Object.assign(
       results,
-      await runRequested(steps, wants, page, capturedThisRun),
+      await runRequested(SHOTS, wants, page, capturedThisRun),
     );
   } finally {
     await browser.close();
@@ -1059,6 +1058,8 @@ async function main() {
   }
   process.exitCode = exitCodeFor({ failed, demoChanged, kidsChanged });
 }
+
+module.exports = { SHOTS };
 
 if (require.main === module) {
   main().catch((err) => {
