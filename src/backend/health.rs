@@ -119,6 +119,10 @@ mod tests {
     fn the_probe_process_observes_the_parent_working_directory() {
         let _lock = exec_lock();
         let cwd = tempfile::tempdir().unwrap();
+        // `pwd` reports the child's resolved directory, and on macOS the temp
+        // path traverses the /var -> /private/var symlink, so the expectation
+        // has to be the canonical form the child will print.
+        let expected = cwd.path().canonicalize().unwrap();
         let cli_dir = tempfile::tempdir().unwrap();
         let cli = fake_cli(cli_dir.path(), "cat >/dev/null; pwd");
         let cfg = AskConfig {
@@ -126,6 +130,6 @@ mod tests {
             ..ask_config(&cli)
         };
 
-        assert_eq!(cwd.path().to_string_lossy(), probe(&cfg).unwrap().trim());
+        assert_eq!(expected.to_string_lossy(), probe(&cfg).unwrap().trim());
     }
 }
