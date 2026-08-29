@@ -155,3 +155,24 @@ src/inline.rs:1002: replace match guard chars .get(index + 1) .is_some_and(|ch| 
 # slice on the next line reads `chars[start + 1..close]` and the mutant does
 # not touch it. Line-pinned: the argument is about this one range start.
 src/inline.rs:1057: replace + with * in autolink_end
+
+# EQUIVALENT. `start` is the index of the first line accepted as a
+# frontmatter fence, a `# ` heading, or a `## ` heading, so `lines[start]`
+# trims to something non-empty that never opens with three backticks
+# (`is_frontmatter_fence` matches `---` plus whitespace only). Both mutants
+# admit exactly one extra state, `end == start + 1`, where the loop inspects
+# that recognized start line, takes the same `else { break }`, and hands
+# `space_cards` the identical slice. Nothing can drive `end` below
+# `start + 1`, since `end` begins at `lines.len()` and `start` indexes into
+# it. Line-pinned: the argument is about this one loop bound.
+# Classified by Codex from rotation shard 12; the proof re-read and both
+# mutants re-run before landing.
+src/generate.rs:532: replace > with >= in clean_output
+src/generate.rs:532: replace + with * in clean_output
+
+# NON-TERMINATING. `end /= 1` leaves `end` unchanged, and this statement is
+# the branch's only advance: the loop condition and the line it inspects are
+# then invariant, so every budget produces a hang. Not executed here on
+# purpose, since running it wedges the suite; the proof is the site, not the
+# operator. Line-pinned. Classified by Codex from rotation shard 12.
+src/generate.rs:535: replace -= with /= in clean_output
