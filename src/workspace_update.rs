@@ -157,7 +157,9 @@ fn reply_excerpt(reply: &str) -> String {
             rendered.push(' ');
         }
         for ch in word.chars() {
-            if ch.is_control() {
+            if ch == '\\' {
+                rendered.push_str("\\\\");
+            } else if ch.is_control() {
                 rendered.extend(ch.escape_debug());
             } else {
                 rendered.push(ch);
@@ -219,7 +221,10 @@ fn stage_members(
                     relative.display(),
                     reply_excerpt(&proposed)
                 ),
-                other => anyhow!("{}: cannot load the proposal ({other})", relative.display()),
+                other => anyhow::Error::new(other).context(format!(
+                    "cannot load the proposal for {}",
+                    relative.display()
+                )),
             },
         )?;
         validate_proposal_metadata(&deck, &candidate, &live_source)?;
@@ -1260,7 +1265,12 @@ mod tests {
                 !excerpt.chars().any(char::is_control),
                 "U+{code:04X} reached the excerpt: {excerpt:?}"
             );
-            if !ch.is_control() {
+            if ch == '\\' {
+                assert_eq!(
+                    "a\\\\b", excerpt,
+                    "the escape introducer is itself escaped, or the rendering is ambiguous"
+                );
+            } else if !ch.is_control() {
                 assert!(
                     excerpt.contains(ch),
                     "U+{code:04X} is not a control and must survive: {excerpt:?}"
@@ -1276,6 +1286,15 @@ mod tests {
             "plain text stays plain",
             reply_excerpt("plain text  stays\n plain"),
             "ordinary text is only whitespace-collapsed"
+        );
+    }
+
+    #[test]
+    fn an_escaped_control_is_distinguishable_from_the_text_that_spells_it() {
+        assert_ne!(
+            reply_excerpt("\u{1b}"),
+            reply_excerpt(r"\u{1b}"),
+            "an ESC byte and a reply literally spelling it must not render alike"
         );
     }
 
