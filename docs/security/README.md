@@ -206,6 +206,12 @@ deliberately widen the provider CLI's permissions through `permission_mode`,
 `allowed_tools`, or provider-specific configuration, and then owns that wider
 trust decision.
 
+A feature that runs its own AI subprocess derives that subprocess's
+configuration instead of reusing the tutor's. Deck generation, trace
+generation, and a workspace source refresh each set their own tool root and
+force source access off, so a tutor grant is not inherited by them
+(`src/generate.rs`, `src/trace_ai.rs`, `src/workspace_update.rs`).
+
 URL sources are current external context rather than captured evidence. Alix
 supplies frozen excerpts regardless; it fetches a URL source only when the
 backend supports `WebFetch` and that tool is allowed. Without a usable source,
@@ -345,6 +351,10 @@ The most relevant deterministic checks currently live beside their controls:
 - `src/ask.rs`, `src/backend/claude.rs`, and `src/backend/codex.rs`: bounded
   generation diagnostics, partial-output redaction, event-driven inactivity,
   and provider process-group termination;
+- `src/generate.rs`, `src/trace_ai.rs`, and `src/workspace_update.rs`: the
+  configuration each AI subprocess is derived with, pinned as an exact table
+  over the tool grant, the tool root, and the refusal to inherit a parent
+  source-access grant;
 - `src/trace_ai.rs`: generated snapshot provenance; and
 - `src/math.rs` and renderer tests: validation and sanitization of generated
   math SVG.

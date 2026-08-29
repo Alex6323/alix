@@ -671,12 +671,11 @@ fn live_proposal_text(deck: &Deck, source: &str) -> Result<String> {
         .map_err(Into::into)
 }
 
-fn reconcile(
-    live_deck: &str,
+fn reconcile_run_config(
     source: &str,
     generate: &GenerateDeckConfig,
     ask: &AskConfig,
-) -> Result<String> {
+) -> Result<AskConfig> {
     let cwd = source_working_directory(source)?;
     let mut run = ask.clone();
     run.allowed_tools = vec!["Read".to_string(), "Glob".to_string(), "Grep".to_string()];
@@ -686,6 +685,16 @@ fn reconcile(
     run.timeout_secs = generate.timeout_for(crate::backend::supports_structured_progress(ask));
     run.progress = true;
     run.idle_timeout_secs = generate.idle_timeout();
+    Ok(run)
+}
+
+fn reconcile(
+    live_deck: &str,
+    source: &str,
+    generate: &GenerateDeckConfig,
+    ask: &AskConfig,
+) -> Result<String> {
+    let run = reconcile_run_config(source, generate, ask)?;
     let prompt = format!("{UPDATE_PROMPT}{live_deck}");
     let raw = crate::ask::run(&run, &prompt, &[])?;
     clean_model_output(&raw)
@@ -2166,5 +2175,69 @@ mod tests {
             "original b\n",
             fs::read_to_string(root.join("decks/b.md")).unwrap()
         );
+    }
+
+    /// Done-list law: the update run's grant is a table, not bookkeeping. The
+    /// parent config deliberately carries a wider tool grant, a foreign root,
+    /// and source access ON, so every field the derivation forgets shows up as
+    /// the parent's value rather than the intended one.
+    #[test]
+    fn the_update_run_derives_the_exact_tool_grant_root_and_source_access_policy() {
+        let (_dir, _root, source, _deck) = workspace("fn main() {}\n");
+        let parent = AskConfig {
+            model: Some("parent-model".to_string()),
+            effort: Some("parent-effort".to_string()),
+            permission_mode: "parentMode".to_string(),
+            allowed_tools: vec!["ParentTool".to_string()],
+            cwd: Some(PathBuf::from("/parent")),
+            source_access: true,
+            timeout_secs: 1,
+            progress: false,
+            idle_timeout_secs: None,
+            ..AskConfig::default()
+        };
+        // Both timeout branches agree at this pair, so the expectation stays a
+        // literal instead of depending on whether the backend streams progress.
+        let timeouts = GenerateDeckConfig {
+            timeout_secs: 900,
+            idle_timeout_secs: 900,
+            ..GenerateDeckConfig::default()
+        };
+        let file = source.join("code.rs");
+        let rows = [
+            (
+                "a directory source, generation naming its own model",
+                source.display().to_string(),
+                Some("generate-model".to_string()),
+                Some("generate-model".to_string()),
+            ),
+            (
+                "a file source, generation deferring to the parent's model",
+                file.display().to_string(),
+                None,
+                Some("parent-model".to_string()),
+            ),
+        ];
+
+        for (label, source_expression, generate_model, expected_model) in rows {
+            let generate = GenerateDeckConfig {
+                model: generate_model,
+                ..timeouts.clone()
+            };
+            let expected = AskConfig {
+                model: expected_model,
+                allowed_tools: vec!["Read".to_string(), "Glob".to_string(), "Grep".to_string()],
+                cwd: Some(source.clone()),
+                source_access: false,
+                timeout_secs: 900,
+                progress: true,
+                idle_timeout_secs: Some(900),
+                ..parent.clone()
+            };
+
+            let derived = reconcile_run_config(&source_expression, &generate, &parent).unwrap();
+
+            assert_eq!(expected, derived, "{label}");
+        }
     }
 }
