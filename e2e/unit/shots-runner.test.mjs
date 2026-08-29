@@ -245,6 +245,11 @@ test("the runner hands each producer its declared filename", async () => {
 
 test("the capture's own registry is one the runner accepts", () => {
   assert.deepEqual(registryProblems(capture.SHOTS), []);
+  assert.equal(
+    Object.isFrozen(capture.SHOTS),
+    true,
+    "a row may not be appended to the registry after it is published",
+  );
 });
 
 test("an invalid registry rejects before any producer runs", async () => {
