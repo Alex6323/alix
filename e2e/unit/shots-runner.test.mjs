@@ -75,8 +75,6 @@ test("a real kids store mutation alone makes the run exit nonzero", async () => 
   assert.equal(await codeAfter({ 1: true }, { kidsChanged: ["progress/y.json"] }), 1);
 });
 
-// The receipt: `writes` names, per shot number, what that step adds to the
-// live set, so attribution is by producer rather than by filename.
 const writingSteps = (writes) =>
   Object.entries(writes).map(([n, names]) => [
     Number(n),
@@ -153,9 +151,6 @@ test("an unknown --only number alone makes the run exit nonzero", async () => {
   assert.equal(await codeAfter({}, { unknown: [11] }), 1);
 });
 
-// The decision above is only worth anything if the capture actually uses it.
-// `main` needs a browser, so the wiring is guarded at the source, the same way
-// the tutor's renderer wiring is.
 test("both capture exits are set, and both through the shared decision", async () => {
   const source = await readFile(
     new URL("../shots/capture.cjs", import.meta.url),
@@ -170,9 +165,6 @@ test("both capture exits are set, and both through the shared decision", async (
   assert.equal(source.match(/process\.exitCode = exitCodeFor\(/g).length, 2);
 });
 
-// The receipt is only honest if it is written where the file lands, so the
-// capture must record after the rename and nowhere else, and hand the live set
-// to the attribution.
 test("the capture records its receipt only after a successful rename", async () => {
   const source = await readFile(
     new URL("../shots/capture.cjs", import.meta.url),
