@@ -194,3 +194,26 @@ test("the capture rejects an unknown --only above the encoder probe", async () =
   assert.ok(validate < encoder, "validation must precede the encoder probe");
   assert.equal(source.match(/unknownRequests\(/g).length, 1);
 });
+
+test("every capture step is registered once, under the number its producer writes", async () => {
+  const source = await readFile(
+    new URL("../shots/capture.cjs", import.meta.url),
+    "utf8",
+  );
+  const table = source.match(/const STEPS = \[([\s\S]*?)\];/);
+  assert.ok(table, "capture.cjs declares a STEPS table");
+  const rows = [...table[1].matchAll(/\[(\d+), (\w+)\]/g)].map(([, n, fn]) => [
+    Number(n),
+    fn,
+  ]);
+  assert.ok(rows.length > 0, "the STEPS table has rows");
+  const ids = rows.map(([n]) => n);
+  assert.deepEqual(
+    ids,
+    rows.map((_, i) => i + 1),
+    `STEPS ids must run 1..N in order, got ${JSON.stringify(ids)}`,
+  );
+  for (const [n, fn] of rows) {
+    assert.equal(fn, `shot${n}`, `step ${n} must be produced by shot${n}, not ${fn}`);
+  }
+});
