@@ -7058,7 +7058,7 @@ fn doctor_rejects_corrupt_diagram_objects_in_a_sourceless_deck() {
 }
 
 #[test]
-fn doctor_repair_diagrams_preserves_every_non_orphan_byte() {
+fn doctor_repair_diagrams_deletes_only_the_orphan_and_normalizes_line_endings() {
     let dir = TempDir::new().unwrap();
     let ws = dir.path();
     std::fs::write(ws.join("alix.toml"), "").unwrap();
@@ -7080,11 +7080,13 @@ fn doctor_repair_diagrams_preserves_every_non_orphan_byte() {
     let out = alix(&["doctor", "--repair-diagrams", deck.to_str().unwrap()]);
 
     assert!(out.status.success(), "stderr: {}", stderr(&out));
-    let expected = before.replace(&format!("{stamp}\r\n"), "");
+    let expected = before
+        .replace(&format!("{stamp}\r\n"), "")
+        .replace("\r\n", "\n");
     assert_eq!(
         expected.as_bytes(),
         std::fs::read(&deck).unwrap(),
-        "repair must delete exactly the orphan line and preserve CRLF bytes"
+        "repair must delete exactly the orphan line and write canonical LF bytes"
     );
 }
 
@@ -7111,6 +7113,44 @@ fn doctor_repair_diagrams_refuses_to_modify_a_standalone_deck() {
     assert!(
         !out.status.success(),
         "the workspace-only repair unexpectedly accepted a standalone deck"
+    );
+}
+
+#[test]
+fn doctor_reports_an_unnormalized_deck_and_normalize_rewrites_it() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "drift.md",
+        "\u{feff}---\r\nid: \"deck-driftdeck\"\r\n---\r\n## q\r\nanswer \r\nhard  \r\n<!-- id: card-drift1 -->\r\n",
+    );
+
+    let out = alix(&["doctor", &deck]);
+    assert!(
+        stderr(&out).contains("not in canonical bytes"),
+        "detection: doctor must report the drift, stderr: {}",
+        stderr(&out)
+    );
+
+    let out = alix(&["doctor", "--normalize", &deck]);
+    assert!(out.status.success(), "repair stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("normalized"),
+        "repair: doctor must say what it rewrote, stdout: {}",
+        stdout(&out)
+    );
+
+    let bytes = std::fs::read_to_string(&deck).unwrap();
+    assert_eq!(
+        "---\nid: \"deck-driftdeck\"\n---\n## q\nanswer\nhard  \n<!-- id: card-drift1 -->\n", bytes,
+        "canonical bytes: BOM and CRLF gone, `answer ` trimmed, the hard break kept"
+    );
+
+    let out = alix(&["doctor", &deck]);
+    assert!(
+        !stderr(&out).contains("not in canonical bytes"),
+        "idempotence: a normalized deck must stop being reported, stderr: {}",
+        stderr(&out)
     );
 }
 

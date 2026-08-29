@@ -219,6 +219,12 @@ struct DoctorArgs {
     #[arg(long)]
     grading: bool,
 
+    /// Rewrite each checked deck into its canonical bytes: no leading BOM, LF
+    /// line endings, and no trailing blanks outside a code fence except the
+    /// two spaces of a hard line break.
+    #[arg(long)]
+    normalize: bool,
+
     /// Stamp reviewed source excerpts and rebase exact excerpts that moved
     /// uniquely within their current file.
     #[arg(long)]

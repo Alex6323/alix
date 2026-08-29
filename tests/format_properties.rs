@@ -318,7 +318,7 @@ proptest! {
         prop_assert_eq!(alix::stamp::StampOutcome::default(), second, "stamping is a fixed point");
         prop_assert_eq!(&stamped, &std::fs::read_to_string(&path).unwrap());
 
-        let newline = if crlf { "\r\n" } else { "\n" };
+        let wrote = stamped != original;
         let mut reconstructed = stamped;
         for row in &outcome.minted_rows {
             let span = format!(" <!-- r:{row} -->");
@@ -326,10 +326,19 @@ proptest! {
             reconstructed = reconstructed.replacen(&span, "", 1);
         }
         for id in &outcome.minted_cards {
-            let span = format!("<!-- id: {id} -->{newline}");
+            let span = format!("<!-- id: {id} -->\n");
             prop_assert_eq!(1, reconstructed.matches(&span).count());
             reconstructed = reconstructed.replacen(&span, "", 1);
         }
-        prop_assert_eq!(original, reconstructed, "stripping every mint restores the original bytes");
+        let expected = if wrote {
+            alix::parser::normalize(&original).into_owned()
+        } else {
+            original
+        };
+        prop_assert_eq!(
+            expected,
+            reconstructed,
+            "stripping every mint restores the original bytes, normalized when the stamp wrote"
+        );
     }
 }

@@ -13,9 +13,6 @@ use crate::{parser, token};
 /// located the same way the parser reads them.
 const WS: [char; 6] = ['\t', '\n', '\x0B', '\x0C', '\r', ' '];
 
-/// One UTF-8 byte-order mark; kept as byte 0 across a stamp write.
-const BOM: &str = "\u{feff}";
-
 /// Row-stamp mint attempts before giving up. 32^6 values against at most a
 /// few hundred rows: exhausting this means the generator is broken.
 const MINT_ATTEMPTS: usize = 64;
@@ -101,10 +98,14 @@ pub fn stamp_initialized_deck(path: &Path) -> Result<StampOutcome, StampError> {
 }
 
 fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, StampError> {
-    let original = fs::read_to_string(path).map_err(|source| StampError::Read {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let original =
+        parser::normalize(
+            &fs::read_to_string(path).map_err(|source| StampError::Read {
+                path: path.to_path_buf(),
+                source,
+            })?,
+        )
+        .into_owned();
     let subject = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -112,10 +113,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
             path: path.to_path_buf(),
         })?;
 
-    // Safety: parse the post-BOM body so parser line/byte offsets align; the
-    // BOM is reattached unchanged as byte 0.
-    let bom = if original.starts_with(BOM) { BOM } else { "" };
-    let body = &original[bom.len()..];
+    let body = original.as_str();
 
     let deck = parser::parse(subject, body)?;
 
@@ -296,7 +294,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     let mut inserts: Vec<(usize, u8, usize, String)> = Vec::new();
     for (line, tok) in card_lines.iter().zip(&minted_cards) {
         let anchor = block_end_line(body, *line);
-        let newline = line_terminator(body, anchor);
+        let newline = "\n";
         let offset = line_start_of_next(body, anchor).ok_or(StampError::MissingLine(anchor))?;
         let lead = if offset == body.len() && !body.ends_with('\n') {
             newline
@@ -346,7 +344,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         ));
     }
     for (end_line, tok) in &container_mints {
-        let newline = line_terminator(body, *end_line);
+        let newline = "\n";
         let offset =
             line_start_of_next(body, *end_line).ok_or(StampError::MissingLine(*end_line))?;
         let lead = if offset == body.len() && !body.ends_with('\n') {
@@ -382,12 +380,12 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     for (offset, _, remove_len, text) in inserts {
         new_body.replace_range(offset..offset + remove_len, &text);
     }
-    let new_text = format!("{bom}{prepend}{new_body}");
+    let new_text = format!("{prepend}{new_body}");
 
     // The input parsed, but an insertion can still land somewhere that makes
     // the result invalid, and this path writes the user's own file. Costs a
     // second parse of a file alix has already read, once per stamp.
-    parser::parse(subject, &new_text[bom.len()..]).map_err(|source| StampError::WouldNotParse {
+    parser::parse(subject, &new_text).map_err(|source| StampError::WouldNotParse {
         path: path.to_path_buf(),
         source,
     })?;
@@ -686,20 +684,6 @@ fn heading_id_marker(rest: &str) -> bool {
         .any(|body| matches!(parser::directive(body), Some((key, _)) if key == "id"))
 }
 
-fn line_terminator(text: &str, line: usize) -> &'static str {
-    let Some(start) = nth_line_start(text, line) else {
-        return "\n";
-    };
-    let rest = &text[start..];
-    match rest.find('\n') {
-        Some(rel) if rest[..rel].ends_with('\r') => "\r\n",
-        Some(_) => "\n",
-        // An unterminated final line follows the file's convention.
-        None if text.contains("\r\n") => "\r\n",
-        None => "\n",
-    }
-}
-
 fn line_start_of_next(text: &str, line: usize) -> Option<usize> {
     let start = nth_line_start(text, line)?;
     let rest = &text[start..];
@@ -921,7 +905,7 @@ mod tests {
     }
 
     #[test]
-    fn stamping_inserts_ids_and_changes_nothing_else() {
+    fn stamping_inserts_ids_and_normalizes_and_changes_nothing_else() {
         let dir = tempfile::tempdir().unwrap();
         let path = write(&dir, "deck.md", FIXTURE);
 
@@ -943,7 +927,7 @@ mod tests {
         assert_eq!(1, reconstructed.matches(&deck_span).count());
         reconstructed = reconstructed.replacen(&deck_span, "", 1);
 
-        assert_eq!(FIXTURE, reconstructed);
+        assert_eq!(parser::normalize(FIXTURE), reconstructed);
     }
 
     #[test]
@@ -972,18 +956,22 @@ mod tests {
     }
 
     #[test]
-    fn stamping_after_a_bom_keeps_the_bom_first() {
+    fn stamping_normalizes_a_bom_away_instead_of_keeping_it_first() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "\u{feff}## q\na\n";
-        let path = write(&dir, "deck.md", original);
+        let path = write(&dir, "deck.md", "\u{feff}## q\na\n");
 
         let outcome = stamp_deck(&path).unwrap();
         let stamped = fs::read_to_string(&path).unwrap();
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
-        assert!(stamped.starts_with(BOM));
-        assert!(!stamped[BOM.len()..].starts_with(BOM));
-        assert!(stamped.starts_with(&format!("{BOM}---\nid: \"{deck_tok}\"\n---\n\n")));
+        assert!(
+            !stamped.starts_with('\u{feff}'),
+            "a stamp write is normalized, so no BOM survives it: {stamped:?}"
+        );
+        assert!(
+            stamped.starts_with(&format!("---\nid: \"{deck_tok}\"\n---\n\n")),
+            "the frontmatter must still lead the file: {stamped:?}"
+        );
     }
 
     #[test]
@@ -1386,7 +1374,7 @@ mod tests {
     }
 
     #[test]
-    fn stamping_a_crlf_deck_preserves_every_original_byte() {
+    fn stamping_a_crlf_deck_rewrites_it_to_lf_and_changes_nothing_else() {
         let dir = tempfile::tempdir().unwrap();
         let original = "---\r\nsource: notes.md\r\n---\r\n## q\r\na\r\n## r\r\nb\r\n";
         let path = write(&dir, "deck.md", original);
@@ -1395,23 +1383,21 @@ mod tests {
         let stamped = fs::read_to_string(&path).unwrap();
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
-        for tok in &outcome.minted_cards {
-            assert!(
-                stamped.contains(&format!("<!-- id: {tok} -->\r\n")),
-                "{stamped:?}"
-            );
-        }
+        assert!(
+            !stamped.contains('\r'),
+            "no CR survives a stamp write: {stamped:?}"
+        );
 
         let deck_span = format!("id: \"{deck_tok}\"\n");
         assert_eq!(1, stamped.matches(&deck_span).count());
         let mut reconstructed = stamped.replacen(&deck_span, "", 1);
         for tok in &outcome.minted_cards {
-            let span = format!("<!-- id: {tok} -->\r\n");
+            let span = format!("<!-- id: {tok} -->\n");
             assert_eq!(1, reconstructed.matches(&span).count(), "span {span:?}");
             reconstructed = reconstructed.replacen(&span, "", 1);
         }
 
-        assert_eq!(original, reconstructed);
+        assert_eq!(original.replace("\r\n", "\n"), reconstructed);
     }
 
     #[test]
@@ -1716,7 +1702,7 @@ mod tests {
     }
 
     #[test]
-    fn a_crlf_table_at_eof_keeps_crlf_when_stamped() {
+    fn a_crlf_table_at_eof_is_rewritten_to_lf_when_stamped() {
         let dir = tempfile::tempdir().unwrap();
         let original = "---\r\nformat-version: 1\r\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\r\ntable: cards\r\n---\r\n| a | b |\r\n|---|---|\r\n| x | y |";
         let path = write(&dir, "deck.md", original);
@@ -1725,8 +1711,8 @@ mod tests {
         let stamped = fs::read_to_string(&path).unwrap();
 
         assert!(
-            !stamped.replace("\r\n", "").contains('\n'),
-            "stamping introduced an LF-only line ending: {stamped:?}"
+            !stamped.contains('\r'),
+            "stamping must leave the table in canonical LF bytes: {stamped:?}"
         );
     }
 

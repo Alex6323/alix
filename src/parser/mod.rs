@@ -15,6 +15,7 @@ pub(crate) mod checklist;
 mod cloze;
 mod frontmatter;
 mod mathspan;
+mod normalize;
 pub mod region;
 mod sidecar;
 mod stream;
@@ -28,6 +29,7 @@ pub use frontmatter::{
     yaml_quote,
 };
 use frontmatter::{MappableBlock, bad_value, parse_frontmatter, parse_reveal};
+pub use normalize::normalize;
 pub use sidecar::{SidecarNote, notes, without_notes};
 
 // Deliberately not Unicode whitespace; anything outside this set is content.

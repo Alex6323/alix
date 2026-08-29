@@ -455,7 +455,30 @@ blank-surrounded thematic break, whatever its spelling and wherever it sits
 (delete the line, or keep it literal with `<!-- plain -->` below it). Inside
 fenced code every
 shape is literal, as always. A trailing-two-space hard break is not a spelling
-at all: content lines shed trailing whitespace when the deck is read.
+at all: content lines shed trailing whitespace when the deck is read, so the
+break changes nothing about what a card shows. The file keeps it anyway,
+because GitHub renders it; see the next section.
+
+## Normalization: the bytes alix writes back
+
+Editors add bytes you never typed, and no deck needs them, so alix settles on
+one form instead of carrying whatever arrived. **Whenever alix writes a deck
+file, it normalizes it.** That covers initializing a deck, stamping a new card
+id, augmenting, receiving a shared deck, and every `alix doctor` repair:
+
+- a leading byte-order mark is dropped;
+- CRLF line endings become LF, everywhere in the file;
+- trailing spaces and tabs are removed.
+
+Two things survive. A **hard line break**, meaning a line ending in two or
+more spaces, is kept and written as exactly two spaces, so a deck that renders
+as several lines on GitHub still does. And a **code fence keeps its own
+trailing blanks**, which are code rather than layout; only its line endings
+change.
+
+alix never rewrites a file it had no other reason to touch, so a deck you only
+read is left exactly as it is. If an editor puts those bytes back after the
+deck was initialized, `alix doctor <deck> --normalize` rewrites it.
 
 ## HTML in a deck
 

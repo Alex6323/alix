@@ -24,6 +24,7 @@ pub struct Placed {
 }
 
 pub fn place_deck(dir: &Path, name: &str, text: &str) -> Result<Placed> {
+    let text = &parser::normalize(text);
     let stem = Path::new(name)
         .file_name()
         .and_then(|n| n.to_str())
@@ -84,6 +85,7 @@ pub fn replace_deck(
     text: &str,
     store: &mut Store,
 ) -> Result<ReplaceReport> {
+    let text = &parser::normalize(text);
     let stem = Path::new(name)
         .file_name()
         .and_then(|n| n.to_str())

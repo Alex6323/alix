@@ -990,6 +990,14 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
         }
         if let Ok(deck) = Deck::load(path) {
             println!("{}: {} cards", deck.subject, deck.cards.len());
+            if std::fs::read_to_string(path).is_ok_and(|text| {
+                matches!(alix::parser::normalize(&text), std::borrow::Cow::Owned(_))
+            }) {
+                report.warn(format!(
+                    "{}: not in canonical bytes; run `alix doctor <dir-or-deck> --normalize`",
+                    path.display()
+                ));
+            }
             let s = &deck.settings;
             let declared: Vec<String> = [
                 s.reveal.map(|r| format!("reveal: {}", val_name(r))),
@@ -1093,6 +1101,23 @@ fn repair_positions(paths: &[PathBuf]) -> Result<()> {
         )
         .with_context(|| format!("{}: the repair would not parse", path.display()))?;
         alix::deck::write_deck_text(path, &repaired)?;
+    }
+    Ok(())
+}
+
+fn normalize_decks(paths: &[PathBuf]) -> Result<()> {
+    for path in paths {
+        let text = std::fs::read_to_string(path)?;
+        let std::borrow::Cow::Owned(normalized) = alix::parser::normalize(&text) else {
+            continue;
+        };
+        alix::parser::parse(
+            path.file_stem().and_then(|s| s.to_str()).unwrap_or("deck"),
+            &normalized,
+        )
+        .with_context(|| format!("{}: the normalized deck would not parse", path.display()))?;
+        alix::deck::write_deck_text(path, &normalized)?;
+        println!("normalized {}", path.display());
     }
     Ok(())
 }
@@ -1283,6 +1308,9 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     let repair_after_explicit_path = repair_after_explicit_path(args.dir.as_deref());
     if let Some(path) = &args.dir {
         if path.is_file() {
+            if args.normalize {
+                normalize_decks(std::slice::from_ref(path))?;
+            }
             if args.repair_source_locators {
                 repair_source_locators(std::slice::from_ref(path))?;
             }
@@ -1301,6 +1329,9 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             return check(vec![path.clone()]);
         }
         if alix::workspace::is_workspace(path) {
+            if args.normalize {
+                normalize_decks(&alix::workspace::diagnosable_deck_files(path))?;
+            }
             if args.repair_source_locators {
                 repair_source_locators(&alix::workspace::diagnosable_deck_files(path))?;
             }
@@ -1332,6 +1363,9 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             (dir, store)
         }
     };
+    if args.normalize && repair_after_explicit_path {
+        normalize_decks(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
+    }
     if args.repair_source_locators && repair_after_explicit_path {
         repair_source_locators(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
     }
@@ -2380,6 +2414,7 @@ printf ']}}'
         );
         let before = std::fs::read_to_string(&deck).unwrap();
         let args = |repair_source_locators| DoctorArgs {
+            normalize: false,
             repair_positions: false,
             repair_diagrams: false,
             repair_frontmatter_order: false,

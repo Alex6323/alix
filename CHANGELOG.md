@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `alix doctor --normalize` rewrites a deck that drifted out of canonical
+  bytes after it was initialized, for when an editor put a byte-order mark,
+  CRLF endings, or trailing blanks back. It refuses to write anything that
+  would stop parsing.
+
+
 - Badged notes and quotations are styled. Each of the five badges opens its
   own callout with a chip naming it, tinted from the theme you are using
   rather than from GitHub's palette, and several notes stack in authored
@@ -378,6 +384,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- alix normalizes a deck's bytes whenever it writes one. A leading
+  byte-order mark is dropped, CRLF line endings become LF, and trailing
+  spaces and tabs are removed. A hard line break survives as exactly two
+  spaces, and a code fence keeps its own trailing blanks, which are code
+  rather than layout. Editors add these bytes without telling you and no
+  deck needs them, so alix settles on one form instead of carrying whatever
+  arrived. Initializing, stamping, augmenting, receiving, and every doctor
+  repair write canonical bytes; a file alix never writes is left alone.
+
+
 - Generation moved under the noun it produces: `alix generate deck` is now
   `alix deck generate`, and `alix generate workspace` is now `alix workspace
   generate`. The top-level `generate` command is gone. Every other command was

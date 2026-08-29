@@ -565,6 +565,7 @@ pub fn write_deck_text(path: &Path, text: &str) -> Result<(), DeckError> {
 /// arrived: the rename can succeed and the directory sync after it fail, and a
 /// caller tracking what it last wrote owns those bytes either way.
 fn write_deck_text_reporting(path: &Path, text: &str) -> Result<(), (DeckError, bool)> {
+    let text = parser::normalize(text);
     let tmp = path.with_extension("md.tmp");
     crate::fsio::replace_file_report(&tmp, path, text.as_bytes()).map_err(|error| {
         let replaced = error.replaced();
@@ -956,7 +957,13 @@ pub fn rewrite_without_reporting(
     exact_lines: &[usize],
 ) -> Result<String, (DeckError, Option<String>)> {
     let fronts = front_lines_of(path, original).map_err(|error| (error, None))?;
-    let new_text = remove_blocks_and_lines(original, &fronts, front_lines, exact_lines);
+    let new_text = parser::normalize(&remove_blocks_and_lines(
+        original,
+        &fronts,
+        front_lines,
+        exact_lines,
+    ))
+    .into_owned();
     match write_deck_text_reporting(path, &new_text) {
         Ok(()) => Ok(new_text),
         Err((error, replaced)) => Err((error, replaced.then_some(new_text))),

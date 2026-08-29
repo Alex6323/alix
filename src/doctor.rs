@@ -176,6 +176,7 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
     }
     let mut broken = Vec::new();
     let mut malformed_math = Vec::new();
+    let mut unnormalized = Vec::new();
     for path in &deck_files {
         let name = path
             .file_name()
@@ -184,6 +185,11 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
             .into_owned();
         match Deck::load(path) {
             Ok(deck) => {
+                if std::fs::read_to_string(path).is_ok_and(|text| {
+                    matches!(crate::parser::normalize(&text), std::borrow::Cow::Owned(_))
+                }) {
+                    unnormalized.push(name.clone());
+                }
                 let augment = crate::augment::AugmentCache::open_for_deck(&deck).ok();
                 for diagnostic in crate::math::diagnostics(&deck.cards, augment.as_ref()) {
                     malformed_math.push(format!("{name}: {diagnostic}"));
@@ -202,6 +208,7 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
         && malformed_math.is_empty()
         && uninitialized.is_empty()
         && unreadable.is_empty()
+        && unnormalized.is_empty()
     {
         Finding::ok("decks", counts)
     } else {
@@ -239,6 +246,20 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
                 uninitialized.len()
             )
         };
+        let normalize_detail = if unnormalized.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; {} deck(s) not in canonical bytes: {}",
+                unnormalized.len(),
+                unnormalized
+                    .iter()
+                    .take(3)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
         let parse_detail = if broken.is_empty() {
             String::new()
         } else {
@@ -255,6 +276,8 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
         };
         let remedy = if !unreadable.is_empty() {
             "check the permissions on the paths alix cannot read, then rerun"
+        } else if !unnormalized.is_empty() && broken.is_empty() && malformed_math.is_empty() {
+            "run `alix doctor <dir-or-deck> --normalize` to rewrite them in canonical bytes"
         } else if uninitialized.is_empty() {
             "run `alix doctor <file>` for the exact deck diagnostics"
         } else {
@@ -264,7 +287,10 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
         Finding::bad(
             "decks",
             Status::Warn,
-            format!("{counts}{parse_detail}{math_detail}{uninitialized_detail}{unreadable_detail}"),
+            format!(
+                "{counts}{parse_detail}{math_detail}{normalize_detail}{uninitialized_detail}\
+                 {unreadable_detail}"
+            ),
             remedy,
         )
     }
