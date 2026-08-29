@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -13,7 +13,7 @@ use crate::{
     augment::AugmentCache,
     card::Card,
     config::{AskConfig, GenerateDeckConfig},
-    deck::{AtRewrite, Deck},
+    deck::{AtRewrite, Deck, DeckError},
     parser,
     source::{CitationIntegrity, SourceBase},
     workspace::{self, Workspace, WorkspaceFiles},
@@ -147,13 +147,28 @@ pub fn stage(
     result
 }
 
+/// A backend reply reaches a terminal and `.alix-update-error.txt`, so a
+/// control byte in it would be an escape sequence rather than text.
 fn reply_excerpt(reply: &str) -> String {
     const LIMIT: usize = 160;
-    let flat = reply.split_whitespace().collect::<Vec<_>>().join(" ");
-    match flat.char_indices().nth(LIMIT) {
-        Some((cut, _)) => format!("{}...", &flat[..cut]),
-        None => flat,
+    let mut rendered = String::new();
+    for word in reply.split_whitespace() {
+        if !rendered.is_empty() {
+            rendered.push(' ');
+        }
+        for ch in word.chars() {
+            if ch.is_control() {
+                rendered.extend(ch.escape_debug());
+            } else {
+                rendered.push(ch);
+            }
+        }
     }
+    if rendered.chars().count() <= LIMIT {
+        return rendered;
+    }
+    let kept: String = rendered.chars().take(LIMIT - 1).collect();
+    format!("{kept}\u{2026}")
 }
 
 fn stage_members(
@@ -194,18 +209,19 @@ fn stage_members(
 
         let live_deck = live_proposal_text(&deck, &live_source)?;
         let proposed = reconcile(&live_deck, &live_source, generate, ask)?;
-        if let Err(error) = parser::parse(&relative.display().to_string(), &proposed) {
-            bail!(
-                "{}: the reply is not a deck ({error}); it began: {}",
-                relative.display(),
-                reply_excerpt(&proposed)
-            );
-        }
         fs::write(&staged_path, proposed.as_bytes())
             .with_context(|| format!("cannot write {}", staged_path.display()))?;
 
-        let candidate = Deck::load_with_defaults(&staged_path, &workspace.settings)
-            .with_context(|| format!("cannot load proposed deck {}", staged_path.display()))?;
+        let candidate = Deck::load_with_defaults(&staged_path, &workspace.settings).map_err(
+            |error| match error {
+                DeckError::Parse { source, .. } => anyhow!(
+                    "{}: the reply is not a deck ({source}); it began: {}",
+                    relative.display(),
+                    reply_excerpt(&proposed)
+                ),
+                other => anyhow!("{}: cannot load the proposal ({other})", relative.display()),
+            },
+        )?;
         validate_proposal_metadata(&deck, &candidate, &live_source)?;
         let identity = validate_unstamped_proposal(&deck, &candidate)?;
 
@@ -1233,6 +1249,46 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(vec![PathBuf::from("decks/plain.md")], report.live_only);
+    }
+
+    #[test]
+    fn a_quoted_reply_never_carries_a_terminal_control_sequence() {
+        for raw in [
+            "\u{1b}[2Jnot a deck",
+            "bel \u{7} here",
+            "del \u{7f} here",
+            "c1 \u{9b}[2J",
+        ] {
+            let excerpt = reply_excerpt(raw);
+            assert!(
+                !excerpt.chars().any(char::is_control),
+                "{raw:?} rendered a control character: {excerpt:?}"
+            );
+        }
+        assert_eq!(
+            "\\u{1b}[2Jnot a deck",
+            reply_excerpt("\u{1b}[2Jnot a deck"),
+            "an escape is shown as its own escape, not swallowed"
+        );
+    }
+
+    #[test]
+    fn a_quoted_reply_counts_its_ellipsis_inside_the_cap() {
+        let long = "x".repeat(400);
+        let excerpt = reply_excerpt(&long);
+        assert_eq!(
+            160,
+            excerpt.chars().count(),
+            "the marker lives inside the budget, not beside it"
+        );
+        assert!(excerpt.ends_with('\u{2026}'), "got {excerpt:?}");
+
+        let exact = "y".repeat(160);
+        assert_eq!(
+            exact,
+            reply_excerpt(&exact),
+            "a reply exactly at the cap is not marked as cut"
+        );
     }
 
     #[cfg(unix)]
