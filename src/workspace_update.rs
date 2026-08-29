@@ -1256,26 +1256,34 @@ mod tests {
         assert_eq!(vec![PathBuf::from("decks/plain.md")], report.live_only);
     }
 
+    fn expected_rendering(ch: char) -> String {
+        if ch.is_whitespace() {
+            "a b".to_string()
+        } else if ch == '\\' {
+            "a\\\\b".to_string()
+        } else if ch.is_control() {
+            format!("a{}b", ch.escape_debug())
+        } else {
+            format!("a{ch}b")
+        }
+    }
+
     #[test]
-    fn a_quoted_reply_never_carries_a_terminal_control_sequence() {
-        for code in (0..=0x9fu32).chain(std::iter::once(0x7f)) {
-            let ch = char::from_u32(code).expect("every code below 0xa0 is a scalar value");
+    fn every_scalar_renders_exactly_one_way_and_no_control_survives() {
+        for code in 0..=0x10ffffu32 {
+            let Some(ch) = char::from_u32(code) else {
+                continue;
+            };
             let excerpt = reply_excerpt(&format!("a{ch}b"));
+            assert_eq!(
+                expected_rendering(ch),
+                excerpt,
+                "U+{code:04X} must render exactly one way"
+            );
             assert!(
                 !excerpt.chars().any(char::is_control),
                 "U+{code:04X} reached the excerpt: {excerpt:?}"
             );
-            if ch == '\\' {
-                assert_eq!(
-                    "a\\\\b", excerpt,
-                    "the escape introducer is itself escaped, or the rendering is ambiguous"
-                );
-            } else if !ch.is_control() {
-                assert!(
-                    excerpt.contains(ch),
-                    "U+{code:04X} is not a control and must survive: {excerpt:?}"
-                );
-            }
         }
         assert_eq!(
             "\\u{1b}[2Jnot a deck",
