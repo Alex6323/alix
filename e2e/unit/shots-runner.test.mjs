@@ -187,32 +187,57 @@ test("the capture rejects an unknown --only above the encoder probe", async () =
   assert.equal(source.match(/unknownRequests\(/g).length, 1);
 });
 
-test("every capture step is registered once, under the number its producer writes", async () => {
+test("every capture step is registered once, under the number and file its producer writes", async () => {
   const source = await readFile(
     new URL("../shots/capture.cjs", import.meta.url),
     "utf8",
   );
-  const table = source.match(/const STEPS = \[([\s\S]*?)\];/);
-  assert.ok(table, "capture.cjs declares a STEPS table");
-  const rows = [...table[1].matchAll(/\[(\d+), (\w+)\]/g)].map(([, n, fn]) => [
-    Number(n),
-    fn,
-  ]);
-  assert.ok(rows.length > 0, "the STEPS table has rows");
+  const table = source.match(/const SHOTS = \[([\s\S]*?)\];/);
+  assert.ok(table, "capture.cjs declares a SHOTS table");
+  const rows = [...table[1].matchAll(/\[(\d+), "([^"]+)", (\w+)\]/g)].map(
+    ([, n, out, fn]) => [Number(n), out, fn],
+  );
+  assert.ok(rows.length > 0, "the SHOTS table has rows");
   const unparsed = table[1]
-    .replace(/\[(\d+), (\w+)\]/g, "")
+    .replace(/\[(\d+), "([^"]+)", (\w+)\]/g, "")
     .replace(/[\s,]/g, "");
-  assert.equal(unparsed, "", `every STEPS row must parse, left over: ${unparsed}`);
+  assert.equal(unparsed, "", `every SHOTS row must parse, left over: ${unparsed}`);
   const ids = rows.map(([n]) => n);
   for (const n of ids) {
-    assert.ok(n >= 1, `STEPS ids must be positive, got ${n}`);
+    assert.ok(n >= 1, `SHOTS ids must be positive, got ${n}`);
   }
   assert.equal(
     new Set(ids).size,
     ids.length,
-    `STEPS ids must be unique, got ${JSON.stringify(ids)}`,
+    `SHOTS ids must be unique, got ${JSON.stringify(ids)}`,
   );
-  for (const [n, fn] of rows) {
+  const files = rows.map(([, out]) => out);
+  assert.equal(
+    new Set(files).size,
+    files.length,
+    `every SHOTS row must publish its own file, got ${JSON.stringify(files)}`,
+  );
+  for (const [n, out, fn] of rows) {
     assert.equal(fn, `shot${n}`, `step ${n} must be produced by shot${n}, not ${fn}`);
+    assert.match(
+      out,
+      new RegExp(`^shot-${n}-[a-z0-9]+\\.webp$`),
+      `step ${n} must publish shot-${n}-<name>.webp, not ${out}`,
+    );
   }
+});
+
+test("only the registry names a published screenshot", async () => {
+  const source = await readFile(
+    new URL("../shots/capture.cjs", import.meta.url),
+    "utf8",
+  );
+  const table = source.match(/const SHOTS = \[[\s\S]*?\];/);
+  assert.ok(table, "capture.cjs declares a SHOTS table");
+  const elsewhere = source.replace(table[0], "").match(/"shot-\d+-[^"]*\.webp"/g);
+  assert.equal(
+    elsewhere,
+    null,
+    `a producer must take its output from the registry, found ${JSON.stringify(elsewhere)}`,
+  );
 });

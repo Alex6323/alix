@@ -10,46 +10,43 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MEDIA_DIR = REPO_ROOT / "site" / "img"
 CAPTURE = REPO_ROOT / "e2e" / "shots" / "capture.cjs"
-STEPS_TABLE = re.compile(r"const STEPS = \[(.*?)\];", re.S)
-STEP_ROW = re.compile(r"\[(\d+), shot\d+\]")
+SHOTS_TABLE = re.compile(r"const SHOTS = \[(.*?)\];", re.S)
+SHOT_ROW = re.compile(r'\[\d+, "([^"]+)", shot\d+\]')
+SITE_PAGE = REPO_ROOT / "site" / "index.html"
+PAGE_SHOT = re.compile(r'src="img/(shot-[^"]+\.webp)"')
 MEDIA_BUDGET_BYTES = 3 * 1024 * 1024 // 2
-EXPECTED_SHOTS = {
-    "shot-1-verify.webp",
-    "shot-2-tutor.webp",
-    "shot-3-modes.webp",
-    "shot-4-exam.webp",
-    "shot-5-augment.webp",
-    "shot-6-trace.webp",
-    "shot-7-picker.webp",
-    "shot-8-topology.webp",
-    "shot-9-themes.webp",
-    "shot-10-kids.webp",
-}
 
 
-def capture_step_numbers() -> set[int]:
-    table = STEPS_TABLE.search(CAPTURE.read_text(encoding="utf-8"))
+def registered_shots() -> set[str]:
+    table = SHOTS_TABLE.search(CAPTURE.read_text(encoding="utf-8"))
     if table is None:
         return set()
-    return {int(number) for number in STEP_ROW.findall(table.group(1))}
+    return set(SHOT_ROW.findall(table.group(1)))
+
+
+def referenced_shots() -> set[str]:
+    return set(PAGE_SHOT.findall(SITE_PAGE.read_text(encoding="utf-8")))
 
 
 def main() -> int:
     media = sorted(path for path in MEDIA_DIR.rglob("*") if path.is_file())
     shot_names = {path.name for path in media if path.name.startswith("shot-")}
-    missing = sorted(EXPECTED_SHOTS - shot_names)
-    unexpected = sorted(shot_names - EXPECTED_SHOTS)
+    expected = registered_shots()
+    missing = sorted(expected - shot_names)
+    unexpected = sorted(shot_names - expected)
     total_bytes = sum(path.stat().st_size for path in media)
 
-    step_numbers = capture_step_numbers()
-    expected_numbers = {int(name.split("-")[1]) for name in EXPECTED_SHOTS}
+    referenced = referenced_shots()
 
     errors = []
-    if step_numbers != expected_numbers:
+    if referenced != expected:
         errors.append(
-            "the capture steps and the expected screenshots disagree: "
-            f"steps {sorted(step_numbers)}, expected {sorted(expected_numbers)}"
+            "the landing page and the capture registry disagree: "
+            f"referenced but unregistered {sorted(referenced - expected)}, "
+            f"registered but unreferenced {sorted(expected - referenced)}"
         )
+    if not expected:
+        errors.append(f"no capture registry found in {CAPTURE}")
     if missing:
         errors.append(f"missing carousel screenshots: {', '.join(missing)}")
     if unexpected:

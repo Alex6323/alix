@@ -366,18 +366,19 @@ const capturedThisRun = new Set();
 
 // One table answers both what runs and what `--only` may name. The shot
 // functions are declarations, so they hoist above this.
-const STEPS = [
-  [1, shot1],
-  [2, shot2],
-  [3, shot3],
-  [4, shot4],
-  [5, shot5],
-  [6, shot6],
-  [7, shot7],
-  [8, shot8],
-  [9, shot9],
-  [10, shot10],
+const SHOTS = [
+  [1, "shot-1-verify.webp", shot1],
+  [2, "shot-2-tutor.webp", shot2],
+  [3, "shot-3-modes.webp", shot3],
+  [4, "shot-4-exam.webp", shot4],
+  [5, "shot-5-augment.webp", shot5],
+  [6, "shot-6-trace.webp", shot6],
+  [7, "shot-7-picker.webp", shot7],
+  [8, "shot-8-topology.webp", shot8],
+  [9, "shot-9-themes.webp", shot9],
+  [10, "shot-10-kids.webp", shot10],
 ];
+const STEPS = SHOTS.map(([n, out, run]) => [n, (page) => run(page, out)]);
 
 async function shot(page, filename, ready) {
   if (path.extname(filename) !== ".webp") {
@@ -481,7 +482,7 @@ function backdateRecallReviews() {
 
 // ---- shot 1: explain-mode keypoints checklist -----------------------------
 
-async function shot1(page) {
+async function shot1(page, out) {
   log("== shot 1: explain-mode keypoints ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
   let s = await api(DEMO_BASE, "POST", "/api/select", { deck: HERO_DECK, depth: "reconstruct", session: 20 });
@@ -525,13 +526,13 @@ async function shot1(page) {
     await page.waitForTimeout(120);
   }
   await page.waitForTimeout(300);
-  await shot(page, "shot-1-verify.webp", ".kp-list");
+  await shot(page, out, ".kp-list");
   return true;
 }
 
 // ---- shot 2: ask-tutor panel (real Claude call) ---------------------------
 
-async function shot2(page) {
+async function shot2(page, out) {
   log("== shot 2: ask-tutor ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
   // A graduated scratch store serves review cards immediately (cram), instead
@@ -583,13 +584,13 @@ async function shot2(page) {
     .waitFor({ state: "visible", timeout: 120_000 })
     .catch(() => log("WARNING: no .ask-a appeared within 120s — capturing current state anyway"));
   await page.waitForTimeout(400);
-  await shot(page, "shot-2-tutor.webp", ".ask-a");
+  await shot(page, out, ".ask-a");
   return true;
 }
 
 // ---- shot 3: multiple-choice with real AI distractors ---------------------
 
-async function shot3(page) {
+async function shot3(page, out) {
   log("== shot 3: multiple-choice ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
   // Recognize is unscheduled/boolean — no introduction cooldown, so this is
@@ -613,7 +614,7 @@ async function shot3(page) {
   }
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(400);
-  await shot(page, "shot-3-modes.webp", ".options .option");
+  await shot(page, out, ".options .option");
   return true;
 }
 
@@ -718,7 +719,7 @@ function fabricateGraduation() {
   log("fabricated a graduated store for", hero);
 }
 
-async function shot4(page) {
+async function shot4(page, out) {
   log("== shot 4: AI exam ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
   const corpus = parseDeck(HERO_FILE);
@@ -776,13 +777,13 @@ async function shot4(page) {
     return false;
   }
   await page.waitForTimeout(400);
-  await shot(page, "shot-4-exam.webp", ".exam-pass, .exam-fail");
+  await shot(page, out, ".exam-pass, .exam-fail");
   return true;
 }
 
 // ---- shot 5: augment screen -----------------------------------------------
 
-async function shot5(page) {
+async function shot5(page, out) {
   log("== shot 5: augment screen ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
   await api(DEMO_BASE, "POST", "/api/deselect", {}).catch(() => {});
@@ -801,13 +802,13 @@ async function shot5(page) {
   }
   await augBtn.first().click();
   await page.waitForTimeout(400);
-  await shot(page, "shot-5-augment.webp", ".aug-card");
+  await shot(page, out, ".aug-card");
   return true;
 }
 
 // ---- shot 6: trace walk checkpoint -----------------------------------------
 
-async function shot6(page) {
+async function shot6(page, out) {
   log("== shot 6: trace walk ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
   await api(DEMO_BASE, "POST", "/api/deselect", {}).catch(() => {});
@@ -840,13 +841,13 @@ async function shot6(page) {
     log("FAILED shot 6: no .source-excerpt rendered — walk did not reach the reveal phase");
     return false;
   }
-  await shot(page, "shot-6-trace.webp", ".source-excerpt");
+  await shot(page, out, ".source-excerpt");
   return true;
 }
 
 // ---- shot 7: picker, workspace expanded ------------------------------------
 
-async function shot7(page) {
+async function shot7(page, out) {
   log("== shot 7: picker ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
   await api(DEMO_BASE, "POST", "/api/deselect", {}).catch(() => {});
@@ -857,13 +858,13 @@ async function shot7(page) {
   await page.waitForTimeout(400);
   // .tree: the dependency-tree branch-line guides only render once drilled
   // INTO the workspace — confirms this isn't still the collapsed list.
-  await shot(page, "shot-7-picker.webp", ".deckrow .tree");
+  await shot(page, out, ".deckrow .tree");
   return true;
 }
 
 // ---- shot 8: topology heatmap in review ------------------------------------
 
-async function shot8(page) {
+async function shot8(page, out) {
   log("== shot 8: topology heatmap ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
   await api(DEMO_BASE, "POST", "/api/deselect", {}).catch(() => {});
@@ -889,13 +890,13 @@ async function shot8(page) {
     log("FAILED shot 8: no #crumbStrip rendered for this session");
     return false;
   }
-  await shot(page, "shot-8-topology.webp", "#crumbStrip");
+  await shot(page, out, "#crumbStrip");
   return true;
 }
 
 // ---- shot 9: theme gallery --------------------------------------------------
 
-async function shot9(page) {
+async function shot9(page, out) {
   log("== shot 9: theme gallery ==");
   // User ruling: every OTHER shot stays on DEFAULT_THEME — this is the one
   // place theme variety still shows, via the popover's own swatch grid, not
@@ -906,13 +907,13 @@ async function shot9(page) {
   await page.waitForTimeout(200);
   await page.locator("#theme-open").click();
   await page.waitForTimeout(250);
-  await shot(page, "shot-9-themes.webp", ".theme-panel.show");
+  await shot(page, out, ".theme-panel.show");
   return true;
 }
 
 // ---- shot 10: kids client ---------------------------------------------------
 
-async function shot10(page) {
+async function shot10(page, out) {
   log("== shot 10: kids client ==");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(`${KIDS_BASE}/`, { waitUntil: "domcontentloaded" });
@@ -972,7 +973,7 @@ async function shot10(page) {
   }
   await target.click();
   await page.waitForTimeout(500);
-  await shot(page, "shot-10-kids.webp", ".opt-correct");
+  await shot(page, out, ".opt-correct");
   return true;
 }
 
