@@ -127,6 +127,14 @@ src/diagram.rs:222: replace > with >= in ground
 # anywhere else in the function must be argued on its own.
 src/diagram.rs:247: replace > with >= in contrast
 
+# EQUIVALENT. The quote scan reaches this guard with either a closing quote at
+# `j < s.len()` or an unterminated value at `j == s.len()`; it cannot overshoot.
+# The operators agree in the first case. In the second, the mutant increments
+# `j` from len to len + 1 before assigning it to `i`, but the outer
+# `i < s.len()` loop exits for both values and neither index is observed again.
+# Line-pinned because the preceding three bounds in this function are distinct.
+src/icon.rs:199: replace < with <= in strip_attrs
+
 # EQUIVALENT. The only extra candidate the widened bound admits is
 # `at == glyphs.len()`, and `raw` is `glyphs.get(at)` (src/inline.rs:623), so
 # that iteration reads `None`, the `matches!` is false, the loop advances once

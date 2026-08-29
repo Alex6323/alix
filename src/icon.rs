@@ -342,6 +342,7 @@ mod tests {
                 r#"<svg viewBox="0 0 24 24">"#,
             ),
             ("<svg onload=   ", "<svg"),
+            ("<svg onload=\"steal()", "<svg"),
         ] {
             assert_eq!(expected, strip_attrs(input), "input: {input:?}");
         }
