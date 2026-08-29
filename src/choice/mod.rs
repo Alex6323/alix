@@ -72,6 +72,10 @@ fn answer_text(card: &Card) -> String {
     crate::render::readable_answer_lines(card, crate::card::AnswerSpace::Authored).join("\n")
 }
 
+fn authored_correct_options(card: &Card) -> &[String] {
+    &card.back
+}
+
 fn content(text: &str, card: &Card) -> String {
     crate::inline::strip_inline_with(text.trim(), &card.definitions)
 }
@@ -128,7 +132,7 @@ pub fn build_authored(
     seed: u64,
     authored_distractors: &[String],
 ) -> Option<ChoiceQuestion> {
-    let correct_text = answer_text(card);
+    let correct_text = authored_correct_options(card).join("\n");
     let mut seen = HashSet::new();
     seen.insert(content(&correct_text, card));
     let mut options = Vec::new();
@@ -161,7 +165,7 @@ pub fn build_authored_multi(
 ) -> Option<ChoiceQuestion> {
     let mut seen = HashSet::new();
     let mut correct_texts = Vec::new();
-    for line in &crate::render::gradeable_answer_lines(card, crate::card::AnswerSpace::Authored) {
+    for line in authored_correct_options(card) {
         let trimmed = line.trim();
         let content = content(trimmed, card);
         if !content.is_empty() && seen.insert(content) {
@@ -305,6 +309,12 @@ mod tests {
         c
     }
 
+    fn authored_card(source: &str) -> Card {
+        crate::parser::parse_str("deck.md", source)
+            .unwrap()
+            .remove(0)
+    }
+
     #[test]
     fn a_multi_question_offers_every_correct_line_and_every_distractor() {
         let c = multi_card(&["2", "4"]);
@@ -327,7 +337,7 @@ mod tests {
     #[test]
     fn an_atomic_option_keeps_a_supporting_quotation_but_not_its_marker() {
         let c = card(1, "the claim\n> supporting quotation");
-        let q = build_authored(&c, 7, &ai(&["a distractor"])).unwrap();
+        let q = build(&c, 7, &ai(&["one", "two", "three"])).unwrap();
 
         assert_eq!(
             q.options[q.correct], "the claim\nsupporting quotation",
@@ -340,27 +350,6 @@ mod tests {
                 "no option shows authoring syntax: {option:?}"
             );
         }
-    }
-
-    #[test]
-    fn a_multi_question_does_not_make_supporting_quotation_lines_correct_options() {
-        let c = multi_card(&[
-            "the claim",
-            "> supporting quotation",
-            "> continued quotation",
-        ]);
-        let q = build_authored_multi(&c, 7, &ai(&["distractor one", "distractor two"])).unwrap();
-
-        let correct: Vec<&str> = q
-            .correct_set
-            .iter()
-            .map(|&index| q.options[index].as_str())
-            .collect();
-        assert_eq!(
-            correct,
-            ["the claim"],
-            "a quotation supports the answer but is not itself a gradeable claim"
-        );
     }
 
     #[test]
@@ -504,6 +493,50 @@ mod tests {
             1,
             q.options.iter().filter(|option| *option == "Paris").count()
         );
+    }
+
+    #[test]
+    fn a_quoted_correct_option_stays_distinct_from_the_same_unquoted_distractor() {
+        let c = authored_card(
+            "## scope\n- [x] > not guaranteed\n- [ ] not guaranteed\n<!-- choices-single -->\n",
+        );
+        let q = build_authored(&c, 1, &c.authored_distractors)
+            .expect("the invoked authored choice must remain buildable");
+
+        assert_eq!(2, q.options.len());
+        assert_eq!("> not guaranteed", q.options[q.correct]);
+        assert!(q.options.iter().any(|option| option == "not guaranteed"));
+    }
+
+    #[test]
+    fn checked_and_unchecked_quote_markers_project_symmetrically() {
+        let c = authored_card(
+            "## attribution\n- [x] > asserted claim\n- [ ] > attributed claim\n<!-- choices-single -->\n",
+        );
+        let q = build_authored(&c, 1, &c.authored_distractors).unwrap();
+
+        assert_eq!("> asserted claim", q.options[q.correct]);
+        assert!(
+            q.options
+                .iter()
+                .any(|option| option == "> attributed claim")
+        );
+    }
+
+    #[test]
+    fn every_checked_quoted_option_remains_in_the_multiple_choice_correct_set() {
+        let c = authored_card(
+            "## all truths\n- [x] ordinary correct\n- [x] > attributed correct\n- [ ] ordinary wrong\n<!-- choices-multiple -->\n",
+        );
+        let q = build_authored_multi(&c, 1, &c.authored_distractors).unwrap();
+        let mut correct: Vec<&str> = q
+            .correct_set
+            .iter()
+            .map(|index| q.options[*index].as_str())
+            .collect();
+        correct.sort_unstable();
+
+        assert_eq!(vec!["> attributed correct", "ordinary correct"], correct);
     }
 
     #[test]

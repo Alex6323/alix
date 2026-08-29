@@ -6557,11 +6557,22 @@ a
             "bare is literal, no finding"
         );
 
-        let error = err("## q\n- [x] a\nnot an option\n<!-- choices-single -->\n");
-        assert!(
-            matches!(error, ParseError::ChoiceShape { line: 2, .. }),
-            "loudness follows invocation, got {error:?}"
-        );
+        for (name, text) in [
+            (
+                "prose",
+                "## q\n- [x] a\nnot an option\n<!-- choices-single -->\n",
+            ),
+            (
+                "quotation",
+                "## q\n- [x] a\n> not an option\n- [ ] b\n<!-- choices-single -->\n",
+            ),
+        ] {
+            let error = err(text);
+            assert!(
+                matches!(error, ParseError::ChoiceShape { line: 2, .. }),
+                "{name}: loudness follows invocation, got {error:?}"
+            );
+        }
     }
 
     #[test]

@@ -807,6 +807,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- A quoted option on an authored choice card keeps its own text. The choice
+  builders ran the checked options through the answer-DISPLAY helpers, which
+  exist for an answer that carries supporting blocks: `readable_answer_lines`
+  drops a `>` marker and `gradeable_answer_lines` removes a quoted line
+  outright. So a `choices-single` card whose correct option was quoted could
+  normalize onto an unquoted distractor and silently stop being a choice card,
+  a quoted correct option and a quoted distractor projected differently (the
+  odd one out gave the answer away), and a `choices-multiple` card lost every
+  quoted correct option from its select-all set, which changed what the card
+  asserts rather than how it looks. An authored option is exactly one
+  task-list line and an invoked choice card may carry no other answer content,
+  so an option is now offered as it was written.
+
 - An AI reply that carries anything after its JSON answer is rejected by name
   instead of being cut to the last `}`. The exam and the augment passes both
   sliced from the first `{` to the last `}`, so a trailing sentence was
