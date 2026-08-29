@@ -1851,6 +1851,17 @@ mod tests {
     }
 
     #[test]
+    fn equal_luminances_have_a_contrast_ratio_of_one() {
+        for luminance in [0.0, 0.5, 1.0] {
+            assert_eq!(
+                1.0,
+                contrast(luminance, luminance),
+                "identical luminances must not differ in contrast at {luminance}"
+            );
+        }
+    }
+
+    #[test]
     fn the_exact_pixel_area_cap_is_legal_and_one_row_over_is_refused() {
         let side = 4096u32;
         assert_eq!(
