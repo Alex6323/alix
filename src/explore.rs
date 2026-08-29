@@ -557,6 +557,16 @@ pub struct MergeReport {
     pub conflicts: Vec<String>,
 }
 
+fn merge_rank(name: &std::ffi::OsStr) -> u8 {
+    if name == crate::assets::ROOT {
+        0
+    } else if name == crate::workspace::DECKS {
+        2
+    } else {
+        1
+    }
+}
+
 /// A forced `.md` collision routes through [`library::replace_deck`] so the
 /// old member's progress is wiped, not orphaned.
 pub fn merge_built(
@@ -571,16 +581,7 @@ pub fn merge_built(
     let mut entries: Vec<_> = fs::read_dir(staging)
         .with_context(|| format!("cannot read {}", staging.display()))?
         .collect::<std::io::Result<_>>()?;
-    entries.sort_by_key(|entry| {
-        let name = entry.file_name();
-        if name == crate::assets::ROOT {
-            0
-        } else if name == crate::workspace::DECKS {
-            2
-        } else {
-            1
-        }
-    });
+    entries.sort_by_key(|entry| merge_rank(&entry.file_name()));
     for entry in entries {
         let name = entry.file_name().to_string_lossy().into_owned();
         let from = entry.path();
@@ -1258,6 +1259,143 @@ back a
         (staging, dest)
     }
 
+    #[test]
+    fn merge_rank_orders_assets_before_ordinary_entries_and_decks_last() {
+        for (name, expected) in [
+            (crate::assets::ROOT, 0),
+            ("alix.toml", 1),
+            (crate::workspace::DECKS, 2),
+        ] {
+            assert_eq!(
+                expected,
+                merge_rank(std::ffi::OsStr::new(name)),
+                "merge rank for {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_decks_directory_uses_member_merge_semantics() {
+        let (staging, dest) = merge_test_dirs("decks-file");
+        fs::write(staging.join(crate::workspace::DECKS), "ordinary file\n").unwrap();
+        let mut store = Store::open(dest.join("deck1.json")).unwrap();
+
+        let report = merge_built(&staging, &dest, false, &mut store).unwrap();
+
+        assert_eq!(1, report.moved, "a file named decks moves as one entry");
+        assert!(report.conflicts.is_empty());
+        assert!(
+            dest.join(crate::workspace::DECKS).is_file(),
+            "the name alone must not turn a file into the member directory"
+        );
+        let _ = fs::remove_dir_all(staging.parent().unwrap());
+
+        let (staging, dest) = merge_test_dirs("ordinary-directory");
+        fs::create_dir_all(staging.join("notes")).unwrap();
+        fs::create_dir_all(dest.join("notes")).unwrap();
+        fs::write(staging.join("notes/fresh.txt"), "fresh\n").unwrap();
+        fs::write(dest.join("notes/keep.txt"), "keep\n").unwrap();
+        let mut store = Store::open(dest.join("deck1.json")).unwrap();
+
+        let report = merge_built(&staging, &dest, false, &mut store).unwrap();
+
+        assert_eq!(
+            0, report.moved,
+            "an ordinary directory collides as one entry"
+        );
+        assert_eq!(vec!["notes".to_string()], report.conflicts);
+        assert!(staging.join("notes/fresh.txt").is_file());
+        assert!(dest.join("notes/keep.txt").is_file());
+        assert!(!dest.join("notes/fresh.txt").exists());
+        let _ = fs::remove_dir_all(staging.parent().unwrap());
+    }
+
+    #[test]
+    fn a_forced_top_level_markdown_collision_counts_the_replacement() {
+        let (staging, dest) = merge_test_dirs("top-level-md");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("topic.md"), "## old\nold answer\n").unwrap();
+        fs::write(staging.join("topic.md"), "## new\nnew answer\n").unwrap();
+        let mut store = Store::open(dest.join("deck1.json")).unwrap();
+
+        let report = merge_built(&staging, &dest, true, &mut store).unwrap();
+
+        assert_eq!(1, report.moved);
+        assert!(report.conflicts.is_empty());
+        assert!(
+            fs::read_to_string(dest.join("topic.md"))
+                .unwrap()
+                .contains("new answer")
+        );
+        assert!(!staging.join("topic.md").exists());
+        let _ = fs::remove_dir_all(staging.parent().unwrap());
+    }
+
+    #[test]
+    fn content_addressed_asset_collisions_deduplicate_equal_bytes_and_reject_unequal_bytes() {
+        for (label, staged_bytes, destination_bytes, equal) in [
+            ("asset-equal", b"same".as_slice(), b"same".as_slice(), true),
+            (
+                "asset-unequal",
+                b"different".as_slice(),
+                b"original".as_slice(),
+                false,
+            ),
+        ] {
+            let (staging, dest) = merge_test_dirs(label);
+            let name = crate::assets::object_name(destination_bytes, "png");
+            let staged = staging.join(format!("assets/deck-deck1/{name}"));
+            let destination = dest.join(format!("assets/deck-deck1/{name}"));
+            fs::create_dir_all(staged.parent().unwrap()).unwrap();
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::write(&staged, staged_bytes).unwrap();
+            fs::write(&destination, destination_bytes).unwrap();
+            let mut store = Store::open(dest.join("deck1.json")).unwrap();
+
+            let result = merge_built(&staging, &dest, false, &mut store);
+
+            if equal {
+                let report = result.unwrap();
+                assert_eq!(0, report.moved, "equal asset bytes are deduplicated");
+                assert!(!staged.exists(), "the redundant staged object is removed");
+            } else {
+                let error = match result {
+                    Ok(_) => panic!("unequal bytes must refuse the asset collision"),
+                    Err(error) => error,
+                };
+                assert!(
+                    format!("{error:#}").contains("different bytes in the destination"),
+                    "{error:#}"
+                );
+                assert_eq!(staged_bytes, fs::read(&staged).unwrap());
+            }
+            assert_eq!(destination_bytes, fs::read(&destination).unwrap());
+            let _ = fs::remove_dir_all(staging.parent().unwrap());
+        }
+    }
+
+    #[test]
+    fn a_new_content_addressed_asset_counts_as_moved() {
+        let (staging, dest) = merge_test_dirs("nested-asset");
+        let name = crate::assets::object_name(b"image", "png");
+        let staged = staging.join(format!("assets/deck-deck1/{name}"));
+        fs::create_dir_all(staged.parent().unwrap()).unwrap();
+        fs::write(&staged, b"image").unwrap();
+        let mut store = Store::open(dest.join("deck1.json")).unwrap();
+
+        let report = merge_built(&staging, &dest, false, &mut store).unwrap();
+
+        assert_eq!(1, report.moved);
+        assert_eq!(
+            b"image",
+            fs::read(dest.join(format!("assets/deck-deck1/{name}")))
+                .unwrap()
+                .as_slice()
+        );
+        assert!(!staged.exists());
+        let _ = fs::remove_dir_all(staging.parent().unwrap());
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_forced_merge_over_a_linked_directory_removes_the_link_not_its_target() {
@@ -1497,6 +1635,97 @@ back a
         assert!(!dir.join("assets").exists());
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_initialized_source_less_decks_with_local_images_are_frozen() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("decks")).unwrap();
+        fs::write(dir.path().join("alix.toml"), "").unwrap();
+        fs::write(dir.path().join("local.png"), b"local image").unwrap();
+        fs::write(
+            dir.path().join("decks/local.md"),
+            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## q\n![local](local.png)\na\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("decks/remote.md"),
+            "---\nformat-version: 1\nid: \"deck-deck2\"\n---\n## q\n![remote](https://example.org/image.png)\na\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("decks/plain.md"),
+            "---\nformat-version: 1\nid: \"deck-deck3\"\n---\n## q\na\n",
+        )
+        .unwrap();
+        for deck_id in ["deck-deck2", "deck-deck3"] {
+            let owned = dir.path().join(format!("assets/{deck_id}"));
+            fs::create_dir_all(&owned).unwrap();
+            fs::write(owned.join("not-content-addressed"), b"invalid").unwrap();
+        }
+
+        let summary = freeze_workspace(dir.path()).unwrap();
+
+        assert_eq!((1, 1), (summary.decks, summary.files));
+        assert!(summary.failed.is_empty(), "{:?}", summary.failed);
+        let image_name = crate::assets::object_name(b"local image", "png");
+        assert!(
+            dir.path()
+                .join(format!("assets/deck-deck1/{image_name}"))
+                .is_file(),
+            "the local image makes its source-less deck eligible"
+        );
+    }
+
+    #[test]
+    fn freeze_workspace_sums_evidence_and_images_from_one_member() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("decks")).unwrap();
+        fs::write(dir.path().join("alix.toml"), "").unwrap();
+        let source = dir.path().join("notes.md");
+        fs::write(&source, "one\ntwo\n").unwrap();
+        fs::write(dir.path().join("diagram.png"), b"diagram").unwrap();
+        fs::write(
+            dir.path().join("decks/both.md"),
+            format!(
+                "---\nformat-version: 1\nid: \"deck-deck4\"\nsource: {}\n---\n## q\n![diagram](diagram.png)\na\n<!-- at: notes.md:2 -->\n",
+                crate::parser::yaml_quote(&source.display().to_string())
+            ),
+        )
+        .unwrap();
+
+        let summary = freeze_workspace(dir.path()).unwrap();
+
+        assert_eq!((1, 2), (summary.decks, summary.files));
+        assert!(summary.failed.is_empty(), "{:?}", summary.failed);
+        assert_eq!(
+            2,
+            fs::read_dir(dir.path().join("assets/deck-deck4"))
+                .unwrap()
+                .count(),
+            "one evidence object plus one image object"
+        );
+    }
+
+    #[test]
+    fn rewrite_scope_discards_empty_components_with_and_without_a_root() {
+        assert_eq!(
+            vec!["alpha".to_string(), "beta".to_string()],
+            rewrite_scope("alpha +  + beta", None),
+            "a rootless scope keeps only its nonempty components in order"
+        );
+
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("alpha"), "a\n").unwrap();
+        fs::write(root.path().join("beta"), "b\n").unwrap();
+        assert_eq!(
+            vec![
+                root.path().join("alpha").display().to_string(),
+                root.path().join("beta").display().to_string(),
+            ],
+            rewrite_scope("alpha +  + beta", Some(root.path())),
+            "a rooted scope keeps only its nonempty components in order"
+        );
     }
 
     #[test]
