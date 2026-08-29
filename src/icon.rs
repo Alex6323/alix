@@ -352,4 +352,31 @@ mod tests {
         assert!(!body.to_ascii_lowercase().contains("<script"));
         assert!(!ws.path().join("assets").join("icon.png").exists());
     }
+
+    /// Done-list law: the icon run's grant is a table, not bookkeeping. The
+    /// parent deliberately carries a tool grant and source access ON, so a
+    /// field the derivation forgets shows up as the parent's value. The cwd is
+    /// inherited on purpose; with no tool granted the drawing run cannot read
+    /// through it.
+    #[test]
+    fn the_icon_run_grants_no_tool_and_refuses_the_parent_s_source_access() {
+        let parent = AskConfig {
+            model: Some("parent-model".to_string()),
+            allowed_tools: vec!["ParentTool".to_string()],
+            cwd: Some(PathBuf::from("/parent")),
+            source_access: true,
+            ..AskConfig::default()
+        };
+
+        let derived = icon_run_config(&parent);
+
+        assert_eq!(
+            AskConfig {
+                allowed_tools: Vec::new(),
+                source_access: false,
+                ..parent.clone()
+            },
+            derived
+        );
+    }
 }

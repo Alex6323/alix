@@ -209,8 +209,10 @@ trust decision.
 A feature that runs its own AI subprocess derives that subprocess's
 configuration instead of reusing the tutor's. Deck generation, trace
 generation, and a workspace source refresh each set their own tool root and
-force source access off, so a tutor grant is not inherited by them
-(`src/generate.rs`, `src/trace_ai.rs`, `src/workspace_update.rs`).
+force source access off; workspace icon drawing grants no tool at all and
+also forces it off. A tutor grant therefore reaches none of these four
+(`src/generate.rs`, `src/trace_ai.rs`, `src/workspace_update.rs`,
+`src/icon.rs`).
 
 URL sources are current external context rather than captured evidence. Alix
 supplies frozen excerpts regardless; it fetches a URL source only when the
@@ -351,10 +353,10 @@ The most relevant deterministic checks currently live beside their controls:
 - `src/ask.rs`, `src/backend/claude.rs`, and `src/backend/codex.rs`: bounded
   generation diagnostics, partial-output redaction, event-driven inactivity,
   and provider process-group termination;
-- `src/generate.rs`, `src/trace_ai.rs`, and `src/workspace_update.rs`: the
-  configuration each AI subprocess is derived with, pinned as an exact table
-  over the tool grant, the tool root, and the refusal to inherit a parent
-  source-access grant;
+- `src/generate.rs`, `src/trace_ai.rs`, `src/workspace_update.rs`, and
+  `src/icon.rs`: the configuration each AI subprocess is derived with, pinned
+  as an exact table over the tool grant, the tool root, and the refusal to
+  inherit a parent source-access grant;
 - `src/trace_ai.rs`: generated snapshot provenance; and
 - `src/math.rs` and renderer tests: validation and sanitization of generated
   math SVG.
