@@ -378,6 +378,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+
+- `alix workspace update` no longer aborts the whole run when one member's
+  proposal is unusable. The member is reported by name with its reason, its
+  staged deck, assets, and augmentation are left as the copy found them, and
+  the other members still stage. The command exits non-zero, records the
+  failures in the proposal so `--apply` reprints them, and applies only the
+  members that updated. If every member fails there is no proposal to apply.
+  The frozen-evidence precondition moved ahead of the first model call, so an
+  unfrozen member now stops the command before any proposal is paid for.
+
 - A pipe table in an answer is one block, like a quotation. Under
   `<!-- reveal: line -->` it takes a single reveal instead of arriving a pipe
   line at a time, and it is excluded from the typed target: typing pipe syntax

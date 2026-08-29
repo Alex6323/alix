@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
-    fs,
+    ffi::OsString,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -67,22 +68,48 @@ pub struct DeckUpdateReport {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FailedMember {
+    pub path: PathBuf,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UpdateReport {
     pub staging: PathBuf,
     pub decks: Vec<DeckUpdateReport>,
     /// Source-backed members with no citations: nothing frozen to reconcile,
     /// so they are left as they are.
     pub live_only: Vec<PathBuf>,
+    pub failed: Vec<FailedMember>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct UpdateManifest {
     version: u32,
     workspace: String,
     decks: Vec<StagedDeck>,
+    failures: Vec<FailedDeck>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FailedDeck {
+    path: String,
+    reason: String,
+}
+
+impl From<FailedDeck> for FailedMember {
+    fn from(failure: FailedDeck) -> Self {
+        FailedMember {
+            path: PathBuf::from(failure.path),
+            reason: failure.reason,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct StagedDeck {
     path: String,
     deck_id: String,
@@ -138,13 +165,52 @@ pub fn stage(
         bail!("{} has no initialized decks to update", root.display());
     }
 
+    let (eligible, live_only) = eligible_members(&root, &workspace)?;
     copy_workspace_for_staging(&root, &staging)?;
-    let result = stage_members(&root, &staging, &workspace, generate, ask);
-    if let Err(error) = &result {
-        let message = format!("{error:#}\n");
+    let result = stage_members(
+        &root, &staging, &workspace, eligible, live_only, generate, ask,
+    );
+    let message = match &result {
+        Err(error) => Some(format!("{error:#}\n")),
+        Ok(report) if !report.failed.is_empty() => Some(
+            report
+                .failed
+                .iter()
+                .map(|member| format!("{}: {}\n", member.path.display(), member.reason))
+                .collect(),
+        ),
+        Ok(_) => None,
+    };
+    if let Some(message) = message {
         let _ = fs::write(staging.join(".alix-update-error.txt"), message);
     }
     result
+}
+
+/// Every cheap, deterministic member precondition is decided before the first
+/// backend call, so an unfrozen deck cannot cost a proposal for every other
+/// member first.
+fn eligible_members(root: &Path, workspace: &Workspace) -> Result<(Vec<Deck>, Vec<PathBuf>)> {
+    let mut eligible = Vec::new();
+    let mut live_only = Vec::new();
+    for path in &workspace.members {
+        let deck = Deck::load_with_defaults(path, &workspace.settings)?;
+        if deck.sources.is_empty() {
+            continue;
+        }
+        if !deck.cards.iter().any(|card| !card.citations.is_empty()) {
+            live_only.push(relative_member(path, root)?);
+            continue;
+        }
+        if !deck.is_frozen() {
+            bail!(
+                "{} still uses live source evidence; initialize and freeze it before workspace update",
+                path.display()
+            );
+        }
+        eligible.push(deck);
+    }
+    Ok((eligible, live_only))
 }
 
 /// A backend reply reaches a terminal and `.alix-update-error.txt`, so a
@@ -221,91 +287,232 @@ fn stage_members(
     root: &Path,
     staging: &Path,
     workspace: &Workspace,
+    eligible: Vec<Deck>,
+    live_only: Vec<PathBuf>,
     generate: &GenerateDeckConfig,
     ask: &AskConfig,
 ) -> Result<UpdateReport> {
     let mut staged_decks = Vec::new();
     let mut reports = Vec::new();
-    let mut live_only = Vec::new();
+    let mut failures: Vec<FailedDeck> = Vec::new();
 
-    for path in &workspace.members {
-        let deck = Deck::load_with_defaults(path, &workspace.settings)?;
-        if deck.sources.is_empty() {
-            continue;
+    for deck in &eligible {
+        let relative = relative_member(&deck.path, root)?;
+        let snapshot = MemberSnapshot::take(staging, &relative, deck_id(deck))?;
+        match stage_member(root, staging, workspace, deck, &relative, generate, ask) {
+            Ok((staged, report)) => {
+                staged_decks.push(staged);
+                reports.push(report);
+            }
+            Err(error) => {
+                snapshot.restore()?;
+                failures.push(FailedDeck {
+                    path: path_string(&relative)?,
+                    reason: format!("{error:#}"),
+                });
+            }
         }
-        let cited = deck.cards.iter().any(|card| !card.citations.is_empty());
-        if !cited {
-            live_only.push(relative_member(path, root)?);
-            continue;
-        }
-        if !deck.is_frozen() {
+    }
+
+    if staged_decks.is_empty() {
+        if failures.is_empty() {
             bail!(
-                "{} still uses live source evidence; initialize and freeze it before workspace update",
-                path.display()
+                "{} has no frozen source-backed members with a local source",
+                root.display()
             );
         }
-        let pointer = reconcile_pointer(&deck)?;
-        let live_source = live_source_expression(&pointer, root)?;
-        let relative = relative_member(path, root)?;
-        let staged_path = staging.join(&relative);
-        let baseline = digest_file(path)?;
-        let augment_path =
-            WorkspaceFiles::new(root).augment_for(deck.deck_token.as_deref().unwrap_or_default());
-        let augment_baseline = digest_optional(&augment_path)?;
+        let listed = failures
+            .iter()
+            .map(|failure| format!("\n  {}: {}", failure.path, failure.reason))
+            .collect::<String>();
+        bail!(
+            "every source-backed member of {} failed to update:{listed}",
+            root.display()
+        );
+    }
+    validate_dependencies(staging)?;
+    let manifest = UpdateManifest {
+        version: MANIFEST_VERSION,
+        workspace: path_string(root)?,
+        decks: staged_decks,
+        failures: failures.clone(),
+    };
+    let bytes = serde_json::to_vec_pretty(&manifest).context("cannot encode update manifest")?;
+    fs::write(staging.join(MANIFEST), bytes)
+        .with_context(|| format!("cannot write {MANIFEST} in {}", staging.display()))?;
+    Ok(UpdateReport {
+        staging: staging.to_path_buf(),
+        decks: reports,
+        live_only,
+        failed: failures.into_iter().map(FailedMember::from).collect(),
+    })
+}
 
-        let live_deck = live_proposal_text(&deck, &live_source)?;
-        let proposed = reconcile(&live_deck, &live_source, generate, ask)?;
-        fs::write(&staged_path, proposed.as_bytes())
-            .with_context(|| format!("cannot write {}", staged_path.display()))?;
+fn deck_id(deck: &Deck) -> &str {
+    deck.deck_token.as_deref().unwrap_or_default()
+}
 
-        let candidate = Deck::load_with_defaults(&staged_path, &workspace.settings).map_err(
-            |error| match error {
-                DeckError::Parse { source, .. } => anyhow!(
-                    "{}: the reply is not a deck ({source}); it began: {}",
-                    relative.display(),
-                    reply_excerpt(&proposed)
-                ),
-                other => anyhow::Error::new(other).context(format!(
-                    "cannot load the proposal for {}",
-                    relative.display()
-                )),
-            },
-        )?;
-        validate_proposal_metadata(&deck, &candidate, &live_source)?;
-        let identity = validate_unstamped_proposal(&deck, &candidate)?;
+/// A member owns three staged surfaces, and a failure has to leave all three
+/// as the staging copy found them: the proposal is written over the deck, and
+/// freezing it writes into the deck's asset directory and prunes its augment
+/// sidecar before any later validation can reject it.
+struct MemberSnapshot {
+    deck: PathBuf,
+    deck_bytes: Vec<u8>,
+    augment: PathBuf,
+    augment_bytes: Option<Vec<u8>>,
+    assets: PathBuf,
+    assets_existed: bool,
+    asset_names: BTreeSet<OsString>,
+}
 
-        let initialized = assets::initialize(&staged_path)
-            .with_context(|| format!("cannot freeze proposal {}", staged_path.display()))?;
-        let staged_deck = Deck::load_with_defaults(&staged_path, &workspace.settings)?;
-        assets::validate_member(&staged_deck)?;
-        validate_citations(&staged_deck)?;
-        validate_images(&staged_deck)?;
+impl MemberSnapshot {
+    fn take(staging: &Path, relative: &Path, deck_id: &str) -> Result<Self> {
+        let files = WorkspaceFiles::new(staging);
+        let deck = staging.join(relative);
+        let augment = files.augment_for(deck_id);
+        let assets = files.assets_for(deck_id);
+        Ok(MemberSnapshot {
+            deck_bytes: fs::read(&deck)
+                .with_context(|| format!("cannot read {}", deck.display()))?,
+            augment_bytes: read_optional(&augment)?,
+            asset_names: directory_names(&assets)?,
+            assets_existed: assets.is_dir(),
+            deck,
+            augment,
+            assets,
+        })
+    }
 
-        let old_tokens = identity_tokens(&deck);
-        let staged_tokens = identity_tokens(&staged_deck);
-        let added_tokens = staged_tokens
-            .difference(&old_tokens)
-            .cloned()
-            .collect::<Vec<_>>();
-        if added_tokens.len() != initialized.stamp.minted_cards.len() {
-            bail!(
-                "{} minted {} card IDs but introduced {} authored card tokens",
-                staged_path.display(),
-                initialized.stamp.minted_cards.len(),
-                added_tokens.len()
+    fn restore(&self) -> Result<()> {
+        let tmp = self.deck.with_extension("md.restore.tmp");
+        crate::fsio::replace_file(&tmp, &self.deck, &self.deck_bytes)
+            .with_context(|| format!("cannot restore {}", self.deck.display()))?;
+        match &self.augment_bytes {
+            Some(bytes) => {
+                let tmp = self.augment.with_extension("json.restore.tmp");
+                crate::fsio::replace_file(&tmp, &self.augment, bytes)
+                    .with_context(|| format!("cannot restore {}", self.augment.display()))?;
+            }
+            None if self.augment.exists() => fs::remove_file(&self.augment)
+                .with_context(|| format!("cannot remove {}", self.augment.display()))?,
+            None => {}
+        }
+        for name in directory_names(&self.assets)? {
+            if !self.asset_names.contains(&name) {
+                let path = self.assets.join(&name);
+                fs::remove_file(&path)
+                    .with_context(|| format!("cannot remove {}", path.display()))?;
+            }
+        }
+        if !self.assets_existed && self.assets.is_dir() {
+            fs::remove_dir(&self.assets)
+                .with_context(|| format!("cannot remove {}", self.assets.display()))?;
+        }
+        Ok(())
+    }
+}
+
+fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => {
+            Err(anyhow::Error::new(error).context(format!("cannot read {}", path.display())))
+        }
+    }
+}
+
+fn directory_names(path: &Path) -> Result<BTreeSet<OsString>> {
+    let mut names = BTreeSet::new();
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(names),
+        Err(error) => {
+            return Err(
+                anyhow::Error::new(error).context(format!("cannot read {}", path.display()))
             );
         }
-        validate_staged_identity(&deck, &staged_deck, &added_tokens)?;
+    };
+    for entry in entries {
+        names.insert(
+            entry
+                .with_context(|| format!("cannot read {}", path.display()))?
+                .file_name(),
+        );
+    }
+    Ok(names)
+}
 
-        let retired_ids = retired_card_ids(&deck, &identity.retired_tokens);
-        let staged_augment = WorkspaceFiles::new(staging)
-            .augment_for(staged_deck.deck_token.as_deref().unwrap_or_default());
-        prune_staged_augmentation(&staged_deck, &staged_augment, &retired_ids)?;
+fn stage_member(
+    root: &Path,
+    staging: &Path,
+    workspace: &Workspace,
+    deck: &Deck,
+    relative: &Path,
+    generate: &GenerateDeckConfig,
+    ask: &AskConfig,
+) -> Result<(StagedDeck, DeckUpdateReport)> {
+    let pointer = reconcile_pointer(deck)?;
+    let live_source = live_source_expression(&pointer, root)?;
+    let staged_path = staging.join(relative);
+    let baseline = digest_file(&deck.path)?;
+    let augment_path = WorkspaceFiles::new(root).augment_for(deck_id(deck));
+    let augment_baseline = digest_optional(&augment_path)?;
 
-        let staged_digest = digest_file(&staged_path)?;
-        let augment_staged = digest_optional(&staged_augment)?;
-        staged_decks.push(StagedDeck {
-            path: path_string(&relative)?,
+    let live_deck = live_proposal_text(deck, &live_source)?;
+    let proposed = reconcile(&live_deck, &live_source, generate, ask)?;
+    fs::write(&staged_path, proposed.as_bytes())
+        .with_context(|| format!("cannot write {}", staged_path.display()))?;
+
+    let candidate = Deck::load_with_defaults(&staged_path, &workspace.settings).map_err(
+        |error| match error {
+            DeckError::Parse { source, .. } => anyhow!(
+                "{}: the reply is not a deck ({source}); it began: {}",
+                relative.display(),
+                reply_excerpt(&proposed)
+            ),
+            other => anyhow::Error::new(other).context(format!(
+                "cannot load the proposal for {}",
+                relative.display()
+            )),
+        },
+    )?;
+    validate_proposal_metadata(deck, &candidate, &live_source)?;
+    let identity = validate_unstamped_proposal(deck, &candidate)?;
+
+    let initialized = assets::initialize(&staged_path)
+        .with_context(|| format!("cannot freeze proposal {}", staged_path.display()))?;
+    let staged_deck = Deck::load_with_defaults(&staged_path, &workspace.settings)?;
+    assets::validate_member(&staged_deck)?;
+    validate_citations(&staged_deck)?;
+    validate_images(&staged_deck)?;
+
+    let old_tokens = identity_tokens(deck);
+    let staged_tokens = identity_tokens(&staged_deck);
+    let added_tokens = staged_tokens
+        .difference(&old_tokens)
+        .cloned()
+        .collect::<Vec<_>>();
+    if added_tokens.len() != initialized.stamp.minted_cards.len() {
+        bail!(
+            "{} minted {} card IDs but introduced {} authored card tokens",
+            staged_path.display(),
+            initialized.stamp.minted_cards.len(),
+            added_tokens.len()
+        );
+    }
+    validate_staged_identity(deck, &staged_deck, &added_tokens)?;
+
+    let retired_ids = retired_card_ids(deck, &identity.retired_tokens);
+    let staged_augment = WorkspaceFiles::new(staging).augment_for(deck_id(&staged_deck));
+    prune_staged_augmentation(&staged_deck, &staged_augment, &retired_ids)?;
+
+    let staged_digest = digest_file(&staged_path)?;
+    let augment_staged = digest_optional(&staged_augment)?;
+    Ok((
+        StagedDeck {
+            path: path_string(relative)?,
             deck_id: staged_deck.deck_token.clone().unwrap_or_default(),
             baseline,
             staged: staged_digest,
@@ -315,35 +522,14 @@ fn stage_members(
             retired_tokens: identity.retired_tokens.clone(),
             retired_ids,
             added_tokens: added_tokens.clone(),
-        });
-        reports.push(DeckUpdateReport {
-            path: relative,
+        },
+        DeckUpdateReport {
+            path: relative.to_path_buf(),
             retained: identity.retained_tokens.len(),
             retired: identity.retired_tokens.len(),
             added: added_tokens.len(),
-        });
-    }
-
-    if staged_decks.is_empty() {
-        bail!(
-            "{} has no frozen source-backed members with a local source",
-            root.display()
-        );
-    }
-    validate_dependencies(staging)?;
-    let manifest = UpdateManifest {
-        version: MANIFEST_VERSION,
-        workspace: path_string(root)?,
-        decks: staged_decks,
-    };
-    let bytes = serde_json::to_vec_pretty(&manifest).context("cannot encode update manifest")?;
-    fs::write(staging.join(MANIFEST), bytes)
-        .with_context(|| format!("cannot write {MANIFEST} in {}", staging.display()))?;
-    Ok(UpdateReport {
-        staging: staging.to_path_buf(),
-        decks: reports,
-        live_only,
-    })
+        },
+    ))
 }
 
 pub fn apply(workspace_root: &Path) -> Result<UpdateReport> {
@@ -377,6 +563,11 @@ pub fn apply(workspace_root: &Path) -> Result<UpdateReport> {
         staging,
         decks: reports,
         live_only: Vec::new(),
+        failed: manifest
+            .failures
+            .into_iter()
+            .map(FailedMember::from)
+            .collect(),
     })
 }
 
@@ -1003,7 +1194,7 @@ fn copy_tree_if_present(from: &Path, to: &Path) -> Result<()> {
 mod tests {
     use super::*;
     #[cfg(unix)]
-    use crate::testutil::{ask_config, exec_lock, fake_reply};
+    use crate::testutil::{ask_config, exec_lock, fake_cli, fake_reply};
 
     fn workspace(source_text: &str) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
         let directory = tempfile::tempdir().unwrap();
@@ -1444,6 +1635,281 @@ mod tests {
     }
 
     #[cfg(unix)]
+    fn add_member(root: &Path, source: &Path, name: &str, deck_id: &str, card_id: &str) -> PathBuf {
+        let deck = root.join(workspace::DECKS).join(name);
+        fs::write(
+            &deck,
+            format!(
+                "---\nformat-version: 1\nid: \"{deck_id}\"\nsource: {}\n---\n## Other question\nOther answer\n<!-- at: code.rs:1 -->\n<!-- id: {card_id} -->\n",
+                parser::yaml_quote(&source.display().to_string())
+            ),
+        )
+        .unwrap();
+        assets::freeze_member(&deck).unwrap();
+        deck
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn one_member_that_fails_does_not_stop_the_others() {
+        let _lock = exec_lock();
+        let (_dir, root, source, _) = workspace("Old answer\n");
+        add_member(&root, &source, "other.md", "deck-deck2", "card-othercard");
+        let reply = proposal(
+            &source,
+            "## New question\nNew answer\n<!-- at: code.rs:1 -->\n",
+        );
+        let command = fake_reply(&root, &reply);
+
+        let report = stage(&root, &GenerateDeckConfig::default(), &ask_config(&command)).unwrap();
+
+        assert_eq!(
+            vec![PathBuf::from("decks/facts.md")],
+            report
+                .decks
+                .iter()
+                .map(|deck| deck.path.clone())
+                .collect::<Vec<_>>(),
+            "the member whose proposal was sound must still stage"
+        );
+        assert_eq!(
+            vec![PathBuf::from("decks/other.md")],
+            report
+                .failed
+                .iter()
+                .map(|member| member.path.clone())
+                .collect::<Vec<_>>(),
+            "the member whose proposal was not must be recorded, not fatal"
+        );
+        assert!(
+            report.failed[0].reason.contains("stable deck ID"),
+            "the recorded reason must be the member's own failure: {}",
+            report.failed[0].reason
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_member_whose_reply_is_not_a_deck_leaves_the_staged_workspace_loadable() {
+        let _lock = exec_lock();
+        let (_dir, root, source, _) = workspace("Old answer\n");
+        add_member(&root, &source, "other.md", "deck-deck2", "card-othercard");
+        let good = root.join("good-proposal");
+        fs::write(
+            &good,
+            proposal(
+                &source,
+                "## New question\nNew answer\n<!-- at: code.rs:1 -->\n",
+            ),
+        )
+        .unwrap();
+        let command = fake_cli(
+            &root,
+            &format!(
+                "prompt=$(cat); case \"$prompt\" in *deck-deck2*) printf 'I cannot help with that request.\\n' ;; *) cat {} ;; esac",
+                good.display()
+            ),
+        );
+
+        let report = stage(&root, &GenerateDeckConfig::default(), &ask_config(&command)).unwrap();
+
+        assert_eq!(
+            vec![PathBuf::from("decks/other.md")],
+            report
+                .failed
+                .iter()
+                .map(|member| member.path.clone())
+                .collect::<Vec<_>>(),
+            "only the member whose reply was not a deck may fail"
+        );
+        assert!(
+            report.failed[0]
+                .reason
+                .contains("I cannot help with that request."),
+            "the reply must be quoted against the member: {}",
+            report.failed[0].reason
+        );
+        assert_eq!(
+            fs::read(root.join("decks/other.md")).unwrap(),
+            fs::read(report.staging.join("decks/other.md")).unwrap(),
+            "the run only reaches Ok because the staged copy came back before every member is loaded again"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_member_is_left_as_the_staging_copy_found_it() {
+        let _lock = exec_lock();
+        let (_dir, root, source, _) = workspace("Old answer\n");
+        let member = add_member(&root, &source, "other.md", "deck-deck2", "card-othercard");
+        let reply = proposal(
+            &source,
+            "## New question\nNew answer\n<!-- at: code.rs:1 -->\n",
+        );
+        let command = fake_reply(&root, &reply);
+        let before = fs::read(&member).unwrap();
+
+        let report = stage(&root, &GenerateDeckConfig::default(), &ask_config(&command)).unwrap();
+
+        assert_eq!(
+            before,
+            fs::read(report.staging.join("decks/other.md")).unwrap(),
+            "a failed member's staged deck must be the copy, not the rejected proposal"
+        );
+        assert_eq!(
+            before,
+            fs::read(&member).unwrap(),
+            "the original must not move"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_member_adds_no_asset_object_to_the_staging_tree() {
+        let _lock = exec_lock();
+        let (_dir, root, source, _) = workspace("first\nsecond\nthird\n");
+        let reply = proposal(
+            &source,
+            "## New question\nNew answer\n<!-- at: code.rs:2 -->\n\n## Second question\nSecond answer\n<!-- at: code.rs:99 -->\n",
+        );
+        let command = fake_reply(&root, &reply);
+        let owned = |base: &Path| {
+            let mut names = directory_names(&WorkspaceFiles::new(base).assets_for("deck-deck1"))
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>();
+            names.sort();
+            names
+        };
+        let before = owned(&root);
+
+        let error =
+            stage(&root, &GenerateDeckConfig::default(), &ask_config(&command)).unwrap_err();
+
+        let staging = staging_path(&root);
+        assert!(
+            staging.is_dir(),
+            "the proposal must stay for inspection: {error:#}"
+        );
+        assert_eq!(
+            before,
+            owned(&staging),
+            "a member that failed after freezing began must leave no object behind"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_reprints_the_failures_the_stage_recorded() {
+        let _lock = exec_lock();
+        let (_dir, root, source, _) = workspace("Old answer\n");
+        add_member(&root, &source, "other.md", "deck-deck2", "card-othercard");
+        let reply = proposal(
+            &source,
+            "## New question\nNew answer\n<!-- at: code.rs:1 -->\n",
+        );
+        let command = fake_reply(&root, &reply);
+        let staged = stage(&root, &GenerateDeckConfig::default(), &ask_config(&command)).unwrap();
+
+        let applied = apply(&root).unwrap();
+
+        assert_eq!(
+            staged.failed, applied.failed,
+            "apply is the second half of one workflow and must name what did not update"
+        );
+    }
+
+    #[test]
+    fn a_manifest_carries_every_field_and_no_others() {
+        let staged = r#"{"path":"decks/a.md","deck_id":"deck-a","baseline":"b","staged":"s","augment_baseline":null,"augment_staged":null,"retained_tokens":[],"retired_tokens":[],"retired_ids":[],"added_tokens":[]}"#;
+        let current = format!(
+            r#"{{"version":1,"workspace":"/w","decks":[{staged}],"failures":[{{"path":"decks/b.md","reason":"why"}}]}}"#
+        );
+        let parsed = serde_json::from_str::<UpdateManifest>(&current).expect("the current shape");
+        assert_eq!(1, parsed.failures.len());
+
+        for (text, why) in [
+            (
+                r#"{"version":1,"workspace":"/w","decks":[]}"#.to_string(),
+                "a manifest with no failure list",
+            ),
+            (
+                r#"{"version":1,"workspace":"/w","decks":[],"failures":[],"extra":1}"#.to_string(),
+                "an unknown field beside the manifest",
+            ),
+            (
+                format!(r#"{{"version":1,"workspace":"/w","decks":[{}],"failures":[]}}"#, staged.replace("\"path\"", "\"extra\":1,\"path\"")),
+                "an unknown field inside a staged deck",
+            ),
+            (
+                r#"{"version":1,"workspace":"/w","decks":[],"failures":[{"path":"a","reason":"r","extra":1}]}"#.to_string(),
+                "an unknown field inside a failure",
+            ),
+        ] {
+            assert!(
+                serde_json::from_str::<UpdateManifest>(&text).is_err(),
+                "{why} must fail as ordinary invalid input"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unfrozen_member_stops_the_run_before_any_staging_exists() {
+        let _lock = exec_lock();
+        let (_dir, root, source, _) = workspace("Old answer\n");
+        fs::write(
+            root.join(workspace::DECKS).join("live.md"),
+            format!(
+                "---\nformat-version: 1\nid: \"deck-deck2\"\nsource: {}\n---\n## Live question\nLive answer\n<!-- at: code.rs:1 -->\n<!-- id: card-livecard -->\n",
+                parser::yaml_quote(&source.display().to_string())
+            ),
+        )
+        .unwrap();
+        let command = fake_reply(&root, "unreachable\n");
+
+        let error =
+            stage(&root, &GenerateDeckConfig::default(), &ask_config(&command)).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("live.md"),
+            "the unfrozen member must be named: {error:#}"
+        );
+        assert!(
+            !staging_path(&root).exists(),
+            "a precondition every member can be checked against must cost no proposal"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn every_member_failing_leaves_a_proposal_that_cannot_be_applied() {
+        let _lock = exec_lock();
+        let (_dir, root, _source, _) = workspace("Old answer\n");
+        let command = fake_reply(&root, "I cannot help with that request.\n");
+
+        let error =
+            stage(&root, &GenerateDeckConfig::default(), &ask_config(&command)).unwrap_err();
+        let staging = staging_path(&root);
+
+        assert!(
+            staging.is_dir(),
+            "the proposal stays for inspection: {error:#}"
+        );
+        assert!(
+            !staging.join(MANIFEST).exists(),
+            "nothing may be applyable when nothing updated"
+        );
+        assert!(
+            fs::read_to_string(staging.join(".alix-update-error.txt"))
+                .unwrap()
+                .contains("I cannot help with that request."),
+            "the inspection file must carry what came back"
+        );
+        assert!(apply(&root).is_err(), "apply must refuse: {error:#}");
+    }
+
+    #[cfg(unix)]
     #[test]
     fn a_reply_that_is_not_a_deck_names_the_member_and_quotes_what_came_back() {
         let _lock = exec_lock();
@@ -1539,6 +2005,7 @@ mod tests {
             version: MANIFEST_VERSION,
             workspace: path_string(&root).unwrap(),
             decks: vec![deck("decks/a.md", "a"), deck("decks/b.md", "b")],
+            failures: Vec::new(),
         };
         let mut writes = 0;
 

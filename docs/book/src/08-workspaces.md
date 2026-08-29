@@ -131,6 +131,15 @@ alix workspace update ~/decks/spanish --apply
 Use `--discard` instead to remove the proposal. Apply refuses if an original
 deck changed after staging.
 
+Every member is checked for frozen evidence before the first model call, so an
+unfrozen deck stops the command immediately and costs nothing. After that, a
+member whose proposal comes back unusable is reported as that member and left
+exactly as the proposal found it, while the other members still stage. The
+command exits non-zero and names each one, the reasons are recorded in the
+proposal so `--apply` reprints them, and applying touches only the members that
+did update. If every member fails there is no proposal to apply, and the
+staging directory is left for inspection.
+
 A card ID belongs to one learning proposition. An unchanged question and
 answer may keep its ID while its note or source locator improves. If the
 question, answer, cloze, or learning image changes, the old card and ID retire

@@ -134,7 +134,14 @@ pub(crate) fn workspace_update_cmd(args: WorkspaceUpdateArgs) -> Result<()> {
         report.staging.display(),
         args.dir.display()
     );
-    Ok(())
+    if report.failed.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "{} of {} source-backed member(s) did not update",
+        report.failed.len(),
+        report.failed.len() + report.decks.len()
+    )
 }
 
 fn print_workspace_update_report(action: &str, report: &alix::workspace_update::UpdateReport) {
@@ -159,6 +166,13 @@ fn print_workspace_update_report(action: &str, report: &alix::workspace_update::
             "  {}: no source citations, nothing frozen to reconcile; left as is",
             path.display()
         );
+    }
+    if report.failed.is_empty() {
+        return;
+    }
+    println!("{} deck(s) did not update:", report.failed.len());
+    for member in &report.failed {
+        println!("  {}: {}", member.path.display(), member.reason);
     }
 }
 
