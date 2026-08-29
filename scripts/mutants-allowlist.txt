@@ -126,3 +126,32 @@ src/diagram.rs:222: replace > with >= in ground
 # Line-pinned: the argument is about this one comparison, so a `>` surviving
 # anywhere else in the function must be argued on its own.
 src/diagram.rs:247: replace > with >= in contrast
+
+# EQUIVALENT. The only extra candidate the widened bound admits is
+# `at == glyphs.len()`, and `raw` is `glyphs.get(at)` (src/inline.rs:623), so
+# that iteration reads `None`, the `matches!` is false, the loop advances once
+# more and stops. The very next line tests `raw(at) != Some(closer)`, which is
+# true for an out-of-bounds `at` either way, so both versions return `None`.
+# Line-pinned: the argument is about this one bound.
+src/inline.rs:674: replace < with <= in link_tail_end
+
+# EQUIVALENT. The arm has already matched `'\'`, which is itself a member of
+# the `'<' | '>' | '\'` set the guard tests, so the mutant guard is always
+# true and the arm always skips two. The original diverges only when the byte
+# after the backslash would be handled differently on its own pass, and the
+# bytes that would be are exactly the three the guard already covers, where it
+# is true in both versions. A trailing backslash ends the loop either way.
+# Line-pinned: the argument is about this one lookahead.
+src/inline.rs:1003: replace + with * in image_destination_end
+
+# EQUIVALENT, for the state transition proved directly above: forcing the
+# guard true is the same edit as making its lookahead always match.
+src/inline.rs:1002: replace match guard chars .get(index + 1) .is_some_and(|ch| matches!(ch, '<' | '>' | '\\')) with true in image_destination_end
+
+# EQUIVALENT. Both callers enter with `chars[start] == '<'`: src/inline.rs:928
+# sits below the `chars[index] != '<'` early-continue at :920, and :1206 tests
+# it explicitly. The widened range therefore adds one candidate that is `'<'`,
+# never the `'>'` the search wants, so `find` returns the same index. The body
+# slice on the next line reads `chars[start + 1..close]` and the mutant does
+# not touch it. Line-pinned: the argument is about this one range start.
+src/inline.rs:1057: replace + with * in autolink_end

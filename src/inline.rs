@@ -1923,6 +1923,11 @@ mod tests {
             ("![d](<d.png>x)", 6, "a destination not sealed by the paren"),
             (r"![d](<a\>b)", 6, "an escaped close leaves the form open"),
             (
+                "![d](<a<b>)",
+                6,
+                "a raw inner angle breaks the image destination",
+            ),
+            (
                 "[t](<a b c>)",
                 5,
                 "a link destination is not the image form",
@@ -1963,6 +1968,14 @@ mod tests {
                 "two pairs on one line",
             ),
             ("![d](<old image.png>)", "an image destination in angles"),
+            (
+                r"![d](<a\>b>)",
+                "an escaped close stays inside the image destination",
+            ),
+            (
+                r"![d](<x\\>)",
+                "an escaped backslash leaves the following close structural",
+            ),
         ];
         for (text, why) in legal_rows {
             assert_eq!(tag_shape_column(text), None, "{why}: {text}");
@@ -3213,6 +3226,28 @@ mod tests {
     #[test]
     fn empty_input_yields_no_runs() {
         assert!(parse_inline("").is_empty());
+    }
+
+    #[test]
+    fn math_scanner_resumes_at_the_exact_delimiter_boundary() {
+        let rows = [
+            ("``$a$`", "a", "a span opening right after a code fence"),
+            ("$$$a$", "a", "a span opening one byte into a display run"),
+            ("x $$ab$$ $c$", "c", "the byte after a closed display run"),
+            ("$`ab`$ $c$", "c", "the byte after a span holding code"),
+            ("$`ab`$ $c$ `d`", "c", "the same, with code following"),
+        ];
+        for (text, inner, why) in rows {
+            assert!(
+                math_encloses(text, inner),
+                "{why}: {text:?} must enclose {inner:?}"
+            );
+        }
+        assert_eq!(
+            1,
+            math_spans(&"$a$a$".chars().collect::<Vec<_>>()).len(),
+            "a closing delimiter is not reused as the next opener"
+        );
     }
 
     proptest! {
