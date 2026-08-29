@@ -3,7 +3,7 @@
 # miss matches an entry here. Entries document argued residuals; the
 # mutants still run every sweep, so red means NEW information.
 #
-# Current contents: EIGHT argued groups, down from twenty-four. Alex ruled
+# Down from twenty-four groups. Alex ruled
 # 2026-08-06 that the only admissible reason is "it really cannot be
 # tested", so everything merely awkward was seamed and killed instead:
 # the uuid mixer became a pure function of its seed (11 killed), the
@@ -114,12 +114,15 @@ src/parser/frontmatter.rs:368: replace + with * in key_rank
 # ratios differ by 0.00000021507230041351. `>` and `>=` therefore select the
 # same ground for every input the function can receive. Were a tie reachable,
 # both grounds would by definition contrast identically, so the tie-break
-# carries no legibility meaning worth pinning either.
-src/diagram.rs: replace > with >= in ground
+# carries no legibility meaning worth pinning either. Line-pinned: the
+# argument is about this one comparison, not about the function.
+src/diagram.rs:222: replace > with >= in ground
 
 # EQUIVALENT, provably, and by inspection rather than enumeration. The only
 # inputs where `>` and `>=` differ are those with `a == b`, and there
 # `(a, b)` and `(b, a)` are the same pair, so the quotient is identical. For
 # every other pair the operators already agree, NaN included, where both are
 # false and the `else` arm is taken either way. No input distinguishes them.
-src/diagram.rs: replace > with >= in contrast
+# Line-pinned: the argument is about this one comparison, so a `>` surviving
+# anywhere else in the function must be argued on its own.
+src/diagram.rs:247: replace > with >= in contrast
