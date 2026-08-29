@@ -668,6 +668,88 @@ mod tests {
     }
 
     #[test]
+    fn only_the_exact_default_generation_spec_is_default() {
+        let cases = [
+            ("the exact default", spec(), true),
+            (
+                "a different goal",
+                GenerationSpec {
+                    goal: "learn one topic".to_string(),
+                    ..spec()
+                },
+                false,
+            ),
+            (
+                "an output language",
+                GenerationSpec {
+                    language: Some("German".to_string()),
+                    ..spec()
+                },
+                false,
+            ),
+            (
+                "an audience",
+                GenerationSpec {
+                    audience: Some("new programmers".to_string()),
+                    ..spec()
+                },
+                false,
+            ),
+            (
+                "a fixed card style",
+                GenerationSpec {
+                    card_style: GenerateCardStyle::Plain,
+                    ..spec()
+                },
+                false,
+            ),
+        ];
+
+        for (name, candidate, expected) in cases {
+            assert_eq!(expected, candidate.is_default(), "{name}");
+        }
+    }
+
+    #[test]
+    fn run_config_derives_the_exact_tool_root_and_source_access_policy() {
+        let ask = AskConfig {
+            allowed_tools: vec!["ParentTool".to_string()],
+            cwd: Some(PathBuf::from("/parent")),
+            source_access: true,
+            ..AskConfig::default()
+        };
+        let cases = [
+            (
+                "a URL keeps the parent's network tools but takes the requested root",
+                true,
+                Some(PathBuf::from("/url-root")),
+                vec!["ParentTool".to_string()],
+                Some(PathBuf::from("/url-root")),
+            ),
+            (
+                "a local source gets read-only local tools and clears the parent root",
+                false,
+                None,
+                vec!["Read".to_string(), "Glob".to_string(), "Grep".to_string()],
+                None,
+            ),
+        ];
+
+        for (name, url, cwd, expected_tools, expected_cwd) in cases {
+            let derived = run_config(&cfg(10), &ask, url, cwd);
+            assert_eq!(
+                expected_tools, derived.allowed_tools,
+                "{name}: allowed tools"
+            );
+            assert_eq!(expected_cwd, derived.cwd, "{name}: working directory");
+            assert!(
+                !derived.source_access,
+                "{name}: source access is always off"
+            );
+        }
+    }
+
+    #[test]
     fn prompt_substitutes_url_and_card_count() {
         let p = build_prompt("https://example.org/page", true, &cfg(12), &spec());
         assert!(p.contains("https://example.org/page"));
