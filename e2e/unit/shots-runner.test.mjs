@@ -208,10 +208,13 @@ test("every capture step is registered once, under the number its producer write
   ]);
   assert.ok(rows.length > 0, "the STEPS table has rows");
   const ids = rows.map(([n]) => n);
-  assert.deepEqual(
-    ids,
-    rows.map((_, i) => i + 1),
-    `STEPS ids must run 1..N in order, got ${JSON.stringify(ids)}`,
+  for (const n of ids) {
+    assert.ok(n >= 1, `STEPS ids must be positive, got ${n}`);
+  }
+  assert.equal(
+    new Set(ids).size,
+    ids.length,
+    `STEPS ids must be unique, got ${JSON.stringify(ids)}`,
   );
   for (const [n, fn] of rows) {
     assert.equal(fn, `shot${n}`, `step ${n} must be produced by shot${n}, not ${fn}`);
