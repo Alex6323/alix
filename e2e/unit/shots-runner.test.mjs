@@ -4,7 +4,7 @@ import test from "node:test";
 
 import runner from "../shots/runner.cjs";
 
-const { runRequested, summarize, unreceipted, exitCodeFor } = runner;
+const { runRequested, summarize, unknownRequests, exitCodeFor } = runner;
 
 const steps = (outcomes) =>
   Object.entries(outcomes).map(([n, outcome]) => [
@@ -51,7 +51,7 @@ const codeAfter = async (outcomes, stores = {}) => {
     failed,
     demoChanged: stores.demoChanged || [],
     kidsChanged: stores.kidsChanged || [],
-    unwritten: stores.unwritten || [],
+    unknown: stores.unknown || [],
   });
 };
 
@@ -75,34 +75,82 @@ test("a real kids store mutation alone makes the run exit nonzero", async () => 
   assert.equal(await codeAfter({ 1: true }, { kidsChanged: ["progress/y.json"] }), 1);
 });
 
-test("a shot with nothing in the receipt is unwritten, whatever is on disk", () => {
-  assert.deepEqual(unreceipted([1, 2], []), [1, 2]);
+// The receipt: `writes` names, per shot number, what that step adds to the
+// live set, so attribution is by producer rather than by filename.
+const writingSteps = (writes) =>
+  Object.entries(writes).map(([n, names]) => [
+    Number(n),
+    async () => {
+      for (const name of names) receipt.add(name);
+      return true;
+    },
+  ]);
+
+let receipt;
+const failedAfterWriting = async (writes) => {
+  receipt = new Set();
+  const results = await runRequested(writingSteps(writes), all, null, receipt);
+  return summarize(results).failed;
+};
+
+test("a shot that returns true without writing anything is a failure", async () => {
+  assert.deepEqual(await failedAfterWriting({ 1: [] }), [1]);
 });
 
-test("a receipt naming each shot leaves nothing unwritten", () => {
+test("a shot that writes its own numbered file passes", async () => {
   assert.deepEqual(
-    unreceipted([1, 10], ["shot-1-verify.webp", "shot-10-kids.webp"]),
+    await failedAfterWriting({ 1: ["shot-1-verify.webp"], 6: ["shot-6-trace.webp"] }),
     [],
   );
 });
 
-test("a receipt for a different shot does not satisfy the one asked for", () => {
-  assert.deepEqual(unreceipted([2], ["shot-3-modes.webp"]), [2]);
-});
-
-test("a receipt entry that is not a numbered shot file satisfies nothing", () => {
-  assert.deepEqual(unreceipted([1], ["shot-1-verify.png", "verify.webp"]), [1]);
-});
-
-test("only the shots asked about are reported, never the whole receipt", () => {
+test("two shots swapping filenames both fail rather than crediting each other", async () => {
   assert.deepEqual(
-    unreceipted([6], ["shot-1-verify.webp", "shot-6-trace.webp"]),
-    [],
+    await failedAfterWriting({ 1: ["shot-2-wrong.webp"], 2: ["shot-1-wrong.webp"] }),
+    [1, 2],
   );
 });
 
-test("a shot that reported captured without writing makes the run exit nonzero", async () => {
-  assert.equal(await codeAfter({ 1: true }, { unwritten: [1] }), 1);
+test("a shot writing a second file fails until the protocol is changed on purpose", async () => {
+  assert.deepEqual(
+    await failedAfterWriting({ 1: ["shot-1-a.webp", "shot-1-b.webp"] }),
+    [1],
+  );
+});
+
+test("a later shot rewriting an earlier shot's file fails on an empty difference", async () => {
+  assert.deepEqual(
+    await failedAfterWriting({ 1: ["shot-1-a.webp"], 2: ["shot-1-a.webp"] }),
+    [2],
+  );
+});
+
+test("an earlier shot's file never satisfies a later one", async () => {
+  assert.deepEqual(
+    await failedAfterWriting({ 1: ["shot-1-verify.webp"], 2: [] }),
+    [2],
+  );
+});
+
+test("without a receipt the attribution is skipped, not silently failed", async () => {
+  const results = await runRequested(steps({ 1: true }), all, null);
+  assert.deepEqual(summarize(results).failed, []);
+});
+
+test("--only naming a shot that does not exist is unknown", () => {
+  assert.deepEqual(unknownRequests([[1, null], [2, null]], new Set([1, 11])), [11]);
+});
+
+test("--only naming only known shots is empty", () => {
+  assert.deepEqual(unknownRequests([[1, null], [6, null]], new Set([6])), []);
+});
+
+test("no --only at all requests everything and is never unknown", () => {
+  assert.deepEqual(unknownRequests([[1, null]], null), []);
+});
+
+test("an unknown --only number alone makes the run exit nonzero", async () => {
+  assert.equal(await codeAfter({}, { unknown: [11] }), 1);
 });
 
 // The decision above is only worth anything if the capture actually uses it.
@@ -113,12 +161,15 @@ test("the capture derives its exit code from the shared decision", async () => {
     new URL("../shots/capture.cjs", import.meta.url),
     "utf8",
   );
-  assert.match(source, /process\.exitCode = exitCodeFor\(/);
-  assert.equal(source.match(/process\.exitCode/g).length, 1);
+  assert.equal(
+    source.match(/process\.exitCode = exitCodeFor\(/g).length,
+    source.match(/process\.exitCode/g).length,
+  );
 });
 
 // The receipt is only honest if it is written where the file lands, so the
-// capture must record after the rename and nowhere else.
+// capture must record after the rename and nowhere else, and hand the live set
+// to the attribution.
 test("the capture records its receipt only after a successful rename", async () => {
   const source = await readFile(
     new URL("../shots/capture.cjs", import.meta.url),
@@ -126,5 +177,17 @@ test("the capture records its receipt only after a successful rename", async () 
   );
   assert.match(source, /fs\.renameSync\(webp, out\);\n\s*capturedThisRun\.add\(filename\);/);
   assert.equal(source.match(/capturedThisRun\.add\(/g).length, 1);
-  assert.match(source, /unreceipted\(reported, capturedThisRun\)/);
+  assert.match(source, /runRequested\(steps, wants, page, capturedThisRun\)/);
+});
+
+test("the capture rejects an unknown --only above the encoder probe", async () => {
+  const source = await readFile(
+    new URL("../shots/capture.cjs", import.meta.url),
+    "utf8",
+  );
+  const validate = source.indexOf("unknownRequests(STEPS, ONLY)");
+  const encoder = source.indexOf("requireWebpEncoder();", source.indexOf("async function main()"));
+  assert.ok(validate > 0, "the capture validates --only");
+  assert.ok(validate < encoder, "validation must precede the encoder probe");
+  assert.equal(source.match(/unknownRequests\(/g).length, 1);
 });

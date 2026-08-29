@@ -29,7 +29,7 @@ const os = require("node:os");
 const {
   runRequested,
   summarize,
-  unreceipted,
+  unknownRequests,
   exitCodeFor,
 } = require("./runner.cjs");
 
@@ -363,6 +363,21 @@ async function settleAnimations(page) {
 // throws — never writes a WebP of the wrong screen; the caller's try/catch
 // turns that into an honest SKIP in the summary.
 const capturedThisRun = new Set();
+
+// One table answers both what runs and what `--only` may name. The shot
+// functions are declarations, so they hoist above this.
+const STEPS = [
+  [1, shot1],
+  [2, shot2],
+  [3, shot3],
+  [4, shot4],
+  [5, shot5],
+  [6, shot6],
+  [7, shot7],
+  [8, shot8],
+  [9, shot9],
+  [10, shot10],
+];
 
 async function shot(page, filename, ready) {
   if (path.extname(filename) !== ".webp") {
@@ -964,6 +979,12 @@ async function shot10(page) {
 // ---- main ------------------------------------------------------------------
 
 async function main() {
+  const unknown = unknownRequests(STEPS, ONLY);
+  if (unknown.length) {
+    console.error(`[shots] --only named no such shot: ${unknown.join(", ")}`);
+    process.exitCode = exitCodeFor({ unknown });
+    return;
+  }
   requireWebpEncoder();
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.mkdirSync(WORK, { recursive: true });
@@ -1008,19 +1029,11 @@ async function main() {
       await establishHeroSchedules(page);
     }
 
-    const steps = [
-      [1, shot1],
-      [2, shot2],
-      [3, shot3],
-      [4, shot4],
-      [5, shot5],
-      [6, shot6],
-      [7, shot7],
-      [8, shot8],
-      [9, shot9],
-      [10, shot10],
-    ];
-    Object.assign(results, await runRequested(steps, wants, page));
+    const steps = STEPS;
+    Object.assign(
+      results,
+      await runRequested(steps, wants, page, capturedThisRun),
+    );
   } finally {
     await browser.close();
     stopAll();
@@ -1035,10 +1048,6 @@ async function main() {
   log("=== summary ===");
   const { lines, failed } = summarize(results);
   for (const line of lines) log(line);
-  const reported = Object.entries(results)
-    .filter(([, ok]) => ok)
-    .map(([n]) => Number(n));
-  const unwritten = unreceipted(reported, capturedThisRun);
   log("~/alix-demo files changed:", demoChanged.length ? demoChanged : "none");
   log("~/alix-kids files changed:", kidsChanged.length ? kidsChanged : "none");
   if (demoChanged.length || kidsChanged.length) {
@@ -1047,10 +1056,7 @@ async function main() {
   if (failed.length) {
     console.error(`[shots] requested shots that did not capture: ${failed.join(", ")}`);
   }
-  if (unwritten.length) {
-    console.error(`[shots] shots that reported captured but wrote no file this run: ${unwritten.join(", ")}`);
-  }
-  process.exitCode = exitCodeFor({ failed, demoChanged, kidsChanged, unwritten });
+  process.exitCode = exitCodeFor({ failed, demoChanged, kidsChanged });
 }
 
 if (require.main === module) {
