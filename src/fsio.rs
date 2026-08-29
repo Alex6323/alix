@@ -207,16 +207,7 @@ pub(crate) fn create_dir_all(dir: &Path) -> Result<()> {
     if dir.exists() {
         return Ok(());
     }
-    let mut missing = Vec::new();
-    let mut cursor = Some(dir);
-    while let Some(component) = cursor {
-        if component.as_os_str().is_empty() || component.exists() {
-            break;
-        }
-        missing.push(component);
-        cursor = component.parent();
-    }
-    for component in missing.iter().rev() {
+    for component in missing_directories(dir) {
         match operation(Operation::CreateDirectory, || {
             std::fs::create_dir(component)
         }) {
@@ -229,6 +220,20 @@ pub(crate) fn create_dir_all(dir: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn missing_directories(dir: &Path) -> Vec<&Path> {
+    let mut missing = Vec::new();
+    let mut cursor = Some(dir);
+    while let Some(component) = cursor {
+        if component.as_os_str().is_empty() || component.exists() {
+            break;
+        }
+        missing.push(component);
+        cursor = component.parent();
+    }
+    missing.reverse();
+    missing
 }
 
 // Test-only named kill points plus fail-on-Nth filesystem operations.
@@ -257,6 +262,7 @@ pub(crate) mod fault {
         nth: Option<usize>,
         seen: usize,
         triggered: Option<Operation>,
+        error_kind: Option<std::io::ErrorKind>,
     }
 
     pub(crate) struct FaultGuard {
@@ -264,6 +270,13 @@ pub(crate) mod fault {
     }
 
     pub(crate) fn fail_on_nth_operation(nth: usize) -> FaultGuard {
+        fail_on_nth_operation_with_kind(nth, std::io::ErrorKind::Other)
+    }
+
+    pub(crate) fn fail_on_nth_operation_with_kind(
+        nth: usize,
+        error_kind: std::io::ErrorKind,
+    ) -> FaultGuard {
         assert!(nth > 0, "fault operation index is one-based");
         FAILURE.with(|failure| {
             let mut failure = failure.borrow_mut();
@@ -273,6 +286,7 @@ pub(crate) mod fault {
             );
             *failure = Failure {
                 nth: Some(nth),
+                error_kind: Some(error_kind),
                 ..Failure::default()
             };
         });
@@ -324,9 +338,14 @@ pub(crate) mod fault {
             }
             failure.nth = None;
             failure.triggered = Some(operation);
-            Err(std::io::Error::other(format!(
-                "injected fault at filesystem operation {nth} ({operation:?})"
-            )))
+            let kind = failure
+                .error_kind
+                .take()
+                .unwrap_or(std::io::ErrorKind::Other);
+            Err(std::io::Error::new(
+                kind,
+                format!("injected fault at filesystem operation {nth} ({operation:?})"),
+            ))
         })
     }
 }
@@ -334,6 +353,73 @@ pub(crate) mod fault {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_resolved_target_gets_its_temporary_beside_the_target() {
+        let root = tempfile::tempdir().unwrap();
+        let caller = root.path().join("alias/deck.md");
+        let target = root.path().join("elsewhere/deck.md");
+
+        assert_eq!(
+            Some(root.path().join("elsewhere/.deck.md.tmp")),
+            temp_beside(&target),
+            "the resolved target's directory, not the caller's, owns the temporary"
+        );
+        assert_ne!(temp_beside(&target), temp_beside(&caller));
+    }
+
+    #[test]
+    fn the_missing_directory_walk_stops_at_an_existing_ancestor_and_an_empty_parent() {
+        let root = tempfile::tempdir().unwrap();
+        let first = root.path().join("first");
+        let second = first.join("second");
+        assert_eq!(
+            vec![first.as_path(), second.as_path()],
+            missing_directories(&second),
+            "an existing absolute ancestor is never returned for creation"
+        );
+
+        let relative = Path::new("fsio-relative-missing-law");
+        assert!(!relative.exists(), "the relative fixture must stay missing");
+        assert_eq!(
+            vec![relative],
+            missing_directories(relative),
+            "the empty parent of a relative path is never returned for creation"
+        );
+    }
+
+    #[test]
+    fn create_directory_continues_only_after_an_already_exists_race() {
+        for (kind, succeeds) in [
+            (std::io::ErrorKind::AlreadyExists, true),
+            (std::io::ErrorKind::PermissionDenied, false),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let target = root.path().join("new");
+            let fault = fault::fail_on_nth_operation_with_kind(1, kind);
+
+            let result = create_dir_all(&target);
+
+            assert_eq!(
+                Some(fault::Operation::CreateDirectory),
+                fault.triggered_operation(),
+                "the {kind:?} row must fault the directory creation itself"
+            );
+            drop(fault);
+            if succeeds {
+                assert!(
+                    result.is_ok(),
+                    "an AlreadyExists race means another creator won: {result:?}"
+                );
+            } else {
+                assert_eq!(
+                    kind,
+                    result.unwrap_err().kind(),
+                    "a non-race error must surface"
+                );
+            }
+        }
+    }
 
     #[test]
     fn replace_file_swaps_content_and_leaves_no_tmp() {
