@@ -2134,9 +2134,27 @@ mod tests {
     }
 
     #[test]
-    fn frontmatter_lines_never_open_a_document_fence() {
-        let text = "---\nnote: |\n  ```mermaid\n  x\n---\n## q\na\n";
-        let found = fences_in_document(text, Some((1, 5)));
+    fn frontmatter_bounds_are_one_based_and_inclusive_at_both_ends() {
+        let outside = "```mermaid\nflowchart TD\n```\n";
+        let cases = [
+            (format!("~~~mermaid\nflowchart LR\n~~~\n{outside}"), (1, 3)),
+            (format!("## q\n---\nnote: x\n~~~mermaid\n{outside}"), (2, 4)),
+        ];
+        for (text, bounds) in cases {
+            let found = fences_in_document(&text, Some(bounds));
+            assert!(!found.unclosed, "{bounds:?} left a fence open in {text:?}");
+            assert_eq!(1, found.fences.len(), "{bounds:?} in {text:?}");
+            assert!(
+                found.fences[0].source.contains("flowchart TD"),
+                "{bounds:?} returned the frontmatter's own fence in {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_indented_mermaid_fence_does_not_open_a_document_fence() {
+        let text = "## q\n  ```mermaid\n  x\n  ```\na\n";
+        let found = fences_in_document(text, None);
         assert_eq!(0, found.fences.len());
         assert!(!found.unclosed);
     }
