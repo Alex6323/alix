@@ -317,9 +317,16 @@ safe or accurate.
 - Authored text is rendered without filtering the Unicode bidirectional
   formatting characters. An unterminated `U+202E` in a card answer reverses
   the rendering of the text after it, across line boundaries, so the learner
-  reads one thing while the grader compares against the logical text. Measured
-  in Chromium against a served deck. Any deck reaching a reader is in scope,
-  including a received or shared workspace and generated output.
+  reads one thing while the stored card says another. Measured in Chromium
+  against a served deck and on a real Android device against the same deck;
+  the clients agree, so this is not a single-renderer defect. The character
+  also reaches the backend process unchanged in a tutor prompt, and in a trace
+  deck's compression grading prompt, where checkpoint answer lines are the
+  rubric by design. A fact deck's own card text is not an exam grading input
+  and is unaffected. What is established is that rendered text and transmitted
+  text differ; how a provider model treats the character is not established.
+  Any deck reaching a reader is in scope, including a received or shared
+  workspace and generated output.
 - Characters that carry no visible advance are accepted in card content. A
   form feed, a vertical tab, a lone carriage return, or a zero-width
   formatting character makes a card that cannot be answered by typing what is
