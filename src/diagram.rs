@@ -150,6 +150,19 @@ pub fn rasterize(svg: &str, family: &str, zoom: f32) -> Result<Raster> {
 }
 
 #[cfg(feature = "full")]
+fn check_raster_size(width: u32, height: u32) -> Result<()> {
+    if width > SIDE_CAP || height > SIDE_CAP {
+        bail!(
+            "the diagram would rasterize to {width}x{height} pixels, over the {SIDE_CAP} per-side cap"
+        );
+    }
+    if u64::from(width) * u64::from(height) > PIXEL_CAP {
+        bail!("the diagram would rasterize to {width}x{height} pixels, over the {PIXEL_CAP} cap");
+    }
+    Ok(())
+}
+
+#[cfg(feature = "full")]
 fn raster(svg: &str, family: &str, zoom: f32) -> Result<resvg::tiny_skia::Pixmap> {
     let mut db = system_fonts().clone();
     db.set_sans_serif_family(family);
@@ -168,14 +181,7 @@ fn raster(svg: &str, family: &str, zoom: f32) -> Result<resvg::tiny_skia::Pixmap
     let tree = usvg::Tree::from_str(svg, &options).context("the SVG cannot be parsed")?;
     let width = (tree.size().width() * zoom).ceil() as u32;
     let height = (tree.size().height() * zoom).ceil() as u32;
-    if width > SIDE_CAP || height > SIDE_CAP {
-        bail!(
-            "the diagram would rasterize to {width}x{height} pixels, over the {SIDE_CAP} per-side cap"
-        );
-    }
-    if u64::from(width) * u64::from(height) > PIXEL_CAP {
-        bail!("the diagram would rasterize to {width}x{height} pixels, over the {PIXEL_CAP} cap");
-    }
+    check_raster_size(width, height)?;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
         .with_context(|| format!("the diagram has no drawable size at zoom {zoom}"))?;
     let (red, green, blue) = ground(svg)?;
@@ -1842,6 +1848,20 @@ mod tests {
         let message = rasterize(svg, "any", 1.0).unwrap_err().to_string();
         assert!(message.contains("100000x1"), "{message}");
         assert!(message.contains("per-side"), "{message}");
+    }
+
+    #[test]
+    fn the_exact_pixel_area_cap_is_legal_and_one_row_over_is_refused() {
+        let side = 4096u32;
+        assert_eq!(
+            PIXEL_CAP,
+            u64::from(side) * u64::from(side),
+            "the law assumes a square area cap"
+        );
+        check_raster_size(side, side).expect("the area cap itself is a legal size");
+        let message = check_raster_size(side, side + 1).unwrap_err().to_string();
+        assert!(message.contains("4096x4097"), "{message}");
+        assert!(message.contains(&PIXEL_CAP.to_string()), "{message}");
     }
 
     #[test]
