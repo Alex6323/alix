@@ -6566,6 +6566,10 @@ a
                 "quotation",
                 "## q\n- [x] a\n> not an option\n- [ ] b\n<!-- choices-single -->\n",
             ),
+            (
+                "quotation under select-all",
+                "## q\n- [x] a\n> not an option\n- [ ] b\n<!-- choices-multiple -->\n",
+            ),
         ] {
             let error = err(text);
             assert!(
