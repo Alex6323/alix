@@ -1193,10 +1193,11 @@ fn relative_member(path: &Path, root: &Path) -> Result<PathBuf> {
 
 fn safe_relative(path: &str) -> Result<PathBuf> {
     let path = PathBuf::from(path);
-    if path.is_absolute()
-        || path
-            .components()
-            .any(|component| matches!(component, std::path::Component::ParentDir))
+    // Only a run of Normal components is safe to join under a root: a Windows
+    // prefix or root survives the join and escapes without being `is_absolute`.
+    if !path
+        .components()
+        .all(|component| matches!(component, std::path::Component::Normal(_)))
     {
         bail!("update manifest contains unsafe path `{}`", path.display());
     }
@@ -1242,6 +1243,118 @@ mod tests {
     use super::*;
     #[cfg(unix)]
     use crate::testutil::{ask_config, exec_lock, fake_cli, fake_reply};
+
+    #[cfg(windows)]
+    #[test]
+    fn safe_relative_rejects_a_root_relative_member() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("workspace");
+        let member = directory.path().join("outside.md");
+        let prefix_len = member.components().next().unwrap().as_os_str().len();
+        let declared = member.to_string_lossy()[prefix_len..].to_string();
+        assert!(Path::new(&declared).has_root(), "{declared}");
+        assert!(!Path::new(&declared).is_absolute(), "{declared}");
+        let joined = root.join(&declared);
+        assert!(
+            !joined.starts_with(&root),
+            "the fixture must demonstrate a join outside the workspace: {}",
+            joined.display()
+        );
+
+        let error = safe_relative(&declared).unwrap_err();
+
+        assert!(format!("{error:#}").contains("unsafe path"), "{error:#}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn publishing_rejects_a_root_relative_member_before_an_outside_write() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("workspace");
+        let staging = directory.path().join("staging");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(&staging).unwrap();
+        let member = directory.path().join("outside.md");
+        fs::write(&member, "outside body\n").unwrap();
+        let prefix_len = member.components().next().unwrap().as_os_str().len();
+        let declared = member.to_string_lossy()[prefix_len..].to_string();
+        let manifest = UpdateManifest {
+            version: MANIFEST_VERSION,
+            workspace: root.display().to_string(),
+            decks: vec![StagedDeck {
+                path: declared,
+                deck_id: "deck-outside".to_string(),
+                baseline: String::new(),
+                staged: String::new(),
+                augment_baseline: None,
+                augment_staged: None,
+                retained_tokens: Vec::new(),
+                retired_tokens: Vec::new(),
+                retired_ids: Vec::new(),
+                added_tokens: Vec::new(),
+            }],
+            failures: Vec::new(),
+        };
+        let mut attempted = None;
+
+        let result = publish_documents_with(&root, &staging, &manifest, |path, _| {
+            attempted = Some(path.to_path_buf());
+            Ok(())
+        });
+
+        assert!(
+            result.is_err(),
+            "a rooted manifest member reached the write callback outside the workspace: {}",
+            attempted
+                .as_deref()
+                .map(Path::display)
+                .unwrap_or_else(|| Path::new("<no write>").display())
+        );
+        assert!(attempted.is_none(), "unsafe destination reached the writer");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn safe_relative_rejects_a_drive_relative_member() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("workspace");
+        let prefix = match directory.path().components().next().unwrap() {
+            std::path::Component::Prefix(prefix) => {
+                prefix.as_os_str().to_string_lossy().into_owned()
+            }
+            other => panic!("temporary path has no Windows prefix: {other:?}"),
+        };
+        let declared = format!("{prefix}outside.md");
+        assert!(!Path::new(&declared).has_root(), "{declared}");
+        assert!(!Path::new(&declared).is_absolute(), "{declared}");
+        let joined = root.join(&declared);
+        assert!(
+            !joined.starts_with(&root),
+            "the fixture must demonstrate a join outside the workspace: {}",
+            joined.display()
+        );
+
+        let error = safe_relative(&declared).unwrap_err();
+
+        assert!(format!("{error:#}").contains("unsafe path"), "{error:#}");
+    }
+
+    #[test]
+    fn safe_relative_accepts_only_paths_made_entirely_of_normal_components() {
+        for accepted in ["a.md", "decks/a.md", "decks/nested/a.md"] {
+            assert!(
+                safe_relative(accepted).is_ok(),
+                "an ordinary member path was rejected: {accepted}"
+            );
+        }
+        for rejected in ["/abs/a.md", "../a.md", "decks/../../a.md", "./a.md"] {
+            let error = safe_relative(rejected).unwrap_err();
+            assert!(
+                format!("{error:#}").contains("unsafe path"),
+                "a non-normal component was accepted: {rejected}"
+            );
+        }
+    }
 
     fn workspace(source_text: &str) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
         let directory = tempfile::tempdir().unwrap();

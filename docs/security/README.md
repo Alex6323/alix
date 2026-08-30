@@ -389,6 +389,9 @@ The most relevant deterministic checks currently live beside their controls:
   identity, byte-preserving refusal, and initialized-only discovery;
 - `src/source.rs` and `src/cli/doctor.rs`: fail-closed citation integrity and
   explicit exact locator repair;
+- `src/workspace_update.rs`: update-manifest member containment, accepting a
+  member path only when every component is `Normal`, so a rooted or
+  Windows-prefixed member cannot survive the join onto the workspace root;
 - `src/fsio.rs` and `tests/cli.rs`: permission-preserving, symlink-respecting
   file replacement shared by every deck and progress writer, including each
   `alix doctor` repair;
