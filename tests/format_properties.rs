@@ -297,6 +297,84 @@ proptest! {
 }
 
 proptest! {
+    #![proptest_config(ProptestConfig { cases: 96, ..ProptestConfig::default() })]
+
+    /// Normalization is a formatting change, never a content one: a deck that
+    /// an editor dirtied normalizes back to the bytes it started from, and no
+    /// card's identity, fingerprint, or citations move on the way.
+    #[test]
+    fn normalizing_a_dirtied_deck_restores_it_and_moves_no_card(
+        (blocks, _) in gen_deck()
+    ) {
+        let original = render_deck(&blocks, false);
+        let clean = alix::parser::normalize(&original).into_owned();
+        let dirty = format!("\u{feff}{}", clean.replace('\n', "\r\n"));
+
+        let restored = alix::parser::normalize(&dirty);
+        prop_assert_eq!(
+            &clean,
+            restored.as_ref(),
+            "a BOM and CRLF endings must normalize back to the canonical bytes"
+        );
+
+        let before = alix::parser::parse("deck.md", &clean).expect("the clean deck parses");
+        let after = alix::parser::parse("deck.md", &restored)
+            .expect("the restored deck must parse too");
+        prop_assert_eq!(
+            fingerprints(&before),
+            fingerprints(&after),
+            "no card id, fingerprint, or citation may move"
+        );
+    }
+
+    /// The same law for the blanks an editor leaves at end of line. Decks
+    /// holding a fence are excluded rather than fence-tracked here, so the
+    /// property never reuses the implementation's own fence logic to decide
+    /// what to expect.
+    #[test]
+    fn stripping_editor_blanks_restores_the_deck_and_moves_no_card(
+        (blocks, _) in gen_deck()
+    ) {
+        let clean = alix::parser::normalize(&render_deck(&blocks, false)).into_owned();
+        prop_assume!(!clean.contains("```") && !clean.contains("~~~"));
+        let dirty: String = clean.lines().map(|line| format!("{line} \t\n")).collect();
+
+        let restored = alix::parser::normalize(&dirty);
+        prop_assert_eq!(
+            &clean,
+            restored.as_ref(),
+            "editor blanks at end of line must normalize away, byte for byte"
+        );
+
+        let before = alix::parser::parse("deck.md", &clean).expect("the clean deck parses");
+        let after = alix::parser::parse("deck.md", &restored)
+            .expect("the restored deck must parse too");
+        prop_assert_eq!(
+            fingerprints(&before),
+            fingerprints(&after),
+            "and no card may move when they go"
+        );
+    }
+}
+
+/// One row per card: everything a normalization must not disturb.
+fn fingerprints(deck: &alix::parser::ParsedDeck) -> Vec<String> {
+    deck.cards
+        .iter()
+        .map(|card| {
+            format!(
+                "{:?}/{}/{:?}/{:?}/{:?}",
+                card.id(),
+                card.content_fingerprint,
+                card.front,
+                card.back,
+                card.citations
+            )
+        })
+        .collect()
+}
+
+proptest! {
     #![proptest_config(ProptestConfig { cases: 48, ..ProptestConfig::default() })]
 
     #[test]
