@@ -98,11 +98,14 @@ freshness check against the live source.
 Because the CLI runs headless, it can't show interactive permission prompts: an
 unanswerable prompt would just hang the call. So `alix` runs it locked down with a
 locked permission mode plus an **exclusive tool allowlist** (`WebFetch`, `WebSearch`
-by default). The listed tools work without prompting; every other tool is silently
-denied. That means a malicious page behind a deck link can't make the tutor run
-shell commands or touch your files. Both the permission mode and the allowlist live
-in the `[ask]` section of the config, along with the command, a `--model` override,
-and the timeout.
+by default). On the Claude backend that list is exclusive in both directions: the
+listed tools work without prompting, and no other tool exists for that call, so a
+malicious page behind a deck link can't make the tutor run shell commands or touch
+your files. The other backends get the same list, but there `alix` can only
+pre-approve it, not bound it, so that backend's own defaults and your provider
+configuration still decide what else it could reach. Both the permission mode and
+the allowlist live in the `[ask]` section of the config, along with the command, a
+`--model` override, and the timeout.
 
 ## Make this a card
 

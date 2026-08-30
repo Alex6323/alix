@@ -177,6 +177,18 @@ account. Tool grants are translated into each provider's command-line controls;
 provider behavior and enforcement are part of Alix's trusted computing base.
 Prompts and supplied context leave the machine for the selected provider.
 
+A grant must bound the provider's available tool set, not merely permit the
+tools it names. Permitting is not restricting: a flag that pre-approves a tool
+leaves every other tool reachable, so the ambient permissions of the user's own
+provider configuration decide what an Alix call can do. On the Claude backend
+the bound is `--tools`, emitted for every call including the empty grant, so a
+call Alix treats as tool-free has no tools at all (`src/backend/claude.rs`).
+Measured on 2026-08-30 against Claude Code by running a subprocess whose
+success was observed on the filesystem rather than reported by the model: with
+the grant expressed only as `--allowedTools Read Glob Grep`, the subprocess ran
+an arbitrary shell command; with the tool set bounded, the same prompt could
+not, and a read within the grant still succeeded.
+
 During `alix generate`, Claude and Codex return structured event streams. Alix
 prints fixed status labels instead of model text, tool inputs, tool results, or
 partial generated content. It retains stdout for final extraction and
@@ -314,6 +326,14 @@ safe or accurate.
   testing remain open.
 - Provider sandboxes and tool flags differ, and Alix cannot independently prove
   that a provider CLI honored them.
+- Only the Claude backend bounds the available tool set. Gemini and Copilot
+  express the permission half of a grant and nothing more, so an empty grant
+  leaves their CLI default tool set in force; Copilot's unconditional
+  `shell,write` denial is the only restriction that survives it. Codex ignores
+  the grant entirely and relies on its own read-only sandbox. Neither the
+  Gemini nor the Copilot behavior has been verified by execution
+  (`src/backend/gemini.rs`, `src/backend/copilot.rs`,
+  `src/backend/codex.rs`).
 - Authored text is rendered without filtering the Unicode bidirectional
   formatting characters. An unterminated `U+202E` in a card answer reverses
   the rendering of the text after it, across line boundaries, so the learner
@@ -377,6 +397,8 @@ The most relevant deterministic checks currently live beside their controls:
 - `src/ask.rs`, `src/backend/claude.rs`, and `src/backend/codex.rs`: bounded
   generation diagnostics, partial-output redaction, event-driven inactivity,
   and provider process-group termination;
+- `src/backend/claude.rs`: every grant, the empty one included, bounds the
+  provider's available tool set and not only its permissions;
 - `src/generate.rs`, `src/trace_ai.rs`, `src/workspace_update.rs`,
   `src/exam.rs`, and `src/icon.rs`: the configuration each AI subprocess is
   derived with, pinned as an exact table over the tool grant, the tool root,

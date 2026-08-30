@@ -40,6 +40,9 @@ impl Backend for ClaudeBackend {
                 tools.push("WebSearch");
             }
         }
+        // `--allowedTools` only permits; `--tools` is what bounds the set.
+        argv.push("--tools".to_string());
+        argv.push(tools.join(","));
         if !tools.is_empty() {
             argv.push("--allowedTools".to_string());
             argv.extend(tools.into_iter().map(String::from));
@@ -146,6 +149,7 @@ impl Backend for ClaudeBackend {
     fn required_help_flags(&self) -> &'static [&'static str] {
         &[
             "-p",
+            "--tools",
             "--allowedTools",
             "--permission-mode",
             "--output-format",
@@ -256,6 +260,8 @@ mod tests {
                 "-p",
                 "--output-format",
                 "text",
+                "--tools",
+                "Read,Glob,Grep,WebFetch,WebSearch",
                 "--allowedTools",
                 "Read",
                 "Glob",
@@ -292,11 +298,61 @@ mod tests {
     }
 
     #[test]
-    fn claude_no_grant_omits_allowedtools() {
+    fn claude_no_grant_omits_allowedtools_and_empties_the_tool_set() {
         let argv = ClaudeBackend.build_argv(&opts(Access::None, &[]));
         assert!(!argv.iter().any(|a| a == "--allowedTools"));
         assert!(!argv.iter().any(|a| a == "--permission-mode"));
-        assert_eq!(vec!["-p", "--output-format", "text"], argv);
+        assert_eq!(vec!["-p", "--output-format", "text", "--tools", ""], argv);
+    }
+
+    #[test]
+    fn every_grant_bounds_the_tool_set_and_not_merely_its_permissions() {
+        for (access, expected) in [
+            (Access::None, ""),
+            (
+                Access::ReadOnly {
+                    files: true,
+                    fetch: false,
+                    search: false,
+                },
+                "Read,Glob,Grep",
+            ),
+            (
+                Access::ReadOnly {
+                    files: false,
+                    fetch: true,
+                    search: false,
+                },
+                "WebFetch",
+            ),
+            (
+                Access::ReadOnly {
+                    files: false,
+                    fetch: false,
+                    search: true,
+                },
+                "WebSearch",
+            ),
+            (
+                Access::ReadOnly {
+                    files: true,
+                    fetch: true,
+                    search: true,
+                },
+                "Read,Glob,Grep,WebFetch,WebSearch",
+            ),
+        ] {
+            let argv = ClaudeBackend.build_argv(&opts(access, &[]));
+            let at = argv
+                .iter()
+                .position(|a| a == "--tools")
+                .unwrap_or_else(|| panic!("--tools must always be passed, got {argv:?}"));
+            assert_eq!(
+                expected,
+                argv[at + 1],
+                "the tool set must equal the grant, got {argv:?}"
+            );
+        }
     }
 
     #[test]
@@ -505,6 +561,7 @@ mod tests {
         assert_eq!(
             &[
                 "-p",
+                "--tools",
                 "--allowedTools",
                 "--permission-mode",
                 "--output-format",

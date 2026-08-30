@@ -862,6 +862,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- An AI call on the Claude backend now runs with the tool set alix grants it,
+  and nothing else. Alix passed the grant as `--allowedTools`, which
+  pre-approves the tools it names without removing any others, so whatever
+  your own Claude Code settings allow was reachable from every alix AI call,
+  including the ones alix treats as tool-free: augmentation, exam grading, and
+  the workspace emblem. Deck text is untrusted input, so this mattered most
+  for a deck you received from someone else. The grant is now also passed as
+  `--tools`, which bounds the set, and the empty grant bounds it to nothing.
+  Verified by running the subprocess and watching the filesystem rather than
+  asking the model what it did.
 - Receiving a shared deck, transferring one between workspaces, and merging
   explored material now write the deck in canonical bytes, as the deck format
   chapter already promised. A received folder is normalized all the way down,
