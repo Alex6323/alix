@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     io::BufRead,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -604,14 +605,33 @@ pub fn land_into(from: &Path, to: &Path) -> Result<()> {
 }
 
 fn normalize_landing(path: &Path) -> Result<()> {
-    if path.is_dir() {
-        for deck in crate::workspace::diagnosable_deck_files(path) {
-            normalize_deck_file(&deck)?;
+    if !path.is_dir() {
+        if path.extension().is_some_and(|ext| ext == "md") {
+            normalize_deck_file(path)?;
         }
         return Ok(());
     }
-    if path.extension().is_some_and(|ext| ext == "md") {
-        normalize_deck_file(path)?;
+    let mut seen = HashSet::new();
+    let mut pending = vec![path.to_path_buf()];
+    let mut done = HashSet::new();
+    while let Some(dir) = pending.pop() {
+        let Ok(identity) = std::fs::canonicalize(&dir) else {
+            continue;
+        };
+        if !seen.insert(identity) {
+            continue;
+        }
+        for deck in crate::workspace::diagnosable_deck_files(&dir) {
+            if done.insert(deck.clone()) {
+                normalize_deck_file(&deck)?;
+            }
+        }
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let child = entry.path();
+            if child.is_dir() {
+                pending.push(child);
+            }
+        }
     }
     Ok(())
 }
@@ -1347,6 +1367,52 @@ mod tests {
                 "{layout} keeps the card id it arrived with"
             );
         }
+    }
+
+    #[test]
+    fn a_folder_normalization_parse_guard_lands_nothing() {
+        const DIRTY_VALID: &str = concat!(
+            "\u{feff}---\r\n",
+            "id: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\r\n",
+            "---\r\n",
+            "## q\r\n",
+            "a\r\n",
+            "<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\r\n",
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let receive_stage = dir.path().join("received");
+        let folder = receive_stage.join("shared");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("a.md"), DIRTY_VALID).unwrap();
+        std::fs::write(
+            folder.join("z.md"),
+            "\u{feff}## question without an answer\r\n",
+        )
+        .unwrap();
+        let destination = dir.path().join("decks");
+        std::fs::create_dir_all(&destination).unwrap();
+
+        let error = land_received(&receive_stage, &destination).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("the normalized deck would not parse"),
+            "the intended parse guard must be the refusal: {error:#}"
+        );
+        assert!(
+            !destination.join("shared").exists(),
+            "the folder must not be partially landed before every deck passes normalization"
+        );
+        assert!(
+            folder.is_dir(),
+            "the caller-owned receiving stage remains available until its tempdir is dropped"
+        );
+        assert!(
+            std::fs::read_dir(&folder)
+                .unwrap()
+                .flatten()
+                .all(|entry| !entry.file_name().to_string_lossy().ends_with(".tmp")),
+            "the failed guard must not strand an atomic-write temporary"
+        );
     }
 
     #[test]

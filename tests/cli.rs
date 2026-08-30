@@ -3698,6 +3698,54 @@ fn share_zip_of_a_workspace_folder_strips_personal_state() {
 }
 
 #[test]
+fn receiving_an_ordinarily_shared_plain_tree_normalizes_nested_decks() {
+    let sender = TempDir::new().unwrap();
+    let source = sender.path().join("shared");
+    std::fs::create_dir_all(source.join("topic")).unwrap();
+    write(
+        &source,
+        "index.md",
+        "---\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
+    );
+    write(
+        &source.join("topic"),
+        "facts.md",
+        "\u{feff}---\r\nid: \"deck-8w2c7x4k1m8q3z5t0v6b2n4d9f\"\r\n---\r\n## nested \t\r\nanswer\r\n<!-- id: card-5jkya9q3m8z0tw5v9y2b4n6d8f -->\r\n",
+    );
+    let out_dir = sender.path().join("out");
+    std::fs::create_dir(&out_dir).unwrap();
+    let shared = alix_env(
+        &[
+            "share",
+            source.to_str().unwrap(),
+            "--zip",
+            "--output",
+            out_dir.to_str().unwrap(),
+        ],
+        sender.path(),
+        &[],
+    );
+    assert!(shared.status.success(), "stderr: {}", stderr(&shared));
+
+    let receiver = TempDir::new().unwrap();
+    let archive = out_dir.join("shared.zip");
+    let received = alix_env(
+        &["receive", archive.to_str().unwrap()],
+        receiver.path(),
+        &[],
+    );
+
+    assert!(received.status.success(), "stderr: {}", stderr(&received));
+    let written =
+        std::fs::read_to_string(receiver.path().join("decks/shared/topic/facts.md")).unwrap();
+    assert_eq!(
+        alix::parser::normalize(&written),
+        written,
+        "a nested deck in an ordinarily shared plain folder must land in canonical bytes"
+    );
+}
+
+#[test]
 fn share_without_wormhole_installed_reports_the_install_hint() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);

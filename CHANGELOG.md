@@ -864,7 +864,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - Receiving a shared deck, transferring one between workspaces, and merging
   explored material now write the deck in canonical bytes, as the deck format
-  chapter already promised. All three landed the sender's bytes unchanged, so
+  chapter already promised. A received folder is normalized all the way down,
+  including decks in an ordinary subfolder. All three landed the sender's bytes unchanged, so
   a received deck could arrive with a byte-order mark, CRLF endings, and
   trailing blanks, and stayed that way until some later edit rewrote it. Found
   by Codex.
