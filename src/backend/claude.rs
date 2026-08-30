@@ -337,6 +337,30 @@ mod tests {
                 Access::ReadOnly {
                     files: true,
                     fetch: true,
+                    search: false,
+                },
+                "Read,Glob,Grep,WebFetch",
+            ),
+            (
+                Access::ReadOnly {
+                    files: true,
+                    fetch: false,
+                    search: true,
+                },
+                "Read,Glob,Grep,WebSearch",
+            ),
+            (
+                Access::ReadOnly {
+                    files: false,
+                    fetch: true,
+                    search: true,
+                },
+                "WebFetch,WebSearch",
+            ),
+            (
+                Access::ReadOnly {
+                    files: true,
+                    fetch: true,
                     search: true,
                 },
                 "Read,Glob,Grep,WebFetch,WebSearch",
