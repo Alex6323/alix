@@ -13,7 +13,8 @@ use chrono::NaiveDate;
 
 use crate::{
     AugmentArgs, AugmentTarget, DeckInitArgs, DeckMoveArgs, DeckRemoveArgs, DeckRestoreArgs,
-    DeckTransferArgs, ImportArgs, WorkspaceDeadlineArgs, WorkspaceInitArgs, WorkspaceUpdateArgs,
+    DeckTransferArgs, ImportArgs, WorkspaceAugmentArgs, WorkspaceAugmentTarget,
+    WorkspaceDeadlineArgs, WorkspaceInitArgs, WorkspaceUpdateArgs,
     common::{confirm, deck_out_dir, one_line, store_for, truncate},
 };
 
@@ -249,24 +250,104 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
     // hash to id 0, collapsing the cache and orphaning the spend.
     let deck = assemble::stamp_and_load_deck(&args.deck)?;
     let ask_cfg = augment_ai::run_config(&config.ai, &config.ask);
-    let guidance = args.with.as_deref();
+    let cache = AugmentCache::open_for_deck(&deck)?;
 
-    let mut cache = AugmentCache::open_for_deck(&deck)?;
-    let cache_path = cache.path().to_path_buf();
-    let fp_by_id: std::collections::HashMap<String, u64> = deck
-        .cards
+    announce(target_label(args.target), &deck.subject, &config, &ask_cfg);
+    let format_cards = match args.target {
+        AugmentTarget::Format => format_candidates(
+            std::slice::from_ref(&deck),
+            std::slice::from_ref(&args.deck),
+            args.store.clone(),
+            &config,
+        )?,
+        _ => Vec::new(),
+    };
+
+    run_targets(AugmentRun {
+        target: args.target,
+        cards: &deck.cards,
+        format_cards: &format_cards,
+        deck_token: deck.deck_token.as_deref(),
+        guidance: args.with.as_deref(),
+        config: &config,
+        ask_cfg: &ask_cfg,
+        cache,
+    })
+}
+
+/// Every member deck's cards in ONE batched call, landing in the workspace's
+/// shared augmentation document. The per-deck command is the one that carries
+/// `--target order`, which a workspace has no single answer for.
+pub(crate) fn workspace_augment_cmd(args: WorkspaceAugmentArgs) -> Result<()> {
+    let root = &args.workspace;
+    if !workspace::is_workspace(root) {
+        bail!("{} is not a workspace", root.display());
+    }
+    let config = Config::load(args.config.as_deref())?;
+    let ask_cfg = augment_ai::run_config(&config.ai, &config.ask);
+    let title = workspace::Workspace::load(root)
+        .map(|ws| ws.display_name())
+        .unwrap_or_else(|_| root.display().to_string());
+
+    let target = match args.target {
+        WorkspaceAugmentTarget::Icon => {
+            announce("an emblem", &title, &config, &ask_cfg);
+            let svg = alix::icon::render(root, args.with.as_deref(), &ask_cfg)?;
+            let installed = alix::icon::install_svg(root, &svg)?;
+            println!("drew the emblem for \"{title}\" → {}", installed.display());
+            return Ok(());
+        }
+        WorkspaceAugmentTarget::Choices => AugmentTarget::Choices,
+        WorkspaceAugmentTarget::Notes => AugmentTarget::Notes,
+        WorkspaceAugmentTarget::Questions => AugmentTarget::Questions,
+        WorkspaceAugmentTarget::Keypoints => AugmentTarget::Keypoints,
+        WorkspaceAugmentTarget::Format => AugmentTarget::Format,
+    };
+
+    let paths = workspace::deck_files(root);
+    if paths.is_empty() {
+        bail!("{} holds no decks to augment", root.display());
+    }
+    let decks = paths
         .iter()
-        .filter_map(|card| card.id().map(|id| (id, card.content_fingerprint)))
+        .map(|path| assemble::stamp_and_load_deck(path))
+        .collect::<Result<Vec<_>>>()?;
+    let cache = AugmentCache::open_for_decks(root, &decks)?;
+
+    announce(target_label(target), &title, &config, &ask_cfg);
+    let format_cards = match target {
+        AugmentTarget::Format => format_candidates(&decks, &paths, args.store.clone(), &config)?,
+        _ => Vec::new(),
+    };
+    let cards: Vec<Card> = decks
+        .iter()
+        .flat_map(|deck| deck.cards.iter().cloned())
         .collect();
 
-    let what = match args.target {
+    run_targets(AugmentRun {
+        target,
+        cards: &cards,
+        format_cards: &format_cards,
+        deck_token: None,
+        guidance: args.with.as_deref(),
+        config: &config,
+        ask_cfg: &ask_cfg,
+        cache,
+    })
+}
+
+fn target_label(target: AugmentTarget) -> &'static str {
+    match target {
         AugmentTarget::Choices => "multiple-choice distractors",
         AugmentTarget::Notes => "trivia / mnemonic notes",
         AugmentTarget::Questions => "reworded question variants",
         AugmentTarget::Keypoints => "answer key points",
         AugmentTarget::Topology => "a review order",
         AugmentTarget::Format => "card formatting",
-    };
+    }
+}
+
+fn announce(what: &str, subject: &str, config: &Config, ask_cfg: &alix::config::AskConfig) {
     let model = config
         .ai
         .model
@@ -275,20 +356,88 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
         .unwrap_or("the default model");
     let backend = alix::ask::backend_label(ask_cfg.backend.name());
     eprintln!(
-        "Generating {what} for \"{}\" with {backend} ({model}) — one batched call, \
-         this can take a moment…",
-        deck.subject
+        "Generating {what} for \"{subject}\" with {backend} ({model}) — one batched call, \
+         this can take a moment…"
     );
+}
 
-    let (made, total, kind) = match args.target {
+/// The filters mirror the review's injection filters, so a card is never
+/// formatted twice or after resting.
+fn format_candidates(
+    decks: &[alix::deck::Deck],
+    paths: &[std::path::PathBuf],
+    store_override: Option<std::path::PathBuf>,
+    config: &Config,
+) -> Result<Vec<Card>> {
+    let store = store_for(paths, store_override, config)?;
+    let mut out = Vec::new();
+    for deck in decks {
+        let subject: Arc<str> = Arc::from(deck.subject.as_str());
+        let deck_ids: std::collections::HashSet<String> =
+            deck.cards.iter().filter_map(Card::id).collect();
+        let retire_after_days = config
+            .review
+            .for_workspace(&workspace::content_root(&deck.path))
+            .retire_after_days;
+        out.extend(
+            deck.cards
+                .iter()
+                .filter(|c| c.hash_lines.is_none())
+                .cloned(),
+        );
+        let deck_id: Arc<str> = Arc::from(deck.deck_token.as_deref().unwrap_or_default());
+        let mut personal = alix::personal::read(&deck.path, &deck.subject).cards;
+        assemble::bind_personal(&mut personal, &subject, &deck_id);
+        out.extend(
+            personal
+                .into_iter()
+                .filter(|c| c.hash_lines.is_none())
+                .filter(|c| c.id().is_some_and(|id| !deck_ids.contains(&id)))
+                .filter(|c| !alix::session::is_retired(c, &store, retire_after_days)),
+        );
+    }
+    Ok(out)
+}
+
+struct AugmentRun<'a> {
+    target: AugmentTarget,
+    cards: &'a [Card],
+    format_cards: &'a [Card],
+    /// Present only for a single deck: a review order is built per deck, so a
+    /// workspace run never selects `Topology`.
+    deck_token: Option<&'a str>,
+    guidance: Option<&'a str>,
+    config: &'a Config,
+    ask_cfg: &'a alix::config::AskConfig,
+    cache: AugmentCache,
+}
+
+fn run_targets(run: AugmentRun) -> Result<()> {
+    let AugmentRun {
+        target,
+        cards,
+        format_cards,
+        deck_token,
+        guidance,
+        config,
+        ask_cfg,
+        mut cache,
+    } = run;
+    let cache_path = cache.path().to_path_buf();
+    let fp_by_id: std::collections::HashMap<String, u64> = cards
+        .iter()
+        .filter_map(|card| card.id().map(|id| (id, card.content_fingerprint)))
+        .collect();
+
+    let (made, total, kind) = match target {
         AugmentTarget::Choices => {
-            let items = warm_items(&deck.cards);
+            let items = warm_items(cards);
             if items.is_empty() {
-                bail!("the deck has no cards to augment");
+                bail!("there are no cards to augment");
             }
             let total = items.len();
             let map =
-                augment_ai::generate(&items, config.ai.distractor_count, guidance, &ask_cfg, None)?;
+                augment_ai::generate(&items, config.ai.distractor_count, guidance, ask_cfg, None)?;
             for (id, distractors) in &map {
                 if let Some(&fingerprint) = fp_by_id.get(id) {
                     cache.set_distractors(id, distractors.clone(), fingerprint);
@@ -297,12 +446,12 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             (map.len(), total, "distractors")
         }
         AugmentTarget::Notes => {
-            let items = warm_items(&deck.cards);
+            let items = warm_items(cards);
             if items.is_empty() {
-                bail!("the deck has no cards to augment");
+                bail!("there are no cards to augment");
             }
             let total = items.len();
-            let map = augment_ai::generate_notes(&items, guidance, &ask_cfg, None)?;
+            let map = augment_ai::generate_notes(&items, guidance, ask_cfg, None)?;
             for (id, note) in &map {
                 if let Some(&fingerprint) = fp_by_id.get(id) {
                     cache.set_note(id, note.clone(), fingerprint);
@@ -313,22 +462,21 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
         AugmentTarget::Questions => {
             // Cloze cards are excluded: their front is the title, not a
             // question to reword.
-            let plain: Vec<Card> = deck
-                .cards
+            let plain: Vec<Card> = cards
                 .iter()
                 .filter(|c| c.hash_lines.is_none())
                 .cloned()
                 .collect();
             let items = warm_items(&plain);
             if items.is_empty() {
-                bail!("the deck has no plain (non-cloze) cards to add question variants to");
+                bail!("there are no plain (non-cloze) cards to add question variants to");
             }
             let total = items.len();
             let map = augment_ai::generate_variants(
                 &items,
                 config.ai.variant_count,
                 guidance,
-                &ask_cfg,
+                ask_cfg,
                 None,
             )?;
             for (id, variants) in &map {
@@ -339,16 +487,16 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             (map.len(), total, "question variants")
         }
         AugmentTarget::Keypoints => {
-            let items = warm_items(&deck.cards);
+            let items = warm_items(cards);
             if items.is_empty() {
-                bail!("the deck has no cards to break into key points");
+                bail!("there are no cards to break into key points");
             }
             let total = items.len();
             let map = augment_ai::generate_keypoints(
                 &items,
                 config.ai.keypoint_count,
                 guidance,
-                &ask_cfg,
+                ask_cfg,
                 None,
             )?;
             for (id, keypoints) in &map {
@@ -359,20 +507,19 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             (map.len(), total, "key points")
         }
         AugmentTarget::Topology => {
-            let items = warm_items(&deck.cards);
+            let items = warm_items(cards);
             if items.is_empty() {
-                bail!("the deck has no cards to build an order over");
+                bail!("there are no cards to build an order over");
             }
             let total = items.len();
-            let deck_token = deck.deck_token.clone().unwrap_or_default();
-            let topo =
-                augment_ai::generate_topology(&items, guidance, &deck_token, &ask_cfg, None)?;
-            print_topology(&topo, &deck.cards);
+            let token = deck_token.unwrap_or_default().to_string();
+            let topo = augment_ai::generate_topology(&items, guidance, &token, ask_cfg, None)?;
+            print_topology(&topo, cards);
             let walked = topo.walk.len();
             cache.add_topology(topo);
             // Scoped to this deck: the cache may be shared with other decks.
             let deck_tokens: std::collections::HashSet<String> =
-                deck.deck_token.iter().cloned().collect();
+                deck_token.map(str::to_string).into_iter().collect();
             let n = cache.topologies_for(&deck_tokens).len();
             println!(
                 "({n} order{} stored for this deck)",
@@ -381,43 +528,13 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
             (walked, total, "a review order")
         }
         AugmentTarget::Format => {
-            let store = store_for(
-                std::slice::from_ref(&args.deck),
-                args.store.clone(),
-                &config,
-            )?;
-            // The filters below mirror the review's injection filters, so a
-            // card is never formatted twice or after resting.
-            let subject: Arc<str> = Arc::from(deck.subject.as_str());
-            let deck_ids: std::collections::HashSet<String> =
-                deck.cards.iter().filter_map(Card::id).collect();
-            let retire_after_days = config
-                .review
-                .for_workspace(&alix::workspace::content_root(&deck.path))
-                .retire_after_days;
-            let mut plain: Vec<Card> = deck
-                .cards
-                .iter()
-                .filter(|c| c.hash_lines.is_none())
-                .cloned()
-                .collect();
-            let deck_id: Arc<str> = Arc::from(deck.deck_token.as_deref().unwrap_or_default());
-            let mut personal = alix::personal::read(&deck.path, &deck.subject).cards;
-            assemble::bind_personal(&mut personal, &subject, &deck_id);
-            plain.extend(
-                personal
-                    .into_iter()
-                    .filter(|c| c.hash_lines.is_none())
-                    .filter(|c| c.id().is_some_and(|id| !deck_ids.contains(&id)))
-                    .filter(|c| !alix::session::is_retired(c, &store, retire_after_days)),
-            );
-            let items = warm_items(&plain);
+            let items = warm_items(format_cards);
             if items.is_empty() {
-                bail!("the deck has no plain (non-cloze) cards to format");
+                bail!("there are no plain (non-cloze) cards to format");
             }
             let total = items.len();
-            let map = augment_ai::generate_format(&items, guidance, &ask_cfg, None)?;
-            let format_fp_by_id: std::collections::HashMap<String, u64> = plain
+            let map = augment_ai::generate_format(&items, guidance, ask_cfg, None)?;
+            let format_fp_by_id: std::collections::HashMap<String, u64> = format_cards
                 .iter()
                 .filter_map(|card| card.id().map(|id| (id, card.format_fingerprint())))
                 .collect();

@@ -231,6 +231,25 @@ The session depth (Recognize/Recall/Reconstruct) isn't a workspace setting.
 It's picked per session, the same as for a loose deck (see
 [Reveal & session depths](04-review-modes.md)).
 
+## Warming the whole workspace
+
+`alix workspace augment <dir> --target <...>` precomputes AI augmentations for
+every member deck at once:
+
+```sh
+alix workspace augment ~/decks/rust --target choices
+alix workspace augment ~/decks/rust --target icon
+```
+
+The card targets (`choices`, `notes`, `questions`, `keypoints`, `format`) run
+as **one batched call over every member's cards**, not one call per deck, and
+each card's result is filed back under the deck that owns it in `augment/`.
+`icon` draws the workspace emblem and is the target only a workspace has; it
+redraws unconditionally, replacing the old one.
+
+There is no `--target order` here. A review order is built per deck, so it
+stays on [`alix deck augment`](17-command-reference.md).
+
 ## Its own files
 
 A workspace keeps shareable material at the workspace root and private

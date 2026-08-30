@@ -283,8 +283,60 @@ enum WorkspaceAction {
     /// Reconcile frozen source-backed decks with their live sources. The first
     /// run stages an exact proposal; inspect it, then rerun with `--apply`.
     Update(WorkspaceUpdateArgs),
+    /// Precompute AI augmentations for every deck in the workspace at once,
+    /// plus the workspace's own emblem.
+    ///
+    /// The card targets run as one batched call over all member cards, not one
+    /// call per deck, and land in the workspace's shared augmentation
+    /// document. Say `alix deck augment` to warm a single deck, which is also
+    /// where `--target order` lives: a review order is built per deck.
+    Augment(WorkspaceAugmentArgs),
     /// Show, set, or clear this workspace's personal "ready by" deadline.
     Deadline(WorkspaceDeadlineArgs),
+}
+
+#[derive(Args)]
+struct WorkspaceAugmentArgs {
+    /// The workspace directory.
+    workspace: PathBuf,
+
+    /// What to augment. Each value describes itself below.
+    #[arg(long, value_enum)]
+    target: WorkspaceAugmentTarget,
+
+    /// Free-text guidance for *how* to augment, woven into the prompt (e.g.
+    /// "use common misconceptions", "draw something calm and geometric").
+    #[arg(long)]
+    with: Option<String>,
+
+    /// User-files root used to include personal cards while augmenting.
+    #[arg(long)]
+    store: Option<PathBuf>,
+
+    /// Path of the config file (default: platform config dir).
+    #[arg(long)]
+    config: Option<PathBuf>,
+}
+
+/// What `alix workspace augment` generates. The card targets mirror
+/// `alix deck augment`; `icon` is the one only a workspace has.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum WorkspaceAugmentTarget {
+    /// Multiple-choice distractors, for every card in the workspace.
+    Choices,
+    /// Trivia / mnemonic notes, for every card in the workspace.
+    Notes,
+    /// Reworded question variants. Plain (non-cloze) cards only.
+    Questions,
+    /// Key points: the load-bearing claims a card's answer makes, so Explain
+    /// mode can grade a reconstruction against them.
+    Keypoints,
+    /// A display-only reshape of a badly-shaped card, applied at review
+    /// without touching the deck. Plain (non-cloze) cards only.
+    Format,
+    /// The workspace's emblem, drawn from its title, description, and members.
+    /// A fresh draw replaces the old one.
+    Icon,
 }
 
 #[derive(Args)]
@@ -723,6 +775,7 @@ fn main() -> Result<()> {
             WorkspaceAction::Generate(args) => generate::workspace_cmd(args),
             WorkspaceAction::Init(args) => deck::workspace_init_cmd(args),
             WorkspaceAction::Update(args) => deck::workspace_update_cmd(args),
+            WorkspaceAction::Augment(args) => deck::workspace_augment_cmd(args),
             WorkspaceAction::Deadline(args) => deck::workspace_deadline_cmd(args),
         },
         Some(Command::Share(args)) => share::share_cmd(args),

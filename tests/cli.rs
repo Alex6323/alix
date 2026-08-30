@@ -5047,6 +5047,106 @@ fn a_workspace_store_override_does_not_relocate_augmentation() {
 }
 
 #[test]
+fn workspace_augment_batches_every_member_deck_into_one_call() {
+    let dir = TempDir::new().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "title = \"Quiz\"\n").unwrap();
+    write(
+        &workspace.join("decks"),
+        "one.md",
+        "---\nformat-version: 1\nid: \"deck-one\"\n---\n## Q1\nA1\n<!-- id: card-q1 -->\n",
+    );
+    write(
+        &workspace.join("decks"),
+        "two.md",
+        "---\nformat-version: 1\nid: \"deck-two\"\n---\n## Q2\nA2\n<!-- id: card-q2 -->\n",
+    );
+    let cli = fake_claude(dir.path(), r#"{"0": ["W1", "W2"], "1": ["W3", "W4"]}"#);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&[
+        "workspace",
+        "augment",
+        workspace.to_str().unwrap(),
+        "--target",
+        "choices",
+        "--config",
+        &config,
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("augmented 2 of 2 cards"),
+        "both decks' cards must ride one batched call, not one call per deck: {}",
+        stdout(&out)
+    );
+
+    let one = std::fs::read_to_string(workspace.join("augment/deck-one.json")).unwrap();
+    let two = std::fs::read_to_string(workspace.join("augment/deck-two.json")).unwrap();
+    assert!(
+        one.contains("W1") && !one.contains("W3"),
+        "each card's distractors must land in its OWN deck's document: {one}"
+    );
+    assert!(
+        two.contains("W3") && !two.contains("W1"),
+        "and not spill into a sibling's: {two}"
+    );
+}
+
+#[test]
+fn workspace_augment_does_not_offer_a_review_order() {
+    let dir = TempDir::new().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "title = \"Quiz\"\n").unwrap();
+
+    let out = alix(&[
+        "workspace",
+        "augment",
+        workspace.to_str().unwrap(),
+        "--target",
+        "order",
+    ]);
+
+    assert!(
+        !out.status.success(),
+        "a review order is built per deck, so the workspace command must not accept it"
+    );
+    assert!(
+        stderr(&out).contains("invalid value"),
+        "clap must reject it at parse time rather than the command failing later: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn workspace_augment_refuses_a_plain_folder() {
+    let dir = TempDir::new().unwrap();
+    let folder = dir.path().join("decks");
+    std::fs::create_dir_all(&folder).unwrap();
+
+    let out = alix(&[
+        "workspace",
+        "augment",
+        folder.to_str().unwrap(),
+        "--target",
+        "choices",
+    ]);
+
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    assert!(
+        stderr(&out).contains("is not a workspace"),
+        "the refusal must name what is wrong: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
 fn augment_notes_caches_a_trivia_note() {
     let dir = TempDir::new().unwrap();
     let deck = write(
@@ -5266,7 +5366,7 @@ fn augment_on_an_empty_deck_errors_without_calling_the_backend() {
     ]);
     assert!(!out.status.success());
     assert!(
-        stderr(&out).contains("the deck has no cards to augment"),
+        stderr(&out).contains("there are no cards to augment"),
         "stderr: {}",
         stderr(&out)
     );

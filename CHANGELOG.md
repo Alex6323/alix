@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `alix workspace augment <dir> --target <...>` warms a whole workspace in one
+  go. The card targets (choices, notes, questions, keypoints, format) run as a
+  single batched call over every member's cards rather than one call per deck,
+  and each result is filed back under the deck that owns the card. `icon`
+  joins them as the target only a workspace has, giving the workspace emblem
+  its first path outside the web app. `--target order` stays on `alix deck
+  augment`, since a review order is built per deck and a workspace has no
+  single answer for it.
+
+
 - `alix doctor --normalize` rewrites a deck that drifted out of canonical
   bytes after it was initialized, for when an editor put a byte-order mark,
   CRLF endings, or trailing blanks back. It refuses to write anything that

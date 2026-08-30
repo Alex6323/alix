@@ -166,6 +166,14 @@ The rest of the AI-and-deck surface:
   workspace for review; `--apply` publishes it without another model call and
   `--discard` removes it. Changed or obsolete learning propositions retire
   their old card IDs; replacements receive fresh IDs.
+- `alix workspace augment <dir> --target <...>`: precompute AI augmentations
+  for every member deck at once (choices, notes, questions, keypoints, format),
+  plus `icon`, the workspace's own emblem. The card targets run as **one
+  batched call over every member's cards**, not one call per deck, and each
+  card's result is filed back under its own deck in the workspace's
+  augmentation folder. `--target order` is deliberately absent: a review order
+  is built per deck, so it lives on `alix deck augment`. `icon` redraws
+  unconditionally, replacing the old emblem.
 - `alix workspace deadline <dir> [<date>|clear]`: show, set, or clear a
   workspace's personal "ready by" date (`--config <path>`); no argument prints
   the current one. Workspace-only, see [Workspaces](08-workspaces.md).
