@@ -387,8 +387,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - alix normalizes a deck's bytes whenever it writes one. A leading
   byte-order mark is dropped, CRLF line endings become LF, and trailing
   spaces and tabs are removed. A hard line break survives as exactly two
-  spaces, and a code fence keeps its own trailing blanks, which are code
-  rather than layout. Editors add these bytes without telling you and no
+  spaces, and a code fence keeps the trailing blanks on every line it owns,
+  its opening and closing lines included: they are code, and a fence opener is
+  fingerprinted byte for byte, so trimming one would silently drop a card's
+  cached augmentations. Editors add these bytes without telling you and no
   deck needs them, so alix settles on one form instead of carrying whatever
   arrived. Initializing, stamping, augmenting, receiving, and every doctor
   repair write canonical bytes; a file alix never writes is left alone.

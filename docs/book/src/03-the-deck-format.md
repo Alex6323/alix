@@ -472,9 +472,11 @@ id, augmenting, receiving a shared deck, and every `alix doctor` repair:
 
 Two things survive. A **hard line break**, meaning a line ending in two or
 more spaces, is kept and written as exactly two spaces, so a deck that renders
-as several lines on GitHub still does. And a **code fence keeps its own
-trailing blanks**, which are code rather than layout; only its line endings
-change.
+as several lines on GitHub still does. And a **code fence keeps the trailing
+blanks on every line it owns**, its opening and closing lines included; only
+its line endings change. Those bytes are code rather than layout, and alix
+identifies a card partly by them, so trimming a fence would quietly detach the
+card from its cached notes and distractors.
 
 alix never rewrites a file it had no other reason to touch, so a deck you only
 read is left exactly as it is. If an editor puts those bytes back after the

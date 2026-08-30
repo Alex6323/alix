@@ -259,8 +259,8 @@ notes it.
 - `alix doctor [dir-or-deck] --normalize`: rewrite each checked deck into its
   canonical bytes, dropping a leading byte-order mark, turning CRLF endings
   into LF, and removing trailing spaces and tabs. A hard line break (two or
-  more trailing spaces) is kept as exactly two, and a code fence keeps its own
-  trailing blanks. alix normalizes every deck it writes anyway, so this is for
+  more trailing spaces) is kept as exactly two, and a code fence keeps the
+  trailing blanks on every line it owns, opener and closer included. alix normalizes every deck it writes anyway, so this is for
   a deck an editor changed after it was initialized. A rewrite that would stop
   the deck parsing is refused.
 - `alix doctor [dir-or-deck] --repair-source-locators`: after you review the

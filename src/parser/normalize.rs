@@ -4,7 +4,9 @@ use super::{closes_fence, fence_opener};
 
 /// A deck file's canonical bytes: no leading BOM, LF line endings, and,
 /// outside a code fence, no trailing blanks except the two spaces of a hard
-/// line break. A fence's own lines keep their trailing blanks, which are code.
+/// line break. A fence keeps the trailing blanks on every line it owns, its
+/// opener and closer included: they are code, and the opener is fingerprinted
+/// byte for byte.
 pub fn normalize(text: &str) -> Cow<'_, str> {
     match rewrite(text) {
         Some(normalized) => Cow::Owned(normalized),
@@ -34,15 +36,20 @@ fn rewrite(text: &str) -> Option<String> {
                     fence = None;
                 }
             }
-            None => {
-                let (kept, hard_break) = split_trailing(line);
-                out.push_str(kept);
-                if hard_break {
-                    out.push_str("  ");
+            None => match fence_opener(line) {
+                Some(opened) => {
+                    out.push_str(line);
+                    fence = Some(opened);
                 }
-                changed |= line.len() != kept.len() + if hard_break { 2 } else { 0 };
-                fence = fence_opener(line);
-            }
+                None => {
+                    let (kept, hard_break) = split_trailing(line);
+                    out.push_str(kept);
+                    if hard_break {
+                        out.push_str("  ");
+                    }
+                    changed |= line.len() != kept.len() + if hard_break { 2 } else { 0 };
+                }
+            },
         }
     }
     changed.then_some(out)
@@ -135,11 +142,56 @@ mod tests {
             "an unclosed fence protects to the end of the document",
         ),
         (
+            "```rust \nlet x = 1;\n```\n",
+            "```rust \nlet x = 1;\n```\n",
+            "the opener belongs to the fence, and `canonical_content` fingerprints it byte \
+             for byte, so trimming it would move a card without changing what it teaches",
+        ),
+        (
             "```` \na \n````\n",
-            "````\na \n````\n",
-            "the opening line is prose, so it is trimmed before the fence takes over",
+            "```` \na \n````\n",
+            "which holds however the opener is spelled",
         ),
     ];
+
+    /// The answer half of a one-card deck, and why its bytes are a risk.
+    const IDENTITY_ROWS: &[(&str, &str)] = &[
+        (
+            "```rust \nlet x = 1;\n```\n",
+            "a fence opener reaches `back` verbatim and is fingerprinted byte for byte",
+        ),
+        ("~~~info \ncode\n~~~\n", "which holds for a tilde fence too"),
+        ("```\ncode \n```\n", "as does a blank inside the fence body"),
+        (
+            "plain answer \nmore text\t\n",
+            "a plain line is trimmed by the parser, so stripping it changes nothing",
+        ),
+        (
+            "$$\nx^2 \n$$\n",
+            "display math reaches `back` verbatim but is normalized before fingerprinting",
+        ),
+        (
+            "answer  \n",
+            "a hard break is kept, so it cannot move a card either",
+        ),
+    ];
+
+    /// Normalization is a formatting change. A card whose fingerprint moves
+    /// silently loses its cached distractors, notes, variants, and keypoints,
+    /// and nothing reports it.
+    #[test]
+    fn normalizing_never_moves_a_card_fingerprint() {
+        for (answer, why) in IDENTITY_ROWS {
+            let deck = format!("---\ntitle: T\n---\n\n# S\n\n## q\n\n{answer}");
+            let before = crate::parser::parse("deck.md", &deck).expect("the deck parses");
+            let after = crate::parser::parse("deck.md", &normalize(&deck))
+                .expect("the normalized deck parses");
+            assert_eq!(
+                before.cards[0].content_fingerprint, after.cards[0].content_fingerprint,
+                "normalizing {answer:?} moved the card's fingerprint: {why}"
+            );
+        }
+    }
 
     #[test]
     fn every_document_normalizes_to_its_canonical_bytes() {
