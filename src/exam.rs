@@ -701,7 +701,14 @@ fn split_layer(sources: &[String], base: Option<&Path>) -> Result<LayerSection> 
         };
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("cannot read `source:` {}", path.display()))?;
-        let label = src.trim().to_string();
+        let declared = src.trim();
+        let label = if Path::new(declared).is_absolute() {
+            path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| declared.to_string())
+        } else {
+            declared.to_string()
+        };
         let (truncated_text, was_truncated) = truncate(&text);
         if was_truncated {
             eprintln!(
@@ -1227,6 +1234,38 @@ mod tests {
         assert!(
             prompt.contains("Source file `b/notes.md`"),
             "the second source is not labeled by what the deck declared: {prompt}"
+        );
+    }
+
+    #[test]
+    fn an_absolute_source_is_labeled_by_its_basename_and_a_relative_one_by_its_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("deep");
+        std::fs::create_dir(&nested).unwrap();
+        std::fs::write(nested.join("relative.md"), "relative body").unwrap();
+        std::fs::write(dir.path().join("absolute.md"), "absolute body").unwrap();
+        let absolute = dir.path().join("absolute.md");
+        let sources = SourceLayers {
+            own: vec![
+                "deep/relative.md".to_string(),
+                absolute.display().to_string(),
+            ],
+            workspace: Vec::new(),
+        };
+
+        let prompt = questions_prompt(&sources, Some(dir.path()), &ExamConfig::default()).unwrap();
+
+        assert!(
+            prompt.contains("Source file `deep/relative.md`"),
+            "a relative declaration should reach the prompt as declared: {prompt}"
+        );
+        assert!(
+            prompt.contains("Source file `absolute.md`"),
+            "an absolute declaration should reach the prompt as its basename: {prompt}"
+        );
+        assert!(
+            !prompt.contains(&absolute.display().to_string()),
+            "the operator's directory layout reached the prompt: {prompt}"
         );
     }
 

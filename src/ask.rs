@@ -1024,6 +1024,34 @@ mod tests {
     }
 
     #[test]
+    fn first_prompt_keeps_sources_with_a_shared_basename_distinguishable() {
+        let sources = crate::deck::SourceLayers {
+            own: vec!["a/notes.md".to_string(), "b/notes.md".to_string()],
+            workspace: Vec::new(),
+        };
+        let context = TutorContext {
+            links: &[],
+            sources: &sources,
+            root: None,
+            frozen: None,
+        };
+
+        let prompt = question_prompt(&card(), Audience::Adult, &context, "why?", true);
+
+        assert_eq!(1, prompt.matches("a/notes.md").count(), "first source path");
+        assert_eq!(
+            1,
+            prompt.matches("b/notes.md").count(),
+            "second source path"
+        );
+        assert_eq!(
+            0,
+            prompt.lines().filter(|line| *line == "notes.md").count(),
+            "a source collapsed to its bare basename: {prompt}"
+        );
+    }
+
+    #[test]
     fn first_prompt_offers_reference_material_when_any_one_layer_is_present() {
         for (own, workspace, links, expected_heading) in [
             (

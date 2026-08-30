@@ -862,12 +862,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
-- An exam labels each `source:` file by what the deck declared rather than by
-  the file's basename, so two sources that share a name are no longer
+- An exam labels each `source:` file by the path the deck declared rather than
+  by the file's basename, so two sources that share a name are no longer
   indistinguishable to the examiner. A deck declaring `a/notes.md` and
   `b/notes.md` previously produced two prompt sections both headed `notes.md`,
   and any question or rubric point mentioning `notes.md` could belong to
-  either.
+  either. A source declared by absolute path still reaches the prompt as its
+  basename, so the exam never sends your directory layout to the model.
 
 
 - An AI call now runs without your own instructions for the CLI it shells out
