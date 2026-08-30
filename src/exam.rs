@@ -701,10 +701,7 @@ fn split_layer(sources: &[String], base: Option<&Path>) -> Result<LayerSection> 
         };
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("cannot read `source:` {}", path.display()))?;
-        let label = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.display().to_string());
+        let label = src.trim().to_string();
         let (truncated_text, was_truncated) = truncate(&text);
         if was_truncated {
             eprintln!(
@@ -1206,6 +1203,31 @@ mod tests {
         assert!(p.contains("primary grounding"));
         assert!(p.contains("supporting context"));
         assert!(own_at < workspace_at, "{p}");
+    }
+
+    #[test]
+    fn questions_prompt_distinguishes_sources_that_share_a_basename() {
+        let dir = tempfile::tempdir().unwrap();
+        for (parent, text) in [("a", "alpha source"), ("b", "beta source")] {
+            let source_dir = dir.path().join(parent);
+            std::fs::create_dir(&source_dir).unwrap();
+            std::fs::write(source_dir.join("notes.md"), text).unwrap();
+        }
+        let sources = SourceLayers {
+            own: vec!["a/notes.md".to_string(), "b/notes.md".to_string()],
+            workspace: Vec::new(),
+        };
+
+        let prompt = questions_prompt(&sources, Some(dir.path()), &ExamConfig::default()).unwrap();
+
+        assert!(
+            prompt.contains("Source file `a/notes.md`"),
+            "the first source is not labeled by what the deck declared: {prompt}"
+        );
+        assert!(
+            prompt.contains("Source file `b/notes.md`"),
+            "the second source is not labeled by what the deck declared: {prompt}"
+        );
     }
 
     #[test]
