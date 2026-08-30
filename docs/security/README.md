@@ -177,6 +177,19 @@ account. Tool grants are translated into each provider's command-line controls;
 provider behavior and enforcement are part of Alix's trusted computing base.
 Prompts and supplied context leave the machine for the selected provider.
 
+A provider CLI reads the operator's own instruction file, and Alix suppresses
+it. `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` are loaded by their CLIs
+regardless of what Alix asks for, so operator instructions shaped replies that
+Alix parses strictly, and the operator's hooks, skills and MCP servers loaded
+inside the subprocess Alix hands untrusted deck text to. Claude runs with
+`--safe-mode`, Codex with `-c project_doc_max_bytes=0`, and Copilot with
+`--no-custom-instructions`; each was confirmed by running the CLI against a
+planted instruction file and observing the instruction take effect without the
+switch and not with it. Codex's `--ignore-user-config` is not equivalent and
+does not suppress the instruction file. Gemini 0.57.0 exposes no such switch,
+so that backend still loads `GEMINI.md` (`src/backend/claude.rs`,
+`src/backend/codex.rs`, `src/backend/copilot.rs`, `src/backend/gemini.rs`).
+
 A grant must bound the provider's available tool set, not merely permit the
 tools it names. Permitting is not restricting: a flag that pre-approves a tool
 leaves every other tool reachable, so the ambient permissions of the user's own

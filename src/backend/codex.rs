@@ -13,12 +13,16 @@ impl Backend for CodexBackend {
     fn build_argv(&self, opts: &RunOpts) -> Vec<String> {
         // --ask-for-approval must precede `exec` (codex rejects it afterward).
         // The sandbox, not opts.access, governs tool access, so it's unused here.
+        // A zero cap is what stops AGENTS.md from shaping a reply alix parses
+        // strictly; `--ignore-user-config` does not, it only skips config.toml.
         let mut argv = vec![
             "--ask-for-approval".to_string(),
             "never".to_string(),
             "exec".to_string(),
             "--sandbox".to_string(),
             "read-only".to_string(),
+            "-c".to_string(),
+            "project_doc_max_bytes=0".to_string(),
         ];
         if opts.progress {
             argv.push("--json".to_string());
@@ -118,7 +122,7 @@ impl Backend for CodexBackend {
     }
 
     fn required_help_flags(&self) -> &'static [&'static str] {
-        &["exec", "--sandbox", "--ask-for-approval", "--json"]
+        &["exec", "--sandbox", "--ask-for-approval", "--json", "-c"]
     }
 
     fn name(&self) -> &'static str {

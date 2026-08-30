@@ -862,6 +862,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- An AI call now runs without your own instructions for the CLI it shells out
+  to. Every backend reads an operator instruction file (`CLAUDE.md`,
+  `AGENTS.md`, `GEMINI.md`), and those instructions shaped replies alix parses
+  strictly, so a rule as ordinary as "end every answer with a timestamp" made
+  exam grading, distractors, notes and generation fail to parse. Claude now
+  runs with `--safe-mode`, Codex with `-c project_doc_max_bytes=0`, and Copilot
+  with `--no-custom-instructions`. Gemini offers no such switch, so that
+  backend is unchanged and the gap is written down in the security notes.
+  This also keeps your hooks, skills and MCP servers out of the subprocess
+  alix hands untrusted deck text to.
 - An AI call on the Claude backend now runs with the tool set alix grants it,
   and nothing else. Alix passed the grant as `--allowedTools`, which
   pre-approves the tools it names without removing any others, so whatever

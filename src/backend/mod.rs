@@ -196,6 +196,43 @@ mod tests {
     }
 
     #[test]
+    fn every_backend_that_can_isolate_operator_instructions_does() {
+        let opts = || RunOpts {
+            model: None,
+            effort: None,
+            permission_mode: None,
+            access: Access::None,
+            session_args: &[],
+            progress: false,
+        };
+        for (backend, expected) in [
+            (
+                Box::new(ClaudeBackend) as Box<dyn Backend>,
+                Some("--safe-mode"),
+            ),
+            (Box::new(CodexBackend), Some("project_doc_max_bytes=0")),
+            (Box::new(CopilotBackend), Some("--no-custom-instructions")),
+            // Gemini 0.57.0 offers no such switch, so alix has none to pass.
+            (Box::new(GeminiBackend), None),
+        ] {
+            let argv = backend.build_argv(&opts());
+            let name = backend.name();
+            match expected {
+                Some(flag) => assert!(
+                    argv.iter().any(|a| a == flag),
+                    "{name} must pass {flag}, got {argv:?}"
+                ),
+                None => assert!(
+                    !argv
+                        .iter()
+                        .any(|a| a.contains("instruction") || a.contains("safe-mode")),
+                    "{name} has no isolation switch, so it must pass none, got {argv:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
     fn backend_for_wires_all_four_backends() {
         let mut cfg = AskConfig::default();
         assert!(backend_for(&cfg).is_ok(), "claude should be wired");

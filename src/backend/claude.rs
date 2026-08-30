@@ -12,8 +12,11 @@ impl Backend for ClaudeBackend {
 
     fn build_argv(&self, opts: &RunOpts) -> Vec<String> {
         let output_format = if opts.progress { "stream-json" } else { "text" };
+        // The operator's own CLAUDE.md, skills, hooks and MCP servers would
+        // otherwise shape a reply alix parses strictly.
         let mut argv = vec![
             "-p".to_string(),
+            "--safe-mode".to_string(),
             "--output-format".to_string(),
             output_format.to_string(),
         ];
@@ -149,6 +152,7 @@ impl Backend for ClaudeBackend {
     fn required_help_flags(&self) -> &'static [&'static str] {
         &[
             "-p",
+            "--safe-mode",
             "--tools",
             "--allowedTools",
             "--permission-mode",
@@ -258,6 +262,7 @@ mod tests {
         assert_eq!(
             vec![
                 "-p",
+                "--safe-mode",
                 "--output-format",
                 "text",
                 "--tools",
@@ -302,7 +307,17 @@ mod tests {
         let argv = ClaudeBackend.build_argv(&opts(Access::None, &[]));
         assert!(!argv.iter().any(|a| a == "--allowedTools"));
         assert!(!argv.iter().any(|a| a == "--permission-mode"));
-        assert_eq!(vec!["-p", "--output-format", "text", "--tools", ""], argv);
+        assert_eq!(
+            vec![
+                "-p",
+                "--safe-mode",
+                "--output-format",
+                "text",
+                "--tools",
+                ""
+            ],
+            argv
+        );
     }
 
     #[test]
@@ -585,6 +600,7 @@ mod tests {
         assert_eq!(
             &[
                 "-p",
+                "--safe-mode",
                 "--tools",
                 "--allowedTools",
                 "--permission-mode",

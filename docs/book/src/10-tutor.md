@@ -107,6 +107,14 @@ configuration still decide what else it could reach. Both the permission mode an
 the allowlist live in the `[ask]` section of the config, along with the command, a
 `--model` override, and the timeout.
 
+`alix` also runs the CLI without *your* instructions for it. Claude Code reads
+`CLAUDE.md`, Codex reads `AGENTS.md`, Gemini reads `GEMINI.md`, and those
+instructions would otherwise shape a reply `alix` parses strictly: a rule as
+ordinary as "end every answer with a timestamp" is enough to break exam grading.
+So `alix` asks each CLI to skip them, along with your hooks, skills and MCP
+servers. Gemini offers no way to do that, so a `GEMINI.md` in scope still
+applies on that backend.
+
 ## Make this a card
 
 During an Ask exchange, if the tutor's reply answers a question about a concept

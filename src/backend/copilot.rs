@@ -12,7 +12,9 @@ impl Backend for CopilotBackend {
 
     fn build_argv(&self, opts: &RunOpts) -> Vec<String> {
         // `-s` suppresses decoration so stdout is just the response text.
-        let mut argv = vec!["-s".to_string()];
+        // The second flag keeps the operator's AGENTS.md out of a reply alix
+        // parses strictly.
+        let mut argv = vec!["-s".to_string(), "--no-custom-instructions".to_string()];
 
         // Always denies shell/write, even for Access::None, so the model can't
         // run a destructive tool despite a text-only prompt.
@@ -67,7 +69,14 @@ impl Backend for CopilotBackend {
     }
 
     fn required_help_flags(&self) -> &'static [&'static str] {
-        &["-p", "-s", "--model", "--deny-tool", "--available-tools"]
+        &[
+            "-p",
+            "-s",
+            "--model",
+            "--deny-tool",
+            "--available-tools",
+            "--no-custom-instructions",
+        ]
     }
 
     fn name(&self) -> &'static str {
