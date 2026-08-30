@@ -702,7 +702,7 @@ fn split_layer(sources: &[String], base: Option<&Path>) -> Result<LayerSection> 
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("cannot read `source:` {}", path.display()))?;
         let declared = src.trim();
-        let label = if Path::new(declared).is_absolute() {
+        let label = if Path::new(declared).has_root() {
             path.file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| declared.to_string())
@@ -1266,6 +1266,38 @@ mod tests {
         assert!(
             !prompt.contains(&absolute.display().to_string()),
             "the operator's directory layout reached the prompt: {prompt}"
+        );
+    }
+
+    #[test]
+    fn same_named_absolute_sources_in_different_layers_have_distinct_headings() {
+        let dir = tempfile::tempdir().unwrap();
+        let own = dir.path().join("own").join("notes.md");
+        let workspace = dir.path().join("workspace").join("notes.md");
+        std::fs::create_dir(own.parent().unwrap()).unwrap();
+        std::fs::create_dir(workspace.parent().unwrap()).unwrap();
+        std::fs::write(&own, "primary body").unwrap();
+        std::fs::write(&workspace, "supporting body").unwrap();
+        let sources = SourceLayers {
+            own: vec![own.display().to_string()],
+            workspace: vec![workspace.display().to_string()],
+        };
+
+        let prompt = questions_prompt(&sources, None, &ExamConfig::default()).unwrap();
+
+        assert_eq!(
+            1,
+            prompt
+                .matches("Source file `notes.md` (a deck source, primary grounding")
+                .count(),
+            "deck heading: {prompt}"
+        );
+        assert_eq!(
+            1,
+            prompt
+                .matches("Workspace source file `notes.md` (supporting context")
+                .count(),
+            "workspace heading: {prompt}"
         );
     }
 
@@ -2395,5 +2427,37 @@ mod tests {
         assert!(!store.deck_mastered("t1"));
         assert!(store.exam_failed_at("t1").is_some());
         assert!(!s.can_remediate());
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn a_windows_root_relative_source_does_not_send_its_directory_layout() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("private").join("notes.md");
+        std::fs::create_dir(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, "private body").unwrap();
+        let prefix_len = source.components().next().unwrap().as_os_str().len();
+        let declared = source.to_string_lossy()[prefix_len..].to_string();
+        assert!(Path::new(&declared).has_root(), "{declared}");
+        assert!(!Path::new(&declared).is_absolute(), "{declared}");
+        let sources = SourceLayers {
+            own: vec![declared.clone()],
+            workspace: Vec::new(),
+        };
+
+        let prompt = questions_prompt(&sources, Some(dir.path()), &ExamConfig::default()).unwrap();
+
+        assert!(
+            prompt.contains("Source file `notes.md`"),
+            "a drive-rooted declaration should reach the prompt as its basename: {prompt}"
+        );
+        assert!(
+            !prompt.contains(&declared),
+            "the operator's root-relative directory layout reached the prompt: {prompt}"
+        );
     }
 }
