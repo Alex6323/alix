@@ -92,6 +92,77 @@ mod tests {
     }
 
     #[test]
+    fn every_grant_maps_to_its_own_gemini_tool_set() {
+        for (access, expected) in [
+            (Access::None, Vec::new()),
+            (
+                Access::ReadOnly {
+                    files: true,
+                    fetch: false,
+                    search: false,
+                },
+                FILE_TOOLS.to_vec(),
+            ),
+            (
+                Access::ReadOnly {
+                    files: false,
+                    fetch: true,
+                    search: false,
+                },
+                vec!["web_fetch"],
+            ),
+            (
+                Access::ReadOnly {
+                    files: false,
+                    fetch: false,
+                    search: true,
+                },
+                vec!["google_web_search"],
+            ),
+            (
+                Access::ReadOnly {
+                    files: true,
+                    fetch: true,
+                    search: false,
+                },
+                [FILE_TOOLS, &["web_fetch"]].concat(),
+            ),
+            (
+                Access::ReadOnly {
+                    files: true,
+                    fetch: false,
+                    search: true,
+                },
+                [FILE_TOOLS, &["google_web_search"]].concat(),
+            ),
+            (
+                Access::ReadOnly {
+                    files: false,
+                    fetch: true,
+                    search: true,
+                },
+                vec!["web_fetch", "google_web_search"],
+            ),
+            (
+                Access::ReadOnly {
+                    files: true,
+                    fetch: true,
+                    search: true,
+                },
+                [FILE_TOOLS, &["web_fetch", "google_web_search"]].concat(),
+            ),
+        ] {
+            let argv = GeminiBackend.build_argv(&opts(access, &[]));
+            let granted: Vec<&str> = argv
+                .windows(2)
+                .filter(|w| w[0] == "--allowed-tools")
+                .map(|w| w[1].as_str())
+                .collect();
+            assert_eq!(expected, granted, "grant {expected:?} in {argv:?}");
+        }
+    }
+
+    #[test]
     fn gemini_read_only_grant_flags() {
         let argv = GeminiBackend.build_argv(&opts(
             Access::ReadOnly {

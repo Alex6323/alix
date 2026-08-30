@@ -110,6 +110,78 @@ mod tests {
     }
 
     #[test]
+    fn every_grant_maps_to_its_own_copilot_tool_set() {
+        // `search` has no independent row without this: Copilot collapses fetch
+        // and search into `url`, so an equality law would hide a later split.
+        for (access, expected) in [
+            (Access::None, None),
+            (
+                Access::ReadOnly {
+                    files: true,
+                    fetch: false,
+                    search: false,
+                },
+                Some("read"),
+            ),
+            (
+                Access::ReadOnly {
+                    files: false,
+                    fetch: true,
+                    search: false,
+                },
+                Some("url"),
+            ),
+            (
+                Access::ReadOnly {
+                    files: false,
+                    fetch: false,
+                    search: true,
+                },
+                Some("url"),
+            ),
+            (
+                Access::ReadOnly {
+                    files: true,
+                    fetch: true,
+                    search: false,
+                },
+                Some("read,url"),
+            ),
+            (
+                Access::ReadOnly {
+                    files: true,
+                    fetch: false,
+                    search: true,
+                },
+                Some("read,url"),
+            ),
+            (
+                Access::ReadOnly {
+                    files: false,
+                    fetch: true,
+                    search: true,
+                },
+                Some("url"),
+            ),
+            (
+                Access::ReadOnly {
+                    files: true,
+                    fetch: true,
+                    search: true,
+                },
+                Some("read,url"),
+            ),
+        ] {
+            let argv = CopilotBackend.build_argv(&opts(access, &[]));
+            let available = argv
+                .windows(2)
+                .find(|w| w[0] == "--available-tools")
+                .map(|w| w[1].as_str());
+            assert_eq!(expected, available, "grant {expected:?} in {argv:?}");
+        }
+    }
+
+    #[test]
     fn copilot_grant_allows_read_denies_shell() {
         let argv = CopilotBackend.build_argv(&opts(
             Access::ReadOnly {
