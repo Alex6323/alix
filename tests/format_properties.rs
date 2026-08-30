@@ -304,11 +304,12 @@ proptest! {
     /// card's identity, fingerprint, or citations move on the way.
     #[test]
     fn normalizing_a_dirtied_deck_restores_it_and_moves_no_card(
-        (blocks, _) in gen_deck()
+        (blocks, doubled) in gen_deck()
     ) {
         let original = render_deck(&blocks, false);
         let clean = alix::parser::normalize(&original).into_owned();
-        let dirty = format!("\u{feff}{}", clean.replace('\n', "\r\n"));
+        let ending = if doubled { "\r\r\n" } else { "\r\n" };
+        let dirty = format!("\u{feff}{}", clean.replace('\n', ending));
 
         let restored = alix::parser::normalize(&dirty);
         prop_assert_eq!(

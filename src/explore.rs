@@ -610,7 +610,7 @@ pub fn merge_built(
                     fs::remove_file(&member_from)
                         .with_context(|| format!("cannot remove {}", member_from.display()))?;
                 } else {
-                    share::move_into(&member_from, &member_to)?;
+                    share::land_into(&member_from, &member_to)?;
                 }
                 moved += 1;
             }
@@ -637,7 +637,7 @@ pub fn merge_built(
                 fs::remove_file(&to).with_context(|| format!("cannot remove {}", to.display()))?;
             }
         }
-        share::move_into(&from, &to)?;
+        share::land_into(&from, &to)?;
         moved += 1;
     }
     Ok(MergeReport { moved, conflicts })

@@ -27,7 +27,7 @@ fn rewrite(text: &str) -> Option<String> {
         if idx > 0 {
             out.push('\n');
         }
-        let line = raw.strip_suffix('\r').unwrap_or(raw);
+        let line = raw.trim_end_matches('\r');
         changed |= line.len() != raw.len();
         match fence {
             Some((ch, open)) => {
@@ -152,6 +152,17 @@ mod tests {
             "```` \na \n````\n",
             "which holds however the opener is spelled",
         ),
+        (
+            "a\r\r\n",
+            "a\n",
+            "a run of carriage returns is line-ending noise, and leaving one behind \
+             would make the stamp write a file mixing both terminators",
+        ),
+        (
+            "```\nlet x = 1;\r\r\n```\n",
+            "```\nlet x = 1;\n```\n",
+            "which holds inside a fence, where the line ending is still not content",
+        ),
     ];
 
     /// The answer half of a one-card deck, and why its bytes are a risk.
@@ -212,5 +223,20 @@ mod tests {
                 "already-normalized {expected:?} should be borrowed, not rewritten: {why}"
             );
         }
+    }
+
+    #[test]
+    fn normalizing_a_fence_opener_preserves_card_identity_fingerprint_and_locator() {
+        let text = "## code?\n```rust \nfn main() {}\n```\n<!-- at: code.rs:1 -->\n<!-- id: card-fence1 -->\n";
+        let before = crate::parser::parse("deck.md", text).unwrap();
+        let normalized = normalize(text);
+        let after = crate::parser::parse("deck.md", &normalized).unwrap();
+
+        assert_eq!(before.cards[0].id(), after.cards[0].id());
+        assert_eq!(before.cards[0].citations, after.cards[0].citations);
+        assert_eq!(
+            before.cards[0].content_fingerprint, after.cards[0].content_fingerprint,
+            "normalizing bytes must not reset tutor and remediation dedup"
+        );
     }
 }

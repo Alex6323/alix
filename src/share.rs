@@ -591,8 +591,44 @@ pub fn land_received(tmp: &Path, dest_dir: &Path) -> Result<(String, Vec<String>
     if dest.exists() {
         bail!("{} already exists; move it aside first", dest.display());
     }
-    move_into(&got, &dest)?;
+    land_into(&got, &dest)?;
     Ok((name, stripped))
+}
+
+/// `move_into` for a deck taking its final place: the bytes are normalized
+/// first, because a landed deck is a deck alix wrote. `move_into` itself stays
+/// byte-exact for rollback restoration and for staging.
+pub fn land_into(from: &Path, to: &Path) -> Result<()> {
+    normalize_landing(from)?;
+    move_into(from, to)
+}
+
+fn normalize_landing(path: &Path) -> Result<()> {
+    if path.is_dir() {
+        for deck in crate::workspace::diagnosable_deck_files(path) {
+            normalize_deck_file(&deck)?;
+        }
+        return Ok(());
+    }
+    if path.extension().is_some_and(|ext| ext == "md") {
+        normalize_deck_file(path)?;
+    }
+    Ok(())
+}
+
+fn normalize_deck_file(path: &Path) -> Result<()> {
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+    let std::borrow::Cow::Owned(normalized) = crate::parser::normalize(&text) else {
+        return Ok(());
+    };
+    crate::parser::parse(
+        path.file_stem().and_then(|s| s.to_str()).unwrap_or("deck"),
+        &normalized,
+    )
+    .with_context(|| format!("{}: the normalized deck would not parse", path.display()))?;
+    crate::deck::write_deck_text(path, &normalized)?;
+    Ok(())
 }
 
 pub fn is_deck_bundle(path: &Path) -> bool {
@@ -661,6 +697,10 @@ pub fn land_deck_bundle_with_force(
     }
     std::fs::copy(&source_deck, &staged_deck)
         .with_context(|| format!("cannot stage {}", destination.display()))?;
+    if let Err(error) = normalize_deck_file(&staged_deck) {
+        let _ = std::fs::remove_file(&staged_deck);
+        return Err(error);
+    }
 
     let source_assets = bundle.join("assets").join(deck_id);
     if source_assets.is_dir() {
@@ -1264,6 +1304,49 @@ mod tests {
             .recv_timeout(std::time::Duration::from_secs(10))
             .unwrap();
         assert!(matches!(ev, ShareEvent::Error(_)), "{ev:?}");
+    }
+
+    /// The folder branch of a landing. `diagnosable_deck_files` resolves a
+    /// workspace's `decks/` and a plain folder's own entries, and only the
+    /// second layout would survive a wrong `member_dir`.
+    #[test]
+    fn landing_a_received_folder_normalizes_every_deck_it_carries() {
+        const DIRTY: &str = concat!(
+            "\u{feff}---\r\n",
+            "id: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\r\n",
+            "---\r\n",
+            "## q \t\r\n",
+            "a\r\n",
+            "<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\r\n",
+        );
+        for (layout, at) in [
+            ("a workspace", "ws/decks/facts.md"),
+            ("a plain folder", "ws/facts.md"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let tmp = dir.path().join("scratch");
+            let staged = tmp.join(at);
+            std::fs::create_dir_all(staged.parent().unwrap()).unwrap();
+            std::fs::write(&staged, DIRTY).unwrap();
+            if at.contains(crate::workspace::DECKS) {
+                std::fs::write(tmp.join("ws").join(crate::workspace::MANIFEST), "").unwrap();
+            }
+            let dest = dir.path().join("decks");
+            std::fs::create_dir_all(&dest).unwrap();
+
+            land_received(&tmp, &dest).unwrap();
+
+            let landed = std::fs::read_to_string(dest.join(at)).unwrap();
+            assert_eq!(
+                crate::parser::normalize(&landed),
+                landed,
+                "{layout} must land in canonical bytes"
+            );
+            assert!(
+                landed.contains("card-4jkya9q3m8z0tw5v9y2b4n6d8f"),
+                "{layout} keeps the card id it arrived with"
+            );
+        }
     }
 
     #[test]

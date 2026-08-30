@@ -3768,6 +3768,29 @@ fn receive_a_zip_deck_lands_in_the_decks_dir() {
 }
 
 #[test]
+fn receive_a_zip_deck_normalizes_the_written_bytes() {
+    let home = TempDir::new().unwrap();
+    let source = TempDir::new().unwrap();
+    let deck = write(
+        source.path(),
+        "facts.md",
+        "\u{feff}---\r\nid: \"deck-deck1\"\r\n---\r\n## q \t\r\na\r\n<!-- id: card-card1 -->\r\n",
+    );
+    let zip = source.path().join("facts.zip");
+    alix::share::zip_to(Path::new(&deck), &zip).unwrap();
+
+    let out = alix_env(&["receive", zip.to_str().unwrap()], home.path(), &[]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let written = std::fs::read_to_string(home.path().join("decks/facts.md")).unwrap();
+    assert_eq!(
+        alix::parser::normalize(&written),
+        written,
+        "receive is a deck-write boundary"
+    );
+}
+
+#[test]
 fn receive_an_existing_deck_without_force_errors_then_force_overwrites() {
     let home = TempDir::new().unwrap();
     let src = TempDir::new().unwrap();

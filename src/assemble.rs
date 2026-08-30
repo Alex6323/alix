@@ -796,6 +796,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn review_open_duplicate_repair_normalizes_the_written_loser() {
+        let dir = tempfile::tempdir().unwrap();
+        let keeper = dir.path().join("a-keeper.md");
+        let loser = dir.path().join("b-loser.md");
+        let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
+        write_initialized(
+            &keeper,
+            &format!("## keeper\nanswer\n<!-- id: {shared} -->\n"),
+        );
+        std::fs::write(
+            &loser,
+            format!(
+                "\u{feff}---\r\nformat-version: 1\r\nid: \"deck-loser\"\r\n---\r\n## copied \t\r\nanswer \r\n<!-- id: {shared} -->\r\n"
+            ),
+        )
+        .unwrap();
+
+        resolve_duplicates_at_open(&loser);
+
+        let written = std::fs::read_to_string(&loser).unwrap();
+        assert!(
+            !written.contains(shared),
+            "precondition: review-open must actually repair the duplicate"
+        );
+        assert_eq!(
+            crate::parser::normalize(&written),
+            written,
+            "duplicate repair is an active deck-write boundary"
+        );
+    }
+
     fn write_initialized(path: &Path, text: &str) {
         let id: String = path
             .file_stem()

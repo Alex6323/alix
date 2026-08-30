@@ -448,7 +448,7 @@ pub fn replace_card_tokens(
             read_as_scanned(repair.keeper, digests)?;
         }
     }
-    let original = read_as_scanned(loser, digests)?;
+    let original = parser::normalize(&read_as_scanned(loser, digests)?).into_owned();
     // Keyed by start, so two collisions resolving to one id comment are one
     // rewrite rather than a second that would splice over the first.
     let mut spans: BTreeMap<usize, (Range<usize>, String)> = BTreeMap::new();
@@ -1234,7 +1234,7 @@ mod tests {
     }
 
     #[test]
-    fn line_targeting_counts_crlf_bytes_and_preserves_the_keeper() {
+    fn line_targeting_survives_crlf_input_and_preserves_the_keeper() {
         let dir = tempfile::tempdir().unwrap();
         let old = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
         let original = format!(
@@ -1248,7 +1248,7 @@ mod tests {
 
         assert_eq!(1, after.matches(old).count(), "the keeper remains old");
         assert!(after.contains(&fresh), "the loser receives the fresh token");
-        assert!(after.contains("\r\n"), "line endings stay CRLF");
+        assert!(!after.contains('\r'), "the repaired deck is written in LF");
     }
 
     #[test]
@@ -1396,6 +1396,25 @@ mod tests {
         }
 
         assert_eq!(original.replace("\r\n", "\n"), reconstructed);
+    }
+
+    #[test]
+    fn stamping_a_double_crlf_deck_leaves_no_carriage_returns() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\r\r\nformat-version: 1\r\r\n---\r\r\n## q\r\r\na\r\r\n";
+        let path = write(&dir, "deck.md", original);
+
+        stamp_deck(&path).unwrap();
+
+        let stamped = fs::read_to_string(&path).unwrap();
+        assert!(
+            !stamped.contains('\r'),
+            "a stamp write must be fully normalized, not mixed CRLF/LF: {stamped:?}"
+        );
+        assert!(
+            matches!(parser::normalize(&stamped), std::borrow::Cow::Borrowed(_)),
+            "one stamp write must reach the normalizer's fixed point"
+        );
     }
 
     #[test]

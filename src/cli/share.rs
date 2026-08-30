@@ -85,7 +85,7 @@ pub(crate) fn receive_cmd(args: ReceiveArgs) -> Result<()> {
                 dest.display()
             );
         }
-        alix::share::move_into(&got, &dest)?;
+        alix::share::land_into(&got, &dest)?;
         println!(
             "Received {} — open it:  alix {}",
             dest.display(),
@@ -117,7 +117,7 @@ pub(crate) fn receive_cmd(args: ReceiveArgs) -> Result<()> {
                 dest.display()
             );
         }
-        alix::share::move_into(&got, &dest)?;
+        alix::share::land_into(&got, &dest)?;
         println!(
             "Received {} — it shows up in the picker (`alix`).",
             dest.display()

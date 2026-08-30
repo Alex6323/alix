@@ -862,6 +862,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- Receiving a shared deck, transferring one between workspaces, and merging
+  explored material now write the deck in canonical bytes, as the deck format
+  chapter already promised. All three landed the sender's bytes unchanged, so
+  a received deck could arrive with a byte-order mark, CRLF endings, and
+  trailing blanks, and stayed that way until some later edit rewrote it. Found
+  by Codex.
+- Normalization now drops a whole run of carriage returns at end of line, not
+  just one. A deck written with `\r\r\n` endings kept a carriage return per
+  line through normalization, and stamping it then wrote a file mixing both
+  terminators. Found by Codex.
+- Repairing a duplicate card id when a deck is opened for review writes the
+  deck in canonical bytes. It rewrote only the id token, leaving the rest of
+  the file as it found it. Found by Codex.
+
+
 - `alix workspace update` blames the member you wrote, not a staged path you
   never saw. When a backend reply is not a deck, the run failed with `cannot
   load proposed deck <staging>/decks/<name>.md` and a bare parse error, naming

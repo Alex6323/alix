@@ -467,7 +467,8 @@ file, it normalizes it.** That covers initializing a deck, stamping a new card
 id, augmenting, receiving a shared deck, and every `alix doctor` repair:
 
 - a leading byte-order mark is dropped;
-- CRLF line endings become LF, everywhere in the file;
+- a line's trailing carriage returns are dropped, so CRLF endings become LF,
+  everywhere in the file;
 - trailing spaces and tabs are removed.
 
 Two things survive. A **hard line break**, meaning a line ending in two or

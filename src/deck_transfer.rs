@@ -551,6 +551,33 @@ mod tests {
     }
 
     #[test]
+    fn copying_a_source_free_deck_normalizes_the_destination_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let destination = dir.path().join("destination");
+        workspace(&source, None, "");
+        workspace(&destination, None, "");
+        let deck = deck(&source, "facts.md", "");
+        let dirty = format!(
+            "\u{feff}{}",
+            std::fs::read_to_string(&deck)
+                .unwrap()
+                .replace('\n', "\r\n")
+                .replace("## q\r\n", "## q \t\r\n")
+        );
+        std::fs::write(&deck, dirty).unwrap();
+
+        transfer(&deck, &destination, TransferMode::Copy).unwrap();
+
+        let copied = std::fs::read_to_string(destination.join("decks/facts.md")).unwrap();
+        assert_eq!(
+            crate::parser::normalize(&copied),
+            copied,
+            "deck transfer is a destination deck-write boundary"
+        );
+    }
+
+    #[test]
     fn move_relocates_progress_and_removes_the_source_graph() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
