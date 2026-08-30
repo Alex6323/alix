@@ -1451,6 +1451,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn questions_prompt_tells_the_examiner_when_a_source_was_truncated() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("large.md"),
+            "a".repeat(MAX_SOURCE_BYTES + 1),
+        )
+        .unwrap();
+        let sources = SourceLayers {
+            own: vec!["large.md".to_string()],
+            workspace: Vec::new(),
+        };
+
+        let prompt = questions_prompt(&sources, Some(dir.path()), &ExamConfig::default()).unwrap();
+
+        assert!(
+            prompt.contains("[... source truncated ...]"),
+            "the pasted source carries no truncation marker, so the examiner reads a partial source as whole"
+        );
+        assert!(
+            prompt.contains("Each question must be answerable from the source"),
+            "the answerability instruction is gone, so the marker guards nothing"
+        );
+    }
+
     use crate::{
         parser,
         session::is_retired_id,
