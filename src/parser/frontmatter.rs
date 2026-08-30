@@ -472,6 +472,70 @@ pub fn reorder_frontmatter(text: &str) -> Reorder {
 mod tests {
     use super::*;
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum MultilineDisposition {
+        Stored,
+        Ignored,
+        BadValue,
+        HardError,
+    }
+
+    #[test]
+    fn every_recognized_frontmatter_key_has_this_multiline_scalar_disposition() {
+        let rows = [
+            ("id", MultilineDisposition::HardError),
+            ("format-version", MultilineDisposition::HardError),
+            ("source", MultilineDisposition::Stored),
+            ("requires", MultilineDisposition::Stored),
+            ("link", MultilineDisposition::Stored),
+            ("trace", MultilineDisposition::Stored),
+            ("reveal", MultilineDisposition::BadValue),
+            ("order", MultilineDisposition::BadValue),
+            ("input", MultilineDisposition::BadValue),
+            ("direction", MultilineDisposition::BadValue),
+            ("sampling", MultilineDisposition::BadValue),
+            ("tasklist", MultilineDisposition::BadValue),
+            ("table", MultilineDisposition::BadValue),
+            ("authors", MultilineDisposition::Stored),
+            ("title", MultilineDisposition::HardError),
+            ("description", MultilineDisposition::Stored),
+            ("license", MultilineDisposition::Stored),
+            ("for", MultilineDisposition::Stored),
+            ("created-at", MultilineDisposition::Stored),
+            ("language", MultilineDisposition::Ignored),
+            ("revision", MultilineDisposition::Ignored),
+        ];
+
+        for (key, expected) in rows {
+            let key_line = format!("{key}: |-");
+            let block = [key_line.as_str(), "  alpha", "  beta"];
+            let mut lints = Vec::new();
+            let parsed = load_frontmatter(&block, 1, &mut lints);
+            let actual = match parsed {
+                Err(_) => MultilineDisposition::HardError,
+                Ok(_)
+                    if lints
+                        .iter()
+                        .any(|lint| matches!(lint.kind, LintKind::BadValue { .. })) =>
+                {
+                    MultilineDisposition::BadValue
+                }
+                Ok(frontmatter) if frontmatter == Frontmatter::default() => {
+                    MultilineDisposition::Ignored
+                }
+                Ok(_) => MultilineDisposition::Stored,
+            };
+
+            assert_eq!(expected, actual, "multiline disposition for `{key}`");
+            assert!(
+                lints
+                    .iter()
+                    .all(|lint| !matches!(lint.kind, LintKind::UnknownKey { .. })),
+                "`{key}` must be recognized by the parser: {lints:?}"
+            );
+        }
+    }
+
     fn reordered(text: &str) -> String {
         match reorder_frontmatter(text) {
             Reorder::Reordered(out) => out,
