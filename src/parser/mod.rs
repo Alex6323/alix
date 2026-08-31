@@ -2039,7 +2039,7 @@ fn split_note(
             Some((name, append, payload)) if names.contains(name) => {
                 addressed.push((name.to_string(), append, payload.to_string()));
             }
-            // Only a block that names a group can be addressing one, so a
+            // Only a block with named blanks can be addressing one, so a
             // note beginning `2:` on any other block is prose.
             Some((name, ..)) if !names.is_empty() => {
                 lints.push(Lint {

@@ -39,10 +39,12 @@ not the identity. The store's hole-records family (`HoleFingerprint`,
 `CardRecords`, the realign and remap paths) is gone, and an old store
 document carrying it fails loud on its unknown field.
 
-**4. Per-hole addressing carries over keyed on group names.** The
+**4. Per-hole addressing carries over keyed on region names.** The
 addressed-note semantics of ADR 0032 (`> g: text` replaces the shared
-block note for group g's card, `> g+: text` appends) survive verbatim,
-addressed to region `[group]` names instead of hole names.
+block note for the card named g, `> g+: text` appends) survive verbatim,
+addressed to region `[name]`s instead of hole names. A name addresses a
+lone named region's card the same way; the group and its derived
+identity begin at the second member (ADR 0034 as amended).
 
 **5. One predicate discriminates blank-derived cards.** Behavior that
 means "this is a blank-derived study card" (generate style validation,
@@ -92,8 +94,8 @@ adds none.
 - A span blank satisfies the generator's cloze style and fails plain.
 - An unpinned math span reviews as draw; a block `input:` pin reaches
   its span cards.
-- Group-addressed notes replace or extend the shared block note for
-  their group's card alone.
+- Name-addressed notes replace or extend the shared block note for
+  the named region's card alone, lone named regions included.
 - An old store document with a `records` field fails loud.
 
 ## Reversal
