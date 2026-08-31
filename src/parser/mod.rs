@@ -22,7 +22,7 @@ mod stream;
 
 pub use canonical::{canonical_content, content_fingerprint, mix_fingerprint};
 pub use cloze::{BLANK, HIDDEN};
-use cloze::{Hole, Seg, Side, hash_repr, hole_fingerprints, scan_markers, seg_display};
+use cloze::{Seg, scan_markers, seg_display};
 pub(crate) use frontmatter::is_frontmatter_fence;
 pub use frontmatter::{
     Frontmatter, Mapping, PERSONAL_PARENT_KEY, Reorder, parse_sampling, reorder_frontmatter,
@@ -1957,7 +1957,6 @@ struct BlockProse {
 fn capture_answer_fences(
     answer: &[(usize, String)],
     splices: &[SpanSplice],
-    hole_lines: &[usize],
 ) -> Vec<crate::card::AnswerFence> {
     use crate::render::{fence_info, fence_marker};
     let mut fences = Vec::new();
@@ -1996,7 +1995,6 @@ fn capture_answer_fences(
                     fingerprint: crate::diagram::fingerprint(&interior),
                     interior: std::sync::Arc::from(interior),
                     spans,
-                    holes: hole_lines.iter().any(|line| (from..index).contains(line)),
                 });
             }
             (Some(_), _) => {}
@@ -2493,7 +2491,7 @@ fn card_images(segments: &[Seg]) -> impl Iterator<Item = CardImage> + '_ {
             regions: Vec::new(),
             crop: None,
         }),
-        Seg::Text(_) | Seg::Hole { .. } => None,
+        Seg::Text(_) => None,
     })
 }
 
@@ -2560,7 +2558,6 @@ fn mixed_image_line(segments: &[Seg]) -> bool {
     segments.iter().any(|s| matches!(s, Seg::Image { .. }))
         && segments.iter().any(|s| match s {
             Seg::Image { .. } => false,
-            Seg::Hole { .. } => true,
             Seg::Text(text) => !text.trim().is_empty(),
         })
 }
@@ -2616,7 +2613,7 @@ fn build_card_inner(
     } = raw;
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
     {
-        let segments = scan_markers(&heading, line, Side::Front, lints)?;
+        let segments = scan_markers(&heading, line, lints)?;
         if segments.iter().any(|s| matches!(s, Seg::Image { .. })) {
             return Err(ParseError::MixedImageLine(line));
         }
@@ -2624,7 +2621,7 @@ fn build_card_inner(
     let (front, answer) = if divided {
         let mut front_lines = vec![heading];
         for (lineno, text) in &front_extra {
-            let segments = scan_markers(text, *lineno, Side::Front, lints)?;
+            let segments = scan_markers(text, *lineno, lints)?;
             if mixed_image_line(&segments) {
                 return Err(ParseError::MixedImageLine(*lineno));
             }
@@ -2643,7 +2640,7 @@ fn build_card_inner(
 
     let mut parsed = Vec::with_capacity(answer.len());
     for (lineno, text) in &answer {
-        let segments = scan_markers(text, *lineno, Side::Answer, lints)?;
+        let segments = scan_markers(text, *lineno, lints)?;
         if mixed_image_line(&segments) {
             return Err(ParseError::MixedImageLine(*lineno));
         }
@@ -3094,274 +3091,39 @@ fn build_card_inner(
         Some(lines.join("\n"))
     }
 
-    fn hole_sits_in_math(segments: &[Seg], hole_seg: usize) -> bool {
-        let mut line = String::new();
-        for (si, segment) in segments.iter().enumerate() {
-            match segment {
-                Seg::Text(text) => line.push_str(text),
-                Seg::Hole { .. } if si == hole_seg => line.push_str(BLANK),
-                Seg::Hole { .. } => line.push_str(HIDDEN),
-                Seg::Image { .. } => {}
-            }
-        }
-        crate::inline::math_encloses(&line, BLANK)
-    }
 
-    let holes: Vec<Hole<'_>> = parsed
+    let answer_fences = capture_answer_fences(&answer, &splices);
+
+    let back_lines: Vec<String> = parsed
         .iter()
-        .enumerate()
-        .flat_map(|(li, segments)| {
-            segments
-                .iter()
-                .enumerate()
-                .filter_map(move |(si, segment)| match segment {
-                    Seg::Hole { text, name } => Some(Hole {
-                        line: li,
-                        seg: si,
-                        text: text.as_str(),
-                        name: name.as_deref(),
-                    }),
-                    Seg::Text(_) | Seg::Image { .. } => None,
-                })
-        })
+        .filter(|segments| !image_only(segments))
+        .map(|segments| seg_display(segments))
         .collect();
-
-    let hole_answer_lines: Vec<usize> = holes.iter().map(|hole| hole.line).collect();
-    let answer_fences = capture_answer_fences(&answer, &splices, &hole_answer_lines);
-
-    let mut named = HashSet::new();
-    let mut groups: Vec<Vec<usize>> = Vec::new();
-    for (h, hole) in holes.iter().enumerate() {
-        let joined = hole.name.and_then(|name| {
-            groups
-                .iter_mut()
-                .find(|group| holes[group[0]].name == Some(name))
-                .map(|group| group.push(h))
-        });
-        if joined.is_none() {
-            groups.push(vec![h]);
-        }
-        named.extend(hole.name);
-    }
-
-    if holes.is_empty() {
-        let back_lines: Vec<String> = parsed
+    let mut card = Card::plain(Arc::clone(subject), front, back_lines, notes, line);
+    card.deck_id = Arc::clone(deck_id);
+    card.token = directives.token.as_deref().map(Arc::from);
+    card.reveal = directives.reveal;
+    card.input = directives.input;
+    card.direction = directives.direction;
+    card.sampling = directives.sampling;
+    card.images = images;
+    card.images_back = images_back;
+    card.span_regions = span_regions;
+    card.answer_fences = answer_fences;
+    card.citations = directives.citations;
+    card.diagrams = directives.diagrams;
+    card.givens = directives.givens;
+    card.block_fingerprint = block_key;
+    cards.push(card);
+    let prose = first_blank_line.is_some().then(|| BlockProse {
+        lines: answer
             .iter()
-            .filter(|segments| !image_only(segments))
-            .map(|segments| seg_display(segments))
-            .collect();
-        let mut card = Card::plain(Arc::clone(subject), front, back_lines, notes, line);
-        card.deck_id = Arc::clone(deck_id);
-        card.token = directives.token.as_deref().map(Arc::from);
-        card.reveal = directives.reveal;
-        card.input = directives.input;
-        card.direction = directives.direction;
-        card.sampling = directives.sampling;
-        card.images = images;
-        card.images_back = images_back;
-        card.span_regions = span_regions;
-        card.answer_fences = answer_fences;
-        card.citations = directives.citations;
-        card.diagrams = directives.diagrams;
-        card.givens = directives.givens;
-        card.block_fingerprint = block_key;
-        cards.push(card);
-        let prose = first_blank_line.is_some().then(|| BlockProse {
-            lines: answer
-                .iter()
-                .zip(&parsed)
-                .map(|((_, text), segments)| (!image_only(segments)).then(|| text.clone()))
-                .collect(),
-            splices,
-        });
-        return Ok(prose);
-    }
-
-    if let Some(line) = first_blank_line {
-        return Err(ParseError::InvalidRegion {
-            line,
-            message: "a `blank:` region cannot share a block with `\\blank{}` text holes".into(),
-        });
-    }
-
-    // A cloze card. `reveal:` is retired here: the holes are the trigger.
-    if directives.reveal.is_some() {
-        lints.push(Lint {
-            line: directives.reveal_line.unwrap_or(line),
-            kind: LintKind::RevealOnCloze,
-        });
-    }
-    let split: Vec<SplitNote> = notes
-        .iter()
-        .map(|note| {
-            let (block, addressed) = split_note(Some(note.body.as_str()), &named, line, lints);
-            SplitNote {
-                badge: note.badge,
-                block,
-                addressed,
-            }
-        })
-        .collect();
-    let hole_notes: Vec<Vec<Note>> = groups
-        .iter()
-        .map(|group| {
-            let name = holes[group[0]].name;
-            split
-                .iter()
-                .filter_map(|note| {
-                    resolve_note(note.block.as_deref(), &note.addressed, name).map(|body| Note {
-                        badge: note.badge,
-                        body,
-                    })
-                })
-                .collect()
-        })
-        .collect();
-    for (n, group) in groups.iter().enumerate() {
-        for hole in group.iter().map(|h| &holes[*h]) {
-            let shown_elsewhere = hole_notes.iter().enumerate().any(|(other, notes)| {
-                other != n && notes.iter().any(|note| names_answer(&note.body, hole.text))
-            });
-            if shown_elsewhere {
-                lints.push(Lint {
-                    line,
-                    kind: LintKind::NoteContainsHoleAnswer {
-                        hole: n + 1,
-                        answer: hole.text.to_string(),
-                    },
-                });
-            }
-        }
-    }
-    let token: Option<Arc<str>> = directives.token.as_deref().map(Arc::from);
-    let structure: Vec<String> = parsed.iter().map(|segments| hash_repr(segments)).collect();
-    let block_holes = hole_fingerprints(&parsed, &holes, &groups);
-    for (n, group) in groups.iter().enumerate() {
-        let asked: Vec<&Hole<'_>> = group.iter().map(|h| &holes[*h]).collect();
-        // Cover-free blocks keep the seg rendering verbatim (escapes display
-        // unescaped), so no existing deck's context changes; a cover forces
-        // the raw-splice path, where covers and hole footprints cut the
-        // authored line together and the leak the cover exists for dies.
-        let context: Vec<String> = if splices.is_empty() {
-            parsed
-                .iter()
-                .enumerate()
-                .filter(|(_, segments)| !image_only(segments))
-                .map(|(li, segments)| {
-                    let mut rendered = String::new();
-                    for (si, segment) in segments.iter().enumerate() {
-                        let asked_here = asked.iter().any(|hole| hole.line == li && hole.seg == si);
-                        match segment {
-                            Seg::Text(text) => rendered.push_str(text),
-                            Seg::Hole { .. } if asked_here => rendered.push_str(BLANK),
-                            Seg::Hole { .. } => rendered.push_str(HIDDEN),
-                            Seg::Image { .. } => {}
-                        }
-                    }
-                    rendered
-                })
-                .collect()
-        } else {
-            answer
-                .iter()
-                .zip(&parsed)
-                .enumerate()
-                .filter(|(_, (_, segments))| !image_only(segments))
-                .map(|(li, ((_, raw), _))| {
-                    let line_holes: Vec<&Hole<'_>> =
-                        holes.iter().filter(|hole| hole.line == li).collect();
-                    let mut cuts: Vec<(usize, usize, &str)> = splices
-                        .iter()
-                        .filter(|splice| splice.answer_index == li)
-                        .map(|splice| (splice.range.0, splice.range.1, HIDDEN))
-                        .collect();
-                    for (footprint, hole) in cloze::hole_footprints(raw).into_iter().zip(line_holes)
-                    {
-                        let asked_here = asked
-                            .iter()
-                            .any(|it| it.line == hole.line && it.seg == hole.seg);
-                        cuts.push((
-                            footprint.start,
-                            footprint.end,
-                            if asked_here { BLANK } else { HIDDEN },
-                        ));
-                    }
-                    cuts.sort_by_key(|(start, ..)| std::cmp::Reverse(*start));
-                    let mut rendered = raw.clone();
-                    for (start, end, marker) in cuts {
-                        rendered.replace_range(start..end, marker);
-                    }
-                    rendered
-                })
-                .collect()
-        };
-        let mut hash_lines = structure.clone();
-        hash_lines.push(format!("#cloze:{n}"));
-        let mut card = Card::plain(
-            Arc::clone(subject),
-            front.clone(),
-            asked.iter().map(|hole| hole.text.to_string()).collect(),
-            hole_notes[n].clone(),
-            line,
-        );
-        card.deck_id = Arc::clone(deck_id);
-        card.context = context;
-        card.context_leads = true;
-        card.hash_lines = Some(hash_lines);
-        card.token = token.clone();
-        card.hole = Some(n as u32);
-        card.hole_name = asked[0].name.map(str::to_string);
-        let in_math: Vec<bool> = asked
-            .iter()
-            .map(|hole| hole_sits_in_math(&parsed[hole.line], hole.seg))
-            .collect();
-        if in_math.iter().any(|it| *it) {
-            card.display_back = Some(
-                asked
-                    .iter()
-                    .zip(&in_math)
-                    .map(|(hole, math)| match math {
-                        true => format!("${}$", hole.text),
-                        false => hole.text.to_string(),
-                    })
-                    .collect(),
-            );
-            card.math_hole = true;
-        }
-        // A hole that stays typed and holds a control sequence asks for the
-        // command's spelling. In a formula the input rule draws it instead,
-        // unless the author pinned the keyboard back.
-        for (hole, math) in asked.iter().zip(&in_math) {
-            let typed =
-                directives.input != Some(Input::Draw) && (!math || directives.input.is_some());
-            if typed && is_control_sequence(hole.text) {
-                lints.push(Lint {
-                    line,
-                    kind: LintKind::UntypableHole {
-                        answer: hole.text.to_string(),
-                    },
-                });
-            }
-        }
-        card.block_holes = block_holes.clone();
-        card.citations = directives.citations.clone();
-        card.images = images.clone();
-        card.images_back = images_back.clone();
-        card.span_regions = span_regions.clone();
-        card.answer_fences = answer_fences.clone();
-        // The effective question (ADR 0034): this card's own masked context
-        // and back, so editing a hidden sibling never stales this card's
-        // cached AI artifacts; the block key above addresses the block.
-        let mut question = card.context.clone();
-        question.extend(card.back.iter().cloned());
-        card.content_fingerprint = content_fingerprint(&front, &question);
-        card.block_fingerprint = block_key;
-        // A cloze sub-card never reverses and keeps no direction: only the
-        // per-card `input:` still applies here.
-        card.input = directives.input;
-        cards.push(card);
-    }
-    Ok(None)
+            .zip(&parsed)
+            .map(|((_, text), segments)| (!image_only(segments)).then(|| text.clone()))
+            .collect(),
+        splices,
+    });
+    Ok(prose)
 }
 
 #[cfg(test)]
@@ -3371,6 +3133,18 @@ mod tests {
 
     fn parse(text: &str) -> ParsedDeck {
         super::parse("deck.md", text).unwrap()
+    }
+
+    #[test]
+    fn a_blank_marker_is_literal_answer_text() {
+        let deck = parse_str("d.md", "## q\nParis is in \\blank{Europe}\n").expect("parses");
+        assert_eq!(1, deck.len(), "one plain card, no sub-cards: {deck:?}");
+        assert_eq!(
+            vec!["Paris is in \\blank{Europe}"],
+            deck[0].back,
+            "the marker is ordinary literal answer text"
+        );
+        assert_eq!(None, deck[0].hole, "no positional sub-id");
     }
 
     #[test]

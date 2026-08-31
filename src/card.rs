@@ -103,9 +103,6 @@ pub struct AnswerFence {
     pub interior: std::sync::Arc<str>,
     /// Every bound span splicing into this fence's interior.
     pub spans: Vec<AnswerFenceSpan>,
-    /// A cloze hole sits inside the interior: the fence never projects as a
-    /// diagram, because the raster would show the hole's answer.
-    pub holes: bool,
 }
 
 /// One span's bound range inside its fence, in bytes of the LF-normalized

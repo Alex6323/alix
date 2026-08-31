@@ -15,89 +15,22 @@ pub const HIDDEN: &str = "⬚";
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Seg {
     Text(String),
-    /// `name` addresses this hole within its own block, for a per-hole
-    /// payload. It is not an identity: see ADR 0032.
-    Hole {
-        text: String,
-        name: Option<String>,
-    },
     Image {
         src: String,
         alt: Option<String>,
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Side {
-    // Test-only until front scanning wires in; an #[expect] would be
-    // unfulfilled under cfg(test).
-    #[allow(dead_code)]
-    Front,
-    Answer,
-}
-
-pub(super) struct Hole<'a> {
-    pub line: usize,
-    pub seg: usize,
-    pub text: &'a str,
-    pub name: Option<&'a str>,
-}
-
-/// One fingerprint per sub-card, since `store::apply_hole_cascade` indexes
-/// this list by sub-card. A group of one is byte-identical to what a lone
-/// hole hashed before grouping existed, so no drilled deck resets.
-pub(super) fn hole_fingerprints(
-    parsed: &[Vec<Seg>],
-    holes: &[Hole<'_>],
-    groups: &[Vec<usize>],
-) -> Vec<HoleFingerprint> {
-    groups
-        .iter()
-        .map(|group| {
-            let answers: Vec<String> = group.iter().map(|h| collapse(holes[*h].text)).collect();
-            let mut lines: Vec<usize> = group.iter().map(|h| holes[*h].line).collect();
-            lines.dedup();
-            let rendered: Vec<String> = lines
-                .iter()
-                .map(|li| {
-                    let mut line = String::new();
-                    for (si, segment) in parsed[*li].iter().enumerate() {
-                        let masked = group
-                            .iter()
-                            .any(|h| holes[*h].line == *li && holes[*h].seg == si);
-                        match segment {
-                            Seg::Text(t) => line.push_str(t),
-                            Seg::Hole { .. } if masked => line.push_str(HOLE_MASK),
-                            Seg::Hole { text, .. } => line.push_str(text),
-                            Seg::Image { src, alt } => push_image(&mut line, src, alt.as_deref()),
-                        }
-                    }
-                    collapse(&line)
-                })
-                .collect();
-            HoleFingerprint {
-                text_fp: hash64(&answers.join("\n")),
-                line_fp: hash64(&rendered.join("\n")),
-            }
-        })
-        .collect()
-}
-
 pub(super) fn scan_markers(
     line_text: &str,
     lineno: usize,
-    side: Side,
     lints: &mut Vec<Lint>,
 ) -> Result<Vec<Seg>, ParseError> {
     let mut segments = Vec::new();
     let mut text = String::new();
     let mut rest = line_text;
     while !rest.is_empty() {
-        if let Some(after) = rest.strip_prefix("\\\\blank") {
-            text.push_str("\\blank");
-            rest = after;
-        } else if rest.starts_with('\\') && rest.trim_start_matches('\\').starts_with("![") {
-            // Parity for the image marker only; `\blank` keeps its own escape grammar.
+        if rest.starts_with('\\') && rest.trim_start_matches('\\').starts_with("![") {
             let run = rest.chars().take_while(|ch| *ch == '\\').count();
             let escaped = run % 2 == 1;
             for _ in 0..run - usize::from(escaped) {
@@ -108,45 +41,6 @@ pub(super) fn scan_markers(
                 rest = &rest[run + 2..];
             } else {
                 rest = scan_image(&rest[run + 2..], lineno, &mut text, &mut segments, lints);
-            }
-        } else if side == Side::Answer
-            && let Some(after) = rest.strip_prefix("\\blank")
-        {
-            let (named, after_name) = match after.strip_prefix('[') {
-                Some(bracketed) => match scan_hole_name(bracketed) {
-                    Some((name, rest_after)) => (Some(name), rest_after),
-                    None => return Err(ParseError::InvalidHoleName(lineno)),
-                },
-                None => (None, after),
-            };
-            let after = after_name;
-            if let Some(arg) = after.strip_prefix('{') {
-                let (content, after_hole) = scan_group(arg, lineno)?;
-                if trim_ws(&content).is_empty() {
-                    return Err(ParseError::EmptyHole(lineno));
-                }
-                if content.contains("\\blank") {
-                    // Hole content is never re-scanned; the inner marker is
-                    // literal text.
-                    lints.push(Lint {
-                        line: lineno,
-                        kind: LintKind::ClozeInHole,
-                    });
-                }
-                if !text.is_empty() {
-                    segments.push(Seg::Text(std::mem::take(&mut text)));
-                }
-                segments.push(Seg::Hole {
-                    text: content,
-                    name: named,
-                });
-                rest = after_hole;
-            } else if named.is_some() {
-                // `\blank[name]` with no `{answer}` after it.
-                return Err(ParseError::InvalidHoleName(lineno));
-            } else {
-                text.push_str("\\blank");
-                rest = after;
             }
         } else if let Some(after) = rest.strip_prefix("![") {
             rest = scan_image(after, lineno, &mut text, &mut segments, lints);
@@ -401,42 +295,12 @@ pub(super) fn seg_display(segments: &[Seg]) -> String {
     for segment in segments {
         match segment {
             Seg::Text(text) => out.push_str(text),
-            Seg::Hole { text: hole, .. } => {
-                out.push_str("\\blank{");
-                out.push_str(hole);
-                out.push('}');
-            }
             Seg::Image { .. } => {}
         }
     }
     out
 }
 
-pub(super) fn hash_repr(segments: &[Seg]) -> String {
-    let mut out = String::new();
-    for segment in segments {
-        match segment {
-            Seg::Text(text) => out.push_str(text),
-            Seg::Hole { text: hole, .. } => {
-                out.push('\u{1f}');
-                out.push_str(hole);
-                out.push('\u{1f}');
-            }
-            Seg::Image { src, alt } => {
-                out.push('\u{1f}');
-                out.push_str("image");
-                out.push('\u{1f}');
-                out.push_str(src);
-                if let Some(alt) = alt {
-                    out.push('\u{1f}');
-                    out.push_str(alt);
-                }
-                out.push('\u{1f}');
-            }
-        }
-    }
-    out
-}
 
 #[cfg(test)]
 mod tests {

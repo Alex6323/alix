@@ -774,7 +774,6 @@ fn context_fence_unit(
 ) -> ContentUnit {
     if mermaid
         && let Some(record) = record
-        && !record.holes
         && let Some(resolved) = diagrams
             .iter()
             .find(|d| d.fingerprint == record.fingerprint)

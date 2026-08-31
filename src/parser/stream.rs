@@ -86,11 +86,7 @@ pub(super) fn maskable_stream(answer: &[(usize, String)], parsed: &[Vec<Seg>]) -
         if segments.iter().any(|seg| matches!(seg, Seg::Image { .. })) {
             continue;
         }
-        let holes = if segments.iter().any(|seg| matches!(seg, Seg::Hole { .. })) {
-            super::cloze::hole_footprints(raw)
-        } else {
-            Vec::new()
-        };
+        let holes: Vec<std::ops::Range<usize>> = Vec::new();
         let byte_of: Vec<usize> = raw
             .char_indices()
             .map(|(byte, _)| byte)
@@ -246,12 +242,7 @@ mod tests {
         let parsed: Vec<Vec<Seg>> = answer
             .iter()
             .map(|(lineno, line)| {
-                super::super::cloze::scan_markers(
-                    line,
-                    *lineno,
-                    super::super::cloze::Side::Answer,
-                    &mut lints,
-                )
+                super::super::cloze::scan_markers(line, *lineno, &mut lints)
                 .unwrap()
             })
             .collect();
@@ -406,12 +397,7 @@ mod tests {
         let parsed: Result<Vec<Vec<Seg>>, _> = answer
             .iter()
             .map(|(lineno, line)| {
-                super::super::cloze::scan_markers(
-                    line,
-                    *lineno,
-                    super::super::cloze::Side::Answer,
-                    &mut lints,
-                )
+                super::super::cloze::scan_markers(line, *lineno, &mut lints)
             })
             .collect();
         parsed.ok().map(|parsed| (answer, parsed))
