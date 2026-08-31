@@ -1499,10 +1499,7 @@ fn link_definition(lines: &[&str], at: usize) -> Option<(String, usize)> {
     }
 
     let consumed = 1 + chars[..end].iter().filter(|&&ch| ch == '\n').count();
-    let holed = lines[at..at + consumed]
-        .iter()
-        .any(|line| line.contains("\\blank"));
-    (!holed).then_some((label, consumed))
+    Some((label, consumed))
 }
 
 /// Chars the escape at `at` covers: two when the backslash escapes ASCII
@@ -3246,17 +3243,19 @@ mod tests {
             assert!(deck.definitions.is_empty(), "{why}: {:?}", deck.definitions);
         }
 
-        let holed = parse("## Q\n[\\blank{r}]: x\n");
-        assert!(
-            holed.definitions.is_empty(),
-            "a hole marker keeps the line a card's prose"
-        );
-        assert!(!holed.cards.is_empty(), "the blank stays a drillable hole");
-
         let err = err("## Q\n[r]: x\n");
         assert!(
             matches!(err, ParseError::FrontWithoutAnswer(1)),
             "a definition-only answer leaves the card answerless: {err}"
+        );
+    }
+
+    #[test]
+    fn a_literal_blank_command_does_not_change_link_definition_grammar() {
+        let error = err("## Q\n[\\blank{r}]: x\n");
+        assert!(
+            matches!(error, ParseError::FrontWithoutAnswer(1)),
+            "a definition-only answer leaves the card answerless: {error}"
         );
     }
 
