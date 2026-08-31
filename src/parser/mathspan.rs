@@ -333,6 +333,13 @@ fn invisible_argument_extents(payload: &str, tokens: &[Token]) -> Vec<(Range<usi
 /// partial span instead of masking the wrong unit.
 fn command_brace_arity(command: &str) -> usize {
     use ratex_parser::macro_expander::{MacroDefinition, MacroExpander};
+    // The allowlist is the zero-arity authority for its own members: its
+    // review vets exactly "zero-argument, learner-visible", and a member
+    // like `\neq` expands to a body (`\not=`) that saturates itself,
+    // which no static body scan can prove.
+    if BLANKABLE_SYMBOLS.binary_search(&command).is_ok() {
+        return 0;
+    }
     if let Some(spec) = ratex_parser::functions::FUNCTIONS.get(command) {
         return spec.num_args;
     }
@@ -345,8 +352,15 @@ fn command_brace_arity(command: &str) -> usize {
 }
 
 /// A text macro's arity is the highest `#N` its expansion references;
-/// `##` is a literal `#` (TeX's own rule).
+/// `##` is a literal `#` (TeX's own rule). That maximum is only a LOWER
+/// bound once the body contains any control sequence: the expansion may
+/// dispatch to a command that consumes further arguments (`\operatorname`
+/// is `\@ifstar...` with no `#N` at all), so such a macro is statically
+/// unprovable and absorbs the whole run, the Function-backed shape.
 fn text_macro_arity(body: &str) -> usize {
+    if body.contains('\\') {
+        return usize::MAX;
+    }
     let mut arity = 0usize;
     let mut chars = body.chars().peekable();
     while let Some(ch) = chars.next() {
@@ -850,12 +864,25 @@ mod tests {
 
     #[test]
     fn every_blankable_symbol_consumes_no_brace_groups() {
+        use ratex_parser::macro_expander::{MacroDefinition, MacroExpander};
         for symbol in BLANKABLE_SYMBOLS {
-            assert_eq!(
-                0,
-                command_brace_arity(symbol),
-                "{symbol} consumes arguments; a group after it is not independent"
-            );
+            assert_eq!(0, command_brace_arity(symbol), "{symbol} is pinned zero");
+            // The mechanical half of the review: where the renderer states
+            // an arity, it must agree; a text macro rides the human vetting
+            // (its body may self-saturate, which no body scan proves).
+            if let Some(spec) = ratex_parser::functions::FUNCTIONS.get(symbol) {
+                assert_eq!(0, spec.num_args, "{symbol} consumes renderer arguments");
+            } else {
+                match MacroExpander::new("", ratex_parser::Mode::Math).get_macro(symbol) {
+                    Some(MacroDefinition::Tokens { num_args, .. }) => {
+                        assert_eq!(0, *num_args, "{symbol} consumes macro arguments");
+                    }
+                    Some(MacroDefinition::Function(_)) => {
+                        panic!("{symbol} is Function-backed; its arity is unprovable");
+                    }
+                    Some(MacroDefinition::Text(_)) | None => {}
+                }
+            }
         }
     }
 
@@ -1009,6 +1036,14 @@ mod tests {
         assert_eq!(
             Ok(()),
             unit(r"\def\foo#1{(#1)}\foo{x}^2", r"\def\foo#1{(#1)}\foo{x}^2")
+        );
+    }
+
+    #[test]
+    fn a_group_after_a_dispatch_macro_walks_to_the_macro() {
+        assert_eq!(
+            Err(Violation::IncompleteScript('^')),
+            unit(r"z+\operatorname{x}^2", r"{x}^2")
         );
     }
 

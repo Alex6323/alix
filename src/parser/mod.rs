@@ -8647,6 +8647,23 @@ the answer
     }
 
     #[test]
+    fn a_span_cannot_split_a_dispatch_macro_from_its_script() {
+        let result = super::parse(
+            "deck.md",
+            &format!(
+                "## q\n---\n$z+\\operatorname{{x}}^2$\n<!-- blank: span hidden=\"{{x}}^2\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            ),
+        );
+        let Err(ParseError::InvalidRegion { message, .. }) = &result else {
+            panic!("a dispatch macro's argument plus its owner's script was accepted: {result:?}");
+        };
+        assert!(
+            message.contains("without its complete base and script"),
+            "{message}"
+        );
+    }
+
+    #[test]
     fn a_defining_spelling_in_a_math_comment_does_not_block_an_earlier_span() {
         let deck = super::parse(
             "deck.md",
