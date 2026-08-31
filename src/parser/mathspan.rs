@@ -384,8 +384,12 @@ fn referenced_params(body: &str) -> usize {
 /// is the oracle. Only its end-of-input-wanting-an-argument diagnostic
 /// marks a stream consumer (`\operatorname` dispatches past the probe's
 /// end); any other outcome, success or an unrelated complaint about the
-/// placeholder arguments (`\tmspace` rejects them as sizes), proves the
-/// visible arity is all the macro takes. Only the frozen builtin
+/// placeholder arguments (`\tmspace` rejects them as sizes), counts as
+/// saturated. That predicate is an exhaustively verified assumption over
+/// the frozen builtin table (the complete-table conformance test), not a
+/// general theorem: a synthetic body can consume through a different
+/// diagnostic (`\left(`), default an optional branch at end of input, or
+/// hide a trailing consumer behind invalid placeholders. Only the frozen
 /// namespace can reach this probe: a formula that mutates the namespace
 /// is rejected wholesale before spans are walked.
 fn expansion_saturates(command: &str, arity: usize) -> bool {
@@ -1192,5 +1196,367 @@ mod tests {
     fn an_equal_depth_group_interior_is_a_unit() {
         assert_eq!(Ok(()), unit(r"\frac{ab}{cd}", r"ab"));
         assert_eq!(Ok(()), unit(r"x^{n+1}", r"n+1"));
+    }
+
+    #[test]
+    fn saturation_walk_matches_the_complete_renderer_text_macro_table() {
+        let cases: &[(&str, usize)] = &[
+            ("\\aa", 0),
+            ("\\AA", 0),
+            ("~", 0),
+            ("\\hphantom", 1),
+            ("\\not", 0),
+            ("\\neq", 0),
+            ("\\ne", 0),
+            ("≠", 0),
+            ("\\notin", 0),
+            ("∉", 0),
+            ("\\notni", 0),
+            ("∌", 0),
+            ("\\iff", 0),
+            ("\\implies", 0),
+            ("\\impliedby", 0),
+            ("\\varGamma", 0),
+            ("\\varDelta", 0),
+            ("\\varTheta", 0),
+            ("\\varLambda", 0),
+            ("\\varXi", 0),
+            ("\\varPi", 0),
+            ("\\varSigma", 0),
+            ("\\varUpsilon", 0),
+            ("\\varPhi", 0),
+            ("\\varPsi", 0),
+            ("\\varOmega", 0),
+            ("\\,", 0),
+            ("\\thinspace", 0),
+            ("\\>", 0),
+            ("\\:", 0),
+            ("\\medspace", 0),
+            ("\\;", 0),
+            ("\\thickspace", 0),
+            ("\\!", 0),
+            ("\\negthinspace", 0),
+            ("\\negmedspace", 0),
+            ("\\negthickspace", 0),
+            ("\\enspace", 0),
+            ("\\enskip", 0),
+            ("\\quad", 0),
+            ("\\qquad", 0),
+            ("\\newline", 0),
+            ("\\@hspace", 1),
+            ("\\@hspacer", 1),
+            ("\\llap", 1),
+            ("\\rlap", 1),
+            ("\\clap", 1),
+            ("\\TeX", 0),
+            ("\\LaTeX", 0),
+            ("\\KaTeX", 0),
+            ("\\imath", 0),
+            ("\\jmath", 0),
+            ("\\minuso", 0),
+            ("\\mathstrut", 0),
+            ("\\underbar", 1),
+            ("\\Bbbk", 0),
+            ("\\substack", 1),
+            ("\\boxed", 1),
+            ("\\colon", 0),
+            ("\\dots", 0),
+            ("\\cdots", 0),
+            ("\\dotsb", 0),
+            ("\\dotsm", 0),
+            ("\\dotsi", 0),
+            ("\\dotsx", 0),
+            ("\\dotso", 0),
+            ("\\DOTSI", 0),
+            ("\\DOTSB", 0),
+            ("\\DOTSX", 0),
+            ("\\gvertneqq", 0),
+            ("\\lvertneqq", 0),
+            ("\\ngeqq", 0),
+            ("\\ngeqslant", 0),
+            ("\\nleqq", 0),
+            ("\\nleqslant", 0),
+            ("\\nshortmid", 0),
+            ("\\nshortparallel", 0),
+            ("\\nsubseteqq", 0),
+            ("\\nsupseteqq", 0),
+            ("\\ulcorner", 0),
+            ("\\urcorner", 0),
+            ("\\llcorner", 0),
+            ("\\lrcorner", 0),
+            ("\\varsubsetneq", 0),
+            ("\\varsubsetneqq", 0),
+            ("\\varsupsetneq", 0),
+            ("\\varsupsetneqq", 0),
+            ("\\lBrace", 0),
+            ("\\rBrace", 0),
+            ("\\llbracket", 0),
+            ("\\rrbracket", 0),
+            ("\\copyright", 0),
+            ("\\textregistered", 0),
+            ("\\textcopyright", 0),
+            ("\\tmspace", 3),
+            ("≘", 0),
+            ("≙", 0),
+            ("≚", 0),
+            ("≛", 0),
+            ("≝", 0),
+            ("≞", 0),
+            ("≟", 0),
+            ("⟂", 0),
+            ("‼", 0),
+            ("⌜", 0),
+            ("⌝", 0),
+            ("⌞", 0),
+            ("⌟", 0),
+            ("©", 0),
+            ("®", 0),
+            ("∷", 0),
+            ("∹", 0),
+            ("≔", 0),
+            ("≕", 0),
+            ("⩴", 0),
+            ("⟦", 0),
+            ("⟧", 0),
+            ("⦃", 0),
+            ("⦄", 0),
+            ("⦵", 0),
+            ("\\dddot", 1),
+            ("\\ddddot", 1),
+            ("\\vdots", 0),
+            ("⋮", 0),
+            ("\\bmod", 0),
+            ("\\pod", 1),
+            ("\\pmod", 1),
+            ("\\mod", 1),
+            ("\\limsup", 0),
+            ("\\liminf", 0),
+            ("\\injlim", 0),
+            ("\\projlim", 0),
+            ("\\varlimsup", 0),
+            ("\\varliminf", 0),
+            ("\\varinjlim", 0),
+            ("\\varprojlim", 0),
+            ("\\argmin", 0),
+            ("\\argmax", 0),
+            ("\\plim", 0),
+            ("\\vcentcolon", 0),
+            ("\\dblcolon", 0),
+            ("\\coloneqq", 0),
+            ("\\Coloneqq", 0),
+            ("\\coloneq", 0),
+            ("\\Coloneq", 0),
+            ("\\eqqcolon", 0),
+            ("\\Eqqcolon", 0),
+            ("\\eqcolon", 0),
+            ("\\Eqcolon", 0),
+            ("\\colonapprox", 0),
+            ("\\Colonapprox", 0),
+            ("\\colonsim", 0),
+            ("\\Colonsim", 0),
+            ("\\ratio", 0),
+            ("\\coloncolon", 0),
+            ("\\colonequals", 0),
+            ("\\coloncolonequals", 0),
+            ("\\equalscolon", 0),
+            ("\\equalscoloncolon", 0),
+            ("\\colonminus", 0),
+            ("\\coloncolonminus", 0),
+            ("\\minuscolon", 0),
+            ("\\minuscoloncolon", 0),
+            ("\\coloncolonapprox", 0),
+            ("\\coloncolonsim", 0),
+            ("\\simcolon", 0),
+            ("\\simcoloncolon", 0),
+            ("\\approxcolon", 0),
+            ("\\approxcoloncolon", 0),
+            ("\\bra", 1),
+            ("\\ket", 1),
+            ("\\braket", 1),
+            ("\\Braket", usize::MAX),
+            ("\\Bra", 1),
+            ("\\Ket", 1),
+            ("\\darr", 0),
+            ("\\dArr", 0),
+            ("\\Darr", 0),
+            ("\\lang", 0),
+            ("\\rang", 0),
+            ("\\uarr", 0),
+            ("\\uArr", 0),
+            ("\\Uarr", 0),
+            ("\\N", 0),
+            ("\\R", 0),
+            ("\\Z", 0),
+            ("\\alef", 0),
+            ("\\alefsym", 0),
+            ("\\Alpha", 0),
+            ("\\Beta", 0),
+            ("\\bull", 0),
+            ("\\Chi", 0),
+            ("\\clubs", 0),
+            ("\\cnums", 0),
+            ("\\Complex", 0),
+            ("\\Dagger", 0),
+            ("\\diamonds", 0),
+            ("\\empty", 0),
+            ("\\Epsilon", 0),
+            ("\\Eta", 0),
+            ("\\exist", 0),
+            ("\\harr", 0),
+            ("\\hArr", 0),
+            ("\\Harr", 0),
+            ("\\hearts", 0),
+            ("\\image", 0),
+            ("\\infin", 0),
+            ("\\Iota", 0),
+            ("\\isin", 0),
+            ("\\Kappa", 0),
+            ("\\larr", 0),
+            ("\\lArr", 0),
+            ("\\Larr", 0),
+            ("\\lrarr", 0),
+            ("\\lrArr", 0),
+            ("\\Lrarr", 0),
+            ("\\Mu", 0),
+            ("\\natnums", 0),
+            ("\\Nu", 0),
+            ("\\Omicron", 0),
+            ("\\plusmn", 0),
+            ("\\rarr", 0),
+            ("\\rArr", 0),
+            ("\\Rarr", 0),
+            ("\\real", 0),
+            ("\\reals", 0),
+            ("\\Reals", 0),
+            ("\\Rho", 0),
+            ("\\sdot", 0),
+            ("\\sect", 0),
+            ("\\spades", 0),
+            ("\\sub", 0),
+            ("\\sube", 0),
+            ("\\supe", 0),
+            ("\\Tau", 0),
+            ("\\thetasym", 0),
+            ("\\weierp", 0),
+            ("\\Zeta", 0),
+            ("\\blue", 1),
+            ("\\orange", 1),
+            ("\\pink", 1),
+            ("\\red", 1),
+            ("\\green", 1),
+            ("\\gray", 1),
+            ("\\purple", 1),
+            ("ℬ", 0),
+            ("ℰ", 0),
+            ("ℱ", 0),
+            ("ℋ", 0),
+            ("ℐ", 0),
+            ("ℒ", 0),
+            ("ℳ", 0),
+            ("ℛ", 0),
+            ("ℭ", 0),
+            ("ℌ", 0),
+            ("ℨ", 0),
+            ("\\angln", 0),
+            ("\\set", usize::MAX),
+            ("\\Set", usize::MAX),
+            ("\\tripledash", 0),
+            ("\\operatorname", usize::MAX),
+            ("\\cr", 0),
+        ];
+        let mismatches = cases
+            .iter()
+            .filter_map(|(name, expected)| {
+                let actual = command_brace_arity(name);
+                (actual != *expected).then(|| format!("{name}: expected {expected}, got {actual}"))
+            })
+            .collect::<Vec<_>>();
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    fn parse_custom_text_macro(
+        body: &str,
+        input: &str,
+    ) -> ratex_parser::ParseResult<Vec<ratex_parser::ParseNode>> {
+        let mut parser = ratex_parser::Parser::new(input);
+        parser.gullet.set_text_macro(r"\probe", body);
+        parser.parse()
+    }
+
+    #[test]
+    fn probe_contract_adversaries_are_outside_the_pinned_table() {
+        const MISSING_MACRO_ARG: &str = "Unexpected end of input in a macro argument";
+
+        for body in [r"\frac", r"\message", r"\@firstoftwo"] {
+            assert_eq!(
+                MISSING_MACRO_ARG,
+                parse_custom_text_macro(body, r"\probe")
+                    .expect_err(body)
+                    .message,
+                "ordinary parser and macro arguments share the pinned diagnostic"
+            );
+        }
+
+        let delimiter_error = parse_custom_text_macro(r"\left(", r"\probe")
+            .expect_err("an unmatched left delimiter consumes until a right delimiter");
+        assert_ne!(MISSING_MACRO_ARG, delimiter_error.message);
+        parse_custom_text_macro(r"\left(", r"\probe x\right)")
+            .expect("the synthetic body consumes trailing input through right delimiter");
+
+        let optional_at_eof = parse_custom_text_macro(r"\@ifstar\message\relax", r"\probe")
+            .expect("the no-star branch defaults without trailing input");
+        assert!(optional_at_eof.is_empty());
+        let optional_present = parse_custom_text_macro(r"\@ifstar\message\relax", r"\probe*{y}")
+            .expect("the star branch consumes the trailing message argument");
+        assert!(optional_present.is_empty());
+
+        let masked =
+            parse_custom_text_macro(r"\tmspace{#1}{#2}{#3}\operatorname", r"\probe{x}{x}{x}")
+                .expect_err("invalid size placeholders fail before the trailing consumer");
+        assert_ne!(MISSING_MACRO_ARG, masked.message);
+        assert_eq!(
+            MISSING_MACRO_ARG,
+            parse_custom_text_macro(
+                r"\tmspace{#1}{#2}{#3}\operatorname",
+                r"\probe{+}{3mu}{.1667em}",
+            )
+            .expect_err("valid placeholders expose the trailing operator consumer")
+            .message
+        );
+        parse_custom_text_macro(
+            r"\tmspace{#1}{#2}{#3}\operatorname",
+            r"\probe{+}{3mu}{.1667em}{z}",
+        )
+        .expect("the synthetic trailing consumer is satisfied by authored input");
+    }
+
+    #[test]
+    fn a_scripted_bgroup_cannot_be_cut_at_only_its_closing_command() {
+        assert_eq!(
+            Err(Violation::ControlSequence(r"\egroup".to_string())),
+            unit(r"z+\bgroup{x}\egroup^2", r"\egroup^2"),
+            "the command-free opening body cannot make its closing command blankable"
+        );
+    }
+
+    #[test]
+    fn pinned_consumers_share_the_diagnostic_and_valid_size_placeholders_saturate() {
+        const MISSING_MACRO_ARG: &str = "Unexpected end of input in a macro argument";
+        for name in [r"\Braket", r"\set", r"\Set", r"\operatorname"] {
+            assert_eq!(
+                MISSING_MACRO_ARG,
+                ratex_parser::parser::parse(name).expect_err(name).message,
+                "{name} must stay on the probe's pinned missing-input path"
+            );
+        }
+        for (name, arity, valid) in [
+            (r"\@hspace", 1, r"\@hspace{1em}"),
+            (r"\@hspacer", 1, r"\@hspacer{1em}"),
+            (r"\tmspace", 3, r"\tmspace{+}{3mu}{.1667em}"),
+        ] {
+            assert_eq!(arity, command_brace_arity(name), "{name}");
+            ratex_parser::parser::parse(valid)
+                .unwrap_or_else(|error| panic!("{name} valid placeholders: {error}"));
+        }
     }
 }
