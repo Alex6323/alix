@@ -334,7 +334,7 @@ fn operand_before(payload: &str, tokens: &[Token], index: usize) -> Option<Range
             at = previous;
             continue;
         }
-        let (operand, start_index) = if matches!(tokens[previous].kind, Kind::Close) {
+        let (mut operand, mut start_index) = if matches!(tokens[previous].kind, Kind::Close) {
             let mut depth = 0i32;
             let mut start = None;
             for (index, earlier) in tokens[..=previous].iter().enumerate().rev() {
@@ -357,6 +357,42 @@ fn operand_before(payload: &str, tokens: &[Token], index: usize) -> Option<Range
         } else {
             (tokens[previous].span.clone(), previous)
         };
+        // A group run headed by a command is that command's application: the
+        // script attaches to the whole atom, not to its final argument.
+        if matches!(tokens[previous].kind, Kind::Close) {
+            let mut run_start = start_index;
+            while let Some(before) = previous_content_token(payload, tokens, run_start) {
+                match tokens[before].kind {
+                    Kind::Close => {
+                        let mut depth = 0i32;
+                        let mut open = None;
+                        for (index, earlier) in tokens[..=before].iter().enumerate().rev() {
+                            match earlier.kind {
+                                Kind::Close => depth += 1,
+                                Kind::Open => {
+                                    depth -= 1;
+                                    if depth == 0 {
+                                        open = Some(index);
+                                        break;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        match open {
+                            Some(index) => run_start = index,
+                            None => break,
+                        }
+                    }
+                    Kind::Sequence => {
+                        operand.start = tokens[before].span.start;
+                        start_index = before;
+                        break;
+                    }
+                    _ => break,
+                }
+            }
+        }
         match previous_content_token(payload, tokens, start_index) {
             Some(owner) if matches!(tokens[owner].kind, Kind::Structural('^' | '_')) => at = owner,
             _ => return Some(operand),
@@ -389,6 +425,76 @@ fn operand_after(payload: &str, tokens: &[Token], index: usize) -> Option<Range<
     Some(first.span.clone())
 }
 
+/// Commands whose argument the pinned renderer parses in TEXT mode, where
+/// script spellings are ordinary characters, with the 1-based index of that
+/// argument (the earlier arguments of the color boxes are not prose).
+const TEXT_ARGUMENT_COMMANDS: &[(&str, usize)] = &[
+    (r"\colorbox", 2),
+    (r"\emph", 1),
+    (r"\fcolorbox", 3),
+    (r"\hbox", 1),
+    (r"\text", 1),
+    (r"\textbf", 1),
+    (r"\textit", 1),
+    (r"\textmd", 1),
+    (r"\textnormal", 1),
+    (r"\textrm", 1),
+    (r"\textsc", 1),
+    (r"\textsf", 1),
+    (r"\textsl", 1),
+    (r"\texttt", 1),
+    (r"\textup", 1),
+];
+
+/// The extents of text-mode arguments: script spellings inside them are
+/// ordinary visible characters, never scripts.
+fn text_argument_extents(payload: &str, tokens: &[Token]) -> Vec<Range<usize>> {
+    let mut extents = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        if !matches!(token.kind, Kind::Sequence) {
+            continue;
+        }
+        let name = &payload[token.span.clone()];
+        let Some((_, text_argument)) = TEXT_ARGUMENT_COMMANDS
+            .iter()
+            .find(|(command, _)| *command == name)
+        else {
+            continue;
+        };
+        let mut cursor = index;
+        for argument in 1..=*text_argument {
+            let Some(next) = next_content_token(payload, tokens, cursor) else {
+                break;
+            };
+            let end_index = if matches!(tokens[next].kind, Kind::Open) {
+                let mut depth = 0i32;
+                let mut end = next;
+                for (later_index, later) in tokens.iter().enumerate().skip(next) {
+                    match later.kind {
+                        Kind::Open => depth += 1,
+                        Kind::Close => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = later_index;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                end
+            } else {
+                next
+            };
+            if argument == *text_argument {
+                extents.push(tokens[next].span.start..tokens[end_index].span.end);
+            }
+            cursor = end_index;
+        }
+    }
+    extents
+}
+
 fn trim_extent(payload: &str, range: &Range<usize>) -> Range<usize> {
     let slice = &payload[range.clone()];
     let start = range.start + (slice.len() - slice.trim_start().len());
@@ -412,6 +518,7 @@ pub(super) fn structural_unit(payload: &str, range: &Range<usize>) -> Result<(),
             return Err(Violation::NotLearnerVisible(name));
         }
     }
+    let text_extents = text_argument_extents(payload, &tokens);
     let mut depth_before = vec![0i32; payload.len() + 1];
     let mut depth = 0i32;
     for token in &tokens {
@@ -456,6 +563,12 @@ pub(super) fn structural_unit(payload: &str, range: &Range<usize>) -> Result<(),
             }
             Kind::Structural(ch) => return Err(Violation::StructuralToken(*ch)),
             Kind::Script(script) => {
+                if text_extents
+                    .iter()
+                    .any(|extent| extent.start <= token.span.start && token.span.end <= extent.end)
+                {
+                    continue;
+                }
                 let mut first = index;
                 while let Some(previous) = previous_content_token(payload, &tokens, first) {
                     if matches!(tokens[previous].kind, Kind::Script(other) if other == *script) {
@@ -740,6 +853,32 @@ mod tests {
         assert_eq!(Ok(()), unit("x' + y", "x'"));
         assert_eq!(Ok(()), unit("x'' + y", "x''"));
         assert_eq!(Ok(()), unit("x'^2 + y", "x'^2"));
+    }
+
+    #[test]
+    fn a_text_mode_argument_keeps_script_spellings_ordinary() {
+        assert_eq!(Ok(()), unit("\\text{x'} + y", "'"));
+        assert_eq!(Ok(()), unit("\\text{x\u{00B2}} + y", "\u{00B2}"));
+        assert_eq!(Ok(()), unit("\\textbf{x'} + y", "x'"));
+        assert_eq!(
+            Ok(()),
+            unit("\\colorbox{red}{x'} + y", "'"),
+            "the text argument is the second one; the color argument is not prose"
+        );
+    }
+
+    #[test]
+    fn a_script_after_a_command_application_walks_to_the_command() {
+        assert_eq!(
+            Err(Violation::IncompleteScript('^')),
+            unit(r"z+\frac{a}{b}^2", r"{b}^2"),
+            "the exponent belongs to the whole fraction atom"
+        );
+        assert_eq!(
+            Ok(()),
+            unit(r"x + {a}{b}^2", r"{b}^2"),
+            "bare juxtaposed groups are not a command application"
+        );
     }
 
     #[test]
