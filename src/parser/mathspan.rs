@@ -331,34 +331,24 @@ fn invisible_argument_extents(payload: &str, tokens: &[Token]) -> Vec<(Range<usi
 /// consuming none. A statically unprovable arity absorbs the whole run:
 /// over-absorption rejects a partial span instead of masking the wrong unit.
 fn command_brace_arity(command: &str) -> usize {
-    let expander = ratex_parser::macro_expander::MacroExpander::new("", ratex_parser::Mode::Math);
-    resolved_arity(command, &expander, &mut Vec::new())
-}
-
-fn resolved_arity(
-    command: &str,
-    expander: &ratex_parser::macro_expander::MacroExpander,
-    resolving: &mut Vec<String>,
-) -> usize {
-    use ratex_parser::macro_expander::MacroDefinition;
+    use ratex_parser::macro_expander::{MacroDefinition, MacroExpander};
     // The allowlist is the zero-arity authority for its own members: its
     // review vets exactly "zero-argument, learner-visible", so a member
-    // stays blankable even where the body walk cannot prove it.
+    // stays blankable even where the probe cannot prove it.
     if BLANKABLE_SYMBOLS.binary_search(&command).is_ok() {
         return 0;
     }
     if let Some(spec) = ratex_parser::functions::FUNCTIONS.get(command) {
         return spec.num_args;
     }
-    match expander.get_macro(command) {
+    match MacroExpander::new("", ratex_parser::Mode::Math).get_macro(command) {
         Some(MacroDefinition::Text(body)) => {
-            if resolving.iter().any(|name| name == command) {
-                return usize::MAX;
+            let arity = referenced_params(body);
+            if expansion_saturates(command, arity) {
+                arity
+            } else {
+                usize::MAX
             }
-            resolving.push(command.to_string());
-            let arity = text_macro_arity(body, expander, resolving);
-            resolving.pop();
-            arity
         }
         Some(MacroDefinition::Tokens { num_args, .. }) => *num_args,
         Some(MacroDefinition::Function(_)) => usize::MAX,
@@ -366,146 +356,47 @@ fn resolved_arity(
     }
 }
 
-enum BodyToken {
-    Command(String),
-    Group(String),
-    Param(usize),
-    Other,
-}
-
-/// A text macro's arity is the highest `#N` its expansion references
-/// (`##` is a literal `#`), trusted only when this walk shows every nested
-/// command's arguments visibly supplied inside the body itself. A command
-/// that could grab tokens past the body's end (`\operatorname` is
-/// `\@ifstar...`, a function-backed dispatcher) makes the macro statically
-/// unprovable, the same absorbing shape as a function-backed macro.
-fn text_macro_arity(
-    body: &str,
-    expander: &ratex_parser::macro_expander::MacroExpander,
-    resolving: &mut Vec<String>,
-) -> usize {
-    let Some(tokens) = body_tokens(body) else {
-        return usize::MAX;
-    };
+/// Highest `#N` a text-macro body references; `##` is a literal `#`
+/// (TeX's own rule).
+fn referenced_params(body: &str) -> usize {
     let mut arity = 0usize;
-    let mut index = 0;
-    while index < tokens.len() {
-        let consumed = match &tokens[index] {
-            BodyToken::Param(n) => {
-                arity = arity.max(*n);
-                0
-            }
-            BodyToken::Group(interior) => {
-                let nested = text_macro_arity(interior, expander, resolving);
-                if nested == usize::MAX {
-                    return usize::MAX;
-                }
-                arity = arity.max(nested);
-                0
-            }
-            BodyToken::Command(name) => {
-                let args = resolved_arity(name, expander, resolving);
-                if args == usize::MAX {
-                    return usize::MAX;
-                }
-                args
-            }
-            BodyToken::Other => 0,
-        };
-        for _ in 0..consumed {
-            index += 1;
-            match tokens.get(index) {
-                None => return usize::MAX,
-                Some(BodyToken::Group(interior)) => {
-                    let nested = text_macro_arity(interior, expander, resolving);
-                    if nested == usize::MAX {
-                        return usize::MAX;
-                    }
-                    arity = arity.max(nested);
-                }
-                Some(BodyToken::Param(n)) => arity = arity.max(*n),
-                Some(BodyToken::Other) => {}
-                // a bare command argument is re-expanded wherever the body
-                // places it; only a zero-arity one provably grabs nothing
-                Some(BodyToken::Command(argument)) => {
-                    if resolved_arity(argument, expander, resolving) != 0 {
-                        return usize::MAX;
-                    }
-                }
-            }
+    let mut chars = body.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '#' {
+            continue;
         }
-        index += 1;
+        match chars.peek() {
+            Some('#') => {
+                chars.next();
+            }
+            Some(digit) if digit.is_ascii_digit() => {
+                arity = arity.max(digit.to_digit(10).unwrap_or(0) as usize);
+                chars.next();
+            }
+            _ => {}
+        }
     }
     arity
 }
 
-fn body_tokens(body: &str) -> Option<Vec<BodyToken>> {
-    let mut tokens = Vec::new();
-    let mut rest = body;
-    while let Some(ch) = rest.chars().next() {
-        match ch {
-            '\\' => {
-                let after = &rest[1..];
-                let word_len = after
-                    .chars()
-                    .take_while(|c| c.is_ascii_alphabetic() || *c == '@')
-                    .map(char::len_utf8)
-                    .sum::<usize>();
-                let len = if word_len > 0 {
-                    word_len
-                } else {
-                    after.chars().next()?.len_utf8()
-                };
-                tokens.push(BodyToken::Command(rest[..1 + len].to_string()));
-                rest = &after[len..];
-            }
-            '{' => {
-                let interior_len = balanced_group_len(&rest[1..])?;
-                tokens.push(BodyToken::Group(rest[1..1 + interior_len].to_string()));
-                rest = &rest[1 + interior_len + 1..];
-            }
-            '}' => return None,
-            '#' => {
-                let mut chars = rest[1..].chars();
-                match chars.next() {
-                    Some('#') => {
-                        tokens.push(BodyToken::Other);
-                        rest = &rest[2..];
-                    }
-                    Some(digit) if digit.is_ascii_digit() => {
-                        tokens.push(BodyToken::Param(digit.to_digit(10)? as usize));
-                        rest = &rest[2..];
-                    }
-                    _ => return None,
-                }
-            }
-            _ if ch.is_whitespace() => {
-                rest = &rest[ch.len_utf8()..];
-            }
-            _ => {
-                tokens.push(BodyToken::Other);
-                rest = &rest[ch.len_utf8()..];
-            }
-        }
+/// Whether `command`, handed exactly `arity` brace groups and nothing
+/// else, parses without demanding more input: the pinned renderer itself
+/// is the oracle. Only its end-of-input-wanting-an-argument diagnostic
+/// marks a stream consumer (`\operatorname` dispatches past the probe's
+/// end); any other outcome, success or an unrelated complaint about the
+/// placeholder arguments (`\tmspace` rejects them as sizes), proves the
+/// visible arity is all the macro takes. Only the frozen builtin
+/// namespace can reach this probe: a formula that mutates the namespace
+/// is rejected wholesale before spans are walked.
+fn expansion_saturates(command: &str, arity: usize) -> bool {
+    let mut probe = String::from(command);
+    for _ in 0..arity {
+        probe.push_str("{x}");
     }
-    Some(tokens)
-}
-
-fn balanced_group_len(interior: &str) -> Option<usize> {
-    let mut depth = 0usize;
-    let mut chars = interior.char_indices();
-    while let Some((at, ch)) = chars.next() {
-        match ch {
-            '\\' => {
-                chars.next()?;
-            }
-            '{' => depth += 1,
-            '}' if depth == 0 => return Some(at),
-            '}' => depth -= 1,
-            _ => {}
-        }
+    match ratex_parser::parser::parse(&probe) {
+        Ok(_) => true,
+        Err(error) => error.message != "Unexpected end of input in a macro argument",
     }
-    None
 }
 
 fn whitespace_token(payload: &str, token: &Token) -> bool {
@@ -1010,10 +901,10 @@ mod tests {
                         panic!("{symbol} is Function-backed; its arity is unprovable");
                     }
                     Some(MacroDefinition::Text(body)) => {
-                        let walked = text_macro_arity(body, &expander, &mut Vec::new());
+                        let arity = referenced_params(body);
                         assert!(
-                            walked == 0 || walked == usize::MAX,
-                            "{symbol} walks to arity {walked}, contradicting the review"
+                            arity == 0 || !expansion_saturates(symbol, arity),
+                            "{symbol} probes to arity {arity}, contradicting the review"
                         );
                     }
                     None => {}
@@ -1023,11 +914,10 @@ mod tests {
     }
 
     #[test]
-    fn the_stream_consuming_macros_are_unprovable_and_saturated_bodies_stay_exact() {
-        // The four stream-consumers per Codex's EOF probe of the complete
-        // pinned macro table (2026-08-31): each invoked with only its direct
-        // `#N` arguments fails wanting more; every other command-bearing
-        // body saturates in-body.
+    fn the_probed_consumers_are_unprovable_and_every_disputed_family_is_exact() {
+        // The four stream-consumers per Codex's exhaustive EOF probe of the
+        // pinned macro table (2026-08-31); production runs the same probe
+        // per command, so these rows pin the oracle, not a transcription.
         for name in [r"\Braket", r"\set", r"\Set", r"\operatorname"] {
             assert_eq!(
                 usize::MAX,
@@ -1035,11 +925,42 @@ mod tests {
                 "{name} consumes the stream"
             );
         }
+        // Every family an earlier arity rule ever misclassified, plus the
+        // saturated samples: exact arities per the same probe.
         for (name, arity) in [
             (r"\boxed", 1),
             (r"\hphantom", 1),
             (r"\varGamma", 0),
+            (r"\pod", 1),
             (r"\pmod", 1),
+            (r"\mod", 1),
+            (r"\tmspace", 3),
+            (r"\limsup", 0),
+            (r"\liminf", 0),
+            (r"\injlim", 0),
+            (r"\projlim", 0),
+            (r"\varlimsup", 0),
+            (r"\varliminf", 0),
+            (r"\varinjlim", 0),
+            (r"\varprojlim", 0),
+            (r"\argmin", 0),
+            (r"\argmax", 0),
+            (r"\plim", 0),
+            (r"\iff", 0),
+            (r"\implies", 0),
+            (r"\impliedby", 0),
+            (r"\not", 0),
+            (r"\minuso", 0),
+            (r"\coloneqq", 0),
+            (r"\dblcolon", 0),
+            (r"\vcentcolon", 0),
+            (r"\,", 0),
+            (r"\;", 0),
+            (r"\!", 0),
+            (r"\:", 0),
+            (r"\thinspace", 0),
+            (r"\cr", 0),
+            (r"\newline", 0),
         ] {
             assert_eq!(arity, command_brace_arity(name), "{name} saturates in-body");
         }
@@ -1209,6 +1130,11 @@ mod tests {
     #[test]
     fn a_group_after_a_fixed_arity_text_macro_stays_independent() {
         assert_eq!(Ok(()), unit(r"z+\boxed{x}{y}^2", r"{y}^2"));
+    }
+
+    #[test]
+    fn a_group_after_a_saturated_operator_macro_stays_independent() {
+        assert_eq!(Ok(()), unit(r"z+\limsup{x}^2", r"{x}^2"));
     }
 
     #[test]

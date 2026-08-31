@@ -8676,6 +8676,18 @@ the answer
     }
 
     #[test]
+    fn a_span_after_a_saturated_operator_macro_is_legal() {
+        let deck = super::parse(
+            "deck.md",
+            &format!(
+                "## q\n---\n$z+\\limsup{{x}}^2$\n<!-- blank: span hidden=\"{{x}}^2\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            ),
+        )
+        .expect("an operator name that saturates in-body leaves the next group independent");
+        assert_eq!(vec!["$z+\\limsup⍰$"], deck.cards[0].context);
+    }
+
+    #[test]
     fn a_defining_spelling_in_a_math_comment_does_not_block_an_earlier_span() {
         let deck = super::parse(
             "deck.md",
