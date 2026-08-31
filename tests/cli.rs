@@ -5464,6 +5464,27 @@ fn deck_init_stamps_an_intended_markdown_deck() {
 }
 
 #[test]
+fn deck_init_keeps_a_display_table_span_above_the_card_id() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "capitals.md",
+        "## Capitals\n| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Italy | Rome |\n<!-- blank: span hidden=\"Paris\" b:a1b2c3 -->\n",
+    );
+
+    let out = alix(&["deck", "init", &deck]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let stamped = std::fs::read_to_string(&deck).unwrap();
+    let span = stamped.find("<!-- blank: span").unwrap();
+    let card_id = stamped.find("<!-- id: card-").unwrap();
+    assert!(
+        span < card_id,
+        "the span directive must precede the card id: {stamped}"
+    );
+}
+
+#[test]
 fn deck_init_refuses_plain_prose_without_changing_it() {
     let dir = TempDir::new().unwrap();
     let original = "# Notes\n\nordinary prose\n";
