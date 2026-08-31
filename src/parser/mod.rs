@@ -2000,15 +2000,16 @@ fn names_answer(note: &str, answer: &str) -> bool {
     })
 }
 
-/// One authored note after its group-addressed lines are separated out.
+/// One authored note after its name-addressed lines are separated out.
 struct SplitNote {
     badge: Option<crate::card::Badge>,
     block: Option<String>,
     addressed: Vec<(String, bool, String)>,
 }
 
-/// A `>` line addressed to one group of this block: `name: text` replaces
-/// the block note for its card, `name+: text` keeps the block note above it.
+/// A `>` line addressed to one named blank of this block: `name: text`
+/// replaces the block note for its card, `name+: text` keeps the block note
+/// above it.
 fn note_address(text: &str) -> Option<(&str, bool, &str)> {
     let (head, rest) = text.split_once(':')?;
     if !rest.starts_with(WHITESPACE) {
@@ -2192,11 +2193,11 @@ fn build_region_cards(
         card.notes = notes
             .iter()
             .filter_map(|note| {
-                let group = match &slot {
+                let name = match &slot {
                     RegionSlot::Group { name, .. } => Some(name.as_str()),
                     RegionSlot::Single { name, .. } => name.as_deref(),
                 };
-                resolve_note(note.block.as_deref(), &note.addressed, group).map(|body| Note {
+                resolve_note(note.block.as_deref(), &note.addressed, name).map(|body| Note {
                     badge: note.badge,
                     body,
                 })
@@ -7134,7 +7135,7 @@ a
             .cards
             .iter()
             .find(|card| card.back == ["Unit"])
-            .expect("group base's card");
+            .expect("the named span base's card");
         let other = deck
             .cards
             .iter()
@@ -7156,7 +7157,7 @@ a
     }
 
     #[test]
-    fn two_lines_addressed_to_one_group_join_in_written_order() {
+    fn two_lines_addressed_to_one_name_join_in_written_order() {
         let deck = parse(
             "## q\nUnit, integration\n\
              > [!NOTE]\n> base: First.\n> base: Second.\n\
@@ -7167,11 +7168,11 @@ a
             .cards
             .iter()
             .find(|card| card.back == ["Unit"])
-            .expect("group base's card");
+            .expect("the named span base's card");
         assert_eq!(Some("First.\nSecond."), base.only_note());
     }
 
-    /// A block with no named group cannot be addressing anything, so a note
+    /// A block with no named blank cannot be addressing anything, so a note
     /// beginning `2:` is prose and stays prose.
     #[test]
     fn a_note_that_looks_addressed_is_prose_where_no_blank_is_named() {
@@ -7243,7 +7244,7 @@ a
             .cards
             .iter()
             .find(|card| card.back == ["Unit"])
-            .expect("group base's card");
+            .expect("the named span base's card");
         assert!(
             base.only_note()
                 .is_some_and(|note| note.starts_with("Unit tests sit at the base"))
@@ -9013,7 +9014,7 @@ the answer
     }
 
     #[test]
-    fn a_group_addressed_note_replaces_the_shared_note_on_its_card() {
+    fn a_name_addressed_note_replaces_the_shared_note_on_its_card() {
         let deck = parse(&format!(
             "## q\n---\nalpha then beta\n> [!NOTE]\n> shared note\n> g: only for g\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [h] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
         ));
@@ -9026,12 +9027,12 @@ the answer
             .cards
             .iter()
             .find(|card| card.back == ["alpha"])
-            .expect("group g's card");
+            .expect("the card named g");
         let h = deck
             .cards
             .iter()
             .find(|card| card.back == ["beta"])
-            .expect("group h's card");
+            .expect("the card named h");
         assert_eq!(
             vec!["only for g"],
             g.notes.iter().map(|n| n.body.as_str()).collect::<Vec<_>>(),
@@ -9053,7 +9054,7 @@ the answer
             .cards
             .iter()
             .find(|card| card.back == ["alpha"])
-            .expect("group g's card");
+            .expect("the card named g");
         assert_eq!(
             vec!["shared note\nextra for g"],
             g.notes.iter().map(|n| n.body.as_str()).collect::<Vec<_>>(),
@@ -9063,7 +9064,7 @@ the answer
             .cards
             .iter()
             .find(|card| card.back == ["beta"])
-            .expect("group h's card");
+            .expect("the card named h");
         assert_eq!(
             vec!["shared note"],
             h.notes.iter().map(|n| n.body.as_str()).collect::<Vec<_>>(),
