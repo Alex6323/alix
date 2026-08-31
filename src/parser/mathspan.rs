@@ -1023,6 +1023,29 @@ mod tests {
     }
 
     #[test]
+    fn the_stream_consuming_macros_are_unprovable_and_saturated_bodies_stay_exact() {
+        // The four stream-consumers per Codex's EOF probe of the complete
+        // pinned macro table (2026-08-31): each invoked with only its direct
+        // `#N` arguments fails wanting more; every other command-bearing
+        // body saturates in-body.
+        for name in [r"\Braket", r"\set", r"\Set", r"\operatorname"] {
+            assert_eq!(
+                usize::MAX,
+                command_brace_arity(name),
+                "{name} consumes the stream"
+            );
+        }
+        for (name, arity) in [
+            (r"\boxed", 1),
+            (r"\hphantom", 1),
+            (r"\varGamma", 0),
+            (r"\pmod", 1),
+        ] {
+            assert_eq!(arity, command_brace_arity(name), "{name} saturates in-body");
+        }
+    }
+
+    #[test]
     fn the_blankable_symbol_table_is_sorted_unique_and_lexer_shaped() {
         assert!(
             BLANKABLE_SYMBOLS.windows(2).all(|pair| pair[0] < pair[1]),
