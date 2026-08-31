@@ -121,13 +121,13 @@ pub enum LintKind {
     UntypableHole {
         answer: String,
     },
-    /// A block note that spells out one hole's answer, which every other
-    /// hole of the block also shows. `hole` is 1-based, as an author counts.
-    NoteContainsHoleAnswer {
-        hole: usize,
+    /// A block note that spells out one blank's answer, which the block's
+    /// other cards also show. `blank` is 1-based, in author order.
+    NoteContainsBlankAnswer {
+        blank: usize,
         answer: String,
     },
-    NoteNamesNoHole {
+    NoteNamesNoGroup {
         name: String,
     },
 }
@@ -400,7 +400,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
                     &mut cards,
                     &mut lints,
                 )?;
-                build_region_cards(block_start, &mut cards, prose.as_ref())?;
+                build_region_cards(block_start, &mut cards, prose.as_ref(), &mut lints)?;
             }
             RawBlock::Table(raw) => {
                 tables.push(TableStamping {
@@ -2013,10 +2013,104 @@ fn capture_answer_fences(
 /// a cover no card. A blank-bearing block is a template: its region cards
 /// REPLACE the cards `build_card` pushed, so no plain card exists beside
 /// them; cover/crop-only blocks keep theirs.
+/// Whole-word, case-insensitive containment. Short answers are skipped:
+/// a three-letter answer matches too much prose to be worth reporting.
+fn names_answer(note: &str, answer: &str) -> bool {
+    let answer = answer.trim();
+    if answer.chars().count() < 4 {
+        return false;
+    }
+    let (note_lower, answer_lower) = (note.to_lowercase(), answer.to_lowercase());
+    note_lower.match_indices(&answer_lower).any(|(at, hit)| {
+        let before = note_lower[..at].chars().next_back();
+        let after = note_lower[at + hit.len()..].chars().next();
+        !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+    })
+}
+
+/// One authored note after its group-addressed lines are separated out.
+struct SplitNote {
+    badge: Option<crate::card::Badge>,
+    block: Option<String>,
+    addressed: Vec<(String, bool, String)>,
+}
+
+/// A `>` line addressed to one group of this block: `name: text` replaces
+/// the block note for its card, `name+: text` keeps the block note above it.
+fn note_address(text: &str) -> Option<(&str, bool, &str)> {
+    let (head, rest) = text.split_once(':')?;
+    if !rest.starts_with(WHITESPACE) {
+        return None;
+    }
+    let payload = trim_ws(rest);
+    if payload.is_empty() {
+        return None;
+    }
+    let (name, append) = match head.strip_suffix('+') {
+        Some(name) => (name, true),
+        None => (head, false),
+    };
+    region::is_group_name(name).then_some((name, append, payload))
+}
+
+fn split_note(
+    note: &crate::card::Note,
+    names: &std::collections::HashSet<&str>,
+    line: usize,
+    lints: &mut Vec<Lint>,
+) -> SplitNote {
+    let mut block: Vec<&str> = Vec::new();
+    let mut addressed = Vec::new();
+    for text in note.body.lines() {
+        match note_address(text) {
+            Some((name, append, payload)) if names.contains(name) => {
+                addressed.push((name.to_string(), append, payload.to_string()));
+            }
+            // Only a block that names a group can be addressing one, so a
+            // note beginning `2:` on any other block is prose.
+            Some((name, ..)) if !names.is_empty() => {
+                lints.push(Lint {
+                    line,
+                    kind: LintKind::NoteNamesNoGroup {
+                        name: name.to_string(),
+                    },
+                });
+                block.push(text);
+            }
+            _ => block.push(text),
+        }
+    }
+    SplitNote {
+        badge: note.badge,
+        block: (!block.is_empty()).then(|| block.join("\n")),
+        addressed,
+    }
+}
+
+fn resolve_note(
+    block: Option<&str>,
+    addressed: &[(String, bool, String)],
+    name: Option<&str>,
+) -> Option<String> {
+    let mine: Vec<&(String, bool, String)> = name
+        .map(|name| addressed.iter().filter(|(to, ..)| to == name).collect())
+        .unwrap_or_default();
+    let Some((_, append, _)) = mine.first() else {
+        return block.map(str::to_string);
+    };
+    let mut lines: Vec<&str> = Vec::new();
+    if *append && let Some(block) = block {
+        lines.push(block);
+    }
+    lines.extend(mine.iter().map(|(_, _, text)| text.as_str()));
+    Some(lines.join("\n"))
+}
+
 fn build_region_cards(
     block_start: usize,
     cards: &mut Vec<Card>,
     prose: Option<&BlockProse>,
+    lints: &mut Vec<Lint>,
 ) -> Result<(), ParseError> {
     use region::{RawRegion, RegionKind};
 
@@ -2040,6 +2134,15 @@ fn build_region_cards(
     if blanks.is_empty() {
         return Ok(());
     }
+    let names: std::collections::HashSet<&str> = blanks
+        .iter()
+        .filter_map(|blank| blank.group.as_deref())
+        .collect();
+    let notes: Vec<SplitNote> = template
+        .notes
+        .iter()
+        .map(|note| split_note(note, &names, template.line, lints))
+        .collect();
 
     // The block's prose rides every region card as context, its own span as
     // the blank marker, sibling and cover spans as the hidden marker; a rect
@@ -2113,6 +2216,19 @@ fn build_region_cards(
         };
         card.context = masked_context(&own);
         card.context_leads = !card.context.is_empty();
+        card.notes = notes
+            .iter()
+            .filter_map(|note| {
+                let group = match &slot {
+                    RegionSlot::Group { name, .. } => Some(name.as_str()),
+                    RegionSlot::Single { .. } => None,
+                };
+                resolve_note(note.block.as_deref(), &note.addressed, group).map(|body| Note {
+                    badge: note.badge,
+                    body,
+                })
+            })
+            .collect();
         card.region = Some(slot);
         card.hole = None;
         card.hole_name = None;
@@ -2180,6 +2296,26 @@ fn build_region_cards(
                 .collect(),
         };
         new_cards.push(region_card(slot, back));
+    }
+    if new_cards.len() > 1 {
+        for (index, blank) in blanks.iter().enumerate() {
+            let Some(hidden) = &blank.hidden else {
+                continue;
+            };
+            if notes.iter().any(|note| {
+                note.block
+                    .as_deref()
+                    .is_some_and(|block| names_answer(block, hidden))
+            }) {
+                lints.push(Lint {
+                    line: template.line,
+                    kind: LintKind::NoteContainsBlankAnswer {
+                        blank: index + 1,
+                        answer: hidden.clone(),
+                    },
+                });
+            }
+        }
     }
     new_cards.sort_by_key(|card| {
         card.region
@@ -2991,106 +3127,6 @@ fn build_card_inner(
         cards.push(card);
         return Ok(None);
     }
-
-    /// Whether the whole answer is one LaTeX command: `\pm` yes, `2a` and
-    /// `x^2` no, and `\frac{1}{2}` yes, since none of them can be typed as
-    /// what they render to.
-    fn is_control_sequence(answer: &str) -> bool {
-        answer.trim_start().starts_with('\\')
-    }
-
-    /// Whole-word, case-insensitive containment. Short answers are skipped:
-    /// a three-letter answer matches too much prose to be worth reporting.
-    fn names_answer(note: &str, answer: &str) -> bool {
-        let answer = answer.trim();
-        if answer.chars().count() < 4 {
-            return false;
-        }
-        let (note_lower, answer_lower) = (note.to_lowercase(), answer.to_lowercase());
-        note_lower.match_indices(&answer_lower).any(|(at, hit)| {
-            let before = note_lower[..at].chars().next_back();
-            let after = note_lower[at + hit.len()..].chars().next();
-            !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
-        })
-    }
-
-    /// One authored note after its hole-addressed lines are separated out.
-    struct SplitNote {
-        badge: Option<Badge>,
-        block: Option<String>,
-        addressed: Vec<(String, bool, String)>,
-    }
-
-    /// A `>` line addressed to one hole of this block: `name: text` replaces
-    /// the block note for it, `name+: text` keeps the block note above it.
-    fn address(text: &str) -> Option<(&str, bool, &str)> {
-        let (head, rest) = text.split_once(':')?;
-        if !rest.starts_with(WHITESPACE) {
-            return None;
-        }
-        let payload = trim_ws(rest);
-        if payload.is_empty() {
-            return None;
-        }
-        let (name, append) = match head.strip_suffix('+') {
-            Some(name) => (name, true),
-            None => (head, false),
-        };
-        cloze::is_hole_name(name).then_some((name, append, payload))
-    }
-
-    fn split_note(
-        note: Option<&str>,
-        names: &HashSet<&str>,
-        line: usize,
-        lints: &mut Vec<Lint>,
-    ) -> (Option<String>, Vec<(String, bool, String)>) {
-        let Some(note) = note else {
-            return (None, Vec::new());
-        };
-        let mut block: Vec<&str> = Vec::new();
-        let mut addressed = Vec::new();
-        for text in note.lines() {
-            match address(text) {
-                Some((name, append, payload)) if names.contains(name) => {
-                    addressed.push((name.to_string(), append, payload.to_string()));
-                }
-                // Only a card that names a hole can be addressing one, so a
-                // note beginning `2:` on any other card is prose.
-                Some((name, ..)) if !names.is_empty() => {
-                    lints.push(Lint {
-                        line,
-                        kind: LintKind::NoteNamesNoHole {
-                            name: name.to_string(),
-                        },
-                    });
-                    block.push(text);
-                }
-                _ => block.push(text),
-            }
-        }
-        ((!block.is_empty()).then(|| block.join("\n")), addressed)
-    }
-
-    fn resolve_note(
-        block: Option<&str>,
-        addressed: &[(String, bool, String)],
-        name: Option<&str>,
-    ) -> Option<String> {
-        let mine: Vec<&(String, bool, String)> = name
-            .map(|name| addressed.iter().filter(|(to, ..)| to == name).collect())
-            .unwrap_or_default();
-        let Some((_, append, _)) = mine.first() else {
-            return block.map(str::to_string);
-        };
-        let mut lines: Vec<&str> = Vec::new();
-        if *append && let Some(block) = block {
-            lines.push(block);
-        }
-        lines.extend(mine.iter().map(|(_, _, text)| text.as_str()));
-        Some(lines.join("\n"))
-    }
-
 
     let answer_fences = capture_answer_fences(&answer, &splices);
 
@@ -7191,14 +7227,24 @@ a
     #[test]
     fn a_note_addressed_to_a_group_lands_on_the_merged_card() {
         let deck = parse(
-            "## q\n\\blank[hs]{SYN}, \\blank[hs]{SYN-ACK}, \\blank{ACK}\n\
-             > [!NOTE]\n> Shared.\n> hs: Both halves of the opening.\n",
+            "## q\nalpha, beta, gamma\n\
+             > [!NOTE]\n> Shared.\n> hs: Both halves of the opening.\n\
+             <!-- blank: span [hs] hidden=\"alpha\" -->\n\
+             <!-- blank: span [hs] hidden=\"beta\" -->\n\
+             <!-- blank: span hidden=\"gamma\" -->\n",
         );
-        assert_eq!(
-            Some("Both halves of the opening."),
-            deck.cards[0].only_note()
-        );
-        assert_eq!(Some("Shared."), deck.cards[1].only_note());
+        let merged = deck
+            .cards
+            .iter()
+            .find(|card| card.back == ["alpha", "beta"])
+            .expect("the merged group card");
+        let single = deck
+            .cards
+            .iter()
+            .find(|card| card.back == ["gamma"])
+            .expect("the ungrouped card");
+        assert_eq!(Some("Both halves of the opening."), merged.only_note());
+        assert_eq!(Some("Shared."), single.only_note());
     }
 
     /// D4: the merged card inherits nothing, and the hole it did not touch
@@ -7242,134 +7288,87 @@ a
     }
 
     #[test]
-    fn escaped_braces_inside_a_hole_are_stripped_and_do_not_count() {
-        let deck = parse("## q\n---\nw \\blank{a \\{b\\} c} z\n");
-        assert_eq!(1, deck.cards.len());
-        assert_eq!(vec!["a {b} c"], deck.cards[0].back);
-        assert_eq!(vec!["w ⍰ z"], deck.cards[0].context);
-
-        let deck = parse("## q\n---\nw \\blank{a \\{b} c\n");
-        assert_eq!(vec!["a {b"], deck.cards[0].back);
-        assert_eq!(vec!["w ⍰ c"], deck.cards[0].context);
-    }
-
-    #[test]
-    fn backslash_backslash_inside_a_hole_is_a_literal_backslash() {
-        let deck = parse("## q\n---\nw \\blank{a\\\\b} z\n");
-        assert_eq!(vec!["a\\b"], deck.cards[0].back);
-    }
-
-    #[test]
-    fn an_unclosed_hole_is_a_line_numbered_error() {
-        assert_eq!(
-            ParseError::UnclosedHole(3),
-            err("## q\n---\nw \\blank{oops\n")
-        );
-    }
-
-    #[test]
-    fn an_empty_hole_is_an_error() {
-        assert_eq!(ParseError::EmptyHole(3), err("## q\n---\nw \\blank{} z\n"));
-        assert_eq!(
-            ParseError::EmptyHole(3),
-            err("## q\n---\nw \\blank{  } z\n")
-        );
-    }
-
-    #[test]
-    fn hole_content_is_not_rescanned() {
-        let deck = parse("## q\n---\nw \\blank{x \\blank{y}} z\n");
-        assert_eq!(1, deck.cards.len());
-        assert_eq!(vec!["x \\blank{y}"], deck.cards[0].back);
-        assert_eq!(
-            vec![Lint {
-                line: 3,
-                kind: LintKind::ClozeInHole
-            }],
-            deck.lints
-        );
-    }
-
-    #[test]
-    fn a_block_note_naming_a_holes_answer_is_reported_per_hole() {
-        // The spec's motivating fixture: reviewing a later hole shows a note
-        // that spells out the first hole's answer.
+    fn a_block_note_naming_a_blanks_answer_is_reported_per_blank() {
+        // The spec's motivating fixture: reviewing a later card shows a note
+        // that spells out the first blank's answer.
         let deck = parse(
             "## The test pyramid, bottom to top\n\
-             \\blank{Unit}, \\blank{integration}, \\blank{end-to-end}\n\
-             > [!NOTE]\n> Unit tests sit at the base because they are fastest and most numerous.\n",
+             Unit, integration, end-to-end\n\
+             > [!NOTE]\n> Unit tests sit at the base because they are fastest and most numerous.\n\
+             <!-- blank: span hidden=\"Unit\" -->\n\
+             <!-- blank: span hidden=\"integration\" -->\n\
+             <!-- blank: span hidden=\"end-to-end\" -->\n",
         );
         assert_eq!(
             vec![Lint {
                 line: 1,
-                kind: LintKind::NoteContainsHoleAnswer {
-                    hole: 1,
+                kind: LintKind::NoteContainsBlankAnswer {
+                    blank: 1,
                     answer: "Unit".to_string()
                 }
             }],
             deck.lints,
-            "only the hole whose answer appears is named, and 1-based"
+            "only the blank whose answer appears is named, and 1-based"
         );
-    }
-
-    #[test]
-    fn an_addressed_note_replaces_the_block_note_for_its_hole_alone() {
-        let deck = parse(
-            "## q\n\\blank[base]{Unit}, \\blank{integration}\n\
-             > [!NOTE]\n> Shared.\n> base: Fastest and most numerous.\n",
-        );
-        assert_eq!(
-            Some("Fastest and most numerous."),
-            deck.cards[0].only_note()
-        );
-        assert_eq!(Some("Shared."), deck.cards[1].only_note());
-    }
-
-    #[test]
-    fn a_plus_addressed_note_keeps_the_block_note_above_it() {
-        let deck = parse(
-            "## q\n\\blank[base]{Unit}, \\blank{integration}\n\
-             > [!NOTE]\n> Shared.\n> base+: And fastest.\n",
-        );
-        assert_eq!(Some("Shared.\nAnd fastest."), deck.cards[0].only_note());
-        assert_eq!(Some("Shared."), deck.cards[1].only_note());
     }
 
     #[test]
     fn an_addressed_note_with_no_block_note_stands_alone() {
         let deck = parse(
-            "## q\n\\blank[base]{Unit}, \\blank{integration}\n> [!NOTE]\n> base+: Fastest.\n",
+            "## q\nUnit, integration\n> [!NOTE]\n> base+: Fastest.\n\
+             <!-- blank: span [base] hidden=\"Unit\" -->\n\
+             <!-- blank: span hidden=\"integration\" -->\n",
         );
+        let base = deck
+            .cards
+            .iter()
+            .find(|card| card.back == ["Unit"])
+            .expect("group base's card");
+        let other = deck
+            .cards
+            .iter()
+            .find(|card| card.back == ["integration"])
+            .expect("the ungrouped card");
         assert_eq!(
             vec![Note {
                 badge: Some(Badge::Note),
                 body: "Fastest.".to_string()
             }],
-            deck.cards[0].notes,
+            base.notes,
             "the badge belongs to the note it opened"
         );
         assert_eq!(
             Vec::<Note>::new(),
-            deck.cards[1].notes,
+            other.notes,
             "a card that resolves no note resolves no badge either"
         );
     }
 
     #[test]
-    fn two_lines_addressed_to_one_hole_join_in_written_order() {
+    fn two_lines_addressed_to_one_group_join_in_written_order() {
         let deck = parse(
-            "## q\n\\blank[base]{Unit}, \\blank{integration}\n\
-             > [!NOTE]\n> base: First.\n> base: Second.\n",
+            "## q\nUnit, integration\n\
+             > [!NOTE]\n> base: First.\n> base: Second.\n\
+             <!-- blank: span [base] hidden=\"Unit\" -->\n\
+             <!-- blank: span hidden=\"integration\" -->\n",
         );
-        assert_eq!(Some("First.\nSecond."), deck.cards[0].only_note());
+        let base = deck
+            .cards
+            .iter()
+            .find(|card| card.back == ["Unit"])
+            .expect("group base's card");
+        assert_eq!(Some("First.\nSecond."), base.only_note());
     }
 
-    /// A card with no named hole cannot be addressing anything, so a note
+    /// A block with no named group cannot be addressing anything, so a note
     /// beginning `2:` is prose and stays prose.
     #[test]
-    fn a_note_that_looks_addressed_is_prose_where_no_hole_is_named() {
-        let deck =
-            parse("## q\n\\blank{Unit}, \\blank{integration}\n> [!NOTE]\n> 2: the second one.\n");
+    fn a_note_that_looks_addressed_is_prose_where_no_group_is_named() {
+        let deck = parse(
+            "## q\nUnit, integration\n> [!NOTE]\n> 2: the second one.\n\
+             <!-- blank: span hidden=\"Unit\" -->\n\
+             <!-- blank: span hidden=\"integration\" -->\n",
+        );
         assert_eq!(Vec::<Lint>::new(), deck.lints);
         for card in &deck.cards {
             assert_eq!(Some("2: the second one."), card.only_note());
@@ -7378,8 +7377,11 @@ a
 
     #[test]
     fn an_address_is_separated_from_its_text_by_a_space() {
-        let deck =
-            parse("## q\n\\blank[base]{Unit}, \\blank{integration}\n> [!NOTE]\n> base:no space.\n");
+        let deck = parse(
+            "## q\nUnit, integration\n> [!NOTE]\n> base:no space.\n\
+             <!-- blank: span [base] hidden=\"Unit\" -->\n\
+             <!-- blank: span hidden=\"integration\" -->\n",
+        );
         assert_eq!(Vec::<Lint>::new(), deck.lints);
         for card in &deck.cards {
             assert_eq!(Some("base:no space."), card.only_note());
@@ -7387,13 +7389,16 @@ a
     }
 
     #[test]
-    fn an_address_naming_no_hole_of_this_card_is_reported_and_kept() {
-        let deck =
-            parse("## q\n\\blank[base]{Unit}, \\blank{integration}\n> [!NOTE]\n> bass: typo.\n");
+    fn an_address_naming_no_group_of_this_block_is_reported_and_kept() {
+        let deck = parse(
+            "## q\nUnit, integration\n> [!NOTE]\n> bass: typo.\n\
+             <!-- blank: span [base] hidden=\"Unit\" -->\n\
+             <!-- blank: span hidden=\"integration\" -->\n",
+        );
         assert_eq!(
             vec![Lint {
                 line: 1,
-                kind: LintKind::NoteNamesNoHole {
+                kind: LintKind::NoteNamesNoGroup {
                     name: "bass".to_string()
                 }
             }],
@@ -7412,42 +7417,59 @@ a
     fn the_pyramid_stops_leaking_once_its_note_is_addressed() {
         let deck = parse(
             "## The test pyramid, bottom to top\n\
-             \\blank[base]{Unit}, \\blank{integration}, \\blank{end-to-end}\n\
-             > [!NOTE]\n> base: Unit tests sit at the base because they are fastest and most numerous.\n",
+             Unit, integration, end-to-end\n\
+             > [!NOTE]\n> base: Unit tests sit at the base because they are fastest and most numerous.\n\
+             <!-- blank: span [base] hidden=\"Unit\" -->\n\
+             <!-- blank: span hidden=\"integration\" -->\n\
+             <!-- blank: span hidden=\"end-to-end\" -->\n",
         );
         assert_eq!(
             Vec::<Lint>::new(),
             deck.lints,
-            "no other hole shows the note that names `Unit`"
+            "no other card shows the note that names `Unit`"
         );
+        let base = deck
+            .cards
+            .iter()
+            .find(|card| card.back == ["Unit"])
+            .expect("group base's card");
         assert!(
-            deck.cards[0]
-                .only_note()
+            base.only_note()
                 .is_some_and(|note| note.starts_with("Unit tests sit at the base"))
         );
-        assert_eq!(None, deck.cards[1].only_note());
-        assert_eq!(None, deck.cards[2].only_note());
+        for card in deck.cards.iter().filter(|card| card.back != ["Unit"]) {
+            assert_eq!(None, card.only_note());
+        }
     }
 
     #[test]
-    fn a_note_naming_no_hole_answer_is_silent() {
-        let deck = parse("## q\n\\blank{Unit}, \\blank{integration}\n> Fastest at the base.\n");
+    fn a_note_naming_no_blank_answer_is_silent() {
+        let deck = parse(
+            "## q\nUnit, integration\n> [!NOTE]\n> Fastest at the base.\n\
+             <!-- blank: span hidden=\"Unit\" -->\n\
+             <!-- blank: span hidden=\"integration\" -->\n",
+        );
         assert_eq!(Vec::<Lint>::new(), deck.lints);
     }
 
     #[test]
-    fn a_single_hole_block_is_never_reported_however_the_note_reads() {
-        // With one hole there is no other card to leak to: the note is on the
-        // card whose answer it names, which is the ordinary way to write one.
-        let deck = parse("## q\n\\blank{Unit} tests\n> Unit tests are fastest.\n");
+    fn a_single_blank_block_is_never_reported_however_the_note_reads() {
+        // With one blank there is no other card to leak to: the note is on
+        // the card whose answer it names, the ordinary way to write one.
+        let deck = parse(
+            "## q\nUnit tests\n> [!NOTE]\n> Unit tests are fastest.\n\
+             <!-- blank: span hidden=\"Unit\" -->\n",
+        );
         assert_eq!(Vec::<Lint>::new(), deck.lints);
     }
 
     #[test]
-    fn a_hole_answer_inside_a_longer_word_is_not_a_match() {
+    fn a_blank_answer_inside_a_longer_word_is_not_a_match() {
         for note in ["Reunites the suites.", "Unitary tests are narrow."] {
             let deck = parse(&format!(
-                "## q\n\\blank{{unit}}, \\blank{{integration}}\n> {note}\n"
+                "## q\nunit, integration\n> [!NOTE]\n> {note}\n\
+                 <!-- blank: span hidden=\"unit\" -->\n\
+                 <!-- blank: span hidden=\"integration\" -->\n"
             ));
             assert_eq!(
                 Vec::<Lint>::new(),
@@ -7458,19 +7480,17 @@ a
     }
 
     #[test]
-    fn a_short_hole_answer_is_below_the_reporting_floor() {
-        let deck = parse("## q\n\\blank{TCP}, \\blank{integration}\n> TCP is a protocol.\n");
+    fn a_short_blank_answer_is_below_the_reporting_floor() {
+        let deck = parse(
+            "## q\nTCP, integration\n> [!NOTE]\n> TCP is a protocol.\n\
+             <!-- blank: span hidden=\"TCP\" -->\n\
+             <!-- blank: span hidden=\"integration\" -->\n",
+        );
         assert_eq!(
             Vec::<Lint>::new(),
             deck.lints,
             "three characters match too much prose to be worth reporting"
         );
-    }
-
-    #[test]
-    fn nested_balanced_braces_stay_inside_the_hole() {
-        let deck = parse("## q\n---\nw \\blank{f{g}h} z\n");
-        assert_eq!(vec!["f{g}h"], deck.cards[0].back);
     }
 
     #[test]
@@ -8225,7 +8245,6 @@ the answer
             "the unmasked bytes ride the record"
         );
         assert_eq!(crate::diagram::fingerprint(interior), fence.fingerprint);
-        assert!(!fence.holes);
         assert_eq!(1, fence.spans.len());
         let span = &fence.spans[0];
         assert_eq!(6, span.line, "the span's identity is its directive line");
@@ -8272,31 +8291,6 @@ the answer
         );
         let recorded: usize = card.answer_fences.iter().map(|f| f.spans.len()).sum();
         assert_eq!(2, recorded, "the prose cover appears in no fence record");
-    }
-
-    #[test]
-    fn a_hole_inside_a_fence_marks_the_record_and_rides_every_cloze_card() {
-        let deck = parse(concat!(
-            "## q\n",
-            "```mermaid\nflowchart LR\n  A[\\blank{Load}] --> B\n```\n",
-            "a prose \\blank{hole} outside\n",
-        ));
-        for card in &deck.cards {
-            assert_eq!(1, card.answer_fences.len(), "cloze cards carry the records");
-            assert!(
-                card.answer_fences[0].holes,
-                "a hole in the interior poisons the fence for projection"
-            );
-        }
-        let deck = parse(concat!(
-            "## q\n",
-            "```mermaid\nflowchart LR\n  A[Load] --> B\n```\n",
-            "a prose \\blank{hole} outside\n",
-        ));
-        assert!(
-            !deck.cards[0].answer_fences[0].holes,
-            "a hole outside the interior leaves the fence projectable"
-        );
     }
 
     #[test]
@@ -9238,6 +9232,61 @@ the answer
             vec!["**⍰** York is big"],
             deck.cards[0].context,
             "the splice lands inside the markers, so the bold survives"
+        );
+    }
+
+    #[test]
+    fn a_group_addressed_note_replaces_the_shared_note_on_its_card() {
+        let deck = parse(&format!(
+            "## q\n---\nalpha then beta\n> [!NOTE]\n> shared note\n> g: only for g\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [h] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+        ));
+        assert_eq!(2, deck.cards.len(), "two one-member group cards");
+        let g = deck
+            .cards
+            .iter()
+            .find(|card| card.back == ["alpha"])
+            .expect("group g's card");
+        let h = deck
+            .cards
+            .iter()
+            .find(|card| card.back == ["beta"])
+            .expect("group h's card");
+        assert_eq!(
+            vec!["only for g"],
+            g.notes.iter().map(|n| n.body.as_str()).collect::<Vec<_>>(),
+            "the address REPLACES the shared note for g"
+        );
+        assert_eq!(
+            vec!["shared note"],
+            h.notes.iter().map(|n| n.body.as_str()).collect::<Vec<_>>(),
+            "the unaddressed card keeps only the shared block"
+        );
+    }
+
+    #[test]
+    fn an_append_address_extends_the_shared_note_on_its_card() {
+        let deck = parse(&format!(
+            "## q\n---\nalpha then beta\n> [!NOTE]\n> shared note\n> g+: extra for g\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [h] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+        ));
+        let g = deck
+            .cards
+            .iter()
+            .find(|card| card.back == ["alpha"])
+            .expect("group g's card");
+        assert_eq!(
+            vec!["shared note\nextra for g"],
+            g.notes.iter().map(|n| n.body.as_str()).collect::<Vec<_>>(),
+            "the append address extends the shared block for g"
+        );
+        let h = deck
+            .cards
+            .iter()
+            .find(|card| card.back == ["beta"])
+            .expect("group h's card");
+        assert_eq!(
+            vec!["shared note"],
+            h.notes.iter().map(|n| n.body.as_str()).collect::<Vec<_>>(),
+            "the unaddressed card keeps only the shared block"
         );
     }
 

@@ -199,13 +199,16 @@ fn span_index(raw: &str, key: &str, line: usize) -> Result<u32, ParseError> {
         .map_err(|_| err(line, format!("`{key}={raw}` overflows")))
 }
 
-fn group_name(raw: &str, line: usize) -> Result<String, ParseError> {
-    let name = &raw[1..raw.len() - 1];
-    let legal = !name.is_empty()
+pub(super) fn is_group_name(name: &str) -> bool {
+    !name.is_empty()
         && name
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
-    if !legal {
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+fn group_name(raw: &str, line: usize) -> Result<String, ParseError> {
+    let name = &raw[1..raw.len() - 1];
+    if !is_group_name(name) {
         return Err(err(
             line,
             format!(

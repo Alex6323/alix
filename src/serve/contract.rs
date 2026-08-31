@@ -2612,7 +2612,6 @@ fn carddto_context_diagram_wire_shape() {
         fingerprint: crate::diagram::fingerprint(source),
         interior: std::sync::Arc::from(source),
         spans: Vec::new(),
-        holes: false,
     });
     let view =
         crate::review::CardView::project(&card, &mut crate::inline::DisplayProjector::default());

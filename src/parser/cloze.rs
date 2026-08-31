@@ -15,10 +15,7 @@ pub const HIDDEN: &str = "⬚";
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Seg {
     Text(String),
-    Image {
-        src: String,
-        alt: Option<String>,
-    },
+    Image { src: String, alt: Option<String> },
 }
 
 pub(super) fn scan_markers(
@@ -301,35 +298,18 @@ pub(super) fn seg_display(segments: &[Seg]) -> String {
     out
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn scan(line: &str, side: Side) -> (Vec<Seg>, Vec<Lint>) {
-        let mut lints = Vec::new();
-        let segments = scan_markers(line, 7, side, &mut lints).unwrap();
-        (segments, lints)
-    }
-
     fn answer(line: &str) -> (Vec<Seg>, Vec<Lint>) {
-        scan(line, Side::Answer)
-    }
-
-    fn fatal(line: &str) -> ParseError {
         let mut lints = Vec::new();
-        scan_markers(line, 7, Side::Answer, &mut lints).unwrap_err()
+        let segments = scan_markers(line, 7, &mut lints).unwrap();
+        (segments, lints)
     }
 
     fn text(t: &str) -> Seg {
         Seg::Text(t.into())
-    }
-
-    fn hole(h: &str) -> Seg {
-        Seg::Hole {
-            text: h.into(),
-            name: None,
-        }
     }
 
     fn image(src: &str, alt: Option<&str>) -> Seg {
@@ -400,12 +380,6 @@ mod tests {
             vec![image("a.png", None), text(" "), image("b.png", None)],
             segments
         );
-    }
-
-    #[test]
-    fn an_image_is_recognized_in_the_front_region_too() {
-        let (segments, _) = scan("![](x.png)", Side::Front);
-        assert_eq!(vec![image("x.png", None)], segments);
     }
 
     #[test]
@@ -548,15 +522,6 @@ mod tests {
     }
 
     #[test]
-    fn a_markdown_image_can_share_a_line_with_a_hole() {
-        let (segments, _) = answer("\\blank{a} and ![](x.png)");
-        assert_eq!(
-            vec![hole("a"), text(" and "), image("x.png", None)],
-            segments
-        );
-    }
-
-    #[test]
     fn unknown_backslash_command_stays_literal() {
         let (segments, lints) = answer("\\frac{1}{2}");
         assert_eq!(vec![text("\\frac{1}{2}")], segments);
@@ -564,94 +529,9 @@ mod tests {
     }
 
     #[test]
-    fn cloze_hole_in_the_answer_region_is_unchanged() {
+    fn a_blank_command_stays_literal() {
         let (segments, lints) = answer("\\blank{mut}");
-        assert_eq!(vec![hole("mut")], segments);
-        assert!(lints.is_empty());
-    }
-
-    #[test]
-    fn a_second_group_after_a_cloze_hole_stays_literal() {
-        let (segments, _) = answer("\\blank{a}{b: c}");
-        assert_eq!(vec![hole("a"), text("{b: c}")], segments);
-    }
-
-    #[test]
-    fn empty_cloze_hole_stays_fatal() {
-        assert_eq!(ParseError::EmptyHole(7), fatal("\\blank{}"));
-    }
-
-    #[test]
-    fn unclosed_cloze_hole_stays_fatal() {
-        assert_eq!(ParseError::UnclosedHole(7), fatal("\\blank{oops"));
-    }
-
-    #[test]
-    fn cloze_bracket_stays_reserved_in_the_answer_region() {
-        assert_eq!(ParseError::InvalidHoleName(7), fatal("\\blank[pin]"));
-    }
-
-    #[test]
-    fn cloze_in_the_front_region_stays_literal() {
-        let (segments, lints) = scan("\\blank{mut}", Side::Front);
         assert_eq!(vec![text("\\blank{mut}")], segments);
         assert!(lints.is_empty());
-    }
-
-    #[test]
-    fn cloze_bracket_in_the_front_region_stays_literal() {
-        let (segments, _) = scan("\\blank[pin]", Side::Front);
-        assert_eq!(vec![text("\\blank[pin]")], segments);
-    }
-
-    #[test]
-    fn escaped_cloze_unescapes_in_the_front_region_too() {
-        let (segments, _) = scan("\\\\blank{x}", Side::Front);
-        assert_eq!(vec![text("\\blank{x}")], segments);
-    }
-
-    #[test]
-    fn hash_repr_wraps_an_image_in_unit_separators() {
-        let (segments, _) = answer("![](m.png)");
-        assert_eq!("\u{1f}image\u{1f}m.png\u{1f}", hash_repr(&segments));
-    }
-
-    #[test]
-    fn hash_repr_image_does_not_collide_with_the_escaped_literal_text() {
-        let image_segments = vec![Seg::Image {
-            src: "x".into(),
-            alt: None,
-        }];
-        let literal_segments = vec![Seg::Text("![](x)".into())];
-        assert_ne!(hash_repr(&image_segments), hash_repr(&literal_segments));
-    }
-
-    #[test]
-    fn hash_repr_image_does_not_collide_with_a_hole_that_mentions_image() {
-        let image_segments = vec![Seg::Image {
-            src: "x".into(),
-            alt: None,
-        }];
-        let hole_segments = vec![Seg::Hole {
-            text: "image x".into(),
-            name: None,
-        }];
-        assert_ne!(hash_repr(&image_segments), hash_repr(&hole_segments));
-    }
-
-    #[test]
-    fn hole_fingerprints_see_an_image_on_the_hole_line() {
-        let holes = vec![Hole {
-            line: 0,
-            seg: 0,
-            text: "a",
-            name: None,
-        }];
-        let (with_image, _) = answer("\\blank{a} ![](x.png)");
-        let (without_image, _) = answer("\\blank{a}");
-        let groups = vec![vec![0usize]];
-        let with_image = hole_fingerprints(&[with_image], &holes, &groups);
-        let without_image = hole_fingerprints(&[without_image], &holes, &groups);
-        assert_ne!(with_image[0].line_fp, without_image[0].line_fp);
     }
 }

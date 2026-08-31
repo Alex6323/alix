@@ -2100,12 +2100,11 @@ mod tests {
             fingerprint: crate::diagram::fingerprint(source),
             interior: std::sync::Arc::from(source),
             spans: Vec::new(),
-            holes: false,
         }
     }
 
     /// The context stream's law: fence-shaped units only, one per closed
-    /// fence in order; a clean record (no spans, no holes) whose unmasked
+    /// fence in order; a clean record (no spans) whose unmasked
     /// fingerprint resolves swaps to the diagram, everything else is code.
     #[test]
     fn a_clean_recorded_context_fence_resolves_through_its_record() {
@@ -2137,7 +2136,7 @@ mod tests {
     }
 
     #[test]
-    fn a_record_with_spans_or_holes_or_no_resolution_stays_code_in_context() {
+    fn a_record_with_spans_or_no_resolution_stays_code_in_context() {
         let source = "flowchart LR\n A-->B";
         let context: Vec<String> = ["```mermaid", "flowchart LR", " A-->B", "```"]
             .iter()
@@ -2151,13 +2150,8 @@ mod tests {
             }],
             ..record(source)
         };
-        let with_holes = crate::card::AnswerFence {
-            holes: true,
-            ..record(source)
-        };
-        let cases: [(Vec<crate::card::AnswerFence>, &str); 4] = [
+        let cases: [(Vec<crate::card::AnswerFence>, &str); 3] = [
             (vec![with_spans], "bound spans hold for span binding"),
-            (vec![with_holes], "a hole poisons the fence"),
             (vec![record("flowchart LR\n X-->Y")], "no resolution"),
             (Vec::new(), "no record at all"),
         ];

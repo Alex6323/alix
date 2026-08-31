@@ -242,8 +242,7 @@ mod tests {
         let parsed: Vec<Vec<Seg>> = answer
             .iter()
             .map(|(lineno, line)| {
-                super::super::cloze::scan_markers(line, *lineno, &mut lints)
-                .unwrap()
+                super::super::cloze::scan_markers(line, *lineno, &mut lints).unwrap()
             })
             .collect();
         maskable_stream(&answer, &parsed)
@@ -396,9 +395,7 @@ mod tests {
         let mut lints = Vec::new();
         let parsed: Result<Vec<Vec<Seg>>, _> = answer
             .iter()
-            .map(|(lineno, line)| {
-                super::super::cloze::scan_markers(line, *lineno, &mut lints)
-            })
+            .map(|(lineno, line)| super::super::cloze::scan_markers(line, *lineno, &mut lints))
             .collect();
         parsed.ok().map(|parsed| (answer, parsed))
     }
