@@ -303,13 +303,46 @@ fn invisible_argument_extents(payload: &str, tokens: &[Token]) -> Vec<(Range<usi
     extents
 }
 
-/// Brace-group arity per the pinned renderer: a command registered in its
-/// function table consumes `num_args` groups; an unregistered control
-/// sequence is a symbol and consumes none.
+/// Brace-group arity per the pinned renderer: a registered function
+/// consumes `num_args` groups, a built-in macro consumes what its
+/// definition references, and an unregistered control sequence is a symbol
+/// consuming none. A function-backed macro's arity is mechanically
+/// unprovable, so it absorbs the whole run: over-absorption rejects a
+/// partial span instead of masking the wrong unit.
 fn command_brace_arity(command: &str) -> usize {
-    ratex_parser::functions::FUNCTIONS
-        .get(command)
-        .map_or(0, |spec| spec.num_args)
+    use ratex_parser::macro_expander::{MacroDefinition, MacroExpander};
+    if let Some(spec) = ratex_parser::functions::FUNCTIONS.get(command) {
+        return spec.num_args;
+    }
+    match MacroExpander::new("", ratex_parser::Mode::Math).get_macro(command) {
+        Some(MacroDefinition::Text(body)) => text_macro_arity(body),
+        Some(MacroDefinition::Tokens { num_args, .. }) => *num_args,
+        Some(MacroDefinition::Function(_)) => usize::MAX,
+        None => 0,
+    }
+}
+
+/// A text macro's arity is the highest `#N` its expansion references;
+/// `##` is a literal `#` (TeX's own rule).
+fn text_macro_arity(body: &str) -> usize {
+    let mut arity = 0usize;
+    let mut chars = body.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '#' {
+            continue;
+        }
+        match chars.peek() {
+            Some('#') => {
+                chars.next();
+            }
+            Some(digit) if digit.is_ascii_digit() => {
+                arity = arity.max(digit.to_digit(10).unwrap_or(0) as usize);
+                chars.next();
+            }
+            _ => {}
+        }
+    }
+    arity
 }
 
 fn whitespace_token(payload: &str, token: &Token) -> bool {
@@ -905,6 +938,19 @@ mod tests {
             Ok(()),
             unit(r"x + {a}{b}^2", r"{b}^2"),
             "bare juxtaposed groups are not a command application"
+        );
+    }
+
+    #[test]
+    fn a_group_after_an_argument_taking_macro_walks_to_the_macro() {
+        assert_eq!(
+            Err(Violation::IncompleteScript('^')),
+            unit(r"z+\pmod{x}^2", r"{x}^2")
+        );
+        assert_eq!(
+            Err(Violation::ControlSequence(r"\pmod".into())),
+            unit(r"z+\pmod{x}^2", r"\pmod{x}^2"),
+            "the allowlist still owns the atom; whole-formula stays the remedy"
         );
     }
 
