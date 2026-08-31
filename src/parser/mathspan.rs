@@ -18,6 +18,7 @@ pub(super) enum Violation {
     IncompleteScript(char),
     IncompleteCommandApplication(String),
     NotLearnerVisible(String),
+    MutableNamespace(String),
 }
 
 impl Violation {
@@ -44,9 +45,30 @@ impl Violation {
             Violation::NotLearnerVisible(name) => {
                 format!("the match lies inside the argument of `{name}`, which renders nothing")
             }
+            Violation::MutableNamespace(name) => format!(
+                "the formula defines or redefines commands with `{name}`, so no partial match has provable structure"
+            ),
         }
     }
 }
+
+/// Commands the pinned renderer accepts that mutate the macro namespace.
+/// A formula containing one has no statically provable structure (any
+/// command, symbols included, may be redefined mid-formula), so only the
+/// whole formula stays blankable. Sorted for binary search.
+const DEFINING_COMMANDS: &[&str] = &[
+    r"\def",
+    r"\edef",
+    r"\futurelet",
+    r"\gdef",
+    r"\global",
+    r"\let",
+    r"\long",
+    r"\newcommand",
+    r"\providecommand",
+    r"\renewcommand",
+    r"\xdef",
+];
 
 /// Zero-argument symbol commands a span may contain (ruled 2026-08-31,
 /// ADR 0040). ADDITIVE ONLY: removing an entry rejects decks it accepted.
@@ -556,6 +578,16 @@ pub(super) fn structural_unit(payload: &str, range: &Range<usize>) -> Result<(),
     }
 
     let tokens = tokens(payload);
+    if let Some(defining) = tokens.iter().find(|token| {
+        matches!(token.kind, Kind::Sequence)
+            && DEFINING_COMMANDS
+                .binary_search(&&payload[token.span.clone()])
+                .is_ok()
+    }) {
+        return Err(Violation::MutableNamespace(
+            payload[defining.span.clone()].to_string(),
+        ));
+    }
     if tokens
         .iter()
         .any(|token| matches!(&token.kind, Kind::Structural('%')) && token.span.end <= range.start)
@@ -952,6 +984,29 @@ mod tests {
             unit(r"z+\pmod{x}^2", r"\pmod{x}^2"),
             "the allowlist still owns the atom; whole-formula stays the remedy"
         );
+    }
+
+    #[test]
+    fn a_group_after_a_locally_defined_macro_walks_to_the_macro() {
+        assert_eq!(
+            Err(Violation::MutableNamespace(r"\def".into())),
+            unit(r"\def\foo#1{(#1)}\foo{x}^2", r"{x}^2")
+        );
+    }
+
+    #[test]
+    fn a_defining_formula_still_blanks_whole() {
+        assert_eq!(
+            Ok(()),
+            unit(r"\def\foo#1{(#1)}\foo{x}^2", r"\def\foo#1{(#1)}\foo{x}^2")
+        );
+    }
+
+    #[test]
+    fn the_defining_command_table_is_sorted_and_unique() {
+        for pair in DEFINING_COMMANDS.windows(2) {
+            assert!(pair[0] < pair[1], "{pair:?} out of order");
+        }
     }
 
     #[test]

@@ -8627,6 +8627,26 @@ the answer
     }
 
     #[test]
+    fn a_span_cannot_split_a_locally_defined_macro_from_its_script() {
+        let result = super::parse(
+            "deck.md",
+            &format!(
+                "## q\n---\n$\\def\\foo#1{{(#1)}}\\foo{{x}}^2$\n<!-- blank: span hidden=\"{{x}}^2\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            ),
+        );
+        let Err(ParseError::InvalidRegion { message, .. }) = &result else {
+            panic!(
+                "a local macro argument plus its owner's script was accepted as {:?}",
+                result.unwrap().cards[0].context
+            );
+        };
+        assert!(
+            message.contains("defines or redefines commands"),
+            "{message}"
+        );
+    }
+
+    #[test]
     fn a_matrix_column_separator_is_never_inside_a_span_match() {
         let line = r"$\begin{pmatrix}a & b\end{pmatrix}$";
         let error = err(&format!(
