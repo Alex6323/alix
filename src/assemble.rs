@@ -706,18 +706,21 @@ mod tests {
     #[test]
     fn every_composed_duplicate_of_one_base_selects_one_authored_block_as_keeper() {
         let dir = tempfile::tempdir().unwrap();
-        let one_hole = dir.path().join("deck.md");
-        let two_hole_copy = dir.path().join("deck-copy.md");
-        let two_hole_peer = dir.path().join("z.md");
+        let one_span = dir.path().join("deck.md");
+        let two_span_copy = dir.path().join("deck-copy.md");
+        let two_span_peer = dir.path().join("z.md");
         let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
         write_initialized(
-            &one_hole,
-            &format!("## one\n\\blank{{alpha}}\n<!-- id: {shared} -->\n"),
+            &one_span,
+            &format!(
+                "## one\nalpha\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {shared} -->\n"
+            ),
         );
-        let two_holes =
-            format!("## two\n\\blank{{alpha}} and \\blank{{beta}}\n<!-- id: {shared} -->\n");
-        write_initialized(&two_hole_copy, &two_holes);
-        write_initialized(&two_hole_peer, &two_holes);
+        let two_spans = format!(
+            "## two\nalpha and beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {shared} -->\n"
+        );
+        write_initialized(&two_span_copy, &two_spans);
+        write_initialized(&two_span_peer, &two_spans);
 
         let map = crate::dedup::scan_dir(dir.path());
         let keepers: std::collections::HashSet<_> = map

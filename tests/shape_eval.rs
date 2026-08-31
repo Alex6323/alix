@@ -107,8 +107,13 @@ fn an_explicit_style_still_overrules_the_rule() {
         generate::generate_deck(source.to_str().unwrap(), &cfg, &AskConfig::default(), &spec)
             .expect("the generator returned no deck");
 
+    let cards = alix::parser::parse_str("generated.md", &deck).expect("the generated deck parses");
     assert!(
-        deck.contains("\\blank{"),
-        "an explicit cloze style must still produce cloze, got:\n{deck}"
+        cards.iter().any(alix::card::Card::is_blank_card),
+        "an explicit cloze style must produce span-derived cards, got:\n{deck}"
+    );
+    assert!(
+        !deck.contains("\\blank{"),
+        "the retired marker must not appear, got:\n{deck}"
     );
 }

@@ -2757,7 +2757,7 @@ fn every_carddto_carries_answer_steps_covering_its_back_exactly_once() {
         "| a | b |\n| --- | --- |\n| 1 | 2 |",
         "lead\n| a | b |\n| --- | --- |\n| 1 | 2 |\ntrail",
         "```text\n> q\n```",
-        r"left \blank{>} right",
+        "left > right\n<!-- blank: span hidden=\">\" boundary=char b:a1b2c3 -->",
     ];
     for back in backs {
         let cards = crate::parser::parse_str("t.md", &format!("## q\n{back}\n"))

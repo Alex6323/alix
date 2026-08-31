@@ -2564,13 +2564,16 @@ mod tests {
     }
 
     #[test]
-    fn split_card_blocks_is_one_block_for_a_cloze_and_drops_preamble() {
-        let text =
-            "---\nsource: x\n---\n\n## Complete the quote\nTo \\blank{be} or not to \\blank{be}\n";
+    fn split_card_blocks_is_one_block_for_a_span_and_drops_preamble() {
+        let text = "---\nsource: x\n---\n\n## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" -->\n<!-- blank: span hidden=\"be\" occurrence=2 -->\n";
         let blocks = split_card_blocks(text);
-        assert_eq!(1, blocks.len());
+        assert_eq!(
+            1,
+            blocks.len(),
+            "the directives stay in the block: {blocks:?}"
+        );
         assert!(blocks[0].starts_with("## Complete the quote"));
-        assert!(blocks[0].contains("\\blank{be}"));
+        assert!(blocks[0].contains("occurrence=2"));
     }
 
     fn sidecar_cards(deck: &Path, deck_id: &str) -> Vec<Card> {
@@ -2775,7 +2778,7 @@ mod tests {
     fn every_sidecar_card_is_scheduled_under_the_id_its_text_reparses_to() {
         for text in [
             "## Why does X?\npoint one\n",
-            "## Complete the quote\nTo \\blank{be} or not to \\blank{bee}\n",
+            "## Complete the quote\nTo be or not to bee\n<!-- blank: span hidden=\"be\" b:a1b2c3 -->\n<!-- blank: span hidden=\"bee\" b:d4e5f6 -->\n",
         ] {
             let dir = tempfile::tempdir().unwrap();
             let deck = dir.path().join("d.md");

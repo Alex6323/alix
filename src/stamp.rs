@@ -807,7 +807,7 @@ mod tests {
 
     /// The trailing space after `## First question` is deliberate: a mutation
     /// that trims the line before inserting would silently normalize it away.
-    const FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe \\blank{alpha} and \\blank{beta} here\n> cloze note\n";
+    const FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe alpha and beta here\n> cloze note\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n";
 
     fn write(dir: &tempfile::TempDir, name: &str, text: &str) -> PathBuf {
         let path = dir.path().join(name);
@@ -919,7 +919,7 @@ mod tests {
         let outcome = stamp_deck(&path).unwrap();
         let stamped = fs::read_to_string(&path).unwrap();
 
-        // Two file cards: the cloze card's two holes stamp once.
+        // Two file cards: the span card's two blanks stamp once.
         assert_eq!(2, outcome.minted_cards.len());
         assert!(outcome.minted_deck.is_some());
 
@@ -933,6 +933,12 @@ mod tests {
         let deck_span = format!("id: \"{deck_tok}\"\n");
         assert_eq!(1, reconstructed.matches(&deck_span).count());
         reconstructed = reconstructed.replacen(&deck_span, "", 1);
+        // The authored region stamps mint their position anchors; stripping
+        // them leaves the authored bytes.
+        for anchor in [" position:5", " position:15"] {
+            assert_eq!(1, reconstructed.matches(anchor).count(), "{anchor:?}");
+            reconstructed = reconstructed.replacen(anchor, "", 1);
+        }
 
         assert_eq!(parser::normalize(FIXTURE), reconstructed);
     }
@@ -1524,10 +1530,10 @@ mod tests {
     }
 
     #[test]
-    fn identical_cloze_fronts_on_different_lines_each_get_their_own_token() {
+    fn identical_span_fronts_on_different_lines_each_get_their_own_token() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo\n---\nthe \\blank{a} note\n\n\
-             ## Foo\n---\nthe \\blank{b} note\n";
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo\n---\nthe a note\n<!-- blank: span hidden=\"a\" -->\n\n\
+             ## Foo\n---\nthe b note\n<!-- blank: span hidden=\"b\" -->\n";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -1536,28 +1542,25 @@ mod tests {
         assert_eq!(2, outcome.minted_cards.len());
         assert_ne!(outcome.minted_cards[0], outcome.minted_cards[1]);
         assert_eq!(
-            1,
-            stamped
-                .matches(&format!(
-                    "the \\blank{{a}} note\n<!-- id: {} -->\n",
-                    outcome.minted_cards[0]
-                ))
-                .count(),
-            "{stamped:?}"
-        );
-        assert_eq!(
-            1,
-            stamped
-                .matches(&format!(
-                    "the \\blank{{b}} note\n<!-- id: {} -->\n",
-                    outcome.minted_cards[1]
-                ))
-                .count(),
-            "{stamped:?}"
+            2,
+            outcome.minted_regions.len(),
+            "each span minted its own stamp: {stamped:?}"
         );
         let parsed = parser::parse("deck.md", &stamped).unwrap();
         assert!(parsed.cards.iter().all(|c| c.front == "Foo"));
         assert!(parsed.cards.iter().all(|c| c.token.is_some()));
+        let ids: HashSet<String> = parsed.cards.iter().filter_map(|c| c.id()).collect();
+        assert_eq!(
+            2,
+            ids.len(),
+            "the derived blank ids bind to two distinct bases: {ids:?}"
+        );
+        let bases: HashSet<&str> = parsed
+            .cards
+            .iter()
+            .filter_map(|c| c.token.as_deref())
+            .collect();
+        assert_eq!(2, bases.len(), "{bases:?}");
     }
 
     #[test]

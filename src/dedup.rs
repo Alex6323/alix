@@ -746,8 +746,10 @@ mod tests {
         let cases = [
             ("plain", format!("## q\na\n<!-- id: {shared} -->\n")),
             (
-                "cloze holes",
-                format!("## q\n\\blank{{alpha}} and \\blank{{beta}}\n<!-- id: {shared} -->\n"),
+                "span blanks",
+                format!(
+                    "## q\nalpha and beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {shared} -->\n"
+                ),
             ),
             (
                 "reversed half",

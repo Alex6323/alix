@@ -398,10 +398,11 @@ mod tests {
         assert_eq!(renderer.render_count(), 1);
     }
 
-    /// A hidden hole can sit directly against the next token, and a bare
+    /// A hidden span can sit directly against the next token, and a bare
     /// control sequence would swallow it: `\cdots` followed by `x` is the
     /// undefined `\cdotsx`, which fails the whole formula rather than the
-    /// hole. Authoring `\blank{n}x^{...}` is an ordinary thing to write.
+    /// span. A masked span adjacent to the next math token is an ordinary
+    /// shape.
     #[test]
     fn a_hidden_hole_against_the_next_token_still_renders() {
         let source = "\\frac{d}{dx}x^n = ⬚x^{⍰}";

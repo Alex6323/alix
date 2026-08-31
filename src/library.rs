@@ -1770,7 +1770,7 @@ mod tests {
 
     /// One fixture: frontmatter without `id:`, a divided card (fence + note +
     /// escaped divider + trailing-space front), and a two-hole cloze card.
-    const MARKER_FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe \\blank{alpha} and \\blank{beta} here\n> cloze note\n";
+    const MARKER_FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe alpha and beta here\n> cloze note\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n";
 
     fn all_tokens(subject: &str, text: &str) -> Vec<String> {
         let deck = crate::parser::parse(subject, text).unwrap();
@@ -1807,9 +1807,14 @@ mod tests {
             let deck = crate::parser::parse("d.md", &text).unwrap();
             assert!(deck.cards.iter().all(|c| c.token.is_some()), "all stamped");
             assert!(text.contains("First question"), "front text kept");
+            assert_eq!(
+                2,
+                deck.cards.iter().filter(|c| c.is_blank_card()).count(),
+                "both span cards survive the writer"
+            );
             assert!(
-                text.contains("alpha") && text.contains("beta"),
-                "cloze kept"
+                text.contains("b:a1b2c3") && text.contains("b:d4e5f6"),
+                "authored region stamps preserved: {text:?}"
             );
             assert_no_duplicate_tokens("d.md", &text);
         }

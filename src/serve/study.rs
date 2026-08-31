@@ -1802,11 +1802,11 @@ mod tests {
     }
 
     #[test]
-    fn tutor_create_rejects_an_exact_copy_of_the_current_cloze_block() {
+    fn tutor_create_rejects_an_exact_copy_of_the_current_span_block() {
         let dir = tempfile::tempdir().unwrap();
         let (mut state, deck_id) = study_state_with_review(dir.path(), crate::depth::Depth::Recall);
         let deck = dir.path().join("study.md");
-        let text = "## Complete the sentence\nThe capital is \\blank{Paris}\n<!-- id: card-studytest -->\n";
+        let text = "## Complete the sentence\nThe capital is Paris\n<!-- blank: span hidden=\"Paris\" b:a1b2c3 -->\n<!-- id: card-studytest -->\n";
         std::fs::write(&deck, text).unwrap();
         let cards = crate::parser::parse_str(&deck_id, text).unwrap();
         let session = crate::session::Session::new(
@@ -1820,7 +1820,7 @@ mod tests {
 
         let outcome = state.ask_create(CreateCardReq {
             front: "Complete the sentence".to_string(),
-            back: vec!["The capital is \\blank{Paris}".to_string()],
+            back: vec!["The capital is Paris".to_string()],
         });
 
         assert!(

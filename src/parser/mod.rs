@@ -6549,10 +6549,15 @@ a
             "---\nformat-version: 1\nid: \"{id}\"\n---\n\
              ## plain\na\n\
              ## choice\n- [x] a\n- [ ] b\n\
-             ## cloze\nthe \\blank{{cat}} sat\n"
+             ## cloze\nthe cat sat\n<!-- blank: span hidden=\"cat\" b:a1b2c3 -->\n"
         );
         let deck = parse(&text);
         assert!(deck.cards.len() >= 3, "{:?}", deck.cards);
+        assert!(
+            deck.cards.iter().any(|card| card.is_blank_card()),
+            "the span row derives a blank card: {:?}",
+            deck.cards
+        );
         for card in &deck.cards {
             assert_eq!(id, card.deck_id.as_ref(), "{card:?}");
         }
@@ -7476,7 +7481,7 @@ the answer
     }
 
     #[test]
-    fn a_divided_front_is_not_scanned_for_cloze_but_yields_images() {
+    fn a_divided_front_keeps_marker_shaped_text_literal_and_yields_images() {
         let deck = parse("## front\n\\blank[pin] stays literal\n![](f.png)\n\n---\nthe answer\n");
         let card = &deck.cards[0];
         assert!(card.front.contains("\\blank[pin]"));
