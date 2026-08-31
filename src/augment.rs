@@ -1233,7 +1233,7 @@ mod tests {
     #[test]
     fn wipe_tokens_reports_whether_anything_was_wiped() {
         let mut cache = AugmentCache::open(std::path::Path::new("unused.json"));
-        cache.set_distractors("card-aa-0", vec!["x".into()], FP);
+        cache.set_distractors("card-aa-ba1b2c3", vec!["x".into()], FP);
         let mut wiped = HashSet::new();
         wiped.insert("card-aa".to_string());
 
@@ -1241,7 +1241,7 @@ mod tests {
             cache.wipe_tokens(&wiped, &HashSet::new()),
             "a wiped entry must report true so the caller saves"
         );
-        assert!(cache.distractors("card-aa-0", FP).is_none());
+        assert!(cache.distractors("card-aa-ba1b2c3", FP).is_none());
         assert!(
             !cache.wipe_tokens(&wiped, &HashSet::new()),
             "nothing left to wipe"
@@ -1847,7 +1847,11 @@ mod tests {
             .iter()
             .map(|w| w.id.clone())
             .collect();
-        assert_eq!(miss, [cid(&cards[1]), cid(&cards[2])]);
+        assert_eq!(
+            miss,
+            [cid(&cards[1])],
+            "the blank card is a region card, never a choices gap"
+        );
 
         let mq: Vec<String> = cache
             .missing_questions(&cards)

@@ -1427,7 +1427,10 @@ mod tests {
             card_style: GenerateCardStyle::Plain,
         };
 
-        let cloze = validate_card_style("## Complete it\nIt is \\blank{done}.\n", &spec);
+        let cloze = validate_card_style(
+            "## Complete it\nIt is done.\n<!-- blank: span hidden=\"done\" -->\n",
+            &spec,
+        );
         let choices = validate_card_style(
             "---\ntasklist: choices-single\n---\n## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
             &spec,

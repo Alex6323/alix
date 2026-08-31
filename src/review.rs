@@ -923,7 +923,9 @@ mod tests {
     #[test]
     fn card_view_carries_context_note_and_images() {
         let (mut store, augment, _dir) = fixtures();
-        let mut cards = parse("## q\nthe \\blank{answer} is here\n> [!NOTE]\n> a note line\n");
+        let mut cards = parse(
+            "## q\nthe answer is here\n> [!NOTE]\n> a note line\n<!-- blank: span hidden=\"answer\" b:a1b2c3 -->\n",
+        );
         cards[0].images = vec![crate::card::CardImage {
             src: "/pics/front.png".into(),
             alt: None,
@@ -1009,24 +1011,6 @@ mod tests {
                 run.math
             );
         }
-    }
-
-    #[test]
-    fn a_revealed_math_hole_carries_a_rendered_run() {
-        let cards = parser::parse_str("d.md", "## q\n---\n$x = -b \\blank{\\pm} \\sqrt{d}$\n")
-            .expect("the deck parses");
-        let view = CardView::from(&cards[0]);
-
-        // Projection strips the delimiters into the run, so the text a client
-        // shows is unchanged; what changes is that it now carries a rendering.
-        assert_eq!(view.back, ["\\pm"]);
-        let run = &view.back_runs[0][0];
-        assert_eq!("\\pm", run.text);
-        assert!(
-            run.math.as_ref().is_some_and(|math| math.svg.is_some()),
-            "the revealed hole must be rendered, got {:?}",
-            run.math
-        );
     }
 
     #[test]
@@ -1289,7 +1273,7 @@ mod tests {
         use crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS;
         let (mut store, mut augment, _dir) = fixtures();
         let cards = parse(
-            "## The classic test pyramid, bottom to top\n\\blank{Unit} tests, \\blank{integration} tests, \\blank{end-to-end} tests.\n",
+            "## bottom layer\nUnit\n## middle layer\nintegration\n## top layer\nend-to-end\n",
         );
         seen(&mut store, &cards);
         for (card, distractors) in cards.iter().zip([
@@ -1336,13 +1320,13 @@ mod tests {
     }
 
     #[test]
-    fn every_cloze_hole_marks_its_own_authored_answer_correct() {
+    fn every_card_marks_its_own_authored_answer_correct() {
         let (mut store, mut augment, _dir) = fixtures();
         let cards = parse(
-            "## The classic test pyramid, bottom to top\n\\blank{Unit} tests, \\blank{integration} tests, \\blank{end-to-end} tests.\n",
+            "## bottom layer\nUnit\n## middle layer\nintegration\n## top layer\nend-to-end\n",
         );
         seen(&mut store, &cards);
-        // Cached sets copied from a real deck, per hole.
+        // Cached sets copied from a real deck, per card.
         let per_hole = [
             ("Unit", ["Acceptance", "Smoke", "Manual"]),
             ("integration", ["component", "contract", "system"]),
@@ -1355,7 +1339,7 @@ mod tests {
                 card.content_fingerprint,
             );
         }
-        assert_eq!(3, cards.len(), "three holes, three sub-cards");
+        assert_eq!(3, cards.len(), "three cards");
 
         for (index, (answer, _)) in per_hole.iter().enumerate() {
             let session = session_at(
@@ -1480,7 +1464,9 @@ mod tests {
     #[test]
     fn check_typed_fails_a_grouped_card_answered_only_in_part() {
         let (mut store, _augment, _dir) = fixtures();
-        let cards = parse("## carpals\nThe \\blank[w]{scaphoid} and the \\blank[w]{lunate}.\n");
+        let cards = parse(
+            "## carpals\nThe scaphoid and the lunate.\n<!-- blank: span [w] hidden=\"scaphoid\" b:a1b2c3 -->\n<!-- blank: span [w] hidden=\"lunate\" b:d4e5f6 -->\n",
+        );
         assert_eq!(1, cards.len(), "one grouped card");
         assert_eq!(2, cards[0].back.len(), "asking two spans");
         seen(&mut store, &cards);
@@ -1844,10 +1830,11 @@ mod tests {
     }
 
     #[test]
-    fn cloze_grading_uses_the_formatted_holes_plain_content() {
+    fn blank_grading_uses_the_styled_spans_plain_content() {
         let (mut store, _augment, _dir) = fixtures();
-        let cards = parse("## capital\n\\blank{**Paris**}\n");
-        assert_eq!(["**Paris**"], cards[0].back.as_slice());
+        let cards =
+            parse("## capital\n**Paris**\n<!-- blank: span hidden=\"Paris\" b:a1b2c3 -->\n");
+        assert_eq!(["Paris"], cards[0].back.as_slice());
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
         let feedback = check_typed(&session, &["Paris".to_string()]).expect("feedback");
@@ -2071,22 +2058,6 @@ mod tests {
     fn input_follows_the_card() {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse("## q\na\n<!-- input: draw -->\n");
-        seen(&mut store, &cards);
-        let session = session_at(cards, &mut store, Depth::Recall, NOW);
-        assert_eq!(
-            state(&session, &store, &augment, Some(NOW)).input,
-            Input::Draw
-        );
-    }
-
-    /// A piece of a formula cannot be typed as itself: the hole's content is
-    /// the expected answer, so a formula hole would ask for LaTeX source.
-    /// Drawing is what a learner does with a symbol, so the rule fills in
-    /// where nothing was authored.
-    #[test]
-    fn a_hole_cut_from_a_formula_is_drawn_rather_than_typed() {
-        let (mut store, augment, _dir) = fixtures();
-        let cards = parse("## q\n---\n$x = -b \\blank{\\pm} \\sqrt{d}$\n");
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert_eq!(

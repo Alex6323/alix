@@ -2615,10 +2615,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let deck = dir.path().join("d.md");
-        let text = "## Complete the quote\nTo \\blank{be} or not to \\blank{be}\n";
+        let text = "## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" b:a1b2c3 -->\n<!-- blank: span hidden=\"be\" occurrence=2 b:d4e5f6 -->\n";
 
         let n = store_remediation(&mut store, &deck, "d.md", text, 1_000, None).unwrap();
-        assert_eq!(2, n, "both cloze sub-cards should be created, not deduped");
+        assert_eq!(2, n, "both span cards should be created, not deduped");
         let holes = sidecar_cards(&deck, "d.md");
         assert_eq!(2, holes.len());
         assert_ne!(
@@ -2641,7 +2641,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let deck = dir.path().join("d.md");
-        let text = "## Complete the quote\nTo \\blank{be} or not to \\blank{bee}\n";
+        let text = "## Complete the quote\nTo be or not to bee\n<!-- blank: span hidden=\"be\" b:a1b2c3 -->\n<!-- blank: span hidden=\"bee\" b:d4e5f6 -->\n";
         let cap = Some(30u32);
 
         let created = store_remediation(&mut store, &deck, "d.md", text, 1_000, cap).unwrap();
@@ -2690,7 +2690,7 @@ mod tests {
             plain.iter().map(|c| c.block_fingerprint).collect();
 
         let deck = dir.path().join("d.md");
-        let cloze = "## Complete the quote\nTo \\blank{be} or not to \\blank{bee}\n";
+        let cloze = "## Complete the quote\nTo be or not to bee\n<!-- blank: span hidden=\"be\" b:a1b2c3 -->\n<!-- blank: span hidden=\"bee\" b:d4e5f6 -->\n";
         let created = store_remediation_cards(
             &mut store,
             Some(&deck),
@@ -2826,32 +2826,6 @@ mod tests {
     }
 
     #[test]
-    fn tolerant_aggregate_open_still_rejects_cross_document_record_ownership_conflicts() {
-        // Records merge through a SEPARATE merge_owned call, so its
-        // fail-closed behavior can regress independently of cards'.
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("deck-a.json"),
-            r#"{"version":1,"deck_id":"deck-a","subject":"a.md","revision":1,"cards":{},"records":{"rec-shared":{"version":1,"holes":[]}}}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            dir.path().join("deck-b.json"),
-            r#"{"version":1,"deck_id":"deck-b","subject":"b.md","revision":1,"cards":{},"records":{"rec-shared":{"version":1,"holes":[]}}}"#,
-        )
-        .unwrap();
-
-        let error = match Store::open_aggregate_tolerant(dir.path()) {
-            Ok(_) => panic!("tolerance swallowed a cross-document record conflict"),
-            Err(error) => error,
-        };
-        assert!(matches!(
-            error,
-            StoreError::DuplicateKey { kind: "record", .. }
-        ));
-    }
-
-    #[test]
     fn every_partial_aggregate_save_is_valid_and_retryable() {
         let mut completed_without_a_fault = false;
         for nth in 1..=32 {
@@ -2956,7 +2930,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             dir.path().join("deck-b.json"),
-            r#"{"version":1,"deck_id":"deck-b","subject":"b.md","revision":1,"cards":{"card-b1":{}},"records":{"card-b1":{"version":1,"holes":[]}},"deck":{"last_depth":"recall"}}"#,
+            r#"{"version":1,"deck_id":"deck-b","subject":"b.md","revision":1,"cards":{"card-b1":{}},"deck":{"last_depth":"recall"}}"#,
         )
         .unwrap();
         let replacement_path = dir.path().join("a2.md");

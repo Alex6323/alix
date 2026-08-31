@@ -536,10 +536,10 @@ mod tests {
     }
 
     #[test]
-    fn validator_deduplicates_the_same_cloze_source_formula() {
+    fn validator_deduplicates_the_same_blank_source_formula() {
         let parsed = crate::parser::parse(
             "deck.md",
-            "## Complete it\n$x = \\blank{1} + \\blank{2} + \\frac{1$\n",
+            "## Complete it\nfill one and two: $\\frac{1$\n<!-- blank: span hidden=\"one\" -->\n<!-- blank: span hidden=\"two\" -->\n",
         )
         .unwrap();
         assert_eq!(2, parsed.cards.len());

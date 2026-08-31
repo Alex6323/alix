@@ -2239,8 +2239,8 @@ fn build_region_cards(
         }
     }
     for (name, members) in groups {
-        // The all-or-none rule for a group's answers, exactly as text holes
-        // have it: mixed presence would leave the card half-answerable.
+        // The all-or-none rule for a group's answers: mixed presence would
+        // leave the card half-answerable.
         let with_hidden = members.iter().filter(|m| m.hidden.is_some()).count();
         if with_hidden != 0 && with_hidden != members.len() {
             return Err(ParseError::InvalidRegion {
@@ -3159,9 +3159,9 @@ mod tests {
     fn one_authored_base_id_remains_legal_for_every_derived_or_inert_shape() {
         let id = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
         let cloze = parse(&format!(
-            "## cloze\n\\blank{{alpha}} and \\blank{{beta}}\n<!-- id: {id} -->\n"
+            "## cloze\nalpha and beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {id} -->\n"
         ));
-        assert_eq!(2, cloze.cards.len(), "cloze holes derive two sub-ids");
+        assert_eq!(2, cloze.cards.len(), "span blanks derive two sub-ids");
 
         let reversed = parse(&format!(
             "## reverse\nfront\n\n---\nback\n<!-- direction: both -->\n<!-- id: {id} -->\n"
@@ -3877,11 +3877,15 @@ mod tests {
             "a section clears the chain; depth 4 hangs off depth 3"
         );
 
-        let cloze = parse_str("t", "## Q\n\\blank{one} and \\blank{two}\n").expect("cloze parses");
-        assert_eq!(2, cloze.len(), "two holes are two units");
+        let cloze = parse_str(
+            "t",
+            "## Q\none and two\n<!-- blank: span hidden=\"one\" -->\n<!-- blank: span hidden=\"two\" -->\n",
+        )
+        .expect("the blank block parses");
+        assert_eq!(2, cloze.len(), "two spans are two units");
         assert!(
             cloze.iter().all(|card| card.block_line == 1),
-            "both holes belong to the block on line 1"
+            "both spans belong to the block on line 1"
         );
 
         let table = parse_str(
@@ -6958,12 +6962,12 @@ a
         assert!(deck.lints.is_empty());
     }
 
-    // ── Cloze ──
+    // ── Blanks ──
 
     #[test]
     fn a_span_in_display_math_reveals_as_math_too() {
-        let deck = parse("## q\n---\n$$a^2 - b^2 = \\blank{(a-b)}(a+b)$$\n");
-        assert_eq!(["$(a-b)$"], *deck.cards[0].back_for_display());
+        let deck = parse("## q\n---\n$$x+y$$\n<!-- blank: span hidden=\"x+y\" -->\n");
+        assert_eq!(["$x+y$"], *deck.cards[0].back_for_display());
     }
 
     #[test]
@@ -6987,7 +6991,9 @@ a
 
     #[test]
     fn a_group_may_reach_across_answer_lines() {
-        let deck = parse("## q\n---\n\\blank[c]{Berlin} is the capital\nof \\blank[c]{Germany}\n");
+        let deck = parse(
+            "## q\n---\nBerlin is the capital\nof Germany\n<!-- blank: span [c] hidden=\"Berlin\" -->\n<!-- blank: span [c] hidden=\"Germany\" -->\n",
+        );
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["Berlin", "Germany"], deck.cards[0].back);
         assert_eq!(vec!["⍰ is the capital", "of ⍰"], deck.cards[0].context);
@@ -6995,7 +7001,9 @@ a
 
     #[test]
     fn a_group_of_three_is_one_card() {
-        let deck = parse("## q\n---\n\\blank[a]{x} \\blank[a]{y} \\blank[a]{z}\n");
+        let deck = parse(
+            "## q\n---\nx y z\n<!-- blank: span [a] hidden=\"x\" -->\n<!-- blank: span [a] hidden=\"y\" -->\n<!-- blank: span [a] hidden=\"z\" -->\n",
+        );
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["x", "y", "z"], deck.cards[0].back);
     }
@@ -8385,28 +8393,6 @@ the answer
     }
 
     #[test]
-    fn a_text_hole_plus_a_blank_span_is_a_composition_error() {
-        let error = err(&format!(
-            "## q\n---\nalpha \\blank{{beta}}\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
-        ));
-        let ParseError::InvalidRegion { message, .. } = error else {
-            panic!("expected InvalidRegion, got {error:?}");
-        };
-        assert!(message.contains("text holes"), "{message}");
-    }
-
-    #[test]
-    fn a_text_hole_plus_a_blank_rect_is_a_composition_error() {
-        let error = err(&format!(
-            "## q\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nalpha \\blank{{beta}}\n<!-- id: {RTOK} -->\n"
-        ));
-        let ParseError::InvalidRegion { message, .. } = error else {
-            panic!("expected InvalidRegion, got {error:?}");
-        };
-        assert!(message.contains("text holes"), "{message}");
-    }
-
-    #[test]
     fn a_task_list_answer_plus_a_blank_region_is_a_composition_error() {
         let error = err(&format!(
             "## pick\n---\n- [x] alpha\n- [ ] beta\n<!-- choices-single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
@@ -8444,17 +8430,6 @@ the answer
         ));
         assert_eq!(1, choice.cards.len());
         assert!(!choice.cards[0].authored_distractors.is_empty());
-    }
-
-    #[test]
-    fn a_cover_span_cannot_bind_to_text_inside_a_cloze_hole() {
-        let error = err(&format!(
-            "## q\n---\nthe first is \\blank{{alpha}}\n<!-- cover: span hidden=\"alpha\" -->\n<!-- id: {RTOK} -->\n"
-        ));
-        let ParseError::InvalidRegion { message, .. } = error else {
-            panic!("expected InvalidRegion, got {error:?}");
-        };
-        assert!(message.contains("occurs 0 time(s)"), "{message}");
     }
 
     #[test]
@@ -8846,18 +8821,7 @@ the answer
     }
 
     #[test]
-    fn occurrence_counting_skips_hole_answers_and_link_destinations() {
-        let beside_hole = err(&format!(
-            "## ports\n---\nSSH is \\blank{{22}}; HTTPS is 22/tcp\n<!-- cover: span hidden=\"22\" occurrence=2 -->\n<!-- id: {RTOK} -->\n"
-        ));
-        let ParseError::InvalidRegion { message, .. } = beside_hole else {
-            panic!("expected InvalidRegion, got {beside_hole:?}");
-        };
-        assert!(
-            message.contains("occurs 1 time(s)"),
-            "the hole's answer is invisible, so only the visible 22 counts: {message}"
-        );
-
+    fn occurrence_counting_skips_link_destinations() {
         let beside_link = err(&format!(
             "## q\n---\nsee [the RFC](https://rfc.example/22) for port 22\n<!-- blank: span hidden=\"22\" occurrence=2 b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
@@ -8871,13 +8835,13 @@ the answer
     }
 
     #[test]
-    fn prose_beside_holes_and_links_stays_blankable() {
-        let beside_hole = parse(&format!(
-            "## ports\n---\nSSH is \\blank{{22}}; HTTPS is 22/tcp\n<!-- cover: span hidden=\"22\" -->\n<!-- id: {RTOK} -->\n"
+    fn prose_beside_links_stays_blankable() {
+        let beside_cover = parse(&format!(
+            "## ports\n---\nSSH is 22; HTTPS is 22/tcp\n<!-- cover: span hidden=\"22\" -->\n<!-- id: {RTOK} -->\n"
         ));
         assert!(
-            beside_hole.cards.iter().all(|card| card.region.is_none()),
-            "a cover makes no card; the cloze cards stand"
+            beside_cover.cards.iter().all(|card| card.region.is_none()),
+            "a cover makes no card; the plain card stands"
         );
 
         let beside_link = parse(&format!(
@@ -9071,12 +9035,12 @@ the answer
     }
 
     #[test]
-    fn moving_a_cloze_cover_span_changes_the_fingerprint() {
+    fn moving_a_cover_span_changes_the_blank_cards_fingerprint() {
         let first = parse(&format!(
-            "## q\n---\nalpha then alpha; fill \\blank{{x}}\n<!-- cover: span hidden=\"alpha\" -->\n<!-- id: {RTOK} -->\n"
+            "## q\n---\nalpha then alpha; fill x\n<!-- cover: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"x\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let second = parse(&format!(
-            "## q\n---\nalpha then alpha; fill \\blank{{x}}\n<!-- cover: span hidden=\"alpha\" occurrence=2 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n---\nalpha then alpha; fill x\n<!-- cover: span hidden=\"alpha\" occurrence=2 -->\n<!-- blank: span hidden=\"x\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_ne!(
             first.cards[0].content_fingerprint,
@@ -9085,8 +9049,10 @@ the answer
     }
 
     #[test]
-    fn each_cloze_card_fingerprints_its_effective_masked_question() {
-        let deck = parse("## q\n---\nfirst \\blank{alpha}; second \\blank{beta}\n");
+    fn each_blank_card_fingerprints_its_effective_masked_question() {
+        let deck = parse(
+            "## q\n---\nfirst alpha; second beta\n<!-- blank: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"beta\" -->\n",
+        );
         assert_eq!(2, deck.cards.len());
         for card in &deck.cards {
             let mut effective_question = card.context.clone();
@@ -9101,9 +9067,13 @@ the answer
     }
 
     #[test]
-    fn editing_a_hidden_sibling_preserves_the_unchanged_cloze_cards_fingerprint() {
-        let before = parse("## q\n---\nfirst \\blank{alpha}; second \\blank{beta}\n");
-        let after = parse("## q\n---\nfirst \\blank{alpha}; second \\blank{gamma}\n");
+    fn editing_a_hidden_sibling_preserves_the_unchanged_blank_cards_fingerprint() {
+        let before = parse(
+            "## q\n---\nfirst alpha; second beta\n<!-- blank: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"beta\" -->\n",
+        );
+        let after = parse(
+            "## q\n---\nfirst alpha; second gamma\n<!-- blank: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"gamma\" -->\n",
+        );
         let alpha_before = before
             .cards
             .iter()

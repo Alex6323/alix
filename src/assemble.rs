@@ -1044,9 +1044,9 @@ mod tests {
         let shared = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
         let cases = [
             (
-                "cloze siblings",
+                "span siblings",
                 format!(
-                    "## fill both\n\\blank{{alpha}} and \\blank{{beta}}\n<!-- id: {shared} -->\n"
+                    "## fill both\nalpha and beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {shared} -->\n"
                 ),
             ),
             (
@@ -1505,7 +1505,7 @@ it reads line two\n\
         let deck_path = dir.path().join("gated.md");
         write_initialized(
             &deck_path,
-            "## Parent\n\\blank{one} and \\blank{two}\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n",
+            "## Parent\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:aaaaaa -->\n| two | zwei | <!-- r:bbbbbb -->\n<!-- cards -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n",
         );
         let loaded = Deck::load(&deck_path).unwrap();
         let parents: Vec<&Card> = loaded

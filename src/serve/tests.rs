@@ -1375,7 +1375,7 @@ fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
     // An unclosed cloze hole fails to parse: `Deck::load` errors.
     write_initialized(
         &dir.path().join("broken.md"),
-        "## front\nbad \\blank{oops\n",
+        "## front\nanswer\n<!-- blank: span hidden=\"missing\" -->\n",
     );
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let entry = picker::catalog(dir.path(), &recent, &mut DeckCache::default())
@@ -1673,36 +1673,6 @@ fn explain_state_serves_the_keypoints_rubric_cached_or_fallback() {
     );
     let cached = review_state(Some(&r), &store, None, 0);
     assert_eq!(cached.keypoints, Some(vec!["one claim".to_string()]));
-}
-
-#[test]
-fn recognize_state_offers_gap_options_for_a_cloze_card() {
-    let dir = tempfile::tempdir().unwrap();
-    let deck = dir.path().join("d.md");
-    let text = "## where\nThe \\blank{cat} sat here\n<!-- id: card-q1 -->\n";
-    std::fs::write(&deck, text).unwrap();
-    let cards = crate::parser::parse_str("d.md", text).unwrap();
-    assert_eq!(vec!["cat".to_string()], cards[0].back);
-    let id = cards[0].id().unwrap();
-    let fingerprint = cards[0].content_fingerprint;
-    let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    store.get_or_insert(&id).introduced_ms = Some(0);
-    let mut r = reviewing_at(deck, cards, &mut store, Depth::Recognize);
-    r.augment.set_distractors(
-        &id,
-        vec!["dog".to_string(), "fish".to_string(), "bird".to_string()],
-        fingerprint,
-    );
-
-    let dto = review_state(Some(&r), &store, None, 0);
-    let opts = dto
-        .choices
-        .expect("a Recognize cloze card offers gap-filler options");
-    assert_eq!(choice::NUM_OPTIONS, opts.len());
-    assert!(
-        opts.contains(&"cat".to_string()),
-        "the gap text is an option"
-    );
 }
 
 #[test]

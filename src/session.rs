@@ -2237,91 +2237,14 @@ mod tests {
     }
 
     #[test]
-    fn removing_a_span_card_drops_siblings_outside_the_session_cap() {
-        let (mut store, _dir) = empty_store();
-        let current = span_sibling(card("deck.md", 1), "a1b2c3");
-        let sibling = span_sibling(card("deck.md", 1), "d4e5f6");
-        let sibling_id = sibling.id().unwrap();
-        let mut session = Session::new(
-            vec![current, sibling],
-            &mut store,
-            sched(),
-            SessionOptions {
-                max_session: 1,
-                ..SessionOptions::default()
-            },
-            0,
-        );
-
-        let removed = session.remove_current(&mut store, 0);
-        assert!(
-            removed
-                .iter()
-                .any(|card| card.id().as_deref() == Some(sibling_id.as_str())),
-            "removing one span card removes its source block, so a sibling the cap kept out of the roster must go too"
-        );
-    }
-
-    #[test]
-    fn removing_a_span_card_returns_depth_excluded_siblings_for_store_cleanup() {
-        let (mut store, _dir) = empty_store();
-        let current = span_sibling(card("deck.md", 1), "a1b2c3");
-        let sibling = span_sibling(card("deck.md", 1), "d4e5f6");
-        let sibling_id = sibling.id().unwrap();
-        store.get_or_insert(&sibling_id).introduced_ms = Some(0);
-        let mut session = Session::new(
-            vec![current],
-            &mut store,
-            sched(),
-            SessionOptions {
-                depth: Depth::Recognize,
-                ..SessionOptions::default()
-            },
-            0,
-        );
-        session.set_depth_excluded(vec![sibling]);
-
-        let removed = session.remove_current(&mut store, 0);
-        for card in removed {
-            if let Some(id) = card.id() {
-                store.remove(&id);
-            }
-        }
-
-        assert!(
-            store.progress(&sibling_id).is_none(),
-            "removing one span card removes its source block, so a depth-excluded sibling must come back for the serve layer to clear its progress"
-        );
-    }
-
-    #[test]
-    fn remove_current_also_drops_span_siblings() {
-        let (mut store, _dir) = empty_store();
-        let mut all = vec![card("deck.md", 1), card("deck.md", 1), card("deck.md", 2)];
-        all[0].back = vec!["span a".into()];
-        all[0] = span_sibling(all[0].clone(), "a1b2c3");
-        all[1].back = vec!["span b".into()];
-        all[1] = span_sibling(all[1].clone(), "d4e5f6");
-        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 0);
-        assert_eq!(3, session.remaining());
-        let removed = session.remove_current(&mut store, 0);
-        assert_eq!(2, removed.len());
-        assert_eq!(1, session.remaining());
-        assert_eq!(2, session.current().unwrap().line);
-    }
-
-    #[test]
     fn sibling_grouping_follows_deck_id_not_the_filename() {
         let (mut store, _dir) = empty_store();
         // Same deck_id, different filenames: still grouped as siblings.
         let mut a = card("a.md", 1);
         a.deck_id = Arc::from("shared-deck");
-        a.back = vec!["span a".into()];
-        let a = span_sibling(a, "a1b2c3");
         let mut b = card("b.md", 1);
         b.deck_id = Arc::from("shared-deck");
-        b.back = vec!["span b".into()];
-        let b = span_sibling(b, "d4e5f6");
+        b.reversed = true;
         let mut session = Session::new(
             vec![a, b],
             &mut store,
@@ -4657,9 +4580,9 @@ mod tests {
     /// graduated, and a locked parent locks its own children in turn.
     #[test]
     fn a_parent_opens_only_when_every_unit_it_expands_to_has_graduated() {
-        let cloze = "## Parent\n\\blank{one} and \\blank{two}\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
+        let cloze = "## Parent\none and two\n<!-- blank: span hidden=\"one\" b:a1b2c3 -->\n<!-- blank: span hidden=\"two\" b:d4e5f6 -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
         let table = "## Parent\n| word | meaning |\n|---|---|\n| one | eins | <!-- r:aaaaaa -->\n| two | zwei | <!-- r:bbbbbb -->\n<!-- cards -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n### Child\nchild answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n";
-        for (label, text) in [("a two-hole cloze", cloze), ("a titled table", table)] {
+        for (label, text) in [("a two-span block", cloze), ("a titled table", table)] {
             let cards = gated_cards(text);
             let units: Vec<String> = cards
                 .iter()

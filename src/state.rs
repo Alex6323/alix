@@ -389,10 +389,6 @@ mod tests {
     fn progress_with_any_single_kind_of_state_is_never_retired() {
         let filled = [
             ("cards", r#""cards":{"card-r1":{}}"#),
-            (
-                "records",
-                r#""cards":{},"records":{"card-r1":{"version":1,"holes":[]}}"#,
-            ),
             ("deck", r#""cards":{},"deck":{"last_depth":"recall"}"#),
         ];
         for (kind, body) in filled {
