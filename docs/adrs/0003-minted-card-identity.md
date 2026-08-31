@@ -6,6 +6,10 @@
   [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md): ids now carry
   `deck-`/`card-` prefixes (sub-ids `card-<token>-<n>` and `card-<token>-r`) and
   the frontmatter deck-id key is `id`; the minted-token model itself is unchanged.
+- Details evolved again by
+  [ADR 0039](0039-span-blanks-are-the-only-cloze.md): the decimal cloze sub-id
+  (`card-<token>-<n>`) retires with the inline marker; blank-card sub-ids are
+  region stamps (`-b<stamp>`, `-g<hash>`). The minted-token model is unchanged.
 - Recorded: 2026-07-24
 - Retrospective: Yes
 

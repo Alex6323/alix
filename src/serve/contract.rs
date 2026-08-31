@@ -1892,7 +1892,8 @@ fn askdto_with_draft_wire_shape() {
 #[test]
 fn createcardresp_wire_shape() {
     // A card's wire id is its prefixed identity: `card-<token>`, or a suffixed
-    // `card-<token>-N` / `card-<token>-r` for a cloze hole / reversed twin.
+    // `card-<token>-b<stamp>` / `card-<token>-g<hash>` / `card-<token>-r` for
+    // a blank span / group / reversed twin.
     let dto = CreateCardResp {
         id: "card-9w2c7xkq4m".to_string(),
     };

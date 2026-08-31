@@ -2067,9 +2067,10 @@ mod tests {
     }
 
     #[test]
-    fn a_hole_cut_from_prose_is_still_typed() {
+    fn a_span_cut_from_prose_is_typed_by_default() {
         let (mut store, augment, _dir) = fixtures();
-        let cards = parse("## q\n---\nthe value is \\blank{dropped}\n");
+        let cards =
+            parse("## q\nthe value is dropped\n<!-- blank: span hidden=\"dropped\" b:a1b2c3 -->\n");
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert_eq!(
@@ -2081,17 +2082,6 @@ mod tests {
     /// The rule fills a gap and never overrules. A deck-level `input:` lands
     /// on the card before this point (deck.rs), so pinning it on the card
     /// covers both ways an author can say it.
-    #[test]
-    fn an_authored_input_beats_the_formula_rule() {
-        let (mut store, augment, _dir) = fixtures();
-        let cards = parse("## q\n---\n$x = \\blank{\\pm} y$\n<!-- input: type -->\n");
-        seen(&mut store, &cards);
-        let session = session_at(cards, &mut store, Depth::Recall, NOW);
-        assert_eq!(
-            state(&session, &store, &augment, Some(NOW)).input,
-            Input::Type
-        );
-    }
 
     #[test]
     fn a_finished_session_reports_no_card_and_no_choices() {

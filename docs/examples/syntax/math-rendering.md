@@ -55,11 +55,14 @@ $$x^2 + y^2 = 1$$
 <!-- id: card-2kecxz9fwvwb4zce4q1xpn80z5 -->
 
 ## Complete the inline quadratic formula.
-$x = \frac{-b \pm \sqrt{\blank{b^2} - \blank{4ac}}}{2a}$
+$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$
+<!-- blank: span hidden="4ac" b:9x3v6q -->
 <!-- id: card-3065zgmvgh9ne54yvshff7egsk -->
 
 ## Complete the displayed difference-of-squares identity.
-$$a^2 - b^2 = \blank{(a-b)}\blank{(a+b)}$$
+$$a^2 - b^2 = (a-b)(a+b)$$
+<!-- blank: span hidden="(a-b)" b:2h5n8r -->
+<!-- blank: span hidden="(a+b)" b:4t7w1z -->
 <!-- id: card-44a77x675j7bwyjve4r5xhe9z8 -->
 
 ## Which derivative is correct for $f(x)=x^3$?

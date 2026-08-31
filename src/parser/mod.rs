@@ -2895,8 +2895,8 @@ fn build_card_inner(
                         });
                     }
                 }
-                // A typed span answer holding a command asks for its spelling
-                // (cloze's untypable rule; math spans draw unless pinned).
+                // A typed span answer holding a command asks for its
+                // spelling (cloze's untypable rule).
                 if span.kind == region::RegionKind::Blank
                     && directives.input == Some(Input::Type)
                     && hidden.contains('\\')

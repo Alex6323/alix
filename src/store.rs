@@ -1558,6 +1558,69 @@ mod tests {
     }
 
     #[test]
+    fn orphans_are_the_keys_with_no_live_card_or_deck_and_prune_clears_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert("live").introduced_ms = Some(0);
+        store.get_or_insert("gone").introduced_ms = Some(0);
+        store.get_or_insert("card-vq").introduced_ms = Some(0);
+        store.set_last_depth("d1", Depth::Recall);
+        store.set_last_depth("d2", Depth::Recall);
+
+        let known_cards: HashSet<String> = ["live".to_string(), "card-vq".to_string()]
+            .into_iter()
+            .collect();
+        let known_deck_ids: HashSet<String> = ["d1".to_string()].into_iter().collect();
+        let orphans = store.orphans(&known_cards, &known_deck_ids);
+        assert_eq!(vec!["gone".to_string()], orphans.cards);
+        assert_eq!(vec!["d2".to_string()], orphans.decks);
+        assert_eq!(2, orphans.len());
+
+        assert_eq!(2, store.prune_orphans(&orphans));
+        assert!(store.get("live").is_some());
+        assert!(store.get("card-vq").is_some());
+        assert_eq!(Some(Depth::Recall), store.last_depth("d1"));
+        assert!(store.get("gone").is_none());
+        assert_eq!(None, store.last_depth("d2"));
+    }
+
+    #[test]
+    fn wipe_deck_clears_every_family_for_its_tokens_and_spares_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        store.get_or_insert("card-doom").introduced_ms = Some(0);
+        store.get_or_insert("card-doom-ba1b2c3").introduced_ms = Some(0);
+        store.set_deck_mastered("doomed", 1);
+        store.get_or_insert("keep").introduced_ms = Some(0);
+        store.set_deck_mastered("keep", 1);
+
+        let tokens: HashSet<String> = ["card-doom".to_string()].into_iter().collect();
+        let wiped = store.wipe_deck(&tokens, "doomed");
+
+        assert_eq!(2, wiped, "the base and the span schedule both count");
+        assert!(store.get("card-doom").is_none());
+        assert!(store.get("card-doom-ba1b2c3").is_none());
+        assert!(!store.deck_mastered("doomed"));
+        assert!(store.get("keep").is_some());
+        assert!(store.deck_mastered("keep"));
+    }
+
+    #[test]
+    fn a_stale_positional_key_survives_wipe_and_lists_as_an_orphan() {
+        // A `-N` key is not part of the id grammar, so token selection cannot
+        // claim it; the raw string comparison in `orphans` still surfaces it
+        // for `reset --orphans`, with no recognition of the retired shape.
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert("card-doom-0").introduced_ms = Some(0);
+        let tokens: HashSet<String> = ["card-doom".to_string()].into_iter().collect();
+        assert_eq!(0, store.wipe_deck(&tokens, "doomed"));
+        let orphans = store.orphans(&HashSet::new(), &HashSet::new());
+        assert_eq!(vec!["card-doom-0".to_string()], orphans.cards);
+    }
+
+    #[test]
     fn save_stamps_the_writer_and_a_reopen_sees_it_as_foreign_elsewhere() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("deck1.json");
@@ -2353,7 +2416,7 @@ mod tests {
     fn a_schedule_entry_exists_whenever_a_card_is_minted() {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(&dir.path().join("s.json")).unwrap();
+        let mut store = Store::open(dir.path().join("s.json")).unwrap();
         let geo = dir.path().join("geo.md");
         let tutor = mint_tutor_card(
             &mut store,

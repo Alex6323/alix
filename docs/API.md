@@ -636,7 +636,7 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 
 | Key | Type | Meaning |
 |---|---|---|
-| `id` | string? | The card's prefixed id (`card-<token>`, `card-<token>-N` for a cloze hole, `card-<token>-r` for a reversed twin), the same spelling `CreateCardResp` returns. Null for a card that carries no id marker yet. Clients compare it to tell whether the served card actually changed, and send it back on `POST /api/choose`; it is stable across edits to the card's text. |
+| `id` | string? | The card's prefixed id (`card-<token>`; `card-<token>-b<stamp>` for a blank span, `card-<token>-g<hash>` for a blank group, `card-<token>-t<row>` for a table row, `card-<token>-r` for a reversed twin), the same spelling `CreateCardResp` returns. Null for a card that carries no id marker yet. Clients compare it to tell whether the served card actually changed, and send it back on `POST /api/choose`; it is stable across edits to the card's text. |
 | `front` | string | The question's plain-text content, with inline Markdown markers stripped. |
 | `front_runs` | [InlineRun] | Display projection of `front`. |
 | `front_units` | [ContentUnitDto]? | Present when the front contains a task list, fenced code, a pipe table, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. |
@@ -967,8 +967,8 @@ how the store keys ids.
 
 **Card id format.** A card id is always a JSON **string** on the wire (it has
 always been, since JSON object keys are strings). Its *value* is the card's
-prefixed **id**: `card-<token>` for a plain card, `card-<token>-N` for
-cloze hole *N* (0-based document order), or `card-<token>-r` for the reversed
+prefixed **id**: `card-<token>` for a plain card, `card-<token>-b<stamp>`
+for a blank span (`-g<hash>` for a group), or `card-<token>-r` for the reversed
 half of a dual-direction card. Deck ids are `deck-<token>` and name the deck's
 state documents (`progress/deck-<token>.json`, `augment/deck-<token>.json`) and
 asset directory (`assets/deck-<token>/`). It is no longer a decimal `u64`.

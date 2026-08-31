@@ -1,7 +1,11 @@
 # 0032: A cloze hole is addressable by name, and grouping starts fresh
 
-- Status: Accepted
-- Evidence: grouping_resets_the_merged_card_alone in src/parser/mod.rs
+- Status: Superseded by
+  [ADR 0039](0039-span-blanks-are-the-only-cloze.md), which retires the
+  `\blank` grammar this record addresses; the addressed-note semantics
+  (decision on notes, `name:` and `name+:`) survive keyed on region
+  group names, the naming grammar and the merged-history rule now live
+  on the region model.
 - Recorded: 2026-08-09
 - Retrospective: No
 

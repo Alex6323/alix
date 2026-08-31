@@ -3171,13 +3171,13 @@ fn recognize_is_unavailable_and_empty_on_an_unaugmented_deck() {
 }
 
 #[test]
-fn cloze_choice_options_with_ai_distractors_keep_their_order_across_pulls() {
-    // The reported shape at full fidelity: a two-hole cloze card whose
-    // hole has AI distractors cached, served as a choice, answered, then the
-    // state re-pulled (the tutor-close pull). The order must hold on both the
-    // Recognize path (seen card) and the introduction path (unseen card).
+fn choice_options_with_ai_distractors_keep_their_order_across_pulls() {
+    // The reported shape at full fidelity: a card with AI distractors
+    // cached, served as a choice, answered, then the state re-pulled (the
+    // tutor-close pull). The order must hold on both the Recognize path
+    // (seen card) and the introduction path (unseen card).
     const CLOZE_DECK: &str = "---\nformat-version: 1\nid: \"deck-frb\"\n---\n## What is frb, in one sentence?\n\
-        A \\blank{code-generation} tool generating the \\blank{FFI} glue on both sides.\n<!-- id: card-frb1 -->\n";
+        A code-generation tool generating the FFI glue on both sides.\n<!-- id: card-frb1 -->\n";
     for seed_store in [true, false] {
         let (base, _guard) = spawn_full_server_fixture(
             None,
@@ -4417,70 +4417,6 @@ fn removing_a_region_card_via_the_api_keeps_the_parent_block() {
     );
 }
 
-#[test]
-fn removing_a_recognizable_cloze_hole_clears_excluded_sibling_progress() {
-    // Removing one hole removes the shared source block, so the sibling a
-    // Recognize session excluded (no cached distractors) must lose its
-    // progress too; per-card augmentation makes this mixed state ordinary.
-    const CLOZE_DECK: &str = "---\nformat-version: 1\nid: \"deck-clozefixture00000000000\"\n---\n\n## ports\nSSH is \\blank{22}; HTTPS is \\blank{443}.\n<!-- id: card-clozefixture0000000000000 -->\n";
-    let (base, guard) = spawn_test_server_fixture(None, |dir| {
-        std::fs::write(dir.join("ports.md"), CLOZE_DECK).unwrap();
-        let cards = parser::parse_str("ports.md", CLOZE_DECK).unwrap();
-        let deck = alix::deck::Deck::load(dir.join("ports.md")).unwrap();
-        let mut cache = alix::augment::AugmentCache::open_for_deck(&deck).unwrap();
-        let first = &cards[0];
-        cache.set_distractors(
-            &first.id().unwrap(),
-            vec!["21".into(), "23".into(), "80".into()],
-            first.content_fingerprint,
-        );
-        cache.save().unwrap();
-    });
-    let cards = parser::parse_str("ports.md", CLOZE_DECK).unwrap();
-    let augmented_id = cards[0].id().unwrap();
-    let excluded_id = cards[1].id().unwrap();
-
-    post_json(
-        &base,
-        "/api/select",
-        r#"{"deck":"ports.md","depth":"recall"}"#,
-    );
-    post_gated(&base, "/api/introduce", "{}");
-    post_gated(&base, "/api/introduce", "{}");
-    post_json(&base, "/api/deselect", "{}");
-    assert!(
-        open_instance_store(guard.dir())
-            .progress(&excluded_id)
-            .is_some(),
-        "the recall pass must leave progress on the soon-excluded sibling, or the final assert is vacuous"
-    );
-
-    let selected = post_json(
-        &base,
-        "/api/select",
-        r#"{"deck":"ports.md","depth":"recognize","cram":true}"#,
-    );
-    let selected: serde_json::Value = serde_json::from_slice(&selected.body).unwrap();
-    assert_eq!(
-        Some(augmented_id.as_str()),
-        selected["card"]["id"].as_str(),
-        "the augmented hole is current while its sibling is depth-excluded: {selected}"
-    );
-    assert!(
-        selected["choices"].is_array(),
-        "the augmented hole has cached distractors: {selected}"
-    );
-
-    let removed = post_gated(&base, "/api/remove", "{}");
-    assert_eq!(200, removed.status);
-    let store = open_instance_store(guard.dir());
-    assert!(
-        store.progress(&excluded_id).is_none(),
-        "removing one hole removes the source block, so the excluded sibling's progress must clear"
-    );
-}
-
-/// Arm-existence smokes for routes whose deletion survived the gate: the
 /// distinguishing status is 409 (no active sitting), never the 404 a
 /// deleted arm would produce.
 #[test]
@@ -7044,14 +6980,14 @@ fn every_shape_example_produces_the_shape_it_advertises() {
     let draw = state_of("draw.md", "recall");
     assert_eq!("draw", draw["input"], "draw.md: {draw}");
 
-    // Cloze: the card id carries a hole suffix, one sub-card per blank.
+    // Cloze: the card id carries a span-stamp suffix, one sub-card per blank.
     let cloze = state_of("cloze.md", "recall");
     let id = cloze["card"]["id"].as_str().unwrap_or_default();
     assert!(
         id.rsplit('-')
             .next()
-            .is_some_and(|tail| tail.chars().all(|c| c.is_ascii_digit())),
-        "cloze.md must serve a hole sub-card, got {id}"
+            .is_some_and(|tail| tail.len() == 7 && tail.starts_with('b')),
+        "cloze.md must serve a span sub-card, got {id}"
     );
 
     // Authored options need no augmentation to render as a pick.

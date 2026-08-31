@@ -87,9 +87,12 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
              CARD SHAPE SYNTAX:\n\
              - A plain card puts short answer lines below its `## ` front. Do not prefix \
              answers with bullets or dashes.\n\
-             - A cloze card wraps each hidden span in an answer line as `\\blank{{...}}`. \
-             Blanks belong in answer lines, NEVER on the front. Example: `When the owner \
-             leaves scope, the value is \\blank{{dropped}}.`\n\
+             - A cloze card writes its answer line as plain prose and hides each span with \
+             a `<!-- blank: span hidden=\"...\" -->` comment on its own line directly below \
+             the answer. The hidden text must appear verbatim in the answer line; if it \
+             repeats there, add `occurrence=N` (1-based) to pick which one. Blanks belong \
+             below answer lines, NEVER on the front. Example: `When the owner leaves scope, \
+             the value is dropped.` then `<!-- blank: span hidden=\"dropped\" -->`.\n\
              - An authored-choice card puts 3-5 GitHub task-list options directly below its \
              front: exactly one checked `- [x]` answer and at least two unchecked `- [ ]` \
              distractors, then `<!-- choices-single -->` on the line directly below the last \
@@ -111,14 +114,17 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
             "- Write every card as a plain question and answer. The plain unindented lines \
              BELOW the front are the answer/back. EVERY card MUST have at least one short \
              answer line. Do not prefix answers with bullets or dashes. Do not use \
-             `\\blank{...}` or task-list choices. Split mappings into one card per pair.",
+             `blank:` span comments or task-list choices. Split mappings into one card \
+             per pair.",
         ),
         GenerateCardStyle::Cloze => Cow::Borrowed(
-            "- Write EVERY card as cloze. The answer lines must contain the full answer with \
-             at least one hidden span wrapped as `\\blank{...}`. Blanks belong in answer \
-             lines, NEVER on the front. Do not prefix answers with bullets or dashes. Do not \
-             write plain answers or task-list choices. Put a mapping in one card with one \
-             pair per line and the recalled half in `\\blank{...}`.",
+            "- Write EVERY card as cloze. Each answer line is full plain prose, and every \
+             hidden span gets a `<!-- blank: span hidden=\"...\" -->` comment on its own \
+             line directly below the answer lines. The hidden text must appear verbatim in \
+             an answer line; if it repeats, add `occurrence=N` (1-based). Blanks belong \
+             below answer lines, NEVER on the front. Do not prefix answers with bullets or \
+             dashes. Do not write plain answers or task-list choices. Put a mapping in one \
+             card with one pair per line and a blank span hiding each recalled half.",
         ),
         GenerateCardStyle::AuthoredChoices => Cow::Borrowed(
             "- Write EVERY card as authored multiple-choice. Directly below the `## ` front, \
@@ -126,7 +132,8 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
              and at least two unchecked `- [ ]` plausible distractors. On the line directly \
              below the last option, write `<!-- choices-single -->`; without it the options \
              stay a literal checklist instead of becoming a card. Do not add a separate \
-             plain answer or use `\\blank{...}`. Keep options parallel in form and length. \
+             plain answer or `blank:` span comments. Keep options parallel in form and \
+             length. \
              Add a short `> [!NOTE]` note explaining the mistaken premise behind the distractors. \
              For a mapping, make one authored-choice card per pair and use plausible values \
              from the same domain as distractors.",
@@ -306,7 +313,8 @@ distinct cards. A front and its answer must ask and tell the same thing.
 - Keep the EXACT same file format: the leading `---` frontmatter block, cards \
 written as `## ` blocks or card-table rows, plain or task-list answers below \
 block fronts, `> [!NOTE]` notes, and any `<!-- key: value -->` directive lines. A \
-cloze card keeps its `\\blank{...}` holes in its answer lines.
+cloze card keeps its `<!-- blank: span hidden=\"...\" -->` comments below its \
+answer lines.
 - Preserve the good cards and their order; do not invent filler to hit a count.
 
 Output ONLY the improved deck — no commentary, no markdown code fences.
@@ -409,9 +417,9 @@ fn review_mapping(style: GenerateCardStyle) -> &'static str {
         }
         GenerateCardStyle::Cloze => {
             "- Rewrite any card that recalls a whole mapping or table of pairs at once \
-             (\"match each X to its Y\") as one cloze card: one line per pair, the recalled \
-             half in `\\blank{...}`. Ordered steps may stay a `<!-- reveal: line -->` card; \
-             unordered pairs never."
+             (\"match each X to its Y\") as one cloze card: one line per pair, a blank span \
+             comment hiding each recalled half. Ordered steps may stay a \
+             `<!-- reveal: line -->` card; unordered pairs never."
         }
         GenerateCardStyle::Plain => {
             "- Rewrite any card that recalls a whole mapping or table of pairs at once \
@@ -759,8 +767,8 @@ mod tests {
         assert!(p.contains("four layers"));
         assert!(!p.contains("{url}"));
         assert!(!p.contains("{max_cards}"));
-        assert!(p.contains("\\blank{...}"));
-        assert!(p.contains("\\blank{dropped}"));
+        assert!(p.contains("blank: span hidden="));
+        assert!(p.contains("hidden=\"dropped\""));
         assert!(p.contains("NEVER on the front"));
         assert!(p.contains("Every card needs at least one answer line"));
         assert!(p.contains("Add a note to most cards"));

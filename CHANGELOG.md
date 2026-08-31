@@ -392,6 +392,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- **Breaking:** the inline `\blank{...}` cloze marker is retired. Span and
+  rect blanks (`<!-- blank: span hidden="..." -->` and its rect sibling) are
+  the only cloze; `\blank{...}` in a deck now parses as ordinary literal
+  answer text. The positional sub-ids the marker minted (`card-<token>-N`)
+  are no longer composed or parsed, the store's hole fingerprint records are
+  gone (an old progress document fails loud on its unknown field), and the
+  formula draw default died with the marker, so a math blank that should be
+  sketched carries an explicit `input: draw`. Per-hole addressed notes
+  survive addressed to region group names: `> g: text` replaces the shared
+  block note for group g's card, `> g+: text` appends to it.
+
 - alix normalizes a deck's bytes whenever it writes one. A leading
   byte-order mark is dropped, CRLF line endings become LF, and trailing
   spaces and tabs are removed. A hard line break survives as exactly two

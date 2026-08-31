@@ -135,7 +135,7 @@ fn render_card(card: &GenCard) -> String {
             }
         }
         CardShape::Cloze { holes } => {
-            let gaps: Vec<String> = (0..*holes).map(|i| format!("\\blank{{gap{i}}}")).collect();
+            let gaps: Vec<String> = (0..*holes).map(|i| format!("gap{i}")).collect();
             out.push_str(&format!("{} {}\n", card.answers[0], gaps.join(" and ")));
         }
         CardShape::Choice { distractors } => {
@@ -148,6 +148,11 @@ fn render_card(card: &GenCard) -> String {
     }
     if let Some(note) = &card.note {
         out.push_str(&format!("> [!NOTE]\n> {note}\n"));
+    }
+    if let CardShape::Cloze { holes } = &card.shape {
+        for i in 0..*holes {
+            out.push_str(&format!("<!-- blank: span hidden=\"gap{i}\" -->\n"));
+        }
     }
     if let Some(token) = &card.token {
         out.push_str(&format!("<!-- id: {token} -->\n"));
@@ -191,18 +196,13 @@ proptest! {
     fn card_ids_round_trip_for_every_legal_shape(
         token in alphabet_string(26),
         row in proptest::option::of(alphabet_string(6)),
-        hole in proptest::option::of(0u32..40),
         reversed in any::<bool>(),
     ) {
-        // Deliberate exclusion: row+hole and reversed-hole ids are illegal
-        // shapes the rejection tests own; this property covers legal ones.
-        let (row, hole) = if row.is_some() { (row, None) } else { (None, hole) };
-        let reversed = reversed && hole.is_none();
-        let id = alix::token::format_card_id(&token, row.as_deref(), hole, reversed);
+        let id = alix::token::format_card_id(&token, row.as_deref(), reversed);
         let parsed = alix::token::parse_prefixed_card_id(&id);
         let base = format!("card-{token}");
         prop_assert_eq!(
-            Some((base.as_str(), row.as_deref(), hole, reversed, None)),
+            Some((base.as_str(), row.as_deref(), reversed, None)),
             parsed
         );
     }
@@ -254,9 +254,9 @@ proptest! {
                 prop_assert_eq!(&card.answers, &deck.cards[0].back);
             }
             CardShape::Cloze { holes } => {
-                prop_assert_eq!(*holes, deck.cards.len(), "one sub-card per hole");
+                prop_assert_eq!(*holes, deck.cards.len(), "one sub-card per span");
                 for (n, sub) in deck.cards.iter().enumerate() {
-                    prop_assert_eq!(Some(n as u32), sub.hole);
+                    prop_assert!(sub.region.is_some(), "a span derives a region card");
                     prop_assert_eq!(format!("gap{n}"), sub.back[0].clone());
                 }
             }
@@ -403,6 +403,23 @@ proptest! {
             let span = format!(" <!-- r:{row} -->");
             prop_assert_eq!(1, reconstructed.matches(&span).count());
             reconstructed = reconstructed.replacen(&span, "", 1);
+        }
+        for stamp in &outcome.minted_regions {
+            // A region mint writes ` position:<n> b:<stamp>` into its own
+            // directive line, so stripping it needs both halves.
+            let marker = format!(" b:{stamp}");
+            prop_assert_eq!(1, reconstructed.matches(&marker).count());
+            let at = reconstructed.find(&marker).unwrap();
+            let position_at = reconstructed[..at]
+                .rfind(" position:")
+                .expect("the mint writes position before the stamp");
+            prop_assert!(
+                reconstructed[position_at + " position:".len()..at]
+                    .chars()
+                    .all(|c| c.is_ascii_digit()),
+                "position and stamp are one contiguous insert"
+            );
+            reconstructed.replace_range(position_at..at + marker.len(), "");
         }
         for id in &outcome.minted_cards {
             let span = format!("<!-- id: {id} -->\n");

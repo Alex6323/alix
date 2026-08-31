@@ -2089,11 +2089,13 @@ mod tests {
             dir.path(),
             "cloze.md",
             "---\nformat-version: 1\nid: deck-cloze\nsource: .\n---\n\
-             ## q\nthe \\blank{first} and the \\blank{second}\n\
+             ## q\nthe first and the second\n\
+             <!-- blank: span hidden=\"first\" b:a1b2c3 -->\n\
+             <!-- blank: span hidden=\"second\" b:d4e5f6 -->\n\
              <!-- at: source.txt:1-2 -->\n<!-- id: card-q -->\n",
         );
         let deck = Deck::load(dir.path().join("cloze.md")).unwrap();
-        assert_eq!(2, deck.cards.len(), "one card per hole: {deck:?}");
+        assert_eq!(2, deck.cards.len(), "one card per span: {deck:?}");
 
         let mut report = Report::default();
         deck_resource_findings(&deck, &mut report);
@@ -2993,11 +2995,6 @@ printf ']}}'
         );
         w(
             &decks,
-            "cloze.md",
-            "## Fill\nthe \\blank{a} gap\n<!-- reveal: line -->\n<!-- id: card-clz1 -->\n",
-        );
-        w(
-            &decks,
             "indented.md",
             "## real\n  ## not a front\nanswer\n<!-- id: card-ind1 -->\n",
         );
@@ -3066,10 +3063,6 @@ printf ']}}'
         assert!(
             warnings.contains("not a block mapping"),
             "unspliceable: {warnings}"
-        );
-        assert!(
-            warnings.contains("cloze card is ignored"),
-            "reveal-on-cloze: {warnings}"
         );
         assert!(warnings.contains("indented `##`"), "{warnings}");
         assert!(warnings.contains("missing image"), "{warnings}");

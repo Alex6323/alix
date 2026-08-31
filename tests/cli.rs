@@ -185,7 +185,7 @@ fn write_progress_document(
         &path,
         format!(
             "{{\"version\":1,\"deck_id\":\"{deck_id}\",\"subject\":\"{subject}\",\
-             \"revision\":1,\"cards\":{{{cards}}},\"records\":{{}},\
+             \"revision\":1,\"cards\":{{{cards}}},\
              \"writer\":null}}"
         ),
     )
@@ -5315,7 +5315,7 @@ fn augment_questions_on_a_cloze_only_deck_errors() {
     let deck = write(
         dir.path(),
         "c.md",
-        "---\nformat-version: 1\nid: \"deck-cloze\"\n---\n## Complete\nThe capital of France is \\blank{Paris}.\n<!-- id: card-c1 -->\n",
+        "---\nformat-version: 1\nid: \"deck-cloze\"\n---\n## Complete\nThe capital of France is Paris.\n<!-- blank: span hidden=\"Paris\" b:a1b2c3 -->\n<!-- id: card-c1 -->\n",
     );
     let config = write(
         dir.path(),

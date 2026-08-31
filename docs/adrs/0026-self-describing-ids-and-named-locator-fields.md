@@ -2,6 +2,10 @@
 
 - Status: Accepted
 - Evidence: parse_locator_fields in src/source.rs
+- Details evolved by
+  [ADR 0039](0039-span-blanks-are-the-only-cloze.md): the decimal cloze sub-id
+  (`card-<token>-<n>`) retires with the inline `\blank` marker; the id grammar
+  keeps `-t<row>`, `-r`, `-b<stamp>`, and `-g<hash>`.
 - Recorded: 2026-07-28
 - Retrospective: No
 
