@@ -832,79 +832,6 @@ impl AugmentCache {
         }
     }
 
-    /// Realigns a cloze card's hole-keyed cache entries after its holes shift:
-    /// matched holes MOVE to their new index, orphaned holes' entries drop, fresh holes start
-    /// empty.
-    pub fn remap_holes(&mut self, token: &str, outcome: &crate::store::CascadeOutcome) -> bool {
-        // An identity remap with no orphans really is a no-op: nothing moves.
-        let identity = outcome.remap.iter().all(|(from, to)| from == to);
-        if identity && outcome.orphaned.is_empty() {
-            return false;
-        }
-        let moves: HashMap<u32, u32> = outcome.remap.iter().copied().collect();
-
-        // Pulled into a temp Vec first (not rewritten in place) so a hole moving
-        // into another's old slot can't clobber it before that entry is read.
-        let stored: Vec<u32> = moves
-            .keys()
-            .copied()
-            .chain(outcome.orphaned.iter().copied())
-            .collect();
-        let mut pulled: Vec<(u32, Augmentation)> = Vec::new();
-        for n in &stored {
-            if let Some(aug) =
-                self.cards
-                    .remove(&crate::token::card_id(token, None, Some(*n), false, None))
-            {
-                pulled.push((*n, aug));
-            }
-        }
-        for (from, aug) in pulled {
-            if let Some(to) = moves.get(&from) {
-                self.cards.insert(
-                    crate::token::card_id(token, None, Some(*to), false, None),
-                    aug,
-                );
-            }
-        }
-
-        let remap_id = |id: &str| -> Option<String> {
-            match crate::token::parse_prefixed_card_id(id) {
-                Some((t, None, Some(n), false, None)) if t == token => moves
-                    .get(&n)
-                    .map(|to| crate::token::card_id(token, None, Some(*to), false, None)),
-                _ => Some(id.to_string()),
-            }
-        };
-        for topo in &mut self.topologies {
-            topo.walk.retain(|id| remap_id(id).is_some());
-            for slot in &mut topo.walk {
-                if let Some(new) = remap_id(slot) {
-                    *slot = new;
-                }
-            }
-            topo.edges
-                .retain(|e| remap_id(&e.from).is_some() && remap_id(&e.to).is_some());
-            for edge in &mut topo.edges {
-                if let Some(new) = remap_id(&edge.from) {
-                    edge.from = new;
-                }
-                if let Some(new) = remap_id(&edge.to) {
-                    edge.to = new;
-                }
-            }
-            for region in &mut topo.regions {
-                region.cards.retain(|id| remap_id(id).is_some());
-                for slot in &mut region.cards {
-                    if let Some(new) = remap_id(slot) {
-                        *slot = new;
-                    }
-                }
-            }
-        }
-        true
-    }
-
     pub fn len(&self) -> usize {
         self.cards.len()
     }
@@ -921,7 +848,7 @@ impl AugmentCache {
             eligible: eligible.len(),
         };
         let all: Vec<&Card> = cards.iter().collect();
-        let plain: Vec<&Card> = cards.iter().filter(|c| c.hash_lines.is_none()).collect();
+        let plain: Vec<&Card> = cards.iter().filter(|c| !c.is_blank_card()).collect();
         CoverageSummary {
             choices: coverage(&all, &|c| {
                 c.multiple_choice
@@ -996,7 +923,7 @@ impl AugmentCache {
     pub fn missing_questions(&self, cards: &[Card]) -> Vec<WarmItem> {
         self.missing(
             cards,
-            |c| c.hash_lines.is_none(),
+            |c| !c.is_blank_card(),
             |c| {
                 c.id()
                     .is_some_and(|id| self.variants(&id, c.content_fingerprint).is_some())
@@ -1018,7 +945,7 @@ impl AugmentCache {
     pub fn missing_format(&self, cards: &[Card]) -> Vec<WarmItem> {
         self.missing(
             cards,
-            |c| c.hash_lines.is_none(),
+            |c| !c.is_blank_card(),
             |c| {
                 c.id()
                     .is_some_and(|id| self.format(&id, c.format_fingerprint()).is_some())
@@ -1167,7 +1094,7 @@ impl AugmentCache {
         let cards_before = self.cards.len();
         self.cards.retain(|id, _| {
             !crate::token::parse_prefixed_card_id(id)
-                .is_some_and(|(token, _, _, _, _)| card_tokens.contains(token))
+                .is_some_and(|(token, _, _, _)| card_tokens.contains(token))
         });
         let topos_before = self.topologies.len();
         self.topologies.retain(|t| !t.belongs_to(deck_tokens));
@@ -1301,80 +1228,6 @@ mod tests {
             panic!("accepted a key owned by another deck");
         };
         assert!(matches!(error, AugmentError::DuplicateKey { key } if key == card_id));
-    }
-
-    #[test]
-    fn augment_entries_move_with_their_hole() {
-        use crate::store::CascadeOutcome;
-        let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
-        cache.set_distractors("tok-0", vec!["wrong x".into(), "wrong y".into()], FP);
-        cache.set_note("tok-0", "a note about the old hole 0".into(), FP);
-
-        let outcome = CascadeOutcome {
-            remap: vec![(0, 1)],
-            orphaned: vec![],
-            fresh: vec![0],
-        };
-        assert!(cache.remap_holes("tok", &outcome));
-
-        assert_eq!(
-            Some(["wrong x".to_string(), "wrong y".to_string()].as_slice()),
-            cache.distractors("tok-1", FP)
-        );
-        assert_eq!(Some("a note about the old hole 0"), cache.note("tok-1", FP));
-        assert!(cache.distractors("tok-0", FP).is_none());
-        assert!(cache.note("tok-0", FP).is_none());
-    }
-
-    #[test]
-    fn an_orphaned_holes_augmentation_is_dropped_not_inherited() {
-        use crate::store::CascadeOutcome;
-        let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
-        cache.set_distractors("tok-0", vec!["a".into()], FP);
-        let outcome = CascadeOutcome {
-            remap: vec![],
-            orphaned: vec![0],
-            fresh: vec![0],
-        };
-        assert!(cache.remap_holes("tok", &outcome));
-        assert!(cache.distractors("tok-0", FP).is_none());
-        assert!(cache.is_empty());
-    }
-
-    #[test]
-    fn hole_remap_rewrites_only_the_target_tokens_topology_slots() {
-        use crate::store::CascadeOutcome;
-        let mut cache = AugmentCache::open(std::path::Path::new("unused.json"));
-        cache.add_topology(topology(
-            "auto",
-            "dA",
-            &["card-aa-0", "card-bb-0", "card-aa", "card-aa-1"],
-        ));
-        cache.topologies[0].edges.push(TopologyEdge {
-            from: "card-aa-1".into(),
-            to: "card-bb-0".into(),
-            label: "orphaned endpoint".into(),
-        });
-        let outcome = CascadeOutcome {
-            remap: vec![(0, 2)],
-            orphaned: vec![1],
-            fresh: vec![],
-        };
-        cache.remap_holes("card-aa", &outcome);
-
-        assert_eq!(
-            vec!["card-aa-2", "card-bb-0", "card-aa"],
-            cache.topologies()[0].walk,
-            "the target's mapped hole moves, another token's hole and the base id stay, the orphaned hole drops"
-        );
-        assert!(
-            cache.topologies()[0]
-                .edges
-                .iter()
-                .all(|edge| edge.from != "card-aa-1" && edge.to != "card-aa-1")
-        );
     }
 
     #[test]
@@ -1888,10 +1741,13 @@ mod tests {
         c
     }
 
-    fn cloze_card(back: &str) -> Card {
+    fn blank_card(back: &str) -> Card {
         let mut c = plain_card(back);
-        c.hash_lines = Some(vec![back.into()]);
-        c.hole = Some(0);
+        c.region = Some(crate::card::RegionSlot::Single {
+            stamp: Some(std::sync::Arc::from("a1b2c3")),
+            hidden: Some(back.to_string()),
+            line: 1,
+        });
         c
     }
 
@@ -1918,7 +1774,7 @@ mod tests {
             plain_card("a"),
             plain_card("b"),
             plain_card("c"),
-            cloze_card("z"),
+            blank_card("z"),
         ];
         cache.set_distractors(
             &cid(&cards[0]),
@@ -1979,7 +1835,7 @@ mod tests {
     fn missing_returns_only_uncovered_eligible_cards() {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
-        let cards = vec![plain_card("a"), plain_card("b"), cloze_card("z")];
+        let cards = vec![plain_card("a"), plain_card("b"), blank_card("z")];
         cache.set_distractors(
             &cid(&cards[0]),
             vec!["x".into()],

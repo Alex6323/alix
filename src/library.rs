@@ -998,7 +998,6 @@ mod tests {
         let orig_deck = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
         store.get_or_insert("card-c1").introduced_ms = Some(0);
-        store.ensure_records_raw("card-c1", &[]);
         store.save().unwrap();
         let progress = dir.path().join("progress/deck-da1.json");
         let orig_progress = std::fs::read(&progress).unwrap();
@@ -1096,7 +1095,6 @@ mod tests {
         write_deck(dir, "a.md", "da1", "c1");
         let mut store = crate::state::open_store(&dir.join("a.md"), dir).unwrap();
         store.get_or_insert("card-c1").introduced_ms = Some(0);
-        store.ensure_records_raw("card-c1", &[]);
         store.save().unwrap();
         let deck = Deck::load(dir.join("a.md")).unwrap();
         let mut cache = AugmentCache::open_for_decks(dir, &[deck]).unwrap();
@@ -1627,7 +1625,6 @@ mod tests {
         // Deck A: a card schedule, deck-family mastery, records.
         store.get_or_insert("card-c1").introduced_ms = Some(0);
         store.set_deck_mastered("deck-da1", 1);
-        store.ensure_records_raw("card-c1", &[]);
         // Deck B (shares the store): its own schedule + mastery.
         store.get_or_insert("card-cb1").introduced_ms = Some(0);
         store.set_deck_mastered("deck-db1", 1);
@@ -1654,7 +1651,6 @@ mod tests {
         assert_eq!(1, report.wiped_cards);
         assert!(store.get("card-c1").is_none());
         assert!(!store.deck_mastered("deck-da1"));
-        assert!(store.records("card-c1").is_none());
         assert!(store.get("card-cb1").is_some());
         assert!(store.deck_mastered("deck-db1"));
 
@@ -1672,7 +1668,6 @@ mod tests {
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
         store.get_or_insert("card-c1").introduced_ms = Some(0);
         store.set_deck_mastered("deck-da1", 1);
-        store.ensure_records_raw("card-c1", &[]);
         store.save().unwrap();
 
         replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();

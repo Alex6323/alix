@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -330,26 +330,6 @@ pub fn resolve_duplicates_at_open(path: &Path) {
     }
 }
 
-fn realign_and_record(store: &mut Store, augment: &mut AugmentCache, cards: &[Card]) -> bool {
-    let mut cascaded = false;
-    let mut seen: HashSet<&str> = HashSet::new();
-    for card in cards {
-        let Some(token) = card.token.as_deref() else {
-            continue;
-        };
-        if !seen.insert(token) {
-            continue;
-        }
-        if card.block_holes.is_empty() {
-            store.ensure_records(card);
-        } else if let Some(outcome) = store.realign_card_holes(token, &card.block_holes) {
-            augment.remap_holes(token, &outcome);
-            cascaded = true;
-        }
-    }
-    cascaded
-}
-
 pub fn stamp_and_load_deck(path: &Path) -> Result<Deck> {
     stamp_for_session(path)?;
     let mut deck = Deck::load(path)?;
@@ -431,17 +411,8 @@ pub fn select(
         .values()
         .filter_map(|d| d.deck_token.clone())
         .collect();
-    let mut augment = AugmentCache::open_for_workspace(&workspace::content_root(deck))
+    let augment = AugmentCache::open_for_workspace(&workspace::content_root(deck))
         .context("cannot open deck augmentation")?;
-    // Records must land before the session build reaches any `get_or_insert`.
-    if realign_and_record(store, &mut augment, &cards) {
-        if let Err(e) = augment.save() {
-            eprintln!("warning: could not save the augment cache: {e}");
-        }
-        if let Err(e) = store.save() {
-            eprintln!("warning: could not save progress: {e}");
-        }
-    }
     for card in &mut cards {
         augment.apply_format(card);
         if let Some(note) = card
@@ -692,7 +663,7 @@ mod tests {
     use crate::{answer::Mode, scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS};
 
     #[test]
-    fn plain_and_cloze_copies_do_not_create_duplicate_progress_record_owners() {
+    fn copied_decks_sharing_one_authored_id_do_not_create_duplicate_progress_owners() {
         let dir = tempfile::tempdir().unwrap();
         let plain_path = dir.path().join("deck.md");
         let cloze_path = dir.path().join("deck-copy.md");
@@ -703,7 +674,7 @@ mod tests {
         );
         write_initialized(
             &cloze_path,
-            &format!("## copied and changed\n\\blank{{answer}}\n<!-- id: {shared} -->\n"),
+            &format!("## copied and changed\nanswer changed\n<!-- id: {shared} -->\n"),
         );
 
         resolve_duplicates_at_open(&cloze_path);
@@ -719,14 +690,15 @@ mod tests {
                 deck.subject.clone(),
             )
             .unwrap();
-            store.ensure_records(&deck.cards[0]);
+            let id = deck.cards[0].id().expect("the fixture card is stamped");
+            store.get_or_insert(&id).introduced_ms = Some(1);
             store.save().unwrap();
         }
 
         let reopened = Store::open_for_decks(&progress, &[plain, cloze]);
         assert!(
             reopened.is_ok(),
-            "review-open must separate the copied authored base before both deck documents claim its hole-remap record: {:?}",
+            "review-open must separate the copied authored base before both deck documents claim its schedule entry: {:?}",
             reopened.err()
         );
     }
@@ -1699,78 +1671,6 @@ it reads line two\n\
         };
         assert_eq!(Depth::Recognize, build.session.depth());
         assert_eq!(2, build.session.initial_size);
-    }
-
-    #[test]
-    fn review_open_records_every_deck_card_including_cloze_holes() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.md");
-        std::fs::write(
-            &path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## Fill\n\
-             the \\blank{alpha} and \\blank{beta}\n<!-- id: card-fillcard -->\n## Plain\nanswer\n<!-- id: card-plaincard -->\n",
-        )
-        .unwrap();
-        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
-
-        select(
-            vec![path],
-            &mut store,
-            &test_config(),
-            &SelectOptions::default(),
-        )
-        .unwrap();
-
-        let plain = store.records("card-plaincard").expect("plain card records");
-        assert!(plain.holes.is_empty());
-        let cloze = store.records("card-fillcard").expect("cloze card records");
-        assert_eq!(2, cloze.holes.len(), "one fingerprint per hole");
-    }
-
-    #[test]
-    fn reordering_cloze_holes_in_the_file_moves_schedules_through_review_open() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.md");
-        std::fs::write(
-            &path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## Fill\n\\blank{alpha} then \\blank{beta}\n<!-- id: card-fillcard -->\n",
-        )
-        .unwrap();
-        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
-
-        select(
-            vec![path.clone()],
-            &mut store,
-            &test_config(),
-            &SelectOptions::default(),
-        )
-        .unwrap();
-        store.get_or_insert("card-fillcard-0").total_reviews = 1;
-        store.get_or_insert("card-fillcard-1").total_reviews = 2;
-
-        std::fs::write(
-            &path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n## Fill\n\\blank{beta} then \\blank{alpha}\n<!-- id: card-fillcard -->\n",
-        )
-        .unwrap();
-        select(
-            vec![path],
-            &mut store,
-            &test_config(),
-            &SelectOptions::default(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            1,
-            store.get("card-fillcard-1").unwrap().total_reviews,
-            "alpha"
-        );
-        assert_eq!(
-            2,
-            store.get("card-fillcard-0").unwrap().total_reviews,
-            "beta"
-        );
     }
 
     #[test]

@@ -287,9 +287,6 @@ impl Walk {
             return;
         }
         if let Some(checkpoint) = self.trace.checkpoints.get(self.current) {
-            // The walk grades with no Session, so it's itself an
-            // entry-creation site: write records before the schedule entry.
-            store.ensure_records_raw(&checkpoint.card_id, &[]);
             let state = store.get_or_insert(&checkpoint.card_id);
             Fsrs::default().apply(state, Depth::Recall, delta.grade(), now_ms, false);
         }
@@ -962,9 +959,6 @@ mod tests {
         walk.predict("guess".to_string());
         walk.grade(&mut store, Delta::Passed, 1000);
         assert!(store.get(&card0).is_some(), "the grade created the entry");
-        let rec = store.records(&card0).expect("records exist alongside it");
-        assert_eq!(crate::store::FP_VERSION, rec.version);
-        assert!(rec.holes.is_empty(), "a trace card is a plain card");
     }
 
     #[test]

@@ -59,16 +59,13 @@ fn clean_field(field: &str) -> String {
 
 const STRUCTURAL: [&str; 6] = ["##", ">", "---", "<!--", "```", "~~~"];
 
-// \blank is escaped anywhere in the line (unlike the leading-only structural markers) since
-// imported prose is never a deliberate hole.
 fn escape_structure(line: &str) -> String {
-    let line = line.replace("\\blank", "\\\\blank");
-    if crate::parser::is_thematic_break(&line)
+    if crate::parser::is_thematic_break(line)
         || STRUCTURAL.iter().any(|marker| line.starts_with(marker))
     {
         format!("\\{line}")
     } else {
-        line
+        line.to_string()
     }
 }
 
@@ -117,11 +114,10 @@ mod tests {
     }
 
     #[test]
-    fn a_literal_cloze_marker_is_doubled_not_a_hole() {
+    fn a_literal_blank_marker_imports_as_plain_prose() {
         let deck = tsv_to_deck("q\tthe \\blank{x} marker\n").unwrap();
         let cards = parse_str("d.md", &deck).unwrap();
         assert_eq!(1, cards.len());
-        assert!(cards[0].hole.is_none(), "no hole from imported prose");
         assert_eq!(vec!["the \\blank{x} marker".to_string()], cards[0].back);
     }
 

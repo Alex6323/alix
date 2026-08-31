@@ -1243,6 +1243,15 @@ mod tests {
         card
     }
 
+    fn span_sibling(mut card: Card, stamp: &str) -> Card {
+        card.region = Some(crate::card::RegionSlot::Single {
+            stamp: Some(Arc::from(stamp)),
+            hidden: card.back.first().cloned(),
+            line: card.line,
+        });
+        card
+    }
+
     fn cards(n: usize) -> Vec<Card> {
         (0..n).map(|i| card("deck.md", i)).collect()
     }
@@ -2228,12 +2237,10 @@ mod tests {
     }
 
     #[test]
-    fn removing_a_cloze_hole_drops_siblings_outside_the_session_cap() {
+    fn removing_a_span_card_drops_siblings_outside_the_session_cap() {
         let (mut store, _dir) = empty_store();
-        let mut current = card("deck.md", 1);
-        current.hole = Some(0);
-        let mut sibling = card("deck.md", 1);
-        sibling.hole = Some(1);
+        let current = span_sibling(card("deck.md", 1), "a1b2c3");
+        let sibling = span_sibling(card("deck.md", 1), "d4e5f6");
         let sibling_id = sibling.id().unwrap();
         let mut session = Session::new(
             vec![current, sibling],
@@ -2251,17 +2258,15 @@ mod tests {
             removed
                 .iter()
                 .any(|card| card.id().as_deref() == Some(sibling_id.as_str())),
-            "removing one hole removes its source block, so a sibling the cap kept out of the roster must go too"
+            "removing one span card removes its source block, so a sibling the cap kept out of the roster must go too"
         );
     }
 
     #[test]
-    fn removing_a_cloze_hole_returns_depth_excluded_siblings_for_store_cleanup() {
+    fn removing_a_span_card_returns_depth_excluded_siblings_for_store_cleanup() {
         let (mut store, _dir) = empty_store();
-        let mut current = card("deck.md", 1);
-        current.hole = Some(0);
-        let mut sibling = card("deck.md", 1);
-        sibling.hole = Some(1);
+        let current = span_sibling(card("deck.md", 1), "a1b2c3");
+        let sibling = span_sibling(card("deck.md", 1), "d4e5f6");
         let sibling_id = sibling.id().unwrap();
         store.get_or_insert(&sibling_id).introduced_ms = Some(0);
         let mut session = Session::new(
@@ -2285,18 +2290,18 @@ mod tests {
 
         assert!(
             store.progress(&sibling_id).is_none(),
-            "removing one hole removes its source block, so a depth-excluded sibling must come back for the serve layer to clear its progress"
+            "removing one span card removes its source block, so a depth-excluded sibling must come back for the serve layer to clear its progress"
         );
     }
 
     #[test]
-    fn remove_current_also_drops_cloze_siblings() {
+    fn remove_current_also_drops_span_siblings() {
         let (mut store, _dir) = empty_store();
         let mut all = vec![card("deck.md", 1), card("deck.md", 1), card("deck.md", 2)];
-        all[0].back = vec!["hole a".into()];
-        all[0].hole = Some(0);
-        all[1].back = vec!["hole b".into()];
-        all[1].hole = Some(1);
+        all[0].back = vec!["span a".into()];
+        all[0] = span_sibling(all[0].clone(), "a1b2c3");
+        all[1].back = vec!["span b".into()];
+        all[1] = span_sibling(all[1].clone(), "d4e5f6");
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 0);
         assert_eq!(3, session.remaining());
         let removed = session.remove_current(&mut store, 0);
@@ -2311,12 +2316,12 @@ mod tests {
         // Same deck_id, different filenames: still grouped as siblings.
         let mut a = card("a.md", 1);
         a.deck_id = Arc::from("shared-deck");
-        a.back = vec!["hole a".into()];
-        a.hole = Some(0);
+        a.back = vec!["span a".into()];
+        let a = span_sibling(a, "a1b2c3");
         let mut b = card("b.md", 1);
         b.deck_id = Arc::from("shared-deck");
-        b.back = vec!["hole b".into()];
-        b.hole = Some(1);
+        b.back = vec!["span b".into()];
+        let b = span_sibling(b, "d4e5f6");
         let mut session = Session::new(
             vec![a, b],
             &mut store,
@@ -2359,15 +2364,15 @@ mod tests {
     }
 
     #[test]
-    fn cloze_siblings_are_separated() {
+    fn span_siblings_are_separated() {
         let (mut store, _dir) = empty_store();
         let mut all = Vec::new();
         for (line, name) in [(1, "A"), (2, "B")] {
-            for hole in 1..=2 {
+            for sibling in 1..=2 {
                 let mut c = card("deck.md", line);
-                c.front = format!("{name}{hole}");
-                c.back = vec![format!("{name} answer {hole}")];
-                c.hole = Some(hole as u32 - 1);
+                c.front = format!("{name}{sibling}");
+                c.back = vec![format!("{name} answer {sibling}")];
+                let c = span_sibling(c, &format!("s{line}{sibling}"));
                 all.push(c);
             }
         }
@@ -2392,10 +2397,10 @@ mod tests {
     fn lone_sibling_group_still_fully_queued() {
         let (mut store, _dir) = empty_store();
         let mut all = Vec::new();
-        for hole in 1..=3 {
+        for sibling in 1..=3 {
             let mut c = card("deck.md", 1);
-            c.back = vec![format!("answer {hole}")];
-            c.hole = Some(hole as u32 - 1);
+            c.back = vec![format!("answer {sibling}")];
+            let c = span_sibling(c, &format!("s{sibling}"));
             all.push(c);
         }
         let session = Session::new(all, &mut store, sched(), SessionOptions::default(), 0);
@@ -2775,16 +2780,16 @@ mod tests {
     #[test]
     fn the_new_pool_round_robins_sibling_groups_into_the_cap() {
         let (mut store, _dir) = empty_store();
-        // Two six-hole clozes plus four singles: without round-robin the first
-        // ten slots would be eaten by the two cloze groups; the round-robin
+        // Two six-span blocks plus four singles: without round-robin the
+        // first ten slots would be eaten by the two blocks; the round-robin
         // spreads the cap across many distinct facts.
         let mut all = Vec::new();
         for line in [1usize, 2] {
-            for hole in 0..6u32 {
+            for sibling in 0..6u32 {
                 let mut c = card("deck.md", line);
                 c.token = Some(Arc::from(format!("clz{line}").as_str()));
-                c.hole = Some(hole);
-                c.back = vec![format!("h{line}-{hole}")];
+                c.back = vec![format!("h{line}-{sibling}")];
+                let c = span_sibling(c, &format!("s{sibling}"));
                 all.push(c);
             }
         }
@@ -2951,7 +2956,7 @@ mod tests {
     }
 
     #[test]
-    fn topology_keeps_cloze_siblings_in_walk_order_skipping_separation() {
+    fn topology_keeps_span_siblings_in_walk_order_skipping_separation() {
         let (mut store, _dir) = empty_store();
         let mut sib_a = Card::plain(
             Arc::from("d.md"),
@@ -2961,7 +2966,7 @@ mod tests {
             7,
         );
         sib_a.token = Some(Arc::from("sib"));
-        sib_a.hole = Some(0);
+        let sib_a = span_sibling(sib_a, "a1b2c3");
         let mut sib_b = Card::plain(
             Arc::from("d.md"),
             "front b".into(),
@@ -2970,7 +2975,7 @@ mod tests {
             7,
         );
         sib_b.token = Some(Arc::from("sib"));
-        sib_b.hole = Some(1);
+        let sib_b = span_sibling(sib_b, "d4e5f6");
         let other = card("d.md", 3);
         let all = vec![sib_a.clone(), sib_b.clone(), other.clone()];
         for c in &all {

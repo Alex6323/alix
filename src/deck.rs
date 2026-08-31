@@ -185,7 +185,7 @@ impl Deck {
             let direction = card.direction.or(settings.direction).unwrap_or_default();
             // Keying on the hole/region (not direction) stops a deck-wide "both" from
             // reversing cloze or region cards.
-            if card.hole.is_some() || card.region.is_some() || direction == Direction::Forward {
+            if card.is_blank_card() || direction == Direction::Forward {
                 expanded.push(card);
             } else {
                 let reversed = card.reversed();
@@ -1113,23 +1113,6 @@ mod tests {
 
     fn fronts(text: &str) -> Vec<usize> {
         parser::card_front_lines(text).unwrap()
-    }
-
-    /// The formula rule in `review::state` only fills in when nothing was
-    /// authored, so a deck-level `input:` has to reach the card before that
-    /// point for the deck half of "the author wins" to hold.
-    #[test]
-    fn a_deck_level_input_reaches_a_formula_hole() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(
-            dir.path(),
-            "d.md",
-            "---\ninput: type\n---\n## q\n---\n$x = \\blank{\\pm} y$\n<!-- id: card-q1 -->\n",
-        );
-        let deck = Deck::load(&path).unwrap();
-
-        assert!(deck.cards[0].math_hole);
-        assert_eq!(Some(Input::Type), deck.cards[0].input);
     }
 
     #[test]
@@ -2064,21 +2047,6 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(&path, "---\ndirection: both\n---\n## a\nb\n").unwrap();
         assert_eq!(2, Deck::load(&path).unwrap().cards.len());
-    }
-
-    #[test]
-    fn direction_does_not_apply_to_cloze() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.md");
-        std::fs::write(
-            &path,
-            "---\ndirection: both\n---\n## fill\nThe \\blank{x} thing.\n",
-        )
-        .unwrap();
-        let deck = Deck::load(&path).unwrap();
-        assert_eq!(1, deck.cards.len());
-        assert_eq!(Some(0), deck.cards[0].hole);
-        assert!(!deck.cards[0].reversed);
     }
 
     #[test]

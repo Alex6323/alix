@@ -58,12 +58,6 @@ pub fn mix_fingerprint(fingerprint: u64, extra: &str) -> u64 {
     hasher.finish()
 }
 
-pub(super) fn hash64(s: &str) -> u64 {
-    let mut hasher = XxHash64::default();
-    hasher.write(s.as_bytes());
-    hasher.finish()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

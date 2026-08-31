@@ -70,7 +70,7 @@ impl Reveal {
 /// augment's reshape. A cloze card's target is its hidden spans, however many
 /// it asks, not its back lines.
 fn gradeable_count(card: &Card) -> usize {
-    if card.hole.is_some() {
+    if card.is_blank_card() {
         return 1;
     }
     crate::render::card_block_flags(card, crate::card::AnswerSpace::Authored)

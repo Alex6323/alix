@@ -186,80 +186,6 @@ pub struct Writer {
     pub at_ms: u64,
 }
 
-// Store-internal, never card identity: freely bumpable; a stale version is
-// ignored and rewritten, not mismatched.
-pub const FP_VERSION: u8 = 2;
-
-// Store-internal matcher data, not card identity: freely changeable.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct HoleFingerprint {
-    pub text_fp: u64,
-    pub line_fp: u64,
-}
-
-// Keyed by the card's base token; store-internal, never part of card identity.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct CardRecords {
-    // FP_VERSION at write time; a stale value is ignored and rewritten, not mismatched.
-    pub version: u8,
-    pub holes: Vec<HoleFingerprint>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct CascadeOutcome {
-    pub remap: Vec<(u32, u32)>,
-    pub orphaned: Vec<u32>,
-    pub fresh: Vec<u32>,
-}
-
-pub fn realign_holes(stored: &[HoleFingerprint], file: &[HoleFingerprint]) -> CascadeOutcome {
-    let mut consumed = vec![false; stored.len()];
-    let mut matched: Vec<Option<usize>> = vec![None; file.len()];
-
-    for (fi, fh) in file.iter().enumerate() {
-        for (si, sh) in stored.iter().enumerate() {
-            if !consumed[si] && sh.text_fp == fh.text_fp && sh.line_fp == fh.line_fp {
-                consumed[si] = true;
-                matched[fi] = Some(si);
-                break;
-            }
-        }
-    }
-    for (fi, fh) in file.iter().enumerate() {
-        if matched[fi].is_some() {
-            continue;
-        }
-        for (si, sh) in stored.iter().enumerate() {
-            if !consumed[si] && sh.text_fp == fh.text_fp {
-                consumed[si] = true;
-                matched[fi] = Some(si);
-                break;
-            }
-        }
-    }
-
-    let mut remap = Vec::new();
-    let mut fresh = Vec::new();
-    for (fi, m) in matched.iter().enumerate() {
-        match m {
-            Some(si) => remap.push((*si as u32, fi as u32)),
-            None => fresh.push(fi as u32),
-        }
-    }
-    remap.sort_unstable();
-    let orphaned = (0..stored.len())
-        .filter(|si| !consumed[*si])
-        .map(|si| si as u32)
-        .collect();
-    CascadeOutcome {
-        remap,
-        orphaned,
-        fresh,
-    }
-}
-
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DeckStoreFile {
@@ -269,8 +195,6 @@ struct DeckStoreFile {
     subject: String,
     revision: u64,
     cards: HashMap<String, CardState>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    records: HashMap<String, CardRecords>,
     #[serde(default, skip_serializing_if = "DeckProgress::is_empty")]
     deck: DeckProgress,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -280,7 +204,6 @@ struct DeckStoreFile {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct StoreDocumentData {
     pub cards: HashMap<String, CardState>,
-    pub records: HashMap<String, CardRecords>,
     pub deck: DeckProgress,
     pub writer: Option<Writer>,
 }
@@ -337,7 +260,6 @@ struct StoreDocument {
 #[derive(Clone, Default)]
 struct StoreOwners {
     cards: HashMap<String, String>,
-    records: HashMap<String, String>,
     decks: HashMap<String, String>,
 }
 
@@ -346,7 +268,6 @@ pub struct Store {
     path: PathBuf,
     cards: HashMap<String, CardState>,
     decks: HashMap<String, DeckProgress>,
-    records: HashMap<String, CardRecords>,
     // None leaves the existing on-disk writer marker untouched (tests/tools
     // don't masquerade as a device).
     pub device: Option<String>,
@@ -474,7 +395,6 @@ fn write_deck_data(
         subject: subject.to_string(),
         revision,
         cards: data.cards.clone(),
-        records: data.records.clone(),
         deck: data.deck,
         writer: data.writer.clone(),
     };
@@ -553,7 +473,6 @@ pub(crate) fn read_deck_data(
         subject,
         StoreDocumentData {
             cards: file.cards,
-            records: file.records,
             deck: file.deck,
             writer: file.writer,
         },
@@ -636,7 +555,6 @@ impl Store {
                 path,
                 cards: HashMap::new(),
                 decks: HashMap::new(),
-                records: HashMap::new(),
                 device: None,
                 last_writer: None,
                 failed_decks: HashMap::new(),
@@ -681,7 +599,6 @@ impl Store {
             path,
             cards: file.cards,
             decks,
-            records: file.records,
             device: None,
             last_writer: file.writer,
             failed_decks: HashMap::new(),
@@ -761,7 +678,6 @@ impl Store {
 
         let mut cards = HashMap::new();
         let mut decks = HashMap::new();
-        let mut records = HashMap::new();
         let mut owners = StoreOwners::default();
         let mut expected = HashMap::new();
         for deck in expected_decks {
@@ -775,11 +691,6 @@ impl Store {
             for card in &deck.cards {
                 if let Some(card_id) = card.id() {
                     owners.cards.insert(card_id, deck_id.to_string());
-                }
-                if let Some(token) = card.token.as_deref() {
-                    owners
-                        .records
-                        .insert(token.to_string(), deck_id.to_string());
                 }
             }
             owners
@@ -809,13 +720,6 @@ impl Store {
                     }
                 };
             merge_owned(&mut cards, &mut owners.cards, &data.cards, &deck_id, "card")?;
-            merge_owned(
-                &mut records,
-                &mut owners.records,
-                &data.records,
-                &deck_id,
-                "record",
-            )?;
             owners.decks.insert(deck_id.clone(), deck_id.clone());
             if !data.deck.is_empty() {
                 decks.insert(deck_id.clone(), data.deck);
@@ -853,7 +757,6 @@ impl Store {
             path,
             cards,
             decks,
-            records,
             device: None,
             last_writer,
             failed_decks,
@@ -900,7 +803,7 @@ impl Store {
 
     /// Overlays the owner's actively held document onto this view: the
     /// owner is authoritative for the deck it holds (its unflushed truth
-    /// beats the disk copy), so its cards, records, and deck progress
+    /// beats the disk copy), so its cards and deck progress
     /// replace this store's, and its deck sheds any failed entry. View
     /// only: an overlaid store is for row building, never for saving.
     #[cfg(feature = "full")]
@@ -910,9 +813,6 @@ impl Store {
         };
         for (key, value) in &owner.cards {
             self.cards.insert(key.clone(), value.clone());
-        }
-        for (key, value) in &owner.records {
-            self.records.insert(key.clone(), value.clone());
         }
         for (key, value) in &owner.decks {
             self.decks.insert(key.clone(), *value);
@@ -965,7 +865,6 @@ impl Store {
             subject: subject.to_string(),
             revision: next,
             cards: self.cards.clone(),
-            records: self.records.clone(),
             deck: self.decks.get(deck_id).cloned().unwrap_or_default(),
             writer: self.writer_for_save(),
         };
@@ -999,7 +898,6 @@ impl Store {
         owners: &StoreOwners,
     ) -> Result<(), StoreError> {
         reject_unowned(&self.cards, &owners.cards, "card")?;
-        reject_unowned(&self.records, &owners.records, "record")?;
         reject_unowned(&self.decks, &owners.decks, "deck")?;
 
         let mut documents = documents
@@ -1009,7 +907,6 @@ impl Store {
         for (index, document) in documents.iter().enumerate() {
             let data = StoreDocumentData {
                 cards: owned_values(&self.cards, &owners.cards, &document.deck_id),
-                records: owned_values(&self.records, &owners.records, &document.deck_id),
                 deck: self
                     .decks
                     .get(&document.deck_id)
@@ -1095,72 +992,6 @@ impl Store {
         self.cards.remove(card_id).is_some()
     }
 
-    pub fn records(&self, token: &str) -> Option<&CardRecords> {
-        self.records.get(token)
-    }
-
-    // Does not run the hole cascade: callers must read old records via
-    // realign_card_holes before this overwrites them.
-    pub fn ensure_records(&mut self, card: &Card) {
-        if let Some(token) = card.token.as_deref() {
-            self.ensure_records_raw(token, &card.block_holes);
-        }
-    }
-
-    pub fn ensure_records_raw(&mut self, token: &str, holes: &[HoleFingerprint]) {
-        self.records.insert(
-            token.to_string(),
-            CardRecords {
-                version: FP_VERSION,
-                holes: holes.to_vec(),
-            },
-        );
-    }
-
-    pub fn realign_card_holes(
-        &mut self,
-        token: &str,
-        file_holes: &[HoleFingerprint],
-    ) -> Option<CascadeOutcome> {
-        let outcome = match self.records.get(token) {
-            Some(rec) if rec.version == FP_VERSION && rec.holes != file_holes => {
-                let stored = rec.holes.clone();
-                let outcome = realign_holes(&stored, file_holes);
-                self.apply_hole_cascade(token, &outcome);
-                Some(outcome)
-            }
-            _ => None,
-        };
-        self.ensure_records_raw(token, file_holes);
-        outcome
-    }
-
-    fn apply_hole_cascade(&mut self, token: &str, outcome: &CascadeOutcome) {
-        let prefix = format!("{token}-");
-        let hole_keys: Vec<(u32, String)> = self
-            .cards
-            .keys()
-            .filter(|key| key.starts_with(&prefix))
-            .filter_map(|key| match crate::token::parse_prefixed_card_id(key) {
-                Some((_, None, Some(n), false, None)) => Some((n, key.clone())),
-                _ => None,
-            })
-            .collect();
-        let mut old: HashMap<u32, CardState> = HashMap::new();
-        for (n, key) in hole_keys {
-            if let Some(state) = self.cards.remove(&key) {
-                old.insert(n, state);
-            }
-        }
-        // Re-add only remapped entries; a stray token-N schedule must not be inherited.
-        for (from, to) in &outcome.remap {
-            if let Some(state) = old.remove(from) {
-                let key = crate::token::card_id(token, None, Some(*to), false, None);
-                self.cards.insert(key, state);
-            }
-        }
-    }
-
     pub fn rebind_replaced_deck(
         &mut self,
         old_deck_id: &str,
@@ -1204,7 +1035,6 @@ impl Store {
                 });
                 documents.sort_by(|left, right| left.path.cmp(&right.path));
                 owners.cards.retain(|_, owner| owner != old_deck_id);
-                owners.records.retain(|_, owner| owner != old_deck_id);
                 owners.decks.retain(|_, owner| owner != old_deck_id);
                 owners
                     .decks
@@ -1212,11 +1042,6 @@ impl Store {
                 for card in &deck.cards {
                     if let Some(card_id) = card.id() {
                         owners.cards.insert(card_id, new_deck_id.to_string());
-                    }
-                    if let Some(token) = card.token.as_deref() {
-                        owners
-                            .records
-                            .insert(token.to_string(), new_deck_id.to_string());
                     }
                 }
             }
@@ -1278,7 +1103,6 @@ impl Store {
         let n = self.cards.len();
         self.cards.clear();
         self.decks.clear();
-        self.records.clear();
         n
     }
 
@@ -1328,25 +1152,6 @@ impl Store {
                 removed += 1;
             }
         }
-        // A fully-pruned token's now-scheduleless records are dead weight and drop too (uncounted).
-        let pruned_tokens: HashSet<&str> = orphans
-            .cards
-            .iter()
-            .filter_map(|id| {
-                crate::token::parse_prefixed_card_id(id).map(|(token, _, _, _, _)| token)
-            })
-            .collect();
-        for token in pruned_tokens {
-            let prefix = format!("{token}-");
-            let still_scheduled = self
-                .cards
-                .keys()
-                .any(|key| key == token || key.starts_with(&prefix));
-            if still_scheduled {
-                continue;
-            }
-            self.records.remove(token);
-        }
         removed
     }
 
@@ -1358,7 +1163,7 @@ impl Store {
             .keys()
             .filter(|id| {
                 crate::token::parse_prefixed_card_id(id)
-                    .is_some_and(|(token, _, _, _, _)| tokens.contains(token))
+                    .is_some_and(|(token, _, _, _)| tokens.contains(token))
             })
             .cloned()
             .collect();
@@ -1367,9 +1172,6 @@ impl Store {
             if self.cards.remove(&id).is_some() {
                 wiped += 1;
             }
-        }
-        for token in tokens {
-            self.records.remove(token);
         }
         self.decks.remove(deck_id);
         wiped
@@ -1448,7 +1250,6 @@ pub fn mint_tutor_card(
     let token = crate::token::format_card_id(
         &crate::token::mint().map_err(|e| MintError::Mint(e.to_string()))?,
         None,
-        None,
         false,
     );
     let mut text = format!("## {front}\n");
@@ -1475,8 +1276,6 @@ pub fn mint_tutor_card(
     }
     crate::personal::append_cards(deck_path, deck_id, &text)
         .map_err(|e| MintError::Malformed(e.to_string()))?;
-    // Records must exist before the schedule entry: keep this order.
-    store.ensure_records(card);
     store.get_or_insert(&id).introduced_ms = Some(now_ms);
     Ok(id)
 }
@@ -1578,7 +1377,6 @@ pub fn store_remediation_cards(
         let token = crate::token::format_card_id(
             &crate::token::mint().map_err(|e| anyhow::anyhow!("cannot mint a token: {e}"))?,
             None,
-            None,
             false,
         );
         let block = stamp_block(block, &token);
@@ -1601,8 +1399,6 @@ pub fn store_remediation_cards(
                 let Some(id) = card.id() else {
                     continue;
                 };
-                // Records must exist before the schedule entry: keep this order.
-                store.ensure_records(card);
                 store.get_or_insert(&id).introduced_ms = Some(now_ms);
                 created_or_revived += 1;
             }
@@ -1759,266 +1555,6 @@ mod tests {
         let path = dir.path().join("deck1.json");
         let store = Store::open(&path).unwrap();
         assert!(store.is_empty());
-    }
-
-    // Arbitrary ints stand in for distinct hidden-text/context hashes (equality is all that
-    // matters).
-    fn hf(word: u64, context: u64) -> HoleFingerprint {
-        HoleFingerprint {
-            text_fp: word,
-            line_fp: context,
-        }
-    }
-
-    #[test]
-    fn inserting_a_hole_shifts_neighbors_without_losing_schedules() {
-        let a = hf(1, 10);
-        let b = hf(2, 20);
-        let fresh_word = hf(9, 90);
-        let outcome = realign_holes(&[a, b], &[fresh_word, a, b]);
-        assert_eq!(vec![(0, 1), (1, 2)], outcome.remap);
-        assert_eq!(vec![0], outcome.fresh);
-        assert!(outcome.orphaned.is_empty());
-    }
-
-    #[test]
-    fn deleting_a_hole_leaves_exactly_that_record_orphaned() {
-        let a = hf(1, 10);
-        let b = hf(2, 20);
-        let c = hf(3, 30);
-        let outcome = realign_holes(&[a, b, c], &[a, c]);
-        assert_eq!(vec![(0, 0), (2, 1)], outcome.remap);
-        assert_eq!(vec![1], outcome.orphaned);
-        assert!(outcome.fresh.is_empty());
-    }
-
-    #[test]
-    fn reordering_holes_follows_the_words() {
-        let a = hf(1, 10);
-        let b = hf(2, 20);
-        let outcome = realign_holes(&[a, b], &[b, a]);
-        assert_eq!(vec![(0, 1), (1, 0)], outcome.remap);
-        assert!(outcome.orphaned.is_empty());
-        assert!(outcome.fresh.is_empty());
-    }
-
-    #[test]
-    fn a_context_rewrite_still_matches_by_text_alone() {
-        let stored = hf(1, 10);
-        let rewritten = hf(1, 99);
-        let outcome = realign_holes(&[stored], &[rewritten]);
-        assert_eq!(vec![(0, 0)], outcome.remap);
-        assert!(outcome.orphaned.is_empty());
-        assert!(outcome.fresh.is_empty());
-    }
-
-    #[test]
-    fn identical_twins_pair_in_document_order_on_both_sides() {
-        let twin = hf(5, 50);
-        let outcome = realign_holes(&[twin, twin], &[twin, twin]);
-        assert_eq!(vec![(0, 0), (1, 1)], outcome.remap);
-        assert!(outcome.orphaned.is_empty());
-        assert!(outcome.fresh.is_empty());
-    }
-
-    #[test]
-    fn word_and_context_both_changed_is_a_fresh_hole() {
-        let stored = hf(1, 10);
-        let changed = hf(7, 70);
-        let outcome = realign_holes(&[stored], &[changed]);
-        assert!(outcome.remap.is_empty());
-        assert_eq!(vec![0], outcome.fresh);
-        assert_eq!(vec![0], outcome.orphaned);
-    }
-
-    #[test]
-    fn a_fresh_hole_wins_the_live_key_and_the_stored_hole_is_orphaned() {
-        let stored = hf(1, 10);
-        let replacement = hf(8, 80);
-        let outcome = realign_holes(&[stored], &[replacement]);
-        assert!(outcome.remap.is_empty());
-        assert_eq!(vec![0], outcome.fresh);
-        assert_eq!(vec![0], outcome.orphaned);
-    }
-
-    #[test]
-    fn the_cascade_rebuilds_entries_into_a_fresh_map() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let token = "card-tok";
-        let a = hf(1, 10);
-        let b = hf(2, 20);
-        store.ensure_records_raw(token, &[a, b]);
-        store.get_or_insert("card-tok-0").total_reviews = 1;
-        store.get_or_insert("card-tok-1").total_reviews = 2;
-
-        let z = hf(8, 80);
-        let outcome = store.realign_card_holes(token, &[z, b]).unwrap();
-        assert_eq!(vec![(1, 1)], outcome.remap);
-        assert_eq!(vec![0], outcome.orphaned);
-        assert_eq!(vec![0], outcome.fresh);
-
-        assert_eq!(2, store.get("card-tok-1").unwrap().total_reviews);
-        assert!(
-            store.get("card-tok-0").is_none(),
-            "the orphaned hole is deleted"
-        );
-        assert_eq!(vec![z, b], store.records(token).unwrap().holes);
-    }
-
-    #[test]
-    fn a_stray_high_index_hole_entry_is_pulled_by_the_cascade_not_left_to_squat() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let token = "card-tok";
-        let a = hf(1, 10);
-        let b = hf(2, 20);
-        store.ensure_records_raw(token, &[a, b]);
-        store.get_or_insert("card-tok-0").total_reviews = 1;
-        store.get_or_insert("card-tok-1").total_reviews = 2;
-        store.get_or_insert("card-tok-5").total_reviews = 9;
-
-        let outcome = store.realign_card_holes(token, &[b, a]).unwrap();
-        assert_eq!(vec![(0, 1), (1, 0)], outcome.remap);
-
-        assert_eq!(
-            2,
-            store.get("card-tok-0").unwrap().total_reviews,
-            "b -> hole 0"
-        );
-        assert_eq!(
-            1,
-            store.get("card-tok-1").unwrap().total_reviews,
-            "a -> hole 1"
-        );
-        assert!(
-            store.get("card-tok-5").is_none(),
-            "the stray is deleted, not left under a live key"
-        );
-    }
-
-    #[test]
-    fn a_stale_fingerprint_version_is_ignored_and_rewritten_never_mismatched() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let token = "card-tok";
-        let a = hf(1, 10);
-        let b = hf(2, 20);
-        store.records.insert(
-            token.to_string(),
-            CardRecords {
-                version: FP_VERSION.wrapping_add(1),
-                holes: vec![a],
-            },
-        );
-        store.get_or_insert("card-tok-0").total_reviews = 7;
-
-        let outcome = store.realign_card_holes(token, &[a, b]);
-        assert!(outcome.is_none());
-        assert_eq!(7, store.get("card-tok-0").unwrap().total_reviews);
-        let rec = store.records(token).unwrap();
-        assert_eq!(FP_VERSION, rec.version);
-        assert_eq!(vec![a, b], rec.holes);
-    }
-
-    #[test]
-    fn orphans_are_the_keys_with_no_live_card_or_deck_and_prune_clears_them() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.get_or_insert("live").introduced_ms = Some(0);
-        store.get_or_insert("gone").introduced_ms = Some(0);
-        store.get_or_insert("card-vq").introduced_ms = Some(0);
-        store.set_last_depth("d1", Depth::Recall);
-        store.set_last_depth("d2", Depth::Recall);
-
-        let known_cards: HashSet<String> = ["live".to_string(), "card-vq".to_string()]
-            .into_iter()
-            .collect();
-        let known_deck_ids: HashSet<String> = ["d1".to_string()].into_iter().collect();
-        let orphans = store.orphans(&known_cards, &known_deck_ids);
-        assert_eq!(vec!["gone".to_string()], orphans.cards);
-        assert_eq!(vec!["d2".to_string()], orphans.decks);
-        assert_eq!(2, orphans.len());
-
-        assert_eq!(2, store.prune_orphans(&orphans));
-        assert!(store.get("live").is_some());
-        assert!(store.get("card-vq").is_some());
-        assert_eq!(Some(Depth::Recall), store.last_depth("d1"));
-        assert!(store.get("gone").is_none());
-        assert_eq!(None, store.last_depth("d2"));
-    }
-
-    #[test]
-    fn reset_orphans_clears_records_of_pruned_tokens() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let a = hf(1, 10);
-
-        store.get_or_insert("card-gonetoken").total_reviews = 3;
-        store.ensure_records_raw("card-gonetoken", &[a]);
-        store.get_or_insert("card-livetoken").total_reviews = 7;
-        store.ensure_records_raw("card-livetoken", &[a]);
-
-        let known_cards: HashSet<String> = ["card-livetoken".to_string()].into_iter().collect();
-        let orphans = store.orphans(&known_cards, &HashSet::new());
-        assert_eq!(vec!["card-gonetoken".to_string()], orphans.cards);
-
-        store.prune_orphans(&orphans);
-
-        assert!(store.get("card-gonetoken").is_none());
-        assert!(store.records("card-gonetoken").is_none());
-        assert!(store.get("card-livetoken").is_some());
-        assert!(store.records("card-livetoken").is_some());
-    }
-
-    #[test]
-    fn pruning_one_card_keeps_records_owned_by_a_sibling_schedule() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let fingerprint = hf(1, 10);
-        store.get_or_insert("card-shared").total_reviews = 3;
-        store.get_or_insert("card-shared-0").total_reviews = 2;
-        store.ensure_records_raw("card-shared", &[fingerprint]);
-
-        let known_cards: HashSet<String> = ["card-shared-0".to_string()].into_iter().collect();
-        let orphans = store.orphans(&known_cards, &HashSet::new());
-        assert_eq!(["card-shared"], orphans.cards.as_slice());
-
-        store.prune_orphans(&orphans);
-
-        assert!(store.get("card-shared").is_none());
-        assert!(store.get("card-shared-0").is_some());
-        assert!(
-            store.records("card-shared").is_some(),
-            "the sibling schedule still owns the token's shared records"
-        );
-    }
-
-    #[test]
-    fn wipe_deck_clears_every_family_for_its_tokens_and_spares_the_rest() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let a = hf(1, 10);
-
-        store.get_or_insert("card-doom").introduced_ms = Some(0);
-        store.get_or_insert("card-doom-0").introduced_ms = Some(0);
-        store.ensure_records_raw("card-doom", &[a]);
-        store.set_deck_mastered("doomed", 1);
-        store.get_or_insert("keep").introduced_ms = Some(0);
-        store.ensure_records_raw("keep", &[a]);
-        store.set_deck_mastered("keep", 1);
-
-        let tokens: HashSet<String> = ["card-doom".to_string()].into_iter().collect();
-        let wiped = store.wipe_deck(&tokens, "doomed");
-
-        assert_eq!(2, wiped, "the base and the hole schedule both count");
-        assert!(store.get("card-doom").is_none());
-        assert!(store.get("card-doom-0").is_none());
-        assert!(store.records("card-doom").is_none());
-        assert!(!store.deck_mastered("doomed"));
-        assert!(store.get("keep").is_some());
-        assert!(store.records("keep").is_some());
-        assert!(store.deck_mastered("keep"));
     }
 
     #[test]
@@ -2814,11 +2350,10 @@ mod tests {
     }
 
     #[test]
-    fn records_exist_whenever_an_entry_is_created() {
+    fn a_schedule_entry_exists_whenever_a_card_is_minted() {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-
+        let mut store = Store::open(&dir.path().join("s.json")).unwrap();
         let geo = dir.path().join("geo.md");
         let tutor = mint_tutor_card(
             &mut store,
@@ -2831,9 +2366,6 @@ mod tests {
         )
         .unwrap();
         assert!(store.get(&tutor).is_some(), "the schedule entry exists");
-        let rec = store.records(&tutor).expect("records exist for the entry");
-        assert_eq!(FP_VERSION, rec.version);
-        assert!(rec.holes.is_empty(), "a plain tutor card has no holes");
 
         let deck = dir.path().join("d.md");
         store_remediation(
@@ -2847,31 +2379,6 @@ mod tests {
         .unwrap();
         let gap = sidecar_ids(&deck, "d.md")[0].clone();
         assert!(store.get(&gap).is_some());
-        assert!(
-            store.records(&gap).is_some(),
-            "a remediation mint writes records too"
-        );
-
-        store_remediation(
-            &mut store,
-            &deck,
-            "d.md",
-            "## Fill\nthe \\blank{a} and \\blank{b}\n",
-            300,
-            None,
-        )
-        .unwrap();
-        let cloze_id = sidecar_cards(&deck, "d.md")
-            .into_iter()
-            .find(|card| card.front == "Fill")
-            .and_then(|card| card.id())
-            .expect("the cloze block reached the sidecar");
-        let (base, _, _, _, _) = crate::token::parse_prefixed_card_id(&cloze_id).unwrap();
-        assert_eq!(
-            2,
-            store.records(base).unwrap().holes.len(),
-            "both holes recorded under the base token"
-        );
     }
 
     #[test]
@@ -3263,16 +2770,6 @@ mod tests {
         }
         state.record_review(999_999, Grade::Pass, Depth::Recall, false);
         assert_eq!(HISTORY_CAP, state.history.len());
-    }
-
-    #[test]
-    fn same_word_holes_on_different_lines_realign_by_line_not_first_come() {
-        let x = hf(1, 10);
-        let y = hf(1, 20);
-        let outcome = realign_holes(&[x, y], &[y, x]);
-        assert_eq!(vec![(0, 1), (1, 0)], outcome.remap);
-        assert!(outcome.fresh.is_empty(), "{:?}", outcome.fresh);
-        assert!(outcome.orphaned.is_empty(), "{:?}", outcome.orphaned);
     }
 
     #[test]

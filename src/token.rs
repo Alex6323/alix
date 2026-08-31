@@ -110,20 +110,11 @@ pub fn format_region_card_id(token: &str, region: RegionRef<'_>) -> String {
 pub fn card_id(
     token: &str,
     row: Option<&str>,
-    hole: Option<u32>,
     reversed: bool,
     region: Option<RegionRef<'_>>,
 ) -> String {
     debug_assert!(
-        hole.is_none() || !reversed,
-        "a cloze sub-card never reverses"
-    );
-    debug_assert!(
-        row.is_none() || hole.is_none(),
-        "a table row card is never cloze"
-    );
-    debug_assert!(
-        region.is_none() || (row.is_none() && hole.is_none() && !reversed),
+        region.is_none() || (row.is_none() && !reversed),
         "a region card carries no other suffix"
     );
     if let Some(region) = region {
@@ -138,22 +129,10 @@ pub fn card_id(
         } else {
             format!("{token}-t{row}")
         }
-    } else if let Some(n) = hole {
-        format!("{token}-{n}")
     } else if reversed {
         format!("{token}-r")
     } else {
         token.to_string()
-    }
-}
-
-fn is_canonical_decimal(s: &str) -> bool {
-    match s.as_bytes() {
-        [b'0'] => true,
-        [first, rest @ ..] => {
-            (b'1'..=b'9').contains(first) && rest.iter().all(|b| b.is_ascii_digit())
-        }
-        [] => false,
     }
 }
 
@@ -167,48 +146,29 @@ pub fn format_deck_id(token: &str) -> String {
     format!("deck-{token}")
 }
 
-pub fn format_card_id(token: &str, row: Option<&str>, hole: Option<u32>, reversed: bool) -> String {
-    format!("card-{}", card_id(token, row, hole, reversed, None))
+pub fn format_card_id(token: &str, row: Option<&str>, reversed: bool) -> String {
+    format!("card-{}", card_id(token, row, reversed, None))
 }
 
-pub type ParsedCardSuffix<'a> = (
-    &'a str,
-    Option<&'a str>,
-    Option<u32>,
-    bool,
-    Option<RegionRef<'a>>,
-);
+pub type ParsedCardSuffix<'a> = (&'a str, Option<&'a str>, bool, Option<RegionRef<'a>>);
 
 pub fn parse_prefixed_card_id(id: &str) -> Option<ParsedCardSuffix<'_>> {
     let rest = id.strip_prefix("card-")?;
-    let (token, row, hole, reversed, region) = match rest.split_once('-') {
-        None => (rest, None, None, false, None),
-        Some((token, "r")) => (token, None, None, true, None),
-        Some((token, suffix)) if is_canonical_decimal(suffix) => {
-            (token, None, Some(suffix.parse().ok()?), false, None)
-        }
+    let (token, row, reversed, region) = match rest.split_once('-') {
+        None => (rest, None, false, None),
+        Some((token, "r")) => (token, None, true, None),
         Some((token, suffix)) => match suffix.as_bytes().first() {
             Some(b't') => match suffix[1..].split_once('-') {
-                Some((row, "r")) if is_valid_row(row) => (token, Some(row), None, true, None),
-                None if is_valid_row(&suffix[1..]) => {
-                    (token, Some(&suffix[1..]), None, false, None)
-                }
+                Some((row, "r")) if is_valid_row(row) => (token, Some(row), true, None),
+                None if is_valid_row(&suffix[1..]) => (token, Some(&suffix[1..]), false, None),
                 _ => return None,
             },
-            Some(b'b') if is_valid_region_stamp(&suffix[1..]) => (
-                token,
-                None,
-                None,
-                false,
-                Some(RegionRef::Single(&suffix[1..])),
-            ),
-            Some(b'g') if is_valid_group_hash(&suffix[1..]) => (
-                token,
-                None,
-                None,
-                false,
-                Some(RegionRef::Group(&suffix[1..])),
-            ),
+            Some(b'b') if is_valid_region_stamp(&suffix[1..]) => {
+                (token, None, false, Some(RegionRef::Single(&suffix[1..])))
+            }
+            Some(b'g') if is_valid_group_hash(&suffix[1..]) => {
+                (token, None, false, Some(RegionRef::Group(&suffix[1..])))
+            }
             _ => return None,
         },
     };
@@ -216,28 +176,20 @@ pub fn parse_prefixed_card_id(id: &str) -> Option<ParsedCardSuffix<'_>> {
         return None;
     }
     let base = &id[.."card-".len() + token.len()];
-    Some((base, row, hole, reversed, region))
+    Some((base, row, reversed, region))
 }
 
-pub type ParsedId<'a> = (
-    Kind,
-    &'a str,
-    Option<&'a str>,
-    Option<u32>,
-    bool,
-    Option<RegionRef<'a>>,
-);
+pub type ParsedId<'a> = (Kind, &'a str, Option<&'a str>, bool, Option<RegionRef<'a>>);
 
 pub fn parse_id(id: &str) -> Option<ParsedId<'_>> {
     if let Some(token) = id.strip_prefix("deck-") {
-        return is_valid(token).then_some((Kind::Deck, token, None, None, false, None));
+        return is_valid(token).then_some((Kind::Deck, token, None, false, None));
     }
-    let (base, row, hole, reversed, region) = parse_prefixed_card_id(id)?;
+    let (base, row, reversed, region) = parse_prefixed_card_id(id)?;
     Some((
         Kind::Card,
         base.strip_prefix("card-")?,
         row,
-        hole,
         reversed,
         region,
     ))
@@ -286,18 +238,11 @@ mod tests {
     }
 
     #[test]
-    fn card_id_composes_token_row_hole_and_reversed() {
-        assert_eq!(card_id("t0", None, None, false, None), "t0");
-        assert_eq!(card_id("t0", None, Some(2), false, None), "t0-2");
-        assert_eq!(card_id("t0", None, None, true, None), "t0-r");
-        assert_eq!(
-            card_id("t0", Some("abcdef"), None, false, None),
-            "t0-tabcdef"
-        );
-        assert_eq!(
-            card_id("t0", Some("abcdef"), None, true, None),
-            "t0-tabcdef-r"
-        );
+    fn card_id_composes_token_row_and_reversed() {
+        assert_eq!(card_id("t0", None, false, None), "t0");
+        assert_eq!(card_id("t0", None, true, None), "t0-r");
+        assert_eq!(card_id("t0", Some("abcdef"), false, None), "t0-tabcdef");
+        assert_eq!(card_id("t0", Some("abcdef"), true, None), "t0-tabcdef-r");
     }
 
     #[test]
@@ -307,59 +252,37 @@ mod tests {
         assert_eq!(parse_prefixed_card_id("card-t0-"), None);
         assert_eq!(parse_prefixed_card_id("card--r"), None);
         assert_eq!(parse_prefixed_card_id("card-t0-1-2"), None);
-        assert_eq!(
-            parse_prefixed_card_id("card-t0-12"),
-            Some(("card-t0", None, Some(12), false, None))
-        );
-    }
-
-    #[test]
-    fn a_leading_zero_hole_suffix_is_rejected() {
-        assert_eq!(parse_prefixed_card_id("card-t0-01"), None);
-        assert_eq!(parse_prefixed_card_id("card-t0-00"), None);
-        assert_eq!(
-            parse_prefixed_card_id("card-t0-0"),
-            Some(("card-t0", None, Some(0), false, None))
-        );
-        assert_eq!(
-            parse_prefixed_card_id("card-t0-10"),
-            Some(("card-t0", None, Some(10), false, None))
-        );
+        assert_eq!(parse_prefixed_card_id("card-t0-12"), None);
+        assert_eq!(parse_prefixed_card_id("card-t0-0"), None);
     }
 
     #[test]
     fn parse_id_reads_the_kind_prefix_and_base_token() {
         assert_eq!(
             parse_id("deck-t0"),
-            Some((Kind::Deck, "t0", None, None, false, None))
+            Some((Kind::Deck, "t0", None, false, None))
         );
         assert_eq!(
             parse_id("card-t0"),
-            Some((Kind::Card, "t0", None, None, false, None))
+            Some((Kind::Card, "t0", None, false, None))
         );
     }
 
     #[test]
     fn parse_id_reads_card_sub_id_forms() {
-        assert_eq!(
-            parse_id("card-t0-0"),
-            Some((Kind::Card, "t0", None, Some(0), false, None))
-        );
-        assert_eq!(
-            parse_id("card-t0-12"),
-            Some((Kind::Card, "t0", None, Some(12), false, None))
-        );
+        assert_eq!(parse_id("card-t0-0"), None);
+        assert_eq!(parse_id("card-t0-12"), None);
         assert_eq!(
             parse_id("card-t0-r"),
-            Some((Kind::Card, "t0", None, None, true, None))
+            Some((Kind::Card, "t0", None, true, None))
         );
         assert_eq!(
             parse_id("card-t0-tabcdef"),
-            Some((Kind::Card, "t0", Some("abcdef"), None, false, None))
+            Some((Kind::Card, "t0", Some("abcdef"), false, None))
         );
         assert_eq!(
             parse_id("card-t0-tabcdef-r"),
-            Some((Kind::Card, "t0", Some("abcdef"), None, true, None))
+            Some((Kind::Card, "t0", Some("abcdef"), true, None))
         );
     }
 
@@ -388,13 +311,7 @@ mod tests {
         assert_eq!("card-t0-ba1b2c3", single);
         assert_eq!(
             parse_prefixed_card_id(&single),
-            Some((
-                "card-t0",
-                None,
-                None,
-                false,
-                Some(RegionRef::Single("a1b2c3"))
-            ))
+            Some(("card-t0", None, false, Some(RegionRef::Single("a1b2c3"))))
         );
         let group = format_region_card_id("t0", RegionRef::Group("chsbz14b1a30x"));
         assert_eq!("card-t0-gchsbz14b1a30x", group);
@@ -402,7 +319,6 @@ mod tests {
             parse_prefixed_card_id(&group),
             Some((
                 "card-t0",
-                None,
                 None,
                 false,
                 Some(RegionRef::Group("chsbz14b1a30x"))
@@ -469,46 +385,42 @@ mod tests {
     }
 
     #[test]
-    fn parse_id_rejects_a_leading_zero_hole_suffix() {
+    fn parse_id_rejects_a_numeric_suffix() {
         assert_eq!(parse_id("card-t0-01"), None);
+        assert_eq!(parse_id("card-t0-2"), None);
     }
 
     #[test]
     fn parse_prefixed_card_id_splits_the_prefixed_base_from_the_suffix() {
         assert_eq!(
-            parse_prefixed_card_id("card-t0-2"),
-            Some(("card-t0", None, Some(2), false, None))
-        );
-        assert_eq!(
             parse_prefixed_card_id("card-t0-r"),
-            Some(("card-t0", None, None, true, None))
+            Some(("card-t0", None, true, None))
         );
         assert_eq!(
             parse_prefixed_card_id("card-t0"),
-            Some(("card-t0", None, None, false, None))
+            Some(("card-t0", None, false, None))
         );
         assert_eq!(
             parse_prefixed_card_id("card-t0-tabcdef"),
-            Some(("card-t0", Some("abcdef"), None, false, None))
+            Some(("card-t0", Some("abcdef"), false, None))
         );
         assert_eq!(
             parse_prefixed_card_id("card-t0-tabcdef-r"),
-            Some(("card-t0", Some("abcdef"), None, true, None))
+            Some(("card-t0", Some("abcdef"), true, None))
         );
     }
 
     #[test]
     fn format_deck_id_and_format_card_id_emit_the_prefixed_forms() {
         assert_eq!(format_deck_id("t0"), "deck-t0");
-        assert_eq!(format_card_id("t0", None, None, false), "card-t0");
-        assert_eq!(format_card_id("t0", None, Some(2), false), "card-t0-2");
-        assert_eq!(format_card_id("t0", None, None, true), "card-t0-r");
+        assert_eq!(format_card_id("t0", None, false), "card-t0");
+        assert_eq!(format_card_id("t0", None, true), "card-t0-r");
         assert_eq!(
-            format_card_id("t0", Some("abcdef"), None, false),
+            format_card_id("t0", Some("abcdef"), false),
             "card-t0-tabcdef"
         );
         assert_eq!(
-            format_card_id("t0", Some("abcdef"), None, true),
+            format_card_id("t0", Some("abcdef"), true),
             "card-t0-tabcdef-r"
         );
     }
@@ -516,7 +428,7 @@ mod tests {
     #[test]
     fn is_valid_prefixed_id_accepts_well_formed_ids_and_rejects_the_rest() {
         assert!(is_valid_prefixed_id("deck-t0"));
-        assert!(is_valid_prefixed_id("card-t0-2"));
+        assert!(!is_valid_prefixed_id("card-t0-2"));
         assert!(is_valid_prefixed_id("card-t0-r"));
         assert!(is_valid_prefixed_id("card-t0-tabcdef"));
         assert!(is_valid_prefixed_id("card-t0-tabcdef-r"));
@@ -566,12 +478,11 @@ mod tests {
     fn row_ids_round_trip_through_format_and_parse() {
         for reversed in [false, true] {
             let row = mint_row().unwrap();
-            let id = format_card_id("t0", Some(&row), None, reversed);
-            let (base, parsed_row, hole, parsed_reversed, _) =
+            let id = format_card_id("t0", Some(&row), reversed);
+            let (base, parsed_row, parsed_reversed, _) =
                 parse_prefixed_card_id(&id).expect("a formatted row id must parse");
             assert_eq!(base, "card-t0", "reversed={reversed}");
             assert_eq!(parsed_row, Some(row.as_str()), "reversed={reversed}");
-            assert_eq!(hole, None, "reversed={reversed}");
             assert_eq!(parsed_reversed, reversed);
         }
     }

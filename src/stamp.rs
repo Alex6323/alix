@@ -487,7 +487,6 @@ fn mint_card_id() -> Result<String, StampError> {
     Ok(token::format_card_id(
         &token::mint().map_err(StampError::Mint)?,
         None,
-        None,
         false,
     ))
 }

@@ -164,7 +164,6 @@ pub struct Card {
     /// The `block_line` of the `## `/`### ` block this sub-card hangs under.
     /// `None` for a top-level card, so gating never asks about it.
     pub parent_block: Option<usize>,
-    pub hash_lines: Option<Vec<String>>,
     pub reveal: Option<Reveal>,
     pub input: Option<Input>,
     pub direction: Option<Direction>,
@@ -179,14 +178,6 @@ pub struct Card {
     pub row: Option<Arc<str>>,
     /// Resolved table-over-deck at parse time; None means the default (on).
     pub sampling: Option<bool>,
-    pub hole: Option<u32>,
-    /// The hole's authored name, addressing it within its own block for a
-    /// per-hole payload. Never an identity: see ADR 0032.
-    pub hole_name: Option<String>,
-    /// Set when this card's hole was cut out of a formula, which decides how
-    /// the answer is asked for: a formula's piece is drawn, not typed.
-    pub math_hole: bool,
-    pub block_holes: Vec<crate::store::HoleFingerprint>,
     pub reversed: bool,
     pub content_fingerprint: u64,
     /// The block-level dedup key (front + cover-masked raw answer lines):
@@ -287,7 +278,6 @@ impl Card {
             line,
             block_line: line,
             parent_block: None,
-            hash_lines: None,
             reveal: None,
             input: None,
             direction: None,
@@ -301,10 +291,6 @@ impl Card {
             token: None,
             row: None,
             sampling: None,
-            hole: None,
-            hole_name: None,
-            math_hole: false,
-            block_holes: Vec::new(),
             reversed: false,
             content_fingerprint,
             block_fingerprint,
@@ -363,6 +349,12 @@ impl Card {
         card
     }
 
+    /// A blank-derived study card (built from `blank:` regions), graded and
+    /// rendered against its hidden spans rather than its answer lines.
+    pub fn is_blank_card(&self) -> bool {
+        self.region.is_some()
+    }
+
     pub fn id(&self) -> Option<String> {
         let token = self.token.as_deref()?;
         let region = match &self.region {
@@ -375,7 +367,6 @@ impl Card {
         Some(token::card_id(
             token,
             self.row.as_deref(),
-            self.hole,
             self.reversed,
             region,
         ))
@@ -442,13 +433,12 @@ pub fn dormant_base_ids(cards: &[Card]) -> impl Iterator<Item = String> + '_ {
 }
 
 impl Eq for Card {}
-// Equality is (token, hole, reversed, region identity) only; unstamped cards (token: None) compare
+// Equality is (token, reversed, region identity) only; unstamped cards (token: None) compare
 // equal, which is harmless since the session/store boundary excludes them first. The region
 // discriminant matters: a parent and its region cards share the token.
 impl PartialEq for Card {
     fn eq(&self, other: &Self) -> bool {
         self.token == other.token
-            && self.hole == other.hole
             && self.reversed == other.reversed
             && region_identity(&self.region) == region_identity(&other.region)
     }
@@ -527,11 +517,8 @@ mod tests {
     }
 
     #[test]
-    fn sub_ids_carry_hole_and_reversed_suffixes() {
+    fn sub_ids_carry_the_reversed_suffix() {
         let mut c = stamped("s", "f", &["b"], None, "q1");
-        c.hole = Some(2);
-        assert_eq!(Some("q1-2".to_string()), c.id());
-        c.hole = None;
         c.reversed = true;
         assert_eq!(Some("q1-r".to_string()), c.id());
     }
@@ -562,9 +549,6 @@ mod tests {
         let mut token = base.clone();
         token.token = Some("other".into());
         assert_ne!(base, token);
-        let mut hole = base.clone();
-        hole.hole = Some(1);
-        assert_ne!(base, hole);
         let mut reversed = base.clone();
         reversed.reversed = true;
         assert_ne!(base, reversed);

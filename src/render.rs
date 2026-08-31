@@ -205,7 +205,7 @@ pub(crate) fn card_block_flags(
 ) -> Vec<bool> {
     let lines = card.answer_lines(space);
     let mut flags = vec![false; lines.len()];
-    if card.hole.is_some() {
+    if card.is_blank_card() {
         return flags;
     }
     let mut projector = DisplayProjector::default();
@@ -277,7 +277,7 @@ pub(crate) fn card_answer_steps(
         back_from: index,
         back_to: index + 1,
     };
-    if card.hole.is_some() {
+    if card.is_blank_card() {
         return (0..lines.len()).map(line).collect();
     }
     let spanned = text_units_spanned(&lines.join("\n"), projector, false, &card.resolved_diagrams);
@@ -1387,9 +1387,9 @@ mod tests {
     }
 
     #[test]
-    fn a_cloze_span_that_is_a_greater_than_sign_is_a_gradeable_line() {
-        let card = parsed("left \\blank{>} right");
-        assert!(card.hole.is_some(), "the fixture is a cloze card");
+    fn a_blank_span_that_is_a_greater_than_sign_is_a_gradeable_line() {
+        let card = parsed("left > right\n<!-- blank: span hidden=\">\" boundary=char b:a1b2c3 -->");
+        assert!(card.is_blank_card(), "the fixture is a blank card");
         let mut projector = DisplayProjector::default();
 
         assert_eq!(

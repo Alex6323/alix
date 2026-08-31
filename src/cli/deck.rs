@@ -379,19 +379,14 @@ fn format_candidates(
             .review
             .for_workspace(&workspace::content_root(&deck.path))
             .retire_after_days;
-        out.extend(
-            deck.cards
-                .iter()
-                .filter(|c| c.hash_lines.is_none())
-                .cloned(),
-        );
+        out.extend(deck.cards.iter().filter(|c| !c.is_blank_card()).cloned());
         let deck_id: Arc<str> = Arc::from(deck.deck_token.as_deref().unwrap_or_default());
         let mut personal = alix::personal::read(&deck.path, &deck.subject).cards;
         assemble::bind_personal(&mut personal, &subject, &deck_id);
         out.extend(
             personal
                 .into_iter()
-                .filter(|c| c.hash_lines.is_none())
+                .filter(|c| !c.is_blank_card())
                 .filter(|c| c.id().is_some_and(|id| !deck_ids.contains(&id)))
                 .filter(|c| !alix::session::is_retired(c, &store, retire_after_days)),
         );
@@ -464,7 +459,7 @@ fn run_targets(run: AugmentRun) -> Result<()> {
             // question to reword.
             let plain: Vec<Card> = cards
                 .iter()
-                .filter(|c| c.hash_lines.is_none())
+                .filter(|c| !c.is_blank_card())
                 .cloned()
                 .collect();
             let items = warm_items(&plain);

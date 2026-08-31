@@ -96,9 +96,7 @@ pub enum LintKind {
     EmptyValue {
         key: String,
     },
-    RevealOnCloze,
     IndentedH2,
-    ClozeInHole,
     UnclosedComment,
     UnclosedFence,
     ImageMalformed,
@@ -118,7 +116,7 @@ pub enum LintKind {
     },
     /// A badged note with no body lines: it renders nothing.
     EmptyNote,
-    UntypableHole {
+    UntypableSpan {
         answer: String,
     },
     /// A block note that spells out one blank's answer, which the block's
@@ -205,14 +203,6 @@ pub enum ParseError {
     #[error("line {line}: {message}")]
     ChoiceShape { line: usize, message: String },
     #[error(
-        "line {0}: a hole name is one or more of `a-z`, `A-Z`, `0-9`, `_` or `-`, closed by `]` and followed by `{{answer}}`: `\\blank[base]{{Unit}}`"
-    )]
-    InvalidHoleName(usize),
-    #[error("line {0}: unclosed cloze hole (missing the closing `}}`)")]
-    UnclosedHole(usize),
-    #[error("line {0}: empty cloze hole")]
-    EmptyHole(usize),
-    #[error(
         "line {0}: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"
     )]
     MixedImageLine(usize),
@@ -238,10 +228,6 @@ pub enum ParseError {
         found: usize,
         expected: usize,
     },
-    #[error(
-        "line {0}: `\\blank{{...}}` in a table cell is not supported; write that row as a `##` card"
-    )]
-    TableCellHole(usize),
     #[error("line {0}: an image in a table cell is not supported; write that row as a `##` card")]
     TableCellImage(usize),
     #[error("line {line}: row stamp `{value}` is not 6 base32 chars")]
@@ -306,15 +292,11 @@ impl ParseError {
             Self::InvalidLocator { .. } => "invalid_locator",
             Self::InvalidRegion { .. } => "invalid_region",
             Self::ChoiceShape { .. } => "choice_shape",
-            Self::InvalidHoleName(_) => "invalid_hole_name",
-            Self::UnclosedHole(_) => "unclosed_hole",
-            Self::EmptyHole(_) => "empty_hole",
             Self::MixedImageLine(_) => "mixed_image_line",
             Self::TableLineMalformed(_) => "table_line_malformed",
             Self::TableColumns { .. } => "table_columns",
             Self::TableRowWidth { .. } => "table_row_width",
             Self::TableDelimiterWidth { .. } => "table_delimiter_width",
-            Self::TableCellHole(_) => "table_cell_hole",
             Self::TableCellImage(_) => "table_cell_image",
             Self::TableRowStamp { .. } => "table_row_stamp",
             Self::TableDuplicateStamp { .. } => "table_duplicate_stamp",
@@ -340,13 +322,9 @@ impl ParseError {
             | Self::SectionDirective(line)
             | Self::OrphanCardId(line)
             | Self::SubCardTableTitle(line)
-            | Self::InvalidHoleName(line)
-            | Self::UnclosedHole(line)
-            | Self::EmptyHole(line)
             | Self::MixedImageLine(line)
             | Self::ReservedMarker(line)
             | Self::TableLineMalformed(line)
-            | Self::TableCellHole(line)
             | Self::TableCellImage(line)
             | Self::TableTrailing(line)
             | Self::StrayDivider(line)
@@ -1903,9 +1881,6 @@ pub fn reorder_card_comments(text: &str) -> Reorder {
 
 fn check_cells(cells: &[String], lineno: usize) -> Result<(), ParseError> {
     for cell in cells {
-        if cell.contains("\\blank{") || cell.contains("\\blank[") {
-            return Err(ParseError::TableCellHole(lineno));
-        }
         let mut cursor = 0;
         while let Some(relative) = cell[cursor..].find("![") {
             let marker = cursor + relative;
@@ -2230,8 +2205,6 @@ fn build_region_cards(
             })
             .collect();
         card.region = Some(slot);
-        card.hole = None;
-        card.hole_name = None;
         card.reversed = false;
         card.direction = None;
         card.input = None;
@@ -2546,7 +2519,7 @@ fn apply_directive(
             // Markers hold base ids only; a sub-id suffix (`-N`, `-r`) never appears here.
             if !matches!(
                 token::parse_prefixed_card_id(&value),
-                Some((_, None, None, false, None))
+                Some((_, None, false, None))
             ) {
                 return Err(ParseError::InvalidCardId { line, value });
             }
@@ -2930,7 +2903,7 @@ fn build_card_inner(
                 {
                     lints.push(Lint {
                         line: span.line,
-                        kind: LintKind::UntypableHole {
+                        kind: LintKind::UntypableSpan {
                             answer: hidden.to_string(),
                         },
                     });
@@ -3180,7 +3153,6 @@ mod tests {
             deck[0].back,
             "the marker is ordinary literal answer text"
         );
-        assert_eq!(None, deck[0].hole, "no positional sub-id");
     }
 
     #[test]
@@ -4882,15 +4854,6 @@ a
     }
 
     #[test]
-    fn a_cloze_hole_on_a_fenced_line_is_still_a_hole() {
-        let deck = parse("## q\n---\n```\nlet x = \\blank{5};\n```\n");
-        assert_eq!(1, deck.cards.len());
-        assert_eq!(Some(0), deck.cards[0].hole);
-        assert_eq!(vec!["5"], deck.cards[0].back);
-        assert_eq!(vec!["```", "let x = ⍰;", "```"], deck.cards[0].context);
-    }
-
-    #[test]
     fn an_indented_h2_is_content_and_linted() {
         let deck = parse("## q\n  ## indented\n");
         assert_eq!(vec!["## indented"], deck.cards[0].back);
@@ -5281,7 +5244,6 @@ a
             vec!["4".to_string(), "6".to_string()],
             card.authored_distractors
         );
-        assert!(card.hole.is_none());
         assert!(deck.lints.is_empty(), "{:?}", deck.lints);
     }
 
@@ -5454,16 +5416,17 @@ a
         );
     }
 
-    /// The block's locator belongs to every card the block produces. A cloze
-    /// block produces one card per hole, and each is a review card an author
-    /// flips to its source on reveal.
+    /// The block's locator belongs to every card the block produces. A
+    /// blank block produces one card per span, and each is a review card an
+    /// author flips to its source on reveal.
     #[test]
-    fn every_cloze_card_carries_the_blocks_source_citation() {
+    fn every_blank_card_carries_the_blocks_source_citation() {
         let deck = parse(
-            "## Complete the sentence\nThe owner is \\blank{dropped} at \\blank{scope} end.\n\
+            "## Complete the sentence\nThe owner is dropped at scope end.\n\
+             <!-- blank: span hidden=\"dropped\" -->\n<!-- blank: span hidden=\"scope\" -->\n\
              <!-- at: src/lib.rs:3-4 -->\n> [!NOTE]\n> deterministic cleanup\n",
         );
-        assert_eq!(2, deck.cards.len(), "one card per hole: {deck:?}");
+        assert_eq!(2, deck.cards.len(), "one card per span: {deck:?}");
         for card in &deck.cards {
             assert_eq!(
                 vec!["src/lib.rs:3-4"],
@@ -5471,8 +5434,8 @@ a
                     .iter()
                     .map(|citation| citation.locator.as_str())
                     .collect::<Vec<_>>(),
-                "hole {:?} keeps the block's locator: {card:?}",
-                card.hole
+                "card {:?} keeps the block's locator: {card:?}",
+                card.back
             );
         }
     }
@@ -6998,204 +6961,32 @@ a
     // ── Cloze ──
 
     #[test]
-    fn a_cloze_marker_makes_the_card_cloze_and_numbers_holes_in_document_order() {
-        let deck = parse("## fill\n---\nthe \\blank{quick} fox\njumps \\blank{over}\n");
-        assert_eq!(2, deck.cards.len());
-
-        assert_eq!("fill", deck.cards[0].front);
-        assert_eq!(Some(0), deck.cards[0].hole);
-        assert_eq!(vec!["quick"], deck.cards[0].back);
-        assert_eq!(vec!["the ⍰ fox", "jumps ⬚"], deck.cards[0].context);
-
-        assert_eq!(Some(1), deck.cards[1].hole);
-        assert_eq!(vec!["over"], deck.cards[1].back);
-        assert_eq!(vec!["the ⬚ fox", "jumps ⍰"], deck.cards[1].context);
-    }
-
-    /// A hole cut out of a formula is a piece of that formula, so it has to
-    /// be shown as one. `back` is what the learner types and what identifies
-    /// the card, so the math form goes to `display_back` alone: revealing
-    /// `\pm` as the characters `\pm` shows source code as an answer.
-    /// A hole's content is the expected answer, so a hole holding a LaTeX
-    /// command asks the learner to spell `\pm`. Inside a formula the input
-    /// rule already turns that into a sketch, so what is left to warn about
-    /// is a hole that stays typed: one outside any formula, or one the
-    /// author pinned back to the keyboard.
-    #[test]
-    fn a_hole_that_asks_for_a_typed_latex_command_is_linted() {
-        let deck = parse("## q\n---\nthe sign is \\blank{\\pm} here\n");
-        assert_eq!(
-            vec![LintKind::UntypableHole {
-                answer: "\\pm".to_string()
-            }],
-            deck.lints
-                .iter()
-                .map(|l| l.kind.clone())
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn a_hole_inside_a_formula_is_not_linted_because_it_is_drawn() {
-        let deck = parse("## q\n---\n$x = -b \\blank{\\pm} \\sqrt{d}$\n");
-        assert!(deck.lints.is_empty(), "{:?}", deck.lints);
-    }
-
-    #[test]
-    fn a_formula_hole_pinned_back_to_typing_is_linted() {
-        let deck = parse("## q\n---\n$x = \\blank{\\pm} y$\n<!-- input: type -->\n");
-        assert_eq!(
-            vec![LintKind::UntypableHole {
-                answer: "\\pm".to_string()
-            }],
-            deck.lints
-                .iter()
-                .map(|l| l.kind.clone())
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn an_ordinary_hole_is_never_linted_as_untypable() {
-        let deck =
-            parse("## q\n---\n$x = \\frac{-b}{\\blank{2a}}$\nthe value is \\blank{dropped}\n");
-        assert!(deck.lints.is_empty(), "{:?}", deck.lints);
-    }
-
-    #[test]
-    fn a_hole_inside_math_reveals_as_math_but_is_still_typed_as_written() {
-        let deck = parse("## q\n---\n$x = -b \\blank{\\pm} \\sqrt{d}$\n");
-        assert_eq!(1, deck.cards.len());
-        assert_eq!(vec!["\\pm"], deck.cards[0].back);
-        assert_eq!(["$\\pm$"], *deck.cards[0].back_for_display());
-    }
-
-    #[test]
-    fn a_hole_in_display_math_reveals_as_math_too() {
+    fn a_span_in_display_math_reveals_as_math_too() {
         let deck = parse("## q\n---\n$$a^2 - b^2 = \\blank{(a-b)}(a+b)$$\n");
         assert_eq!(["$(a-b)$"], *deck.cards[0].back_for_display());
     }
 
     #[test]
-    fn a_hole_in_prose_reveals_exactly_as_written() {
-        let deck = parse("## q\n---\nthe value is \\blank{dropped}\n");
+    fn a_blank_in_prose_reveals_exactly_as_written() {
+        let deck =
+            parse("## q\n---\nthe value is dropped\n<!-- blank: span hidden=\"dropped\" -->\n");
         assert_eq!(None, deck.cards[0].display_back);
         assert_eq!(["dropped"], *deck.cards[0].back_for_display());
     }
 
-    /// Two holes on one line, only one of them inside the formula.
+    /// Two spans on one line, only one of them a formula.
     #[test]
-    fn only_the_hole_inside_the_formula_reveals_as_math() {
-        let deck = parse("## q\n---\nthe \\blank{sign} in $x = \\blank{\\pm} y$\n");
+    fn only_the_span_inside_the_formula_reveals_as_math() {
+        let deck = parse(
+            "## q\n---\nthe sign in $x+y$\n<!-- blank: span hidden=\"sign\" -->\n<!-- blank: span hidden=\"x+y\" -->\n",
+        );
         assert_eq!(2, deck.cards.len());
         assert_eq!(None, deck.cards[0].display_back);
-        assert_eq!(["$\\pm$"], *deck.cards[1].back_for_display());
+        assert_eq!(["$x+y$"], *deck.cards[1].back_for_display());
     }
 
     #[test]
-    fn bare_cloze_without_a_brace_is_literal() {
-        let deck = parse("## q\n---\na \\blank marker\n");
-        assert_eq!(1, deck.cards.len());
-        assert_eq!(None, deck.cards[0].hole);
-        assert_eq!(vec!["a \\blank marker"], deck.cards[0].back);
-    }
-
-    #[test]
-    fn double_backslash_cloze_is_a_literal_marker() {
-        let deck = parse("## q\n---\na \\\\blank{x} b\n");
-        assert_eq!(1, deck.cards.len());
-        assert_eq!(None, deck.cards[0].hole);
-        assert_eq!(vec!["a \\blank{x} b"], deck.cards[0].back);
-    }
-
-    #[test]
-    fn a_named_hole_parses_and_the_sub_card_carries_the_name() {
-        let deck = parse("## fill\n---\nthe \\blank[speed]{quick} \\blank{fox}\n");
-        assert_eq!(2, deck.cards.len());
-        assert_eq!(Some("speed"), deck.cards[0].hole_name.as_deref());
-        assert_eq!(vec!["quick"], deck.cards[0].back);
-        assert_eq!(None, deck.cards[1].hole_name.as_deref());
-        assert_eq!(vec!["fox"], deck.cards[1].back);
-        assert_eq!(vec!["the ⍰ ⬚"], deck.cards[0].context);
-    }
-
-    /// A name is an address, never an identity (ADR 0032): naming a hole an
-    /// author has already drilled must not reset its schedule, and
-    /// `store::realign_holes` decides that from these fingerprints alone.
-    #[test]
-    fn naming_a_hole_leaves_the_card_it_addresses_untouched() {
-        let unnamed = parse("## q\n---\n\\blank{Unit}, \\blank{integration}\n");
-        let named = parse("## q\n---\n\\blank[base]{Unit}, \\blank[middle]{integration}\n");
-        assert_eq!(2, named.cards.len());
-        for (n, (plain, addressed)) in unnamed.cards.iter().zip(&named.cards).enumerate() {
-            assert_eq!(plain.block_holes, addressed.block_holes, "hole {n} holes");
-            assert_eq!(
-                plain.hash_lines, addressed.hash_lines,
-                "hole {n} hash lines"
-            );
-            assert_eq!(plain.back, addressed.back, "hole {n} answer");
-            assert_eq!(plain.context, addressed.context, "hole {n} context");
-        }
-    }
-
-    #[test]
-    fn a_hole_name_may_carry_an_underscore_or_a_hyphen() {
-        let deck = parse("## q\n---\n\\blank[base_two]{x} \\blank[base-three]{y}\n");
-        assert_eq!(2, deck.cards.len());
-        assert_eq!(Some("base_two"), deck.cards[0].hole_name.as_deref());
-        assert_eq!(Some("base-three"), deck.cards[1].hole_name.as_deref());
-    }
-
-    /// A hole's line fingerprint masks that hole and renders every other one
-    /// as its text, so the siblings' wording is part of the context this hole
-    /// is identified by.
-    #[test]
-    fn a_holes_line_fingerprint_reads_the_other_holes_text() {
-        let one = parse("## q\n---\n\\blank{a}, \\blank{alpha}\n");
-        let two = parse("## q\n---\n\\blank{a}, \\blank{omega}\n");
-        assert_ne!(
-            one.cards[0].block_holes[0].line_fp, two.cards[0].block_holes[0].line_fp,
-            "the sibling's text sits in this hole's line"
-        );
-        assert_eq!(
-            one.cards[0].block_holes[0].text_fp, two.cards[0].block_holes[0].text_fp,
-            "what this hole asks for did not change"
-        );
-    }
-
-    #[test]
-    fn a_malformed_hole_name_is_a_parse_error() {
-        for spelling in [
-            "\\blank[]{x}",
-            "\\blank[a b]{x}",
-            "\\blank[a.b]{x}",
-            "\\blank[a{x}",
-            "\\blank[name]",
-            "\\blank[name] {x}",
-        ] {
-            assert_eq!(
-                ParseError::InvalidHoleName(3),
-                err(&format!("## q\n---\n{spelling}\n")),
-                "for `{spelling}`"
-            );
-        }
-    }
-
-    #[test]
-    fn two_holes_sharing_a_name_are_drilled_as_one_card_asking_both_spans() {
-        let deck = parse("## q\n---\n\\blank[hs]{SYN}, \\blank[hs]{SYN-ACK}, \\blank{ACK}\n");
-        assert_eq!(2, deck.cards.len(), "the group is one card, `ACK` another");
-        assert_eq!(vec!["SYN", "SYN-ACK"], deck.cards[0].back);
-        assert_eq!(Some("hs"), deck.cards[0].hole_name.as_deref());
-        assert_eq!(vec!["⍰, ⍰, ⬚"], deck.cards[0].context);
-        assert_eq!(vec!["ACK"], deck.cards[1].back);
-        assert_eq!(vec!["⬚, ⬚, ⍰"], deck.cards[1].context);
-        assert_eq!(Some(0), deck.cards[0].hole);
-        assert_eq!(Some(1), deck.cards[1].hole);
-    }
-
-    #[test]
-    fn a_group_may_span_lines() {
+    fn a_group_may_reach_across_answer_lines() {
         let deck = parse("## q\n---\n\\blank[c]{Berlin} is the capital\nof \\blank[c]{Germany}\n");
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["Berlin", "Germany"], deck.cards[0].back);
@@ -7213,7 +7004,9 @@ a
     /// key points a multi-line plain answer holds, so it stays typed.
     #[test]
     fn a_merged_card_is_typed_at_reconstruct_not_self_graded() {
-        let deck = parse("## q\n---\n\\blank[hs]{SYN}, \\blank[hs]{SYN-ACK}\n");
+        let deck = parse(
+            "## q\n---\nalpha, beta\n<!-- blank: span [hs] hidden=\"alpha\" -->\n<!-- blank: span [hs] hidden=\"beta\" -->\n",
+        );
         assert_eq!(
             crate::answer::Mode::Typing,
             crate::depth::check_for(
@@ -7245,46 +7038,6 @@ a
             .expect("the ungrouped card");
         assert_eq!(Some("Both halves of the opening."), merged.only_note());
         assert_eq!(Some("Shared."), single.only_note());
-    }
-
-    /// D4: the merged card inherits nothing, and the hole it did not touch
-    /// rides the positional shift on its fingerprint.
-    #[test]
-    fn grouping_resets_the_merged_card_alone() {
-        let before = parse("## q\n---\n\\blank{SYN}, \\blank{SYN-ACK}, \\blank{ACK}\n");
-        let after = parse("## q\n---\n\\blank[hs]{SYN}, \\blank[hs]{SYN-ACK}, \\blank{ACK}\n");
-        let outcome =
-            crate::store::realign_holes(&before.cards[0].block_holes, &after.cards[0].block_holes);
-        assert_eq!(vec![(2, 1)], outcome.remap, "`ACK` moves from -2 to -1");
-        assert_eq!(vec![0], outcome.fresh, "the merged card starts fresh");
-        assert_eq!(vec![0, 1], outcome.orphaned, "neither half is inherited");
-    }
-
-    /// `line_fp` is the context half of a hole's identity, so it must not
-    /// move when only the hidden text does. A group hides several spans, and
-    /// every one of them is masked out of its own line.
-    #[test]
-    fn a_groups_line_fingerprint_ignores_the_text_it_hides() {
-        let one = parse("## q\n---\n\\blank[hs]{SYN}, \\blank[hs]{SYN-ACK}\n");
-        let two = parse("## q\n---\n\\blank[hs]{SYN}, \\blank[hs]{SYNACK}\n");
-        let (one, two) = (&one.cards[0].block_holes[0], &two.cards[0].block_holes[0]);
-        assert_eq!(one.line_fp, two.line_fp, "the line around the spans is one");
-        assert_ne!(one.text_fp, two.text_fp, "what it asks for did change");
-    }
-
-    #[test]
-    fn naming_a_hole_without_grouping_it_keeps_every_fingerprint() {
-        let plain = parse("## q\n---\n\\blank{SYN}, \\blank{SYN-ACK}\n");
-        let named = parse("## q\n---\n\\blank[a]{SYN}, \\blank[b]{SYN-ACK}\n");
-        assert_eq!(plain.cards[0].block_holes, named.cards[0].block_holes);
-    }
-
-    #[test]
-    fn two_cards_may_each_carry_a_hole_of_the_same_name() {
-        let deck = parse("## a\n---\n\\blank[base]{Unit}\n\n## b\n---\n\\blank[base]{atom}\n");
-        assert_eq!(2, deck.cards.len());
-        assert_eq!(Some("base"), deck.cards[0].hole_name.as_deref());
-        assert_eq!(Some("base"), deck.cards[1].hole_name.as_deref());
     }
 
     #[test]
@@ -7494,26 +7247,13 @@ a
     }
 
     #[test]
-    fn a_reveal_directive_on_a_cloze_card_is_linted_not_obeyed() {
-        let deck = parse("## q\n---\na \\blank{b} c\n<!-- reveal: line -->\n");
-        assert_eq!(None, deck.cards[0].reveal);
-        assert_eq!(
-            vec![Lint {
-                line: 4,
-                kind: LintKind::RevealOnCloze
-            }],
-            deck.lints
-        );
-    }
-
-    #[test]
-    fn cloze_cards_never_produce_a_reversed_twin() {
+    fn blank_cards_never_produce_a_reversed_twin() {
         let deck = parse(
-            "---\ndirection: both\n---\n## q\n---\na \\blank{b} c\n<!-- direction: both -->\n",
+            "---\ndirection: both\n---\n## q\n---\na b c\n<!-- direction: both -->\n<!-- blank: span hidden=\"b\" -->\n",
         );
         assert_eq!(Some(Direction::Both), deck.frontmatter.direction);
         assert_eq!(1, deck.cards.len());
-        assert_eq!(Some(0), deck.cards[0].hole);
+        assert!(deck.cards[0].is_blank_card());
         assert!(!deck.cards[0].reversed);
         assert_eq!(None, deck.cards[0].direction);
     }
@@ -7701,15 +7441,16 @@ the answer
         let card = &deck.cards[0];
         assert!(card.front.contains("\\blank[pin]"));
         assert_eq!(vec![PathBuf::from("f.png")], img_srcs(&card.images));
-        assert!(card.hole.is_none());
     }
 
     #[test]
-    fn a_cloze_card_carries_front_and_back_images() {
-        let deck = parse("## front\n![](f.png)\n\n---\nthe \\blank{answer} here\n![](b.png)\n");
+    fn a_blank_card_carries_front_and_back_images() {
+        let deck = parse(
+            "## front\n![](f.png)\n\n---\nthe answer here\n![](b.png)\n<!-- blank: span hidden=\"answer\" -->\n",
+        );
         assert_eq!(1, deck.cards.len());
         let card = &deck.cards[0];
-        assert_eq!(Some(0), card.hole);
+        assert!(card.is_blank_card());
         assert_eq!(vec![PathBuf::from("f.png")], img_srcs(&card.images));
         assert_eq!(vec![PathBuf::from("b.png")], img_srcs(&card.images_back));
     }
@@ -7960,11 +7701,7 @@ the answer
     }
 
     #[test]
-    fn a_blank_marker_or_image_in_a_cell_is_refused() {
-        assert_eq!(
-            ParseError::TableCellHole(3),
-            err("| a | b |\n|---|---|\n| x | \\blank{y} |\n<!-- cards -->\n")
-        );
+    fn an_image_in_a_cell_is_refused() {
         assert_eq!(
             ParseError::TableCellImage(3),
             err("| a | b |\n|---|---|\n| ![alt](x.png) | y |\n<!-- cards -->\n")
@@ -8692,13 +8429,13 @@ the answer
     }
 
     #[test]
-    fn covers_and_crops_stay_legal_beside_holes_and_task_lists() {
+    fn covers_and_crops_stay_legal_beside_blanks_and_task_lists() {
         let cloze = parse(&format!(
-            "## q\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n<!-- crop: rect x=0 y=0 width=9 height=9 -->\n\n---\nw \\blank{{z}} y\n<!-- id: {RTOK} -->\n"
+            "## q\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n<!-- crop: rect x=0 y=0 width=9 height=9 -->\n\n---\nw z y\n<!-- blank: span hidden=\"z\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert!(
-            cloze.cards[0].hole.is_some(),
-            "a cover is a display transform, not a template: the hole cards stand"
+            cloze.cards[0].is_blank_card(),
+            "a cover is a display transform, not a template: the span cards stand"
         );
         assert_eq!(1, cloze.cards[0].images[0].regions.len());
 
@@ -8718,15 +8455,6 @@ the answer
             panic!("expected InvalidRegion, got {error:?}");
         };
         assert!(message.contains("occurs 0 time(s)"), "{message}");
-    }
-
-    #[test]
-    fn a_cloze_gap_is_a_word_boundary_for_an_adjacent_cover_span() {
-        let deck = parse(&format!(
-            "## q\n---\nleft\\blank{{middle}}right\n<!-- cover: span hidden=\"right\" -->\n<!-- id: {RTOK} -->\n"
-        ));
-        assert_eq!(1, deck.cards.len());
-        assert_eq!(Some(0), deck.cards[0].hole);
     }
 
     #[test]
@@ -8769,15 +8497,6 @@ the answer
             panic!("expected InvalidRegion, got {error:?}");
         };
         assert!(message.contains("occurs 0 time(s)"), "{message}");
-    }
-
-    #[test]
-    fn a_crossing_candidate_does_not_consume_an_overlapping_matchable_occurrence() {
-        let deck = parse(&format!(
-            "## q\n---\nba\\blank{{x}}nana\n<!-- cover: span hidden=\"ana\" boundary=char -->\n<!-- id: {RTOK} -->\n"
-        ));
-        assert_eq!(1, deck.cards.len());
-        assert_eq!(Some(0), deck.cards[0].hole);
     }
 
     #[test]
@@ -9024,7 +8743,7 @@ the answer
             "## q\n---\n$\\gamma$\n<!-- input: type -->\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
-            vec![LintKind::UntypableHole {
+            vec![LintKind::UntypableSpan {
                 answer: r"\gamma".to_string()
             }],
             deck.lints
@@ -9042,7 +8761,7 @@ the answer
             contains
                 .lints
                 .iter()
-                .filter(|l| matches!(l.kind, LintKind::UntypableHole { .. }))
+                .filter(|l| matches!(l.kind, LintKind::UntypableSpan { .. }))
                 .count(),
             "a command anywhere in the hidden text is untypable: {:?}",
             contains.lints
@@ -9342,12 +9061,12 @@ the answer
     }
 
     #[test]
-    fn a_cover_span_masks_answer_giving_prose_in_cloze_context() {
+    fn a_cover_span_masks_answer_giving_prose_in_blank_context() {
         let deck = parse(&format!(
-            "## q\n---\nthe legend says alpha; fill \\blank{{alpha}}\n<!-- cover: span hidden=\"alpha\" -->\n<!-- id: {RTOK} -->\n"
+            "## q\n---\nthe legend says alpha; fill alpha\n<!-- cover: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"alpha\" occurrence=2 b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len());
-        assert_eq!(Some(0), deck.cards[0].hole);
+        assert!(deck.cards[0].is_blank_card());
         assert_eq!(vec!["the legend says ⬚; fill ⍰"], deck.cards[0].context);
     }
 

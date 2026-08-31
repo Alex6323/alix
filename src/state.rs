@@ -113,7 +113,7 @@ pub fn retire_replaced_progress(store_path: &Path, deck_id: &str) -> Result<bool
     let progress = progress_document_for(store_path, deck_id)?;
     if progress.is_file() {
         let (_, _, data) = store::read_deck_data(&progress, deck_id, None)?;
-        if !data.cards.is_empty() || !data.records.is_empty() || !data.deck.is_empty() {
+        if !data.cards.is_empty() || !data.deck.is_empty() {
             return Ok(false);
         }
     }

@@ -499,9 +499,9 @@ pub(crate) fn validate_card_style(deck: &str, spec: &GenerationSpec) -> Result<(
         .filter(|card| match spec.card_style {
             GenerateCardStyle::Mixed => false,
             GenerateCardStyle::Plain => {
-                card.hole.is_some() || !card.authored_distractors.is_empty()
+                card.is_blank_card() || !card.authored_distractors.is_empty()
             }
-            GenerateCardStyle::Cloze => card.hole.is_none(),
+            GenerateCardStyle::Cloze => !card.is_blank_card(),
             GenerateCardStyle::AuthoredChoices => {
                 !(2..=4).contains(&card.authored_distractors.len())
             }
@@ -1367,7 +1367,7 @@ mod tests {
             (GenerateCardStyle::Plain, "## Question\nAnswer\n"),
             (
                 GenerateCardStyle::Cloze,
-                "## Complete it\nThe value is \\blank{dropped}.\n",
+                "## Complete it\nThe value is dropped.\n<!-- blank: span hidden=\"dropped\" -->\n",
             ),
             (
                 GenerateCardStyle::AuthoredChoices,
@@ -1384,6 +1384,24 @@ mod tests {
             };
             validate_card_style(deck, &spec).unwrap();
         }
+    }
+
+    #[test]
+    fn span_blank_cards_satisfy_cloze_style_and_not_plain_style() {
+        let deck =
+            "## Complete it\nThe value is dropped.\n<!-- blank: span hidden=\"dropped\" -->\n";
+        let spec = |card_style| GenerationSpec {
+            goal: "learn it".to_string(),
+            language: None,
+            audience: None,
+            card_style,
+        };
+        validate_card_style(deck, &spec(GenerateCardStyle::Cloze))
+            .expect("a span blank IS the requested cloze shape");
+        assert!(
+            validate_card_style(deck, &spec(GenerateCardStyle::Plain)).is_err(),
+            "a span blank is not a plain card"
+        );
     }
 
     #[test]

@@ -173,7 +173,7 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<ScannedCard>) {
             let v = rest.trim();
             if matches!(
                 crate::token::parse_prefixed_card_id(v),
-                Some((_, None, None, false, None))
+                Some((_, None, false, None))
             ) && heading_line > 0
             {
                 let entry = ScannedCard {

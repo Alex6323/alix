@@ -173,7 +173,7 @@ fn image_views(
 /// sibling questions the cover could give away: neither a region card nor a
 /// cloze sub-card.
 pub(crate) fn covers_reveal(card: &Card) -> bool {
-    card.region.is_none() && card.hole.is_none()
+    !card.is_blank_card()
 }
 
 /// Which stamps the projected card asks: a single region's own stamp, a
@@ -490,9 +490,7 @@ pub fn state(
         keypoint_runs,
         // Last in the chain, after the card's own directive and the deck's:
         // the rule fills a gap and never overrules what an author wrote.
-        input: card
-            .and_then(|c| c.input.or(c.math_hole.then_some(Input::Draw)))
-            .unwrap_or_default(),
+        input: card.and_then(|c| c.input).unwrap_or_default(),
         finished,
         remaining: session.remaining() as u32,
         initial: session.initial_size as u32,
@@ -644,8 +642,6 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
-
     use super::*;
 
     #[test]
@@ -1031,54 +1027,6 @@ mod tests {
             "the revealed hole must be rendered, got {:?}",
             run.math
         );
-    }
-
-    fn math_hole_answer() -> impl Strategy<Value = String> {
-        prop_oneof![
-            Just("x".to_string()),
-            Just("x_1".to_string()),
-            Just(r"\pm".to_string()),
-            Just(r"\alpha".to_string()),
-            Just(r"\frac{1}{2}".to_string()),
-        ]
-    }
-
-    proptest! {
-        #![proptest_config(ProptestConfig { cases: 24, ..ProptestConfig::default() })]
-
-        #[test]
-        fn every_generated_formula_hole_reveals_as_math(answer in math_hole_answer()) {
-            let math_deck = format!("## q\n$x + \\blank{{{answer}}} + y$\n");
-            let math_cards = parser::parse_str("d.md", &math_deck).expect("the math deck parses");
-            prop_assert_eq!(1, math_cards.len());
-            prop_assert!(math_cards[0].math_hole, "card: {:?}", math_cards[0]);
-
-            let math_view = CardView::from(&math_cards[0]);
-            prop_assert_eq!(1, math_view.back.len());
-            prop_assert_eq!(answer.as_str(), math_view.back[0].as_str());
-            let rendered = math_view
-                .back_runs
-                .first()
-                .and_then(|runs| runs.first())
-                .and_then(|run| run.math.as_ref());
-            prop_assert!(
-                rendered.and_then(|math| math.svg.as_ref()).is_some(),
-                "answer: {answer:?}; runs: {:?}",
-                math_view.back_runs
-            );
-
-            let prose_deck = format!("## q\nbefore \\blank{{{answer}}} after\n");
-            let prose_cards = parser::parse_str("d.md", &prose_deck).expect("the prose deck parses");
-            prop_assert_eq!(1, prose_cards.len());
-            prop_assert!(!prose_cards[0].math_hole, "card: {:?}", prose_cards[0]);
-
-            let prose_view = CardView::from(&prose_cards[0]);
-            prop_assert!(
-                prose_view.back_runs.iter().flatten().all(|run| run.math.is_none()),
-                "answer: {answer:?}; runs: {:?}",
-                prose_view.back_runs
-            );
-        }
     }
 
     #[test]
@@ -1618,10 +1566,12 @@ mod tests {
     }
 
     #[test]
-    fn a_cloze_answer_that_is_a_greater_than_sign_is_exact_text_not_a_quote() {
+    fn a_blank_answer_that_is_a_greater_than_sign_is_exact_text_not_a_quote() {
         let (mut store, _augment, _dir) = fixtures();
-        let cards = parse("## comparison\nleft \\blank{>} right\n");
-        assert!(cards[0].hole.is_some(), "the parser produced a cloze card");
+        let cards = parse(
+            "## comparison\nleft > right\n<!-- blank: span hidden=\">\" boundary=char b:a1b2c3 -->\n",
+        );
+        assert!(cards[0].is_blank_card(), "the parser produced a blank card");
         assert_eq!([">"], cards[0].back.as_slice());
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
@@ -2423,22 +2373,21 @@ mod tests {
     }
 
     #[test]
-    fn a_cloze_cards_cover_stays_masked_to_protect_its_sibling_question() {
-        let text = "## diagram\n![](parts.png)\n<!-- cover: rect x=1 y=2 width=3 height=4 -->\n\n---\nThe first is \\blank{alpha}; the second is \\blank{beta}.\n";
+    fn a_blank_cards_cover_stays_masked_to_protect_its_sibling_question() {
+        let text = "## diagram\n![](parts.png)\n<!-- cover: rect x=1 y=2 width=3 height=4 -->\n\n---\nThe first is alpha; the second is beta.\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n";
         let cards = crate::parser::parse_str("t.md", text).unwrap();
-        assert_eq!(2, cards.len(), "the block produces sibling hole cards");
+        assert_eq!(2, cards.len(), "the block produces sibling span cards");
 
         for card in &cards {
             assert!(
-                card.hole.is_some(),
-                "this is a cloze card, not a plain card"
+                card.is_blank_card(),
+                "this is a blank card, not a plain card"
             );
-            assert!(card.region.is_none(), "a text hole is not an image region");
             let cover = &CardView::from(card).images[0].regions[0];
             assert_eq!(RegionRole::Cover, cover.role);
             assert!(
                 !cover.reveal_on_answer,
-                "answering one hole must not uncover material that protects its sibling hole"
+                "answering one span must not uncover material that protects its sibling question"
             );
         }
     }

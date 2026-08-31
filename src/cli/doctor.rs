@@ -138,7 +138,7 @@ fn deck_findings(path: &Path, report: &mut Report) {
         }
     }
     for tok in &tokens {
-        if let Some((_, token, _, _, _, _)) = alix::token::parse_id(tok)
+        if let Some((_, token, _, _, _)) = alix::token::parse_id(tok)
             && !alix::token::is_canonical(token)
         {
             report.warn(format!(
@@ -640,9 +640,6 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::UnknownKey { key } => format!("unknown key `{key}` (ignored)"),
         LintKind::BadValue { key, value } => format!("`{key}` has an invalid value `{value}`"),
         LintKind::EmptyValue { key } => format!("`{key}` has an empty value"),
-        LintKind::RevealOnCloze => {
-            "`reveal:` on a cloze card is ignored (the holes are the reveal)".to_string()
-        }
         LintKind::IndentedH2 => {
             "an indented `##` line is content, not a card front (likely a mistype)".to_string()
         }
@@ -654,13 +651,10 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
             "`{name}:` names no group of this block, so the line is shown as \
              the block note"
         ),
-        LintKind::UntypableHole { answer } => format!(
-            "the hole `{answer}` asks the learner to type a LaTeX command; \
-             hide a piece that can be typed, or let it be drawn"
+        LintKind::UntypableSpan { answer } => format!(
+            "the hidden span `{answer}` asks the learner to type a LaTeX \
+             command; hide a piece that can be typed, or let it be drawn"
         ),
-        LintKind::ClozeInHole => {
-            "a `\\blank` inside a cloze hole is literal text, not a nested hole".to_string()
-        }
         LintKind::UnclosedComment => {
             "a `<!--` line that never closes with `-->` stays content".to_string()
         }
