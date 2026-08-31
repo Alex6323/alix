@@ -1380,6 +1380,10 @@ pub fn store_remediation_cards(
             false,
         );
         let block = stamp_block(block, &token);
+        // Region stamps are identity: an unstamped generated span parses
+        // idless and would never schedule, so the production stamper runs
+        // over the block before the parse that schedules it.
+        let block = stamp_generated_regions(&block)?;
         // A malformed block is a hard error, not a silently-dropped card.
         let cards = crate::parser::parse_str(deck_id, &block)?;
         let Some(first) = cards.first() else {
@@ -1431,6 +1435,22 @@ fn personal_ids_with_content(deck_path: &Path, deck_id: &str, fingerprint: u64) 
         .filter(|card| card.block_fingerprint == fingerprint)
         .filter_map(|card| card.id())
         .collect()
+}
+
+fn stamp_generated_regions(block: &str) -> AnyResult<String> {
+    let deck_id = crate::token::mint().map_err(|e| anyhow::anyhow!("cannot mint a token: {e}"))?;
+    // A scratch header so the non-initializing stamper accepts the file;
+    // stripped after, so only the block's own bytes are appended.
+    let head = format!("---\nid: \"deck-{deck_id}\"\n---\n\n");
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("remediation.md");
+    std::fs::write(&path, format!("{head}{block}"))?;
+    crate::stamp::stamp_initialized_deck(&path)?;
+    let stamped = std::fs::read_to_string(&path)?;
+    stamped
+        .strip_prefix(&head)
+        .map(str::to_string)
+        .ok_or_else(|| anyhow::anyhow!("the stamper rewrote the scratch header"))
 }
 
 fn stamp_block(block: &str, token: &str) -> String {
@@ -2640,6 +2660,36 @@ mod tests {
             "a different answer in the same sentence shape is a distinct gap"
         );
         assert_eq!(2, sidecar_cards(&deck, "d.md").len());
+    }
+
+    #[test]
+    fn an_unstamped_span_remediation_is_stamped_and_scheduled() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let deck = dir.path().join("d.md");
+        let text = "## Recall how a String is laid out in memory.\nA String stores a pointer, length and capacity on the stack.\n<!-- blank: span hidden=\"pointer\" -->\n<!-- blank: span hidden=\"length\" -->\n";
+
+        let created = store_remediation(&mut store, &deck, "d.md", text, 1_000, None).unwrap();
+        assert_eq!(2, created, "each generated span schedules as its own card");
+        let ids = sidecar_ids(&deck, "d.md");
+        assert_eq!(
+            2,
+            ids.len(),
+            "the stored text reparses to two stamped span cards"
+        );
+        for id in &ids {
+            assert!(
+                store.get(id).is_some(),
+                "the id scheduled in memory is the id reparsed from disk: {id}"
+            );
+        }
+
+        let rerun = store_remediation(&mut store, &deck, "d.md", text, 2_000, None).unwrap();
+        assert_eq!(
+            0, rerun,
+            "fresh stamps do not defeat dedup: the block key masks the spans"
+        );
+        assert_eq!(2, sidecar_ids(&deck, "d.md").len(), "no duplicate append");
     }
 
     #[test]
