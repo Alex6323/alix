@@ -981,6 +981,41 @@ mod tests {
     /// reaches the client as a rendered math run, not as the characters the
     /// author typed. Without this the learner reveals `\pm` and reads source.
     #[test]
+    fn a_revealed_math_span_carries_a_rendered_run() {
+        for (label, body, expected_back) in [
+            (
+                "atom span",
+                "$x = a + b$\n<!-- blank: span hidden=\"a\" b:a1b2c3 -->",
+                "a",
+            ),
+            (
+                "whole-formula span",
+                "$x = a + b$\n<!-- blank: span hidden=\"x = a + b\" b:a1b2c3 -->",
+                "x = a + b",
+            ),
+        ] {
+            let source = format!(
+                "---\nid: deck-0000000000000000000000000\n---\n# M\n## formula\n{body}\n<!-- id: card-regionregionregionregionre -->\n"
+            );
+            let deck = crate::parser::parse("m.md", &source)
+                .unwrap_or_else(|e| panic!("{label}: deck parses: {e}"));
+            let view = CardView::from(&deck.cards[0]);
+            assert_eq!(
+                view.back,
+                [expected_back],
+                "{label}: grading content stays plain"
+            );
+            let run = &view.back_runs[0][0];
+            assert_eq!(expected_back, run.text, "{label}: run text stays plain");
+            assert!(
+                run.math.as_ref().is_some_and(|math| math.svg.is_some()),
+                "{label}: a math-classed span must reveal rendered, got {:?}",
+                run.math
+            );
+        }
+    }
+
+    #[test]
     fn a_revealed_math_hole_carries_a_rendered_run() {
         let cards = parser::parse_str("d.md", "## q\n---\n$x = -b \\blank{\\pm} \\sqrt{d}$\n")
             .expect("the deck parses");

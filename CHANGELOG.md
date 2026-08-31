@@ -16,12 +16,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   augment`, since a review order is built per deck and a workspace has no
   single answer for it.
 
-
 - `alix doctor --normalize` rewrites a deck that drifted out of canonical
   bytes after it was initialized, for when an editor put a byte-order mark,
   CRLF endings, or trailing blanks back. It refuses to write anything that
   would stop parsing.
-
 
 - Badged notes and quotations are styled. Each of the five badges opens its
   own callout with a chip naming it, tinted from the theme you are using
@@ -404,7 +402,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deck needs them, so alix settles on one form instead of carrying whatever
   arrived. Initializing, stamping, augmenting, receiving, and every doctor
   repair write canonical bytes; a file alix never writes is left alone.
-
 
 - Generation moved under the noun it produces: `alix generate deck` is now
   `alix deck generate`, and `alix generate workspace` is now `alix workspace
@@ -862,6 +859,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+- A span blank bound inside a formula reveals its answer as rendered math,
+  as the displayed answer regains its `$` delimiters; grading still compares
+  the plain hidden text. Previously the revealed answer of a math-classed
+  span showed raw LaTeX source.
+
 - An exam labels each `source:` file by the path the deck declared rather than
   by the file's basename, so two sources that share a name are no longer
   indistinguishable to the examiner. A deck declaring `a/notes.md` and
@@ -873,7 +875,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `\Users\you\notes.md`, which names a rooted location without being an
   absolute path.
 
-
 - An AI call now runs without your own instructions for the CLI it shells out
   to. Every backend reads an operator instruction file (`CLAUDE.md`,
   `AGENTS.md`, `GEMINI.md`), and those instructions shaped replies alix parses
@@ -884,6 +885,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   backend is unchanged and the gap is written down in the security notes.
   This also keeps your hooks, skills and MCP servers out of the subprocess
   alix hands untrusted deck text to.
+
 - An AI call on the Claude backend now runs with the tool set alix grants it,
   and nothing else. Alix passed the grant as `--allowedTools`, which
   pre-approves the tools it names without removing any others, so whatever
@@ -894,21 +896,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--tools`, which bounds the set, and the empty grant bounds it to nothing.
   Verified by running the subprocess and watching the filesystem rather than
   asking the model what it did.
+
 - Receiving a shared deck, transferring one between workspaces, and merging
   explored material now write the deck in canonical bytes, as the deck format
   chapter already promised. A received folder is normalized all the way down,
-  including decks in an ordinary subfolder. All three landed the sender's bytes unchanged, so
+  including decks in an ordinary subfolder. All three landed the sender's bytes
+  unchanged, so
   a received deck could arrive with a byte-order mark, CRLF endings, and
   trailing blanks, and stayed that way until some later edit rewrote it. Found
   by Codex.
+
 - Normalization now drops a whole run of carriage returns at end of line, not
   just one. A deck written with `\r\r\n` endings kept a carriage return per
   line through normalization, and stamping it then wrote a file mixing both
   terminators. Found by Codex.
+
 - Repairing a duplicate card id when a deck is opened for review writes the
   deck in canonical bytes. It rewrote only the id token, leaving the rest of
   the file as it found it. Found by Codex.
-
 
 - `alix workspace update` blames the member you wrote, not a staged path you
   never saw. When a backend reply is not a deck, the run failed with `cannot

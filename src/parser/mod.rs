@@ -1933,6 +1933,7 @@ fn extract_row_stamp(line: &str) -> Option<(String, String)> {
 struct SpanSplice {
     directive_line: usize,
     cover: bool,
+    math: bool,
     answer_index: usize,
     range: (usize, usize),
 }
@@ -2074,10 +2075,37 @@ fn build_region_cards(
             })
             .collect()
     };
+    let math_line = |line: usize| {
+        prose.is_some_and(|prose| {
+            prose
+                .splices
+                .iter()
+                .any(|splice| splice.directive_line == line && !splice.cover && splice.math)
+        })
+    };
     let region_card = |slot: RegionSlot, back: Vec<String>| {
         let mut card = template.clone();
+        // The displayed answer regains its `$` delimiters so a math-classed
+        // span reveals rendered; `back` stays the typed/graded plain text.
+        let asked: Vec<(usize, &String)> = match &slot {
+            RegionSlot::Single { line, .. } => back.iter().map(|text| (*line, text)).collect(),
+            RegionSlot::Group { members, .. } => members
+                .iter()
+                .filter(|member| member.hidden.is_some())
+                .zip(&back)
+                .map(|(member, text)| (member.line, text))
+                .collect(),
+        };
+        card.display_back = asked.iter().any(|(line, _)| math_line(*line)).then(|| {
+            asked
+                .iter()
+                .map(|(line, text)| match math_line(*line) {
+                    true => format!("${text}$"),
+                    false => (*text).clone(),
+                })
+                .collect()
+        });
         card.back = back;
-        card.display_back = None;
         // card.line stays the authored block line: card_front_lines exposes
         // every distinct line as a Markdown block boundary, and a directive
         // line there once let removal truncate the parent's answer.
@@ -2781,6 +2809,7 @@ fn build_card_inner(
             splices.push(SpanSplice {
                 directive_line: span.line,
                 cover: span.kind == region::RegionKind::Cover,
+                math: stream.math_piece(&(start..end)).is_some(),
                 answer_index,
                 range: (range.start, range.end),
             });
