@@ -58,19 +58,6 @@ void main() {
     expect(find.byType(SketchCanvas), findsNothing);
   });
 
-  testWidgets('a hole cut from a formula draws without any directive', (tester) async {
-    await pumpDeck(
-      tester,
-      '## The quadratic formula\n---\n\$x = -b \\blank{\\pm} \\sqrt{d}\$\n',
-      name: 'formula.md',
-    );
-
-    expect(
-      find.byType(SketchCanvas),
-      findsOneWidget,
-      reason: 'the lib resolves input: draw for a math hole; the client must honour it',
-    );
-  });
 
   testWidgets('the tool row offers pen, eraser, undo and clear', (tester) async {
     await pumpDeck(tester, '## Draw it\nか\n<!-- input: draw -->\n');

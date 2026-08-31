@@ -38,7 +38,7 @@ abstract interface class ReviewPort {
     required int nowMs,
   });
 
-  void applyCardNote({required int line, required List<String> notes});
+  void applyCardNote({required String id, required List<String> notes});
 
   void applyExamPassed(int nowMs);
 

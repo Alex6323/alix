@@ -26,7 +26,7 @@ void seedChoiceDistractors({
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>>
 abstract class ReviewSession implements RustOpaqueInterface {
-  void applyCardNote({required int line, required List<String> notes});
+  void applyCardNote({required String id, required List<String> notes});
 
   void applyExamPassed({required BigInt nowMs});
 
@@ -729,6 +729,7 @@ class ReviewState {
 }
 
 class TutorCard {
+  final String id;
   final String subject;
   final String front;
   final List<String> back;
@@ -736,6 +737,7 @@ class TutorCard {
   final BigInt line;
 
   const TutorCard({
+    required this.id,
     required this.subject,
     required this.front,
     required this.back,
@@ -745,6 +747,7 @@ class TutorCard {
 
   @override
   int get hashCode =>
+      id.hashCode ^
       subject.hashCode ^
       front.hashCode ^
       back.hashCode ^
@@ -756,6 +759,7 @@ class TutorCard {
       identical(this, other) ||
       other is TutorCard &&
           runtimeType == other.runtimeType &&
+          id == other.id &&
           subject == other.subject &&
           front == other.front &&
           back == other.back &&

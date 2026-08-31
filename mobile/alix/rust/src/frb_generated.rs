@@ -71,7 +71,7 @@ fn wire__crate__api__review__ReviewSession_apply_card_note_impl(
             let api_that = <RustOpaqueMoi<
                 flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>,
             >>::sse_decode(&mut deserializer);
-            let api_line = <u32>::sse_decode(&mut deserializer);
+            let api_id = <String>::sse_decode(&mut deserializer);
             let api_notes = <Vec<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
@@ -92,7 +92,7 @@ fn wire__crate__api__review__ReviewSession_apply_card_note_impl(
                     let mut api_that_guard = api_that_guard.unwrap();
                     let output_ok = crate::api::review::ReviewSession::apply_card_note(
                         &mut *api_that_guard,
-                        api_line,
+                        api_id,
                         api_notes,
                     )?;
                     Ok(output_ok)
@@ -2918,12 +2918,14 @@ impl SseDecode for crate::api::review::ReviewState {
 impl SseDecode for crate::api::review::TutorCard {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
         let mut var_subject = <String>::sse_decode(deserializer);
         let mut var_front = <String>::sse_decode(deserializer);
         let mut var_back = <Vec<String>>::sse_decode(deserializer);
         let mut var_at = <Option<String>>::sse_decode(deserializer);
         let mut var_line = <usize>::sse_decode(deserializer);
         return crate::api::review::TutorCard {
+            id: var_id,
             subject: var_subject,
             front: var_front,
             back: var_back,
@@ -3928,6 +3930,7 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::ReviewStat
 impl flutter_rust_bridge::IntoDart for crate::api::review::TutorCard {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
+            self.id.into_into_dart().into_dart(),
             self.subject.into_into_dart().into_dart(),
             self.front.into_into_dart().into_dart(),
             self.back.into_into_dart().into_dart(),
@@ -5027,6 +5030,7 @@ impl SseEncode for crate::api::review::ReviewState {
 impl SseEncode for crate::api::review::TutorCard {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
         <String>::sse_encode(self.subject, serializer);
         <String>::sse_encode(self.front, serializer);
         <Vec<String>>::sse_encode(self.back, serializer);

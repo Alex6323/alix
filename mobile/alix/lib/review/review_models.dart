@@ -331,6 +331,7 @@ class ReviewCrumbModel {
 
 class ReviewTutorCardModel {
   ReviewTutorCardModel({
+    required this.id,
     required this.subject,
     required this.front,
     required Iterable<String> back,
@@ -338,6 +339,7 @@ class ReviewTutorCardModel {
     required this.line,
   }) : back = List.unmodifiable(back);
 
+  final String id;
   final String subject;
   final String front;
   final List<String> back;

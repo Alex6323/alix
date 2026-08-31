@@ -58,6 +58,7 @@ class ReviewBridgePort implements ReviewPort {
     return tutor == null
         ? null
         : ReviewTutorCardModel(
+            id: tutor.id,
             subject: tutor.subject,
             front: tutor.front,
             back: tutor.back,
@@ -152,8 +153,8 @@ class ReviewBridgePort implements ReviewPort {
   }
 
   @override
-  void applyCardNote({required int line, required List<String> notes}) {
-    _session.applyCardNote(line: line, notes: notes);
+  void applyCardNote({required String id, required List<String> notes}) {
+    _session.applyCardNote(id: id, notes: notes);
   }
 
   @override

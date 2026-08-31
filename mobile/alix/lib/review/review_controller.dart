@@ -214,8 +214,8 @@ class ReviewController extends ChangeNotifier {
     return _requirePort().mintTutorCard(front: front, back: back, nowMs: nowMs);
   }
 
-  void applyCardNote({required int line, required List<String> notes}) {
-    _requirePort().applyCardNote(line: line, notes: notes);
+  void applyCardNote({required String id, required List<String> notes}) {
+    _requirePort().applyCardNote(id: id, notes: notes);
   }
 
   void applyExamPassed(int nowMs) => _requirePort().applyExamPassed(nowMs);

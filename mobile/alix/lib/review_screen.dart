@@ -155,7 +155,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           nowMs: DateTime.now().millisecondsSinceEpoch,
         ),
         onNote: (notes) =>
-            _controller.applyCardNote(line: tutor.line, notes: notes),
+            _controller.applyCardNote(id: tutor.id, notes: notes),
       ),
     );
   }

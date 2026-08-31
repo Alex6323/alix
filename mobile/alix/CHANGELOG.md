@@ -7,6 +7,14 @@ Release notes, so a release without its section fails loud.
 
 ## [Unreleased]
 
+### Fixed
+
+- A tutor note taken on a fill-in-the-blank card landed on the block's
+  first blank regardless of which one was under review: notes were
+  addressed by source line, which every blank of one block shares. The
+  tutor now addresses the exact card id. Found by Codex with a red
+  bridge-level reproduction.
+
 ## [0.3.0] - 2026-08-03
 
 ### Fixed

@@ -200,7 +200,9 @@ void main() {
     writeTestDeck(
       clozeDeck,
       '## Complete\n'
-      '\$x = \\blank{alpha} + \\blank{beta}\$\n'
+      '\$x = alpha + beta\$\n'
+      '<!-- blank: span hidden="alpha" b:a1b2c3 -->\n'
+      '<!-- blank: span hidden="beta" b:d4e5f6 -->\n'
       '<!-- id: card-cloze -->\n',
     );
     final cloze = ReviewSession.open(
@@ -1005,7 +1007,9 @@ void main() {
     writeTestDeck(
       clozeDeck,
       '## Complete\n'
-      '\$x = \\blank{alpha} + \\blank{beta}\$\n'
+      '\$x = alpha + beta\$\n'
+      '<!-- blank: span hidden="alpha" b:a1b2c3 -->\n'
+      '<!-- blank: span hidden="beta" b:d4e5f6 -->\n'
       '<!-- id: card-cloze -->\n',
     );
     await tester.pumpWidget(

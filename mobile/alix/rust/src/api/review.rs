@@ -347,6 +347,7 @@ pub struct ForeignWriter {
 }
 
 pub struct TutorCard {
+    pub id: String,
     pub subject: String,
     pub front: String,
     pub back: Vec<String>,
@@ -541,6 +542,7 @@ impl ReviewSession {
     pub fn tutor_card(&self) -> Option<TutorCard> {
         let card = self.session.current()?;
         Some(TutorCard {
+            id: card.id()?,
             subject: card.subject.to_string(),
             front: card.front.clone(),
             back: card.back.clone(),
@@ -583,22 +585,24 @@ impl ReviewSession {
     }
 
     #[flutter_rust_bridge::frb(sync)]
-    pub fn apply_card_note(&mut self, line: u32, notes: Vec<String>) -> Result<()> {
+    pub fn apply_card_note(&mut self, id: String, notes: Vec<String>) -> Result<()> {
         if notes.is_empty() {
             return Ok(());
         }
-        let line = line as usize;
-        let Some(card_id) = self
+        if !self
             .session
             .cards()
             .iter()
-            .find(|card| card.line == line)
-            .and_then(alix::card::Card::id)
-        else {
-            bail!("no card at line {line} carries an id to attach a note to");
-        };
-        alix::personal::append_note(&self.deck_path, &self.deck_token, &card_id, &notes)?;
-        if let Some(cur) = self.session.current_mut().filter(|cur| cur.line == line) {
+            .any(|card| card.id().as_deref() == Some(id.as_str()))
+        {
+            bail!("no card in the session carries the id `{id}` to attach a note to");
+        }
+        alix::personal::append_note(&self.deck_path, &self.deck_token, &id, &notes)?;
+        if let Some(cur) = self
+            .session
+            .current_mut()
+            .filter(|cur| cur.id().as_deref() == Some(id.as_str()))
+        {
             cur.append_note(&notes);
         }
         Ok(())
@@ -1296,7 +1300,7 @@ mod tests {
         let root = dir.path();
         write_deck(
             &root.join("d.md"),
-            "## capital?\nParis is the capital of \\blank{France}\n",
+            "## capital?\nParis is the capital of France\n<!-- blank: span hidden=\"France\" -->\n",
         );
         let authored = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let authored_back = authored.cards[0].back.clone();
@@ -1397,7 +1401,6 @@ mod tests {
         // Read after opening: stamping adds frontmatter, so the card moves.
         let before = alix::deck::Deck::load(root.join("d.md")).unwrap();
         let id_before = before.cards[0].id().expect("the fixture stamps its own id");
-        let line = before.cards[0].line;
         let deck_bytes_before = std::fs::read(root.join("d.md")).unwrap();
 
         s.grade(Grade::Pass, Some(LATER)).unwrap();
@@ -1409,8 +1412,11 @@ mod tests {
             "grading scheduled the card at Recall before the note append"
         );
 
-        s.apply_card_note(line as u32, vec!["first".to_string(), "second".to_string()])
-            .unwrap();
+        s.apply_card_note(
+            id_before.clone(),
+            vec!["first".to_string(), "second".to_string()],
+        )
+        .unwrap();
 
         let sidecar =
             std::fs::read_to_string(alix::personal::sidecar_path(&root.join("d.md"))).unwrap();
@@ -1442,6 +1448,44 @@ mod tests {
     }
 
     #[test]
+    fn apply_card_note_addresses_the_current_span_sibling_not_the_first_line_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("d.md"),
+            "## q\nfirst and second\n\
+             <!-- blank: span hidden=\"first\" b:a1b2c3 -->\n\
+             <!-- blank: span hidden=\"second\" b:d4e5f6 -->\n\
+             <!-- id: card-topic -->\n",
+        );
+
+        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
+        let deck = alix::deck::Deck::load(root.join("d.md")).unwrap();
+        let first_id = deck.cards[0].id().unwrap();
+        let second_id = deck.cards[1].id().unwrap();
+        assert_eq!(deck.cards[0].line, deck.cards[1].line);
+
+        if s.session.current().and_then(alix::card::Card::id) == Some(first_id.clone()) {
+            s.grade(Grade::Pass, Some(LATER)).unwrap();
+        }
+        let tutor = s.tutor_card().expect("a card is current");
+        assert_eq!(
+            tutor.id, second_id,
+            "precondition: the second sibling is current and the tutor carries its id"
+        );
+
+        s.apply_card_note(tutor.id, vec!["only about second".to_string()])
+            .unwrap();
+        let sidecar =
+            std::fs::read_to_string(alix::personal::sidecar_path(&root.join("d.md"))).unwrap();
+        assert!(
+            sidecar.contains(&format!("<!-- note: {second_id} -->")),
+            "the current sibling owns the note: {sidecar}"
+        );
+        assert!(!sidecar.contains(&format!("<!-- note: {first_id} -->")));
+    }
+
+    #[test]
     fn apply_card_note_with_empty_notes_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -1452,7 +1496,8 @@ mod tests {
         let before_bytes = std::fs::read(root.join("d.md")).unwrap();
 
         let mut s = opened_after_introduction(&root.join("d.md"), root, None);
-        s.apply_card_note(1, Vec::new()).unwrap();
+        s.apply_card_note("card-q1".to_string(), Vec::new())
+            .unwrap();
 
         let after_bytes = std::fs::read(root.join("d.md")).unwrap();
         assert_eq!(
@@ -1467,7 +1512,7 @@ mod tests {
         let root = dir.path();
         write(&root.join("d.md"), "## q\na\n");
         let mut s = opened_after_introduction(&root.join("d.md"), root, None);
-        let line = s.tutor_card().expect("a card is current").line;
+        let id = s.tutor_card().expect("a card is current").id;
 
         assert!(
             s.state(Some(LATER))
@@ -1478,7 +1523,7 @@ mod tests {
             "no note yet"
         );
 
-        s.apply_card_note(line as u32, vec!["explained".to_string()])
+        s.apply_card_note(id, vec!["explained".to_string()])
             .unwrap();
 
         let note = s.state(Some(LATER)).card.expect("a rendered card").note;
@@ -1489,19 +1534,19 @@ mod tests {
     }
 
     #[test]
-    fn apply_card_note_mirror_is_guarded_by_the_anchor_line() {
+    fn apply_card_note_mirror_is_guarded_by_the_card_id() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("d.md"), "## q1\na1\n\n## q2\na2\n");
 
         let mut s = opened_after_introduction(&root.join("d.md"), root, None);
         let loaded = alix::deck::Deck::load(root.join("d.md")).unwrap();
-        let line1 = loaded.cards[0].line;
-        let line2 = loaded.cards[1].line;
-        let current_line = s.tutor_card().expect("a card is current").line;
-        let other_line = if current_line == line1 { line2 } else { line1 };
+        let id1 = loaded.cards[0].id().expect("stamped on open");
+        let id2 = loaded.cards[1].id().expect("stamped on open");
+        let current_id = s.tutor_card().expect("a card is current").id;
+        let other_id = if current_id == id1 { id2 } else { id1 };
 
-        s.apply_card_note(other_line as u32, vec!["stale".to_string()])
+        s.apply_card_note(other_id, vec!["stale".to_string()])
             .unwrap();
 
         assert!(
@@ -1510,14 +1555,14 @@ mod tests {
                 .expect("a rendered card")
                 .note
                 .is_empty(),
-            "a note anchored to a different card's line must not mirror onto \
+            "a note anchored to a different card's id must not mirror onto \
              the current card"
         );
         let sidecar =
             std::fs::read_to_string(alix::personal::sidecar_path(&root.join("d.md"))).unwrap();
         assert!(
             sidecar.contains("> stale"),
-            "the sidecar append is unconditional (line-keyed): {sidecar}"
+            "the sidecar append is unconditional (id-keyed): {sidecar}"
         );
     }
 
@@ -1604,8 +1649,8 @@ mod tests {
             s.state(Some(LATER)).introducing,
             "the bridge parity row must start from the same fresh card as the server row"
         );
-        let line = s.tutor_card().expect("a card is current").line;
-        s.apply_card_note(line as u32, vec![alix_test_support::NOTE.to_string()])
+        let id = s.tutor_card().expect("a card is current").id;
+        s.apply_card_note(id, vec![alix_test_support::NOTE.to_string()])
             .unwrap();
 
         assert_eq!(
@@ -1680,8 +1725,8 @@ mod tests {
         let minted = s
             .mint_tutor_card("mine?".to_string(), vec!["my answer".to_string()], LATER)
             .expect("fresh content mints");
-        let line = s.tutor_card().expect("a card is current").line;
-        s.apply_card_note(line as u32, vec!["mine to remember".to_string()])
+        let id = s.tutor_card().expect("a card is current").id;
+        s.apply_card_note(id, vec!["mine to remember".to_string()])
             .unwrap();
         let deck_card_id = alix::deck::Deck::load(&deck).unwrap().cards[0]
             .id()

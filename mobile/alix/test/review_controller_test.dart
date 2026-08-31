@@ -228,7 +228,7 @@ class _FakeReviewPort implements ReviewPort {
   }
 
   @override
-  void applyCardNote({required int line, required List<String> notes}) {}
+  void applyCardNote({required String id, required List<String> notes}) {}
 
   @override
   void applyExamPassed(int nowMs) {}

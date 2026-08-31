@@ -83,7 +83,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 abstract class RustLibApi extends BaseApi {
   void crateApiReviewReviewSessionApplyCardNote({
     required ReviewSession that,
-    required int line,
+    required String id,
     required List<String> notes,
   });
 
@@ -266,7 +266,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   void crateApiReviewReviewSessionApplyCardNote({
     required ReviewSession that,
-    required int line,
+    required String id,
     required List<String> notes,
   }) {
     return handler.executeSync(
@@ -277,7 +277,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          sse_encode_u_32(line, serializer);
+          sse_encode_String(id, serializer);
           sse_encode_list_String(notes, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 1)!;
         },
@@ -286,7 +286,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiReviewReviewSessionApplyCardNoteConstMeta,
-        argValues: [that, line, notes],
+        argValues: [that, id, notes],
         apiImpl: this,
       ),
     );
@@ -295,7 +295,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiReviewReviewSessionApplyCardNoteConstMeta =>
       const TaskConstMeta(
         debugName: "ReviewSession_apply_card_note",
-        argNames: ["that", "line", "notes"],
+        argNames: ["that", "id", "notes"],
       );
 
   @override
@@ -2209,14 +2209,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TutorCard dco_decode_tutor_card(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return TutorCard(
-      subject: dco_decode_String(arr[0]),
-      front: dco_decode_String(arr[1]),
-      back: dco_decode_list_String(arr[2]),
-      at: dco_decode_opt_String(arr[3]),
-      line: dco_decode_usize(arr[4]),
+      id: dco_decode_String(arr[0]),
+      subject: dco_decode_String(arr[1]),
+      front: dco_decode_String(arr[2]),
+      back: dco_decode_list_String(arr[3]),
+      at: dco_decode_opt_String(arr[4]),
+      line: dco_decode_usize(arr[5]),
     );
   }
 
@@ -3541,12 +3542,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   TutorCard sse_decode_tutor_card(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
     var var_subject = sse_decode_String(deserializer);
     var var_front = sse_decode_String(deserializer);
     var var_back = sse_decode_list_String(deserializer);
     var var_at = sse_decode_opt_String(deserializer);
     var var_line = sse_decode_usize(deserializer);
     return TutorCard(
+      id: var_id,
       subject: var_subject,
       front: var_front,
       back: var_back,
@@ -4794,6 +4797,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   void sse_encode_tutor_card(TutorCard self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
     sse_encode_String(self.subject, serializer);
     sse_encode_String(self.front, serializer);
     sse_encode_list_String(self.back, serializer);
@@ -4920,10 +4924,10 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
         RustLib.instance.api.rust_arc_decrement_strong_count_ReviewSessionPtr,
   );
 
-  void applyCardNote({required int line, required List<String> notes}) =>
+  void applyCardNote({required String id, required List<String> notes}) =>
       RustLib.instance.api.crateApiReviewReviewSessionApplyCardNote(
         that: this,
-        line: line,
+        id: id,
         notes: notes,
       );
 
