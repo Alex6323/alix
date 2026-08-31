@@ -647,9 +647,9 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
             "the note contains the text of blank {blank}'s answer (`{answer}`); \
              the block's other cards show this note"
         ),
-        LintKind::NoteNamesNoGroup { name } => format!(
-            "`{name}:` names no group of this block, so the line is shown as \
-             the block note"
+        LintKind::NoteNamesNoBlank { name } => format!(
+            "`{name}:` names no named blank of this block, so the line is \
+             shown as the block note"
         ),
         LintKind::UntypableSpan { answer } => format!(
             "the hidden span `{answer}` asks the learner to type a LaTeX \

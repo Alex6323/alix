@@ -408,8 +408,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   formula rule carries over: a span inside a formula is sketched unless the
   block pins `input: type`, and a block's `input:` directive now reaches its
   span cards. Per-hole addressed notes
-  survive addressed to region group names: `> g: text` replaces the shared
-  block note for group g's card, `> g+: text` appends to it.
+  survive addressed to region names, grouped or lone: `> g: text` replaces
+  the shared block note for the card named g, `> g+: text` appends to it.
 
 - alix normalizes a deck's bytes whenever it writes one. A leading
   byte-order mark is dropped, CRLF line endings become LF, and trailing

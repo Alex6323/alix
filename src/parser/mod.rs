@@ -125,7 +125,7 @@ pub enum LintKind {
         blank: usize,
         answer: String,
     },
-    NoteNamesNoGroup {
+    NoteNamesNoBlank {
         name: String,
     },
 }
@@ -2042,7 +2042,7 @@ fn split_note(
             Some((name, ..)) if !names.is_empty() => {
                 lints.push(Lint {
                     line,
-                    kind: LintKind::NoteNamesNoGroup {
+                    kind: LintKind::NoteNamesNoBlank {
                         name: name.to_string(),
                     },
                 });
@@ -2237,9 +2237,6 @@ fn build_region_cards(
         }
     }
     for (name, members) in groups {
-        // A name alone is a note address, not a group: group identity (and
-        // its documented history reset) is born at the second member
-        // (Alex's ruling, 2026-08-31).
         if let [only] = members.as_slice() {
             new_cards.push(region_card(
                 RegionSlot::Single {
@@ -7176,7 +7173,7 @@ a
     /// A block with no named group cannot be addressing anything, so a note
     /// beginning `2:` is prose and stays prose.
     #[test]
-    fn a_note_that_looks_addressed_is_prose_where_no_group_is_named() {
+    fn a_note_that_looks_addressed_is_prose_where_no_blank_is_named() {
         let deck = parse(
             "## q\nUnit, integration\n> [!NOTE]\n> 2: the second one.\n\
              <!-- blank: span hidden=\"Unit\" -->\n\
@@ -7202,7 +7199,7 @@ a
     }
 
     #[test]
-    fn an_address_naming_no_group_of_this_block_is_reported_and_kept() {
+    fn an_address_naming_no_blank_of_this_block_is_reported_and_kept() {
         let deck = parse(
             "## q\nUnit, integration\n> [!NOTE]\n> bass: typo.\n\
              <!-- blank: span [base] hidden=\"Unit\" -->\n\
@@ -7211,7 +7208,7 @@ a
         assert_eq!(
             vec![Lint {
                 line: 1,
-                kind: LintKind::NoteNamesNoGroup {
+                kind: LintKind::NoteNamesNoBlank {
                     name: "bass".to_string()
                 }
             }],
