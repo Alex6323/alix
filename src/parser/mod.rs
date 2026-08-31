@@ -8664,6 +8664,18 @@ the answer
     }
 
     #[test]
+    fn a_span_after_a_fixed_arity_text_macro_is_legal() {
+        let deck = super::parse(
+            "deck.md",
+            &format!(
+                "## q\n---\n$z+\\boxed{{x}}{{y}}^2$\n<!-- blank: span hidden=\"{{y}}^2\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            ),
+        )
+        .expect("the group after a one-argument macro is an independent unit");
+        assert_eq!(vec!["$z+\\boxed{x}⍰$"], deck.cards[0].context);
+    }
+
+    #[test]
     fn a_defining_spelling_in_a_math_comment_does_not_block_an_earlier_span() {
         let deck = super::parse(
             "deck.md",

@@ -328,57 +328,184 @@ fn invisible_argument_extents(payload: &str, tokens: &[Token]) -> Vec<(Range<usi
 /// Brace-group arity per the pinned renderer: a registered function
 /// consumes `num_args` groups, a built-in macro consumes what its
 /// definition references, and an unregistered control sequence is a symbol
-/// consuming none. A function-backed macro's arity is mechanically
-/// unprovable, so it absorbs the whole run: over-absorption rejects a
-/// partial span instead of masking the wrong unit.
+/// consuming none. A statically unprovable arity absorbs the whole run:
+/// over-absorption rejects a partial span instead of masking the wrong unit.
 fn command_brace_arity(command: &str) -> usize {
-    use ratex_parser::macro_expander::{MacroDefinition, MacroExpander};
+    let expander = ratex_parser::macro_expander::MacroExpander::new("", ratex_parser::Mode::Math);
+    resolved_arity(command, &expander, &mut Vec::new())
+}
+
+fn resolved_arity(
+    command: &str,
+    expander: &ratex_parser::macro_expander::MacroExpander,
+    resolving: &mut Vec<String>,
+) -> usize {
+    use ratex_parser::macro_expander::MacroDefinition;
     // The allowlist is the zero-arity authority for its own members: its
-    // review vets exactly "zero-argument, learner-visible", and a member
-    // like `\neq` expands to a body (`\not=`) that saturates itself,
-    // which no static body scan can prove.
+    // review vets exactly "zero-argument, learner-visible", so a member
+    // stays blankable even where the body walk cannot prove it.
     if BLANKABLE_SYMBOLS.binary_search(&command).is_ok() {
         return 0;
     }
     if let Some(spec) = ratex_parser::functions::FUNCTIONS.get(command) {
         return spec.num_args;
     }
-    match MacroExpander::new("", ratex_parser::Mode::Math).get_macro(command) {
-        Some(MacroDefinition::Text(body)) => text_macro_arity(body),
+    match expander.get_macro(command) {
+        Some(MacroDefinition::Text(body)) => {
+            if resolving.iter().any(|name| name == command) {
+                return usize::MAX;
+            }
+            resolving.push(command.to_string());
+            let arity = text_macro_arity(body, expander, resolving);
+            resolving.pop();
+            arity
+        }
         Some(MacroDefinition::Tokens { num_args, .. }) => *num_args,
         Some(MacroDefinition::Function(_)) => usize::MAX,
         None => 0,
     }
 }
 
-/// A text macro's arity is the highest `#N` its expansion references;
-/// `##` is a literal `#` (TeX's own rule). That maximum is only a LOWER
-/// bound once the body contains any control sequence: the expansion may
-/// dispatch to a command that consumes further arguments (`\operatorname`
-/// is `\@ifstar...` with no `#N` at all), so such a macro is statically
-/// unprovable and absorbs the whole run, the Function-backed shape.
-fn text_macro_arity(body: &str) -> usize {
-    if body.contains('\\') {
+enum BodyToken {
+    Command(String),
+    Group(String),
+    Param(usize),
+    Other,
+}
+
+/// A text macro's arity is the highest `#N` its expansion references
+/// (`##` is a literal `#`), trusted only when this walk shows every nested
+/// command's arguments visibly supplied inside the body itself. A command
+/// that could grab tokens past the body's end (`\operatorname` is
+/// `\@ifstar...`, a function-backed dispatcher) makes the macro statically
+/// unprovable, the same absorbing shape as a function-backed macro.
+fn text_macro_arity(
+    body: &str,
+    expander: &ratex_parser::macro_expander::MacroExpander,
+    resolving: &mut Vec<String>,
+) -> usize {
+    let Some(tokens) = body_tokens(body) else {
         return usize::MAX;
-    }
+    };
     let mut arity = 0usize;
-    let mut chars = body.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch != '#' {
-            continue;
+    let mut index = 0;
+    while index < tokens.len() {
+        let consumed = match &tokens[index] {
+            BodyToken::Param(n) => {
+                arity = arity.max(*n);
+                0
+            }
+            BodyToken::Group(interior) => {
+                let nested = text_macro_arity(interior, expander, resolving);
+                if nested == usize::MAX {
+                    return usize::MAX;
+                }
+                arity = arity.max(nested);
+                0
+            }
+            BodyToken::Command(name) => {
+                let args = resolved_arity(name, expander, resolving);
+                if args == usize::MAX {
+                    return usize::MAX;
+                }
+                args
+            }
+            BodyToken::Other => 0,
+        };
+        for _ in 0..consumed {
+            index += 1;
+            match tokens.get(index) {
+                None => return usize::MAX,
+                Some(BodyToken::Group(interior)) => {
+                    let nested = text_macro_arity(interior, expander, resolving);
+                    if nested == usize::MAX {
+                        return usize::MAX;
+                    }
+                    arity = arity.max(nested);
+                }
+                Some(BodyToken::Param(n)) => arity = arity.max(*n),
+                Some(BodyToken::Other) => {}
+                // a bare command argument is re-expanded wherever the body
+                // places it; only a zero-arity one provably grabs nothing
+                Some(BodyToken::Command(argument)) => {
+                    if resolved_arity(argument, expander, resolving) != 0 {
+                        return usize::MAX;
+                    }
+                }
+            }
         }
-        match chars.peek() {
-            Some('#') => {
-                chars.next();
+        index += 1;
+    }
+    arity
+}
+
+fn body_tokens(body: &str) -> Option<Vec<BodyToken>> {
+    let mut tokens = Vec::new();
+    let mut rest = body;
+    while let Some(ch) = rest.chars().next() {
+        match ch {
+            '\\' => {
+                let after = &rest[1..];
+                let word_len = after
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphabetic() || *c == '@')
+                    .map(char::len_utf8)
+                    .sum::<usize>();
+                let len = if word_len > 0 {
+                    word_len
+                } else {
+                    after.chars().next()?.len_utf8()
+                };
+                tokens.push(BodyToken::Command(rest[..1 + len].to_string()));
+                rest = &after[len..];
             }
-            Some(digit) if digit.is_ascii_digit() => {
-                arity = arity.max(digit.to_digit(10).unwrap_or(0) as usize);
-                chars.next();
+            '{' => {
+                let interior_len = balanced_group_len(&rest[1..])?;
+                tokens.push(BodyToken::Group(rest[1..1 + interior_len].to_string()));
+                rest = &rest[1 + interior_len + 1..];
             }
+            '}' => return None,
+            '#' => {
+                let mut chars = rest[1..].chars();
+                match chars.next() {
+                    Some('#') => {
+                        tokens.push(BodyToken::Other);
+                        rest = &rest[2..];
+                    }
+                    Some(digit) if digit.is_ascii_digit() => {
+                        tokens.push(BodyToken::Param(digit.to_digit(10)? as usize));
+                        rest = &rest[2..];
+                    }
+                    _ => return None,
+                }
+            }
+            _ if ch.is_whitespace() => {
+                rest = &rest[ch.len_utf8()..];
+            }
+            _ => {
+                tokens.push(BodyToken::Other);
+                rest = &rest[ch.len_utf8()..];
+            }
+        }
+    }
+    Some(tokens)
+}
+
+fn balanced_group_len(interior: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut chars = interior.char_indices();
+    while let Some((at, ch)) = chars.next() {
+        match ch {
+            '\\' => {
+                chars.next()?;
+            }
+            '{' => depth += 1,
+            '}' if depth == 0 => return Some(at),
+            '}' => depth -= 1,
             _ => {}
         }
     }
-    arity
+    None
 }
 
 fn whitespace_token(payload: &str, token: &Token) -> bool {
@@ -868,19 +995,28 @@ mod tests {
         for symbol in BLANKABLE_SYMBOLS {
             assert_eq!(0, command_brace_arity(symbol), "{symbol} is pinned zero");
             // The mechanical half of the review: where the renderer states
-            // an arity, it must agree; a text macro rides the human vetting
-            // (its body may self-saturate, which no body scan proves).
+            // an arity, it must agree; a text macro's body walk must find
+            // zero (proven self-saturated) or unprovable (the vetting then
+            // carries it), never a positive arity contradicting the review.
             if let Some(spec) = ratex_parser::functions::FUNCTIONS.get(symbol) {
                 assert_eq!(0, spec.num_args, "{symbol} consumes renderer arguments");
             } else {
-                match MacroExpander::new("", ratex_parser::Mode::Math).get_macro(symbol) {
+                let expander = MacroExpander::new("", ratex_parser::Mode::Math);
+                match expander.get_macro(symbol) {
                     Some(MacroDefinition::Tokens { num_args, .. }) => {
                         assert_eq!(0, *num_args, "{symbol} consumes macro arguments");
                     }
                     Some(MacroDefinition::Function(_)) => {
                         panic!("{symbol} is Function-backed; its arity is unprovable");
                     }
-                    Some(MacroDefinition::Text(_)) | None => {}
+                    Some(MacroDefinition::Text(body)) => {
+                        let walked = text_macro_arity(body, &expander, &mut Vec::new());
+                        assert!(
+                            walked == 0 || walked == usize::MAX,
+                            "{symbol} walks to arity {walked}, contradicting the review"
+                        );
+                    }
+                    None => {}
                 }
             }
         }
@@ -1045,6 +1181,11 @@ mod tests {
             Err(Violation::IncompleteScript('^')),
             unit(r"z+\operatorname{x}^2", r"{x}^2")
         );
+    }
+
+    #[test]
+    fn a_group_after_a_fixed_arity_text_macro_stays_independent() {
+        assert_eq!(Ok(()), unit(r"z+\boxed{x}{y}^2", r"{y}^2"));
     }
 
     #[test]
