@@ -3138,6 +3138,38 @@ mod tests {
     use super::*;
     use crate::session::Order;
 
+    #[test]
+    fn a_span_on_a_display_table_blanks_the_cell_into_a_sub_card() {
+        let deck = parse(
+            "## Capitals\n| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Italy | Rome |\n<!-- blank: span hidden=\"Paris\" b:a1b2c3 -->\n",
+        );
+        assert_eq!(1, deck.cards.len(), "the span replaces the plain card");
+        let card = &deck.cards[0];
+        assert!(card.region.is_some(), "the span derives a blank card");
+        assert_eq!(vec!["Paris".to_string()], card.back);
+        assert!(
+            card.context
+                .iter()
+                .any(|line| line.contains("| France | ⍰ |")),
+            "the table renders in full with the cell blanked: {:?}",
+            card.context
+        );
+    }
+
+    #[test]
+    fn a_span_on_a_card_table_is_rejected_loudly() {
+        let error = err(
+            "## Capitals\n| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Italy | Rome |\n<!-- cards -->\n<!-- blank: span hidden=\"Paris\" b:a1b2c3 -->\n",
+        );
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(
+            message.contains("a card table has neither"),
+            "the rejection names the boundary: {message}"
+        );
+    }
+
     fn parse(text: &str) -> ParsedDeck {
         super::parse("deck.md", text).unwrap()
     }

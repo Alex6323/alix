@@ -155,6 +155,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     }
     card_lines.sort_unstable();
 
+    let card_table_lines: HashSet<usize> = deck.tables.iter().map(|table| table.line).collect();
     // (row line, minted stamp) and (block end line, minted container id),
     // minted before any write like the card ids below.
     let mut row_mints: Vec<(usize, String)> = Vec::new();
@@ -293,7 +294,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     const WITHIN_LINE: u8 = 1;
     let mut inserts: Vec<(usize, u8, usize, String)> = Vec::new();
     for (line, tok) in card_lines.iter().zip(&minted_cards) {
-        let anchor = block_end_line(body, *line);
+        let anchor = block_end_line(body, *line, Some(&card_table_lines));
         let offset = line_start_of_next(body, anchor).ok_or(StampError::MissingLine(anchor))?;
         let lead = if offset == body.len() && !body.ends_with('\n') {
             "\n"
@@ -548,7 +549,7 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), StampError> {
     })
 }
 
-fn block_end_line(text: &str, front_line: usize) -> usize {
+fn block_end_line(text: &str, front_line: usize, card_tables: Option<&HashSet<usize>>) -> usize {
     let mut last = front_line;
     let mut fence: Option<(char, usize)> = None;
     let mut line = front_line;
@@ -578,16 +579,25 @@ fn block_end_line(text: &str, front_line: usize) -> usize {
         if parser::heading_depth(raw).is_some() {
             return last;
         }
-        // A table opens its own block: the card's id line must not land
-        // beyond it, where the parser would hand the marker to the table.
-        if raw.starts_with('|')
-            && let Some(next_start) = nth_line_start(text, line + 1)
-        {
-            let next_rest = &text[next_start..];
-            let next_raw = &next_rest[..next_rest.find('\n').unwrap_or(next_rest.len())];
-            if next_raw.starts_with('|') && parser::is_delimiter_row(next_raw) {
-                return last;
+        // A CARD table opens its own block: the card's id line must not
+        // land beyond it, where the parser would hand the marker to the
+        // table. A display table is ordinary answer content and the block
+        // walks through it; the parse-blind hygiene caller (None) stops at
+        // every lexical table, both of whose id positions it blesses.
+        let stops_block = match card_tables {
+            Some(set) => set.contains(&line),
+            None => {
+                raw.starts_with('|')
+                    && nth_line_start(text, line + 1).is_some_and(|next_start| {
+                        let next_rest = &text[next_start..];
+                        let next_raw =
+                            &next_rest[..next_rest.find('\n').unwrap_or(next_rest.len())];
+                        next_raw.starts_with('|') && parser::is_delimiter_row(next_raw)
+                    })
             }
+        };
+        if stops_block {
+            return last;
         }
         if !raw.trim_matches(&WS[..]).is_empty() {
             last = line;
@@ -627,7 +637,7 @@ pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
         }
         if let Some((depth, rest)) = parser::heading_depth(raw) {
             if crate::parser::is_card_depth(depth) {
-                block_end = Some(block_end_line(text, line));
+                block_end = Some(block_end_line(text, line, None));
                 if heading_id_marker(rest) {
                     found.push(line);
                 }
@@ -824,7 +834,7 @@ mod tests {
         assert_eq!(vec![3, 5, 7, 10], fronts, "precondition: four card fronts");
 
         for front in fronts {
-            let end = block_end_line(text, front);
+            let end = block_end_line(text, front, None);
             let next_heading = text
                 .lines()
                 .enumerate()
@@ -1914,6 +1924,44 @@ mod tests {
             )),
             "the id line follows the last pipe prose line: {stamped:?}"
         );
+    }
+
+    #[test]
+    fn a_display_table_answer_keeps_the_id_after_the_table() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Capitals\n| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Italy | Rome |\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+
+        assert!(
+            stamped.ends_with(&format!(
+                "| Italy | Rome |\n<!-- id: {} -->\n",
+                outcome.minted_cards[0]
+            )),
+            "an undeclared table is answer content, and the id follows it: {stamped:?}"
+        );
+        parser::parse("deck.md", &stamped).expect("the stamped deck parses");
+    }
+
+    #[test]
+    fn a_display_table_with_a_span_keeps_the_id_after_the_directive() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Capitals\n| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Italy | Rome |\n<!-- blank: span hidden=\"Paris\" b:a1b2c3 -->\n";
+        let path = write(&dir, "deck.md", original);
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+
+        assert!(
+            stamped.ends_with(&format!(
+                "<!-- blank: span hidden=\"Paris\" b:a1b2c3 position:48 -->\n<!-- id: {} -->\n",
+                outcome.minted_cards[0]
+            )),
+            "the id closes the block, below the span directive: {stamped:?}"
+        );
+        parser::parse("deck.md", &stamped).expect("the stamped deck parses");
     }
 
     #[test]

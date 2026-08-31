@@ -871,6 +871,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of being constrained.
 
 ### Fixed
+
+- `alix deck init` no longer fails on a card whose answer ends in a
+  table: the stamper placed the card's id above the table, which the
+  parser then rejected. A display table (one without a `cards`
+  invocation) is answer content, and the id now lands after it,
+  trailing blank directives included.
 - A span blank bound inside a formula reveals its answer as rendered math,
   as the displayed answer regains its `$` delimiters; grading still compares
   the plain hidden text. Previously the revealed answer of a math-classed
