@@ -202,9 +202,9 @@ pub fn build_authored_multi(
 }
 
 pub fn can_build(card: &Card, ai_distractors: &[String]) -> bool {
-    // Region cards are deliberately excluded, even against stale cached
-    // distractors the eligibility gate never minted.
-    if card.region.is_some() {
+    // Image-region cards are deliberately excluded, even against stale
+    // cached distractors the eligibility gate never minted.
+    if card.region.is_some() && !card.is_text_blank_card() {
         return false;
     }
     distinct_distractors(card, ai_distractors).len() == NUM_OPTIONS - 1
@@ -238,7 +238,7 @@ pub fn build_sampled(card: &Card, seed: u64, deck_cards: &[Card]) -> Option<Choi
 }
 
 pub fn can_sample(card: &Card, deck_cards: &[Card]) -> bool {
-    if card.region.is_some() {
+    if card.region.is_some() && !card.is_text_blank_card() {
         return false;
     }
     build_sampled(card, 0, deck_cards).is_some()
@@ -674,19 +674,32 @@ mod tests {
     }
 
     #[test]
-    fn a_region_card_takes_no_choice_question_from_any_source() {
-        let mut region = card(1, "answer");
-        region.region = Some(crate::card::RegionSlot::Single {
-            stamp: Some(Arc::from("a1b2c3")),
-            hidden: Some("answer".into()),
-            line: 3,
-        });
-        region.authored_distractors = vec!["x".into(), "y".into(), "z".into()];
+    fn an_image_region_card_takes_no_choice_question_from_any_source() {
+        let text = "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"answer\" b:a1b2c3 -->\n\n---\nback\n<!-- id: card-qregionregionregionregionx -->\n";
+        let cards = crate::parser::parse_str("t.md", text).unwrap();
+        let region = cards
+            .iter()
+            .find(|c| c.region.is_some())
+            .expect("the blank produced a region card");
         assert!(
-            !can_build(&region, &ai(&["p", "q", "r"])),
-            "cached or authored distractors never build a region choice"
+            !can_build(region, &ai(&["p", "q", "r"])),
+            "cached distractors never build an image-region choice"
         );
-        assert!(!can_sample(&region, &[region.clone()]));
+        assert!(!can_sample(region, &cards));
+    }
+
+    #[test]
+    fn a_text_span_card_builds_a_choice_from_cached_distractors() {
+        let text = "## q\nthe answer is answer\n<!-- blank: span hidden=\"answer\" b:a1b2c3 -->\n<!-- id: card-qspanspanspanspanspanspanx -->\n";
+        let cards = crate::parser::parse_str("t.md", text).unwrap();
+        let span = cards
+            .iter()
+            .find(|c| c.region.is_some())
+            .expect("the span produced a blank card");
+        assert!(
+            can_build(span, &ai(&["p", "q", "r"])),
+            "a text span builds choices like the cloze it replaced"
+        );
     }
 
     #[test]

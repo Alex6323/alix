@@ -355,6 +355,17 @@ impl Card {
         self.region.is_some()
     }
 
+    /// The choices gate distinguishes the two blank kinds: every member
+    /// masking answer text (a `span`) qualifies; one image region disqualifies.
+    pub fn is_text_blank_card(&self) -> bool {
+        let Some(slot) = &self.region else {
+            return false;
+        };
+        slot.directive_lines()
+            .iter()
+            .all(|line| self.span_regions.iter().any(|region| region.line == *line))
+    }
+
     pub fn id(&self) -> Option<String> {
         let token = self.token.as_deref()?;
         let region = match &self.region {

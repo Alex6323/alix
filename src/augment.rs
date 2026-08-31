@@ -897,10 +897,10 @@ impl AugmentCache {
     }
 
     pub fn missing_choices(&self, cards: &[Card]) -> Vec<WarmItem> {
-        // Region cards are deliberately excluded.
+        // Image-region cards are deliberately excluded.
         self.missing(
             cards,
-            |card| card.region.is_none() && !card.multiple_choice,
+            |card| (card.region.is_none() || card.is_text_blank_card()) && !card.multiple_choice,
             |c| {
                 !c.authored_distractors.is_empty()
                     || c.id()
@@ -1741,14 +1741,26 @@ mod tests {
         c
     }
 
-    fn blank_card(back: &str) -> Card {
-        let mut c = plain_card(back);
-        c.region = Some(crate::card::RegionSlot::Single {
-            stamp: Some(std::sync::Arc::from("a1b2c3")),
-            hidden: Some(back.to_string()),
-            line: 1,
-        });
-        c
+    fn span_card(hidden: &str) -> Card {
+        let text = format!(
+            "## q\nthe answer is {hidden}\n<!-- blank: span hidden=\"{hidden}\" b:a1b2c3 -->\n<!-- id: card-augmentaugmentaugmentaugman -->\n"
+        );
+        crate::parser::parse_str("d.md", &text)
+            .unwrap()
+            .into_iter()
+            .find(|c| c.region.is_some())
+            .expect("the span produced a blank card")
+    }
+
+    fn rect_card(hidden: &str) -> Card {
+        let text = format!(
+            "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"{hidden}\" b:a1b2c3 -->\n\n---\nback\n<!-- id: card-augmentaugmentaugmentaugman -->\n"
+        );
+        crate::parser::parse_str("d.md", &text)
+            .unwrap()
+            .into_iter()
+            .find(|c| c.region.is_some())
+            .expect("the blank produced a region card")
     }
 
     fn topo_over(name: &str, deck_token: &str, card: &str) -> Topology {
@@ -1774,7 +1786,7 @@ mod tests {
             plain_card("a"),
             plain_card("b"),
             plain_card("c"),
-            blank_card("z"),
+            span_card("z"),
         ];
         cache.set_distractors(
             &cid(&cards[0]),
@@ -1835,7 +1847,12 @@ mod tests {
     fn missing_returns_only_uncovered_eligible_cards() {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
-        let cards = vec![plain_card("a"), plain_card("b"), blank_card("z")];
+        let cards = vec![
+            plain_card("a"),
+            plain_card("b"),
+            span_card("z"),
+            rect_card("r"),
+        ];
         cache.set_distractors(
             &cid(&cards[0]),
             vec!["x".into()],
@@ -1849,8 +1866,9 @@ mod tests {
             .collect();
         assert_eq!(
             miss,
-            [cid(&cards[1])],
-            "the blank card is a region card, never a choices gap"
+            [cid(&cards[1]), cid(&cards[2])],
+            "a text span is a choices gap like the cloze it replaced; an \
+             image region never is"
         );
 
         let mq: Vec<String> = cache

@@ -96,9 +96,10 @@ pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
 }
 
 pub fn card_recognizable(card: &Card, cache: &AugmentCache, deck_cards: &[Card]) -> bool {
-    // Region cards are deliberately excluded, even when distractors are
-    // cached or authored.
-    if card.region.is_some() {
+    // Image-region cards are deliberately excluded, even when distractors
+    // are cached or authored; text spans recognize like the cloze they
+    // replaced.
+    if card.region.is_some() && !card.is_text_blank_card() {
         return false;
     }
     // Select-all builds only from its authored option set; AI and sampled
@@ -147,7 +148,7 @@ mod tests {
     }
 
     #[test]
-    fn a_region_card_is_never_recognizable_even_with_cached_distractors() {
+    fn an_image_region_card_is_never_recognizable_even_with_cached_distractors() {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
         let text = "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"ans\" b:a1b2c3 -->\n\n---\nback\n<!-- id: card-qregionx -->\n";
@@ -166,6 +167,32 @@ mod tests {
             "the choice gate holds even against cached distractors"
         );
         assert_eq!(Depth::Recall, default_depth(&cards, &cache));
+    }
+
+    #[test]
+    fn a_text_span_card_with_cached_distractors_is_recognizable() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
+        let text = "## q\nthe answer is ans\n<!-- blank: span hidden=\"ans\" b:a1b2c3 -->\n<!-- id: card-qspanspanspanspanspanspanx -->\n";
+        let cards = parser::parse_str("t.md", text).unwrap();
+        let span_card = cards
+            .iter()
+            .find(|card| card.region.is_some())
+            .expect("the span produced a blank card");
+        assert!(
+            !card_recognizable(span_card, &cache, &cards),
+            "no distractors yet, nothing to build choices from"
+        );
+        cache.set_distractors(
+            &span_card.id().unwrap(),
+            vec!["x".into(), "y".into(), "z".into()],
+            span_card.content_fingerprint,
+        );
+        assert!(
+            card_recognizable(span_card, &cache, &cards),
+            "a text span recognizes like the cloze it replaced"
+        );
+        assert_eq!(Depth::Recognize, default_depth(&cards, &cache));
     }
 
     #[test]
