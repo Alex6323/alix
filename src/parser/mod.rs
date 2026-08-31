@@ -8599,6 +8599,14 @@ the answer
     }
 
     #[test]
+    fn a_group_after_a_zero_argument_symbol_is_a_legal_script_base() {
+        let deck = parse(&format!(
+            "## q\n---\n$z+\\alpha{{x}}^2$\n<!-- blank: span hidden=\"{{x}}^2\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+        ));
+        assert_eq!(vec!["$z+\\alpha\u{2370}$"], deck.cards[0].context);
+    }
+
+    #[test]
     fn a_matrix_column_separator_is_never_inside_a_span_match() {
         let line = r"$\begin{pmatrix}a & b\end{pmatrix}$";
         let error = err(&format!(

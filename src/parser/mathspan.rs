@@ -303,6 +303,15 @@ fn invisible_argument_extents(payload: &str, tokens: &[Token]) -> Vec<(Range<usi
     extents
 }
 
+/// Brace-group arity per the pinned renderer: a command registered in its
+/// function table consumes `num_args` groups; an unregistered control
+/// sequence is a symbol and consumes none.
+fn command_brace_arity(command: &str) -> usize {
+    ratex_parser::functions::FUNCTIONS
+        .get(command)
+        .map_or(0, |spec| spec.num_args)
+}
+
 fn whitespace_token(payload: &str, token: &Token) -> bool {
     matches!(token.kind, Kind::Other)
         && payload[token.span.clone()].chars().all(char::is_whitespace)
@@ -357,10 +366,12 @@ fn operand_before(payload: &str, tokens: &[Token], index: usize) -> Option<Range
         } else {
             (tokens[previous].span.clone(), previous)
         };
-        // A group run headed by a command is that command's application: the
-        // script attaches to the whole atom, not to its final argument.
+        // A group run is a command's application only when the command's
+        // renderer arity consumes the whole run; a shorter arity leaves the
+        // trailing groups (the script's base among them) independent.
         if matches!(tokens[previous].kind, Kind::Close) {
             let mut run_start = start_index;
+            let mut walked = 1usize;
             while let Some(before) = previous_content_token(payload, tokens, run_start) {
                 match tokens[before].kind {
                     Kind::Close => {
@@ -380,13 +391,18 @@ fn operand_before(payload: &str, tokens: &[Token], index: usize) -> Option<Range
                             }
                         }
                         match open {
-                            Some(index) => run_start = index,
+                            Some(index) => {
+                                run_start = index;
+                                walked += 1;
+                            }
                             None => break,
                         }
                     }
                     Kind::Sequence => {
-                        operand.start = tokens[before].span.start;
-                        start_index = before;
+                        if walked <= command_brace_arity(&payload[tokens[before].span.clone()]) {
+                            operand.start = tokens[before].span.start;
+                            start_index = before;
+                        }
                         break;
                     }
                     _ => break,
@@ -758,6 +774,17 @@ mod tests {
     }
 
     #[test]
+    fn every_blankable_symbol_consumes_no_brace_groups() {
+        for symbol in BLANKABLE_SYMBOLS {
+            assert_eq!(
+                0,
+                command_brace_arity(symbol),
+                "{symbol} consumes arguments; a group after it is not independent"
+            );
+        }
+    }
+
+    #[test]
     fn the_blankable_symbol_table_is_sorted_unique_and_lexer_shaped() {
         assert!(
             BLANKABLE_SYMBOLS.windows(2).all(|pair| pair[0] < pair[1]),
@@ -879,6 +906,11 @@ mod tests {
             unit(r"x + {a}{b}^2", r"{b}^2"),
             "bare juxtaposed groups are not a command application"
         );
+    }
+
+    #[test]
+    fn a_group_after_a_zero_argument_symbol_remains_its_own_script_base() {
+        assert_eq!(Ok(()), unit(r"z+\alpha{x}^2", r"{x}^2"));
     }
 
     #[test]
