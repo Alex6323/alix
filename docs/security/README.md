@@ -347,6 +347,22 @@ safe or accurate.
   Gemini nor the Copilot behavior has been verified by execution
   (`src/backend/gemini.rs`, `src/backend/copilot.rs`,
   `src/backend/codex.rs`).
+- Alix builds every model prompt by concatenating its own labels with deck
+  content, with no boundary marking which spans are untrusted. Card text sits
+  at column 0 alongside `Deck:`, `Front:`, `Answer:` and `Note:`, so a deck can
+  write those labels itself and present forged turns to the model; no control
+  characters or invisible bytes are needed. Fourteen prompt builders share the
+  shape. Measured against the real tutor builder with a forged card and a
+  canary, five rounds per backend, scored on an exact-match reply: the Codex
+  backend followed the injected instruction once in five, against a five in
+  five clean-card baseline, while the Claude default tier, Claude Haiku and
+  Copilot did not follow it. So the injection is not universally detected, and
+  the backend with the highest baseline compliance is the one that fell. One
+  hit in five establishes possibility, not a rate. What a successful injection
+  reaches is bounded by the backend's own sandbox and tool grant rather than by
+  anything Alix imposes on the prompt. The exam grader, generation and condense
+  paths are unmeasured, and Gemini is vendor-blocked. A per-call unguessable
+  delimiter around untrusted spans is the intended fix and is not built.
 - Authored text is rendered without filtering the Unicode bidirectional
   formatting characters. An unterminated `U+202E` in a card answer reverses
   the rendering of the text after it, across line boundaries, so the learner
