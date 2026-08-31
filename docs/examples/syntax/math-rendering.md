@@ -56,6 +56,7 @@ $$x^2 + y^2 = 1$$
 
 ## Complete the inline quadratic formula.
 $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$
+<!-- blank: span hidden="b^2" b:7b2sq9 -->
 <!-- blank: span hidden="4ac" b:9x3v6q -->
 <!-- id: card-3065zgmvgh9ne54yvshff7egsk -->
 

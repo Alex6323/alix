@@ -1,5 +1,5 @@
 //! The structural-unit policy for span matches inside math source (ADR
-//! 0034): a masked range must be a complete structural unit of its formula,
+//! 0040): a masked range must be a complete structural unit of its formula,
 //! so replacing it with a boxed blank can never leave dangling structure.
 //! A whole-formula match (compared after trimming outer whitespace) is
 //! always such a unit and bypasses the token rules; the renderer re-parse
@@ -15,6 +15,8 @@ pub(super) enum Violation {
     RowBreak,
     GroupSplit,
     ControlSequence(String),
+    IncompleteScript(char),
+    IncompleteCommandApplication(String),
     NotLearnerVisible(String),
 }
 
@@ -31,7 +33,13 @@ impl Violation {
             Violation::RowBreak => r"the match contains a `\\` row break".to_string(),
             Violation::GroupSplit => "the match splits a brace group".to_string(),
             Violation::ControlSequence(name) => format!(
-                "the match contains the control sequence `{name}`; only a whole-formula blank may contain commands"
+                "the match contains the control sequence `{name}`, which is not a blankable symbol"
+            ),
+            Violation::IncompleteScript(token) => {
+                format!("the match contains `{token}` without its complete base and script")
+            }
+            Violation::IncompleteCommandApplication(name) => format!(
+                "the match cuts the application of `{name}`: an argument group continues past it"
             ),
             Violation::NotLearnerVisible(name) => {
                 format!("the match lies inside the argument of `{name}`, which renders nothing")
@@ -39,6 +47,132 @@ impl Violation {
         }
     }
 }
+
+/// Zero-argument symbol commands a span may contain (ruled 2026-08-31,
+/// ADR 0040). ADDITIVE ONLY: removing an entry rejects decks it accepted.
+const BLANKABLE_SYMBOLS: &[&str] = &[
+    r"\Delta",
+    r"\Gamma",
+    r"\Im",
+    r"\Lambda",
+    r"\Leftarrow",
+    r"\Leftrightarrow",
+    r"\Omega",
+    r"\Phi",
+    r"\Pi",
+    r"\Psi",
+    r"\Re",
+    r"\Rightarrow",
+    r"\Sigma",
+    r"\Theta",
+    r"\Upsilon",
+    r"\Xi",
+    r"\aleph",
+    r"\alpha",
+    r"\angle",
+    r"\approx",
+    r"\ast",
+    r"\beta",
+    r"\bigcap",
+    r"\bigcup",
+    r"\bullet",
+    r"\cap",
+    r"\cdot",
+    r"\chi",
+    r"\circ",
+    r"\cong",
+    r"\cos",
+    r"\cup",
+    r"\delta",
+    r"\div",
+    r"\downarrow",
+    r"\ell",
+    r"\emptyset",
+    r"\epsilon",
+    r"\equiv",
+    r"\eta",
+    r"\exists",
+    r"\exp",
+    r"\forall",
+    r"\gamma",
+    r"\geq",
+    r"\gets",
+    r"\gg",
+    r"\hbar",
+    r"\in",
+    r"\infty",
+    r"\int",
+    r"\iota",
+    r"\kappa",
+    r"\lambda",
+    r"\leftarrow",
+    r"\leftrightarrow",
+    r"\leq",
+    r"\lim",
+    r"\ll",
+    r"\ln",
+    r"\log",
+    r"\mapsto",
+    r"\max",
+    r"\mid",
+    r"\min",
+    r"\mp",
+    r"\mu",
+    r"\nabla",
+    r"\neg",
+    r"\neq",
+    r"\ni",
+    r"\notin",
+    r"\nu",
+    r"\odot",
+    r"\oint",
+    r"\omega",
+    r"\ominus",
+    r"\oplus",
+    r"\oslash",
+    r"\otimes",
+    r"\parallel",
+    r"\partial",
+    r"\perp",
+    r"\phi",
+    r"\pi",
+    r"\pm",
+    r"\prime",
+    r"\prod",
+    r"\propto",
+    r"\psi",
+    r"\rho",
+    r"\rightarrow",
+    r"\setminus",
+    r"\sigma",
+    r"\sim",
+    r"\simeq",
+    r"\sin",
+    r"\star",
+    r"\subset",
+    r"\subseteq",
+    r"\sum",
+    r"\supset",
+    r"\supseteq",
+    r"\tan",
+    r"\tau",
+    r"\theta",
+    r"\times",
+    r"\to",
+    r"\uparrow",
+    r"\upsilon",
+    r"\varepsilon",
+    r"\varnothing",
+    r"\varphi",
+    r"\varpi",
+    r"\varrho",
+    r"\varsigma",
+    r"\vartheta",
+    r"\vee",
+    r"\wedge",
+    r"\xi",
+    r"\zeta",
+];
 
 enum Kind {
     Sequence,
@@ -154,6 +288,61 @@ fn invisible_argument_extents(payload: &str, tokens: &[Token]) -> Vec<(Range<usi
     extents
 }
 
+fn whitespace_token(payload: &str, token: &Token) -> bool {
+    matches!(token.kind, Kind::Other)
+        && payload[token.span.clone()].chars().all(char::is_whitespace)
+}
+
+fn operand_before(payload: &str, tokens: &[Token], index: usize) -> Option<Range<usize>> {
+    let mut previous = index.checked_sub(1)?;
+    while whitespace_token(payload, &tokens[previous]) {
+        previous = previous.checked_sub(1)?;
+    }
+    let last = &tokens[previous];
+    if matches!(last.kind, Kind::Close) {
+        let mut depth = 0i32;
+        for earlier in tokens[..=previous].iter().rev() {
+            match earlier.kind {
+                Kind::Close => depth += 1,
+                Kind::Open => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(earlier.span.start..last.span.end);
+                    }
+                }
+                _ => {}
+            }
+        }
+        return Some(tokens.first()?.span.start..last.span.end);
+    }
+    Some(last.span.clone())
+}
+
+fn operand_after(payload: &str, tokens: &[Token], index: usize) -> Option<Range<usize>> {
+    let mut next = index + 1;
+    while next < tokens.len() && whitespace_token(payload, &tokens[next]) {
+        next += 1;
+    }
+    let first = tokens.get(next)?;
+    if matches!(first.kind, Kind::Open) {
+        let mut depth = 0i32;
+        for later in &tokens[next..] {
+            match later.kind {
+                Kind::Open => depth += 1,
+                Kind::Close => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(first.span.start..later.span.end);
+                    }
+                }
+                _ => {}
+            }
+        }
+        return Some(first.span.start..tokens.last()?.span.end);
+    }
+    Some(first.span.clone())
+}
+
 fn trim_extent(payload: &str, range: &Range<usize>) -> Range<usize> {
     let slice = &payload[range.clone()];
     let start = range.start + (slice.len() - slice.trim_start().len());
@@ -204,20 +393,40 @@ pub(super) fn structural_unit(payload: &str, range: &Range<usize>) -> Result<(),
         }
     }
 
-    for token in &tokens {
+    for (index, token) in tokens.iter().enumerate() {
         if token.span.start < range.start || token.span.end > range.end {
             continue;
         }
         match &token.kind {
+            Kind::Structural(ch @ ('^' | '_')) => {
+                let complete = operand_before(payload, &tokens, index)
+                    .zip(operand_after(payload, &tokens, index))
+                    .is_some_and(|(base, script)| {
+                        range.start <= base.start && script.end <= range.end
+                    });
+                if !complete {
+                    return Err(Violation::IncompleteScript(*ch));
+                }
+            }
             Kind::Structural(ch) => return Err(Violation::StructuralToken(*ch)),
             Kind::Sequence => {
                 let text = &payload[token.span.clone()];
                 if text == r"\\" {
                     return Err(Violation::RowBreak);
                 }
-                if text != r"\{" && text != r"\}" {
-                    return Err(Violation::ControlSequence(text.to_string()));
+                if text == r"\{" || text == r"\}" || BLANKABLE_SYMBOLS.binary_search(&text).is_ok()
+                {
+                    continue;
                 }
+                let argument_continues = tokens
+                    .iter()
+                    .filter(|later| later.span.start >= range.end)
+                    .find(|later| !whitespace_token(payload, later))
+                    .is_some_and(|later| matches!(later.kind, Kind::Open));
+                if argument_continues {
+                    return Err(Violation::IncompleteCommandApplication(text.to_string()));
+                }
+                return Err(Violation::ControlSequence(text.to_string()));
             }
             _ => {}
         }
@@ -293,9 +502,6 @@ mod tests {
     #[test]
     fn every_unescaped_structural_token_is_rejected_inside_a_match() {
         for (payload, hidden, token) in [
-            (r"x^2", r"x^", '^'),
-            (r"x^2", r"^2", '^'),
-            (r"a_i", r"a_", '_'),
             (r"a & b", r"a &", '&'),
             (r"a % b", r"a %", '%'),
             (r"a # b", r"a #", '#'),
@@ -348,12 +554,67 @@ mod tests {
     #[test]
     fn a_contained_command_is_rejected_naming_it() {
         assert_eq!(
-            Err(Violation::ControlSequence(r"\gamma".to_string())),
-            unit(r"x + \gamma + y", r"+ \gamma +")
+            Err(Violation::ControlSequence(r"\quad".to_string())),
+            unit(r"x + \quad + y", r"+ \quad +")
         );
         assert_eq!(
             Err(Violation::ControlSequence(r"\left".to_string())),
             unit(r"\left( x \right)", r"\left( x")
+        );
+    }
+
+    #[test]
+    fn the_blankable_symbol_table_is_sorted_unique_and_lexer_shaped() {
+        assert!(
+            BLANKABLE_SYMBOLS.windows(2).all(|pair| pair[0] < pair[1]),
+            "binary_search requires strict ascending order"
+        );
+        for name in BLANKABLE_SYMBOLS {
+            assert!(
+                name.starts_with('\\') && name[1..].chars().all(|ch| ch.is_ascii_alphabetic()),
+                "{name} is not the lexer's control-word shape"
+            );
+        }
+    }
+
+    #[test]
+    fn an_allowlisted_symbol_command_is_a_blankable_unit() {
+        assert_eq!(Ok(()), unit(r"x = -b \pm \sqrt{d}", r"\pm"));
+        assert_eq!(Ok(()), unit(r"e^{i\pi} + 1 = 0", r"\pi"));
+        assert_eq!(Ok(()), unit(r"a \leq b", r"\leq"));
+    }
+
+    #[test]
+    fn a_complete_base_and_script_is_a_blankable_unit() {
+        assert_eq!(Ok(()), unit(r"x = b^2 - 4ac", r"b^2"));
+        assert_eq!(Ok(()), unit(r"a_i + b", r"a_i"));
+        assert_eq!(Ok(()), unit(r"{ab}^{n+1} + c", r"{ab}^{n+1}"));
+    }
+
+    #[test]
+    fn a_script_without_its_whole_base_and_script_is_incomplete() {
+        assert_eq!(
+            Err(Violation::IncompleteScript('^')),
+            unit(r"x^2 + y", r"^2")
+        );
+        assert_eq!(
+            Err(Violation::IncompleteScript('^')),
+            unit(r"x^2 + y", r"x^")
+        );
+        assert_eq!(
+            Err(Violation::IncompleteScript('_')),
+            unit(r"a_i + b", r"a_")
+        );
+    }
+
+    #[test]
+    fn a_cut_command_application_is_named_when_its_argument_continues() {
+        assert_eq!(
+            Err(Violation::IncompleteCommandApplication(
+                r"\frac".to_string()
+            )),
+            unit(r"z+\frac{a}{b}", r"\frac{a}"),
+            "the orphaned-denominator counterexample (ADR 0040 adversary)"
         );
     }
 

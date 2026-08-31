@@ -253,10 +253,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   take no multiple-choice questions until the MC-family design settles.
   Spans bind into math source under a structural-unit law: a hidden text
   must be a complete structural unit of its formula (no cut control words,
-  no contained structural tokens or commands, no split brace groups; a
-  whole-formula match always qualifies), the authored formula and every
-  masked variant must re-parse under the product's renderer, and violations
-  are loud binding errors naming the offending token. Masked math renders
+  no split brace groups, no script cut from its base, no command cut from
+  its argument groups, no contained column or row separators; a standalone
+  symbol command such as `\pm` or a Greek letter qualifies, a base with
+  its whole script such as `b^2` qualifies, and a whole-formula match
+  always qualifies), the authored formula and every masked variant must
+  re-parse under the product's renderer, and violations are loud binding
+  errors naming the offending token. Masked math renders
   the blank as a boxed form instead of the text markers, the same forms
   cloze holes in formulas already use. A math span whose hidden text
   carries a LaTeX command while the block pins `input: type` gets the

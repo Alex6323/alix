@@ -39,13 +39,14 @@ Reach for cloze when the *context* is the cue: a definition with its key term
 removed, a line of code with the operative token blanked.
 
 A span inside `$...$` or `$$...$$` is a piece of the formula, and must be a
-complete structural unit of it (a lone term such as `4ac`), or the whole
-formula. At review it is **sketched rather than typed**, since a formula's
-piece has no keyboard spelling; write `input: type` on the card or the deck
-to keep the keyboard, and an authored `input:` always wins. A LaTeX command
-such as `\pm` may only be hidden by blanking the whole formula: a typed
-answer holding a command would ask for its spelling, and `alix doctor`
-warns when a typed span holds one.
+complete structural unit of it: a lone term such as `4ac`, a base with its
+whole script such as `b^2`, a standalone symbol such as `\pm` or `\alpha`,
+or the whole formula. A script cut from its base (`^2` alone) or a command
+cut from its arguments (`\frac{a}` without its `{b}`) is a loud error
+naming the cut. At review a formula span is **sketched rather than typed**,
+since a formula's piece has no keyboard spelling; write `input: type` on the
+card or the deck to keep the keyboard, and an authored `input:` always wins.
+`alix doctor` warns when a typed span's answer would need LaTeX to type.
 
 ### A note for one blank
 
@@ -261,11 +262,13 @@ writing that `position:` in yourself, or keep the old target by setting
 name). Doctor never rewrites a diverged span on its own.
 
 A span may sit inside a formula. Its hidden text must then be a complete
-structural unit of the math: no half of a `\command`, no split `{...}` group,
-no structural characters inside the match (`&` and `\\`, LaTeX's column and
-row separators), and alix proves the formula still renders with the span
-masked; a violation is a loud error naming the offending piece of the
-formula when the deck loads. A masked formula draws the blank as a boxed
+structural unit of the math: no half of a `\command`, no command cut from
+an argument group it applies to, no script cut from its base, no split
+`{...}` group, no structural characters inside the match (`&` and `\\`,
+LaTeX's column and row separators). A standalone symbol command (`\pm`, a
+Greek letter) and a base with its whole script (`b^2`) are units, and alix
+proves the formula still renders with the span masked; a violation is a
+loud error naming the offending piece of the formula when the deck loads. A masked formula draws the blank as a boxed
 hole, and when a block pins `input: type`, `alix doctor` warns on a span
 whose answer needs LaTeX to type, since typing `\pm` asks for a spelling.
 

@@ -8525,19 +8525,49 @@ the answer
     }
 
     #[test]
-    fn a_partial_match_containing_a_structural_token_is_rejected() {
+    fn a_partial_script_match_is_rejected_as_incomplete() {
         for hidden in ["x^", "^2"] {
             let error = err(&format!(
-                "## q\n---\n$x^2$\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+                "## q\n---\nsum $x^2 + y$ here\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
             ));
             let ParseError::InvalidRegion { message, .. } = error else {
                 panic!("expected InvalidRegion for {hidden}, got {error:?}");
             };
             assert!(
-                message.contains("structural token `^`"),
+                message.contains("without its complete base and script"),
                 "{hidden}: {message}"
             );
         }
+    }
+
+    #[test]
+    fn a_complete_base_and_script_is_a_legal_span_blank() {
+        let deck = parse(&format!(
+            "## q\n---\n$x = b^2 - 4ac$\n<!-- blank: span hidden=\"b^2\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+        ));
+        assert_eq!(vec!["$x = \u{2370} - 4ac$"], deck.cards[0].context);
+    }
+
+    #[test]
+    fn an_allowlisted_symbol_command_is_a_legal_span_blank() {
+        let deck = parse(&format!(
+            "## q\n---\n$x = -b \\pm c$\n<!-- blank: span hidden=\"\\\\pm\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+        ));
+        assert_eq!(vec!["$x = -b \u{2370} c$"], deck.cards[0].context);
+    }
+
+    #[test]
+    fn a_cut_command_application_is_rejected_naming_the_command() {
+        let error = err(&format!(
+            "## q\n---\n$z+\\frac{{a}}{{b}}$\n<!-- blank: span hidden=\"\\\\frac{{a}}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(
+            message.contains("cuts the application of `\\frac`"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -8609,14 +8639,14 @@ the answer
     }
 
     #[test]
-    fn a_partial_match_containing_a_command_is_rejected_in_v1() {
+    fn a_non_blankable_command_in_a_match_is_rejected() {
         let error = err(&format!(
-            "## q\n---\n$x + \\gamma + y$\n<!-- blank: span hidden=\"\\\\gamma\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n---\n$x + \\quad + y$\n<!-- blank: span hidden=\"\\\\quad\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
         };
-        assert!(message.contains("control sequence `\\gamma`"), "{message}");
+        assert!(message.contains("not a blankable symbol"), "{message}");
     }
 
     #[test]
