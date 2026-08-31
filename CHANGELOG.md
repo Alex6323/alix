@@ -289,24 +289,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   user-reviewable entry order; copied logs admit only known-safe fields, and
   copied config drops AI prompt overrides and extra guidance.
 
-- A cloze blank can be named, `\blank[base]{Unit}`, and a note line can be
-  written to that name: `> base: text` gives that blank a note of its own
-  instead of the shared one, and `> base+: text` adds to the shared note. A
-  `>` note belongs to the whole card, so until now a note that spelled out
-  one blank's answer gave it away on every sibling card. A line is only an
-  address when the card names a blank and the name before the `:` is one of
-  them, so ordinary notes are untouched; `alix doctor` reports an address
-  naming no blank of its card and shows the line as a note. The name is an
-  address inside its own card, never an id: naming a blank you have already
-  drilled keeps its history, and two cards may each have a `base`.
+- A blank span can be named, `<!-- blank: span [base] hidden="Unit" -->`,
+  and a note line can be written to that name: `> base: text` gives that
+  blank a note of its own instead of the shared one, and `> base+: text`
+  adds to the shared note. A `>` note belongs to the whole card, so until
+  now a note that spelled out one blank's answer gave it away on every
+  sibling card. A line is only an address when the card names a blank and
+  the name before the `:` is one of them, so ordinary notes are untouched;
+  `alix doctor` reports an address naming no blank of its card and shows
+  the line as a note. The name is an address inside its own card, never an
+  id: a lone named span keeps its stamp identity, so naming a blank you
+  have already drilled keeps its history, and two cards may each have a
+  `base`. A group only exists at two or more members.
 
 - Two blanks of one card that share a name are drilled as a single card asking
   both spans, so a fact split across two blanks is no longer answered in
-  halves. They need not be adjacent or on the same line, both show as `____`,
-  and the answer is typed as a list with one line per span. Grouping starts the
-  merged card's history over, because recalling two spans together is a harder
-  question than either alone and an inherited schedule would overstate what you
-  know; the blanks you did not group keep theirs.
+  halves. They need not be adjacent or on the same line, both show as blank
+  markers, and the answer is typed as a list with one line per span. Grouping
+  starts the merged card's history over, because recalling two spans together
+  is a harder question than either alone and an inherited schedule would
+  overstate what you know; the blanks you did not group keep theirs, and a
+  name on a single span is not yet a group, so the reset happens only when
+  the second member joins.
 
 - Personal notes and cards now live in a file of their own beside the deck
   (`spanish.md` gets `spanish.personal.md`), leaving the authored deck

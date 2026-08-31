@@ -1888,6 +1888,7 @@ mod tests {
             stamp: Some(std::sync::Arc::from("a1b2c3")),
             hidden: Some("a".into()),
             line: 3,
+            name: None,
         });
         let cards = vec![region, plain_card("b")];
         let missing: Vec<String> = cache

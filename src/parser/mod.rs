@@ -2194,7 +2194,7 @@ fn build_region_cards(
             .filter_map(|note| {
                 let group = match &slot {
                     RegionSlot::Group { name, .. } => Some(name.as_str()),
-                    RegionSlot::Single { .. } => None,
+                    RegionSlot::Single { name, .. } => name.as_deref(),
                 };
                 resolve_note(note.block.as_deref(), &note.addressed, group).map(|body| Note {
                     badge: note.badge,
@@ -2230,6 +2230,7 @@ fn build_region_cards(
                         stamp: blank.stamp.as_deref().map(Arc::from),
                         hidden: blank.hidden.clone(),
                         line: blank.line,
+                        name: None,
                     },
                     blank.hidden.iter().cloned().collect(),
                 ));
@@ -2237,6 +2238,21 @@ fn build_region_cards(
         }
     }
     for (name, members) in groups {
+        // A name alone is a note address, not a group: group identity (and
+        // its documented history reset) is born at the second member
+        // (Alex's ruling, 2026-08-31).
+        if let [only] = members.as_slice() {
+            new_cards.push(region_card(
+                RegionSlot::Single {
+                    stamp: only.stamp.as_deref().map(Arc::from),
+                    hidden: only.hidden.clone(),
+                    line: only.line,
+                    name: Some(name.to_string()),
+                },
+                only.hidden.iter().cloned().collect(),
+            ));
+            continue;
+        }
         // The all-or-none rule for a group's answers: mixed presence would
         // leave the card half-answerable.
         let with_hidden = members.iter().filter(|m| m.hidden.is_some()).count();
@@ -8990,7 +9006,11 @@ the answer
         let deck = parse(&format!(
             "## q\n---\nalpha then beta\n> [!NOTE]\n> shared note\n> g: only for g\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [h] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
         ));
-        assert_eq!(2, deck.cards.len(), "two one-member group cards");
+        assert_eq!(
+            2,
+            deck.cards.len(),
+            "two lone named spans, two single cards"
+        );
         let g = deck
             .cards
             .iter()
@@ -9047,6 +9067,44 @@ the answer
         ));
         assert_eq!(1, deck.cards.len(), "one group card");
         assert_eq!(vec!["⍰ then ⍰"], deck.cards[0].context);
+    }
+
+    #[test]
+    fn a_lone_named_span_stays_single_and_keeps_its_stamp_identity() {
+        let deck = parse(&format!(
+            "## q\n---\nalpha then beta\n<!-- blank: span [base] hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+        ));
+        assert_eq!(
+            1,
+            deck.cards.len(),
+            "a name alone is an address, not a group"
+        );
+        assert!(
+            matches!(
+                deck.cards[0].region,
+                Some(crate::card::RegionSlot::Single { .. })
+            ),
+            "the slot stays Single: {:?}",
+            deck.cards[0].region
+        );
+        assert_eq!(
+            Some(format!("{RTOK}-ba1b2c3")),
+            deck.cards[0].id(),
+            "naming a span never moves its identity off the stamp"
+        );
+    }
+
+    #[test]
+    fn a_second_member_births_the_group_and_the_derived_identity() {
+        let deck = parse(&format!(
+            "## q\n---\nalpha then beta\n<!-- blank: span [base] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [base] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+        ));
+        assert_eq!(1, deck.cards.len(), "two members are one group card");
+        let id = deck.cards[0].id().expect("stamped group id");
+        assert!(
+            id.starts_with(&format!("{RTOK}-g")),
+            "a real group takes the derived hash identity: {id}"
+        );
     }
 
     #[test]

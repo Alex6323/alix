@@ -100,8 +100,10 @@ did *not* group keep their history. Group early if you are going to.
 
 **A name addresses a span; it is not its id.** Identity is the minted stamp,
 so renaming a span, or adding a name to one you have already drilled, keeps
-your history exactly as rewording the question does. The name means nothing
-outside the card it is written in: two cards may each have a `base`.
+your history exactly as rewording the question does. A name alone does not
+make a group: the group, and its history reset, begins when a second span
+takes the same name. The name means nothing outside the card it is written
+in: two cards may each have a `base`.
 
 ## Dual-direction cards: `direction:`
 

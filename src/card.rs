@@ -45,6 +45,7 @@ pub enum RegionSlot {
         stamp: Option<Arc<str>>,
         hidden: Option<String>,
         line: usize,
+        name: Option<String>,
     },
     Group {
         name: String,
@@ -492,12 +493,14 @@ mod tests {
             stamp: Some(Arc::from("a1b2c3")),
             hidden: None,
             line: 3,
+            name: None,
         });
         let mut other_single = parent.clone();
         other_single.region = Some(RegionSlot::Single {
             stamp: Some(Arc::from("d4e5f6")),
             hidden: None,
             line: 4,
+            name: None,
         });
         let mut group = parent.clone();
         group.region = Some(RegionSlot::Group {

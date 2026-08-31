@@ -1248,6 +1248,7 @@ mod tests {
             stamp: Some(Arc::from(stamp)),
             hidden: card.back.first().cloned(),
             line: card.line,
+            name: None,
         });
         card
     }
@@ -2213,6 +2214,7 @@ mod tests {
             stamp: Some(Arc::from("a1b2c3")),
             hidden: Some("lunate".into()),
             line: 3,
+            name: None,
         });
         let region_id = region.id().unwrap();
         let mut session = Session::new(

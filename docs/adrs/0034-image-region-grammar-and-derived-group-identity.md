@@ -315,7 +315,12 @@ parent; a deck-wide check would re-mint a safely copied stamp and reset that
 card's identity for nothing.
 
 **A group's card id is DERIVED from the set of its members' stamps** and is
-never written in the file:
+never written in the file. (Amended 2026-08-31 by maintainer ruling, recorded
+with the span unification: a name alone does not create a group. A lone named
+region stays a Single with its stamp identity `-b<stamp>`; the name is only a
+note address. A group, and this derived identity, exists at two or more
+members, so naming or renaming never resets a card's history and the
+documented grouping reset happens when the second member joins.)
 
     card-<token>-g<13>
 
