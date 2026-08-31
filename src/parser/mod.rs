@@ -1463,8 +1463,9 @@ fn scan(
 /// its label and how many lines it consumed, taken as deck-wide metadata
 /// rather than answer content. Label, destination, and title each may
 /// continue on a following line, so the whole candidate is scanned as one
-/// joined block. An invalid or incomplete shape consumes nothing; the
-/// text of the candidate never changes its classification.
+/// joined block. An invalid or incomplete shape consumes nothing; literal
+/// text resembling retired syntax inside an otherwise valid candidate does
+/// not alter its classification.
 fn link_definition(lines: &[&str], at: usize) -> Option<(String, usize)> {
     let first = *lines.get(at)?;
     if indent_width(first) >= 4 || !trim_ws(first).starts_with('[') {
