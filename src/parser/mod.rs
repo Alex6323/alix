@@ -8647,6 +8647,18 @@ the answer
     }
 
     #[test]
+    fn a_defining_spelling_in_a_math_comment_does_not_block_an_earlier_span() {
+        let deck = super::parse(
+            "deck.md",
+            &format!(
+                "## q\n---\n$x+y % \\def\\foo{{z}}$\n<!-- blank: span hidden=\"x\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            ),
+        )
+        .expect("the commented spelling never reaches the renderer");
+        assert_eq!(vec!["$⍰+y % \\def\\foo{z}$"], deck.cards[0].context);
+    }
+
+    #[test]
     fn a_matrix_column_separator_is_never_inside_a_span_match() {
         let line = r"$\begin{pmatrix}a & b\end{pmatrix}$";
         let error = err(&format!(

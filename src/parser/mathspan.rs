@@ -578,15 +578,25 @@ pub(super) fn structural_unit(payload: &str, range: &Range<usize>) -> Result<(),
     }
 
     let tokens = tokens(payload);
-    if let Some(defining) = tokens.iter().find(|token| {
-        matches!(token.kind, Kind::Sequence)
+    // An unescaped `%` comments the rest of its line, so a defining
+    // spelling there never reaches the renderer's namespace.
+    let mut commented = false;
+    for token in &tokens {
+        if commented {
+            commented = !payload[token.span.clone()].contains('\n');
+            continue;
+        }
+        if matches!(token.kind, Kind::Structural('%')) {
+            commented = true;
+        } else if matches!(token.kind, Kind::Sequence)
             && DEFINING_COMMANDS
                 .binary_search(&&payload[token.span.clone()])
                 .is_ok()
-    }) {
-        return Err(Violation::MutableNamespace(
-            payload[defining.span.clone()].to_string(),
-        ));
+        {
+            return Err(Violation::MutableNamespace(
+                payload[token.span.clone()].to_string(),
+            ));
+        }
     }
     if tokens
         .iter()
@@ -999,6 +1009,19 @@ mod tests {
         assert_eq!(
             Ok(()),
             unit(r"\def\foo#1{(#1)}\foo{x}^2", r"\def\foo#1{(#1)}\foo{x}^2")
+        );
+    }
+
+    #[test]
+    fn a_defining_spelling_in_a_later_comment_does_not_mutate_the_namespace() {
+        assert_eq!(Ok(()), unit(r"x+y % \def\foo{z}", "x"));
+    }
+
+    #[test]
+    fn a_comment_ends_at_its_line_so_a_defining_spelling_below_still_mutates() {
+        assert_eq!(
+            Err(Violation::MutableNamespace(r"\def".into())),
+            unit("x+y % c\n\\def\\bar{z} w", "x")
         );
     }
 
