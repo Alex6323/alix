@@ -8556,6 +8556,20 @@ the answer
     }
 
     #[test]
+    fn a_unicode_superscript_span_needs_its_base() {
+        let error = err(&format!(
+            "## q\n---\n$x\u{00B2} + y$\n<!-- blank: span hidden=\"\u{00B2}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+        ));
+        let ParseError::InvalidRegion { message, .. } = error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(
+            message.contains("without its complete base and script"),
+            "{message}"
+        );
+    }
+
+    #[test]
     fn a_complete_base_and_script_is_a_legal_span_blank() {
         let deck = parse(&format!(
             "## q\n---\n$x = b^2 - 4ac$\n<!-- blank: span hidden=\"b^2\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"

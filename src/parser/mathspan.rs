@@ -174,11 +174,19 @@ const BLANKABLE_SYMBOLS: &[&str] = &[
     r"\zeta",
 ];
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Script {
+    Sup,
+    Sub,
+    Prime,
+}
+
 enum Kind {
     Sequence,
     Open,
     Close,
     Structural(char),
+    Script(Script),
     Other,
 }
 
@@ -231,7 +239,14 @@ fn tokens(payload: &str) -> Vec<Token> {
             '{' => Kind::Open,
             '}' => Kind::Close,
             '^' | '_' | '&' | '%' | '#' => Kind::Structural(ch),
-            _ => Kind::Other,
+            '\'' => Kind::Script(Script::Prime),
+            // The pinned renderer's own classification, so the set cannot
+            // drift from what its atom parser converts into scripts.
+            ch => match ratex_parser::unicode_sup_sub::unicode_sub_sup(ch) {
+                Some((_, true)) => Kind::Script(Script::Sub),
+                Some((_, false)) => Kind::Script(Script::Sup),
+                None => Kind::Other,
+            },
         };
         out.push(Token {
             span: at..at + ch.len_utf8(),
@@ -293,29 +308,60 @@ fn whitespace_token(payload: &str, token: &Token) -> bool {
         && payload[token.span.clone()].chars().all(char::is_whitespace)
 }
 
-fn operand_before(payload: &str, tokens: &[Token], index: usize) -> Option<Range<usize>> {
+fn previous_content_token(payload: &str, tokens: &[Token], index: usize) -> Option<usize> {
     let mut previous = index.checked_sub(1)?;
     while whitespace_token(payload, &tokens[previous]) {
         previous = previous.checked_sub(1)?;
     }
-    let last = &tokens[previous];
-    if matches!(last.kind, Kind::Close) {
-        let mut depth = 0i32;
-        for earlier in tokens[..=previous].iter().rev() {
-            match earlier.kind {
-                Kind::Close => depth += 1,
-                Kind::Open => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return Some(earlier.span.start..last.span.end);
-                    }
-                }
-                _ => {}
-            }
-        }
-        return Some(tokens.first()?.span.start..last.span.end);
+    Some(previous)
+}
+
+fn next_content_token(payload: &str, tokens: &[Token], index: usize) -> Option<usize> {
+    let mut next = index + 1;
+    while next < tokens.len() && whitespace_token(payload, &tokens[next]) {
+        next += 1;
     }
-    Some(last.span.clone())
+    (next < tokens.len()).then_some(next)
+}
+
+/// The atom a script attaches to, walking past sibling scripts and their
+/// operands: in `x_i^2` both scripts belong to `x`, never to `i`.
+fn operand_before(payload: &str, tokens: &[Token], index: usize) -> Option<Range<usize>> {
+    let mut at = index;
+    loop {
+        let previous = previous_content_token(payload, tokens, at)?;
+        if matches!(tokens[previous].kind, Kind::Script(_)) {
+            at = previous;
+            continue;
+        }
+        let (operand, start_index) = if matches!(tokens[previous].kind, Kind::Close) {
+            let mut depth = 0i32;
+            let mut start = None;
+            for (index, earlier) in tokens[..=previous].iter().enumerate().rev() {
+                match earlier.kind {
+                    Kind::Close => depth += 1,
+                    Kind::Open => {
+                        depth -= 1;
+                        if depth == 0 {
+                            start = Some(index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            match start {
+                Some(index) => (tokens[index].span.start..tokens[previous].span.end, index),
+                None => (tokens.first()?.span.start..tokens[previous].span.end, 0),
+            }
+        } else {
+            (tokens[previous].span.clone(), previous)
+        };
+        match previous_content_token(payload, tokens, start_index) {
+            Some(owner) if matches!(tokens[owner].kind, Kind::Structural('^' | '_')) => at = owner,
+            _ => return Some(operand),
+        }
+    }
 }
 
 fn operand_after(payload: &str, tokens: &[Token], index: usize) -> Option<Range<usize>> {
@@ -409,6 +455,41 @@ pub(super) fn structural_unit(payload: &str, range: &Range<usize>) -> Result<(),
                 }
             }
             Kind::Structural(ch) => return Err(Violation::StructuralToken(*ch)),
+            Kind::Script(script) => {
+                let mut first = index;
+                while let Some(previous) = previous_content_token(payload, &tokens, first) {
+                    if matches!(tokens[previous].kind, Kind::Script(other) if other == *script) {
+                        first = previous;
+                    } else {
+                        break;
+                    }
+                }
+                let mut last = index;
+                while let Some(next) = next_content_token(payload, &tokens, last) {
+                    if matches!(tokens[next].kind, Kind::Script(other) if other == *script) {
+                        last = next;
+                    } else {
+                        break;
+                    }
+                }
+                let mut complete = operand_before(payload, &tokens, first)
+                    .is_some_and(|base| range.start <= base.start)
+                    && tokens[last].span.end <= range.end;
+                // The parser folds a `^`-script after a prime run into the
+                // same superscript, so cutting it off cuts the cluster.
+                if complete
+                    && *script == Script::Prime
+                    && let Some(next) = next_content_token(payload, &tokens, last)
+                    && matches!(tokens[next].kind, Kind::Structural('^'))
+                    && tokens[next].span.start >= range.end
+                {
+                    complete = false;
+                }
+                if !complete {
+                    let spelled = payload[token.span.clone()].chars().next().unwrap_or('\'');
+                    return Err(Violation::IncompleteScript(spelled));
+                }
+            }
             Kind::Sequence => {
                 let text = &payload[token.span.clone()];
                 if text == r"\\" {
@@ -616,6 +697,59 @@ mod tests {
             unit(r"z+\frac{a}{b}", r"\frac{a}"),
             "the orphaned-denominator counterexample (ADR 0040 adversary)"
         );
+    }
+
+    #[test]
+    fn a_unicode_script_needs_its_base_and_its_whole_cluster() {
+        assert_eq!(
+            Err(Violation::IncompleteScript('\u{00B2}')),
+            unit("x\u{00B2} + y", "\u{00B2}"),
+            "a superscript two alone orphans its base"
+        );
+        assert_eq!(
+            Err(Violation::IncompleteScript('\u{00B2}')),
+            unit("x\u{00B2}\u{00B3} + y", "x\u{00B2}"),
+            "cutting the cluster after the two orphans the three"
+        );
+        assert_eq!(
+            Err(Violation::IncompleteScript('\u{2081}')),
+            unit("a\u{2081} + b", "\u{2081}"),
+            "a subscript one alone orphans its base"
+        );
+        assert_eq!(Ok(()), unit("x\u{00B2} + y", "x\u{00B2}"));
+        assert_eq!(Ok(()), unit("x\u{00B2}\u{00B3} + y", "x\u{00B2}\u{00B3}"));
+    }
+
+    #[test]
+    fn a_prime_run_needs_its_base_and_its_whole_cluster() {
+        assert_eq!(
+            Err(Violation::IncompleteScript('\'')),
+            unit("x' + y", "'"),
+            "a prime alone orphans its base"
+        );
+        assert_eq!(
+            Err(Violation::IncompleteScript('\'')),
+            unit("x'' + y", "x'"),
+            "cutting a prime run leaves an orphaned prime"
+        );
+        assert_eq!(
+            Err(Violation::IncompleteScript('\'')),
+            unit("x'^2 + y", "x'"),
+            "the ^-script joins the prime cluster, so it cannot be cut off"
+        );
+        assert_eq!(Ok(()), unit("x' + y", "x'"));
+        assert_eq!(Ok(()), unit("x'' + y", "x''"));
+        assert_eq!(Ok(()), unit("x'^2 + y", "x'^2"));
+    }
+
+    #[test]
+    fn a_stacked_script_walks_to_the_owning_atom() {
+        assert_eq!(
+            Err(Violation::IncompleteScript('^')),
+            unit("x_i^2 + y", "i^2"),
+            "both scripts of x_i^2 attach to x, so i is not a base"
+        );
+        assert_eq!(Ok(()), unit("x_i^2 + y", "x_i^2"));
     }
 
     #[test]

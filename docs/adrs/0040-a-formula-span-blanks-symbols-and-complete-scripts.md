@@ -53,7 +53,13 @@ accepted.
 exactly when its base operand and its script operand (one token or one
 balanced brace group each) both lie inside the match; otherwise the
 error names the cut script. This admits `b^2`, `a_i`, `{ab}^{n+1}` and
-rejects both `^2` alone and `x^` alone.
+rejects both `^2` alone and `x^` alone. (Amended 2026-08-31, after the
+review's red constructions: a script is every spelling the pinned
+renderer's atom parser converts into one, so Unicode
+superscript/subscript characters and prime apostrophe runs follow the
+same law, classified by the renderer's own public mapping rather than a
+copied table; a base's stacked scripts all attach to the owning atom, so
+`i^2` inside `x_i^2` is a cut, not a pair.)
 
 **3. A cut command application is named as such.** When a contained
 non-allowlisted command's match is followed by a further argument
