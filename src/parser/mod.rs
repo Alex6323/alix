@@ -2172,7 +2172,8 @@ fn build_region_cards(
                 .map(|(member, text)| (member.line, text))
                 .collect(),
         };
-        card.display_back = asked.iter().any(|(line, _)| math_line(*line)).then(|| {
+        let math = asked.iter().any(|(line, _)| math_line(*line));
+        card.display_back = math.then(|| {
             asked
                 .iter()
                 .map(|(line, text)| match math_line(*line) {
@@ -2207,7 +2208,7 @@ fn build_region_cards(
         card.region = Some(slot);
         card.reversed = false;
         card.direction = None;
-        card.input = None;
+        card.input = card.input.or(math.then_some(Input::Draw));
         card.row = None;
         // The effective question includes the masked context (ADR 0034): two
         // spans over the same word in different sentences are different

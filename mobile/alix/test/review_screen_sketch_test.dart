@@ -52,6 +52,20 @@ void main() {
     expect(find.byType(TextField), findsNothing);
   });
 
+  testWidgets('a span cut from a formula draws without any directive', (tester) async {
+    await pumpDeck(
+      tester,
+      '## The quadratic formula\n---\n\$x = -b \\pm \\sqrt{d}\$\n<!-- blank: span hidden="d" b:a1b2c3 -->\n',
+      name: 'formula.md',
+    );
+
+    expect(
+      find.byType(SketchCanvas),
+      findsOneWidget,
+      reason: 'the lib resolves input: draw for a math span; the client must honour it',
+    );
+  });
+
   testWidgets('a typed card is untouched by the draw branch', (tester) async {
     await pumpDeck(tester, '## What is 2 + 2?\n4\n', name: 'typed.md');
 

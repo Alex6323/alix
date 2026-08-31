@@ -2067,6 +2067,50 @@ mod tests {
     }
 
     #[test]
+    fn explicit_draw_input_reaches_a_math_span_review_card() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse(
+            "## q\n---\n$\\gamma$\n<!-- input: draw -->\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n",
+        );
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Recall, NOW);
+        assert_eq!(
+            state(&session, &store, &augment, Some(NOW)).input,
+            Input::Draw,
+            "the authored span input must reach the review client"
+        );
+    }
+
+    #[test]
+    fn an_unpinned_math_span_draws_by_default() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards =
+            parse("## q\n---\n$\\gamma$\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n");
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Recall, NOW);
+        assert_eq!(
+            state(&session, &store, &augment, Some(NOW)).input,
+            Input::Draw,
+            "the formula rule: a math span sketches unless pinned"
+        );
+    }
+
+    #[test]
+    fn a_block_input_pin_reaches_a_prose_span_card() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse(
+            "## q\nthe value is dropped\n<!-- input: draw -->\n<!-- blank: span hidden=\"dropped\" b:a1b2c3 -->\n",
+        );
+        seen(&mut store, &cards);
+        let session = session_at(cards, &mut store, Depth::Recall, NOW);
+        assert_eq!(
+            state(&session, &store, &augment, Some(NOW)).input,
+            Input::Draw,
+            "the block directive routes to the span card"
+        );
+    }
+
+    #[test]
     fn a_span_cut_from_prose_is_typed_by_default() {
         let (mut store, augment, _dir) = fixtures();
         let cards =

@@ -40,9 +40,12 @@ removed, a line of code with the operative token blanked.
 
 A span inside `$...$` or `$$...$$` is a piece of the formula, and must be a
 complete structural unit of it (a lone term such as `4ac`), or the whole
-formula. A LaTeX command such as `\pm` may only be hidden by blanking the
-whole formula: a typed answer holding a command would ask for its spelling,
-and `alix doctor` warns when a typed span holds one.
+formula. At review it is **sketched rather than typed**, since a formula's
+piece has no keyboard spelling; write `input: type` on the card or the deck
+to keep the keyboard, and an authored `input:` always wins. A LaTeX command
+such as `\pm` may only be hidden by blanking the whole formula: a typed
+answer holding a command would ask for its spelling, and `alix doctor`
+warns when a typed span holds one.
 
 ### A note for one blank
 

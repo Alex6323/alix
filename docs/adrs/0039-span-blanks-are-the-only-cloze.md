@@ -56,9 +56,10 @@ Easier: one grammar, one identity model, prose that stays readable
 everywhere, and a deck format that can stabilize for 0.8.
 
 Harder, and accepted: hole review history resets on conversion (the
-stamp is new identity); the formula draw default died with the
-`math_hole` field, so a converted math hole must carry an explicit
-`input: draw`, which the external conversion tooling stamps.
+stamp is new identity). The formula draw default survives the field it
+rode on (amended by ruling, 2026-08-31): a math-classed span defaults
+to `input: draw` on its card, and the authored block `input:` reaches
+span cards, so an explicit pin wins in either direction.
 
 Deliberately external: converting existing decks is disposable tooling
 outside this repository, per the pre-1.0 rule. Overlapping and
@@ -89,6 +90,8 @@ adds none.
 
 - `\blank{x}` in an answer is literal text and derives no sub-card.
 - A span blank satisfies the generator's cloze style and fails plain.
+- An unpinned math span reviews as draw; a block `input:` pin reaches
+  its span cards.
 - Group-addressed notes replace or extend the shared block note for
   their group's card alone.
 - An old store document with a `records` field fails loud.

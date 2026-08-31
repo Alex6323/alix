@@ -398,8 +398,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answer text. The positional sub-ids the marker minted (`card-<token>-N`)
   are no longer composed or parsed, the store's hole fingerprint records are
   gone (an old progress document fails loud on its unknown field), and the
-  formula draw default died with the marker, so a math blank that should be
-  sketched carries an explicit `input: draw`. Per-hole addressed notes
+  formula rule carries over: a span inside a formula is sketched unless the
+  block pins `input: type`, and a block's `input:` directive now reaches its
+  span cards. Per-hole addressed notes
   survive addressed to region group names: `> g: text` replaces the shared
   block note for group g's card, `> g+: text` appends to it.
 
