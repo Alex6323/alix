@@ -984,10 +984,11 @@ fn remediation_prompt(gaps: &[String]) -> String {
          CHOOSE THE CARD TYPE per gap, by what the gap actually is:\n\
          - A missed FACT or TERM (a definition, a value, what lives where) -> a \
          cheap recall card. Prefer a cloze: a `## ` front with a short \
-         instruction, then an answer line that states the fact with each hidden \
-         span wrapped as `\\blank{...}` (braces outside the marker are literal). \
-         If there is no natural word to blank out, use a plain `## ` card with \
-         the answer on the line below instead.\n\
+         instruction, an answer line that states the fact as plain prose, then \
+         one `<!-- blank: span hidden=\"...\" -->` comment line per hidden \
+         span, where `hidden` repeats the exact answer text to hide. If there \
+         is no natural word to blank out, use a plain `## ` card with the \
+         answer on the line below instead.\n\
          - A missed CONCEPT, MECHANISM or CONNECTION (a \"why\", \"how\" or \"what \
          happens if\") -> an understanding card: a `## ` open prompt with the \
          key points a good answer covers, one per line below it. This forces the \
@@ -1009,8 +1010,12 @@ fn remediation_prompt(gaps: &[String]) -> String {
          quotation and belongs to the answer. No frontmatter, no \
          headings other than the `## ` fronts. One example of each card type:\n\
          ## Recall how a String is laid out in memory.\n\
-         A String stores a \\blank{pointer}, \\blank{length} and \
-         \\blank{capacity} on the stack, and its bytes live on the \\blank{heap}.\n\
+         A String stores a pointer, length and capacity on the stack, and its \
+         bytes live on the heap.\n\
+         <!-- blank: span hidden=\"pointer\" -->\n\
+         <!-- blank: span hidden=\"length\" -->\n\
+         <!-- blank: span hidden=\"capacity\" -->\n\
+         <!-- blank: span hidden=\"heap\" -->\n\
          ## What does `drop` do for a String, and when?\n\
          It returns the String's heap buffer to the allocator, at the end of the \
          owning scope.\n\
@@ -1398,10 +1403,34 @@ mod tests {
         let p = remediation_prompt(&["x".to_string()]);
         assert!(p.contains("missed FACT or TERM"));
         assert!(p.contains("missed CONCEPT"));
-        assert!(p.contains("\\blank{...}"));
+        assert!(p.contains("<!-- blank: span hidden="));
+        assert!(!p.contains("\\blank{"));
         assert!(p.contains("understanding card"));
         assert!(!p.contains("indented answer"));
         assert!(p.contains("## "));
+    }
+
+    #[test]
+    fn remediation_prompt_recall_example_parses_as_four_blank_cards() {
+        let prompt = remediation_prompt(&["x".to_string()]);
+        let start = prompt
+            .find("## Recall how a String is laid out in memory.")
+            .expect("the recall example starts");
+        let tail = &prompt[start..];
+        let end = tail
+            .find("\n## What does `drop` do for a String, and when?")
+            .expect("the next example bounds the recall card");
+        let cards = crate::parser::parse_str("model-output.md", &tail[..end]).unwrap();
+
+        assert_eq!(
+            4,
+            cards.len(),
+            "the prompt's four hidden facts must become four review cards: {cards:?}"
+        );
+        assert!(
+            cards.iter().all(|card| card.region.is_some()),
+            "every generated recall card must be a span-derived card: {cards:?}"
+        );
     }
 
     #[test]
