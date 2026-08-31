@@ -23,7 +23,7 @@ full.
 | `format-version` | deck | Reserved. The deck **format's** version, not the deck's own. Absence means `1`, so alix never writes it; any number other than `1` is refused rather than guessed at. [→ ch 3](03-the-deck-format.md) |
 | `id` | deck | The frontmatter deck ID (`deck-<token>`) marks an initialized deck and authorizes maintenance of missing card IDs. Its `deck-` prefix is what tells alix's decks apart. [→ ch 3](03-the-deck-format.md) |
 | `id` | card | The HTML-comment card ID (`card-<token>`) anchors review history. It is minted by `alix deck init` or a deck-creation workflow and maintained by alix, never hand-authored. After a card table it is the table's container ID; each row's card composes it with the row stamp (`r:`) in the row's first cell. [→ ch 3](03-the-deck-format.md) |
-| `reveal` | deck · card | [How the answer is uncovered](04-review-modes.md): flip (default) or line. Cloze is triggered by `\blank{...}` markers, never by a `reveal:` value. |
+| `reveal` | deck · card | [How the answer is uncovered](04-review-modes.md): flip (default) or line. Cloze is triggered by a `blank:` directive, never by a `reveal:` value. |
 | `order` | deck | Card order: `scheduled` (default) or `sequential`. [→ ch 5](05-scheduling.md) |
 | `input` | deck · card | `draw`: answer on a canvas instead of typing. [→ ch 4](04-review-modes.md) |
 | `direction` | deck · card | [Review direction](06-cloze-direction-images.md): forward, reverse, both. |
@@ -41,7 +41,7 @@ full.
 | `at` | card | A repeatable named-field locator into the `source` (`at: file:lines fingerprint: xxh64-...`, plus `asset:` once frozen; a range-less path or URL cites the whole source): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
 | `given` | card | A [trace checkpoint's](13-trace-decks.md) off-screen symbol, as `name - meaning` (repeatable). |
 | `diagram` | card | Machine-maintained stamp on the line after a ```` ```mermaid ```` fence, tying the fence text to its frozen image and geometry (`fingerprint:`, `asset:`, `geometry:`). Written by deck init, never hand-authored. [→ ch 6](06-cloze-direction-images.md) |
-| `blank` | card | Masks and asks: a region of the preceding image (`rect x= y= width= height= hidden="..."`, optional `[group]`) or a stored text blank in the answer block (`span hidden="..."`, optional `occurrence=`/`boundary=`). Carries a minted `b:` stamp (and `position:` anchor on a span), maintained by alix like ids. [→ ch 6](06-cloze-direction-images.md) |
+| `blank` | card | Masks and asks: a region of the preceding image (`rect x= y= width= height= hidden="..."`, optional `[group]`) or a text span in the answer block (`span hidden="..."`, optional `occurrence=`/`boundary=`). Carries a minted `b:` stamp (and `position:` anchor on a span), maintained by alix like ids. [→ ch 6](06-cloze-direction-images.md) |
 | `cover` | card | Masks without ever asking, for legends and labels that give answers away: `rect` on the preceding image or `span` in the answer block. No group, no stamp, no card. [→ ch 6](06-cloze-direction-images.md) |
 | `crop` | card | A viewport onto the preceding image (`rect x= y= width= height=`, at most one per image); region coordinates stay in full-source space. [→ ch 6](06-cloze-direction-images.md) |
 

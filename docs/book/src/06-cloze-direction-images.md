@@ -5,94 +5,99 @@ from chapter 3.
 
 ## Cloze cards: fill in the blank
 
-A cloze card hides part of the answer; you create one by wrapping the hidden
-text in `\blank{...}`.
+A cloze card hides part of the answer; you create one by pointing a
+`blank:` directive at a span of the answer text.
 
-Wrap any span of an answer in `\blank{...}` and the card becomes a **cloze**: each
-`\blank{...}` is a blank, and the card expands into one sub-card per blank. No
-directive is needed; the marker itself is the trigger.
+Write the answer as ordinary prose, then name the hidden text in a
+`<!-- blank: span hidden="..." -->` comment after it. Each directive is a
+blank, and the card expands into one sub-card per blank. No marker sits in
+the prose, so the deck reads normally in any other Markdown tool.
 
 ```
 ## Complete the Rust declaration
-let \blank{mut} x: \blank{u64} = 0;
+let mut x: u64 = 0;
+<!-- blank: span hidden="mut" -->
+<!-- blank: span hidden="u64" -->
 ```
 
-This makes two cards. One blanks `mut` and shows the rest; the other blanks `u64`.
-The asked blank is marked apart from the *other* blanks, which are hidden as `⬚`, so no card
-gives away its siblings' answers. You only produce the hidden text. The web app
-draws both as chips rather than showing the glyphs themselves.
+This makes two cards. One blanks `mut` and shows the rest; the other blanks
+`u64`. The asked span is marked apart from the *other* spans, which are hidden
+as `⬚`, so no card gives away its siblings' answers. You only produce the
+hidden text. The web app draws both as chips rather than showing the glyphs
+themselves.
 
-Braces outside a `\blank{}` are ordinary text, so `let p = Foo {};` is fine in a
-cloze answer. If you need a literal brace *inside* a `\blank{...}`, escape it as
-`\{` or `\}`.
+The hidden text must appear in the answer exactly as written. When it appears
+more than once, `occurrence=2` picks the second match; matches snap to word
+boundaries unless the directive says `boundary=char`.
 
 `alix` keeps a card's cloze siblings apart in the queue when other cards are
-available, so you don't see `mut` right after `u64`. Editing is safe: identity is
-the card's token (chapter 3), so rewording the question, or a hole's text, keeps
-your history.
+available, so you don't see `mut` right after `u64`. Editing is safe: each
+span's identity is the stamp alix mints into its directive (`b:...`), so
+rewording the question, or moving the prose, keeps your history.
 
 Reach for cloze when the *context* is the cue: a definition with its key term
 removed, a line of code with the operative token blanked.
 
-A blank inside `$...$` or `$$...$$` is a piece of the formula, and is treated
-as one. It reveals typeset (`$x = -b \blank{\pm} \sqrt{d}$` shows ±, not the
-characters `\pm`), and at Reconstruct it is **sketched rather than typed**,
-since a formula's piece has no keyboard spelling. Write `input: type` on the
-card or the deck to keep the keyboard: an authored `input:` always wins, and
-the rule only fills in where you said nothing. `alix doctor` warns when a hole
-that stays typed holds a LaTeX command, since `\blank{\pm}` then asks for the
-spelling of `\pm` rather than for the sign.
+A span inside `$...$` or `$$...$$` is a piece of the formula, and must be a
+complete structural unit of it (a lone term such as `4ac`), or the whole
+formula. A LaTeX command such as `\pm` may only be hidden by blanking the
+whole formula: a typed answer holding a command would ask for its spelling,
+and `alix doctor` warns when a typed span holds one.
 
 ### A note for one blank
 
 A `>` note belongs to the card you wrote, so every blank of it shows the same
 note, and a note that spells out one blank's answer gives it away on all the
-others. Name the blank you mean and write the note to that name:
+others. Give the span a name in square brackets and write the note to that
+name:
 
 ```
 ## The test pyramid, bottom to top
-\blank[base]{Unit}, \blank{integration}, \blank{end-to-end}
+Unit, integration, end-to-end
 > [!NOTE]
 > base: Fastest and most numerous, which is why they sit at the bottom.
+<!-- blank: span [base] hidden="Unit" -->
+<!-- blank: span hidden="integration" -->
+<!-- blank: span hidden="end-to-end" -->
 ```
 
 Only the `Unit` card shows that line; the other two show nothing. Written as
 `> base+: ...` it is added below the shared note instead of replacing it. A
-name is one or more of `a-z`, `A-Z`, `0-9`, `_` or `-`, and two blanks of one
-card can't share it.
+name is one or more of `a-z`, `A-Z`, `0-9`, `_` or `-`.
 
 Everything else stays prose. A note line is only an address when the card
-names a blank and the name before the `:` is one of them, so a note that opens
+names a span and the name before the `:` is one of them, so a note that opens
 `2: the second one` is still a note. `alix doctor` reports an address that
-names no blank of its card, and shows the line as an ordinary note.
+names no span of its card, and shows the line as an ordinary note.
 
 ### Blanks that belong together
 
-Give two blanks the *same* name and they become one card asking both, instead
+Give two spans the *same* name and they become one card asking both, instead
 of two cards each asking half a fact:
 
 ```
 ## The TCP three-way handshake, in order
-\blank[open]{SYN}, \blank[open]{SYN-ACK}, \blank{ACK}
+SYN, SYN-ACK, ACK
+<!-- blank: span [open] hidden="SYN" -->
+<!-- blank: span [open] hidden="SYN-ACK" -->
+<!-- blank: span hidden="ACK" occurrence=2 -->
 ```
 
 That is two cards, not three: one asking `SYN` and `SYN-ACK` together, one
-asking `ACK`. Both spans show as `⍰` on the merged card, and you answer them
-as a list, one line per span. They don't have to sit next to each other or even
-on the same line, so `\blank[c]{Berlin} is the capital of \blank[c]{Germany}`
-groups too.
+asking `ACK` (`occurrence=2`, because the first `ACK` in the stream sits
+inside `SYN-ACK`). Both spans show as `⍰` on the merged card, and you answer
+them as a list, one line per span. They don't have to sit next to each other
+or even on the same line.
 
-**Grouping starts that card's history over.** Two spans recalled together are a
-harder question than either alone, so the merged card takes no schedule from
-the blanks it replaces: it comes back as if it were new. The blanks you did
-*not* group keep their history, even though grouping renumbered them. Group
-early if you are going to.
+**Grouping starts that card's history over.** Two spans recalled together are
+a harder question than either alone, so the merged card takes no schedule
+from the blanks it replaces: it comes back as if it were new. The spans you
+did *not* group keep their history. Group early if you are going to.
 
-**A name addresses a blank; it is not its id.** Identity is the card's token
-(chapter 3), so renaming a blank, or adding a name to one you have already
-drilled, keeps your history exactly as rewording the question does. The name
-means nothing outside the card it is written in: two cards may each have a
-`base`.
+**A name addresses a span; it is not its id.** Identity is the minted stamp,
+so renaming a span, or adding a name to one you have already drilled, keeps
+your history exactly as rewording the question does. The name means nothing
+outside the card it is written in: two cards may each have a `base`.
 
 ## Dual-direction cards: `direction:`
 
@@ -180,8 +185,8 @@ Each directive names its shape first: `rect` is the shape word, and the only
 image shape today (`span`, below, is the text shape). Three keywords, one
 concept each:
 
-- **`blank:`** masks a region and asks about it, the same idea as a text
-  `\blank{...}` in picture form. `hidden="..."` is the expected answer.
+- **`blank:`** masks a region and asks about it, the picture form of a text
+  span. `hidden="..."` is the expected answer.
 - **`cover:`** masks a region and never asks: for a legend or label that would
   give an answer away. It creates no card; a `hidden=` on it is kept but
   inert, so switching a region between `blank:` and `cover:` never loses
@@ -201,7 +206,7 @@ visible at all is refused, because a question about nothing visible is broken
 (percentage geometry is checked when the deck loads, pixel geometry at render
 time, since only the app showing the file knows its size).
 
-**A block with a `blank:` is a template, exactly like a cloze block**: it
+**A block with a `blank:` is a template, exactly like a text-span block**: it
 produces one card per blank and nothing else, and each sibling card masks the
 others' regions so no answer leaks. In review the roles look different on
 purpose: the region you are asked about shows the `⍰` blank marker, a sibling
@@ -228,17 +233,7 @@ When you open a deck for review, alix stamps each region with a short
 and what keeps a region's review history attached while you nudge its
 coordinates or reword its answer.
 
-## Stored text blanks: `blank: span`
-
-The same directive blanks *text* without touching the sentence. Where an
-inline `\blank{...}` rewrites the answer line, a `span` names its target from
-a comment below the block, so the text stays clean for every other reader:
-
-```
-## The powerhouse line
-The mitochondrion is the powerhouse of the cell.
-<!-- blank: span hidden="mitochondrion" -->
-```
+## Span matching, drift, and repair
 
 `hidden="..."` is both the anchor and the answer: alix finds that text in the
 block and masks it. `cover: span hidden="..."` hides its text the same way
@@ -268,9 +263,8 @@ no structural characters inside the match (`&` and `\\`, LaTeX's column and
 row separators), and alix proves the formula still renders with the span
 masked; a violation is a loud error naming the offending piece of the
 formula when the deck loads. A masked formula draws the blank as a boxed
-hole (the same form cloze holes in math already use), and a span whose
-answer needs LaTeX to type gets the same doctor warning a cloze hole gets
-when the block pins `input: type`.
+hole, and when a block pins `input: type`, `alix doctor` warns on a span
+whose answer needs LaTeX to type, since typing `\pm` asks for a spelling.
 
 ## Mermaid diagrams
 

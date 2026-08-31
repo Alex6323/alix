@@ -398,7 +398,7 @@ pub(crate) struct LinePiece {
     pub math: bool,
 }
 
-pub(crate) fn line_pieces(text: &str, excluded: &[std::ops::Range<usize>]) -> Vec<LinePiece> {
+pub(crate) fn line_pieces(text: &str) -> Vec<LinePiece> {
     let LineClassification {
         glyphs,
         bold,
@@ -408,11 +408,9 @@ pub(crate) fn line_pieces(text: &str, excluded: &[std::ops::Range<usize>]) -> Ve
     } = classify_line(text, false, None);
     let chars: Vec<char> = text.chars().collect();
     let linked = link_syntax_mask(&chars, &glyphs);
-    let byte_at: Vec<usize> = text.char_indices().map(|(byte, _)| byte).collect();
     let mut pieces: Vec<LinePiece> = Vec::new();
-    // A dropped glyph (link syntax, or an excluded authored range such as a
-    // cloze hole footprint) splits the surrounding text into separate
-    // pieces, so no match and no splice can quietly span the gap.
+    // A dropped glyph (link syntax) splits the surrounding text into
+    // separate pieces, so no match and no splice can quietly span the gap.
     let mut gap = false;
     // The math span the last pushed piece belongs to, so one formula stays
     // one piece while a gap still splits it.
@@ -421,11 +419,7 @@ pub(crate) fn line_pieces(text: &str, excluded: &[std::ops::Range<usize>]) -> Ve
         if glyph.math.is_none() && removed[index] {
             continue;
         }
-        if linked[index]
-            || excluded
-                .iter()
-                .any(|range| range.contains(&byte_at[glyph.raw_index]))
-        {
+        if linked[index] {
             gap = true;
             continue;
         }
@@ -1406,7 +1400,7 @@ mod tests {
 
     #[test]
     fn line_pieces_map_plain_text_identically() {
-        let pieces = line_pieces("plain text", &[]);
+        let pieces = line_pieces("plain text");
         assert_eq!(1, pieces.len());
         assert_eq!("plain text", pieces[0].text);
         assert_eq!((0..10).collect::<Vec<_>>(), pieces[0].starts);
@@ -1416,7 +1410,7 @@ mod tests {
 
     #[test]
     fn line_pieces_split_styled_from_plain_and_skip_the_markers() {
-        let pieces = line_pieces("**New** York", &[]);
+        let pieces = line_pieces("**New** York");
         assert_eq!(2, pieces.len());
         assert_eq!(("New", true), (pieces[0].text.as_str(), pieces[0].bold));
         assert_eq!(vec![2, 3, 4], pieces[0].starts);
@@ -1426,7 +1420,7 @@ mod tests {
 
     #[test]
     fn line_pieces_anchor_an_escaped_char_at_its_backslash() {
-        let pieces = line_pieces("a\\*b", &[]);
+        let pieces = line_pieces("a\\*b");
         assert_eq!(1, pieces.len(), "{pieces:?}");
         assert_eq!("a*b", pieces[0].text);
         assert_eq!(
@@ -1439,7 +1433,7 @@ mod tests {
 
     #[test]
     fn line_pieces_drop_link_syntax_and_keep_the_label_as_its_own_piece() {
-        let pieces = line_pieces("see [the RFC](https://x) now", &[]);
+        let pieces = line_pieces("see [the RFC](https://x) now");
         assert_eq!(3, pieces.len(), "{pieces:?}");
         assert_eq!("see ", pieces[0].text);
         assert_eq!("the RFC", pieces[1].text);
@@ -1456,22 +1450,14 @@ mod tests {
 
     #[test]
     fn an_incomplete_link_pattern_stays_ordinary_prose() {
-        let pieces = line_pieces("just [brackets] here", &[]);
+        let pieces = line_pieces("just [brackets] here");
         assert_eq!(1, pieces.len(), "{pieces:?}");
         assert_eq!("just [brackets] here", pieces[0].text);
     }
 
     #[test]
-    fn an_excluded_range_splits_the_piece_at_the_gap() {
-        let pieces = line_pieces("aa XX bb", std::slice::from_ref(&(3..5)));
-        assert_eq!(2, pieces.len(), "{pieces:?}");
-        assert_eq!("aa ", pieces[0].text);
-        assert_eq!(" bb", pieces[1].text, "no match or splice may span the gap");
-    }
-
-    #[test]
     fn line_pieces_mark_code_contents_and_exclude_backticks() {
-        let pieces = line_pieces("a `code` b", &[]);
+        let pieces = line_pieces("a `code` b");
         assert_eq!(3, pieces.len(), "{pieces:?}");
         assert_eq!(("code", true), (pieces[1].text.as_str(), pieces[1].code));
         assert_eq!(vec![3, 4, 5, 6], pieces[1].starts);
@@ -1479,7 +1465,7 @@ mod tests {
 
     #[test]
     fn line_pieces_mark_math_source_and_exclude_dollar_delimiters() {
-        let pieces = line_pieces("sum $x+y$ here", &[]);
+        let pieces = line_pieces("sum $x+y$ here");
         assert_eq!(3, pieces.len(), "{pieces:?}");
         assert_eq!(("x+y", true), (pieces[1].text.as_str(), pieces[1].math));
         assert_eq!(vec![5, 6, 7], pieces[1].starts);

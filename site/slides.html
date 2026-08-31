@@ -456,7 +456,7 @@ Consistency, Availability, Partition tolerance.
     <p class="eyebrow"><span class="k">A</span> · appendix — the deck format on one slide</p>
     <table class="tbl">
       <tr><td>## front</td><td>starts a card; the plain lines below are the answer</td></tr>
-      <tr><td>\blank{span}</td><td>cloze — each blanked span in the answer becomes its own sub-card</td></tr>
+      <tr><td>&lt;!-- blank: span hidden="..." --&gt;</td><td>cloze: each hidden span of the answer becomes its own sub-card</td></tr>
       <tr><td>- [x] / - [ ]</td><td>a task-list answer is an authored multiple-choice card</td></tr>
       <tr><td>&gt; note</td><td>shown after answering</td></tr>
       <tr><td>&lt;!-- reveal: line --&gt;</td><td>flip &#183; line — how a card presents; how deeply you drill is a per-session choice</td></tr>

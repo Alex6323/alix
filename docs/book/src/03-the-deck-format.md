@@ -68,8 +68,7 @@ that will render as emphasis.
 
 Inline escaping follows the CommonMark rule: a backslash before any ASCII
 punctuation character yields that literal character, and a backslash before
-anything else (letters, digits, spaces) stays a literal backslash. That is
-why `\blank{...}` needs no escaping to survive.
+anything else (letters, digits, spaces) stays a literal backslash.
 
 ## Links
 
@@ -575,8 +574,8 @@ block it maps, so a second below the first fails the same way.
 
 ## Escaping
 
-Because `##`, `>`, a break line of any spelling, and the fence and cloze markers
-are structural, an answer line that must *start* with one literally is escaped
+Because `##`, `>`, a break line of any spelling, and the fence markers are
+structural, an answer line that must *start* with one literally is escaped
 with a leading backslash: `\##`, `\>`, `\---`, `\***`. The backslash is consumed; the line displays without it.
 For a break line of any spelling, `<!-- plain -->` on the line below keeps it as
 content too.

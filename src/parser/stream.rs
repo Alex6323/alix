@@ -86,13 +86,12 @@ pub(super) fn maskable_stream(answer: &[(usize, String)], parsed: &[Vec<Seg>]) -
         if segments.iter().any(|seg| matches!(seg, Seg::Image { .. })) {
             continue;
         }
-        let holes: Vec<std::ops::Range<usize>> = Vec::new();
         let byte_of: Vec<usize> = raw
             .char_indices()
             .map(|(byte, _)| byte)
             .chain([raw.len()])
             .collect();
-        let built: Vec<BuiltPiece> = line_pieces(raw, &holes)
+        let built: Vec<BuiltPiece> = line_pieces(raw)
             .into_iter()
             .map(|piece| {
                 let map = piece
@@ -358,10 +357,11 @@ mod tests {
         assert_eq!(Some((3, 0..1)), s.splice(&(2..3)));
     }
 
-    // A dense two-letter alphabet with structural tokens, so overlapping
-    // occurrences straddling hole gaps and style edges are COMMON, not
-    // needle-rare: the differential property must be able to reach the
-    // shadowing shapes it guards against.
+    // A dense two-letter alphabet with structural tokens (including the
+    // retired marker as ordinary literal text), so overlapping occurrences
+    // straddling style edges are COMMON, not needle-rare: the differential
+    // property must be able to reach the shadowing shapes it guards
+    // against.
     fn arbitrary_lines() -> impl Strategy<Value = Vec<String>> {
         let token = prop_oneof![
             Just("a".to_string()),

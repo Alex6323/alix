@@ -67,15 +67,16 @@ A `Vec<u8>`, its bytes on the heap.
 > Capacity can exceed its length.
 
 ## Fill in the blank
-let \blank{mut} x = 0;
+let mut x = 0;
+<!-- blank: span hidden="mut" -->
 ```
 
 The front is the `## ` line; the plain lines below are the answer. A `> [!NOTE]`
 line opens a note shown after you answer (a blockquote without one of GitHub's
 five alert badges is a quotation, and belongs to the answer), and a `<!-- -->`
 directive on a card tunes it
-(here `\blank{mut}` turns into a fill-in-the-blank, auto-detected as a cloze
-card). Run `alix deck init <file>` once on a hand-written deck: it mints the
+(here the `blank:` directive hides `mut` in the answer, making the card a
+fill-in-the-blank). Run `alix deck init <file>` once on a hand-written deck: it mints the
 stable deck and card ids that make the file appear in the picker and carry
 review history. Full format and every directive:
 [the deck format](docs/book/src/03-the-deck-format.md),

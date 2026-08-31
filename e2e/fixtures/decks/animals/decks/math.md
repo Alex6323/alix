@@ -28,7 +28,9 @@ Checklist complete
 <!-- id: card-mathcheck -->
 
 ## Complete the two terms
-$x = \blank{a} + \blank{b}$
+$x = a + b$
+<!-- blank: span hidden="a" b:e2trm1 -->
+<!-- blank: span hidden="b" b:e2trm2 -->
 <!-- id: card-mathcloze -->
 
 ## Which dollar examples stay literal?

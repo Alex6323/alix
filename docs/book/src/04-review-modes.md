@@ -24,9 +24,9 @@ frontmatter, or per card with a `<!-- reveal: ... -->` directive (default `flip`
   (lyrics, a sequence of steps). Pair it with `order: sequential` in the
   frontmatter to walk the deck top to bottom.
 
-A card becomes **cloze** (a gap to fill) automatically when its answer contains
-`\blank{...}` markers; the marker itself is the trigger, never a `reveal:`
-value. See [cloze cards](06-cloze-direction-images.md).
+A card becomes **cloze** (a gap to fill) when a `blank:` directive hides a
+span of its answer; the directive is the trigger, never a `reveal:` value.
+See [cloze cards](06-cloze-direction-images.md).
 
 ```
 ## Stage every change in git, including deletions?
@@ -119,7 +119,9 @@ A cloze marker may sit inside math:
 
 ```markdown
 ## Complete the identity.
-$$a^2 - b^2 = \blank{(a-b)}\blank{(a+b)}$$
+$$a^2 - b^2 = (a-b)(a+b)$$
+<!-- blank: span hidden="(a-b)" -->
+<!-- blank: span hidden="(a+b)" -->
 ```
 
 During review, the active hole renders as a boxed question mark and another
