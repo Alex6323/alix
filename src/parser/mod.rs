@@ -1492,29 +1492,33 @@ fn footnote_definition(raw: &str) -> bool {
     };
     let mut escaped = false;
     let mut close = None;
-    let mut label_bytes = 0usize;
+    let mut label_points = 0usize;
     for (at, ch) in rest.char_indices() {
         if WHITESPACE.contains(&ch) {
             return false;
         }
         if escaped {
             escaped = false;
-            label_bytes += ch.len_utf8();
+            label_points += 1;
             continue;
         }
         match ch {
-            '\\' => escaped = true,
+            '\\' => {
+                escaped = true;
+                label_points += 1;
+            }
+            '[' => return false,
             ']' => {
                 close = Some(at);
                 break;
             }
-            _ => label_bytes += ch.len_utf8(),
+            _ => label_points += 1,
         }
     }
     let Some(close) = close else {
         return false;
     };
-    label_bytes > 0 && rest[close + 1..].starts_with(':')
+    (1..=999).contains(&label_points) && rest[close + 1..].starts_with(':')
 }
 
 fn link_definition(lines: &[&str], at: usize) -> Option<(String, usize)> {
@@ -7047,12 +7051,38 @@ a
                 "## q\n---\n[^a\\]]: never supported\n",
                 "an escaped close inside the label",
             ),
+            (
+                "## q\n---\n[^a\\[b]: escaped open is label content\n",
+                "an escaped open bracket inside the label",
+            ),
+            (
+                &format!("## q\n---\n[^{}]: at the cap\n", "a".repeat(999)),
+                "a 999-code-point label",
+            ),
+            (
+                &format!("## q\n---\n[^{}]: multibyte cap\n", "\u{e4}".repeat(999)),
+                "999 multibyte code points",
+            ),
         ] {
             let err = super::parse("deck.md", text).unwrap_err();
             assert!(
                 matches!(err, ParseError::FootnoteDefinition(3)),
                 "{why}: {err:?}"
             );
+        }
+    }
+
+    #[test]
+    fn footnote_label_near_misses_stay_ordinary_prose() {
+        for (line, why) in [
+            ("[^a[b]: ordinary prose".to_string(), "a raw open bracket"),
+            (
+                format!("[^{}]: ordinary prose", "a".repeat(1000)),
+                "a label over 999 code points",
+            ),
+        ] {
+            let deck = parse(&format!("## q\n---\n{line}\n"));
+            assert_eq!(vec![line.clone()], deck.cards[0].back, "{why}: {line}");
         }
     }
 
