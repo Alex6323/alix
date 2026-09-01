@@ -13,6 +13,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every byte; every invisible character with a rendered role (zero-width
   joiners, word joiner, soft hyphen, variation selectors, bidi isolates
   and embeddings, and the rest) is untouched.
+- Typed grading draws the ink line: a character that paints no
+  horizontal ink (soft hyphen, zero-width space, joiners, word joiner,
+  variation selectors, bidi isolates and embeddings, tag characters)
+  no longer grades, on either side of the comparison, so an answer is
+  judged on what the screen shows rather than on what a device's
+  keyboard or emoji picker happens to emit. Spacing characters still
+  grade.
 - `alix doctor` flags a pipe table that declares no mapping: a bare table
   still renders plain, and the new lint asks for an explicit
   `<!-- cards -->` or `<!-- plain -->` so a forgotten mapping cannot

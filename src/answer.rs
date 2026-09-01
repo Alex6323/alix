@@ -68,8 +68,29 @@ impl Input {
     }
 }
 
+/// The ink line: a byte that moves no ink horizontally cannot be typed from
+/// what the screen shows, so it never grades; joiners, variant selectors, and
+/// direction controls are the learner's device, not the learner. MVS is
+/// deliberately absent: it spaces, so it grades.
+fn paints_no_ink(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{200B}'..='\u{200D}'
+            | '\u{2060}'
+            | '\u{FE0E}'
+            | '\u{FE0F}'
+            | '\u{202A}'..='\u{202C}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{E0000}'..='\u{E007F}'
+    )
+}
+
 pub fn normalize_answer(s: &str) -> String {
-    s.split_whitespace()
+    s.chars()
+        .filter(|c| !paints_no_ink(*c))
+        .collect::<String>()
+        .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
         .trim_end_matches(['.', ',', ';', ':', '!', '?'])
@@ -163,6 +184,56 @@ mod tests {
         assert_eq!(Some(Input::Type), Input::parse("TYPE"));
         assert_eq!(None, Input::parse("scribble"));
         assert_eq!(Input::Type, Input::default());
+    }
+
+    #[test]
+    fn the_ink_line_ignores_what_paints_no_ink() {
+        let ignored: &[(char, &str)] = &[
+            ('\u{00AD}', "soft hyphen"),
+            ('\u{200B}', "zero-width space"),
+            ('\u{200C}', "ZWNJ"),
+            ('\u{200D}', "ZWJ"),
+            ('\u{2060}', "word joiner"),
+            ('\u{FE0E}', "VS15"),
+            ('\u{FE0F}', "VS16"),
+            ('\u{202A}', "LRE embedding"),
+            ('\u{202B}', "RLE embedding"),
+            ('\u{202C}', "PDF terminator"),
+            ('\u{2066}', "LRI isolate"),
+            ('\u{2067}', "RLI isolate"),
+            ('\u{2068}', "FSI isolate"),
+            ('\u{2069}', "PDI isolate"),
+            ('\u{E0067}', "a tag letter"),
+            ('\u{E007F}', "the tag cancel"),
+        ];
+        for (byte, name) in ignored {
+            let expected = format!("a{byte}b");
+            assert!(
+                grade_typed("ab", &expected).passed,
+                "typing what the screen shows must pass against a {name} in the expected answer"
+            );
+            let typed = format!("a{byte}b");
+            assert!(
+                grade_typed(&typed, "ab").passed,
+                "a device emitting a {name} must not fail the learner"
+            );
+        }
+    }
+
+    #[test]
+    fn what_paints_ink_still_grades() {
+        assert!(
+            grade_typed("a b", "a\u{000B}b").passed,
+            "VT is whitespace and collapses with the rest"
+        );
+        assert!(
+            grade_typed("a b", "a\u{00A0}b").passed,
+            "NBSP is whitespace to the collapse"
+        );
+        assert!(
+            !grade_typed("ab", "a\u{180E}b").passed,
+            "MVS spaces, so it grades; a Mongolian card needs a Mongolian keyboard"
+        );
     }
 
     #[test]
