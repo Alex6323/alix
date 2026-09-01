@@ -1054,7 +1054,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_defaults_parse_input_and_order_independently() {
+    fn workspace_defaults_parse_input_and_review_independently() {
         let input = [("input".to_string(), "type".to_string())];
         let parsed = DeckSettings::from_directives(&input);
         assert_eq!(Some(Input::Type), parsed.input);
