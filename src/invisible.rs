@@ -50,11 +50,11 @@ impl Survey {
 }
 
 pub fn survey(text: &str) -> Survey {
-    let chars: Vec<char> = text.chars().collect();
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
     let mut found = Survey::default();
     let mut i = 0;
     while i < chars.len() {
-        let c = chars[i];
+        let (at, c) = chars[i];
         if c == '\u{1F3F4}'
             && let Some(end) = subdivision_flag_end(&chars, i)
         {
@@ -72,7 +72,7 @@ pub fn survey(text: &str) -> Survey {
             continue;
         }
         let inside_emoji = match c {
-            '\u{200D}' => joins_pictographs(&chars, i),
+            '\u{200D}' => joins_pictographs(text, at),
             '\u{FE0E}' | '\u{FE0F}' => sits_on_emoji_base(&chars, i),
             _ => false,
         };
@@ -86,29 +86,27 @@ pub fn survey(text: &str) -> Survey {
 
 /// `U+1F3F4`, at least one tag letter, then the cancel: the only shape tag
 /// characters legitimately take (a subdivision flag such as Scotland's).
-fn subdivision_flag_end(chars: &[char], base: usize) -> Option<usize> {
+fn subdivision_flag_end(chars: &[(usize, char)], base: usize) -> Option<usize> {
     let mut i = base + 1;
     let mut letters = 0;
-    while matches!(chars.get(i), Some('\u{E0061}'..='\u{E007A}')) {
+    while matches!(chars.get(i), Some((_, '\u{E0061}'..='\u{E007A}'))) {
         letters += 1;
         i += 1;
     }
-    (letters > 0 && chars.get(i) == Some(&'\u{E007F}')).then_some(i + 1)
+    (letters > 0 && matches!(chars.get(i), Some((_, '\u{E007F}')))).then_some(i + 1)
 }
 
-fn joins_pictographs(chars: &[char], zwj: usize) -> bool {
-    let before = chars[..zwj]
-        .iter()
-        .rev()
-        .find(|c| !matches!(c, '\u{FE0E}' | '\u{FE0F}'));
-    let after = chars[zwj + 1..]
-        .iter()
-        .find(|c| !matches!(c, '\u{FE0E}' | '\u{FE0F}'));
-    matches!((before, after), (Some(b), Some(a)) if is_emoji(*b) && is_emoji(*a))
+/// GB11 decides, via the grapheme segmenter, so Extended_Pictographic stays
+/// the segmenter's table, never a hand-rolled one: the join succeeded exactly
+/// when no grapheme boundary follows the ZWJ.
+fn joins_pictographs(text: &str, zwj_at: usize) -> bool {
+    use unicode_segmentation::UnicodeSegmentation;
+    let after = zwj_at + '\u{200D}'.len_utf8();
+    after < text.len() && !text.grapheme_indices(true).any(|(start, _)| start == after)
 }
 
-fn sits_on_emoji_base(chars: &[char], selector: usize) -> bool {
-    let Some(base) = selector.checked_sub(1).and_then(|i| chars.get(i)) else {
+fn sits_on_emoji_base(chars: &[(usize, char)], selector: usize) -> bool {
+    let Some((_, base)) = selector.checked_sub(1).and_then(|i| chars.get(i)) else {
         return false;
     };
     is_emoji(*base) || matches!(base, '0'..='9' | '#' | '*')
@@ -209,6 +207,12 @@ mod tests {
                 &[],
                 0,
                 "a variation selector between the ZWJ and its base is transparent",
+            ),
+            (
+                "\u{2388}\u{200D}\u{2388}",
+                &[],
+                0,
+                "extended pictographs that are not Emoji=Yes still join: GB11, one grapheme",
             ),
             (
                 "\u{1F44D}\u{FE0F}",
