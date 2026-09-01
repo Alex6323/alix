@@ -195,14 +195,14 @@
 {"e":195,"g":[3],"err":"line 2: four-space indentation opens a Markdown code block, which alix does not support; wrap the code in a ``` fence instead"}
 {"e":196,"g":[3],"cards":1,"back":"ws"}
 {"e":197,"g":[3],"cards":1,"back":"div"}
-{"e":198,"g":[9],"cards":1,"back":"exact"}
+{"e":198,"g":[9],"lints":["Lint { line: 2, kind: UndecidedTable }"],"cards":1,"back":"exact"}
 {"e":199,"g":[9],"cards":1,"back":"exact"}
-{"e":200,"g":[9],"cards":1,"back":"exact"}
-{"e":201,"g":[9],"cards":1,"back":"exact"}
-{"e":202,"g":[9],"cards":1,"back":"ws"}
-{"e":203,"g":[9],"cards":1,"back":"exact"}
-{"e":204,"g":[9],"cards":1,"back":"exact"}
-{"e":205,"g":[9],"cards":1,"back":"exact"}
+{"e":200,"g":[9],"lints":["Lint { line: 2, kind: UndecidedTable }"],"cards":1,"back":"exact"}
+{"e":201,"g":[9],"lints":["Lint { line: 2, kind: UndecidedTable }"],"cards":1,"back":"exact"}
+{"e":202,"g":[9],"lints":["Lint { line: 2, kind: UndecidedTable }"],"cards":1,"back":"ws"}
+{"e":203,"g":[9],"lints":["Lint { line: 2, kind: UndecidedTable }"],"cards":1,"back":"exact"}
+{"e":204,"g":[9],"lints":["Lint { line: 2, kind: UndecidedTable }"],"cards":1,"back":"exact"}
+{"e":205,"g":[9],"lints":["Lint { line: 2, kind: UndecidedTable }"],"cards":1,"back":"exact"}
 {"e":206,"g":[12],"cards":1,"back":"exact"}
 {"e":207,"g":[12],"cards":1,"back":"exact"}
 {"e":208,"g":[12],"cards":1,"back":"ws"}
@@ -577,14 +577,14 @@
 {"e":577,"g":[8],"cards":1,"back":"div"}
 {"e":578,"g":[8],"cards":1,"back":"div"}
 {"e":579,"g":[8],"cards":1,"back":"div"}
-{"e":580,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"exact"}
+{"e":580,"g":[14],"cards":1,"back":"div"}
 {"e":581,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
 {"e":582,"g":[14],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
 {"e":583,"g":[14],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
 {"e":584,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
 {"e":585,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
 {"e":586,"g":[14],"cards":1,"back":"div"}
-{"e":587,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"exact"}
+{"e":587,"g":[14],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
 {"e":588,"g":[14],"cards":1,"back":"div"}
 {"e":589,"g":[14],"cards":1,"back":"div"}
 {"e":590,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}

@@ -569,14 +569,14 @@
 {"e":569,"g":[8],"cards":1,"back":"div"}
 {"e":570,"g":[8],"cards":1,"back":"div"}
 {"e":571,"g":[8],"cards":1,"back":"div"}
-{"e":572,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"exact"}
+{"e":572,"g":[14],"cards":1,"back":"div"}
 {"e":573,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
 {"e":574,"g":[14],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
 {"e":575,"g":[14],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
 {"e":576,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
 {"e":577,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
 {"e":578,"g":[14],"cards":1,"back":"div"}
-{"e":579,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"exact"}
+{"e":579,"g":[14],"err":"line 2: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"}
 {"e":580,"g":[14],"cards":1,"back":"div"}
 {"e":581,"g":[14],"cards":1,"back":"div"}
 {"e":582,"g":[14],"lints":["Lint { line: 2, kind: ImageMalformed }"],"cards":1,"back":"div"}
