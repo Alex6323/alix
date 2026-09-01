@@ -1000,11 +1000,50 @@ fn image_destination_end(chars: &[char], start: usize) -> Option<usize> {
                 index += 2;
             }
             '<' => return None,
-            '>' => return (chars.get(index + 1) == Some(&')')).then_some(index),
+            '>' => return image_title_tail(chars, index + 1).then_some(index),
             _ => index += 1,
         }
     }
     None
+}
+
+// Mirrors `title_tail` in parser::cloze: the `)` may follow the
+// destination directly or after the dropped GFM title.
+fn image_title_tail(chars: &[char], from: usize) -> bool {
+    let whitespace = |at: usize| {
+        chars
+            .get(at)
+            .is_some_and(|ch| crate::parser::WHITESPACE.contains(ch))
+    };
+    let mut at = from;
+    while whitespace(at) {
+        at += 1;
+    }
+    let separated = at > from;
+    match chars.get(at).copied() {
+        Some(')') => true,
+        Some(open @ ('"' | '\'' | '(')) if separated => {
+            let closer = if open == '(' { ')' } else { open };
+            at += 1;
+            loop {
+                match chars.get(at).copied() {
+                    None => return false,
+                    Some('\\') => at += 2,
+                    Some(ch) if ch == closer => {
+                        at += 1;
+                        break;
+                    }
+                    Some('(') if open == '(' => return false,
+                    Some(_) => at += 1,
+                }
+            }
+            while whitespace(at) {
+                at += 1;
+            }
+            chars.get(at) == Some(&')')
+        }
+        _ => false,
+    }
 }
 
 /// The index just past a code span opened at `start` (a backtick run
@@ -1954,6 +1993,14 @@ mod tests {
                 "two pairs on one line",
             ),
             ("![d](<old image.png>)", "an image destination in angles"),
+            (
+                "![d](<old image.png> \"a title\")",
+                "a titled image destination in angles",
+            ),
+            (
+                "![d](<old image.png> (a title))",
+                "a paren-titled image destination in angles",
+            ),
             (
                 r"![d](<a\>b>)",
                 "an escaped close stays inside the image destination",

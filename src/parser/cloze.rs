@@ -104,7 +104,7 @@ fn bracketed_src(arg: &str) -> Option<(String, &str)> {
                 }
             }
             '<' | '\n' => return None,
-            '>' => return rest[1..].strip_prefix(')').map(|after| (src, after)),
+            '>' => return title_tail(&rest[1..]).map(|after| (src, after)),
             _ => {
                 src.push(ch);
                 rest = &rest[ch.len_utf8()..];
@@ -143,15 +143,19 @@ fn unbracketed_src(arg: &str) -> Option<(String, &str)> {
                 depth -= 1;
                 rest = &rest[1..];
                 if depth == 0 {
-                    let trimmed = trim_ws(&src);
-                    // Inner whitespace would start a Markdown title
-                    // (unsupported); the bracketed <src> form carries spaces.
-                    if trimmed.contains(&WHITESPACE[..]) {
-                        return None;
-                    }
-                    return Some((trimmed.to_string(), rest));
+                    return Some((src, rest));
                 }
                 src.push(')');
+            }
+            ch if WHITESPACE.contains(&ch) => {
+                if src.is_empty() {
+                    rest = &rest[ch.len_utf8()..];
+                } else {
+                    if depth != 1 {
+                        return None;
+                    }
+                    return title_tail(rest).map(|after| (src, after));
+                }
             }
             _ => {
                 src.push(ch);
@@ -160,6 +164,39 @@ fn unbracketed_src(arg: &str) -> Option<(String, &str)> {
         }
     }
     None
+}
+
+// Mirrors `inline::link_tail_end`'s GFM title grammar; the tail-agreement
+// law test keeps the two copies from drifting apart.
+fn title_tail(rest: &str) -> Option<&str> {
+    let after_ws = rest.trim_start_matches(|c: char| WHITESPACE.contains(&c));
+    let separated = after_ws.len() != rest.len();
+    match after_ws.chars().next() {
+        Some(')') => Some(&after_ws[1..]),
+        Some(open @ ('"' | '\'' | '(')) if separated => {
+            let closer = if open == '(' { ')' } else { open };
+            let mut inner = &after_ws[1..];
+            loop {
+                let ch = inner.chars().next()?;
+                if ch == '\\' {
+                    let skip = 1 + inner[1..].chars().next().map_or(0, char::len_utf8);
+                    inner = &inner[skip..];
+                    continue;
+                }
+                if ch == closer {
+                    inner = &inner[1..];
+                    break;
+                }
+                if open == '(' && ch == '(' {
+                    return None;
+                }
+                inner = &inner[ch.len_utf8()..];
+            }
+            let after_title = inner.trim_start_matches(|c: char| WHITESPACE.contains(&c));
+            after_title.strip_prefix(')')
+        }
+        _ => None,
+    }
 }
 
 fn image_malformed(lineno: usize) -> Lint {
@@ -265,6 +302,108 @@ mod tests {
     }
 
     #[test]
+    fn the_image_tail_and_the_link_tail_accept_the_same_gfm_tails() {
+        let rows = [
+            ("x.png)", true, "a bare destination"),
+            ("x.png )", true, "trailing whitespace before the close"),
+            ("x.png \"t\")", true, "a double-quoted title"),
+            ("x.png 't')", true, "a single-quoted title"),
+            ("x.png (t))", true, "a paren title"),
+            ("x.png \"a) b\")", true, "a close paren inside a title"),
+            (
+                "x.png \"say \\\"hi\\\"\")",
+                true,
+                "an escaped quote in a title",
+            ),
+            ("<a b> \"t\")", true, "a bracketed destination plus title"),
+            (
+                "x.png\"t\")",
+                true,
+                "no separation: the quote is destination content",
+            ),
+            ("x.png \"t\" x)", false, "junk after a closed title"),
+            (
+                "x.png (t(t))",
+                false,
+                "a nested open paren in a paren title",
+            ),
+            ("x.png \"t", false, "an unclosed title"),
+            ("a b.png)", false, "unbracketed whitespace with no title"),
+        ];
+        for (tail, accepted, why) in rows {
+            let (segments, _) = answer(&format!("![a]({tail}"));
+            let image = segments
+                .iter()
+                .any(|segment| matches!(segment, Seg::Image { .. }));
+            assert_eq!(accepted, image, "image tail, {why}: {tail}");
+            let flat: String = crate::inline::parse_inline(&format!("[a]({tail}"))
+                .iter()
+                .map(|run| run.text.as_str())
+                .collect();
+            assert_eq!(accepted, flat == "a", "link tail, {why}: {tail}");
+        }
+    }
+
+    #[test]
+    fn a_double_quoted_title_parses_and_is_dropped() {
+        let (segments, lints) = answer("![a moon](moon.png \"The Moon\")");
+        assert_eq!(vec![image("moon.png", Some("a moon"))], segments);
+        assert!(lints.is_empty(), "{lints:?}");
+    }
+
+    #[test]
+    fn single_quoted_and_paren_titles_parse_like_the_link_tail() {
+        let (segments, lints) = answer("![](a.png 'one') ![](b.png (two))");
+        assert_eq!(
+            vec![image("a.png", None), text(" "), image("b.png", None)],
+            segments
+        );
+        assert!(lints.is_empty(), "{lints:?}");
+    }
+
+    #[test]
+    fn a_bracketed_destination_carries_spaces_and_a_title() {
+        let (segments, lints) = answer("![m](<my file.png> \"The Moon\")");
+        assert_eq!(vec![image("my file.png", Some("m"))], segments);
+        assert!(lints.is_empty(), "{lints:?}");
+    }
+
+    #[test]
+    fn an_escaped_quote_stays_inside_its_title() {
+        let (segments, lints) = answer("![a](x.png \"say \\\"hi\\\"\")");
+        assert_eq!(vec![image("x.png", Some("a"))], segments);
+        assert!(lints.is_empty(), "{lints:?}");
+    }
+
+    #[test]
+    fn an_unseparated_quote_is_destination_content_not_a_title() {
+        let (segments, lints) = answer("![a](x.png\"t\")");
+        assert_eq!(vec![image("x.png\"t\"", Some("a"))], segments);
+        assert!(lints.is_empty(), "{lints:?}");
+    }
+
+    #[test]
+    fn an_unclosed_title_degrades_to_literal_with_a_lint() {
+        let (segments, lints) = answer("![a](x.png \"t");
+        assert_eq!(vec![text("![a](x.png \"t")], segments);
+        assert_eq!(vec![image_malformed()], lints);
+    }
+
+    #[test]
+    fn junk_after_a_closed_title_degrades_to_literal_with_a_lint() {
+        let (segments, lints) = answer("![a](x.png \"t\" x)");
+        assert_eq!(vec![text("![a](x.png \"t\" x)")], segments);
+        assert_eq!(vec![image_malformed()], lints);
+    }
+
+    #[test]
+    fn a_paren_title_rejects_a_nested_open_paren() {
+        let (segments, lints) = answer("![a](x.png (t(t))");
+        assert_eq!(vec![text("![a](x.png (t(t))")], segments);
+        assert_eq!(vec![image_malformed()], lints);
+    }
+
+    #[test]
     fn an_unclosed_paren_degrades_to_literal_with_a_lint() {
         let (segments, lints) = answer("![alt](moon.png");
         assert_eq!(vec![text("![alt](moon.png")], segments);
@@ -303,13 +442,6 @@ mod tests {
     fn a_whitespace_only_src_counts_as_empty() {
         let (segments, lints) = answer("![](  )");
         assert!(segments.is_empty());
-        assert_eq!(vec![image_malformed()], lints);
-    }
-
-    #[test]
-    fn a_markdown_title_degrades_to_literal_with_a_lint() {
-        let (segments, lints) = answer("![a](moon.png \"the moon\")");
-        assert_eq!(vec![text("![a](moon.png \"the moon\")")], segments);
         assert_eq!(vec![image_malformed()], lints);
     }
 

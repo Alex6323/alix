@@ -109,6 +109,9 @@ pub enum LintKind {
     /// vocabulary, so anything else in one is ignored, which is silent
     /// exactly when the author meant it to do something.
     UnrecognizedComment,
+    /// A bare pipe table declaring no mapping: it renders plain, which
+    /// is silent exactly when the author meant cards.
+    UndecidedTable,
     /// A blockquote opening with a badge-shaped first line that is not one
     /// of the five: it stays a quote, which is a silent meaning shift.
     BadgeShape {
@@ -206,6 +209,10 @@ pub enum ParseError {
         "line {0}: an image shares its line with prose; give the image its own line (inline images are a roadmap item, not silently torn from the sentence)"
     )]
     MixedImageLine(usize),
+    #[error(
+        "line {0}: footnotes are not supported; a `[^label]:` definition line has no meaning in a deck"
+    )]
+    FootnoteDefinition(usize),
     #[error("line {0}: a table line must start and end with `|`; add the missing outer pipe")]
     TableLineMalformed(usize),
     #[error(
@@ -293,6 +300,7 @@ impl ParseError {
             Self::InvalidRegion { .. } => "invalid_region",
             Self::ChoiceShape { .. } => "choice_shape",
             Self::MixedImageLine(_) => "mixed_image_line",
+            Self::FootnoteDefinition(_) => "footnote_definition",
             Self::TableLineMalformed(_) => "table_line_malformed",
             Self::TableColumns { .. } => "table_columns",
             Self::TableRowWidth { .. } => "table_row_width",
@@ -323,6 +331,7 @@ impl ParseError {
             | Self::OrphanCardId(line)
             | Self::SubCardTableTitle(line)
             | Self::MixedImageLine(line)
+            | Self::FootnoteDefinition(line)
             | Self::ReservedMarker(line)
             | Self::TableLineMalformed(line)
             | Self::TableCellImage(line)
@@ -1011,6 +1020,10 @@ fn scan(
             continue;
         }
 
+        if footnote_definition(raw) {
+            return Err(ParseError::FootnoteDefinition(lineno));
+        }
+
         if let Some((label, consumed)) = link_definition(lines, idx) {
             definitions.push(label);
             skip_lines = consumed - 1;
@@ -1050,6 +1063,12 @@ fn scan(
             .flatten();
         if let Some((line, Mapping::Plain)) = declared {
             literal_table_invocation = Some(line);
+        }
+        if table_header && declared.is_none() && !table_default {
+            lints.push(Lint {
+                line: lineno,
+                kind: LintKind::UndecidedTable,
+            });
         }
         if table_header
             && match declared {
@@ -1466,6 +1485,22 @@ fn scan(
 /// joined block. An invalid or incomplete shape consumes nothing; literal
 /// text resembling retired syntax inside an otherwise valid candidate does
 /// not alter its classification.
+// Must be checked before `link_definition`, which would otherwise consume
+// the spelling silently as a caret-labeled link definition.
+fn footnote_definition(raw: &str) -> bool {
+    if indent_width(raw) >= 4 {
+        return false;
+    }
+    let Some(rest) = trim_ws(raw).strip_prefix("[^") else {
+        return false;
+    };
+    let Some(end) = rest.find(']') else {
+        return false;
+    };
+    let label = &rest[..end];
+    !label.is_empty() && !label.contains(&WHITESPACE[..]) && rest[end + 1..].starts_with(':')
+}
+
 fn link_definition(lines: &[&str], at: usize) -> Option<(String, usize)> {
     let first = *lines.get(at)?;
     if indent_width(first) >= 4 || !trim_ws(first).starts_with('[') {
@@ -6947,6 +6982,89 @@ a
     }
 
     #[test]
+    fn an_undecided_bare_table_lints_and_every_decision_silences_it() {
+        let table = "| a | b |\n| - | - |\n| x | y |\n";
+        let undecided = parse(&format!("## q\n---\nabove\n{table}"));
+        assert_eq!(
+            vec![Lint {
+                line: 4,
+                kind: LintKind::UndecidedTable
+            }],
+            undecided.lints,
+            "a bare table carries no mapping decision"
+        );
+        for (text, why) in [
+            (
+                format!("## q\n---\nabove\n{table}<!-- cards -->\n"),
+                "cards",
+            ),
+            (
+                format!("## q\n---\nabove\n{table}<!-- plain -->\n"),
+                "plain",
+            ),
+            (
+                format!("---\ntable: cards\n---\n# s\n## q\n---\nabove\n{table}"),
+                "deck-wide mapping",
+            ),
+        ] {
+            let deck = parse(&text);
+            assert_eq!(Vec::<Lint>::new(), deck.lints, "{why} decides the table");
+        }
+    }
+
+    #[test]
+    fn a_footnote_definition_line_is_a_hard_error_at_any_legal_indent() {
+        for (text, why) in [
+            ("## q\n---\n[^1]: never supported\n", "column 0"),
+            ("## q\n---\n  [^note]: indented\n", "definition indent"),
+        ] {
+            let err = super::parse("deck.md", text).unwrap_err();
+            assert!(
+                matches!(err, ParseError::FootnoteDefinition(3)),
+                "{why}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn inline_footnote_markers_and_protected_spellings_stay_prose() {
+        let deck = parse("## q\n---\nsee note[^1] and regex [^abc] stay prose\n");
+        assert_eq!(
+            vec!["see note[^1] and regex [^abc] stay prose"],
+            deck.cards[0].back,
+            "inline markers are GFM no-definition prose"
+        );
+        let fenced = parse("## q\n---\n```\n[^1]: in code\n```\n");
+        assert_eq!(
+            vec!["```", "[^1]: in code", "```"],
+            fenced.cards[0].back,
+            "a fence protects the spelling"
+        );
+        let plain = parse("## q\n---\n[x]: not a definition, prose tail\n[link def]: https://a\n");
+        assert_eq!(
+            vec!["[x]: not a definition, prose tail"],
+            plain.cards[0].back,
+            "a caretless bracket line keeps its ordinary meaning (the valid \
+             link definition below it stays deck metadata)"
+        );
+    }
+
+    #[test]
+    fn a_titled_bracketed_image_parses_through_the_whole_deck_path() {
+        let deck = parse("## q\n---\n![m](<my file.png> \"The Moon\")\n");
+        assert_eq!(
+            1,
+            deck.cards[0].images_back.len(),
+            "the titled image survives the full parse: {:?}",
+            deck.cards[0]
+        );
+        assert_eq!(
+            std::path::Path::new("my file.png"),
+            deck.cards[0].images_back[0].src
+        );
+    }
+
+    #[test]
     fn a_backslash_before_anything_else_is_literal() {
         let deck = parse("## q\n---\n\\d is a digit class\n\\# x\n");
         assert_eq!(
@@ -6954,6 +7072,17 @@ a
             deck.cards[0].back,
             "`\\d` is not a marker so it stays literal, while `\\#` now escapes \
              the section marker and gives up its backslash (ruled D5)"
+        );
+    }
+
+    #[test]
+    fn a_line_final_backslash_is_literal_content_not_a_hard_break() {
+        let deck = parse("## q\n---\nthe path is C:\\photos\\\nnext line\n");
+        assert_eq!(
+            vec!["the path is C:\\photos\\", "next line"],
+            deck.cards[0].back,
+            "GFM's backslash hard-break spelling stays literal answer content \
+             (ruled element 61): line-final backslashes are usually content"
         );
     }
 

@@ -258,6 +258,12 @@ mod tests {
     }
 
     #[test]
+    fn a_trailing_backslash_is_graded_content_unlike_trailing_whitespace() {
+        assert!(!grade_typed("C:\\dir", "C:\\dir\\").passed);
+        assert!(grade_typed("C:\\dir\\", "C:\\dir\\").passed);
+    }
+
+    #[test]
     fn a_one_letter_different_word_is_not_a_typo_and_fails() {
         assert!(!grade_typed("affect", "effect").passed);
     }

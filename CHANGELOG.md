@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `alix doctor` flags a pipe table that declares no mapping: a bare table
+  still renders plain, and the new lint asks for an explicit
+  `<!-- cards -->` or `<!-- plain -->` so a forgotten mapping cannot
+  silently turn fifty vocabulary rows into one card.
+- Images accept the GFM title (`![alt](src "title")`, single-quote and paren
+  spellings too). The title is parsed and ignored for now; previously a
+  titled image failed as malformed and degraded to literal text, losing the
+  picture on paste.
 - `alix workspace augment <dir> --target <...>` warms a whole workspace in one
   go. The card targets (choices, notes, questions, keypoints, format) run as a
   single batched call over every member's cards rather than one call per deck,
@@ -399,6 +407,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- **Breaking:** a GFM footnote definition line (`[^label]:` at line start,
+  outside code) is now a hard parse error naming footnotes as unsupported.
+  It previously parsed silently, as prose or worse as a link definition
+  with a caret label, misrepresenting pasted content. Inline `[^1]` and
+  regex classes like `[^abc]` stay ordinary prose.
 - **Breaking:** the inline `\blank{...}` cloze marker is retired. Span and
   rect blanks (`<!-- blank: span hidden="..." -->` and its rect sibling) are
   the only cloze; `\blank{...}` in a deck now parses as ordinary literal

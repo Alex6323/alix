@@ -160,7 +160,11 @@ For a deck on its own, an image `src` is a path relative to the deck file,
 exactly the way a standard Markdown viewer resolves it: a bare filename means
 the image sits next to the deck, and `sub/moon.png` means a subdirectory. An
 absolute path is used as-is. The brackets can carry alt text:
-`![the open-position shape](g-major-tab.png)`. Because the paths are ordinary
+`![the open-position shape](g-major-tab.png)`, and a destination in angle
+brackets can carry spaces (`![tab](<g major.png>)`). A GFM title after the
+destination (`![tab](g-major-tab.png "open position")`) parses and is
+ignored: pasted Markdown keeps its image, and the title does nothing yet.
+Because the paths are ordinary
 Markdown, such a deck renders identically in the web app and in any Markdown
 viewer that opens the file directly (GitHub, Obsidian, a plain preview pane).
 `alix doctor` warns about an image file it can't find, but doesn't fail on it.

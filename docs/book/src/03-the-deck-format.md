@@ -92,7 +92,11 @@ metadata, not content: it never displays and is never graded, and a card
 whose whole answer is definitions fails loud as answerless. Reference
 links resolve against the deck's own definitions and render like inline
 links, in all three GFM forms: `[text][label]`, `[text][]`, and bare
-`[text]`. Labels match case-insensitively with interior whitespace
+`[text]`. A footnote definition (`[^label]:` at the start of a line) is
+the one bracket-definition spelling a deck rejects outright: footnotes
+are not supported, and the line fails loud rather than silently becoming
+prose or metadata; inline `[^1]` (and a regex class like `[^abc]`) stays
+ordinary text. Labels match case-insensitively with interior whitespace
 collapsed, a label never resolves across deck boundaries, and a
 reference whose label is undefined stays ordinary prose.
 
@@ -242,7 +246,11 @@ card whose whole answer is a table asks you to explain it instead. It never
 becomes cards on its own;
 `<!-- cards -->` on the line below maps it (or `table:
 cards` in frontmatter maps every table in the deck, with `<!-- plain -->`
-below one table keeping it literal). Each row is a card: first column front,
+below one table keeping it literal). A table that declares neither is
+still rendered plain, and `alix doctor` flags it until you write
+`<!-- cards -->` or `<!-- plain -->` below it: the two meanings are too
+far apart to leave to accident, so the file says which one you meant.
+Each row is a card: first column front,
 second column back, optional third column note. The header row is shown as
 the card's context, never tested:
 

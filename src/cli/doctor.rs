@@ -677,6 +677,10 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::ImageMalformed => "an image embed here is malformed; write \
              `![alt](file.png)` (or escape a literal `![` as `\\![`)"
             .to_string(),
+        LintKind::UndecidedTable => "this table declares no mapping; add \
+             `<!-- cards -->` below it to make each row a card, or \
+             `<!-- plain -->` to keep it a literal table"
+            .to_string(),
         LintKind::ChoiceAnswerMixed => {
             "task-list choices are mixed with other answer content; treating the card as plain"
                 .to_string()
