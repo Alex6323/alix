@@ -356,6 +356,63 @@ proptest! {
             "and no card may move when they go"
         );
     }
+
+    /// The same law for the invisible bytes layer 1 drops: FF, DEL, the two
+    /// bidi reversal overrides, an interior BOM, and an interior CR injected
+    /// into prose normalize away byte for byte, and no card's identity,
+    /// fingerprint, citation, or span anchor moves. Fence-holding decks are
+    /// excluded the same way `stripping_editor_blanks` excludes them.
+    #[test]
+    fn dropping_invisible_bytes_restores_the_deck_and_moves_no_card(
+        (blocks, _) in gen_deck(),
+        seed in any::<u64>(),
+    ) {
+        let clean = alix::parser::normalize(&render_deck(&blocks, false)).into_owned();
+        prop_assume!(!clean.contains("```") && !clean.contains("~~~"));
+        prop_assume!(clean.chars().count() > 2);
+
+        let mut dirty = clean.clone();
+        for (nth, dropped) in ['\u{000C}', '\u{007F}', '\u{202D}', '\u{202E}', '\u{FEFF}', '\r']
+            .into_iter()
+            .enumerate()
+        {
+            if let Some(at) = injection_point(&dirty, seed, nth) {
+                dirty.insert(at, dropped);
+            }
+        }
+        prop_assume!(dirty != clean);
+
+        let restored = alix::parser::normalize(&dirty);
+        prop_assert_eq!(
+            &clean,
+            restored.as_ref(),
+            "an injected drop-set byte must normalize away, byte for byte"
+        );
+
+        let before = alix::parser::parse("deck.md", &clean).expect("the clean deck parses");
+        let after = alix::parser::parse("deck.md", &restored)
+            .expect("the restored deck must parse too");
+        prop_assert_eq!(
+            fingerprints(&before),
+            fingerprints(&after),
+            "and no card, citation, or span anchor may move when they go"
+        );
+    }
+}
+
+/// A char-boundary insertion point at least one byte in (an injected BOM must
+/// be interior, not leading) and never directly before a newline (an injected
+/// CR must be interior, never a line ending the old rule already strips).
+fn injection_point(text: &str, seed: u64, nth: usize) -> Option<usize> {
+    let candidates: Vec<usize> = text
+        .char_indices()
+        .map(|(i, _)| i)
+        .filter(|&i| i > 0 && !text[i..].starts_with('\n'))
+        .collect();
+    if candidates.is_empty() {
+        return None;
+    }
+    Some(candidates[(seed as usize).wrapping_add(nth.wrapping_mul(7919)) % candidates.len()])
 }
 
 /// One row per card: everything a normalization must not disturb.
@@ -364,12 +421,14 @@ fn fingerprints(deck: &alix::parser::ParsedDeck) -> Vec<String> {
         .iter()
         .map(|card| {
             format!(
-                "{:?}/{}/{:?}/{:?}/{:?}",
+                "{:?}/{}/{:?}/{:?}/{:?}/{:?}/{:?}",
                 card.id(),
                 card.content_fingerprint,
                 card.front,
                 card.back,
-                card.citations
+                card.citations,
+                card.span_regions,
+                card.region
             )
         })
         .collect()

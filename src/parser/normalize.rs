@@ -42,7 +42,8 @@ fn rewrite(text: &str) -> Option<String> {
                     fence = Some(opened);
                 }
                 None => {
-                    let (kept, hard_break) = split_trailing(line);
+                    let visible = drop_invisible(line);
+                    let (kept, hard_break) = split_trailing(&visible);
                     out.push_str(kept);
                     if hard_break {
                         out.push_str("  ");
@@ -53,6 +54,23 @@ fn rewrite(text: &str) -> Option<String> {
         }
     }
     changed.then_some(out)
+}
+
+/// Only the bidi reversal overrides drop; the embeddings LRE/RLE, PDF, and
+/// every isolate are kept on purpose, they carry legitimate RTL text.
+fn is_dropped(c: char) -> bool {
+    matches!(
+        c,
+        '\u{000C}' | '\u{007F}' | '\u{202D}' | '\u{202E}' | '\u{FEFF}' | '\r'
+    )
+}
+
+fn drop_invisible(line: &str) -> Cow<'_, str> {
+    if line.contains(is_dropped) {
+        Cow::Owned(line.chars().filter(|c| !is_dropped(*c)).collect())
+    } else {
+        Cow::Borrowed(line)
+    }
 }
 
 /// `ends_with("  ")` is GFM's hard break: two spaces or more, after content.
@@ -162,6 +180,56 @@ mod tests {
             "```\nlet x = 1;\r\r\n```\n",
             "```\nlet x = 1;\n```\n",
             "which holds inside a fence, where the line ending is still not content",
+        ),
+        (
+            "a\u{000C}b\n",
+            "ab\n",
+            "a form feed has no rendered role in prose, so it goes",
+        ),
+        (
+            "a\u{007F}b\n",
+            "ab\n",
+            "DEL is a control byte with no rendered role, so it goes",
+        ),
+        (
+            "a\u{202D}b\n",
+            "ab\n",
+            "an LRO reversal override in prose goes",
+        ),
+        (
+            "a\u{202E}b\n",
+            "ab\n",
+            "an RLO reversal override in prose goes for the same reason",
+        ),
+        (
+            "a\u{feff}b\n",
+            "ab\n",
+            "a BOM interior to a line is paste damage, not a byte-order mark",
+        ),
+        (
+            "## q\n\u{feff}a\n",
+            "## q\na\n",
+            "a BOM starting any later line is interior to the file and goes",
+        ),
+        (
+            "a\rb\n",
+            "ab\n",
+            "a CR interior to a line is not a line ending and goes",
+        ),
+        (
+            "a  \u{000C}\nb\n",
+            "a  \nb\n",
+            "dropping a trailing form feed exposes the hard break the spaces spell",
+        ),
+        (
+            "a\u{200B}b\n",
+            "a\u{200B}b\n",
+            "a kept invisible (ZWSP here) has a rendered role and is not layer 1's business",
+        ),
+        (
+            "```\na\u{000C}b\u{202E}c\n```\n",
+            "```\na\u{000C}b\u{202E}c\n```\n",
+            "layer 1 never enters a fence, whatever the byte",
         ),
     ];
 

@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Deck normalization drops invisible bytes with no rendered role from
+  prose: form feed, DEL, an interior BOM, an interior carriage return,
+  and the two bidi reversal overrides (LRO/RLO). Fenced code keeps
+  every byte; every invisible character with a rendered role (zero-width
+  joiners, word joiner, soft hyphen, variation selectors, bidi isolates
+  and embeddings, and the rest) is untouched.
 - `alix doctor` flags a pipe table that declares no mapping: a bare table
   still renders plain, and the new lint asks for an explicit
   `<!-- cards -->` or `<!-- plain -->` so a forgotten mapping cannot
