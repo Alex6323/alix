@@ -378,6 +378,10 @@ pub fn check_backups(root: &Path) -> Option<Finding> {
 }
 
 #[cfg(test)]
+#[path = "doctor/emoji_zoo.rs"]
+mod emoji_zoo;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
