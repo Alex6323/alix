@@ -13,6 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every byte; every invisible character with a rendered role (zero-width
   joiners, word joiner, soft hyphen, variation selectors, bidi isolates
   and embeddings, and the rest) is untouched.
+
 - Typed grading draws the ink line: a character that paints no
   horizontal ink (soft hyphen, zero-width space, joiners, word joiner,
   variation selectors, bidi isolates and embeddings, tag characters)
@@ -20,20 +21,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   judged on what the screen shows rather than on what a device's
   keyboard or emoji picker happens to emit. Spacing characters still
   grade.
+
 - `alix doctor` reports the invisible characters a deck keeps: one calm
   per-deck note with counts by class, emoji-aware so bytes inside a
   well-formed emoji stay silent. It warns only where a byte has no
   legitimate reading: tag characters outside a flag emoji (they encode
   invisible text) and bidi override characters inside a code fence
   (rendered order may differ from stored order).
+
 - `alix doctor` flags a pipe table that declares no mapping: a bare table
   still renders plain, and the new lint asks for an explicit
   `<!-- cards -->` or `<!-- plain -->` so a forgotten mapping cannot
   silently turn fifty vocabulary rows into one card.
+
 - Images accept the GFM title (`![alt](src "title")`, single-quote and paren
   spellings too). The title is parsed and ignored for now; previously a
   titled image failed as malformed and degraded to literal text, losing the
   picture on paste.
+
 - `alix workspace augment <dir> --target <...>` warms a whole workspace in one
   go. The card targets (choices, notes, questions, keypoints, format) run as a
   single batched call over every member's cards rather than one call per deck,
@@ -276,8 +281,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sibling questions (a cover exists to stop a question-side leak), false
   for a sibling mask and for a cover on a region or cloze card, whose
   content could give a sibling's answer away; clients never infer reveal
-  behavior from the role. Region cards
-  take no multiple-choice questions until the MC-family design settles.
+  behavior from the role. Image-region cards take no multiple-choice
+  questions until the MC-family design settles; text-span blank cards can
+  take them when their choices can be built.
   Spans bind into math source under a structural-unit law: a hidden text
   must be a complete structural unit of its formula (no cut control words,
   no split brace groups, no script cut from its base, no command cut from
@@ -354,13 +360,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it at home in both directions: it is never bundled, and an arriving bundle
   cannot overwrite yours.
 
-- The example decks gained one for cloze inside a formula, showing that
-  `\blank{...}` works within `$...$` and `$$...$$`.
+- The example decks gained one for a blank inside a formula, showing that a
+  `<!-- blank: span hidden="..." -->` directive works on `$...$` and
+  `$$...$$` formula lines.
 
-- `alix doctor` warns when a cloze hole that stays typed holds a LaTeX
-  command, because the hole's content is the expected answer and
-  `\blank{\pm}` then asks for the spelling of `\pm`. A hole inside a
-  formula is silent: it is drawn rather than typed.
+- `alix doctor` warns when a formula span pinned to `input: type` hides a
+  LaTeX command, because the span's hidden text is the expected answer and
+  typing `\pm` asks for the spelling of `\pm`. Without an authored `input:`,
+  a formula span is sketched rather than typed.
 
 - Deck authoring has a written rule for which card shape suits which
   material, and one worked example per shape. `docs/include/card-shapes.md`
@@ -438,11 +445,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `<!-- cards -->` and `<!-- plain -->` invocations stay per-block only. The
   pre-rename spellings (`tasklist:`, `table:`, `choices-single`,
   `choices-multiple`) fail as ordinary unknown vocabulary.
+
 - **Breaking:** a GFM footnote definition line (`[^label]:` at line start,
   outside code) is now a hard parse error naming footnotes as unsupported.
   It previously parsed silently, as prose or worse as a link definition
   with a caret label, misrepresenting pasted content. Inline `[^1]` and
   regex classes like `[^abc]` stay ordinary prose.
+
 - **Breaking:** the inline `\blank{...}` cloze marker is retired. Span and
   rect blanks (`<!-- blank: span hidden="..." -->` and its rect sibling) are
   the only cloze; `\blank{...}` in a deck now parses as ordinary literal
@@ -466,12 +475,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   arrived. Initializing, stamping, augmenting, receiving, and every doctor
   repair write canonical bytes; a file alix never writes is left alone.
 
-- Generation moved under the noun it produces: `alix generate deck` is now
-  `alix deck generate`, and `alix generate workspace` is now `alix workspace
-  generate`. The top-level `generate` command is gone. Every other command was
-  already `alix <noun> <verb>`, so this was the one that read backwards, and
-  `alix deck --help` now lists everything you can do to a deck instead of
-  hiding half of it under a separate top-level.
+- **Breaking:** generation moved under the noun it produces. The top-level
+  `alix generate` command is gone. `alix deck generate` takes a URL, a file,
+  or a directory taken whole and always writes one deck; `--trace` still
+  makes that deck a trace, and a `trace:` stub still builds in place.
+  `alix workspace generate` takes a directory, explores it, and always builds
+  a workspace, a one-item plan included; another source shape is refused with
+  a pointer to the deck command. The requested noun fixes the result before
+  the model call instead of letting the source type or plan size decide it.
+  `--deck` is gone because `alix deck generate` is what it meant, and
+  `--workspace <dir>` is now `--into <dir>` on both subcommands: for `deck`,
+  an existing workspace receives the deck; for `workspace`, that folder is
+  built and created when absent. Every other command already reads
+  `alix <noun> <verb>`, and `alix deck --help` now lists the complete deck
+  command set.
 
 - A deck's `<!-- -->` comments are alix machinery, and `alix doctor` now says
   so uniformly. The finding used to depend on the comment's length: a one-word
@@ -502,22 +519,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whose whole answer is a table now has nothing to type, so Reconstruct
   explains it instead of asking for text. Typing the cells themselves is a
   separate feature and is not in this release.
-
-- **Breaking: `alix generate` is split into `alix generate deck` and `alix
-  generate workspace`.** The kind of thing you got used to be decided for you,
-  from the source type and from the size of the model's plan: asking for a
-  workspace over a directory could silently produce a single deck, after the
-  call was already paid for. Now the subcommand names the result. `generate
-  deck` takes a URL, a file, or a directory taken whole and always writes one
-  deck (`--trace` makes that deck a trace, as before, and a `trace:` stub deck
-  still builds in place); `generate workspace` takes a directory, explores it,
-  and always builds a workspace, a one-item plan included. `--deck` is gone
-  because `generate deck` is what it meant, and `--workspace <dir>` is now
-  `--into <dir>`, spelled the same on both subcommands and meaning what each
-  one builds: on `deck` it is an existing workspace to write the deck into,
-  and on `workspace` it is the folder to build, created if it is absent.
-  A source that is not a directory is refused by `generate workspace`, naming
-  the deck command instead.
 
 - A thematic break is one lexical class: three or more of one marker, `-`, `*`,
   or `_`, with spaces or tabs allowed between them and an indent under four
@@ -869,7 +870,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   alone, the same treatment the authored deck gets.
 
 - Generated decks now pick a card shape from the material rather than
-  choosing between plain and cloze. `alix generate` can produce card
+  choosing between plain and cloze. `alix deck generate` can produce card
   tables, line-by-line reveals, both-direction cards, and draw cards,
   which it previously had no way to emit, so a vocabulary source becomes
   a table and a procedure becomes an ordered reveal. Its prompt is built
@@ -907,19 +908,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from the config template `alix config --init` writes and from the
   backend source-reachability errors, which now say plain `source:`. The
   dead `Reveal::Cloze` enum variant is deleted outright, and the cloze
-  image hash preimage now uses the current `![alt](src)` spelling (stored
-  hole fingerprints regenerate via a store-internal version bump; review
-  history is untouched).
+  image hash preimage now uses the current `![alt](src)` spelling.
 
 - The retired `reveal = "cloze"` value is rejected in a workspace
-  manifest's `[defaults]` too, the one scope that still accepted it, and
-  the `workspace init` template stops advertising it: `\blank{...}` holes
-  are the only cloze trigger, at every scope.
+  manifest's `[defaults]` too, the one scope that still accepted it, and the
+  `workspace init` template stops advertising it. Cards declare blanks on
+  their blocks with `<!-- blank: span ... -->` or
+  `<!-- blank: rect ... -->` directive comments; no workspace default creates
+  one.
 
 - `generate`'s `max_cards` is now a soft ceiling with a default of 100
   (was a hard-worded 30): the prompt aims for the configured count, and a
   generation that comes back larger is kept in full with a warning
   instead of being constrained.
+
+- Text-span blank cards are Recognize-eligible again, preserving the depth
+  that the inline cloze cards they replace had before retirement. They enter
+  choices augmentation, and authored, cached, or sampled distractors build
+  their choice questions when they supply a usable option set; an
+  image-region card, or a named group containing one, stays excluded.
 
 ### Fixed
 
@@ -928,6 +935,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   parser then rejected. A display table (one without a `cards`
   invocation) is answer content, and the id now lands after it,
   trailing blank directives included.
+
 - A span blank bound inside a formula reveals its answer as rendered math,
   as the displayed answer regains its `$` delimiters; grading still compares
   the plain hidden text. Previously the revealed answer of a math-classed
@@ -1633,15 +1641,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   has no keyboard spelling. An `input:` written on the card or the deck
   still wins: the rule only fills in where nothing was authored.
 
-- A cloze card whose hidden hole sits directly against the next token
-  renders again. `\blank{n}x^{...}` failed the whole formula, because the
-  mark standing in for a hidden hole was a bare control sequence and
-  welded onto whatever followed it.
+- A formula span whose hidden text sits directly against the next token
+  renders again. In a derivative ending `nx^{...}`, a `blank: span` hiding
+  the `n` produced the undefined `\cdotsx` control sequence and failed the
+  whole formula; the mask now terminates before the following token.
 
-- A cloze hole cut out of a formula now reveals as that formula's piece
-  rather than as its source: `$x = -b \blank{\pm} \sqrt{d}$` reveals a
-  typeset ± where it used to show the characters `\pm`. What you type at
-  Reconstruct is unchanged, so blank something typable.
+- A formula span now reveals as that formula's piece rather than as its
+  source: hiding `\pm` with `<!-- blank: span hidden="\pm" -->` reveals a
+  typeset ± where the source characters used to appear. The plain hidden
+  text remains the answer, while its display projection carries rendered
+  math.
 
 - The example images now show the card as the reader should read it. A
   choice example is photographed answered, because the cursor rests on
@@ -1686,7 +1695,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every kind of work done (introduced, reviewed). A sitting with no work
   at all no longer celebrates.
 
-- The `alix generate --review` and `alix deck augment` help texts name
+- The `alix deck generate --review` and `alix deck augment` help texts name
   the AI backend neutrally instead of hardcoding Claude, the augment
   progress line names the configured backend, and `alix receive`'s help
   mentions workspaces alongside decks and folders.
@@ -1705,6 +1714,42 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   closing `<!-- id -->` marker, tripping doctor's misplaced-marker
   warning on every noted card. Notes now land before the card's trailing
   comment markers, keeping the id line last.
+
+- A malformed or edited `alix workspace update` proposal can no longer name
+  a Windows root-relative or drive-relative member that escapes the workspace
+  on apply. Every member path must contain only normal relative components
+  before it can reach an atomic write.
+
+- Ask Tutor on adult web now opens for a card whose answer contains a pipe
+  table. The tutor receives the table renderer it calls, so the reference
+  renders as a table instead of throwing before the panel opens.
+
+- `alix deck generate` and `alix doctor --repair-source-locators` now stamp
+  every citation when card-table rows share one `at:` line or cards arrive
+  out of file order. Rewrites address citations by line and count distinct
+  physical lines, so a valid deck no longer fails after it is written.
+
+- Web catalog revalidation now counts directory entries, so adding or
+  removing a workspace member in the same filesystem timestamp tick
+  invalidates the snapshot on every platform instead of remaining invisible.
+
+- `[keys.review] context` can now be rebound as the manual promised. Setting
+  it no longer rejects the whole config and takes the decks directory,
+  backends, and every other binding with it.
+
+- `alix deck augment --help` now lets each valid `--target` describe itself,
+  including `keypoints` and `format`, instead of repeating a stale four-target
+  list above the complete set.
+
+- Relative and absolute spellings of the same deck or member directory now
+  resolve the same workspace and review store. Running `alix stats d.md`
+  inside a workspace's `decks/` directory no longer opens a different store
+  and reports an in-progress deck as not started.
+
+- `alix deck init d.md` from a workspace's `decks/` directory now freezes
+  source excerpts like the absolute spelling. It no longer stamps card ids
+  while leaving live citations in a partially initialized deck that another
+  relative `init` cannot finish.
 
 ## [0.7.0] - 2026-08-02
 
