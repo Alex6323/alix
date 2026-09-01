@@ -97,12 +97,25 @@ fn subdivision_flag_end(chars: &[(usize, char)], base: usize) -> Option<usize> {
 }
 
 /// GB11 decides, via the grapheme segmenter, so Extended_Pictographic stays
-/// the segmenter's table, never a hand-rolled one: the join succeeded exactly
-/// when no grapheme boundary follows the ZWJ.
+/// the segmenter's table, never a hand-rolled one. No boundary after the ZWJ
+/// alone is not enough: GB9 also removes it, gluing a selector or joiner to a
+/// ZWJ that joined nothing, so what follows must itself be GB11-joinable.
 fn joins_pictographs(text: &str, zwj_at: usize) -> bool {
     use unicode_segmentation::UnicodeSegmentation;
     let after = zwj_at + '\u{200D}'.len_utf8();
-    after < text.len() && !text.grapheme_indices(true).any(|(start, _)| start == after)
+    let Some(next) = text[after..].chars().next() else {
+        return false;
+    };
+    gb11_joins(next) && !text.grapheme_indices(true).any(|(start, _)| start == after)
+}
+
+/// Asked of the segmenter itself: `c` is GB11-joinable exactly when inserting
+/// a ZWJ merges `U+2388 c` (two graphemes) into one.
+fn gb11_joins(c: char) -> bool {
+    use unicode_segmentation::UnicodeSegmentation;
+    let bare: String = ['\u{2388}', c].into_iter().collect();
+    let joined: String = ['\u{2388}', '\u{200D}', c].into_iter().collect();
+    bare.graphemes(true).count() == 2 && joined.graphemes(true).count() == 1
 }
 
 fn sits_on_emoji_base(chars: &[(usize, char)], selector: usize) -> bool {
@@ -213,6 +226,12 @@ mod tests {
                 &[],
                 0,
                 "extended pictographs that are not Emoji=Yes still join: GB11, one grapheme",
+            ),
+            (
+                "\u{1F468}\u{200D}\u{FE0F}\u{1F469}",
+                &[("VS16", 1), ("ZWJ", 1)],
+                0,
+                "a selector after the ZWJ broke the join: GB9 glue is not GB11",
             ),
             (
                 "\u{1F44D}\u{FE0F}",
