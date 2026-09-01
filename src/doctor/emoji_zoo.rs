@@ -239,9 +239,11 @@ fn the_emoji_zoo_flags_only_invisibles_outside_well_formed_sequences() {
 
 #[test]
 fn the_emoji_zoo_source_is_printable_ascii_plus_lf() {
-    let wrong = include_bytes!("emoji_zoo.rs")
-        .iter()
-        .copied()
+    // A CRLF pair is the checkout's line-ending translation, not an authored
+    // byte, so it is undone before the audit; a lone CR still fails.
+    let wrong = include_str!("emoji_zoo.rs")
+        .replace("\r\n", "\n")
+        .bytes()
         .enumerate()
         .filter(|(_, byte)| *byte != b'\n' && !(b' '..=b'~').contains(byte))
         .collect::<Vec<_>>();
