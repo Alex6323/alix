@@ -184,7 +184,7 @@ alix ~/decks/spanish/
 ## Shared directives
 
 The `[defaults]` keys are the deck-directive names `reveal`, `input`,
-`order`, `direction`, and `sampling` from
+`review`, `direction`, and `sampling` from
 [the deck format](03-the-deck-format.md),
 plus `strictness`: the learner-side [exam](12-the-ai-exam.md) rigor, which
 a deck itself cannot declare. They fill in only what a deck *doesn't* set

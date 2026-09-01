@@ -33,7 +33,7 @@ impl DeckSettings {
             match key.as_str() {
                 "reveal" => settings.reveal = Reveal::parse(value),
                 "input" => settings.input = Input::parse(value),
-                "order" => settings.order = Order::parse(value),
+                "review" => settings.order = Order::parse(value),
                 "direction" => settings.direction = Direction::parse(value),
                 "sampling" => settings.sampling = parser::parse_sampling(value),
                 "strictness" => settings.exam_strictness = Strictness::parse(value),
@@ -1060,7 +1060,7 @@ mod tests {
         assert_eq!(Some(Input::Type), parsed.input);
         assert_eq!(None, parsed.order);
 
-        let order = [("order".to_string(), "sequential".to_string())];
+        let order = [("review".to_string(), "sequential".to_string())];
         let parsed = DeckSettings::from_directives(&order);
         assert_eq!(None, parsed.input);
         assert_eq!(Some(Order::Sequential), parsed.order);
@@ -1718,7 +1718,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nreveal: line\norder: sequential\ndirection: bogus\n---\n## f\nb\n",
+            "---\nreveal: line\nreview: sequential\ndirection: bogus\n---\n## f\nb\n",
         )
         .unwrap();
 

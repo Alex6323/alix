@@ -1592,7 +1592,7 @@ mod tests {
     #[test]
     fn stamping_a_table_mints_the_container_and_row_stamps() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\ntable: cards\n---\n| word | meaning |\n|---|---|\n| hund | dog |\n| katze | cat |\n";
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| word | meaning |\n|---|---|\n| hund | dog |\n| katze | cat |\n<!-- cards -->\n";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -1603,7 +1603,7 @@ mod tests {
         let container = &outcome.minted_cards[0];
         assert!(
             stamped.ends_with(&format!(
-                "| hund | dog | <!-- r:{} -->\n| katze | cat | <!-- r:{} -->\n<!-- id: {container} -->\n",
+                "| hund | dog | <!-- r:{} -->\n| katze | cat | <!-- r:{} -->\n<!-- cards -->\n<!-- id: {container} -->\n",
                 outcome.minted_rows[0], outcome.minted_rows[1]
             )),
             "{stamped:?}"
@@ -1630,7 +1630,7 @@ mod tests {
         let path = write(
             &dir,
             "deck.md",
-            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\ntable: cards\n---\n| a | b |\n|---|---|\n| x | y |\n",
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n",
         );
 
         stamp_deck(&path).unwrap();
@@ -1709,7 +1709,7 @@ mod tests {
         let path = write(
             &dir,
             "deck.md",
-            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\ntable: cards\n---\n| a | b |\n|---|---|\n| x | y |",
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->",
         );
 
         let first = stamp_deck(&path).unwrap();
@@ -1733,7 +1733,7 @@ mod tests {
     #[test]
     fn a_crlf_table_at_eof_is_rewritten_to_lf_when_stamped() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\r\nformat-version: 1\r\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\r\ntable: cards\r\n---\r\n| a | b |\r\n|---|---|\r\n| x | y |";
+        let original = "---\r\nformat-version: 1\r\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\r\n---\r\n| a | b |\r\n|---|---|\r\n| x | y |\r\n<!-- cards -->";
         let path = write(&dir, "deck.md", original);
 
         stamp_deck(&path).unwrap();
@@ -1750,7 +1750,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let container = "card-4jkya9q3m8z0tw5v9y2b4n6d8f";
         let original = format!(
-            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\ntable: cards\n---\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q |\n<!-- id: {container} -->\n"
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y | <!-- r:4k2x9w -->\n| p | q |\n<!-- cards -->\n<!-- id: {container} -->\n"
         );
         let path = write(&dir, "deck.md", &original);
 
@@ -1775,7 +1775,7 @@ mod tests {
         let path = write(
             &dir,
             "deck.md",
-            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\ntable: cards\n---\n| a | b |\n|---|---|\n| x | y |\n| p | q |\n| m | n |\n",
+            "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y |\n| p | q |\n| m | n |\n<!-- cards -->\n",
         );
         stamp_deck(&path).unwrap();
         let stamped = fs::read_to_string(&path).unwrap();
@@ -1803,7 +1803,7 @@ mod tests {
     #[test]
     fn the_container_id_splices_after_trailing_directive_comments() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\ntable: cards\n---\n| a | b |\n|---|---|\n| x | y |\n<!-- direction: both -->\n";
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n<!-- direction: both -->\n";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -1844,7 +1844,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // No trailing newline: the EOF lead applies only to the final card,
         // never to the mid-file container insert.
-        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\ntable: cards\n---\n| a | b |\n|---|---|\n| x | y |\n\n## q\nanswer";
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n\n## q\nanswer";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -1853,7 +1853,7 @@ mod tests {
 
         assert!(
             stamped.contains(&format!(
-                "| x | y | <!-- r:{} -->\n<!-- id: {container} -->\n\n## q\n",
+                "| x | y | <!-- r:{} -->\n<!-- cards -->\n<!-- id: {container} -->\n\n## q\n",
                 outcome.minted_rows[0]
             )),
             "the container line follows the last row directly: {stamped:?}"

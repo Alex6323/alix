@@ -338,7 +338,7 @@ pub struct ReviewState {
     /// [`ChoiceFeedback`], so this payload can never leak the answer.
     pub choices: Option<Vec<String>>,
     /// `Some(true)` when the served pick is select-all-that-apply
-    /// (`choices-multiple`); absent on a single pick and off `choice` mode.
+    /// (`choices: multiple`); absent on a single pick and off `choice` mode.
     #[serde(default)]
     pub choices_multiple: Option<bool>,
     #[serde(default)]
@@ -1252,8 +1252,9 @@ mod tests {
     #[test]
     fn authored_distractors_replace_ai_choices_at_recognize() {
         let (mut store, mut augment, _dir) = fixtures();
-        let cards =
-            parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices-single -->\n");
+        let cards = parse(
+            "## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices: single -->\n",
+        );
         seen(&mut store, &cards);
         arm(&mut augment, &cards);
         let session = session_at(cards, &mut store, Depth::Recognize, NOW);
@@ -1360,8 +1361,9 @@ mod tests {
     #[test]
     fn the_displayed_answer_still_passes_after_the_session_is_polled() {
         let (mut store, augment, _dir) = fixtures();
-        let cards =
-            parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices-single -->\n");
+        let cards = parse(
+            "## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices: single -->\n",
+        );
         seen(&mut store, &cards);
         let mut session = session_at(cards, &mut store, Depth::Recognize, NOW);
         let shown = current_question(&session, &store, &augment).expect("a pick");
@@ -1384,8 +1386,9 @@ mod tests {
     #[test]
     fn authored_choices_vary_between_study_sessions() {
         let (mut store, augment, _dir) = fixtures();
-        let cards =
-            parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices-single -->\n");
+        let cards = parse(
+            "## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices: single -->\n",
+        );
         seen(&mut store, &cards);
         let first = current_question(
             &session_at(cards.clone(), &mut store, Depth::Recognize, NOW),
@@ -1414,8 +1417,9 @@ mod tests {
     #[test]
     fn authored_distractors_drive_the_never_seen_introduction_attempt() {
         let (mut store, mut augment, _dir) = fixtures();
-        let cards =
-            parse("## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices-single -->\n");
+        let cards = parse(
+            "## capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices: single -->\n",
+        );
         // AI distractors exist in the cache but must be ignored for an authored card.
         arm(&mut augment, &cards);
         // Never seen (no `seen(...)`) and depth is Recall, not Recognize: this is the
@@ -2398,7 +2402,7 @@ mod tests {
     }
 
     const MULTI: &str =
-        "---\ntasklist: choices-multiple\n---\n## evens\n- [x] 2\n- [x] 4\n- [ ] 3\n- [ ] 5\n";
+        "---\nchoices: multiple\n---\n## evens\n- [x] 2\n- [x] 4\n- [ ] 3\n- [ ] 5\n";
 
     #[test]
     fn a_multiple_card_serves_its_full_option_set_and_flags_the_wire() {
@@ -2493,7 +2497,7 @@ mod tests {
     fn a_distractorless_multiple_card_serves_no_pick() {
         let (store, augment, _dir) = fixtures();
         let mut fresh_store = Store::open(_dir.path().join("fresh.json")).unwrap();
-        let cards = parse("---\ntasklist: choices-multiple\n---\n## all\n- [x] a\n- [x] b\n");
+        let cards = parse("---\nchoices: multiple\n---\n## all\n- [x] a\n- [x] b\n");
         let session = session_at(cards, &mut fresh_store, Depth::Recall, NOW);
         let s = state(&session, &fresh_store, &augment, Some(NOW));
         assert!(s.introducing);

@@ -26,7 +26,7 @@ the `[review] max_session` config; unrelated to the AI backend's own
 file records and mirror the named targets to stderr). The session depth is
 picked in the picker's split Depth… menu, an order or region in its focus
 drawer ([scheduling](05-scheduling.md)), and the card order is the deck's
-`order:` directive.
+`review:` directive.
 How each card is checked comes from its `reveal:` combined with the
 session's depth ([reveal & session depths](04-review-modes.md)), not a flag.
 

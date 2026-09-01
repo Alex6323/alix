@@ -2698,7 +2698,7 @@ mod tests {
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let authored = crate::parser::parse_str(
             "d.md",
-            "## Capital of France?\n- [x] Paris\n- [ ] Lyon\n<!-- choices-single -->\n<!-- id: card-france -->\n",
+            "## Capital of France?\n- [x] Paris\n- [ ] Lyon\n<!-- choices: single -->\n<!-- id: card-france -->\n",
         )
         .unwrap();
         let deck_fingerprints: std::collections::HashSet<u64> =

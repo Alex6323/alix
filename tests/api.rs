@@ -353,13 +353,14 @@ const CHOICE_ARMED_DECK: &str = "---\nformat-version: 1\nid: \"deck-choicearmed\
 
 /// A stamped five-row card table, no augment cache: at Recognize its picks
 /// come from column sampling alone, and the header renders as context.
-const TABLE_DECK: &str = "---\nformat-version: 1\nid: \"deck-vocabtable\"\ntable: cards\n---\n\
+const TABLE_DECK: &str = "---\nformat-version: 1\nid: \"deck-vocabtable\"\n---\n\
 ## German numbers\n| word | meaning |\n|---|---|\n\
 | eins | one | <!-- r:aaaaa2 -->\n\
 | zwei | two | <!-- r:aaaaa3 -->\n\
 | drei | three | <!-- r:aaaaa4 -->\n\
 | vier | four | <!-- r:aaaaa5 -->\n\
 | fünf | five | <!-- r:aaaaa6 -->\n\
+<!-- cards -->\n\
 <!-- id: card-vt1 -->\n";
 
 /// [`TABLE_DECK`]'s front → back, mirroring [`choice_answer`].
@@ -2890,7 +2891,7 @@ fn post_api_choose_reports_the_correct_index_for_a_recognize_session() {
     assert_eq!(true, body["passed"], "body: {body}");
 }
 
-const MULTI_CHOICE_DECK: &str = "---\ntasklist: choices-multiple\nid: \"deck-multichoice\"\n---\n\
+const MULTI_CHOICE_DECK: &str = "---\nchoices: multiple\nid: \"deck-multichoice\"\n---\n\
 ## Which of these are even?\n- [x] 2\n- [x] 4\n- [ ] 3\n- [ ] 5\n<!-- id: card-m1 -->\n";
 
 fn post_choice_multi(base: &str, indices: &[usize]) -> HttpResp {
@@ -3240,7 +3241,7 @@ fn choice_options_with_ai_distractors_keep_their_order_across_pulls() {
 /// later".
 #[test]
 fn an_exhausted_recognize_deck_reports_the_gap_not_a_bare_empty_done() {
-    const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicemixed\"\ntasklist: choices-single\n---\n\
+    const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicemixed\"\nchoices: single\n---\n\
         ## pick 1\n- [x] right\n- [ ] wrong-a\n- [ ] wrong-b\n<!-- id: card-cm1 -->\n\n\
         ## pick 2\n- [x] yes\n- [ ] no-a\n- [ ] no-b\n<!-- id: card-cm2 -->\n\n\
         ## plain 1\nback 3\n<!-- id: card-cm3 -->\n\n\
@@ -3341,7 +3342,7 @@ fn reveal_endpoint_is_gone_and_abandonment_reintroduces_as_new() {
 /// at Recognize, where the schedule-wide next-due is undefined.
 #[test]
 fn a_recognize_done_with_floored_cards_says_when_one_opens() {
-    const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicecool\"\ntasklist: choices-single\n---\n\
+    const MIXED: &str = "---\nformat-version: 1\nid: \"deck-choicecool\"\nchoices: single\n---\n\
         ## cool 1\n- [x] right\n- [ ] wrong-a\n- [ ] wrong-b\n<!-- id: card-cc1 -->\n\n\
         ## cool 2\n- [x] yes\n- [ ] no-a\n- [ ] no-b\n<!-- id: card-cc2 -->\n\n\
         ## cool plain\nback\n<!-- id: card-cc3 -->\n";

@@ -271,7 +271,7 @@ fn validate_filled_card_styles(
 ) -> Result<()> {
     for item in items.iter().filter(|item| item.kind == Kind::Deck) {
         if let Some(deck) = filled.get(&item.num) {
-            let assembled = format!("---\ntasklist: choices-single\n---\n{deck}");
+            let assembled = format!("---\nchoices: single\n---\n{deck}");
             generate::validate_card_style(&assembled, spec)
                 .with_context(|| format!("generated workspace item {}", item.num))?;
         }
@@ -491,7 +491,7 @@ pub fn materialize(
             }
             Kind::Deck => {
                 decks += 1;
-                body.push_str("tasklist: choices-single\n");
+                body.push_str("choices: single\n");
             }
         }
         match rewrite_scope(&item.source, root.as_deref()).as_slice() {

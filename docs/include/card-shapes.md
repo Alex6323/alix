@@ -26,11 +26,11 @@ badly exactly where thought was needed.
 
 | material | shape | kind | why |
 | --- | --- | --- | --- |
-| Paired items: a word and its meaning, a term and its definition, a symbol and its name. | A card table: a GitHub pipe table with `<!-- cards -->` on the line directly below it, no blank line between (or `table: cards` in frontmatter), one row per pair, columns front, back, and an optional note. | structural | One row per pair, and each row's Recognize options come from its own column, so the wrong answers are real siblings and cost no AI call. Prose wastes both. |
+| Paired items: a word and its meaning, a term and its definition, a symbol and its name. | A card table: a GitHub pipe table with `<!-- cards -->` on the line directly below it, no blank line between, one row per pair, columns front, back, and an optional note. | structural | One row per pair, and each row's Recognize options come from its own column, so the wrong answers are real siblings and cost no AI call. Prose wastes both. |
 | Ordered steps that must be reproduced in order: a recipe, an algorithm, a procedure, a verse. | `reveal: line`, with one step per answer line. | structural | Order is graded, and the answer uncovers one line at a time so recall is stepwise rather than all-or-nothing. A flip card cannot test order at all. |
 | An answer that cannot be typed: a diagram, a circuit, a glyph, notation. | `input: draw` | structural | The learner sketches and self-grades against the reveal. Typing a diagram is not a check, it is a workaround. |
 | A statement turning on one term, where the sentence around it is the cue. | Cloze: hide the span with `<!-- blank: span hidden="..." -->` on its own line below the answer. | judgement | The context does the cueing, so recall is anchored where it will be used. If nothing in the sentence is a natural target, this is a plain card wearing a disguise. |
-| A fact whose common confusions are known and nameable. | Authored choice: a task list with one `- [x]` and one or more `- [ ]`, closed by `<!-- choices-single -->` on the line below it, ideally two or three (or `tasklist: choices-single` in frontmatter, once for the deck). | judgement | The distractors are the teaching. Write them only if you can say what mistaken belief each one represents; if you cannot, the shape is doing nothing. |
+| A fact whose common confusions are known and nameable. | Authored choice: a task list with one `- [x]` and one or more `- [ ]`, closed by `<!-- choices: single -->` on the line below it, ideally two or three (or `choices: single` in frontmatter, once for the deck). | judgement | The distractors are the teaching. Write them only if you can say what mistaken belief each one represents; if you cannot, the shape is doing nothing. |
 | A term that must be recalled from either side: vocabulary, symbols, names. | `direction: both` | judgement | One authoring act, two cards. Reach for it when both directions are genuinely useful, not by default: it doubles the review load. |
 | Anything else: a definition, an explanation, a cause, a comparison. | A plain card: `## ` front, answer lines below. | judgement | The default, and not a failure. Most material has no structure to exploit, and a plain card drilled well beats a clever shape drilled badly. |
 
@@ -50,7 +50,7 @@ Rules that hold whatever the shape:
 - An invocation binds the block directly above it, so it sits on the line
   immediately below the last option or row. `<!-- cards -->` takes card
   directives after it, an `at:` locator or a reveal mode, but never a
-  blockquote: a card table's note is its note column. `<!-- choices-single -->`
+  blockquote: a card table's note is its note column. `<!-- choices: single -->`
   takes a `> [!NOTE]` note after it.
 - One idea per card. Split compound facts rather than nesting them.
 - No two cards may test the same fact. Vary what is asked; do not

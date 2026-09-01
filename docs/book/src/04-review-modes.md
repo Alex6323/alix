@@ -21,7 +21,7 @@ frontmatter, or per card with a `<!-- reveal: ... -->` directive (default `flip`
 
 - **flip** *(default)*: the whole answer is revealed at once.
 - **line**: the answer is revealed one line at a time, for ordered material
-  (lyrics, a sequence of steps). Pair it with `order: sequential` in the
+  (lyrics, a sequence of steps). Pair it with `review: sequential` in the
   frontmatter to walk the deck top to bottom.
 
 A card becomes **cloze** (a gap to fill) when a `blank:` directive hides a
@@ -59,7 +59,7 @@ go: authored choice options on a card (an invoked task list), AI-generated distr
   desired retention (`recognize_retention`, default 0.85), because recognition
   holds far longer than production. It's a genuine multiple-choice
   pick, built from a card's authored choice options (an invoked task list;
-  `choices-multiple` asks for every correct option, graded all-or-nothing), the
+  `choices: multiple` asks for every correct option, graded all-or-nothing), the
   deck's cached AI distractors (`alix deck augment --target choices`), or, for
   a [card table's](03-the-deck-format.md) rows, the other rows of the same
   column: a cloze card asks you to pick its gap, a line card to pick the whole

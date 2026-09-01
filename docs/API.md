@@ -607,7 +607,7 @@ The review-session payload; returned by every review action.
 | `phase` | string | `"select"` \| `"review"` \| `"done"` *(closed)*. `done` is session end. |
 | `card` | CardDto? | Null in select phase and when done. |
 | `choices` | [string]? | Choice options; the correct indices are never sent (see `ChooseFeedbackDto`). |
-| `choices_multiple` | bool? | `true` when the served pick is select-all-that-apply (`choices-multiple`): submit `indices`, not `index`. Absent on a single pick and off `choice` mode. |
+| `choices_multiple` | bool? | `true` when the served pick is select-all-that-apply (`choices: multiple`): submit `indices`, not `index`. Absent on a single pick and off `choice` mode. |
 | `choice_runs` | [[InlineRun]]? | Display projection for `choices`, in exact index lockstep. Null when `choices` is null. |
 | `keypoints` | [string]? | Explain-check rubric lines. |
 | `keypoint_runs` | [[InlineRun]]? | Display projection for `keypoints`, in exact index lockstep. Null when `keypoints` is null. |

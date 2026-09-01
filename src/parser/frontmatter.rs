@@ -30,12 +30,18 @@ pub(crate) enum MappableBlock {
 }
 
 impl Mapping {
-    pub(crate) fn parse(value: &str) -> Option<Self> {
-        match value {
+    pub(crate) fn parse(body: &str) -> Option<Self> {
+        match body {
             "plain" => Some(Self::Plain),
-            "choices-single" => Some(Self::ChoicesSingle),
-            "choices-multiple" => Some(Self::ChoicesMultiple),
             "cards" => Some(Self::Cards),
+            _ => Self::parse_choices(trim_ws(body.strip_prefix("choices:")?)),
+        }
+    }
+
+    pub(crate) fn parse_choices(value: &str) -> Option<Self> {
+        match value {
+            "single" => Some(Self::ChoicesSingle),
+            "multiple" => Some(Self::ChoicesMultiple),
             _ => None,
         }
     }
@@ -69,8 +75,7 @@ pub struct Frontmatter {
     pub input: Option<Input>,
     pub direction: Option<Direction>,
     pub sampling: Option<bool>,
-    pub tasklist: Option<Mapping>,
-    pub table: Option<Mapping>,
+    pub choices: Option<Mapping>,
     pub unspliceable: bool,
     pub personal_for: Option<String>,
 }
@@ -193,7 +198,7 @@ fn load_frontmatter(
                 Some(reveal) => frontmatter.reveal = Some(reveal),
                 None => lints.push(bad_value(line, key, describe(value))),
             },
-            "order" => match value.as_str().and_then(Order::parse) {
+            "review" => match value.as_str().and_then(Order::parse) {
                 Some(order) => frontmatter.order = Some(order),
                 None => lints.push(bad_value(line, key, describe(value))),
             },
@@ -209,15 +214,9 @@ fn load_frontmatter(
                 Some(sampling) => frontmatter.sampling = Some(sampling),
                 None => lints.push(bad_value(line, key, describe(value))),
             },
-            "tasklist" => match value.as_str().and_then(Mapping::parse) {
-                Some(m @ (Mapping::ChoicesSingle | Mapping::ChoicesMultiple)) => {
-                    frontmatter.tasklist = Some(m);
-                }
-                _ => lints.push(bad_value(line, key, describe(value))),
-            },
-            "table" => match value.as_str().and_then(Mapping::parse) {
-                Some(Mapping::Cards) => frontmatter.table = Some(Mapping::Cards),
-                _ => lints.push(bad_value(line, key, describe(value))),
+            "choices" => match value.as_str().and_then(Mapping::parse_choices) {
+                Some(m) => frontmatter.choices = Some(m),
+                None => lints.push(bad_value(line, key, describe(value))),
             },
             "authors" => frontmatter.authors = string_list(key, value, line, lints),
             // The deck's display name: trimmed, non-empty, single line. An
@@ -357,7 +356,7 @@ pub enum Reorder {
 /// The canonical order for frontmatter alix itself writes and for the opt-in
 /// doctor repair: authored keys first, machine lines last. An author's own
 /// order is never diagnosed against it.
-const CANONICAL_KEY_ORDER: [&str; 19] = [
+const CANONICAL_KEY_ORDER: [&str; 18] = [
     "title",
     "description",
     "trace",
@@ -367,12 +366,11 @@ const CANONICAL_KEY_ORDER: [&str; 19] = [
     "language",
     "revision",
     "reveal",
-    "order",
+    "review",
     "input",
     "direction",
     "sampling",
-    "tasklist",
-    "table",
+    "choices",
     "source",
     "requires",
     "link",
@@ -490,12 +488,11 @@ mod tests {
             ("link", MultilineDisposition::Stored),
             ("trace", MultilineDisposition::Stored),
             ("reveal", MultilineDisposition::BadValue),
-            ("order", MultilineDisposition::BadValue),
+            ("review", MultilineDisposition::BadValue),
             ("input", MultilineDisposition::BadValue),
             ("direction", MultilineDisposition::BadValue),
             ("sampling", MultilineDisposition::BadValue),
-            ("tasklist", MultilineDisposition::BadValue),
-            ("table", MultilineDisposition::BadValue),
+            ("choices", MultilineDisposition::BadValue),
             ("authors", MultilineDisposition::Stored),
             ("title", MultilineDisposition::HardError),
             ("description", MultilineDisposition::Stored),
@@ -575,12 +572,11 @@ mod tests {
             "link",
             "requires",
             "source",
-            "table",
-            "tasklist",
+            "choices",
             "sampling",
             "direction",
             "input",
-            "order",
+            "review",
             "reveal",
             "revision",
             "language",
@@ -603,12 +599,11 @@ mod tests {
                 "language",
                 "revision",
                 "reveal",
-                "order",
+                "review",
                 "input",
                 "direction",
                 "sampling",
-                "tasklist",
-                "table",
+                "choices",
                 "source",
                 "requires",
                 "link",

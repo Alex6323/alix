@@ -71,7 +71,7 @@ $$a^2 - b^2 = (a-b)(a+b)$$
 - [x] $f'(x)=3x^2$
 - [ ] $f'(x)=3x$
 - [ ] $f'(x)=x^4$
-<!-- choices-single -->
+<!-- choices: single -->
 <!-- id: card-76xft3gym5tn20pmyh1y6qns6d -->
 
 ## Inspect these formulas as static front checkboxes.

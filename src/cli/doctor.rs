@@ -693,8 +693,8 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         }
         LintKind::UnrecognizedComment => "a deck's `<!-- -->` is alix machinery, and this \
              one is not recognized, so it is ignored; write a directive (`key: value`), a \
-             locator, or an invocation (`plain`, `cards`, `choices-single`, \
-             `choices-multiple`), and put prose in `description:` or a card"
+             locator, or an invocation (`plain`, `cards`, `choices: single`, \
+             `choices: multiple`), and put prose in `description:` or a card"
             .to_string(),
         LintKind::BadgeShape { text } => format!(
             "`{text}` is not one of the five alert badges, so this blockquote is a quote \
@@ -1032,7 +1032,7 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
             let s = &deck.settings;
             let declared: Vec<String> = [
                 s.reveal.map(|r| format!("reveal: {}", val_name(r))),
-                s.order.map(|o| format!("order: {}", val_name(o))),
+                s.order.map(|o| format!("review: {}", val_name(o))),
                 s.exam_strictness
                     .map(|v| format!("strictness: {}", val_name(v))),
             ]
@@ -2139,7 +2139,7 @@ mod tests {
         w(
             dir.path(),
             "declared.md",
-            "---\nformat-version: 1\nid: deck-declared\nreveal: line\norder: sequential\nrequires: ghost\nsource: https://example.test/source\n---\n## q\na\n<!-- id: card-q -->\n",
+            "---\nformat-version: 1\nid: deck-declared\nreveal: line\nreview: sequential\nrequires: ghost\nsource: https://example.test/source\n---\n## q\na\n<!-- id: card-q -->\n",
         );
         let plain = dir.path().join("plain.md");
         w(dir.path(), "plain.md", "## q\na\n");
@@ -2178,7 +2178,7 @@ mod tests {
 
         assert_eq!(1, stdout.matches("  settings:").count(), "{stdout}");
         assert!(
-            stdout.contains("reveal: line, order: sequential"),
+            stdout.contains("reveal: line, review: sequential"),
             "{stdout}"
         );
         assert_eq!(1, stdout.matches("  requires:").count(), "{stdout}");
@@ -3453,7 +3453,7 @@ printf ']}}'
     #[test]
     fn unstamped_table_rows_are_reported_as_content_without_ids() {
         let dir = tempfile::tempdir().unwrap();
-        let head = "---\nformat-version: 1\nid: deck-tbl\ntable: cards\n---\n";
+        let head = "---\nformat-version: 1\nid: deck-tbl\n---\n";
         let rows = "| a | alpha | <!-- r:aaaaaa -->\n| b | beta |\n| c | gamma |\n";
         let container = "<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n";
 
@@ -3461,7 +3461,7 @@ printf ']}}'
         let path = dir.path().join("partly.md");
         std::fs::write(
             &path,
-            format!("{head}| w | m |\n|---|---|\n{rows}{container}"),
+            format!("{head}| w | m |\n|---|---|\n{rows}<!-- cards -->\n{container}"),
         )
         .unwrap();
         let mut report = Report::default();
@@ -3477,7 +3477,11 @@ printf ']}}'
 
         // Without one, no row can compose an id, so every row is reported.
         let path = dir.path().join("none.md");
-        std::fs::write(&path, format!("{head}| w | m |\n|---|---|\n{rows}")).unwrap();
+        std::fs::write(
+            &path,
+            format!("{head}| w | m |\n|---|---|\n{rows}<!-- cards -->\n"),
+        )
+        .unwrap();
         let mut report = Report::default();
         deck_findings(&path, &mut report);
         assert!(

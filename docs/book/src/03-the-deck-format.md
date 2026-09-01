@@ -206,10 +206,10 @@ mapping on the line below the list to make it a choice card:
 - [ ] 4
 - [x] 5
 - [ ] 6
-<!-- choices-single -->
+<!-- choices: single -->
 ```
 
-Under `choices-single` the one `[x]` item is the correct answer. Alix shows
+Under `choices: single` the one `[x]` item is the correct answer. Alix shows
 only that answer at Recall and expects it at Reconstruct; the `[ ]` items are
 distractors shown with it at Recognize. Every option is used, so the card
 needs no AI `choices` augmentation and is skipped by that augment target. The
@@ -218,18 +218,18 @@ on screen, then receives a fresh seed when the card reappears or a new study
 session starts. As with any shuffle, two appearances can still produce the
 same order by chance.
 
-`choices-single` demands exactly one checked item and at least one unchecked
+`choices: single` demands exactly one checked item and at least one unchecked
 item; any other shape fails loudly. Use `-`, `*`, or `+` bullets, with `[x]`
 or `[X]` for the answer. Task lists inside notes or a card's front before the
 `---` divider render as static checkboxes rather than interactive choices.
 
-`choices-multiple` is select-all-that-apply: every `[x]` is a correct option
-and the reviewer picks all of them. A `choices-multiple` list that checks
+`choices: multiple` is select-all-that-apply: every `[x]` is a correct option
+and the reviewer picks all of them. A `choices: multiple` list that checks
 exactly one item is legal: a one-answer select-all is a fair question when
 the learner must discover how many options are correct.
 
 A deck built of choice cards declares the mapping once in frontmatter instead
-of once per card: `tasklist: choices-single` (or `choices-multiple`). A
+of once per card: `choices: single` (or `choices: multiple`). A
 per-card invocation overrides the deck default, and `<!-- plain -->` on the
 line below one task list keeps that one literal.
 
@@ -244,9 +244,8 @@ under `<!-- reveal: line -->` it takes a single reveal rather than arriving a
 pipe line at a time, and Reconstruct never asks you to type pipe syntax, so a
 card whose whole answer is a table asks you to explain it instead. It never
 becomes cards on its own;
-`<!-- cards -->` on the line below maps it (or `table:
-cards` in frontmatter maps every table in the deck, with `<!-- plain -->`
-below one table keeping it literal). A table that declares neither is
+`<!-- cards -->` on the line below maps it, and `<!-- plain -->`
+below one table keeps it literal. A table that declares neither is
 still rendered plain, and `alix doctor` flags it until you write
 `<!-- cards -->` or `<!-- plain -->` below it: the two meanings are too
 far apart to leave to accident, so the file says which one you meant.
@@ -567,7 +566,7 @@ authors: [Alex, "Claude (Opus 5)"]
 license: CC-BY-4.0
 created-at: 2026-07-31
 reveal: line
-order: sequential
+review: sequential
 ---
 ```
 

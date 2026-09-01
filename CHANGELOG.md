@@ -426,6 +426,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
+- **Breaking:** the mapping and scheduling directives are now key: value on
+  every surface, and the deck-wide table default is gone. The task-list
+  invocation comments are `<!-- choices: single -->` and
+  `<!-- choices: multiple -->` (previously `choices-single` /
+  `choices-multiple`); the deck-wide default is the frontmatter key
+  `choices: single|multiple` (previously `tasklist:`); the scheduling key is
+  `review: scheduled|sequential` in deck frontmatter and workspace
+  `[defaults]` (previously `order:`); and the `table:` frontmatter key is
+  retired with no replacement, so a pipe table becomes cards only through
+  `<!-- cards -->` on the line below it. Single-word instructions without a
+  key are no longer allowed in frontmatter; the bare `<!-- cards -->` and
+  `<!-- plain -->` invocations stay per-block only. The retired spellings
+  fail as ordinary unknown vocabulary.
 - **Breaking:** a GFM footnote definition line (`[^label]:` at line start,
   outside code) is now a hard parse error naming footnotes as unsupported.
   It previously parsed silently, as prose or worse as a link definition

@@ -383,7 +383,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
                     &subject,
                     &deck_id,
                     raw,
-                    document.frontmatter.tasklist,
+                    document.frontmatter.choices,
                     &mut cards,
                     &mut lints,
                 )?;
@@ -797,8 +797,7 @@ fn parse_document(text: &str) -> Result<Document, ParseError> {
     let lines = prepare(text)?;
     let mut lints = Vec::new();
     let (frontmatter, body_start, frontmatter_span) = parse_frontmatter(&lines, &mut lints)?;
-    let table_default = frontmatter.table == Some(Mapping::Cards);
-    let body = scan(&lines, body_start, table_default, &mut lints)?;
+    let body = scan(&lines, body_start, &mut lints)?;
     Ok(Document {
         frontmatter,
         blocks: body.blocks,
@@ -911,12 +910,7 @@ fn thematic_break(t: &str) -> bool {
     })
 }
 
-fn scan(
-    lines: &[&str],
-    start: usize,
-    table_default: bool,
-    lints: &mut Vec<Lint>,
-) -> Result<ScannedBody, ParseError> {
+fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBody, ParseError> {
     let mut blocks: Vec<RawBlock> = Vec::new();
     let mut definitions: Vec<String> = Vec::new();
     let mut current: Option<RawCard> = None;
@@ -1060,19 +1054,13 @@ fn scan(
         if let Some((line, Mapping::Plain)) = declared {
             literal_table_invocation = Some(line);
         }
-        if table_header && declared.is_none() && !table_default {
+        if table_header && declared.is_none() {
             lints.push(Lint {
                 line: lineno,
                 kind: LintKind::UndecidedTable,
             });
         }
-        if table_header
-            && match declared {
-                Some((_, Mapping::Cards)) => true,
-                Some(_) => false,
-                None => table_default,
-            }
-        {
+        if table_header && matches!(declared, Some((_, Mapping::Cards))) {
             let next = lines[idx + 1];
             let invocation_line = declared.map(|(line, _)| line);
             // An empty-bodied heading directly above the table is its TITLE,
@@ -2742,7 +2730,7 @@ fn build_card(
     subject: &Arc<str>,
     deck_id: &Arc<str>,
     raw: RawCard,
-    tasklist_default: Option<Mapping>,
+    choices_default: Option<Mapping>,
     cards: &mut Vec<Card>,
     lints: &mut Vec<Lint>,
 ) -> Result<Option<BlockProse>, ParseError> {
@@ -2750,7 +2738,7 @@ fn build_card(
     let section = raw.section.clone();
     let block_line = raw.line;
     let parent = raw.parent;
-    let out = build_card_inner(subject, deck_id, raw, tasklist_default, cards, lints);
+    let out = build_card_inner(subject, deck_id, raw, choices_default, cards, lints);
     for card in &mut cards[start..] {
         card.section_context = section.clone();
         card.block_line = block_line;
@@ -2763,7 +2751,7 @@ fn build_card_inner(
     subject: &Arc<str>,
     deck_id: &Arc<str>,
     raw: RawCard,
-    tasklist_default: Option<Mapping>,
+    choices_default: Option<Mapping>,
     cards: &mut Vec<Card>,
     lints: &mut Vec<Lint>,
 ) -> Result<Option<BlockProse>, ParseError> {
@@ -3066,7 +3054,7 @@ fn build_card_inner(
             None => has_other = true,
         }
     }
-    let mapping = match mapping.or(tasklist_default) {
+    let mapping = match mapping.or(choices_default) {
         Some(m @ (Mapping::ChoicesSingle | Mapping::ChoicesMultiple)) => Some(m),
         _ => None,
     };
@@ -3131,14 +3119,14 @@ fn build_card_inner(
                     return Err(ParseError::ChoiceShape {
                         line: choice_line,
                         message: format!(
-                            "`choices-single` needs exactly one `[x]`, found {checked_count}"
+                            "`choices: single` needs exactly one `[x]`, found {checked_count}"
                         ),
                     });
                 }
                 if distractors.is_empty() {
                     return Err(ParseError::ChoiceShape {
                         line: choice_line,
-                        message: "`choices-single` needs at least one unchecked `[ ]` distractor"
+                        message: "`choices: single` needs at least one unchecked `[ ]` distractor"
                             .into(),
                     });
                 }
@@ -3147,7 +3135,7 @@ fn build_card_inner(
                 if checked_count == 0 {
                     return Err(ParseError::ChoiceShape {
                         line: choice_line,
-                        message: "`choices-multiple` checks no option; mark at least one `[x]`"
+                        message: "`choices: multiple` checks no option; mark at least one `[x]`"
                             .into(),
                     });
                 }
@@ -5352,7 +5340,7 @@ a
     #[test]
     fn an_all_task_list_answer_is_a_single_correct_checkbox_card() {
         let deck =
-            parse("## Which is prime?\n- [ ] 4\n- [x] 5\n- [ ] 6\n<!-- choices-single -->\n");
+            parse("## Which is prime?\n- [ ] 4\n- [x] 5\n- [ ] 6\n<!-- choices: single -->\n");
         let card = &deck.cards[0];
         assert_eq!(vec!["5"], card.back);
         assert_eq!(
@@ -5366,6 +5354,62 @@ a
     // ── invocation is named, loudness follows invocation (A1/A2)   ──
 
     #[test]
+    fn the_choices_grammar_is_key_value_on_both_surfaces() {
+        let deck = parse("---\nchoices: single\n---\n## q\n- [x] a\n- [ ] b\n");
+        assert_eq!(
+            vec!["a"],
+            deck.cards[0].back,
+            "deck-wide single maps the task list"
+        );
+        assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
+        assert_eq!(Vec::<Lint>::new(), deck.lints);
+
+        let deck = parse("---\nchoices: multiple\n---\n## q\n- [x] a\n- [x] b\n- [ ] c\n");
+        assert_eq!(
+            vec!["a", "b"],
+            deck.cards[0].back,
+            "deck-wide multiple maps too"
+        );
+        assert_eq!(Vec::<Lint>::new(), deck.lints);
+
+        let deck = parse("## q\n- [x] a\n- [ ] b\n<!-- choices: single -->\n");
+        assert_eq!(
+            vec!["a"],
+            deck.cards[0].back,
+            "the key: value invocation binds"
+        );
+        assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
+        assert_eq!(Vec::<Lint>::new(), deck.lints);
+
+        let deck = parse("## q\n- [x] a\n- [ ] b\n- [x] c\n<!-- choices: multiple -->\n");
+        assert_eq!(vec!["a", "c"], deck.cards[0].back);
+        assert_eq!(Vec::<Lint>::new(), deck.lints);
+    }
+
+    #[test]
+    fn the_retired_mapping_spellings_are_ordinary_unknown_vocabulary() {
+        let deck = parse("---\ntasklist: choices-single\n---\n## q\n- [x] a\n- [ ] b\n");
+        assert_eq!(
+            vec!["- [x] a", "- [ ] b"],
+            deck.cards[0].back,
+            "the retired key maps nothing; the task list stays literal"
+        );
+        assert!(
+            !deck.lints.is_empty(),
+            "an unknown frontmatter key is a loud ordinary lint"
+        );
+
+        let deck = parse("---\norder: sequential\n---\n## q\na\n");
+        assert!(
+            deck.lints.iter().any(
+                |lint| matches!(lint.kind, LintKind::UnknownKey { ref key } if key == "order")
+            ),
+            "the retired order key is a loud ordinary unknown-key lint: {:?}",
+            deck.lints
+        );
+    }
+
+    #[test]
     fn a_bare_task_list_is_literal_answer_content() {
         let deck = parse("## q\n- [x] a\n- [ ] b\n");
         assert_eq!(vec!["- [x] a", "- [ ] b"], deck.cards[0].back);
@@ -5375,7 +5419,7 @@ a
 
     #[test]
     fn an_invocation_below_the_task_list_makes_the_choice_card() {
-        let deck = parse("## q\n- [x] a\n- [ ] b\n<!-- choices-single -->\n");
+        let deck = parse("## q\n- [x] a\n- [ ] b\n<!-- choices: single -->\n");
         assert_eq!(vec!["a"], deck.cards[0].back);
         assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
         assert_eq!(Vec::<Lint>::new(), deck.lints);
@@ -5383,7 +5427,7 @@ a
 
     #[test]
     fn a_single_invocation_with_two_checks_fails_loudly() {
-        let error = err("## q\n- [x] a\n- [x] b\n- [ ] c\n<!-- choices-single -->\n");
+        let error = err("## q\n- [x] a\n- [x] b\n- [ ] c\n<!-- choices: single -->\n");
         assert!(
             matches!(error, ParseError::ChoiceShape { line: 2, .. }),
             "expected ChoiceShape at the first task line, got {error:?}"
@@ -5392,7 +5436,7 @@ a
 
     #[test]
     fn a_multiple_invocation_collects_every_checked_option() {
-        let deck = parse("## q\n- [x] a\n- [ ] b\n- [x] c\n<!-- choices-multiple -->\n");
+        let deck = parse("## q\n- [x] a\n- [ ] b\n- [x] c\n<!-- choices: multiple -->\n");
         assert_eq!(vec!["a", "c"], deck.cards[0].back);
         assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
         assert_eq!(Vec::<Lint>::new(), deck.lints);
@@ -5400,7 +5444,7 @@ a
 
     #[test]
     fn one_check_under_multiple_is_legal_and_silent() {
-        let deck = parse("## q\n- [x] a\n- [ ] b\n<!-- choices-multiple -->\n");
+        let deck = parse("## q\n- [x] a\n- [ ] b\n<!-- choices: multiple -->\n");
         assert_eq!(vec!["a"], deck.cards[0].back);
         assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
         assert_eq!(
@@ -5456,9 +5500,9 @@ a
                 "an editorial comment bounds the runs, so nothing crosses it",
             ),
             (
-                "## q\n- [x] a\n- [ ] b\n<!-- id: card-x -->\n<!-- at: src/x.rs:1-2 -->\n<!-- blank: span hidden=\"a\" -->\n<!-- reveal: line -->\n<!-- choices-single -->\n",
+                "## q\n- [x] a\n- [ ] b\n<!-- id: card-x -->\n<!-- at: src/x.rs:1-2 -->\n<!-- blank: span hidden=\"a\" -->\n<!-- reveal: line -->\n<!-- choices: single -->\n",
                 Reorder::Reordered(
-                    "## q\n- [x] a\n- [ ] b\n<!-- choices-single -->\n<!-- reveal: line -->\n<!-- blank: span hidden=\"a\" -->\n<!-- at: src/x.rs:1-2 -->\n<!-- id: card-x -->\n".into(),
+                    "## q\n- [x] a\n- [ ] b\n<!-- choices: single -->\n<!-- reveal: line -->\n<!-- blank: span hidden=\"a\" -->\n<!-- at: src/x.rs:1-2 -->\n<!-- id: card-x -->\n".into(),
                 ),
                 "the full canonical order: invocation, directives, regions, locator, id",
             ),
@@ -5521,7 +5565,7 @@ a
 
     #[test]
     fn a_trailing_choices_invocation_maps_its_task_list() {
-        let choices = parse("## Pick\n- [x] right\n- [ ] wrong\n<!-- choices-single -->\n");
+        let choices = parse("## Pick\n- [x] right\n- [ ] wrong\n<!-- choices: single -->\n");
         assert_eq!(1, choices.cards.len());
         assert_eq!(vec!["right"], choices.cards[0].back);
         assert_eq!(
@@ -5557,7 +5601,7 @@ a
 
     #[test]
     fn a_leading_choices_invocation_is_machinery_out_of_position() {
-        let leading_choices = err("## Pick\n<!-- choices-single -->\n- [x] right\n- [ ] wrong\n");
+        let leading_choices = err("## Pick\n<!-- choices: single -->\n- [x] right\n- [ ] wrong\n");
         assert!(
             matches!(
                 leading_choices,
@@ -5636,32 +5680,24 @@ a
             "deck.md",
             "## Vocabulary\n<!-- direction: both -->\n| word | meaning |\n|---|---|\n| one | eins |\n<!-- cards -->\n",
         );
-        let defaulted = super::parse(
-            "deck.md",
-            "---\ntable: cards\n---\n## Vocabulary\n<!-- direction: both -->\n| word | meaning |\n|---|---|\n| one | eins |\n",
-        );
         assert!(
             matches!(
                 &explicit,
                 Err(ParseError::LeadingDirective { line: 2, key }) if key == "direction"
-            ) && matches!(
-                &defaulted,
-                Err(ParseError::LeadingDirective { line: 5, key }) if key == "direction"
             ),
-            "an empty heading absorbed as a table title must not let leading card machinery bypass the card-content guard: explicit={explicit:?}, defaulted={defaulted:?}"
+            "an empty heading absorbed as a table title must not let leading card machinery bypass the card-content guard: {explicit:?}"
         );
     }
 
     #[test]
     fn a_titled_tables_trailing_directive_remains_legal() {
-        for text in [
+        let deck = super::parse(
+            "deck.md",
             "## Vocabulary\n| word | meaning |\n|---|---|\n| one | eins |\n<!-- cards -->\n<!-- direction: both -->\n",
-            "---\ntable: cards\n---\n## Vocabulary\n| word | meaning |\n|---|---|\n| one | eins |\n<!-- direction: both -->\n",
-        ] {
-            let deck = super::parse("deck.md", text).unwrap();
-            assert_eq!(1, deck.cards.len());
-            assert_eq!(Some(Direction::Both), deck.cards[0].direction);
-        }
+        )
+        .unwrap();
+        assert_eq!(1, deck.cards.len());
+        assert_eq!(Some(Direction::Both), deck.cards[0].direction);
     }
 
     #[test]
@@ -5739,13 +5775,13 @@ a
 
     #[test]
     fn everything_trails_invocation_boundary_choices_is_loud_when_nonadjacent() {
-        let error = err("## Pick\n- [x] right\n- [ ] wrong\n\n<!-- choices-single -->\n");
+        let error = err("## Pick\n- [x] right\n- [ ] wrong\n\n<!-- choices: single -->\n");
 
         assert!(
             matches!(
                 error,
                 ParseError::LeadingInvocation { line: 5, ref word }
-                    if word == "choices-single"
+                    if word == "choices: single"
             ),
             "a nonadjacent choices invocation must identify its line, got {error:?}"
         );
@@ -5754,13 +5790,13 @@ a
     #[test]
     fn everything_trails_invocation_does_not_reach_through_a_note_block() {
         let error =
-            err("## Pick\n- [x] right\n- [ ] wrong\n> Remember why.\n<!-- choices-single -->\n");
+            err("## Pick\n- [x] right\n- [ ] wrong\n> Remember why.\n<!-- choices: single -->\n");
 
         assert!(
             matches!(
                 error,
                 ParseError::LeadingInvocation { line: 5, ref word }
-                    if word == "choices-single"
+                    if word == "choices: single"
             ),
             "the note is the directly preceding block, so the older task list cannot bind: {error:?}"
         );
@@ -5769,14 +5805,14 @@ a
     #[test]
     fn everything_trails_invocation_does_not_reach_through_a_fence_block() {
         let error = err(
-            "## Pick\n- [x] right\n- [ ] wrong\n```text\nnot an option\n```\n<!-- choices-single -->\n",
+            "## Pick\n- [x] right\n- [ ] wrong\n```text\nnot an option\n```\n<!-- choices: single -->\n",
         );
 
         assert!(
             matches!(
                 error,
                 ParseError::LeadingInvocation { line: 7, ref word }
-                    if word == "choices-single"
+                    if word == "choices: single"
             ),
             "the fence is the directly preceding block, so the older task list cannot bind: {error:?}"
         );
@@ -5984,7 +6020,7 @@ a
     #[test]
     fn everything_trails_invocation_sees_through_machinery_and_nothing_else() {
         let deck = parse(
-            "## Pick\n- [x] right\n- [ ] wrong\n<!-- reveal: line -->\n<!-- choices-single -->\n",
+            "## Pick\n- [x] right\n- [ ] wrong\n<!-- reveal: line -->\n<!-- choices: single -->\n",
         );
         assert_eq!(
             vec!["wrong"],
@@ -5993,33 +6029,33 @@ a
         );
 
         let error = err(
-            "## Pick\n- [x] right\n- [ ] wrong\n<!-- a reminder to myself -->\n<!-- choices-single -->\n",
+            "## Pick\n- [x] right\n- [ ] wrong\n<!-- a reminder to myself -->\n<!-- choices: single -->\n",
         );
         assert!(
             matches!(
                 error,
                 ParseError::LeadingInvocation { line: 5, ref word }
-                    if word == "choices-single"
+                    if word == "choices: single"
             ),
             "an editorial comment is not machinery, so it ends the block: {error:?}"
         );
 
-        let error = err("## Q\nanswer\n<!-- choices-single -->\n");
+        let error = err("## Q\nanswer\n<!-- choices: single -->\n");
         assert!(
             matches!(
                 error,
                 ParseError::LeadingInvocation { line: 3, ref word }
-                    if word == "choices-single"
+                    if word == "choices: single"
             ),
             "ordinary answer prose is no task list, so nothing binds: {error:?}"
         );
 
-        let error = err("## Q\nanswer\n---\n<!-- plain -->\n<!-- choices-single -->\n");
+        let error = err("## Q\nanswer\n---\n<!-- plain -->\n<!-- choices: single -->\n");
         assert!(
             matches!(
                 error,
                 ParseError::LeadingInvocation { line: 5, ref word }
-                    if word == "choices-single"
+                    if word == "choices: single"
             ),
             "a divider is a block choices cannot map, even reached through \
              machinery: {error:?}"
@@ -6039,26 +6075,26 @@ a
         );
 
         let error = err(
-            "## Pick\n- [x] right\n- [ ] wrong\n<!-- reveel: line -->\n<!-- choices-single -->\n",
+            "## Pick\n- [x] right\n- [ ] wrong\n<!-- reveel: line -->\n<!-- choices: single -->\n",
         );
         assert!(
             matches!(
                 error,
                 ParseError::LeadingInvocation { line: 5, ref word }
-                    if word == "choices-single"
+                    if word == "choices: single"
             ),
             "an unknown key is not recognized machinery, so it ends the run \
              instead of silently reclassifying the list: {error:?}"
         );
 
         let error = err(
-            "## Pick\n- [x] right\n- [ ] wrong\n<!-- choices-single -->\n<!-- choices-multiple -->\n",
+            "## Pick\n- [x] right\n- [ ] wrong\n<!-- choices: single -->\n<!-- choices: multiple -->\n",
         );
         assert!(
             matches!(
                 error,
                 ParseError::LeadingInvocation { line: 5, ref word }
-                    if word == "choices-multiple"
+                    if word == "choices: multiple"
             ),
             "one invocation consumes the block it binds, so a second cannot \
              silently win: {error:?}"
@@ -6097,13 +6133,12 @@ a
         );
 
         let deck = parse(
-            "---\ntable: cards\n---\n# Reference\n| term | meaning |\n|---|---|\n| one | eins |\n<!-- plain -->\n\n## q\nanswer\n",
+            "# Reference\n| term | meaning |\n|---|---|\n| one | eins |\n<!-- plain -->\n\n## q\nanswer\n",
         );
         assert_eq!(
             1,
             deck.cards.len(),
-            "`plain` below one table is the documented escape from a `table: \
-             cards` default, so the deck loads: {:?}",
+            "`plain` below one table decides it literal, so the deck loads: {:?}",
             deck.cards
         );
         assert!(
@@ -6116,28 +6151,28 @@ a
         );
 
         let deck = parse(
-            "---\ntable: cards\n---\n## Compare the terms\n| term | meaning |\n|---|---|\n| one | eins |\n<!-- plain -->\n",
+            "## Compare the terms\n| term | meaning |\n|---|---|\n| one | eins |\n<!-- plain -->\n",
         );
         assert_eq!(
             vec!["| term | meaning |", "|---|---|", "| one | eins |"],
             deck.cards[0].back,
-            "the same escape holds when the literal table IS a card's answer, \
+            "the same decision holds when the literal table IS a card's answer, \
              the shape both book chapters show: {:?}",
             deck.cards
         );
 
-        let error = err("---\ntable: cards\n---\n## Q\nanswer\n<!-- plain -->\n");
+        let error = err("## Q\nanswer\n<!-- plain -->\n");
         assert!(
             matches!(
                 error,
-                ParseError::LeadingInvocation { line: 6, ref word } if word == "plain"
+                ParseError::LeadingInvocation { line: 3, ref word } if word == "plain"
             ),
-            "a table owns the escape, so `plain` under ordinary answer prose \
+            "a table owns the decision, so `plain` under ordinary answer prose \
              is still loud: {error:?}"
         );
 
         let deck = parse(
-            "---\ntable: cards\n---\n## Two\n| a | b |\n|---|---|\n| 1 | 2 |\n<!-- plain -->\n| c | d |\n|---|---|\n| 3 | 4 |\n<!-- plain -->\n",
+            "## Two\n| a | b |\n|---|---|\n| 1 | 2 |\n<!-- plain -->\n| c | d |\n|---|---|\n| 3 | 4 |\n<!-- plain -->\n",
         );
         assert_eq!(
             vec![
@@ -6154,13 +6189,12 @@ a
             deck.cards
         );
 
-        let error = err(
-            "---\ntable: cards\n---\n## Q\n| a | b |\n|---|---|\n| 1 | 2 |\n<!-- plain -->\ntail\n<!-- plain -->\n",
-        );
+        let error =
+            err("## Q\n| a | b |\n|---|---|\n| 1 | 2 |\n<!-- plain -->\ntail\n<!-- plain -->\n");
         assert!(
             matches!(
                 error,
-                ParseError::LeadingInvocation { line: 10, ref word } if word == "plain"
+                ParseError::LeadingInvocation { line: 7, ref word } if word == "plain"
             ),
             "ownership is one exact line, not a standing licence for the rest \
              of the card: {error:?}"
@@ -6397,8 +6431,8 @@ a
     }
 
     #[test]
-    fn a_tasklist_deck_default_invokes_without_per_card_markers() {
-        let deck = parse("---\ntasklist: choices-single\n---\n## q\n- [x] a\n- [ ] b\n");
+    fn a_choices_deck_default_invokes_without_per_card_markers() {
+        let deck = parse("---\nchoices: single\n---\n## q\n- [x] a\n- [ ] b\n");
         assert_eq!(vec!["a"], deck.cards[0].back);
         assert_eq!(vec!["b"], deck.cards[0].authored_distractors);
         assert_eq!(Vec::<Lint>::new(), deck.lints, "a known key never lints");
@@ -6407,7 +6441,7 @@ a
     #[test]
     fn a_per_block_invocation_overrides_the_deck_default() {
         let deck = parse(
-            "---\ntasklist: choices-multiple\n---\n## q\n- [x] a\n- [ ] b\n<!-- choices-single -->\n",
+            "---\nchoices: multiple\n---\n## q\n- [x] a\n- [ ] b\n<!-- choices: single -->\n",
         );
         assert_eq!(vec!["a"], deck.cards[0].back);
         assert_eq!(
@@ -6419,16 +6453,28 @@ a
 
     #[test]
     fn a_plain_marker_escapes_the_deck_default() {
-        let deck =
-            parse("---\ntasklist: choices-single\n---\n## q\n- [x] a\n- [ ] b\n<!-- plain -->\n");
+        let deck = parse("---\nchoices: single\n---\n## q\n- [x] a\n- [ ] b\n<!-- plain -->\n");
         assert_eq!(vec!["- [x] a", "- [ ] b"], deck.cards[0].back);
     }
 
     #[test]
-    fn a_table_deck_default_invokes_cards() {
-        let deck = parse("---\ntable: cards\n---\n| a | b |\n|---|---|\n| x | y |\n");
-        assert_eq!(1, deck.cards.len());
-        assert_eq!("x", deck.cards[0].front);
+    fn the_retired_table_key_is_ordinary_unknown_vocabulary() {
+        let deck = parse("---\ntable: cards\n---\n## q\n| a | b |\n|---|---|\n| x | y |\n");
+        assert!(
+            deck.cards[0]
+                .back
+                .iter()
+                .any(|line| line.contains("| x | y |")),
+            "the retired key decides nothing; the table stays literal: {:?}",
+            deck.cards[0].back
+        );
+        assert!(
+            deck.lints.iter().any(
+                |lint| matches!(lint.kind, LintKind::UnknownKey { ref key } if key == "table")
+            ),
+            "the retired key is a loud ordinary unknown-key lint: {:?}",
+            deck.lints
+        );
     }
 
     #[test]
@@ -6447,7 +6493,7 @@ a
     #[test]
     fn blank_and_image_only_lines_do_not_turn_authored_choices_into_prose() {
         let deck = parse(
-            "## Which is prime?\n\n- [ ] 4\n![](number-line.png)\n- [x] 5\n<!-- choices-single -->\n",
+            "## Which is prime?\n\n- [ ] 4\n![](number-line.png)\n- [x] 5\n<!-- choices: single -->\n",
         );
         assert_eq!(vec!["5"], deck.cards[0].back);
         assert_eq!(vec!["4".to_string()], deck.cards[0].authored_distractors);
@@ -6461,7 +6507,7 @@ a
     #[test]
     fn a_divided_checkbox_card_takes_options_from_the_answer_region() {
         let deck = parse(
-            "## Pick one\nsome stimulus\n\n---\n- [x] yes\n- [ ] no\n<!-- choices-single -->\n",
+            "## Pick one\nsome stimulus\n\n---\n- [x] yes\n- [ ] no\n<!-- choices: single -->\n",
         );
         let card = &deck.cards[0];
         assert_eq!("Pick one\nsome stimulus", card.front);
@@ -6483,15 +6529,15 @@ a
         for (name, text) in [
             (
                 "prose",
-                "## q\n- [x] a\nnot an option\n<!-- choices-single -->\n",
+                "## q\n- [x] a\nnot an option\n<!-- choices: single -->\n",
             ),
             (
                 "quotation",
-                "## q\n- [x] a\n> not an option\n- [ ] b\n<!-- choices-single -->\n",
+                "## q\n- [x] a\n> not an option\n- [ ] b\n<!-- choices: single -->\n",
             ),
             (
                 "quotation under select-all",
-                "## q\n- [x] a\n> not an option\n- [ ] b\n<!-- choices-multiple -->\n",
+                "## q\n- [x] a\n> not an option\n- [ ] b\n<!-- choices: multiple -->\n",
             ),
         ] {
             let error = err(text);
@@ -6507,13 +6553,13 @@ a
         for (name, text) in [
             (
                 "two checks",
-                "## q\n- [x] a\n- [x] b\n<!-- choices-single -->\n",
+                "## q\n- [x] a\n- [x] b\n<!-- choices: single -->\n",
             ),
             (
                 "no check",
-                "## q\n- [ ] a\n- [ ] b\n<!-- choices-single -->\n",
+                "## q\n- [ ] a\n- [ ] b\n<!-- choices: single -->\n",
             ),
-            ("no distractor", "## q\n- [x] a\n<!-- choices-single -->\n"),
+            ("no distractor", "## q\n- [x] a\n<!-- choices: single -->\n"),
         ] {
             let error = err(text);
             assert!(
@@ -6525,7 +6571,7 @@ a
 
     #[test]
     fn a_duplicate_option_lints_and_keeps_first() {
-        let deck = parse("## q\n- [x] a\n- [ ] b\n- [ ] b\n<!-- choices-single -->\n");
+        let deck = parse("## q\n- [x] a\n- [ ] b\n- [ ] b\n<!-- choices: single -->\n");
         assert_eq!(vec!["b".to_string()], deck.cards[0].authored_distractors);
         assert!(
             deck.lints
@@ -6537,7 +6583,7 @@ a
     #[test]
     fn a_choice_note_cannot_name_an_option_position_that_shuffle_changes() {
         let deck = parse(
-            "## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n<!-- choices-single -->\n> [!NOTE]\n> Option 2 confuses identity with sampling.\n",
+            "## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n<!-- choices: single -->\n> [!NOTE]\n> Option 2 confuses identity with sampling.\n",
         );
 
         assert_eq!(
@@ -6558,7 +6604,7 @@ a
 
     #[test]
     fn option_text_preserves_source_while_grading_uses_content() {
-        let deck = parse("## q\n- [x] **Paris**\n- [ ] London\n<!-- choices-single -->\n");
+        let deck = parse("## q\n- [x] **Paris**\n- [ ] London\n<!-- choices: single -->\n");
         assert_eq!(vec!["**Paris**"], deck.cards[0].back);
         assert_eq!("Paris", crate::inline::strip_inline(&deck.cards[0].back[0]));
         assert_eq!(
@@ -6569,7 +6615,7 @@ a
 
     #[test]
     fn math_checkbox_options_preserve_authored_source() {
-        let deck = parse("## q\n- [x] $x^2$\n- [ ] $x^3$\n<!-- choices-single -->\n");
+        let deck = parse("## q\n- [x] $x^2$\n- [ ] $x^3$\n<!-- choices: single -->\n");
         assert_eq!(vec!["$x^2$"], deck.cards[0].back);
         assert_eq!(
             vec!["$x^3$".to_string()],
@@ -6580,7 +6626,7 @@ a
 
     #[test]
     fn formatted_and_plain_checkbox_options_are_content_duplicates() {
-        let deck = parse("## q\n- [x] $x$\n- [ ] x\n- [ ] y\n<!-- choices-single -->\n");
+        let deck = parse("## q\n- [x] $x$\n- [ ] x\n- [ ] y\n<!-- choices: single -->\n");
         assert_eq!(vec!["$x$"], deck.cards[0].back);
         assert_eq!(vec!["y".to_string()], deck.cards[0].authored_distractors);
         assert!(
@@ -6593,10 +6639,10 @@ a
     #[test]
     fn editing_only_a_distractor_preserves_identity_and_fingerprint() {
         let before = parse(
-            "## q\n- [x] right\n- [ ] wrong\n<!-- choices-single -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
+            "## q\n- [x] right\n- [ ] wrong\n<!-- choices: single -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
         );
         let after = parse(
-            "## q\n- [x] right\n- [ ] different\n<!-- choices-single -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
+            "## q\n- [x] right\n- [ ] different\n<!-- choices: single -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
         );
         assert_eq!(before.cards[0].id(), after.cards[0].id());
         assert_eq!(
@@ -7031,10 +7077,6 @@ a
             (
                 format!("## q\n---\nabove\n{table}<!-- plain -->\n"),
                 "plain",
-            ),
-            (
-                format!("---\ntable: cards\n---\n# s\n## q\n---\nabove\n{table}"),
-                "deck-wide mapping",
             ),
         ] {
             let deck = parse(&text);
@@ -7547,11 +7589,10 @@ link:
   - https://docs.rs/tokio
 trace: how a keypress becomes a grade
 reveal: line
-order: sequential
+review: sequential
 input: draw
 direction: both
-tasklist: choices-single
-table: cards
+choices: single
 title: The Title
 license: MIT
 authors: someone
@@ -7591,8 +7632,7 @@ the answer
                 input: Some(Input::Draw),
                 direction: Some(Direction::Both),
                 sampling: None,
-                tasklist: Some(Mapping::ChoicesSingle),
-                table: Some(Mapping::Cards),
+                choices: Some(Mapping::ChoicesSingle),
                 unspliceable: false,
                 personal_for: None,
             },
@@ -7608,7 +7648,7 @@ the answer
                 crops: Vec::new(),
                 token: Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
                 reveal: Some(Reveal::Flip),
-                reveal_line: Some(31),
+                reveal_line: Some(30),
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
                 sampling: None,
@@ -7616,7 +7656,7 @@ the answer
                     locator: "src/caching.rs:46-66".into(),
                     fingerprint: Some(0x0123456789abcdef),
                     asset: Some("sha256-abc123.rs".into()),
-                    line: 34,
+                    line: 33,
                 }],
                 diagrams: Vec::new(),
                 givens: vec![
@@ -7642,7 +7682,7 @@ the answer
                 locator: "src/caching.rs:46-66".into(),
                 fingerprint: Some(0x0123456789abcdef),
                 asset: Some("sha256-abc123.rs".into()),
-                line: 34,
+                line: 33,
             }],
             card.citations
         );
@@ -7940,9 +7980,10 @@ the answer
     }
 
     #[test]
-    fn an_empty_table_ends_on_its_delimiter() {
-        let deck = parse("---\ntable: cards\n---\n| a | b |\n|---|---|\n");
-        assert_eq!(5, deck.tables[0].end_line);
+    fn an_empty_table_ends_on_its_trailing_invocation() {
+        let deck = parse("| a | b |\n|---|---|\n<!-- cards -->\n");
+        assert_eq!(0, deck.cards.len());
+        assert_eq!(3, deck.tables[0].end_line);
     }
 
     #[test]
@@ -8652,7 +8693,7 @@ the answer
     #[test]
     fn a_task_list_answer_plus_a_blank_region_is_a_composition_error() {
         let error = err(&format!(
-            "## pick\n---\n- [x] alpha\n- [ ] beta\n<!-- choices-single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## pick\n---\n- [x] alpha\n- [ ] beta\n<!-- choices: single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -8663,7 +8704,7 @@ the answer
     #[test]
     fn an_incomplete_task_list_plus_a_blank_region_is_still_a_composition_error() {
         let error = err(&format!(
-            "## pick\n---\n- [ ] alpha\n- [ ] beta\n<!-- choices-single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## pick\n---\n- [ ] alpha\n- [ ] beta\n<!-- choices: single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -8683,7 +8724,7 @@ the answer
         assert_eq!(1, cloze.cards[0].images[0].regions.len());
 
         let choice = parse(&format!(
-            "## pick\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\n- [x] alpha\n- [ ] beta\n<!-- choices-single -->\n<!-- id: {RTOK} -->\n"
+            "## pick\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\n- [x] alpha\n- [ ] beta\n<!-- choices: single -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, choice.cards.len());
         assert!(!choice.cards[0].authored_distractors.is_empty());

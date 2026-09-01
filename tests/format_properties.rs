@@ -143,7 +143,7 @@ fn render_card(card: &GenCard) -> String {
             for i in 0..*distractors {
                 out.push_str(&format!("- [ ] wrong option {i}\n"));
             }
-            out.push_str("<!-- choices-single -->\n");
+            out.push_str("<!-- choices: single -->\n");
         }
     }
     if let Some(note) = &card.note {

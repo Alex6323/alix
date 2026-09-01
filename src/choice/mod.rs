@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn a_quoted_correct_option_stays_distinct_from_the_same_unquoted_distractor() {
         let c = authored_card(
-            "## scope\n- [x] > not guaranteed\n- [ ] not guaranteed\n<!-- choices-single -->\n",
+            "## scope\n- [x] > not guaranteed\n- [ ] not guaranteed\n<!-- choices: single -->\n",
         );
         let q = build_authored(&c, 1, &c.authored_distractors)
             .expect("the invoked authored choice must remain buildable");
@@ -511,7 +511,7 @@ mod tests {
     #[test]
     fn checked_and_unchecked_quote_markers_project_symmetrically() {
         let c = authored_card(
-            "## attribution\n- [x] > asserted claim\n- [ ] > attributed claim\n<!-- choices-single -->\n",
+            "## attribution\n- [x] > asserted claim\n- [ ] > attributed claim\n<!-- choices: single -->\n",
         );
         let q = build_authored(&c, 1, &c.authored_distractors).unwrap();
 
@@ -526,7 +526,7 @@ mod tests {
     #[test]
     fn every_checked_quoted_option_remains_in_the_multiple_choice_correct_set() {
         let c = authored_card(
-            "## all truths\n- [x] ordinary correct\n- [x] > attributed correct\n- [ ] ordinary wrong\n<!-- choices-multiple -->\n",
+            "## all truths\n- [x] ordinary correct\n- [x] > attributed correct\n- [ ] ordinary wrong\n<!-- choices: multiple -->\n",
         );
         let q = build_authored_multi(&c, 1, &c.authored_distractors).unwrap();
         let mut correct: Vec<&str> = q

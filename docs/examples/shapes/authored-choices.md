@@ -3,7 +3,7 @@ title: "Authored choices: the distractors teach"
 description: >-
   One `- [x]` and two or more `- [ ]`. Write them only if you can say what
   mistaken belief each wrong option represents.
-tasklist: choices-single
+choices: single
 id: "deck-4pw3s7ceswqmr0w2adks32qqf8"
 ---
 

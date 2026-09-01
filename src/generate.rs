@@ -95,7 +95,7 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
              the value is dropped.` then `<!-- blank: span hidden=\"dropped\" -->`.\n\
              - An authored-choice card puts 3-5 GitHub task-list options directly below its \
              front: exactly one checked `- [x]` answer and at least two unchecked `- [ ]` \
-             distractors, then `<!-- choices-single -->` on the line directly below the last \
+             distractors, then `<!-- choices: single -->` on the line directly below the last \
              option. Without that line the options stay a literal checklist instead of \
              becoming a card. Add a `> [!NOTE]` note explaining their mistaken premises.\n\
              - A card table starts with `| front | back | note |`, then \
@@ -130,7 +130,7 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
             "- Write EVERY card as authored multiple-choice. Directly below the `## ` front, \
              write 3-5 GitHub task-list options: exactly one checked `- [x]` correct answer \
              and at least two unchecked `- [ ]` plausible distractors. On the line directly \
-             below the last option, write `<!-- choices-single -->`; without it the options \
+             below the last option, write `<!-- choices: single -->`; without it the options \
              stay a literal checklist instead of becoming a card. Do not add a separate \
              plain answer or `blank:` span comments. Keep options parallel in form and \
              length. \
@@ -164,7 +164,7 @@ an option list, or a table.
 immediately below the last option or row. \
 `<!-- cards -->` takes card directives after it, an `at:` locator or a reveal \
 mode, but never a blockquote: a card table's note is its note column. \
-`<!-- choices-single -->` takes a `> [!NOTE]` note after it.
+`<!-- choices: single -->` takes a `> [!NOTE]` note after it.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
@@ -247,14 +247,14 @@ an option list, or a table.
 immediately below the last option or row. \
 `<!-- cards -->` takes card directives after it, an `at:` locator or a reveal \
 mode, but never a blockquote: a card table's note is its note column. \
-`<!-- choices-single -->` takes a `> [!NOTE]` note after it.
+`<!-- choices: single -->` takes a `> [!NOTE]` note after it.
 - To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
 code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
 Begin the file with exactly this frontmatter block:
 ---
 source: {source}
-tasklist: choices-single
+choices: single
 
 ---
 The `source:` key ties the deck to its source, so `alix exam` can later grade \
@@ -880,7 +880,7 @@ mod tests {
     #[test]
     fn the_authored_choice_shape_the_prompt_teaches_parses_and_binds() {
         let taught = "## Pick one\n- [x] right\n- [ ] wrong\n- [ ] also wrong\n\
-                      <!-- choices-single -->\n> [!NOTE]\n> the mistaken premise\n";
+                      <!-- choices: single -->\n> [!NOTE]\n> the mistaken premise\n";
         let parsed = parser::parse("deck.md", taught).expect("the taught shape parses");
         let card = &parsed.cards[0];
         assert_eq!(
@@ -895,7 +895,7 @@ mod tests {
         );
 
         let inverted = "## Pick one\n- [x] right\n- [ ] wrong\n- [ ] also wrong\n\
-                        > [!NOTE]\n> the mistaken premise\n<!-- choices-single -->\n";
+                        > [!NOTE]\n> the mistaken premise\n<!-- choices: single -->\n";
         assert!(
             parser::parse("deck.md", inverted).is_err(),
             "and the other order does not parse, which is why the order is taught"
@@ -1004,7 +1004,7 @@ mod tests {
         let choice = parser::parse(
             "deck.md",
             "## Pick one\n- [x] right\n- [ ] wrong\n- [ ] also wrong\n\
-             <!-- choices-single -->\n<!-- at: src/lib.rs:1-2 -->\n\
+             <!-- choices: single -->\n<!-- at: src/lib.rs:1-2 -->\n\
              > [!NOTE]\n> why the alternatives fail\n",
         )
         .expect("a choice invocation carries a locator and then its taught note");
@@ -1104,14 +1104,14 @@ mod tests {
         let prompt = build_prompt("https://example.org", true, &cfg(10), &spec);
 
         assert!(
-            prompt.contains("<!-- choices-single -->"),
-            "the URL template has no tasklist frontmatter, so the explicit style must teach the trailing invocation: {prompt}"
+            prompt.contains("<!-- choices: single -->"),
+            "the URL template has no deck-wide choices default, so the explicit style must teach the trailing invocation: {prompt}"
         );
     }
 
     /// Every prompt that teaches the task-list shape must also teach the
     /// invocation that turns it into a card: the URL template carries no
-    /// `tasklist:` default, so a taught shape without it is a checklist.
+    /// `choices:` default, so a taught shape without it is a checklist.
     #[test]
     fn every_card_style_teaching_task_list_options_also_teaches_the_invocation() {
         for style in [GenerateCardStyle::Mixed, GenerateCardStyle::AuthoredChoices] {
@@ -1120,7 +1120,7 @@ mod tests {
                 continue;
             }
             assert!(
-                format.contains("<!-- choices-single -->"),
+                format.contains("<!-- choices: single -->"),
                 "{style:?} teaches task-list options without the trailing invocation, \
                  so its output parses as a literal checklist: {format}"
             );
@@ -1135,7 +1135,7 @@ mod tests {
             audience: None,
             card_style: GenerateCardStyle::AuthoredChoices,
         };
-        let following_the_prompt = "---\nlink: https://example.org\n\n---\n## Pick one\n- [x] Right\n- [ ] Wrong A\n- [ ] Wrong B\n<!-- choices-single -->\n";
+        let following_the_prompt = "---\nlink: https://example.org\n\n---\n## Pick one\n- [x] Right\n- [ ] Wrong A\n- [ ] Wrong B\n<!-- choices: single -->\n";
         let without_the_invocation = "---\nlink: https://example.org\n\n---\n## Pick one\n- [x] Right\n- [ ] Wrong A\n- [ ] Wrong B\n";
 
         assert!(
@@ -1160,10 +1160,10 @@ mod tests {
 
         let prompt = build_prompt(".", false, &cfg(10), &spec);
 
-        assert!(prompt.contains("tasklist: choices-single"));
+        assert!(prompt.contains("choices: single"));
         assert!(
             validate_card_style(
-                "---\ntasklist: choices-single\n---\n## Pick one\n- [x] Right\n- [ ] Wrong A\n- [ ] Wrong B\n",
+                "---\nchoices: single\n---\n## Pick one\n- [x] Right\n- [ ] Wrong A\n- [ ] Wrong B\n",
                 &spec,
             )
             .is_ok(),
@@ -1265,7 +1265,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(
             dir.path(),
-            "---\ntasklist: choices-single\n---\n## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
+            "---\nchoices: single\n---\n## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
         );
         let spec = GenerationSpec {
             goal: "learn it".to_string(),
@@ -1351,7 +1351,7 @@ mod tests {
 
     #[test]
     fn a_generated_choice_note_cannot_name_a_position_that_shuffle_changes() {
-        let deck = "---\ntasklist: choices-single\n---\n## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n> [!NOTE]\n> Option 2 reverses the relation.\n";
+        let deck = "---\nchoices: single\n---\n## Pick one\n- [x] Correct claim\n- [ ] First misconception\n- [ ] Second misconception\n> [!NOTE]\n> Option 2 reverses the relation.\n";
 
         for card_style in [GenerateCardStyle::Mixed, GenerateCardStyle::AuthoredChoices] {
             let spec = GenerationSpec {
@@ -1379,7 +1379,7 @@ mod tests {
             ),
             (
                 GenerateCardStyle::AuthoredChoices,
-                "---\ntasklist: choices-single\n---\n## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
+                "---\nchoices: single\n---\n## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
             ),
         ];
 
@@ -1440,7 +1440,7 @@ mod tests {
             &spec,
         );
         let choices = validate_card_style(
-            "---\ntasklist: choices-single\n---\n## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
+            "---\nchoices: single\n---\n## Pick one\n- [ ] Wrong A\n- [x] Correct\n- [ ] Wrong B\n",
             &spec,
         );
 

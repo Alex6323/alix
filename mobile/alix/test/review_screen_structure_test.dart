@@ -171,7 +171,7 @@ void main() {
       deck,
       '## Capital of France?\n'
       '- [x] Paris\n- [ ] Rome\n- [ ] Bern\n- [ ] Madrid\n'
-      '<!-- choices-single -->\n'
+      '<!-- choices: single -->\n'
       '<!-- id: card-choice -->\n',
     );
     makeDue(deck, root.path);

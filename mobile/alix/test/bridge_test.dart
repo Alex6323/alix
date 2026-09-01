@@ -138,7 +138,7 @@ void main() {
       '## What does \$E = mc^2\$ describe?\n'
       '- [x] **\$E = mc^2\$**\n'
       '- [ ] \$F = ma\$\n'
-      '<!-- choices-single -->\n'
+      '<!-- choices: single -->\n'
       '> [!NOTE]\n'
       '> Energy and mass use \$E = mc^2\$.\n'
       '> - [x] Includes \$c^2\$\n'
@@ -290,7 +290,7 @@ void main() {
       '- [x] two\n'
       '- [ ] three\n'
       '- [x] four\n'
-      '<!-- choices-multiple -->\n'
+      '<!-- choices: multiple -->\n'
       '<!-- id: card-multi -->\n',
     );
     final session = ReviewSession.open(
@@ -333,7 +333,7 @@ void main() {
       '## Pick one\n'
       '- [x] yes\n'
       '- [ ] no\n'
-      '<!-- choices-single -->\n'
+      '<!-- choices: single -->\n'
       '<!-- id: card-single -->\n',
     );
     final single = ReviewSession.open(
@@ -354,7 +354,7 @@ void main() {
       '- [ ] two\n'
       '- [x] three\n'
       '- [x] five\n'
-      '<!-- choices-multiple -->\n'
+      '<!-- choices: multiple -->\n'
       '<!-- id: card-multiport -->\n',
     );
     final port = const ReviewBridgeFactory().open(
@@ -949,7 +949,7 @@ void main() {
       '## What does \$E = mc^2\$ describe?\n'
       '- [x] **\$E = mc^2\$**\n'
       '- [ ] \$F = ma\$\n'
-      '<!-- choices-single -->\n'
+      '<!-- choices: single -->\n'
       '> [!NOTE]\n'
       '> Energy and mass use \$E = mc^2\$.\n'
       '> - [x] Includes \$c^2\$\n'
