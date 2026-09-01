@@ -980,7 +980,7 @@ mod tests {
             "## What does $E = mc^2$ describe?\n\
              - [x] **$E = mc^2$**\n\
              - [ ] $F = ma$\n\
-             <!-- choices-single -->\n\
+             <!-- choices: single -->\n\
              > [!NOTE]\n\
              > Energy and mass use $E = mc^2$.\n\
              > - [x] Includes $c^2$\n\

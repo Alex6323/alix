@@ -2583,6 +2583,14 @@ fn apply_directive(
             }
             directives.token = Some(value);
         }
+        // Valid `choices: single|multiple` bodies are consumed as invocations
+        // before the directive split, so any value arriving here is invalid.
+        "choices" => {
+            return Err(ParseError::ChoiceShape {
+                line,
+                message: format!("`choices:` takes `single` or `multiple`, not `{value}`"),
+            });
+        }
         "reveal" => match parse_reveal(&value) {
             Some(reveal) => {
                 directives.reveal = Some(reveal);
@@ -5384,6 +5392,33 @@ a
         let deck = parse("## q\n- [x] a\n- [ ] b\n- [x] c\n<!-- choices: multiple -->\n");
         assert_eq!(vec!["a", "c"], deck.cards[0].back);
         assert_eq!(Vec::<Lint>::new(), deck.lints);
+    }
+
+    #[test]
+    fn an_unbuilt_choices_value_is_loud_on_both_surfaces() {
+        let deck = parse("---\nchoices: ordered\n---\n## q\n- [x] a\n- [ ] b\n");
+        assert_eq!(
+            vec!["- [x] a", "- [ ] b"],
+            deck.cards[0].back,
+            "a bad deck-wide value maps nothing"
+        );
+        assert!(
+            deck.lints.iter().any(
+                |lint| matches!(lint.kind, LintKind::BadValue { ref key, .. } if key == "choices")
+            ),
+            "a bad deck-wide value is the ordinary bad-value lint, like every other key: {:?}",
+            deck.lints
+        );
+
+        let error = err("## q\n- [x] a\n- [ ] b\n<!-- choices: ordered -->\n");
+        assert!(
+            matches!(
+                error,
+                ParseError::ChoiceShape { line: 4, ref message }
+                    if message.contains("`choices:` takes `single` or `multiple`")
+            ),
+            "an invocation-shaped comment with an unbuilt value fails loud: {error:?}"
+        );
     }
 
     #[test]

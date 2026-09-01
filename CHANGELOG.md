@@ -184,16 +184,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   angles is not), and a comment protects nothing mid-line: a tag
   inside `text <!-- <div> -->` errors like any other.
 
-- Named mapping invocations: `<!-- choices-single -->` or
-  `<!-- choices-multiple -->` below a task list makes it a choice card (one
+- Named mapping invocations: `<!-- choices: single -->` or
+  `<!-- choices: multiple -->` below a task list makes it a choice card (one
   correct answer, or select-all-that-apply), `<!-- cards -->` below a pipe
-  table makes it a card table, and the `tasklist:` / `table:` frontmatter
-  keys declare a deck-wide default with `<!-- plain -->` as the per-block
-  escape. A single-token comment naming no known invocation is an
-  `alix doctor` finding; a `choices-multiple` list that checks exactly one
+  table makes it a card table, and the `choices:` frontmatter key declares a
+  deck-wide task-list default with `<!-- plain -->` as the per-block
+  escape. A comment naming no known invocation or directive is an
+  `alix doctor` finding; a `choices: multiple` list that checks exactly one
   option is legal and silent.
 
-- The select-all wire: a `choices-multiple` card serves every authored
+- The select-all wire: a `choices: multiple` card serves every authored
   option with `choices_multiple: true` in the review state, and
   `POST /api/choose {indices, card}` grades the pick by exact set equality
   (`MultiChooseFeedbackDto`). Select-all builds only from the authored
@@ -426,19 +426,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after a confirmation.
 
 ### Changed
-- **Breaking:** the mapping and scheduling directives are now key: value on
-  every surface, and the deck-wide table default is gone. The task-list
-  invocation comments are `<!-- choices: single -->` and
-  `<!-- choices: multiple -->` (previously `choices-single` /
-  `choices-multiple`); the deck-wide default is the frontmatter key
-  `choices: single|multiple` (previously `tasklist:`); the scheduling key is
-  `review: scheduled|sequential` in deck frontmatter and workspace
-  `[defaults]` (previously `order:`); and the `table:` frontmatter key is
-  retired with no replacement, so a pipe table becomes cards only through
-  `<!-- cards -->` on the line below it. Single-word instructions without a
-  key are no longer allowed in frontmatter; the bare `<!-- cards -->` and
-  `<!-- plain -->` invocations stay per-block only. The retired spellings
-  fail as ordinary unknown vocabulary.
+- **Breaking:** the scheduling key renames from `order:` to
+  `review: scheduled|sequential`, in deck frontmatter and workspace
+  `[defaults]`; `order:` now fails as an ordinary unknown key. In the same
+  ruling the (unreleased) mapping grammar went key: value on every surface:
+  the invocations are `<!-- choices: single -->` and
+  `<!-- choices: multiple -->`, the deck-wide default is the `choices:`
+  frontmatter key, and no `table:` key exists, so a pipe table becomes cards
+  only through `<!-- cards -->` on the line below it. Single-word
+  instructions without a key are not allowed in frontmatter; the bare
+  `<!-- cards -->` and `<!-- plain -->` invocations stay per-block only. The
+  pre-rename spellings (`tasklist:`, `table:`, `choices-single`,
+  `choices-multiple`) fail as ordinary unknown vocabulary.
 - **Breaking:** a GFM footnote definition line (`[^label]:` at line start,
   outside code) is now a hard parse error naming footnotes as unsupported.
   It previously parsed silently, as prose or worse as a link definition
@@ -671,7 +670,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - BREAKING: comment machinery trails its block (everything-trails).
   A mapping invocation (`<!-- cards -->`, `<!-- plain -->`,
-  `<!-- choices-single -->`, `<!-- choices-multiple -->`) now sits on
+  `<!-- choices: single -->`, `<!-- choices: multiple -->`) now sits on
   the line directly below the table, task list, or `---` it maps,
   never above; a recognized invocation above its block fails loud with
   the line, the why, and the fix. One invocation maps exactly one
@@ -733,8 +732,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   table without an invocation (or deck default) no longer becomes a choice
   card or card table: it stays literal content, so a pasted GFM document
   loads without acquiring study semantics. Existing decks that relied on
-  auto-recognition must opt in via the new invocations or frontmatter
-  defaults; generated decks declare `tasklist: choices-single` themselves.
+  auto-recognition must opt in via the new invocations or the deck-wide
+  `choices:` default; generated decks declare `choices: single` themselves.
   Under an invocation, shape violations that used to be lints (mixed
   content, a wrong `[x]` count, a missing distractor) fail loudly.
 
@@ -1004,10 +1003,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   builders ran the checked options through the answer-DISPLAY helpers, which
   exist for an answer that carries supporting blocks: `readable_answer_lines`
   drops a `>` marker and `gradeable_answer_lines` removes a quoted line
-  outright. So a `choices-single` card whose correct option was quoted could
+  outright. So a `choices: single` card whose correct option was quoted could
   normalize onto an unquoted distractor and silently stop being a choice card,
   a quoted correct option and a quoted distractor projected differently (the
-  odd one out gave the answer away), and a `choices-multiple` card lost every
+  odd one out gave the answer away), and a `choices: multiple` card lost every
   quoted correct option from its select-all set, which changed what the card
   asserts rather than how it looks. An authored option is exactly one
   task-list line and an invoked choice card may carry no other answer content,

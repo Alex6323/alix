@@ -56,6 +56,6 @@ Rules that hold whatever the shape:
 - No two cards may test the same fact. Vary what is asked; do not
   rephrase.
 
-`order:` and `sampling:` are not shapes. They modify how an existing
+`review:` and `sampling:` are not shapes. They modify how an existing
 deck is served and are documented with the other directives.
 <!-- ANCHOR_END: guide -->

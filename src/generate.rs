@@ -798,6 +798,19 @@ mod tests {
     }
 
     #[test]
+    fn the_card_shape_guide_teaches_the_current_review_key() {
+        let guide = card_shape_guide();
+        assert!(
+            !guide.contains("`order:`"),
+            "the production generator guide still teaches the retired `order:` key: {guide}"
+        );
+        assert!(
+            guide.contains("`review:`"),
+            "the production generator guide omits the replacement `review:` key: {guide}"
+        );
+    }
+
+    #[test]
     fn mixed_prompt_embeds_the_shared_card_shape_guide_and_its_syntax() {
         let prompt = build_prompt("https://example.org/page", true, &cfg(12), &spec());
         let guide = card_shape_guide();
