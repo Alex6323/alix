@@ -73,18 +73,12 @@
 # mask the bit is 0 for EVERY input, so OR and XOR give the same result
 # and no test can distinguish them. The other eleven mixer mutants were
 # killed by pinning uuid_from_seed's exact output for known seeds.
-src/ask.rs: replace | with ^ in random_uuid
+src/ask.rs: replace | with ^ in uuid_from_seed
 
 # UNREACHABLE. parse_drafted_card rejects either empty side
 # before this condition, so no single-empty state can reach it and
 # the two operators are indistinguishable from any input.
 src/ask.rs: replace || with && in parse_drafted_card
-
-# DEAD-PATH. synthesize_virtual stores this line number only on the Card, and
-# WarmItem::from_card discards it before any output is generated; the
-# value has no consumer on this path.
-src/cli/deck.rs: replace + with - in augment_cmd
-src/cli/deck.rs: replace + with * in augment_cmd
 
 # IO-LEAF. After the announce seam, local_lan_ip is three lines of pure
 # syscall (bind, connect, read the local address): no logic remains to
@@ -104,8 +98,9 @@ src/parser/sidecar.rs:39: replace + with * in without_notes
 # EQUIVALENT. key_rank's only consumer is a sort_by_key; only pairwise
 # order is observable. Ranks are canonical 0..=18, unknown 19, `for` 20,
 # `id` 21; under `* 2` id becomes 38, and no key can rank inside (21, 38),
-# so every pairwise comparison is unchanged for every input.
-src/parser/frontmatter.rs:368: replace + with * in key_rank
+# so every pairwise comparison is unchanged for every input. Line-pinned to
+# the `id` rank; the `for` rank immediately above is a different site.
+src/parser/frontmatter.rs:387: replace + with * in key_rank
 
 # EQUIVALENT, provably. `ground` reaches this comparison only through
 # `hex_color`, so `ink` is always the luminance of an 8-bit RGB triple.
@@ -136,33 +131,21 @@ src/diagram.rs:247: replace > with >= in contrast
 src/icon.rs:199: replace < with <= in strip_attrs
 
 # EQUIVALENT. The only extra candidate the widened bound admits is
-# `at == glyphs.len()`, and `raw` is `glyphs.get(at)` (src/inline.rs:623), so
+# `at == glyphs.len()`, and `raw` is `glyphs.get(at)` (src/inline.rs:617), so
 # that iteration reads `None`, the `matches!` is false, the loop advances once
-# more and stops. The very next line tests `raw(at) != Some(closer)`, which is
-# true for an out-of-bounds `at` either way, so both versions return `None`.
-# Line-pinned: the argument is about this one bound.
-src/inline.rs:674: replace < with <= in link_tail_end
+# more and stops. The check at line 673 then tests
+# `raw(at) != Some(closer)`, which is true for an out-of-bounds `at` either
+# way, so both versions return `None`. Line-pinned to the quoted-title closer
+# scan; the angle-destination bound at line 633 is a different site.
+src/inline.rs:668: replace < with <= in link_tail_end
 
-# EQUIVALENT. The arm has already matched `'\'`, which is itself a member of
-# the `'<' | '>' | '\'` set the guard tests, so the mutant guard is always
-# true and the arm always skips two. The original diverges only when the byte
-# after the backslash would be handled differently on its own pass, and the
-# bytes that would be are exactly the three the guard already covers, where it
-# is true in both versions. A trailing backslash ends the loop either way.
-# Line-pinned: the argument is about this one lookahead.
-src/inline.rs:1003: replace + with * in image_destination_end
-
-# EQUIVALENT, for the state transition proved directly above: forcing the
-# guard true is the same edit as making its lookahead always match.
-src/inline.rs:1002: replace match guard chars .get(index + 1) .is_some_and(|ch| matches!(ch, '<' | '>' | '\\')) with true in image_destination_end
-
-# EQUIVALENT. Both callers enter with `chars[start] == '<'`: src/inline.rs:928
-# sits below the `chars[index] != '<'` early-continue at :920, and :1206 tests
+# EQUIVALENT. Both callers enter with `chars[start] == '<'`: src/inline.rs:925
+# sits below the `chars[index] != '<'` early-continue at :921, and :1268 tests
 # it explicitly. The widened range therefore adds one candidate that is `'<'`,
 # never the `'>'` the search wants, so `find` returns the same index. The body
-# slice on the next line reads `chars[start + 1..close]` and the mutant does
+# slice at line 1120 reads `chars[start + 1..close]` and the mutant does
 # not touch it. Line-pinned: the argument is about this one range start.
-src/inline.rs:1057: replace + with * in autolink_end
+src/inline.rs:1119: replace + with * in autolink_end
 
 # EQUIVALENT. `start` is the index of the first line accepted as a
 # frontmatter fence, a `# ` heading, or a `## ` heading, so `lines[start]`
@@ -175,12 +158,12 @@ src/inline.rs:1057: replace + with * in autolink_end
 # it. Line-pinned: the argument is about this one loop bound.
 # Classified by Codex from rotation shard 12; the proof re-read and both
 # mutants re-run before landing.
-src/generate.rs:532: replace > with >= in clean_output
-src/generate.rs:532: replace + with * in clean_output
+src/generate.rs:540: replace > with >= in clean_output
+src/generate.rs:540: replace + with * in clean_output
 
 # NON-TERMINATING. `end /= 1` leaves `end` unchanged, and this statement is
 # the branch's only advance: the loop condition and the line it inspects are
 # then invariant, so every budget produces a hang. Not executed here on
 # purpose, since running it wedges the suite; the proof is the site, not the
 # operator. Line-pinned. Classified by Codex from rotation shard 12.
-src/generate.rs:535: replace -= with /= in clean_output
+src/generate.rs:543: replace -= with /= in clean_output

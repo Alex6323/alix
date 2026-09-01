@@ -1982,6 +1982,11 @@ mod tests {
                 "a raw inner angle breaks the image destination",
             ),
             (
+                "![d](<a\\\nb>)",
+                6,
+                "a backslash cannot hide a newline in an image destination",
+            ),
+            (
                 "[t](<a b c>)",
                 5,
                 "a link destination is not the image form",
