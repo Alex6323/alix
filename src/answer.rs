@@ -68,27 +68,9 @@ impl Input {
     }
 }
 
-/// The ink line: a byte that moves no ink horizontally cannot be typed from
-/// what the screen shows, so it never grades; joiners, variant selectors, and
-/// direction controls are the learner's device, not the learner. MVS is
-/// deliberately absent: it spaces, so it grades.
-fn paints_no_ink(c: char) -> bool {
-    matches!(
-        c,
-        '\u{00AD}'
-            | '\u{200B}'..='\u{200D}'
-            | '\u{2060}'
-            | '\u{FE0E}'
-            | '\u{FE0F}'
-            | '\u{202A}'..='\u{202C}'
-            | '\u{2066}'..='\u{2069}'
-            | '\u{E0000}'..='\u{E007F}'
-    )
-}
-
 pub fn normalize_answer(s: &str) -> String {
     s.chars()
-        .filter(|c| !paints_no_ink(*c))
+        .filter(|c| !crate::invisible::paints_no_ink(*c))
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()

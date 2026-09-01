@@ -476,7 +476,15 @@ id, augmenting, receiving a shared deck, and every `alix doctor` repair:
 - a leading byte-order mark is dropped;
 - a line's trailing carriage returns are dropped, so CRLF endings become LF,
   everywhere in the file;
-- trailing spaces and tabs are removed.
+- trailing spaces and tabs are removed;
+- invisible bytes with no rendered role are dropped from prose: form feed,
+  DEL, a byte-order mark anywhere past the file start, a carriage return in
+  the middle of a line, and the two bidi override characters LRO and RLO.
+  Every invisible character that does render something keeps its place:
+  zero-width joiners and non-joiners (Persian and Indic text), the zero-width
+  space and word joiner (wrap control), the soft hyphen, variation selectors
+  (emoji presentation), and the bidi isolates and embeddings that make
+  mixed-direction text read correctly.
 
 Two things survive. A **hard line break**, meaning a line ending in two or
 more spaces, is kept and written as exactly two spaces, so a deck that renders
@@ -489,6 +497,19 @@ card from its cached notes and distractors.
 alix never rewrites a file it had no other reason to touch, so a deck you only
 read is left exactly as it is. If an editor puts those bytes back after the
 deck was initialized, `alix doctor <deck> --normalize` rewrites it.
+
+Because the kept invisibles are, by definition, impossible to see, `alix
+doctor` tells you about them: one calm per-deck note with counts by class
+(bytes inside a well-formed emoji stay out of the count, since you can see
+the emoji). The note is informational; a Persian, Thai, or emoji-rich deck is
+supposed to look like that. Doctor warns in exactly two cases, because these
+two have no legitimate reading: tag characters outside a flag emoji, which
+encode invisible text, and bidi override characters inside a code fence,
+where the rendered order of the code can differ from the stored order.
+
+Typed answers are graded on what the screen shows: a character that paints no
+ink (a zero-width joiner your emoji picker added, a soft hyphen, a variation
+selector) never decides pass or fail, on either side of the comparison.
 
 ## HTML in a deck
 

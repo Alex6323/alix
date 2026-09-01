@@ -49,6 +49,7 @@ pub mod icon;
 #[cfg(feature = "full")]
 pub mod import;
 pub mod inline;
+pub mod invisible;
 pub mod library;
 pub mod listing;
 pub mod log;

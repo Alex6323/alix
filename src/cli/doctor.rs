@@ -108,6 +108,8 @@ fn deck_findings(path: &Path, report: &mut Report) {
         }
     }
 
+    invisible_byte_findings(path, &text, report);
+
     let augment = Deck::load(path)
         .ok()
         .and_then(|deck| alix::augment::AugmentCache::open_for_deck(&deck).ok());
@@ -221,6 +223,37 @@ fn span_anchor_findings(path: &Path, cards: &[alix::card::Card], report: &mut Re
                 region.line,
             ));
         }
+    }
+}
+
+fn invisible_byte_findings(path: &Path, text: &str, report: &mut Report) {
+    let found = alix::invisible::survey_prose(text.lines());
+    if found.stray_tags > 0 {
+        report.warn(format!(
+            "{}: {} tag character(s) outside a flag sequence: they encode invisible text",
+            path.display(),
+            found.stray_tags
+        ));
+    }
+    if let Some(line) = alix::invisible::first_fenced_reversal_override(text) {
+        report.warn(format!(
+            "{}: line {line}: a fence contains bidirectional override characters; \
+             rendered order may differ from stored order",
+            path.display()
+        ));
+    }
+    let named: Vec<String> = found
+        .counts
+        .iter()
+        .filter(|(label, _)| **label != "TAG")
+        .map(|(label, n)| format!("{label} {n}"))
+        .collect();
+    if !named.is_empty() {
+        report.note(format!(
+            "{}: invisible characters kept as authored: {} (rendered, never graded)",
+            path.display(),
+            named.join(", ")
+        ));
     }
 }
 
@@ -1523,6 +1556,83 @@ mod tests {
         )
         .unwrap();
         path
+    }
+
+    #[test]
+    fn kept_invisibles_draw_one_calm_note_and_nothing_warns() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = anchor_deck(&dir, "an\u{200B}swer with a soft\u{00AD}hyphen\n");
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        let note = report
+            .notes
+            .iter()
+            .find(|n| n.contains("invisible"))
+            .expect("one calm note names the invisible bytes");
+        assert!(
+            note.contains("ZSWP 1") || note.contains("ZWSP 1"),
+            "counts by class: {note}"
+        );
+        assert!(note.contains("SHY 1"), "counts by class: {note}");
+        assert!(
+            report.warnings.iter().all(|w| !w.contains("invisible")),
+            "legitimate invisibles never warn: {:?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn an_emoji_rich_deck_draws_no_invisible_note() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = anchor_deck(
+            &dir,
+            "\u{1F469}\u{200D}\u{1F680} and \u{1F44D}\u{FE0F} and \u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}\n",
+        );
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        assert!(
+            report.notes.iter().all(|n| !n.contains("invisible")),
+            "an emoji-only deck is supposed to look like that: {:?}",
+            report.notes
+        );
+    }
+
+    #[test]
+    fn stray_tag_characters_warn_about_invisible_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = anchor_deck(&dir, "pay\u{E0067}\u{E0061}load\n");
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        assert!(
+            report.warnings.iter().any(|w| w.contains("invisible text")),
+            "tag characters outside a flag are the stealth shape: {:?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn a_fence_holding_reversal_overrides_warns_and_embeddings_do_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = anchor_deck(&dir, "```\nx\u{202E}y\n```\n");
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        assert!(
+            report.warnings.iter().any(|w| w.contains("rendered order")),
+            "the Trojan Source shape warns factually: {:?}",
+            report.warnings
+        );
+
+        let calm = anchor_deck(&dir, "```\nx\u{202A}y\u{202C}\n```\n");
+        let mut calm_report = Report::default();
+        deck_findings(&calm, &mut calm_report);
+        assert!(
+            calm_report
+                .warnings
+                .iter()
+                .all(|w| !w.contains("rendered order")),
+            "embeddings in a fence are not the reversal shape: {:?}",
+            calm_report.warnings
+        );
     }
 
     #[test]

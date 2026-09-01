@@ -20,6 +20,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   judged on what the screen shows rather than on what a device's
   keyboard or emoji picker happens to emit. Spacing characters still
   grade.
+- `alix doctor` reports the invisible characters a deck keeps: one calm
+  per-deck note with counts by class, emoji-aware so bytes inside a
+  well-formed emoji stay silent. It warns only where a byte has no
+  legitimate reading: tag characters outside a flag emoji (they encode
+  invisible text) and bidi override characters inside a code fence
+  (rendered order may differ from stored order).
 - `alix doctor` flags a pipe table that declares no mapping: a bare table
   still renders plain, and the new lint asks for an explicit
   `<!-- cards -->` or `<!-- plain -->` so a forgotten mapping cannot
