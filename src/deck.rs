@@ -183,8 +183,8 @@ impl Deck {
             let mut card = card;
             card.sampling = card.sampling.or(settings.sampling);
             let direction = card.direction.or(settings.direction).unwrap_or_default();
-            // Keying on the hole/region (not direction) stops a deck-wide "both" from
-            // reversing cloze or region cards.
+            // Keying on the region (not direction) stops a deck-wide "both" from
+            // reversing region cards.
             if card.is_blank_card() || direction == Direction::Forward {
                 expanded.push(card);
             } else {

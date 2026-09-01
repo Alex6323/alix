@@ -203,7 +203,7 @@ struct Parsed {
     path: PathBuf,
     deck_token: Option<String>,
     digest: u64,
-    /// One entry per composed id, so a cloze card's holes and a table's rows
+    /// One entry per composed id, so a card's regions and a table's rows
     /// each contribute their own claim over one shared block line.
     cards: Vec<ScannedCard>,
 }
@@ -298,7 +298,7 @@ fn deck_dupes(parsed: &[Parsed]) -> (Vec<(PathBuf, PathBuf, String)>, Vec<usize>
 
 /// Authored-identity duplicates across the non-excluded decks. One authored
 /// block is ONE claim however many review units it expands to, so a block's
-/// sibling holes, table rows, reversed half, and regions co-own their base
+/// sibling regions, table rows, and reversed half co-own their base
 /// legally while two different blocks never do. Grouping on the composed id
 /// instead would both miss a pair whose shapes differ (a plain card and a
 /// cloze copy of it) and let one block be elected keeper of one unit and

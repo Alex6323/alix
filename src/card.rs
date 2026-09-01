@@ -554,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn equality_is_exactly_token_hole_and_direction() {
+    fn equality_is_exactly_token_region_and_direction() {
         let base = stamped("deck", "front", &["back"], None, "tok");
         let mut presentation_only = base.clone();
         presentation_only.front = "different".to_string();
