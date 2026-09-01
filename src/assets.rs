@@ -1346,9 +1346,10 @@ mod tests {
         let source = directory.path().join("notes.md");
         std::fs::write(&source, "one \r\ntwo\r\nthree\r\n").unwrap();
         std::fs::write(directory.path().join("diagram.PNG"), [0, 1, 2, 255]).unwrap();
+        std::fs::write(directory.path().join("old image.png"), [9, 9]).unwrap();
         let path = directory.path().join("decks/facts.md");
         let text = format!(
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## q\n![d](diagram.PNG)\na\n<!-- at: notes.md:2 -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## q\n![d](diagram.PNG)\n![m](<old image.png> \"Old title\")\na\n<!-- at: notes.md:2 -->\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();
@@ -1360,7 +1361,7 @@ mod tests {
         assert_eq!(
             FreezeReport {
                 evidence: 1,
-                images: 1,
+                images: 2,
                 diagrams: 0,
                 diagram_warnings: Vec::new(),
             },
@@ -1378,6 +1379,14 @@ mod tests {
         );
         let image_name = object_name(&[0, 1, 2, 255], "png");
         assert!(frozen.contains(&format!("](assets/deck-deck1/{image_name})")));
+        let titled_name = object_name(&[9, 9], "png");
+        assert!(
+            frozen.contains(&format!(
+                "![m](<assets/deck-deck1/{titled_name}> \"Old title\")"
+            )),
+            "the rewrite replaces only the destination span, keeping the \
+             title: {frozen}"
+        );
         assert_eq!(
             [0, 1, 2, 255],
             std::fs::read(

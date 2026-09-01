@@ -911,12 +911,15 @@ fn angle_scan(chars: &[char]) -> AngleScan {
             index = code_span_end(chars, index);
             continue;
         }
-        if chars[index] != '<' || is_escaped(chars, index) {
-            index += 1;
+        if chars[index] == ']'
+            && !is_escaped(chars, index)
+            && let Some(end) = image_tail_end(chars, index)
+        {
+            index = end + 1;
             continue;
         }
-        if let Some(close) = image_destination_end(chars, index) {
-            index = close + 1;
+        if chars[index] != '<' || is_escaped(chars, index) {
+            index += 1;
             continue;
         }
         if let Some(end) = autolink_end(chars, index) {
@@ -974,11 +977,13 @@ fn slot_open_len(slot: usize) -> usize {
 /// mirroring the parser's image grammar (label is the nearest `![` left
 /// of the `]` with no `]` between; `\<` `\>` `\\` escape inside; a raw
 /// `<` breaks the form).
-fn image_destination_end(chars: &[char], start: usize) -> Option<usize> {
-    if start < 2 || chars[start - 1] != '(' || chars[start - 2] != ']' {
+// The whole accepted tail is one skip so tag-shape scanning never
+// resumes inside a destination or its dropped title.
+fn image_tail_end(chars: &[char], close: usize) -> Option<usize> {
+    if chars.get(close + 1) != Some(&'(') {
         return None;
     }
-    let mut label = start - 2;
+    let mut label = close;
     loop {
         if label == 0 {
             return None;
@@ -990,26 +995,50 @@ fn image_destination_end(chars: &[char], start: usize) -> Option<usize> {
             _ => {}
         }
     }
-    let mut index = start + 1;
-    while index < chars.len() {
-        match chars[index] {
-            '\\' if chars
-                .get(index + 1)
-                .is_some_and(|ch| matches!(ch, '<' | '>' | '\\')) =>
-            {
-                index += 2;
+    let mut at = close + 2;
+    if chars.get(at) == Some(&'<') {
+        at += 1;
+        loop {
+            match chars.get(at)? {
+                '\\' if matches!(chars.get(at + 1), Some('<' | '>' | '\\')) => at += 2,
+                '<' | '\n' => return None,
+                '>' => {
+                    at += 1;
+                    break;
+                }
+                _ => at += 1,
             }
-            '<' => return None,
-            '>' => return image_title_tail(chars, index + 1).then_some(index),
-            _ => index += 1,
+        }
+    } else {
+        let mut depth = 0usize;
+        loop {
+            match chars.get(at)? {
+                '\\' if matches!(chars.get(at + 1), Some('(' | ')' | '\\')) => at += 2,
+                ')' if depth == 0 => break,
+                ')' => {
+                    depth -= 1;
+                    at += 1;
+                }
+                '(' => {
+                    depth += 1;
+                    at += 1;
+                }
+                ch if crate::parser::WHITESPACE.contains(ch) => {
+                    if depth != 0 {
+                        return None;
+                    }
+                    break;
+                }
+                _ => at += 1,
+            }
         }
     }
-    None
+    image_title_tail(chars, at)
 }
 
 // Mirrors `title_tail` in parser::cloze: the `)` may follow the
 // destination directly or after the dropped GFM title.
-fn image_title_tail(chars: &[char], from: usize) -> bool {
+fn image_title_tail(chars: &[char], from: usize) -> Option<usize> {
     let whitespace = |at: usize| {
         chars
             .get(at)
@@ -1021,28 +1050,28 @@ fn image_title_tail(chars: &[char], from: usize) -> bool {
     }
     let separated = at > from;
     match chars.get(at).copied() {
-        Some(')') => true,
+        Some(')') => Some(at),
         Some(open @ ('"' | '\'' | '(')) if separated => {
             let closer = if open == '(' { ')' } else { open };
             at += 1;
             loop {
                 match chars.get(at).copied() {
-                    None => return false,
+                    None => return None,
                     Some('\\') => at += 2,
                     Some(ch) if ch == closer => {
                         at += 1;
                         break;
                     }
-                    Some('(') if open == '(' => return false,
+                    Some('(') if open == '(' => return None,
                     Some(_) => at += 1,
                 }
             }
             while whitespace(at) {
                 at += 1;
             }
-            chars.get(at) == Some(&')')
+            (chars.get(at) == Some(&')')).then_some(at)
         }
-        _ => false,
+        _ => None,
     }
 }
 
@@ -2000,6 +2029,14 @@ mod tests {
             (
                 "![d](<old image.png> (a title))",
                 "a paren-titled image destination in angles",
+            ),
+            (
+                "![m](my.png \"The <Moon>\")",
+                "an angle run inside a bare-destination image title",
+            ),
+            (
+                "![m](<my file.png> \"The <Moon>\")",
+                "an angle run inside a bracketed-destination image title",
             ),
             (
                 r"![d](<a\>b>)",

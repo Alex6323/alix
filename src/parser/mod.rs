@@ -544,17 +544,13 @@ fn image_references_in_line(line: &str, offset: usize, out: &mut Vec<ImageRefere
             cursor = alt_end.saturating_add(1);
             continue;
         };
-        let Some((source, after)) = cloze::scan_src(paren) else {
+        let Some((source, span, after)) = cloze::scan_src(paren) else {
             cursor = alt_end.saturating_add(1);
             continue;
         };
         let consumed = paren.len() - after.len();
         let paren_start = alt_end + 2;
-        let destination = if paren.starts_with('<') {
-            paren_start + 1..paren_start + consumed.saturating_sub(2)
-        } else {
-            paren_start..paren_start + consumed.saturating_sub(1)
-        };
+        let destination = paren_start + span.start..paren_start + span.end;
         if line.get(destination.clone()).is_none() {
             cursor = paren_start + consumed;
             continue;
@@ -1494,11 +1490,31 @@ fn footnote_definition(raw: &str) -> bool {
     let Some(rest) = trim_ws(raw).strip_prefix("[^") else {
         return false;
     };
-    let Some(end) = rest.find(']') else {
+    let mut escaped = false;
+    let mut close = None;
+    let mut label_bytes = 0usize;
+    for (at, ch) in rest.char_indices() {
+        if WHITESPACE.contains(&ch) {
+            return false;
+        }
+        if escaped {
+            escaped = false;
+            label_bytes += ch.len_utf8();
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            ']' => {
+                close = Some(at);
+                break;
+            }
+            _ => label_bytes += ch.len_utf8(),
+        }
+    }
+    let Some(close) = close else {
         return false;
     };
-    let label = &rest[..end];
-    !label.is_empty() && !label.contains(&WHITESPACE[..]) && rest[end + 1..].starts_with(':')
+    label_bytes > 0 && rest[close + 1..].starts_with(':')
 }
 
 fn link_definition(lines: &[&str], at: usize) -> Option<(String, usize)> {
@@ -4702,7 +4718,17 @@ a
         for (line, expected_source, expected_typed) in [
             (r"![](my\(file\).png)", "my(file).png", r"my\(file\).png"),
             (r"![](<a\>b.png>)", "a>b.png", r"a\>b.png"),
-            ("![](  spaced.png  )", "spaced.png", "  spaced.png  "),
+            ("![](  spaced.png  )", "spaced.png", "spaced.png"),
+            (
+                "![one](images/Moon.PNG \"title\")",
+                "images/Moon.PNG",
+                "images/Moon.PNG",
+            ),
+            (
+                "![d](<old image.png> \"Old title\")",
+                "old image.png",
+                "old image.png",
+            ),
         ] {
             let found = image_references(line);
             assert_eq!(1, found.len(), "for {line}");
@@ -7017,6 +7043,10 @@ a
         for (text, why) in [
             ("## q\n---\n[^1]: never supported\n", "column 0"),
             ("## q\n---\n  [^note]: indented\n", "definition indent"),
+            (
+                "## q\n---\n[^a\\]]: never supported\n",
+                "an escaped close inside the label",
+            ),
         ] {
             let err = super::parse("deck.md", text).unwrap_err();
             assert!(
@@ -7047,6 +7077,23 @@ a
             "a caretless bracket line keeps its ordinary meaning (the valid \
              link definition below it stays deck metadata)"
         );
+    }
+
+    #[test]
+    fn a_title_with_an_angle_run_parses_through_the_whole_deck_path() {
+        for (text, why) in [
+            (
+                "## q\n---\n![m](my.png \"The <Moon>\")\n",
+                "bare destination",
+            ),
+            (
+                "## q\n---\n![m](<my file.png> \"The <Moon>\")\n",
+                "bracketed destination",
+            ),
+        ] {
+            let deck = parse(text);
+            assert_eq!(1, deck.cards[0].images_back.len(), "{why}: {text}");
+        }
     }
 
     #[test]

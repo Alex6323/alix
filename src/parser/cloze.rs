@@ -56,7 +56,7 @@ fn scan_image<'a>(
 ) -> &'a str {
     if let Some((raw_alt, after_alt)) = inner.split_once(']')
         && let Some(paren) = after_alt.strip_prefix('(')
-        && let Some((src, after)) = scan_src(paren)
+        && let Some((src, _, after)) = scan_src(paren)
     {
         if src.is_empty() {
             lints.push(image_malformed(lineno));
@@ -77,14 +77,19 @@ fn scan_image<'a>(
     inner
 }
 
-pub(super) fn scan_src(paren: &str) -> Option<(String, &str)> {
+// The range is the destination's authored bytes within `paren`, the span
+// asset rewriting replaces; the decoded source and the range differ
+// whenever escapes or delimiters are involved.
+pub(super) fn scan_src(paren: &str) -> Option<(String, std::ops::Range<usize>, &str)> {
     match paren.strip_prefix('<') {
-        Some(bracketed) => bracketed_src(bracketed),
+        Some(bracketed) => {
+            bracketed_src(bracketed).map(|(src, interior, after)| (src, 1..1 + interior, after))
+        }
         None => unbracketed_src(paren),
     }
 }
 
-fn bracketed_src(arg: &str) -> Option<(String, &str)> {
+fn bracketed_src(arg: &str) -> Option<(String, usize, &str)> {
     let mut src = String::new();
     let mut rest = arg;
     while let Some(ch) = rest.chars().next() {
@@ -104,7 +109,10 @@ fn bracketed_src(arg: &str) -> Option<(String, &str)> {
                 }
             }
             '<' | '\n' => return None,
-            '>' => return title_tail(&rest[1..]).map(|after| (src, after)),
+            '>' => {
+                let interior = arg.len() - rest.len();
+                return title_tail(&rest[1..]).map(|after| (src, interior, after));
+            }
             _ => {
                 src.push(ch);
                 rest = &rest[ch.len_utf8()..];
@@ -114,13 +122,15 @@ fn bracketed_src(arg: &str) -> Option<(String, &str)> {
     None
 }
 
-fn unbracketed_src(arg: &str) -> Option<(String, &str)> {
+fn unbracketed_src(arg: &str) -> Option<(String, std::ops::Range<usize>, &str)> {
     let mut src = String::new();
     let mut depth = 1usize;
     let mut rest = arg;
+    let mut content_start = None;
     while let Some(ch) = rest.chars().next() {
         match ch {
             '\\' => {
+                content_start.get_or_insert(arg.len() - rest.len());
                 let after = &rest[1..];
                 if let Some(escaped) = after
                     .chars()
@@ -135,17 +145,20 @@ fn unbracketed_src(arg: &str) -> Option<(String, &str)> {
                 }
             }
             '(' => {
+                content_start.get_or_insert(arg.len() - rest.len());
                 depth += 1;
                 src.push('(');
                 rest = &rest[1..];
             }
             ')' => {
                 depth -= 1;
-                rest = &rest[1..];
                 if depth == 0 {
-                    return Some((src, rest));
+                    let end = arg.len() - rest.len();
+                    return Some((src, content_start.unwrap_or(end)..end, &rest[1..]));
                 }
+                content_start.get_or_insert(arg.len() - rest.len());
                 src.push(')');
+                rest = &rest[1..];
             }
             ch if WHITESPACE.contains(&ch) => {
                 if src.is_empty() {
@@ -154,10 +167,12 @@ fn unbracketed_src(arg: &str) -> Option<(String, &str)> {
                     if depth != 1 {
                         return None;
                     }
-                    return title_tail(rest).map(|after| (src, after));
+                    let span = content_start.unwrap_or(0)..arg.len() - rest.len();
+                    return title_tail(rest).map(|after| (src, span, after));
                 }
             }
             _ => {
+                content_start.get_or_insert(arg.len() - rest.len());
                 src.push(ch);
                 rest = &rest[ch.len_utf8()..];
             }
