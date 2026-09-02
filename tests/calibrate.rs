@@ -5,16 +5,17 @@
 //! `alix doctor --grading` also runs), to catch the one failure mode the
 //! deterministic tests structurally cannot: a *lenient* grader. "mastered" is
 //! only as honest as this stays. Each backend grades at its CLI-default model
-//! plus, where one is named, a weakest "floor" model, and every call prints
-//! the backend, the requested model, and the model the stream reported, so a
-//! PASS names what it certified.
+//! plus, where one is named, a weakest "floor" row (a floor model, or a floor
+//! reasoning effort where the CLI pins its model), and every call prints the
+//! backend, the requested row, and the model the stream reported, so a PASS
+//! names what it certified.
 //!
 //! Every test here is `#[ignore]`d, so `cargo test` (and CI) compile them but
 //! run none. Run them deliberately before every desktop/mobile release and
 //! after changing `grade_prompt`, with `make calibrate` (needs each calibrated
 //! backend CLI installed and logged in; makes real, costed calls). Unlike
-//! doctor's batched spot-check, each test grades its one probe per backend and
-//! model row in its own call, so a failure names exactly the drifted case.
+//! doctor's batched spot-check, each test grades its one probe per backend
+//! row in its own call, so a failure names exactly the drifted case.
 //!
 //! Two rules keep the probes robust to the model's nondeterminism. First,
 //! fixtures are clear-cut, never borderline. Second, a Safety probe asserts

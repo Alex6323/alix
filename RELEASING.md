@@ -114,7 +114,8 @@ at. **crates.io is not automated.**
 4. **Live grader calibration.** Run `make calibrate` even when no grading prompt
    changed: the live models can drift independently of this repository. Each
    probe grades on every calibrated backend CLI (the list and any per-backend
-   floor model live in `tests/calibrate.rs`), so those CLIs must be installed
+   floor row, a weakest model or a weakest reasoning effort, live in
+   `tests/calibrate.rs`), so those CLIs must be installed
    and logged in. These are the ignored, real-model grader tests, so this gate
    is costed, non-deterministic, authenticated, and deliberately manual rather
    than CI.
