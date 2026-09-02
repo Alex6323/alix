@@ -1669,9 +1669,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - A new card whose answer was revealed before the "Seen" acknowledgment no
   longer returns as a new card for the rest of the sitting. It came back
-  after every acquire cooldown offering only "Seen" again, so it could
+  after every introduction cooldown offering only "Seen" again, so it could
   never reach a graded review. Cards whose Recognize options need no AI
-  (table rows, authored option lists) hit this on every acquire, because
+  (table rows, authored option lists) hit this on every introduction, because
   picking an option is what reveals the answer.
 
 - A filesystem error after an atomic rename no longer strands progress or

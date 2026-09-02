@@ -45,7 +45,7 @@ the depth you choose when starting a session
 ## Where do new decks come from?
 write them yourself, or let the AI draft them from a source
 > [!NOTE]
-> In the web app: point alix at an article or your notes and it
+> In the web app: point alix at an article's URL and it
 > drafts the cards, which you edit like any deck.
 
 ## You are stuck on a card. Where do you get help without leaving the review?

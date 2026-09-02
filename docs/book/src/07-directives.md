@@ -24,7 +24,7 @@ full.
 | `id` | card | The HTML-comment card ID (`card-<token>`) anchors review history. It is minted by `alix deck init` or a deck-creation workflow and maintained by alix, never hand-authored. After a card table it is the table's container ID; each row's card composes it with the row stamp (`r:`) in the row's first cell. [→ ch 3](03-the-deck-format.md) |
 | `reveal` | deck · card | [How the answer is uncovered](04-review-modes.md): flip (default) or line. Cloze is triggered by a `blank:` directive, never by a `reveal:` value. |
 | `review` | deck | The order cards are served at review: `scheduled` (default) or `sequential`. [→ ch 5](05-scheduling.md) |
-| `input` | deck · card | `draw`: answer on a canvas instead of typing. [→ ch 4](04-review-modes.md) |
+| `input` | deck · card | `type` (default) or `draw`: answer on a canvas instead of typing. [→ ch 4](04-review-modes.md) |
 | `direction` | deck · card | [Review direction](06-cloze-direction-images.md): forward, reverse, both. |
 | `sampling` | deck · card | `on` (default) or `off`: whether a [card table](03-the-deck-format.md)'s rows may draw Recognize options from their own column. A table's value overrides the deck's in either direction. |
 | `strictness` | workspace | [Exam](12-the-ai-exam.md) grading rigor for the members, in `alix.toml`'s `[defaults]` only: a learner setting, so a deck declaring it gets an unknown-key lint. |
