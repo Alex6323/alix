@@ -87,6 +87,14 @@ class PublishCheckTest(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn("origin has no tag v0.8.0", result.stderr)
 
+    def test_an_unreachable_origin_fails_as_a_listing_error_not_a_missing_tag(self):
+        repo = released_repo()
+        git(repo, "remote", "set-url", "origin", os.path.join(repo, "no-such-origin.git"))
+        result = run_check(repo)
+        self.assertEqual(1, result.returncode)
+        self.assertIn("could not list origin's tags", result.stderr)
+        self.assertNotIn("origin has no tag", result.stderr)
+
     def test_a_tag_moved_locally_after_the_push_fails_naming_both_commits(self):
         repo = released_repo()
         commit(repo, "later.txt", "retagged\n")

@@ -313,16 +313,21 @@ package-verify:
 # proves `v<version>` exists, sits in HEAD's history, matches origin's tag,
 # and that the tree is clean; the recipe then checks that tag out, publishes,
 # and returns to the previous checkout whether or not cargo succeeded, exiting
-# with cargo's status. PUBLISH_DRY_RUN=1 builds the tarball at the tag and
-# uploads nothing. Irreversible without it.
+# with cargo's status. PUBLISH_DRY_RUN=1 (any non-empty value) builds the
+# tarball at the tag and uploads nothing. Irreversible without it.
 PUBLISH_FLAGS = $(if $(PUBLISH_DRY_RUN),--dry-run,)
 publish:
 	@sh scripts/publish-check.sh
 	@tag=v$$(sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml | head -n 1); \
-	git checkout -q "$$tag" || exit 1; \
-	echo "publish: checked out $$tag"; \
+	git checkout -q --detach "refs/tags/$$tag" || exit 1; \
+	echo "publish: checked out $$tag at $$(git rev-parse --short HEAD)"; \
 	cargo publish --locked $(PUBLISH_FLAGS); status=$$?; \
-	git checkout -q - && echo "publish: back on the previous checkout"; \
+	if git checkout -q -; then \
+		echo "publish: back on the previous checkout"; \
+	else \
+		echo "publish: cargo exited $$status but HEAD is still detached at $$tag; return by hand" >&2; \
+		[ $$status -ne 0 ] || status=1; \
+	fi; \
 	exit $$status
 
 # Test coverage (needs cargo-llvm-cov: `cargo install cargo-llvm-cov`). Prints a

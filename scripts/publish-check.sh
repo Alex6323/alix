@@ -22,7 +22,9 @@ local_sha=$(git rev-parse -q --verify "refs/tags/$tag^{commit}" 2>/dev/null || t
 git merge-base --is-ancestor "$local_sha" HEAD \
     || fail "tag $tag ($local_sha) is not in HEAD's history; publish from the branch that carries the release"
 
-remote_sha=$(git ls-remote --tags origin "refs/tags/$tag" | tail -n 1 | cut -f 1)
+listing=$(git ls-remote --tags origin "refs/tags/$tag") \
+    || fail "could not list origin's tags (network or SSH auth); nothing was published"
+remote_sha=$(printf '%s\n' "$listing" | tail -n 1 | cut -f 1)
 [ -n "$remote_sha" ] || fail "origin has no tag $tag; the release workflow builds from origin's tag, push it first"
 [ "$remote_sha" = "$local_sha" ] \
     || fail "tag $tag is $local_sha here but $remote_sha on origin; the two releases would differ"
