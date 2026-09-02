@@ -362,9 +362,7 @@ export function createSheets({
     return loadPreview();
   }
 
-  // The Doctor sheet: one row per check from /api/doctor (an open set the
-  // client never enumerates), each with a status glyph and, when something
-  // needs fixing, a muted remedy line.
+  // The /api/doctor check set is open; do not add a client-side allowlist.
   function doctorRow(r) {
     const glyph = r.status === "ok" ? "✓" : r.status === "warn" ? "!" : r.status === "fail" ? "✗" : "?";
     const row = el("div", "doc-row doc-" + r.status);
