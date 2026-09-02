@@ -171,12 +171,16 @@ at. **crates.io is not automated.**
 9. **Publish to crates.io (manual):** first `make package-verify`, which builds
    the crate from its own tarball the way crates.io will; a file the code
    `include_*!`s but the allowlist omits fails there and nowhere earlier
-   (0.8.0's card-shape guide did). Then, from the tag's tree
-   (`git checkout vX.Y.Z`; back to `main` afterwards), `make publish`: it
-   refuses unless HEAD carries `vX.Y.Z` with a clean tree, then runs
-   `cargo publish --locked`, so the crate is the tree the GitHub Release was
-   built from and not whatever `main` has moved to since. `cargo publish`
-   alone would package any tree under the manifest version. The package
+   (0.8.0's card-shape guide did). Then `make publish` from `main`: it takes
+   the version from `Cargo.toml`, refuses unless the tag `vX.Y.Z` exists,
+   sits in HEAD's history, and is the same commit origin carries (the one
+   the release workflow built), and unless the tree is clean; then it checks
+   that tag out, runs `cargo publish --locked`, and returns to `main` whether
+   or not cargo succeeded. The crate is therefore the tree the GitHub Release
+   was built from, not whatever `main` has moved to since; `cargo publish`
+   alone would package any tree under the manifest version.
+   `make publish PUBLISH_DRY_RUN=1` runs the whole sequence and uploads
+   nothing, which is the rehearsal to do first. The package
    stays lean via `Cargo.toml`'s `include` allowlist (`src/**`, `web/**`,
    `assets/decks/**`, `assets/licenses/**`, the card-shape guide, and the
    root README, CHANGELOG, the two license files, and NOTICE ship).

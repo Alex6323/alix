@@ -20,19 +20,31 @@ GIT_ENV = {
 
 
 def git(repo, *args):
-    subprocess.run(
+    return subprocess.run(
         ["git", *args], cwd=repo, env=GIT_ENV, check=True, capture_output=True, text=True
-    )
+    ).stdout.strip()
 
 
-def tagged_repo(tags=("v0.8.0",)):
-    repo = tempfile.mkdtemp(dir=os.environ.get("TMPDIR"))
-    git(repo, "init", "-q")
-    (pathlib.Path(repo) / "Cargo.toml").write_text(MANIFEST, encoding="utf-8")
-    git(repo, "add", "Cargo.toml")
-    git(repo, "commit", "-q", "-m", "release")
-    for tag in tags:
+def commit(repo, name, content):
+    (pathlib.Path(repo) / name).write_text(content, encoding="utf-8")
+    git(repo, "add", name)
+    git(repo, "commit", "-q", "-m", name)
+
+
+def released_repo(tag="v0.8.0", pushed=True):
+    workdir = tempfile.mkdtemp(dir=os.environ.get("TMPDIR"))
+    origin = os.path.join(workdir, "origin.git")
+    repo = os.path.join(workdir, "clone")
+    subprocess.run(["git", "init", "-q", "--bare", origin], env=GIT_ENV, check=True)
+    os.mkdir(repo)
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "remote", "add", "origin", origin)
+    commit(repo, "Cargo.toml", MANIFEST)
+    if tag:
         git(repo, "tag", tag)
+    git(repo, "push", "-q", "origin", "main")
+    if tag and pushed:
+        git(repo, "push", "-q", "origin", tag)
     return repo
 
 
@@ -43,33 +55,58 @@ def run_check(repo):
 
 
 class PublishCheckTest(unittest.TestCase):
-    def test_a_clean_checkout_of_the_manifest_tag_passes(self):
-        result = run_check(tagged_repo())
+    def test_a_clean_tree_with_the_pushed_manifest_tag_in_its_history_passes(self):
+        result = run_check(released_repo())
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("OK (HEAD is v0.8.0", result.stdout)
+        self.assertIn("OK (v0.8.0 = ", result.stdout)
 
-    def test_a_second_tag_on_the_same_commit_does_not_hide_the_release_tag(self):
-        result = run_check(tagged_repo(tags=("mobile-v0.3.0", "v0.8.0")))
-        self.assertEqual(0, result.returncode, result.stderr)
-
-    def test_a_commit_past_the_tag_fails_naming_the_tag_to_check_out(self):
-        repo = tagged_repo()
-        (pathlib.Path(repo) / "later.txt").write_text("codex work\n", encoding="utf-8")
-        git(repo, "add", "later.txt")
-        git(repo, "commit", "-q", "-m", "later")
+    def test_a_commit_past_the_tag_still_passes_because_the_recipe_checks_the_tag_out(self):
+        repo = released_repo()
+        commit(repo, "later.txt", "codex work\n")
         result = run_check(repo)
-        self.assertEqual(1, result.returncode)
-        self.assertIn("HEAD carries no tag v0.8.0", result.stderr)
-        self.assertIn("git checkout v0.8.0", result.stderr)
+        self.assertEqual(0, result.returncode, result.stderr)
 
-    def test_a_tag_for_another_version_fails_listing_what_head_carries(self):
-        result = run_check(tagged_repo(tags=("v0.7.0",)))
+    def test_a_missing_tag_fails_naming_the_manifest_version(self):
+        result = run_check(released_repo(tag=None))
         self.assertEqual(1, result.returncode)
         self.assertIn("no tag v0.8.0", result.stderr)
-        self.assertIn("tags on HEAD: v0.7.0", result.stderr)
+        self.assertIn("0.8.0", result.stderr)
 
-    def test_a_dirty_tree_at_the_tag_fails_listing_the_changes(self):
-        repo = tagged_repo()
+    def test_a_tag_for_another_version_does_not_count(self):
+        result = run_check(released_repo(tag="v0.7.0"))
+        self.assertEqual(1, result.returncode)
+        self.assertIn("no tag v0.8.0", result.stderr)
+
+    def test_a_tag_that_only_matches_the_version_as_a_pattern_does_not_count(self):
+        result = run_check(released_repo(tag="v0x8x0"))
+        self.assertEqual(1, result.returncode)
+        self.assertIn("no tag v0.8.0", result.stderr)
+
+    def test_a_tag_absent_from_origin_fails(self):
+        result = run_check(released_repo(pushed=False))
+        self.assertEqual(1, result.returncode)
+        self.assertIn("origin has no tag v0.8.0", result.stderr)
+
+    def test_a_tag_moved_locally_after_the_push_fails_naming_both_commits(self):
+        repo = released_repo()
+        commit(repo, "later.txt", "retagged\n")
+        git(repo, "tag", "-f", "v0.8.0")
+        result = run_check(repo)
+        self.assertEqual(1, result.returncode)
+        self.assertIn("on origin", result.stderr)
+        self.assertIn(git(repo, "rev-parse", "HEAD"), result.stderr)
+
+    def test_a_tag_outside_head_history_fails(self):
+        repo = released_repo()
+        git(repo, "checkout", "-q", "--orphan", "elsewhere")
+        commit(repo, "elsewhere.txt", "a root commit that never saw the tag\n")
+        self.assertNotEqual(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "v0.8.0"))
+        result = run_check(repo)
+        self.assertEqual(1, result.returncode)
+        self.assertIn("not in HEAD's history", result.stderr)
+
+    def test_a_modified_file_fails_listing_the_change(self):
+        repo = released_repo()
         (pathlib.Path(repo) / "Cargo.toml").write_text(MANIFEST + "\n", encoding="utf-8")
         result = run_check(repo)
         self.assertEqual(1, result.returncode)
@@ -77,16 +114,11 @@ class PublishCheckTest(unittest.TestCase):
         self.assertIn("Cargo.toml", result.stderr)
 
     def test_an_untracked_file_counts_as_dirty(self):
-        repo = tagged_repo()
+        repo = released_repo()
         (pathlib.Path(repo) / "scratch.log").write_text("", encoding="utf-8")
         result = run_check(repo)
         self.assertEqual(1, result.returncode)
         self.assertIn("scratch.log", result.stderr)
-
-    def test_a_tag_matching_the_version_only_as_a_pattern_fails(self):
-        result = run_check(tagged_repo(tags=("v0x8x0",)))
-        self.assertEqual(1, result.returncode)
-        self.assertIn("no tag v0.8.0", result.stderr)
 
 
 if __name__ == "__main__":

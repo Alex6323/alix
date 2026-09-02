@@ -308,13 +308,22 @@ package-verify:
 	cargo package --locked --allow-dirty
 	@echo 'package-verify: OK (the tarball builds on its own)'
 
-# Publish to crates.io from the tag's tree and nowhere else. `cargo publish`
-# packages whatever tree it runs in under the manifest version, so the gate
-# refuses unless HEAD carries `v<version>` with a clean tree; the crate is
-# then the tree the GitHub Release was built from. Irreversible.
+# Publish to crates.io from the tag the manifest version names, and nowhere
+# else. `cargo publish` packages whatever tree it runs in, so the gate first
+# proves `v<version>` exists, sits in HEAD's history, matches origin's tag,
+# and that the tree is clean; the recipe then checks that tag out, publishes,
+# and returns to the previous checkout whether or not cargo succeeded, exiting
+# with cargo's status. PUBLISH_DRY_RUN=1 builds the tarball at the tag and
+# uploads nothing. Irreversible without it.
+PUBLISH_FLAGS = $(if $(PUBLISH_DRY_RUN),--dry-run,)
 publish:
 	@sh scripts/publish-check.sh
-	cargo publish --locked
+	@tag=v$$(sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml | head -n 1); \
+	git checkout -q "$$tag" || exit 1; \
+	echo "publish: checked out $$tag"; \
+	cargo publish --locked $(PUBLISH_FLAGS); status=$$?; \
+	git checkout -q - && echo "publish: back on the previous checkout"; \
+	exit $$status
 
 # Test coverage (needs cargo-llvm-cov: `cargo install cargo-llvm-cov`). Prints a
 # per-file summary and writes a browsable report to target/llvm-cov/html/. A
