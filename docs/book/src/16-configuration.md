@@ -184,12 +184,14 @@ settings:
   The terminal shows calm live progress, but partial generated cards remain
   hidden until the result passes validation.
 - **`[exam]`**: the AI exam: `model`, `timeout_secs` (300), `num_questions` (5),
-  `pass_threshold` (1.0), `strictness` (`balanced`), `extra`.
+  `pass_threshold` (1.0), `strictness` (`balanced`), `extra`,
+  `retry_cooldown_secs` (3600; `0` disables the failed-exam re-sit wait).
 - **`[trace]`**: the `generate deck --trace` and `workspace generate` planning
   passes: `model` defaults to
   unset, which resolves to the backend's strong model where it defines one
   (Claude: `opus`), and `effort` defaults to `"high"` (the build is
-  correctness-critical and amortized); also `timeout_secs`.
+  correctness-critical and amortized); also `timeout_secs` and `extra`
+  (extra guidance appended to the build prompt).
 - **`[ai]`**: [`alix deck augment`](15-the-web-app.md#augmenting-a-deck-from-the-picker)'s
   generation targets: a `model` override, `distractor_count` (3),
   `variant_count` (4), `keypoint_count` (5), and `timeout_secs` (300, sized
