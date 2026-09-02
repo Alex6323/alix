@@ -99,7 +99,8 @@ optionally overridden per workspace in `alix.toml`'s `[defaults]`. The levels:
 This dial (how hard each answer is judged) is independent of `pass_threshold` (how
 *many* answers must pass). Both, plus `model`, `timeout_secs` (default 300),
 `num_questions` (default 5), an `extra` guidance field, and
-`retry_cooldown_secs` (default 3600; `0` disables the re-sit wait), live in
+`retry_cooldown_secs` (default 3600; `0` disables the wait before re-sitting
+a failed *trace* exam; a failed fact-deck exam remediates instead), live in
 the `[exam]` config section.
 
 ## Why this is the centerpiece
