@@ -305,7 +305,8 @@ to this codebase. When in doubt, mirror the surrounding code.
   investigations, plans, roadmap notes, or other simple requests. When runtime,
   tooling, or product behavior is implemented, or a spec or ADR is drafted,
   create or update the issue-named Markdown deck at
-  `~/dev-meta/alix/alix-development/<issue-slug>.md`; do not create a separate
+  `<study-workspace>/<issue-slug>.md` (the concrete workspace path lives in
+  the private memory, not this tracked file); do not create a separate
   workspace per issue. For an implementation, teach the exact patch: name the
   edited functions/types, contrast old and new behavior, identify the tests,
   and explain the chosen mechanism. A decision-only card is not a substitute

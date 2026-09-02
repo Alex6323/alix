@@ -184,7 +184,7 @@ the grown-up app can keep the look they grew
 attached to), plus crowd-favourite editor/slide palettes
 (GitHub, Dracula, Nord, Solarized, Gruvbox, Catppuccin, Tokyo Night, Monokai, One
 Dark, Ayu, Rosé Pine, Everforest). Open the **Theme…** popover from the ☰ menu (a
-small bar button on the trace walk): a grid grouped Light / Dark that **previews
+small bar button on the trace walk): a grid grouped Light / Dark / Kids that **previews
 on a sample card as you hover** and re-themes the whole app when you click one,
 remembering your choice in the browser (kept in `localStorage`, not the config).
 The palette lives in a shared `theme.css` the

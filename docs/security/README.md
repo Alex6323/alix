@@ -377,11 +377,12 @@ safe or accurate.
   text differ; how a provider model treats the character is not established.
   Any deck reaching a reader is in scope, including a received or shared
   workspace and generated output.
-- Characters that carry no visible advance are accepted in card content. A
-  form feed, a vertical tab, a lone carriage return, or a zero-width
-  formatting character makes a card that cannot be answered by typing what is
-  on screen. This is a correctness gap rather than a disclosure one, but it
-  shares the untrusted-rendering boundary with the entry above.
+- Invisible characters that do render are deliberately preserved in card
+  content (bidi embeddings and isolates carry legitimate RTL text), and the
+  typed-answer check filters no-ink characters from both sides rather than
+  rejecting them. The residual is presentational: preserved formatting
+  characters can still shape what a reader sees, so they share the
+  untrusted-rendering boundary with the entry above.
 - Exact direct toolchain and Action pins now reduce release drift, but runner
   images and transitive build inputs are not hermetic. Release signing,
   checksums, SBOMs, and provenance are not yet complete across every

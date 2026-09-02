@@ -60,9 +60,10 @@ Spaced repetition system.
 FSRS, which predicts when you're about to forget each card.
 ```
 
-Save it as `srs.md` in your decks directory (`~/decks` by default). A line
-starting with `>` is a **note**, shown after you answer. Initialize a file you
-wrote by hand once:
+Save it as `srs.md` in your decks directory (`~/decks` by default). A
+blockquote whose first line is an alert badge (`> [!NOTE]`) is a **note**,
+shown after you answer; any other blockquote is a quotation that belongs to
+the answer. Initialize a file you wrote by hand once:
 
 ```sh
 alix deck init ~/decks/srs.md
