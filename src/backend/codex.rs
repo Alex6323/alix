@@ -28,10 +28,14 @@ impl Backend for CodexBackend {
             argv.push("--json".to_string());
         }
 
-        // Codex has no --effort/--permission-mode equivalent, so both are dropped.
+        // Codex has no --permission-mode equivalent, so it is dropped.
         if let Some(model) = opts.model {
             argv.push("-m".to_string());
             argv.push(model.to_string());
+        }
+        if let Some(effort) = opts.effort {
+            argv.push("-c".to_string());
+            argv.push(format!("model_reasoning_effort={effort}"));
         }
         argv.extend(opts.session_args.iter().cloned());
         argv
@@ -194,18 +198,36 @@ mod tests {
     fn codex_model_flag_uses_short_form() {
         let argv = CodexBackend.build_argv(&RunOpts {
             model: Some("gpt-5"),
-            effort: Some("high"), // no Codex equivalent, must be dropped
+            effort: None,
             permission_mode: Some("dontAsk"), // Claude-only, must be dropped
             access: Access::None,
             session_args: &[],
             progress: false,
         });
         assert_flag_value(&argv, "-m", "gpt-5");
-        assert!(!argv.iter().any(|a| a == "--effort" || a == "high"));
+        assert!(!argv.iter().any(|a| a.contains("model_reasoning_effort")));
         assert!(
             !argv
                 .iter()
                 .any(|a| a == "--permission-mode" || a == "dontAsk")
+        );
+    }
+
+    #[test]
+    fn codex_effort_maps_to_the_reasoning_config_key() {
+        let argv = CodexBackend.build_argv(&RunOpts {
+            model: None,
+            effort: Some("minimal"),
+            permission_mode: None,
+            access: Access::None,
+            session_args: &[],
+            progress: false,
+        });
+        assert_flag_value(&argv, "-c", "project_doc_max_bytes=0");
+        assert!(
+            argv.windows(2)
+                .any(|w| w[0] == "-c" && w[1] == "model_reasoning_effort=minimal"),
+            "effort must reach codex as its reasoning config: {argv:?}"
         );
     }
 

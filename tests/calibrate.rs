@@ -31,13 +31,15 @@ use alix::{
     exam::{ExamQuestion, Verdict, grade_answers},
 };
 
-// (backend, weakest "floor" model also probed; None = the CLI default only).
-// Gemini is omitted: no login on the release machine. Codex has no floor:
-// the ChatGPT-account CLI rejects every non-default model probed.
-const CALIBRATED: [(BackendKind, Option<&str>); 3] = [
-    (BackendKind::Claude, Some("haiku")),
-    (BackendKind::Codex, None),
-    (BackendKind::Copilot, Some("gpt-5-mini")),
+// (backend, weakest "floor" model, weakest "floor" effort). Each Some adds a
+// probe row beside the CLI-default one. Gemini is omitted: no login on the
+// release machine. Codex floors on effort, not model: the ChatGPT-account CLI
+// rejects every non-default model probed, but honors reasoning effort
+// (its API supports none|low|medium|high|xhigh|max; none is the floor).
+const CALIBRATED: [(BackendKind, Option<&str>, Option<&str>); 3] = [
+    (BackendKind::Claude, Some("haiku"), None),
+    (BackendKind::Codex, None, Some("none")),
+    (BackendKind::Copilot, Some("gpt-5-mini"), None),
 ];
 
 #[test]
@@ -67,14 +69,15 @@ fn assert_probe(name: &str) {
         .iter()
         .find(|p| p.name == name)
         .unwrap_or_else(|| panic!("no probe named {name:?} in alix::calibrate::PROBES"));
-    for (kind, floor) in CALIBRATED {
-        let rows = [None, floor];
-        let rows = if floor.is_some() {
-            &rows[..]
-        } else {
-            &rows[..1]
-        };
-        for &model in rows {
+    for (kind, model_floor, effort_floor) in CALIBRATED {
+        let mut rows: Vec<(Option<&str>, Option<&str>)> = vec![(None, None)];
+        if model_floor.is_some() {
+            rows.push((model_floor, None));
+        }
+        if effort_floor.is_some() {
+            rows.push((None, effort_floor));
+        }
+        for (model, effort) in rows {
             let q = ExamQuestion {
                 prompt: p.question.to_string(),
                 points: p.points.iter().map(|x| x.to_string()).collect(),
@@ -82,13 +85,18 @@ fn assert_probe(name: &str) {
             let mut ask = AskConfig {
                 backend: kind,
                 model: model.map(str::to_string),
+                effort: effort.map(str::to_string),
                 ..AskConfig::default()
             };
             ask.command = backend_for(&ask)
                 .expect("every calibrated backend is wired")
                 .command()
                 .to_string();
-            let requested = model.unwrap_or("cli-default");
+            let requested = match (model, effort) {
+                (Some(m), _) => m.to_string(),
+                (None, Some(e)) => format!("effort-{e}"),
+                (None, None) => "cli-default".to_string(),
+            };
             let result = grade_answers(
                 &[q],
                 &[p.answer.to_string()],

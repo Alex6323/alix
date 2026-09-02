@@ -934,6 +934,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The codex backend forwards a configured `[ask] effort` to the CLI as
+  its reasoning-effort config instead of silently dropping it. Nothing
+  changes when `effort` is unset.
+
 - `alix deck init` no longer fails on a card whose answer ends in a
   table: the stamper placed the card's id above the table, which the
   parser then rejected. A display table (one without a `cards`
