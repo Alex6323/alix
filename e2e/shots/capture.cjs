@@ -668,15 +668,34 @@ function fabricateGraduation() {
   const hero = deckId(HERO_FILE);
   // Session cards for a blank card are the per-span sub-ids (`-b<stamp>`,
   // the stamp minted into each `<!-- blank: ... b:x -->` line), not the base
-  // token; the store tolerates unmatched extras as orphans.
+  // token; the store tolerates unmatched extras as orphans. The stamp scan
+  // mirrors the quote-aware `stamp_token_offset` in src/stamp.rs: a `b:`
+  // inside a quoted value is answer text, not the stamp.
+  function blankStamp(comment) {
+    let quoted = false;
+    for (let i = 0; i < comment.length; i++) {
+      const ch = comment[i];
+      if (quoted) {
+        if (ch === "\\") i++;
+        else if (ch === '"') quoted = false;
+        continue;
+      }
+      if (ch === '"') quoted = true;
+      else if (comment.startsWith("b:", i)) {
+        const token = comment.slice(i + 2).match(/^[a-z0-9]+/);
+        if (token) return token[0];
+      }
+    }
+    return null;
+  }
   const ids = [];
   for (const block of text.split(/\n## /).slice(1)) {
     const m = block.match(/<!-- id: (card-[a-z0-9]+) -->/);
     if (!m) continue;
     ids.push(m[1]);
     for (const cm of block.matchAll(/<!-- blank:[\s\S]*?-->/g)) {
-      const bm = cm[0].match(/\bb:([a-z0-9]+)/);
-      if (bm) ids.push(`${m[1]}-b${bm[1]}`);
+      const stamp = blankStamp(cm[0]);
+      if (stamp) ids.push(`${m[1]}-b${stamp}`);
     }
   }
   if (!ids.length) throw new Error(`no card ids in ${HERO_FILE}`);
