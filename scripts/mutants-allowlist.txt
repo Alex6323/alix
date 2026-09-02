@@ -96,11 +96,11 @@ src/cli/launch.rs: replace local_lan_ip -> Option<std::net::IpAddr> with None
 src/parser/sidecar.rs:39: replace + with * in without_notes
 
 # EQUIVALENT. key_rank's only consumer is a sort_by_key; only pairwise
-# order is observable. Ranks are canonical 0..=18, unknown 19, `for` 20,
-# `id` 21; under `* 2` id becomes 38, and no key can rank inside (21, 38),
+# order is observable. Ranks are canonical 0..=17, unknown 18, `for` 19,
+# `id` 20; under `* 2` id becomes 36, and no key can rank inside (20, 36),
 # so every pairwise comparison is unchanged for every input. Line-pinned to
 # the `id` rank; the `for` rank immediately above is a different site.
-src/parser/frontmatter.rs:387: replace + with * in key_rank
+src/parser/frontmatter.rs:385: replace + with * in key_rank
 
 # EQUIVALENT, provably. `ground` reaches this comparison only through
 # `hex_color`, so `ink` is always the luminance of an 8-bit RGB triple.

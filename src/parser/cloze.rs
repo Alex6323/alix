@@ -194,8 +194,10 @@ fn title_tail(rest: &str) -> Option<&str> {
             loop {
                 let ch = inner.chars().next()?;
                 if ch == '\\' {
-                    let skip = 1 + inner[1..].chars().next().map_or(0, char::len_utf8);
-                    inner = &inner[skip..];
+                    inner = &inner[1..];
+                    if let Some(escaped) = inner.chars().next() {
+                        inner = &inner[escaped.len_utf8()..];
+                    }
                     continue;
                 }
                 if ch == closer {
@@ -356,6 +358,28 @@ mod tests {
                 .map(|run| run.text.as_str())
                 .collect();
             assert_eq!(accepted, flat == "a", "link tail, {why}: {tail}");
+        }
+    }
+
+    #[test]
+    fn every_image_title_tail_preserves_its_separator_and_escape_contract() {
+        for (tail, expected, case) in [
+            (")", Some(""), "a destination without a title"),
+            (" \"title\")", Some(""), "a separated title"),
+            ("\"title\")", None, "an unseparated quote"),
+            (
+                " \"say \\\"hi\\\"\")",
+                Some(""),
+                "escaped ascii title delimiters",
+            ),
+            (
+                " \"say \\é now\")",
+                Some(""),
+                "an escaped multibyte character",
+            ),
+            (" \"trailing \\", None, "a trailing escape"),
+        ] {
+            assert_eq!(expected, title_tail(tail), "{case}: {tail:?}");
         }
     }
 

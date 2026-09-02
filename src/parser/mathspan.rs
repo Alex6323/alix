@@ -290,18 +290,10 @@ fn invisible_argument_extents(payload: &str, tokens: &[Token]) -> Vec<(Range<usi
         if !matches!(name, r"\phantom" | r"\hphantom" | r"\vphantom") {
             continue;
         }
-        let mut next = index + 1;
-        while next < tokens.len()
-            && matches!(tokens[next].kind, Kind::Other)
-            && payload[tokens[next].span.clone()]
-                .chars()
-                .all(char::is_whitespace)
-        {
-            next += 1;
-        }
-        let Some(argument) = tokens.get(next) else {
+        let Some(next) = next_content_token(payload, tokens, index) else {
             continue;
         };
+        let argument = &tokens[next];
         let mut end = argument.span.end;
         if matches!(argument.kind, Kind::Open) {
             let mut depth = 0i32;
@@ -424,7 +416,7 @@ fn next_content_token(payload: &str, tokens: &[Token], index: usize) -> Option<u
 /// operands: in `x_i^2` both scripts belong to `x`, never to `i`.
 fn operand_before(payload: &str, tokens: &[Token], index: usize) -> Option<Range<usize>> {
     let mut at = index;
-    loop {
+    for _ in 0..tokens.len() {
         let previous = previous_content_token(payload, tokens, at)?;
         if matches!(tokens[previous].kind, Kind::Script(_)) {
             at = previous;
@@ -459,7 +451,10 @@ fn operand_before(payload: &str, tokens: &[Token], index: usize) -> Option<Range
         if matches!(tokens[previous].kind, Kind::Close) {
             let mut run_start = start_index;
             let mut walked = 1usize;
-            while let Some(before) = previous_content_token(payload, tokens, run_start) {
+            for _ in 0..tokens.len() {
+                let Some(before) = previous_content_token(payload, tokens, run_start) else {
+                    break;
+                };
                 match tokens[before].kind {
                     Kind::Close => {
                         let mut depth = 0i32;
@@ -501,6 +496,7 @@ fn operand_before(payload: &str, tokens: &[Token], index: usize) -> Option<Range
             _ => return Some(operand),
         }
     }
+    None
 }
 
 fn operand_after(payload: &str, tokens: &[Token], index: usize) -> Option<Range<usize>> {
@@ -690,7 +686,10 @@ pub(super) fn structural_unit(payload: &str, range: &Range<usize>) -> Result<(),
                     continue;
                 }
                 let mut first = index;
-                while let Some(previous) = previous_content_token(payload, &tokens, first) {
+                for previous in (0..index).rev() {
+                    if whitespace_token(payload, &tokens[previous]) {
+                        continue;
+                    }
                     if matches!(tokens[previous].kind, Kind::Script(other) if other == *script) {
                         first = previous;
                     } else {
@@ -815,6 +814,45 @@ mod tests {
     }
 
     #[test]
+    fn every_control_sequence_token_preserves_its_authored_extent() {
+        for (payload, expected, case) in [
+            (r"a\", vec!["a", r"\"], "a trailing backslash"),
+            (
+                r"x\verb*",
+                vec!["x", r"\verb*"],
+                "a star without a delimiter",
+            ),
+            (
+                r"x\verb|",
+                vec!["x", r"\verb|"],
+                "a delimiter without a body",
+            ),
+            (
+                r"x\verb*|a|y",
+                vec!["x", r"\verb*|a|", "y"],
+                "a starred ascii verbatim run",
+            ),
+            (
+                r"x\verb*éaéy",
+                vec!["x", r"\verb*éaé", "y"],
+                "a starred multibyte-delimited verbatim run",
+            ),
+            (
+                r"x\verb|ab|y",
+                vec!["x", r"\verb|ab|", "y"],
+                "a verbatim body with non-delimiter bytes",
+            ),
+        ] {
+            let parsed = tokens(payload);
+            let actual = parsed
+                .iter()
+                .map(|token| &payload[token.span.clone()])
+                .collect::<Vec<_>>();
+            assert_eq!(expected, actual, "{case}: {payload:?}");
+        }
+    }
+
+    #[test]
     fn every_unescaped_structural_token_is_rejected_inside_a_match() {
         for (payload, hidden, token) in [
             (r"a & b", r"a &", '&'),
@@ -858,6 +896,58 @@ mod tests {
             Ok(()),
             unit(r"\phantom{a} target", "target"),
             "visible text after the phantom stays bindable"
+        );
+    }
+
+    #[test]
+    fn every_invisible_argument_extent_skips_whitespace_and_stops_after_one_argument() {
+        for (payload, expected, case) in [
+            (
+                r"\phantom  {x}y",
+                vec![("  {x}", r"\phantom")],
+                "a braced argument",
+            ),
+            (
+                "a+\\hphantom \t z",
+                vec![(" \t z", r"\hphantom")],
+                "a braceless argument",
+            ),
+            (r"\vphantom   ", Vec::new(), "a missing argument"),
+        ] {
+            let parsed = tokens(payload);
+            let extents = invisible_argument_extents(payload, &parsed);
+            let actual = extents
+                .iter()
+                .map(|(extent, name)| (&payload[extent.clone()], name.as_str()))
+                .collect::<Vec<_>>();
+            assert_eq!(expected, actual, "{case}: {payload:?}");
+        }
+    }
+
+    #[test]
+    fn content_token_walkers_skip_only_ascii_whitespace() {
+        let payload = "a \tβ";
+        let parsed = tokens(payload);
+        assert_eq!(4, parsed.len(), "one token per authored character");
+        assert_eq!(
+            Some(3),
+            next_content_token(payload, &parsed, 0),
+            "forward over space and tab"
+        );
+        assert_eq!(
+            None,
+            next_content_token(payload, &parsed, 3),
+            "no content after beta"
+        );
+        assert_eq!(
+            Some(0),
+            previous_content_token(payload, &parsed, 3),
+            "backward over space and tab"
+        );
+        assert_eq!(
+            None,
+            previous_content_token(payload, &parsed, 0),
+            "no content before a"
         );
     }
 

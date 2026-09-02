@@ -533,6 +533,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn every_yaml_kind_has_its_exact_diagnostic_name() {
+        for (source, expected) in [
+            ("null", "null"),
+            ("true", "a boolean"),
+            ("1", "an integer"),
+            ("1.5", "a float"),
+            ("word", "a string"),
+            ("[one]", "a sequence"),
+            ("{one: two}", "a mapping"),
+        ] {
+            let documents = YamlLoader::load_from_str(source).unwrap();
+            assert_eq!(expected, yaml_kind(&documents[0]), "yaml source {source:?}");
+        }
+    }
+
+    #[test]
+    fn every_frontmatter_line_number_keeps_its_document_offset() {
+        let block = ["title: ok", "\"choices\": nope", "id: nope"];
+        for (key, expected) in [("title", 11), ("choices", 12), ("id", 13)] {
+            assert_eq!(expected, key_line(&block, 11, key), "key {key}");
+        }
+
+        let invalid = ["title: ok", "source: [unterminated"];
+        let error = load_frontmatter(&invalid, 11, &mut Vec::new()).unwrap_err();
+        assert!(
+            matches!(error, ParseError::FrontmatterSyntax { line: 13, .. }),
+            "the syntax marker after the second block line must map to document line 13: {error:?}"
+        );
+    }
+
     fn reordered(text: &str) -> String {
         match reorder_frontmatter(text) {
             Reorder::Reordered(out) => out,
