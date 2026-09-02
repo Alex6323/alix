@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core lean-check mobile-unit test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust gfm-measure package-verify
+.PHONY: build build-core lean-check mobile-unit test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust gfm-measure package-verify publish
 
 # Compile the workspace.
 build:
@@ -307,6 +307,14 @@ package-check:
 package-verify:
 	cargo package --locked --allow-dirty
 	@echo 'package-verify: OK (the tarball builds on its own)'
+
+# Publish to crates.io from the tag's tree and nowhere else. `cargo publish`
+# packages whatever tree it runs in under the manifest version, so the gate
+# refuses unless HEAD carries `v<version>` with a clean tree; the crate is
+# then the tree the GitHub Release was built from. Irreversible.
+publish:
+	@sh scripts/publish-check.sh
+	cargo publish --locked
 
 # Test coverage (needs cargo-llvm-cov: `cargo install cargo-llvm-cov`). Prints a
 # per-file summary and writes a browsable report to target/llvm-cov/html/. A
