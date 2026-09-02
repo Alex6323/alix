@@ -362,9 +362,9 @@ export function createSheets({
     return loadPreview();
   }
 
-  // The Doctor sheet: one row per environment/backend check from /api/doctor
-  // (config, store, decks, backend, share, wormhole — an open set), each with a
-  // status glyph and, when something needs fixing, a muted remedy line.
+  // The Doctor sheet: one row per check from /api/doctor (an open set the
+  // client never enumerates), each with a status glyph and, when something
+  // needs fixing, a muted remedy line.
   function doctorRow(r) {
     const glyph = r.status === "ok" ? "✓" : r.status === "warn" ? "!" : r.status === "fail" ? "✗" : "?";
     const row = el("div", "doc-row doc-" + r.status);
