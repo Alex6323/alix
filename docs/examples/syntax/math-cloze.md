@@ -3,9 +3,10 @@ title: "Cloze inside a formula"
 description: >-
   A `blank: span` directive works on a formula line, inline or displayed.
   The hidden span is a piece of the formula, so what is asked is the
-  step, not the sentence around it. A formula span is sketched at review
-  rather than typed, so even a symbol like `\pm` can be hidden; the span
-  must be a complete structural unit of the formula.
+  step, not the sentence around it. On mobile a formula span is sketched
+  at review rather than typed, so even a symbol like `\pm` can be hidden;
+  the desktop web app still serves the typed check. The span must be a
+  complete structural unit of the formula.
 id: "deck-12x3e6yg9qkhxfjwgg9q4gwp7x"
 ---
 

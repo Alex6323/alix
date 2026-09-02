@@ -351,6 +351,7 @@ export function createStudy({
     if (cardId) card.id = cardId;
     const q = el("div", "region q");
     if (leftAlign) q.style.textAlign = "left";
+    q.addEventListener("scroll", () => updateQuestionFade(q));
     card.appendChild(q);
     card.appendChild(el("div", "divider"));
     const a = el("div", "region a" + (withNote ? " withnote" : ""));
@@ -416,6 +417,7 @@ export function createStudy({
       appendContext(q, c.context, c.context_runs, c.context_units, undefined, contextDiagram);
     }
     appendImages(q, c.images);
+    fitQuestion(q);
 
     // The answer region (id="ansRegion") is filled by fillBottom(); the note region
     // and its divider are added only once the note is shown (see setNote); the answer
@@ -456,6 +458,7 @@ export function createStudy({
       appendContext(q, c.context, c.context_runs, c.context_units, undefined, browseDiagram);
     }
     appendImages(q, c.images);
+    fitQuestion(q);
 
     const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
     if (isReshapedList(c)) appendFullAnswer(sec, c, true);
@@ -666,6 +669,24 @@ export function createStudy({
     let n = 0;
     lns.forEach(ln => { if (ln.getBoundingClientRect().top >= foldY - 4) n++; });
     return n;
+  }
+
+  function fitQuestion(q) {
+    const formulas = q.querySelectorAll(".math-display svg");
+    formulas.forEach((svg) => { svg.style.maxHeight = ""; });
+    formulas.forEach((svg) => {
+      const overflow = q.scrollHeight - q.clientHeight;
+      if (overflow <= 0) return;
+      const room = svg.getBoundingClientRect().height - overflow;
+      svg.style.maxHeight = Math.max(40, Math.round(room)) + "px";
+    });
+    updateQuestionFade(q);
+  }
+
+  function updateQuestionFade(q) {
+    const hints = overflowHints(q);
+    q.classList.toggle("fade-top", hints.showTop);
+    q.classList.toggle("fade-bottom", hints.showBottom);
   }
 
   function updateFade(a) {

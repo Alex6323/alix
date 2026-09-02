@@ -362,7 +362,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `alix doctor` warns when a formula span pinned to `input: type` hides a
   LaTeX command, because the span's hidden text is the expected answer and
   typing `\pm` asks for the spelling of `\pm`. Without an authored `input:`,
-  a formula span is sketched rather than typed.
+  a formula span is sketched rather than typed on mobile; the desktop web
+  app still serves the typed check.
 
 - Deck authoring has a written rule for which card shape suits which
   material, and one worked example per shape. `docs/include/card-shapes.md`
@@ -928,6 +929,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   prescribed a rewrite is removed.
 
 ### Fixed
+- A display formula on the question side of an adult web card scales to the
+  room the question region leaves it, and the region shows the answer
+  region's edge fade when content still overflows. The region is capped at a
+  share of the card and hides its scrollbar, so a tall masked formula at a
+  short window lost its denominator with nothing to say so; the shipped
+  formula-cloze example image showed exactly that.
 
 - The desktop entry written by `install-desktop.sh` no longer describes
   alix as a trainer "for the terminal"; bare `alix` opens the local web
@@ -1647,8 +1654,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   because the hole's content is the expected answer and a formula's piece
   has no keyboard spelling. The mobile client honors the default; the
   desktop web app still serves the typed check. An `input:` written on the
-  card or the deck still wins: the rule only fills in where nothing was
-  authored.
+  card or the deck wins over the default on mobile, since the rule only fills
+  in where nothing was authored; the desktop web app currently ignores
+  `input: draw` on a cloze card.
 
 - A formula span whose hidden text sits directly against the next token
   renders again. In a derivative ending `nx^{...}`, a `blank: span` hiding

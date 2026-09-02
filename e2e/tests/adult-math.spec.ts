@@ -1,5 +1,5 @@
 import { test, expect } from "./helpers";
-import { openApp } from "./helpers";
+import { adultDeckRow, openApp } from "./helpers";
 
 test.beforeEach(async ({ page, request }) => {
   await request.post("/api/deselect", { data: {} });
@@ -199,4 +199,43 @@ test("adult card surfaces render shared math SVGs safely", async ({ page, reques
   await page.locator(".math-audit").screenshot({ path: testInfo.outputPath("adult-light.png") });
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await page.locator(".math-audit").screenshot({ path: testInfo.outputPath("adult-dark.png") });
+});
+
+test("a tall display formula on the question side scales into the capped question region", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1000, height: 600 });
+  const browseResponse = await request.post("/api/browse", {
+    data: { deck: "animals/math.md" },
+  });
+  expect(browseResponse.ok(), await browseResponse.text()).toBeTruthy();
+  const browse = await browseResponse.json();
+  const explain = browse.cards.find((card: any) => card.front.includes("Explain the quadratic formula"));
+  const inlineRun = explain?.back_runs?.[0]?.find((run: any) => run.math?.svg);
+  expect(inlineRun, "the fixture must carry the quadratic formula as a rendered math run").toBeTruthy();
+  // The same SVG serves inline and display math; flagging it display puts the
+  // fraction on the question side as a block, taller than the capped region.
+  const formula = { ...inlineRun, math: { ...inlineRun.math, display: true } };
+  const card = { ...explain, context: [inlineRun.text], context_runs: [[formula]], context_units: [] };
+  await page.route("**/api/browse", (route) =>
+    route.fulfill({ json: { cards: [card], label: "tall formula" } }),
+  );
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(String(error)));
+  page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  await request.post("/api/deselect", { data: {} });
+  await openApp(page);
+  await expect(page.locator(".deckrow").first(), errors.join("\n")).toBeVisible();
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "Math").hover();
+  await page.keyboard.press("b");
+
+  const question = page.locator(".region.q");
+  const svg = question.locator(".math-display svg");
+  await expect(svg).toBeVisible();
+  const region = await question.boundingBox();
+  const drawn = await svg.boundingBox();
+  expect(region && drawn, "the question region and its formula must lay out").toBeTruthy();
+  expect(
+    drawn!.y + drawn!.height,
+    `formula bottom ${drawn!.y + drawn!.height} must not pass the question region's bottom ${region!.y + region!.height}`,
+  ).toBeLessThanOrEqual(region!.y + region!.height);
 });

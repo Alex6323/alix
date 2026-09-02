@@ -46,7 +46,9 @@ cut from its arguments (`\frac{a}` without its `{b}`) is a loud error
 naming the cut. At review a formula span **defaults to the sketch canvas on
 mobile**, since a formula's piece has no keyboard spelling (the desktop web
 app does not honor the default yet and types it); write `input: type` on the
-card or the deck to keep the keyboard, and an authored `input:` always wins.
+card or the deck to keep the keyboard. An authored `input:` wins over the
+default on mobile; the desktop web app currently ignores `input: draw` on a
+cloze card and types it regardless.
 `alix doctor` warns when a typed span's answer would need LaTeX to type.
 
 ### A note for one blank

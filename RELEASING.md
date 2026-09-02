@@ -153,8 +153,9 @@ at. **crates.io is not automated.**
    publishing job runs, so green checks on other bytes cannot authorize a
    release. Then it creates the GitHub Release and attaches the binaries.
 9. **Publish to crates.io (manual):** `cargo publish` (the package stays lean via
-   `Cargo.toml`'s `include` allowlist: only `src/**`, `web/**`, and the
-   root README/CHANGELOG/licenses ship). `make package-check` (also run inside
+   `Cargo.toml`'s `include` allowlist: `src/**`, `web/**`, `assets/decks/**`,
+   `assets/licenses/**`, and the root README, CHANGELOG, the two license
+   files, and NOTICE ship). `make package-check` (also run inside
    `preflight`) asserts nothing untracked leaks into the tarball; eyeball
    `cargo package --list` too if unsure. Publish is irreversible.
 10. **Verify reach.** The `pages` workflow redeploys `alix.study` + the mdBook on

@@ -861,7 +861,7 @@ async function shot6(page, out) {
   await page.waitForTimeout(500);
   const field = page.locator(".wfield");
   if (await field.count()) {
-    await field.fill("It moves: s1 is invalidated and s2 becomes the sole owner of the heap data.");
+    await field.fill("Stack: a pointer, a length, and a capacity. The character contents live on the heap.");
     await field.press("Shift+Enter");
     await page.waitForTimeout(400);
   }
