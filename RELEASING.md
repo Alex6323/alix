@@ -121,7 +121,10 @@ at. **crates.io is not automated.**
    than CI.
    Treat a failure as evidence to investigate and resolve before tagging. A
    diagnostic rerun is fine, but do not discard a failure and release merely
-   because a later run got lucky.
+   because a later run got lucky. Keep the run's log and store its matrix as
+   `docs/results/<date>-calibrate-<version>.md` via
+   `python3 scripts/calibrate_matrix.py <log> --tree <candidate> --run <when>`,
+   so the per-backend verdicts stay comparable release over release.
 4b. **Card-shape evaluation.** Run `make shape-eval` when the deck generator,
    its prompt, or `docs/include/card-shapes.md` changed. Deterministic tests prove the
    rule reaches the prompt; only this proves the rule still steers a real
