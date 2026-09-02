@@ -226,13 +226,14 @@ notes it.
   stay out. The command never uploads or sends the archive; review it before
   attaching it yourself. It uses the default profile when one is selected,
   otherwise the default config and decks directory.
-- `alix doctor [dir-or-deck]`: environment health checks, a one-line remedy per
-  problem: the config parses, the current profile's local log path is named,
-  the progress store is readable, the decks dir
-  scans, and the backend CLI, the `share` helper (`wormhole`), and the
-  `diagrams` renderer (`sekien`) are on your PATH. Name a **deck file** to lint it
-  in depth (syntax, named-field `at:` locators, and frozen cards that have
-  drifted from their live source). It withholds stale excerpts and reports
+- `alix doctor [dir-or-deck]`: with no argument or a directory, environment
+  health checks, a one-line remedy per problem: the config parses, the
+  current profile's local log path is named, the progress store is readable,
+  the decks dir scans, and the backend CLI, the `share` helper (`wormhole`),
+  and the `diagrams` renderer (`sekien`) are on your PATH. Name a **deck
+  file** instead to lint it in depth (syntax, named-field `at:` locators, and
+  frozen cards that have drifted from their live source); that form runs the
+  deck lint only, none of the environment rows. It withholds stale excerpts and reports
   a unique exact relocation, changed content, ambiguity, or a missing
   fingerprint. alix does not recognize or rewrite old deck formats; a deck
   written in one fails as ordinary invalid input (an unknown key, an id or

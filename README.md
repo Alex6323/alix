@@ -101,6 +101,7 @@ grading and card identity keep using the source text.
 | `alix deck remove <deck>` | Delete a deck and everything that is its alone (cannot be undone) |
 | `alix deck restore <deck>` | Swap a deck with its `.bak` backups, undoing the last overwrite |
 | `alix workspace init <dir>` | Scaffold an empty workspace to grow into |
+| `alix workspace augment <dir> --target …` | Warm every deck in a workspace at once (plus the workspace `icon`) |
 | `alix workspace update <dir>` | Stage a source-aware card update; inspect it, then `--apply` |
 | `alix workspace deadline <dir> [<date>\|clear]` | Show, set, or clear a workspace's "ready by" date |
 | `alix <dir>` | Serve a folder or workspace as its own scoped instance |

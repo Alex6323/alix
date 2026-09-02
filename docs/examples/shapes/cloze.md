@@ -13,7 +13,7 @@ When the owner leaves scope, the value is dropped.
 <!-- blank: span hidden="dropped" b:3nk4vq -->
 <!-- id: card-11555cmyqk4h7bdmhwy15gy3ct -->
 
-## The Gaussian year
+## Sunlight's travel time
 Light takes about 8 minutes to reach Earth from the Sun.
 > [!NOTE]
 > Close enough to notice: a solar flare is seen after it happened.
