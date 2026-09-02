@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core lean-check mobile-unit test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust gfm-measure
+.PHONY: build build-core lean-check mobile-unit test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust gfm-measure package-verify
 
 # Compile the workspace.
 build:
@@ -299,6 +299,14 @@ package-check:
 		exit 1; \
 	fi; \
 	echo 'package-check: OK (every published file is git-tracked)'
+
+# The other half of package-check: build the crate from its own tarball, as
+# crates.io will. A path the code `include_*!`s but the allowlist omits fails
+# here and nowhere else (0.8.0's card-shape guide did). A full release build,
+# so it is a release step (RELEASING.md step 9), not part of preflight.
+package-verify:
+	cargo package --locked --allow-dirty
+	@echo 'package-verify: OK (the tarball builds on its own)'
 
 # Test coverage (needs cargo-llvm-cov: `cargo install cargo-llvm-cov`). Prints a
 # per-file summary and writes a browsable report to target/llvm-cov/html/. A

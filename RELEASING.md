@@ -155,12 +155,16 @@ at. **crates.io is not automated.**
    every blocking CI job on the tag's exact SHA (`exact-tag-ci`) before any
    publishing job runs, so green checks on other bytes cannot authorize a
    release. Then it creates the GitHub Release and attaches the binaries.
-9. **Publish to crates.io (manual):** `cargo publish` (the package stays lean via
-   `Cargo.toml`'s `include` allowlist: `src/**`, `web/**`, `assets/decks/**`,
-   `assets/licenses/**`, and the root README, CHANGELOG, the two license
-   files, and NOTICE ship). `make package-check` (also run inside
-   `preflight`) asserts nothing untracked leaks into the tarball; eyeball
-   `cargo package --list` too if unsure. Publish is irreversible.
+9. **Publish to crates.io (manual):** first `make package-verify`, which builds
+   the crate from its own tarball the way crates.io will; a file the code
+   `include_*!`s but the allowlist omits fails there and nowhere earlier
+   (0.8.0's card-shape guide did). Then `cargo publish` (the package stays
+   lean via `Cargo.toml`'s `include` allowlist: `src/**`, `web/**`,
+   `assets/decks/**`, `assets/licenses/**`, the card-shape guide, and the
+   root README, CHANGELOG, the two license files, and NOTICE ship).
+   `make package-check` (also run inside `preflight`) asserts nothing
+   untracked leaks into the tarball; eyeball `cargo package --list` too if
+   unsure. Publish is irreversible.
 10. **Verify reach.** The `pages` workflow redeploys `alix.study` + the mdBook on
    the `main` push automatically — confirm the site, the download buttons, and
    `install.sh` resolve the new asset names.
