@@ -666,16 +666,17 @@ function pollExam(page) {
 function fabricateGraduation() {
   const text = fs.readFileSync(HERO_FILE, "utf8");
   const hero = deckId(HERO_FILE);
-  // Session cards for a cloze are the per-hole sub-ids (`token-n`), not the
-  // base token; cover every hole (and both numbering conventions; the store
-  // tolerates unmatched extras as orphans).
+  // Session cards for a blank card are the per-span sub-ids (`-b<stamp>`,
+  // the stamp minted into each `<!-- blank: ... b:x -->` line), not the base
+  // token; the store tolerates unmatched extras as orphans.
   const ids = [];
   for (const block of text.split(/\n## /).slice(1)) {
     const m = block.match(/<!-- id: (card-[a-z0-9]+) -->/);
     if (!m) continue;
     ids.push(m[1]);
-    const holes = (block.match(/blank\{/g) || []).length;
-    for (let h = 0; h <= holes && holes > 0; h++) ids.push(`${m[1]}-${h}`);
+    for (const bm of block.matchAll(/<!-- blank:[^>]*?\bb:([a-z0-9]+) -->/g)) {
+      ids.push(`${m[1]}-b${bm[1]}`);
+    }
   }
   if (!ids.length) throw new Error(`no card ids in ${HERO_FILE}`);
   const now = Date.now();
@@ -707,14 +708,13 @@ function fabricateGraduation() {
         },
       ]),
     ),
-    records: {},
     deck: { last_depth: "recall" },
     writer: { device: "shots", at_ms: now },
   };
   const progressDir = path.join(DEMO_DIR, "progress");
   fs.mkdirSync(progressDir, { recursive: true });
   fs.writeFileSync(path.join(progressDir, `${hero}.json`), JSON.stringify(doc, null, 2));
-  execFileSync("alix", ["stats", HERO_FILE, "--store", DEMO_DIR], { stdio: "pipe" });
+  execFileSync(buildAlix(), ["stats", HERO_FILE, "--store", DEMO_DIR], { stdio: "pipe" });
   log("fabricated a graduated store for", hero);
 }
 
