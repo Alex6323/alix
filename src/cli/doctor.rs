@@ -635,34 +635,25 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
                     deck.subject
                 ));
             }
-            alix::deck::RequiresMode::Filename => {
-                match alix::deck::resolve_dep(req, dir, dir) {
-                    None => {
-                        report.warn(format!(
-                            "{}: requires `{req}` but no such deck exists here (dangling \
+            alix::deck::RequiresMode::Filename => match alix::deck::resolve_dep(req, dir, dir) {
+                None => {
+                    report.warn(format!(
+                        "{}: requires `{req}` but no such deck exists here (dangling \
                              prerequisite); a filename edge breaks when the prerequisite is \
                              renamed or deleted (a `deck-<token>` id edge survives renames)",
-                            deck.subject
-                        ));
-                        if req.starts_with("deck-") {
-                            report.note(format!(
-                                "{}: `requires: {req}` looks like a truncated or malformed \
-                                 deck id (an id is `deck-` plus 26 base32 chars); it was read \
-                                 as a filename",
-                                deck.subject
-                            ));
-                        }
-                    }
-                    Some(path) => unparseable_prereq(report, req, &path),
-                }
-                if alix::token::is_canonical(req) {
-                    report.note(format!(
-                        "{}: `requires: {req}` looks like an un-prefixed deck id; \
-                         write `deck-{req}`",
                         deck.subject
                     ));
+                    if req.starts_with("deck-") {
+                        report.note(format!(
+                            "{}: `requires: {req}` looks like a truncated or malformed \
+                                 deck id (an id is `deck-` plus 26 base32 chars); it was read \
+                                 as a filename",
+                            deck.subject
+                        ));
+                    }
                 }
-            }
+                Some(path) => unparseable_prereq(report, req, &path),
+            },
         }
     }
 }
@@ -2873,7 +2864,7 @@ printf ']}}'
     }
 
     #[test]
-    fn doctor_hints_that_a_bare_canonical_token_in_requires_is_an_un_prefixed_id() {
+    fn a_bare_token_in_requires_is_an_ordinary_dangling_filename_edge() {
         let dir = tempfile::tempdir().unwrap();
         let token = CANONICAL_ID.strip_prefix("deck-").unwrap();
         let path = dir.path().join("d.md");
@@ -2887,11 +2878,16 @@ printf ']}}'
         deck_findings(&path, &mut report);
 
         assert!(
-            report.notes.iter().any(|note| {
-                note.contains("looks like an un-prefixed deck id")
-                    && note.contains(&format!("write `deck-{token}`"))
-            }),
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("dangling prerequisite")),
             "{:#?}",
+            report.warnings
+        );
+        assert!(
+            report.notes.iter().all(|note| !note.contains(token)),
+            "no note singles the bare token out: {:#?}",
             report.notes
         );
     }

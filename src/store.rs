@@ -1389,9 +1389,8 @@ pub fn store_remediation_cards(
         let Some(first) = cards.first() else {
             continue;
         };
-        // The BLOCK key (literal `\blank{}` markers count as text, so a plain
-        // card repeating a hole's hidden text can't collide): one sidecar
-        // block is created or revived as a unit, whatever its hole count.
+        // The BLOCK key: one sidecar block is created or revived as a
+        // unit, whatever its span count.
         let fingerprint = first.block_fingerprint;
         if deck_fingerprints.contains(&fingerprint) {
             continue;
@@ -1630,7 +1629,7 @@ mod tests {
     fn a_stale_positional_key_survives_wipe_and_lists_as_an_orphan() {
         // A `-N` key is not part of the id grammar, so token selection cannot
         // claim it; the raw string comparison in `orphans` still surfaces it
-        // for `reset --orphans`, with no recognition of the retired shape.
+        // for `reset --orphans`.
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         store.get_or_insert("card-doom-0").introduced_ms = Some(0);

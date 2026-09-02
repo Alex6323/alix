@@ -620,7 +620,7 @@ pub(crate) fn workspace_init_cmd(args: WorkspaceInitArgs) -> Result<()> {
          [defaults]\n\
          \n\
          # reveal = \"flip\"              # flip | line\n\
-         # order = \"scheduled\"          # scheduled | sequential\n"
+         # review = \"scheduled\"         # scheduled | sequential\n"
     );
     let workspace_files = alix::workspace::WorkspaceFiles::new(&args.dir);
     std::fs::write(workspace_files.manifest(), manifest)

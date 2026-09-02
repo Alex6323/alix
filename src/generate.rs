@@ -802,7 +802,7 @@ mod tests {
         let guide = card_shape_guide();
         assert!(
             !guide.contains("`order:`"),
-            "the production generator guide still teaches the retired `order:` key: {guide}"
+            "the production generator guide teaches an `order:` key the format does not define: {guide}"
         );
         assert!(
             guide.contains("`review:`"),
@@ -1039,7 +1039,7 @@ mod tests {
     }
 
     #[test]
-    fn readme_quickstart_does_not_teach_the_retired_bare_note_shape() {
+    fn readme_quickstart_teaches_the_admonition_note_shape() {
         let readme = include_str!("../README.md");
         let explanation = readme
             .split_once("The front is the `## ` line")

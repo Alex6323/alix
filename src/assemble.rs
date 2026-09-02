@@ -491,7 +491,7 @@ pub fn select(
     // authored, not launched.
     let target_settings: Vec<&DeckSettings> = settings.iter().collect();
     let order = resolve(
-        "order",
+        "review",
         None,
         target_settings.iter().map(|s| s.order),
         Order::default(),

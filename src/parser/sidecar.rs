@@ -170,7 +170,7 @@ mod tests {
         assert_eq!(
             Vec::<SidecarNote>::new(),
             notes("<!-- note: card-abc (a hint) -->\n> mine\n"),
-            "the retired hinted form is not recognized, it is invalid input"
+            "a marker with trailing content is not recognized, it is invalid input"
         );
     }
 

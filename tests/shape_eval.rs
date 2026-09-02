@@ -114,6 +114,6 @@ fn an_explicit_style_still_overrules_the_rule() {
     );
     assert!(
         !deck.contains("\\blank{"),
-        "the retired marker must not appear, got:\n{deck}"
+        "a cloze deck hides text with span directives, never inline marker syntax, got:\n{deck}"
     );
 }

@@ -243,10 +243,9 @@ notes it.
   non-canonical token, a frontmatter that can't be stamped, an id marker away
   from its card's closing line (the position stamping mints at), and cards
   still awaiting a token. For `requires:` it separates a dangling filename edge
-  from a dangling deck-id edge, a `card-…` id pasted where a deck belongs, a
-  file that only shares a required id's name (the id wins, so add the `.md`
-  extension to mean the file), and an un-prefixed token it suggests writing as
-  `deck-<token>`. It nudges a `source:` that lists more than a few entries
+  from a dangling deck-id edge, a `card-…` id pasted where a deck belongs, and
+  a file that only shares a required id's name (the id wins, so add the `.md`
+  extension to mean the file). It nudges a `source:` that lists more than a few entries
   toward their common directory, and flags a `source:` pointing into `assets/`
   (a deck keeps its real source, never its frozen excerpt fragments). It also
   names deck-like Markdown ignored until explicitly

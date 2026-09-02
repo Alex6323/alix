@@ -928,6 +928,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   their choice questions when they supply a usable option set; an
   image-region card, or a named group containing one, stays excluded.
 
+- `alix doctor` reads a bare token in `requires:` as an ordinary dangling
+  filename prerequisite. The dedicated note that singled the shape out and
+  prescribed a rewrite is removed.
+
 ### Fixed
 
 - `alix deck init` no longer fails on a card whose answer ends in a
@@ -1048,7 +1052,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was `generate`'s cleanup of a model reply, which found the deck's start by
   an exact compare: a reply whose opening fence carried a trailing space lost
   its whole frontmatter block, so the saved deck dropped `source`, `link`,
-  `tasklist`, its title, and its identity metadata.
+  `choices`, its title, and its identity metadata.
 
 - `alix doctor` checks a workspace member's frozen excerpts even when the deck
   still holds an unfrozen `at:` citation. One live citation used to switch off
@@ -1750,6 +1754,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   source excerpts like the absolute spelling. It no longer stamps card ids
   while leaving live citations in a partially initialized deck that another
   relative `init` cannot finish.
+
+- `alix workspace init`'s manifest template advertises `review:` as the
+  commented `[defaults]` scheduling sample. The sample previously named a key
+  the current format does not define, so uncommenting it was silently ignored.
+
+- The warning printed when assembled decks disagree on their scheduling
+  setting names the `review:` key. It previously pointed the reader at a key
+  the current format does not define.
 
 ## [0.7.0] - 2026-08-02
 

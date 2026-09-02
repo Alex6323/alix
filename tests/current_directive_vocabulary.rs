@@ -21,16 +21,21 @@ fn executable_fixtures_use_the_current_directive_vocabulary() {
             "mobile Rust bridge test",
             include_str!("../mobile/alix/rust/src/api/review.rs"),
         ),
+        (
+            "session assembly warning labels",
+            include_str!("../src/assemble.rs"),
+        ),
     ];
-    let retired = [
+    let undefined = [
         "<!-- choices-single -->",
         "<!-- choices-multiple -->",
         "order: sequential",
+        "\"order\"",
     ];
     let stale: Vec<String> = surfaces
         .into_iter()
         .flat_map(|(surface, text)| {
-            retired
+            undefined
                 .into_iter()
                 .filter(move |word| text.contains(word))
                 .map(move |word| format!("{surface}: {word}"))
@@ -39,7 +44,7 @@ fn executable_fixtures_use_the_current_directive_vocabulary() {
 
     assert!(
         stale.is_empty(),
-        "executable fixtures still use retired directives: {stale:?}"
+        "executable fixtures use spellings the current grammar does not define: {stale:?}"
     );
 }
 
@@ -63,6 +68,6 @@ fn unreleased_changelog_claims_use_the_current_directive_vocabulary() {
 
     assert!(
         stale.is_empty(),
-        "Unreleased still presents retired directives as current vocabulary: {stale:?}"
+        "Unreleased presents spellings the current grammar does not define as current: {stale:?}"
     );
 }

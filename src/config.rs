@@ -1684,7 +1684,7 @@ mod tests {
     }
 
     #[test]
-    fn pre_nesting_key_sections_are_rejected() {
+    fn unnested_key_sections_are_rejected() {
         assert!(Config::from_toml("[picker]\ndown = [\"n\"]\n").is_err());
         assert!(Config::from_toml("[browse]\nnext = [\"n\"]\n").is_err());
     }

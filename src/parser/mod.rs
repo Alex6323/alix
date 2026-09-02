@@ -1466,9 +1466,9 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
 /// its label and how many lines it consumed, taken as deck-wide metadata
 /// rather than answer content. Label, destination, and title each may
 /// continue on a following line, so the whole candidate is scanned as one
-/// joined block. An invalid or incomplete shape consumes nothing; literal
-/// text resembling retired syntax inside an otherwise valid candidate does
-/// not alter its classification.
+/// joined block. An invalid or incomplete shape consumes nothing; arbitrary
+/// literal text inside an otherwise valid candidate does not alter its
+/// classification.
 // Must be checked before `link_definition`, which would otherwise consume
 // the spelling silently as a caret-labeled link definition.
 fn footnote_definition(raw: &str) -> bool {
@@ -3016,10 +3016,9 @@ fn build_card_inner(
         .min();
 
     // The block-level dedup key: front + cover-masked RAW answer lines
-    // (literal `\blank{...}` markers count as text, so a plain card
-    // repeating a hole's hidden text cannot collide; cover cuts make a
-    // moved cover change the key). Every card of the block carries it,
-    // while content_fingerprint stays the card's own effective question.
+    // (cover cuts make a moved cover change the key). Every card of the
+    // block carries it, while content_fingerprint stays the card's own
+    // effective question.
     let masked_answer: Vec<String> = answer
         .iter()
         .enumerate()
@@ -4563,10 +4562,10 @@ a
         );
     }
 
-    /// The classification key was deferred, so the word that used to be
-    /// parsed now takes the ordinary unknown-key lint.
+    /// Classification by `tags:` is deliberately not a format concept;
+    /// the key takes the ordinary unknown-key lint.
     #[test]
-    fn a_tags_key_is_no_longer_recognized() {
+    fn a_tags_key_is_an_ordinary_unknown_key() {
         let deck = parse(
             "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\ntags: [rust]\n---\n## q\na\n",
         );
@@ -5422,12 +5421,12 @@ a
     }
 
     #[test]
-    fn the_retired_mapping_spellings_are_ordinary_unknown_vocabulary() {
+    fn unknown_mapping_spellings_are_ordinary_unknown_vocabulary() {
         let deck = parse("---\ntasklist: choices-single\n---\n## q\n- [x] a\n- [ ] b\n");
         assert_eq!(
             vec!["- [x] a", "- [ ] b"],
             deck.cards[0].back,
-            "the retired key maps nothing; the task list stays literal"
+            "an unknown key maps nothing; the task list stays literal"
         );
         assert!(
             !deck.lints.is_empty(),
@@ -5439,7 +5438,7 @@ a
             deck.lints.iter().any(
                 |lint| matches!(lint.kind, LintKind::UnknownKey { ref key } if key == "order")
             ),
-            "the retired order key is a loud ordinary unknown-key lint: {:?}",
+            "an unknown order key is a loud ordinary unknown-key lint: {:?}",
             deck.lints
         );
     }
@@ -5899,7 +5898,7 @@ a
             (
                 "[!TIP]",
                 Badge::Tip,
-                "a tip is a plain styled note, not the retired hint",
+                "a tip is a plain styled note like every other badge",
             ),
             ("[!IMPORTANT]", Badge::Important, "the third badge"),
             ("[!WARNING]", Badge::Warning, "the fourth badge"),
@@ -6493,21 +6492,21 @@ a
     }
 
     #[test]
-    fn the_retired_table_key_is_ordinary_unknown_vocabulary() {
+    fn an_unknown_table_key_is_ordinary_unknown_vocabulary() {
         let deck = parse("---\ntable: cards\n---\n## q\n| a | b |\n|---|---|\n| x | y |\n");
         assert!(
             deck.cards[0]
                 .back
                 .iter()
                 .any(|line| line.contains("| x | y |")),
-            "the retired key decides nothing; the table stays literal: {:?}",
+            "an unknown key decides nothing; the table stays literal: {:?}",
             deck.cards[0].back
         );
         assert!(
             deck.lints.iter().any(
                 |lint| matches!(lint.kind, LintKind::UnknownKey { ref key } if key == "table")
             ),
-            "the retired key is a loud ordinary unknown-key lint: {:?}",
+            "an unknown key is a loud ordinary unknown-key lint: {:?}",
             deck.lints
         );
     }

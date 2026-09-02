@@ -664,6 +664,10 @@ fn workspace_init_writes_both_documented_manifests() {
     let manifest = std::fs::read_to_string(ws.join("alix.toml")).unwrap();
     assert!(manifest.contains("title = \"T\""), "{manifest}");
     assert!(manifest.contains("[defaults]"), "headers stay uncommented");
+    assert!(
+        manifest.contains("# review = \"scheduled\""),
+        "the [defaults] sample advertises the current scheduling key: {manifest}"
+    );
     let local = std::fs::read_to_string(ws.join("alix.local.toml")).unwrap();
     assert!(local.contains("[review]"), "headers stay uncommented");
     assert!(local.contains("never shared"), "{local}");
