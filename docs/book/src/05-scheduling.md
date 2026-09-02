@@ -61,7 +61,7 @@ layout stay put. If the card has authored choice options, or the deck has AI
 distractors (`alix deck augment --target choices`) and the card is **atomic**
 (single-line answer), it instead
 greets you as a **multiple-choice** question: pick one, see which was right.
-Either way a guess never marks it recognized or punishes it, and the first
+Either way a guess records no grade and never punishes it, and the first
 *graded* quiz then comes back **later in the same session** (once a settle
 gap passes it resurfaces, interleaved behind the other cards you're seeing),
 so seeing a deck flows straight into drilling it. That gap is
@@ -78,8 +78,8 @@ proportionally, so chain another sitting when a deadline is near. Both keys live
 in `[review]` (see [Configuration](16-configuration.md); a workspace can
 override them in its `alix.local.toml`), and `--session N` overrides
 `max_session` for one launch. This holds at every depth, Recognize included: a
-Recognize sitting splits the same cap between never-met cards and
-met-but-unrecognized ones, and the met sweep finishes across chained sittings.
+Recognize sitting splits the same cap between never-met cards and cards due
+at Recognize.
 This is the first step of a card's life: *introduce*, then let its depth(s)
 schedule it.
 
@@ -103,25 +103,26 @@ harder over time just by surviving reviews. Which depth you exercise, and
 when, is entirely your call each session.
 
 The exception flows **downward, and only on a full pass**: get a card fully
-right at Reconstruct (in cram: only when it was due) and that also counts for its Recall
-schedule: if you can produce the answer, you can certainly recall it, so
-alix won't re-ask the easier form days later. If recall was **due** at that
-moment, the pass stands in for that review: full schedule credit, recorded
-in the card's history and marked as *propagated*. If recall existed but
-wasn't due yet, only its due date is pushed out from now (memory untouched,
-nothing recorded, the same refresh a cram pass gets). A *partly* or a miss
-never propagates, and a card drilled only at Reconstruct never gains a
-recall schedule from this. Separately, **any** full pass at any depth (cram
-included) marks the card *recognized* if it wasn't yet.
+right at a deeper depth (in cram: only when it was due) and that also counts
+for every shallower schedule the card already has. Reconstruct credits Recall
+and Recognize, Recall credits Recognize: if you can produce the answer, you
+can certainly recall and recognize it, so alix won't re-ask an easier form
+days later. If the shallower depth was **due** at that moment, the pass
+stands in for that review: full schedule credit, recorded in the card's
+history and marked as *propagated*. If its schedule existed but wasn't due
+yet, only its due date is pushed out from now (memory untouched, nothing
+recorded, the same refresh a cram pass gets). A *partly* or a miss never
+propagates, and a missing schedule is never created: a card drilled only at
+Reconstruct never gains a recall or recognize schedule from this.
 
 ## Badges
 
 A deck can earn a **badge** at each depth, shown in the picker: a quick read
 on how solid it is, never a gate on anything (only passing the [AI
 exam](12-the-ai-exam.md) unlocks a dependent deck). A deck earns a depth's
-badge once *every* one of its cards is currently solid at that depth:
-recognized, for Recognize; at or past 21 days of FSRS stability, for
-Recall/Reconstruct, in practice a few weeks of regular drilling. Only the
+badge once *every* one of its cards is currently solid at that depth: at or
+past 21 days of FSRS stability (in practice a few weeks of regular
+drilling), the same bar at all three depths, Recognize included. Only the
 highest badged depth shows: **solid** while the deck still clears the bar,
 **dotted** once a card has since lapsed below it (a badge, once earned, keeps
 its date, a high-water mark, not a live pass/fail).
@@ -165,12 +166,10 @@ dependencies chapter covers it in full.
 ## Cramming
 
 Need to review everything now, schedule be damned, the night before an exam?
-**Cram** ignores due times and shows every card that isn't retired. It's a
-per-launch tick-box in the picker's Depth… menu (key `c` while the menu is
-open); plain **Learn** never crams. At Recognize, cram is the repeatable quiz:
-it serves every card you have met, including the already-recognized ones a
-normal Recognize session would skip (the sitting stays bounded by
-`max_session`).
+**Cram** ignores due times and shows every card that isn't retired, at every
+depth (the sitting stays bounded by `max_session`). It's a per-launch
+tick-box in the picker's Depth… menu (key `c` while the menu is open); plain
+**Learn** never crams.
 
 Cram changes **which cards are queued, never how a due card is graded**: a
 card that was genuinely due grades exactly like a normal review: full

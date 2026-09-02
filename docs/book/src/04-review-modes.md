@@ -71,15 +71,16 @@ go: authored choice options on a card (an invoked task list), AI-generated distr
   cached distractors, and no table has nothing to recognize: the picker greys
   the Recognize depth out until a card carries options or you run the augment.
   A correct
-  pick marks the card recognized; a quiet **"I guessed"** link right after lets
+  pick grades the card at Recognize; a quiet **"I guessed"** link right after lets
   you undo that, re-queuing it. A wrong pick shows which option was right, then
   **Continue** re-queues it too.
 - **Recall** *(the default)*: the classic flashcard. Bring the answer to mind,
   reveal it, and self-grade. Its own FSRS schedule.
 - **Reconstruct**: produce the answer in full, on its **own independent FSRS
   schedule** per card. Recall and Reconstruct are two separate practices, so a
-  card can be due for one and not the other; the one pass-only downward credit
-  between them is covered in [Scheduling](05-scheduling.md).
+  card can be due for one and not the other; the pass-only downward credit
+  that flows to every shallower schedule is covered in
+  [Scheduling](05-scheduling.md).
 
 Nothing climbs or descends between depths on its own: a card's Recall and
 Reconstruct schedules just sit there side by side, and which one you exercise is
