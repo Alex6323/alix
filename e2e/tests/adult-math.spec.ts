@@ -214,9 +214,10 @@ test("a tall display formula on the question side scales into the capped questio
   // The same SVG serves inline and display math; flagging it display puts the
   // fraction on the question side as a block, taller than the capped region.
   const formula = { ...inlineRun, math: { ...inlineRun.math, display: true } };
-  const card = { ...explain, context: [inlineRun.text], context_runs: [[formula]], context_units: [] };
+  const contextCard = { ...explain, context: [inlineRun.text], context_runs: [[formula]], context_units: [] };
+  const frontCard = { ...explain, front: inlineRun.text, front_runs: [formula], front_units: null, context: [], context_runs: [], context_units: [] };
   await page.route("**/api/browse", (route) =>
-    route.fulfill({ json: { cards: [card], label: "tall formula" } }),
+    route.fulfill({ json: { cards: [contextCard, frontCard], label: "tall formulas" } }),
   );
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(String(error)));
@@ -229,13 +230,20 @@ test("a tall display formula on the question side scales into the capped questio
   await page.keyboard.press("b");
 
   const question = page.locator(".region.q");
-  const svg = question.locator(".math-display svg");
-  await expect(svg).toBeVisible();
-  const region = await question.boundingBox();
-  const drawn = await svg.boundingBox();
-  expect(region && drawn, "the question region and its formula must lay out").toBeTruthy();
-  expect(
-    drawn!.y + drawn!.height,
-    `formula bottom ${drawn!.y + drawn!.height} must not pass the question region's bottom ${region!.y + region!.height}`,
-  ).toBeLessThanOrEqual(region!.y + region!.height);
+  const formulaStaysInside = async (where: string) => {
+    const svg = question.locator(".math-display svg");
+    await expect(svg).toBeVisible();
+    const region = await question.boundingBox();
+    const drawn = await svg.boundingBox();
+    expect(region && drawn, `${where}: the question region and its formula must lay out`).toBeTruthy();
+    expect(
+      drawn!.y + drawn!.height,
+      `${where}: formula bottom ${drawn!.y + drawn!.height} must not pass the question region's bottom ${region!.y + region!.height}`,
+    ).toBeLessThanOrEqual(region!.y + region!.height);
+  };
+  await formulaStaysInside("context formula");
+  await expect(question.locator(".context")).toHaveCount(1);
+  await page.keyboard.press("ArrowRight");
+  await expect(question.locator(".context")).toHaveCount(0);
+  await formulaStaysInside("front formula");
 });
