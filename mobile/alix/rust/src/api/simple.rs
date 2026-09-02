@@ -1,6 +1,9 @@
 #[flutter_rust_bridge::frb(init)]
 pub fn init_app() {
-    flutter_rust_bridge::setup_default_user_utils();
+    // Not setup_default_user_utils: that forces RUST_BACKTRACE=1, which
+    // anyhow captures and Debug-prints into every bridged error string the
+    // UI shows verbatim. Only its panic-hook half is kept.
+    flutter_rust_bridge::PanicBacktrace::setup();
 }
 
 #[flutter_rust_bridge::frb(sync)]
