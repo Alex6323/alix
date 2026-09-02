@@ -2,6 +2,11 @@
 
 - Status: Accepted (terminator clause superseded by 0037)
 - Evidence: section_context_units in src/serve/dto.rs
+- Details evolved 2026-09-02: sub-cards stack to `######` (the ATX
+  ceiling); seven or more hashes are ordinary prose, not an error.
+  Evidence in `src/parser/mod.rs::heading_depth` and the law row
+  "h6 completes the six-depth chain"; the structure decision is
+  unchanged.
 - Recorded: 2026-08-21
 - Retrospective: No
 - Open before acceptance: none on the grammar since 2026-08-22. The two

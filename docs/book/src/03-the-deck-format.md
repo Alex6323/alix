@@ -250,8 +250,8 @@ still rendered plain, and `alix doctor` flags it until you write
 `<!-- cards -->` or `<!-- plain -->` below it: the two meanings are too
 far apart to leave to accident, so the file says which one you meant.
 Each row is a card: first column front,
-second column back, optional third column note. The header row is shown as
-the card's context, never tested:
+second column back, optional third column note. The header row names the
+columns for whoever reads the file; it is never displayed and never tested:
 
 ```
 | word      | meaning   | note                 |
@@ -276,8 +276,8 @@ nothing between them but blank lines:
 | to refute | widerlegen  | eine These widerlegen |
 ```
 
-The heading names the group and is shown as the card's first context line,
-above the column labels; it is a title only when its body is empty, so a
+The heading names the group and, when present, is the row card's only
+context line; it is a title only when its body is empty, so a
 heading with an answer under it is an ordinary card that happens to be
 followed by a table. The table's directives, including its own ID, trail the
 table on their own lines below it; a directive on the heading line is a parse

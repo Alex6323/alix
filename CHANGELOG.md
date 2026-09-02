@@ -387,8 +387,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Card tables: a GitHub-flavored pipe table in a deck is a compact card
   source, one card per row (front | back | optional note). The header row
-  is shown as the card's context, and a `##` heading directly above the
-  table titles it and leads that context. Each row carries a minted
+  names the columns and is never displayed; a `##` heading directly above
+  the table titles it and is the row card's context. Each row carries a minted
   six-character stamp at its end and the table one container id line, so
   sorting, inserting, and editing rows preserves review history.
 
@@ -928,6 +928,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   prescribed a rewrite is removed.
 
 ### Fixed
+
+- The desktop entry written by `install-desktop.sh` no longer describes
+  alix as a trainer "for the terminal"; bare `alix` opens the local web
+  app.
 
 - The codex backend forwards a configured `[ask] effort` to the CLI as
   its reasoning-effort config instead of silently dropping it. Nothing

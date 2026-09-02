@@ -167,9 +167,10 @@ dependencies chapter covers it in full.
 
 Need to review everything now, schedule be damned, the night before an exam?
 **Cram** ignores due times and shows every card that isn't retired, at every
-depth (the sitting stays bounded by `max_session`). It's a per-launch
-tick-box in the picker's Depth… menu (key `c` while the menu is open); plain
-**Learn** never crams.
+depth (the sitting stays bounded by `max_session`; at Recognize the pick-only
+filter still applies, so only cards with something to pick from appear).
+It's a per-launch tick-box in the picker's Depth… menu (key `c` while the
+menu is open); plain **Learn** never crams.
 
 Cram changes **which cards are queued, never how a due card is graded**: a
 card that was genuinely due grades exactly like a normal review: full
@@ -214,9 +215,9 @@ As you go, a thin **region breadcrumb** sits above each card (e.g.
 emphasized) so you see *where you are* in the material, not just what's in front
 of you. The names are deliberately coarse: they orient without giving away any
 card's answer. Under each region is a **card-tier heatmap**: one small cell
-per card. Neutral means untouched; grey means **seen** (the card was shown to
-you at least once, right or wrong); white means **introduced** (you got it right
-at least once); a **learned** (graduated) card is green, yellow, or red by how
+per card. Neutral means untouched; grey means **seen** (you met the card:
+acknowledged it, or answered and got it wrong); white means **learning** (you
+got it right at least once, not yet graduated); a **learned** (graduated) card is green, yellow, or red by how
 well you'd recall it right now; purple means retired. An **outlined** cell,
 unfilled, is a [sub-card](03-the-deck-format.md#sections-and-sub-cards) still
 gated on its parent's graduation, which is why it is usually untouched as well.
