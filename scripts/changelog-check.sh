@@ -43,6 +43,20 @@ bad_names=$(awk '
 [ -z "$bad_names" ] || fail "non-standard subsection under [Unreleased]:
 $bad_names"
 
+# A release cut leaves an empty Added / Changed / Fixed skeleton under
+# [Unreleased] (RELEASING.md step 3), so the next entry has its slot waiting.
+missing_skeleton=$(awk '
+    /^## \[Unreleased\]/ { unrel = 1; next }
+    /^## \[/ { unrel = 0 }
+    unrel && /^### (Added|Changed|Fixed)$/ { seen[$0] = 1 }
+    END {
+        split("### Added,### Changed,### Fixed", want, ",")
+        for (i = 1; i <= 3; i++) if (!(want[i] in seen)) print want[i]
+    }
+' "$file")
+[ -z "$missing_skeleton" ] || fail "[Unreleased] lacks its release skeleton:
+$missing_skeleton"
+
 # A dirty working tree must never lose release headings relative to HEAD:
 # releases only ever append headings, so a decrease is a truncation.
 if committed=$(git show "HEAD:$file" 2>/dev/null); then
