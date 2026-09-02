@@ -36,10 +36,7 @@ fn check_all(cfg: &AskConfig) -> Result<()> {
 
     let mut rows: Vec<(BackendKind, String, String)> = Vec::with_capacity(kinds.len());
     for kind in kinds {
-        let per_kind = AskConfig {
-            backend: kind,
-            ..cfg.clone()
-        };
+        let per_kind = config_for_backend(cfg, kind);
         let backend = backend_for(&per_kind)?;
         let name = backend.name().to_string();
         let cmd = backend.command().to_string();
@@ -51,10 +48,7 @@ fn check_all(cfg: &AskConfig) -> Result<()> {
 
     let mut any_failed = false;
     for (kind, name, cmd) in &rows {
-        let per_kind = AskConfig {
-            backend: *kind,
-            ..cfg.clone()
-        };
+        let per_kind = config_for_backend(cfg, *kind);
         match probe(&per_kind) {
             Ok(_) => println!("✓ {name:<name_width$}  ({cmd:<cmd_width$}): ready"),
             Err(e) => {
@@ -68,6 +62,13 @@ fn check_all(cfg: &AskConfig) -> Result<()> {
         anyhow::bail!("one or more backends failed the health check")
     } else {
         Ok(())
+    }
+}
+
+fn config_for_backend(cfg: &AskConfig, backend: BackendKind) -> AskConfig {
+    AskConfig {
+        backend,
+        ..cfg.clone()
     }
 }
 
@@ -112,6 +113,19 @@ mod tests {
             };
 
             assert_eq!(expected, probe_config(&parent));
+        }
+    }
+
+    #[test]
+    fn every_health_probe_keeps_the_backend_it_was_given() {
+        let parent = AskConfig::default();
+        for backend in [
+            BackendKind::Claude,
+            BackendKind::Gemini,
+            BackendKind::Codex,
+            BackendKind::Copilot,
+        ] {
+            assert_eq!(backend, config_for_backend(&parent, backend).backend);
         }
     }
 

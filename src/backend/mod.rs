@@ -248,6 +248,24 @@ mod tests {
     }
 
     #[test]
+    fn every_backend_reports_its_canonical_name_and_command() {
+        for (kind, name, command) in [
+            (BackendKind::Claude, "claude", "claude"),
+            (BackendKind::Gemini, "gemini", "gemini"),
+            (BackendKind::Codex, "codex", "codex"),
+            (BackendKind::Copilot, "copilot", "copilot"),
+        ] {
+            let cfg = AskConfig {
+                backend: kind,
+                ..AskConfig::default()
+            };
+            let backend = backend_for(&cfg).unwrap();
+            assert_eq!(name, backend.name(), "{kind:?}");
+            assert_eq!(command, backend.command(), "{kind:?}");
+        }
+    }
+
+    #[test]
     fn codex_backend_refuses_a_url_source_cleanly() {
         let cfg = AskConfig {
             backend: BackendKind::Codex,

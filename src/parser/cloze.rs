@@ -563,4 +563,40 @@ mod tests {
         assert_eq!(vec![text("\\blank{mut}")], segments);
         assert!(lints.is_empty());
     }
+
+    #[test]
+    fn every_backslash_run_preserves_its_image_marker_parity() {
+        for run in 1..=4 {
+            let prefix = "\\".repeat(run);
+            let input = format!("{prefix}![a](x.png)");
+            let (segments, lints) = answer(&input);
+            let expected = if run % 2 == 1 {
+                vec![text(&format!("{}![a](x.png)", "\\".repeat(run - 1)))]
+            } else {
+                vec![text(&prefix), image("x.png", Some("a"))]
+            };
+            assert_eq!(expected, segments, "run of {run} backslashes");
+            assert!(lints.is_empty(), "run of {run} backslashes: {lints:?}");
+        }
+    }
+
+    #[test]
+    fn image_source_scanning_preserves_authored_ranges_and_rejects_invalid_brackets() {
+        for (input, src, range, after) in [
+            ("<a b.png>)tail", "a b.png", 1..8, "tail"),
+            ("a\\(b\\).png)tail", "a(b).png", 0..10, "tail"),
+            ("a(b)c.png)tail", "a(b)c.png", 0..9, "tail"),
+            ("  \\(b.png)tail", "(b.png", 2..9, "tail"),
+            ("  (a)b.png)tail", "(a)b.png", 2..10, "tail"),
+        ] {
+            assert_eq!(
+                Some((src.to_string(), range, after)),
+                scan_src(input),
+                "{input}"
+            );
+        }
+        for input in ["<a<b>)", "<a\nb>)"] {
+            assert_eq!(None, scan_src(input), "{input:?}");
+        }
+    }
 }
