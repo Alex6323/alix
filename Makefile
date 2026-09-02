@@ -319,7 +319,8 @@ coverage-lcov:
 	cargo +$(RUST_NIGHTLY) llvm-cov --workspace --lcov --output-path lcov.info
 
 # Grader calibration (tests/calibrate.rs): the REAL grade prompt vs labeled
-# adversarial answers, to catch a lenient grader. Needs the claude CLI logged in;
+# adversarial answers, to catch a lenient grader. Needs the claude, codex, and
+# copilot CLIs logged in (the calibrated-backend matrix lives in the test);
 # makes real, costed calls. Off the normal gate: run before every desktop/mobile
 # release and after changing grade_prompt.
 calibrate:
