@@ -672,14 +672,25 @@ export function createStudy({
   }
 
   function fitQuestion(q) {
-    const formulas = q.querySelectorAll(".math-display svg");
-    formulas.forEach((svg) => { svg.style.maxHeight = ""; });
-    formulas.forEach((svg) => {
-      const overflow = q.scrollHeight - q.clientHeight;
-      if (overflow <= 0) return;
-      const room = svg.getBoundingClientRect().height - overflow;
-      svg.style.maxHeight = Math.max(40, Math.round(room)) + "px";
+    const formulas = [...q.querySelectorAll(".math-display svg")];
+    const pictures = [...q.querySelectorAll(":scope > .card-img, :scope > .img-wrap, :scope > .img-fit")];
+    const formulaFloor = 40 / Math.max(1, formulas.length);
+    const visuals = [
+      ...formulas.map((node) => ({ node, floor: formulaFloor })),
+      ...pictures.map((node) => ({ node, floor: 40 })),
+    ];
+    visuals.forEach(({ node }) => { node.style.maxHeight = ""; });
+    q.querySelectorAll("img.card-img").forEach((image) => {
+      if (!image.complete) image.addEventListener("load", () => fitQuestion(q), { once: true });
     });
+    const overflow = q.scrollHeight - q.clientHeight;
+    if (overflow > 0 && visuals.length) {
+      const height = visuals.reduce((sum, { node }) => sum + node.getBoundingClientRect().height, 0);
+      const share = Math.max(0, height - overflow) / visuals.length;
+      visuals.forEach(({ node, floor }) => {
+        node.style.maxHeight = Math.max(floor, Math.floor(share)) + "px";
+      });
+    }
     updateQuestionFade(q);
   }
 

@@ -36,6 +36,7 @@
      down to fit instead of scrolling; flex-grow 0 keeps small images at their
      natural size rather than ballooning. */
   .card-img { flex: 0 1 auto; min-height: 0; align-self: center; max-width: 100%; object-fit: contain; margin: 12px auto 0; border-radius: 8px; }
+  .region.q > .card-img, .region.q > .img-wrap, .region.q > .img-fit { min-height: 40px; }
   .img-wrap { position: relative; display: flex; justify-content: center; flex: 0 1 auto; min-height: 0; align-self: center; max-width: 100%; }
   .img-wrap .card-img { margin: 12px 0 0; min-height: 0; max-height: 100%; }
   .img-fit { display: flex; justify-content: center; align-items: center; flex: 0 1 auto; min-height: 0; align-self: center; width: 100%; }

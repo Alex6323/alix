@@ -12,6 +12,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Adult web review keeps several formulas and question images visible together
+  instead of clipping a later formula or shrinking an image to a speck.
+
 ## [0.8.0] - 2026-09-02
 
 ### Added

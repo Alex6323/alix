@@ -1,12 +1,39 @@
 import { test, expect } from "./helpers";
 import { adultDeckRow, openApp } from "./helpers";
 
+const TALL_IMAGE =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='800'%3E%3Crect width='800' height='800' fill='white'/%3E%3Cpath d='M40 760L400 40l360 720z' fill='none' stroke='black' stroke-width='20'/%3E%3C/svg%3E";
+
 test.beforeEach(async ({ page, request }) => {
   await request.post("/api/deselect", { data: {} });
   await page.setViewportSize({ width: 390, height: 844 });
   await openApp(page);
   await expect(page.locator(".deckrow").first()).toBeVisible();
 });
+
+async function questionFitMathCards(request: any) {
+  const response = await request.post("/api/browse", { data: { deck: "animals/math.md" } });
+  expect(response.ok(), await response.text()).toBeTruthy();
+  const browse = await response.json();
+  const explain = browse.cards.find((card: any) => card.front.includes("Explain the quadratic formula"));
+  const inlineRun = explain?.back_runs?.[0]?.find((run: any) => run.math?.svg);
+  expect(inlineRun, "the fixture must carry the quadratic formula").toBeTruthy();
+  const formula = { ...inlineRun, math: { ...inlineRun.math, display: true } };
+  return { explain, formula };
+}
+
+async function openQuestionFitBrowse(page: any, request: any, cards: any[]) {
+  await page.route("**/api/browse", (route: any) =>
+    route.fulfill({ json: { cards, label: "question fit probes" } }),
+  );
+  await request.post("/api/deselect", { data: {} });
+  await openApp(page);
+  await expect(page.locator(".deckrow").first()).toBeVisible();
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "Math").hover();
+  await page.keyboard.press("b");
+  await expect(page.locator(".region.q")).toBeVisible();
+}
 
 test("adult context blocks render paired bare math and keep unmatched openers literal", async ({ page, request }) => {
   const browseResponse = await request.post("/api/browse", {
@@ -246,4 +273,76 @@ test("a tall display formula on the question side scales into the capped questio
   await page.keyboard.press("ArrowRight");
   await expect(question.locator(".context")).toHaveCount(0);
   await formulaStaysInside("front formula");
+});
+
+test("two display formulas share the available question height", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1000, height: 600 });
+  const { explain, formula } = await questionFitMathCards(request);
+  const card = {
+    ...explain,
+    front: "Compare the two equivalent forms",
+    front_runs: [{ text: "Compare the two equivalent forms" }],
+    front_units: null,
+    context: [formula.text, formula.text],
+    context_runs: [[formula], [formula]],
+    context_units: [],
+    context_leads: true,
+  };
+  await openQuestionFitBrowse(page, request, [card]);
+
+  const geometry = await page.locator(".region.q").evaluate((question) => {
+    const region = question.getBoundingClientRect();
+    const formulas = Array.from(question.querySelectorAll<SVGElement>(".math-display svg"));
+    return {
+      regionBottom: region.bottom,
+      formulas: formulas.map((svg) => {
+        const box = svg.getBoundingClientRect();
+        return { height: box.height, bottom: box.bottom };
+      }),
+    };
+  });
+  expect(geometry.formulas).toHaveLength(2);
+  expect(
+    geometry.formulas.every((formula) => formula.bottom <= geometry.regionBottom + 0.5),
+    JSON.stringify(geometry),
+  ).toBeTruthy();
+  expect(
+    Math.abs(geometry.formulas[0].height - geometry.formulas[1].height),
+    `identical formulas should share the fit equally: ${JSON.stringify(geometry)}`,
+  ).toBeLessThanOrEqual(1);
+});
+
+test("a question image remains visible beside a fitted formula", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1000, height: 600 });
+  const { explain, formula } = await questionFitMathCards(request);
+  const card = {
+    ...explain,
+    front: formula.text,
+    front_runs: [formula],
+    front_units: null,
+    context: [],
+    context_runs: [],
+    context_units: [],
+    images: [{ src: TALL_IMAGE, alt: "geometry probe" }],
+  };
+  await openQuestionFitBrowse(page, request, [card]);
+
+  await page.waitForFunction(() => {
+    const image = document.querySelector(".region.q .card-img");
+    return image instanceof HTMLImageElement && image.complete && image.naturalHeight === 800;
+  });
+  const geometry = await page.locator(".region.q").evaluate((question) => {
+    const region = question.getBoundingClientRect();
+    const formula = question.querySelector<SVGElement>(".math-display svg")!.getBoundingClientRect();
+    const image = question.querySelector<HTMLImageElement>(".card-img")!.getBoundingClientRect();
+    return {
+      regionBottom: region.bottom,
+      formula: { height: formula.height, bottom: formula.bottom },
+      image: { height: image.height, bottom: image.bottom },
+    };
+  });
+  expect(geometry.formula.bottom, JSON.stringify(geometry)).toBeLessThanOrEqual(geometry.regionBottom + 0.5);
+  expect(geometry.image.bottom, JSON.stringify(geometry)).toBeLessThanOrEqual(geometry.regionBottom + 0.5);
+  expect(geometry.formula.height + 0.5, JSON.stringify(geometry)).toBeGreaterThanOrEqual(40);
+  expect(geometry.image.height + 0.5, JSON.stringify(geometry)).toBeGreaterThanOrEqual(40);
 });
