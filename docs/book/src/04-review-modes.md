@@ -185,8 +185,10 @@ Two ways to reach it:
   per card with `<!-- input: draw -->`, when the answer *can't* be typed (a
   diagram, a circuit, a piece of notation). The reveal is whatever the card
   already uses: a `![](...)` image on the answer side, or an explain card's
-  key points. An authored draw card always uses the canvas; the per-device toggle
-  below can't turn it off (you can't type a diagram).
+  key points. An authored draw card uses the canvas, and the per-device toggle
+  below can't turn it off (you can't type a diagram). The one exception is a
+  cloze card in the desktop web app, which ignores both the directive and the
+  toggle and serves the typed check.
 - **The per-device toggle.** For a card that *can* be typed, the web ☰ menu's
   **Draw answers** switch lets you answer on the canvas anyway, for the retention
   of writing by hand, without changing the deck file. It's remembered per browser.
@@ -195,9 +197,9 @@ Grading a draw card is entirely **self-reported**: there's no OCR or vision mode
 reading the canvas, so it works like a self-graded flip/explain card. You judge
 your own drawing against the reveal. In this version `input:` is honored on
 **self-graded** checks only (a `flip` reveal or an explain); it's ignored
-elsewhere. One case needs no directive on mobile: a cloze hole cut out of a
-formula defaults to the sketch canvas there. The desktop web app does not
-honor that default yet and serves a formula span as the typed check.
+elsewhere, and the desktop web app also ignores `input: draw` on any cloze
+card, authored or defaulted. One case needs no directive on mobile: a cloze
+hole cut out of a formula defaults to the sketch canvas there.
 
 ---
 

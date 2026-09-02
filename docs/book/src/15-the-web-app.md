@@ -172,8 +172,10 @@ input for a small canvas: **Pen** · **Eraser** · **Undo** · **Clear**, then
 **Reveal**. The drawing stays on screen (frozen, not editable) while you
 self-grade against the card's normal reveal, then it's discarded; nothing you
 draw is saved or sent anywhere beyond rendering it in the browser. It's
-honored on `flip`/`explain` cards only, and there's no OCR or vision model
-reading it back: grading is on you, same as any other self-graded card.
+honored on `flip`/`explain` cards only, never on a cloze card (the desktop web
+app types those regardless of the directive or the toggle), and there's no OCR
+or vision model reading it back: grading is on you, same as any other
+self-graded card.
 
 ## Themes
 
