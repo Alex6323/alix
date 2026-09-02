@@ -1761,7 +1761,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and the round count was capped at fifteen instead of rerunning to PASS.
   Grader calibration (its matrix is stored under `docs/results/`), the
   card-shape evaluation, and the old-format audit ran to PASS on the
-  release candidate's production code.
+  release candidate's production code. The release-plumbing edits made
+  after the last audit round (this changelog's own rollover, RELEASING.md,
+  the calibration record) were not audited.
 
 ## [0.7.0] - 2026-08-02
 

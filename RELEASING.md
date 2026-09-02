@@ -106,8 +106,14 @@ at. **crates.io is not automated.**
    tag (an outdated tutorial is worse than none). When a pre-1.0 release
    changes persisted state, state the clean break explicitly and verify that
    production contains no accidental compatibility branch.
-2. **Bump the version.** Set `version = "X.Y.Z"` in `Cargo.toml`; refresh
-   `Cargo.lock` (`cargo build`).
+2. **Bump the version.** Set `version = "X.Y.Z"` in `Cargo.toml`, then refresh
+   every lockfile that carries the crate's version: the root `Cargo.lock`
+   (`cargo build`), `mobile/alix/rust/Cargo.lock` (`make mobile-unit`), and an
+   unlocked resolve for `tools/gfm-harness` and `fuzz` (`cargo metadata
+   --manifest-path <dir>/Cargo.toml`; an `--offline` update can downgrade
+   unrelated crates). Then `git grep` the old version: the README and book
+   install pins, the `docs/API.md` version example, and the bug-report
+   archive-name test carry it by hand, and only historical mentions may remain.
 3. **Finalize the changelog.** Rename `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD`,
    then add a fresh empty `## [Unreleased]` (Added / Changed / Fixed) above it.
    The release notes come from this section, so its heading must match the tag.
@@ -137,6 +143,13 @@ at. **crates.io is not automated.**
    examples, site, slides, tutorials, images, and screenshots. It writes
    `target/docs-audit.md`. Resolve every finding and rerun until the report
    begins `DOCS AUDIT: PASS`; this is a deliberate release check, not CI.
+   The audit is a single-shot sampler, so it may keep finding one or two
+   real items per round without converging. The termination rule (user
+   decision 2026-09-02): at most fifteen rounds per candidate. The last
+   round's findings are fixed and verified against the code without a rerun
+   (a P0 or P1 in that round buys one more), and the changelog's release
+   section records the gate as sampled, findings fixed, no clean sample,
+   naming any later edit to an audited surface the audit did not see.
 6. **Old-format recognition audit.** Run `make old-format-audit` on this exact
    release candidate: a costed read-only LLM sweep of production code for
    anything that recognizes, names, or special-cases an old format (temporary
@@ -145,8 +158,8 @@ at. **crates.io is not automated.**
    and demands its own removal.
 7. **Stage everything the bump touched, then commit.** The version bump
    regenerates files beyond `Cargo.toml`: the `tests/contracts/VersionDto.json`
-   snapshot and the mobile `Cargo.lock` both pick up the new version once the
-   suite runs. Run `make preflight` again: its clean-tree step lists anything
+   snapshot (the `mod contract` test writes it) and the four lockfiles from
+   step 2 all pick up the new version once the suite runs. Run `make preflight` again: its clean-tree step lists anything
    still unstaged. Then `git add -A` (stage ALL of it, never a hand-picked
    list), commit `Release vX.Y.Z`, and confirm a final `make preflight` is green
    with a clean tree.
