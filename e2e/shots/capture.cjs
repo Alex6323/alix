@@ -669,24 +669,32 @@ function fabricateGraduation() {
   // Session cards for a blank card are the per-span sub-ids (`-b<stamp>`,
   // the stamp minted into each `<!-- blank: ... b:x -->` line), not the base
   // token; the store tolerates unmatched extras as orphans. The stamp scan
-  // mirrors the quote-aware `stamp_token_offset` in src/stamp.rs: a `b:`
-  // inside a quoted value is answer text, not the stamp.
+  // mirrors the whitespace-token grammar of src/parser/region.rs::tokens: a
+  // quoted run stays inside its token, and only a whole token starting with
+  // `b:` is the stamp.
   function blankStamp(comment) {
+    const body = comment.slice("<!-- blank:".length, -"-->".length);
     let quoted = false;
-    for (let i = 0; i < comment.length; i++) {
-      const ch = comment[i];
+    let token = "";
+    let stamp = null;
+    const flush = () => {
+      if (stamp === null && token.startsWith("b:")) stamp = token.slice(2);
+      token = "";
+    };
+    for (let i = 0; i < body.length; i++) {
+      const ch = body[i];
       if (quoted) {
-        if (ch === "\\") i++;
+        if (ch === "\\") token += body[++i] ?? "";
         else if (ch === '"') quoted = false;
+        else token += ch;
         continue;
       }
       if (ch === '"') quoted = true;
-      else if (comment.startsWith("b:", i)) {
-        const token = comment.slice(i + 2).match(/^[a-z0-9]+/);
-        if (token) return token[0];
-      }
+      else if (/\s/.test(ch)) flush();
+      else token += ch;
     }
-    return null;
+    flush();
+    return stamp;
   }
   const ids = [];
   for (const block of text.split(/\n## /).slice(1)) {
