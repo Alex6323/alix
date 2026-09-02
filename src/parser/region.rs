@@ -956,4 +956,42 @@ mod tests {
             "fields without shape",
         );
     }
+
+    #[test]
+    fn a_number_is_equal_by_its_literal_and_unit_never_by_its_value() {
+        let num = |literal: &str, value: f64, percent: bool| Num {
+            literal: literal.to_string(),
+            value,
+            percent,
+        };
+        assert_eq!(num("10", 10.0, false), num("10", 10.0, false));
+        assert_eq!(
+            num("10", 10.0, false),
+            num("10", 11.0, false),
+            "the value derives from the literal, so it never decides"
+        );
+        assert_ne!(num("10", 10.0, false), num("11", 11.0, false));
+        assert_ne!(num("10", 10.0, false), num("10", 10.0, true));
+        assert_ne!(num("10", 10.0, false), num("11", 11.0, true));
+    }
+
+    #[test]
+    fn a_quoted_greater_than_is_dangerous_only_right_after_two_dashes() {
+        for (value, case) in [
+            (">", "bare"),
+            ("a->", "one dash"),
+            ("-x>", "a dash, then a letter"),
+            ("--x>", "two dashes, then a letter"),
+            ("--a", "two dashes, never closed"),
+        ] {
+            let region = blank(&format!(r#"span hidden="{value}""#))
+                .unwrap_or_else(|error| panic!("case `{case}`: {error:?}"));
+            assert_eq!(region.hidden.as_deref(), Some(value), "case `{case}`");
+        }
+        reject(
+            blank(r#"span hidden="-->""#),
+            "would close the comment",
+            "raw comment end",
+        );
+    }
 }

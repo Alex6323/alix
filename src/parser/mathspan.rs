@@ -417,11 +417,7 @@ fn previous_content_token(payload: &str, tokens: &[Token], index: usize) -> Opti
 }
 
 fn next_content_token(payload: &str, tokens: &[Token], index: usize) -> Option<usize> {
-    let mut next = index + 1;
-    while next < tokens.len() && whitespace_token(payload, &tokens[next]) {
-        next += 1;
-    }
-    (next < tokens.len()).then_some(next)
+    (index + 1..tokens.len()).find(|&next| !whitespace_token(payload, &tokens[next]))
 }
 
 /// The atom a script attaches to, walking past sibling scripts and their
@@ -508,11 +504,8 @@ fn operand_before(payload: &str, tokens: &[Token], index: usize) -> Option<Range
 }
 
 fn operand_after(payload: &str, tokens: &[Token], index: usize) -> Option<Range<usize>> {
-    let mut next = index + 1;
-    while next < tokens.len() && whitespace_token(payload, &tokens[next]) {
-        next += 1;
-    }
-    let first = tokens.get(next)?;
+    let next = next_content_token(payload, tokens, index)?;
+    let first = &tokens[next];
     if matches!(first.kind, Kind::Open) {
         let mut depth = 0i32;
         for later in &tokens[next..] {
@@ -705,7 +698,10 @@ pub(super) fn structural_unit(payload: &str, range: &Range<usize>) -> Result<(),
                     }
                 }
                 let mut last = index;
-                while let Some(next) = next_content_token(payload, &tokens, last) {
+                for next in (index..tokens.len()).skip(1) {
+                    if whitespace_token(payload, &tokens[next]) {
+                        continue;
+                    }
                     if matches!(tokens[next].kind, Kind::Script(other) if other == *script) {
                         last = next;
                     } else {
@@ -754,9 +750,7 @@ pub(super) fn structural_unit(payload: &str, range: &Range<usize>) -> Result<(),
     }
 
     let entry = depth_before[range.start];
-    if depth_before[range.end] != entry
-        || (range.start + 1..range.end).any(|byte| depth_before[byte] < entry)
-    {
+    if depth_before[range.end] != entry || range.clone().any(|byte| depth_before[byte] < entry) {
         return Err(Violation::GroupSplit);
     }
     Ok(())
@@ -1558,5 +1552,57 @@ mod tests {
             ratex_parser::parser::parse(valid)
                 .unwrap_or_else(|error| panic!("{name} valid placeholders: {error}"));
         }
+    }
+
+    #[test]
+    fn whitespace_between_a_script_and_its_operand_is_skipped_not_taken() {
+        assert_eq!(
+            Err(Violation::IncompleteScript('^')),
+            unit("x^ 2 + y", "x^ "),
+            "the blank after ^ is not the exponent"
+        );
+        assert_eq!(Ok(()), unit("x^ 2 + y", "x^ 2"));
+    }
+
+    #[test]
+    fn leading_whitespace_inside_the_match_still_reaches_the_whole_payload_bypass() {
+        for range in [1..7, 0..8, 2..8, 0..7, 1..8] {
+            assert_eq!(
+                Ok(()),
+                structural_unit("  a & b ", &range),
+                "{range:?} trims to the whole payload, so the `&` never counts"
+            );
+        }
+    }
+
+    #[test]
+    fn a_match_touching_an_invisible_argument_without_entering_it_is_visible() {
+        assert_eq!(Ok(()), unit(r"\phantom{x}y + z", "y"));
+        assert_eq!(Ok(()), unit(r"y\phantom{x} + z", "y"));
+        assert!(
+            !matches!(
+                unit(r"y\phantom{x} + z", r"y\phantom"),
+                Err(Violation::NotLearnerVisible(_))
+            ),
+            "the invisible extent starts after the command token, so a match ending there never enters it"
+        );
+        assert!(matches!(
+            unit(r"\phantom{x}y + z", "x"),
+            Err(Violation::NotLearnerVisible(_))
+        ));
+    }
+
+    #[test]
+    fn a_script_beside_a_text_argument_is_still_a_script() {
+        assert_eq!(
+            Err(Violation::IncompleteScript('\'')),
+            unit(r"\text{a} x' + y", "'"),
+            "after the text argument"
+        );
+        assert_eq!(
+            Err(Violation::IncompleteScript('\'')),
+            unit(r"x' + \text{a}", "'"),
+            "before the text argument"
+        );
     }
 }
