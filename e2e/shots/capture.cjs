@@ -690,7 +690,8 @@ function fabricateGraduation() {
         continue;
       }
       if (ch === '"') quoted = true;
-      else if (/\s/.test(ch)) flush();
+      // \s plus NEXT LINE minus BOM equals Rust's char::is_whitespace.
+      else if (ch === "\u0085" || (/\s/.test(ch) && ch !== "\uFEFF")) flush();
       else token += ch;
     }
     flush();
