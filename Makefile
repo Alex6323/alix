@@ -305,7 +305,7 @@ package-check:
 # here and nowhere else (0.8.0's card-shape guide did). A full release build,
 # so it is a release step (RELEASING.md step 9), not part of preflight.
 package-verify:
-	cargo package --locked --allow-dirty
+	cargo package --locked --allow-dirty --target-dir target/package-verify
 	@echo 'package-verify: OK (the tarball builds on its own)'
 
 # Publish to crates.io from the tag the manifest version names, and nowhere
@@ -315,7 +315,11 @@ package-verify:
 # and returns to the previous checkout whether or not cargo succeeded, exiting
 # with cargo's status. PUBLISH_DRY_RUN=1 (any non-empty value) builds the
 # tarball at the tag and uploads nothing. Irreversible without it.
-PUBLISH_FLAGS = $(if $(PUBLISH_DRY_RUN),--dry-run,)
+# Verify builds get their own target dir: in the shared `target/` the
+# tarball's binary uplifts over target/debug/alix and `cargo build` then
+# reports the crate fresh against the tarball's copy, so `cargo run` serves
+# the tarball's embedded web assets instead of the tree's.
+PUBLISH_FLAGS = $(if $(PUBLISH_DRY_RUN),--dry-run,) --target-dir target/package-verify
 publish:
 	@sh scripts/publish-check.sh
 	@tag=v$$(sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml | head -n 1); \
