@@ -94,7 +94,8 @@ so is every client.
 - **The polling pattern** (ask, exam, augment): a POST kicks a
   background thread and returns immediately with `thinking`/`busy` true; poll
   the matching GET until it clears, then read `error` or the results. alix's
-  own client polls at ~400 ms. `elapsed` (seconds, nullable) is progress
+  own client polls at 400 to 600 ms depending on the family (tutor 400, exam
+  and augment 600). `elapsed` (seconds, nullable) is progress
   feedback for the in-flight call.
 
 ## 4. Flows

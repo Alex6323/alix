@@ -288,8 +288,9 @@ not draw mermaid itself: when a **workspace member** is initialized
 (`alix deck init`, the same step that freezes local images and cited source
 excerpts, both covered below and in [Workspaces](08-workspaces.md)), each
 fence is rendered once through **sekien**, an optional external CLI that
-runs real mermaid.js (`cargo install sekien`), rasterized, and stored in the
-deck's asset folder (`assets/deck-<token>/` under the workspace) as a
+runs real mermaid.js (`cargo install sekien`; on Linux it also needs
+webkit2gtk, gtk3 and xvfb), rasterized, and stored in the deck's asset
+folder (`assets/deck-<token>/` under the workspace) as a
 content-addressed image plus a label map: where every node and edge label
 sits in the picture, which is what masking uses later. A machine-managed
 stamp comment lands on the line after the fence, tying the fence text to
