@@ -437,7 +437,6 @@ pub fn has_decks(path: &Path) -> bool {
 /// [`root_store_path`]).
 pub fn store_path(dir: &Path) -> PathBuf {
     match manifest_store(dir) {
-        Some(store) if Path::new(&store).is_absolute() => PathBuf::from(store),
         Some(store) => dir.join(store),
         None => dir.to_path_buf(),
     }
@@ -1115,5 +1114,42 @@ mod tests {
             .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
             .collect();
         assert_eq!(vec!["real.md".to_string()], names);
+    }
+
+    #[test]
+    fn manifest_icon_reads_the_icon_key_or_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(None, manifest_icon(dir.path()));
+        write(&dir.path().join(MANIFEST), "title = \"W\"\n");
+        assert_eq!(None, manifest_icon(dir.path()));
+        write(&dir.path().join(MANIFEST), "icon = \"logo.png\"\n");
+        assert_eq!(Some("logo.png".to_string()), manifest_icon(dir.path()));
+    }
+
+    #[test]
+    fn set_deadline_str_parses_the_date_or_refuses_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let local = dir.path().join(crate::config::LOCAL_MANIFEST);
+        set_deadline_str(dir.path(), Some("2026-09-02")).unwrap();
+        let text = std::fs::read_to_string(&local).unwrap();
+        assert!(text.contains("deadline = \"2026-09-02\""), "{text}");
+
+        let error = set_deadline_str(dir.path(), Some("02.09.2026")).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("not a YYYY-MM-DD date"),
+            "{error:#}"
+        );
+        let text = std::fs::read_to_string(&local).unwrap();
+        assert!(
+            text.contains("2026-09-02"),
+            "a refused date leaves the old one: {text}"
+        );
+
+        set_deadline_str(dir.path(), None).unwrap();
+        assert!(
+            !std::fs::read_to_string(&local)
+                .unwrap()
+                .contains("deadline")
+        );
     }
 }

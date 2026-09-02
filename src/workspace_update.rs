@@ -1511,6 +1511,12 @@ mod tests {
             &ask_config(&command),
         )
         .unwrap();
+        assert!(
+            !staging_path(&workspace)
+                .join(".alix-update-error.txt")
+                .exists(),
+            "no member failed, so no staging note is written"
+        );
 
         assert_eq!(1, report.decks[0].retained);
         assert_eq!(0, report.decks[0].retired);
@@ -1845,6 +1851,11 @@ mod tests {
             report.failed[0].reason.contains("stable deck ID"),
             "the recorded reason must be the member's own failure: {}",
             report.failed[0].reason
+        );
+        let note = fs::read_to_string(staging_path(&root).join(".alix-update-error.txt")).unwrap();
+        assert!(
+            note.contains("decks/other.md: ") && note.contains("stable deck ID"),
+            "the staging note names the failed member and its reason: {note:?}"
         );
     }
 
@@ -2352,5 +2363,274 @@ mod tests {
 
             assert_eq!(expected, derived, "{label}");
         }
+    }
+
+    #[test]
+    fn read_optional_distinguishes_absent_from_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(None, read_optional(&dir.path().join("absent")).unwrap());
+        fs::write(dir.path().join("present"), b"bytes").unwrap();
+        assert_eq!(
+            Some(b"bytes".to_vec()),
+            read_optional(&dir.path().join("present")).unwrap()
+        );
+        assert!(
+            read_optional(dir.path()).is_err(),
+            "a directory is unreadable, not absent"
+        );
+    }
+
+    #[test]
+    fn directory_names_distinguishes_absent_from_unlistable() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            directory_names(&dir.path().join("absent"))
+                .unwrap()
+                .is_empty()
+        );
+        fs::create_dir(dir.path().join("a")).unwrap();
+        fs::write(dir.path().join("b"), b"").unwrap();
+        assert_eq!(
+            BTreeSet::from([OsString::from("a"), OsString::from("b")]),
+            directory_names(dir.path()).unwrap()
+        );
+        assert!(
+            directory_names(&dir.path().join("b")).is_err(),
+            "a file is unlistable, not absent"
+        );
+    }
+
+    #[test]
+    fn a_model_fence_is_stripped_only_when_it_both_opens_and_closes_the_reply() {
+        assert_eq!("body\n", clean_model_output("```md\nbody\n```").unwrap());
+        assert_eq!("```md\nbody\n", clean_model_output("```md\nbody").unwrap());
+        assert_eq!("body\n```\n", clean_model_output("body\n```").unwrap());
+    }
+
+    #[test]
+    fn staged_identity_rejects_changed_content_unreviewed_ids_and_colliding_mints() {
+        let dir = tempfile::tempdir().unwrap();
+        let load = |name: &str, body: &str| {
+            let path = dir.path().join(name);
+            fs::write(
+                &path,
+                format!("---\nformat-version: 1\nid: \"deck-deck1\"\n---\n{body}"),
+            )
+            .unwrap();
+            Deck::load(&path).unwrap()
+        };
+        let current = load("current.md", "## Q\nA\n<!-- id: card-keep -->\n");
+        let same = load("same.md", "## Q\nA\n<!-- id: card-keep -->\n");
+        let changed = load("changed.md", "## Q2\nA\n<!-- id: card-keep -->\n");
+        let extra = load(
+            "extra.md",
+            "## Q\nA\n<!-- id: card-keep -->\n## N\nB\n<!-- id: card-new -->\n",
+        );
+        let message = |result: Result<()>| format!("{:#}", result.unwrap_err());
+        assert!(validate_staged_identity(&current, &same, &[]).is_ok());
+        assert!(
+            message(validate_staged_identity(&current, &changed, &[]))
+                .contains("changed its learning content")
+        );
+        assert!(
+            message(validate_staged_identity(&current, &extra, &[])).contains("unreviewed card ID")
+        );
+        let reviewed = validate_staged_identity(&current, &extra, &["card-new".to_string()]);
+        assert!(reviewed.is_ok(), "{:#}", reviewed.unwrap_err());
+        assert!(
+            message(validate_staged_identity(
+                &current,
+                &extra,
+                &["card-keep".to_string(), "card-new".to_string()]
+            ))
+            .contains("collides")
+        );
+    }
+
+    #[test]
+    fn image_identities_digest_present_files_and_name_absent_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let present = dir.path().join("present.png");
+        fs::write(&present, b"png bytes").unwrap();
+        let absent = dir.path().join("absent.png");
+        let image = |src: &Path| crate::card::CardImage {
+            src: src.to_path_buf(),
+            alt: None,
+            regions: Vec::new(),
+            crop: None,
+        };
+        let identities = image_identities(&[image(&present), image(&absent)]).unwrap();
+        assert_eq!(
+            vec![digest_file(&present).unwrap(), absent.display().to_string()],
+            identities
+        );
+    }
+
+    #[test]
+    fn a_corrupt_augment_sidecar_does_not_block_an_update_that_retires_nothing() {
+        let (_dir, _root, _source, deck) = workspace("Old answer\n");
+        let staged_deck = Deck::load(&deck).unwrap();
+        let deck_id = staged_deck.deck_token.clone().unwrap();
+        let sidecar = WorkspaceFiles::for_deck(&deck).augment_for(&deck_id);
+        fs::create_dir_all(sidecar.parent().unwrap()).unwrap();
+        fs::write(&sidecar, "not json").unwrap();
+        assert!(prune_staged_augmentation(&staged_deck, &sidecar, &[]).is_ok());
+        assert!(
+            prune_staged_augmentation(&staged_deck, &sidecar, &["card-oldcard".to_string()])
+                .is_err(),
+            "with something to retire the sidecar is read and its corruption surfaces"
+        );
+    }
+
+    #[test]
+    fn staged_citations_must_be_fingerprinted() {
+        let (_dir, root, source, deck) = workspace("Old answer\n");
+        assert!(
+            validate_citations(&Deck::load(&deck).unwrap()).is_ok(),
+            "the fixture member is frozen"
+        );
+        let raw = root.join("decks/raw.md");
+        fs::write(
+            &raw,
+            format!(
+                "---\nformat-version: 1\nid: \"deck-raw\"\nsource: {}\n---\n## Q\nA\n<!-- at: code.rs:1 -->\n<!-- id: card-raw -->\n",
+                parser::yaml_quote(&source.display().to_string())
+            ),
+        )
+        .unwrap();
+        let error = validate_citations(&Deck::load(&raw).unwrap()).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("unfingerprinted"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn staged_images_must_resolve_inside_the_member_s_asset_boundary() {
+        let (_dir, root, source, deck) = workspace("Old answer\n");
+        assert!(validate_images(&Deck::load(&deck).unwrap()).is_ok());
+        let pictured = root.join("decks/pictured.md");
+        fs::write(
+            &pictured,
+            format!(
+                "---\nformat-version: 1\nid: \"deck-pictured\"\nsource: {}\n---\n## Q\nA\n![alt](missing.png)\n<!-- id: card-pictured -->\n",
+                parser::yaml_quote(&source.display().to_string())
+            ),
+        )
+        .unwrap();
+        assert!(validate_images(&Deck::load(&pictured).unwrap()).is_err());
+    }
+
+    #[test]
+    fn a_staged_member_requiring_an_absent_deck_fails_dependency_validation() {
+        let (_dir, root, source, _) = workspace("Old answer\n");
+        assert!(validate_dependencies(&root).is_ok());
+        let needy = root.join("decks/needy.md");
+        fs::write(
+            &needy,
+            format!(
+                "---\nformat-version: 1\nid: \"deck-needy\"\nrequires:\n  - ghost\nsource: {}\n---\n## Q\nA\n<!-- id: card-needy -->\n",
+                parser::yaml_quote(&source.display().to_string())
+            ),
+        )
+        .unwrap();
+        let error = validate_dependencies(&root).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("requires missing deck `ghost`"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn publishing_copies_every_staged_asset_object_into_the_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("ws");
+        let staging = dir.path().join("staging");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&staging).unwrap();
+        let written = assets::write_object(&staging, "deck-deck1", b"png bytes", "png").unwrap();
+        let manifest = UpdateManifest {
+            version: MANIFEST_VERSION,
+            workspace: root.display().to_string(),
+            decks: vec![StagedDeck {
+                path: "decks/facts.md".to_string(),
+                deck_id: "deck-deck1".to_string(),
+                baseline: String::new(),
+                staged: String::new(),
+                augment_baseline: None,
+                augment_staged: None,
+                retained_tokens: Vec::new(),
+                retired_tokens: Vec::new(),
+                retired_ids: Vec::new(),
+                added_tokens: Vec::new(),
+            }],
+            failures: Vec::new(),
+        };
+
+        publish_assets(&root, &staging, &manifest).unwrap();
+
+        let published = WorkspaceFiles::new(&root)
+            .assets_for("deck-deck1")
+            .join(written.file_name().unwrap());
+        assert_eq!(b"png bytes".to_vec(), fs::read(&published).unwrap());
+    }
+
+    #[test]
+    fn restoring_documents_rewrites_or_removes_each_path_and_tolerates_an_absent_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let rewritten = dir.path().join("rewritten");
+        fs::write(&rewritten, b"new").unwrap();
+        let removed = dir.path().join("removed");
+        fs::write(&removed, b"new").unwrap();
+        let absent = dir.path().join("absent");
+
+        restore_documents(&[
+            (rewritten.clone(), Some(b"old".to_vec())),
+            (removed.clone(), None),
+            (absent.clone(), None),
+        ])
+        .unwrap();
+
+        assert_eq!(b"old".to_vec(), fs::read(&rewritten).unwrap());
+        assert!(!removed.exists());
+        assert!(!absent.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_rejects_a_staged_deck_whose_identity_differs_from_the_manifest() {
+        let _lock = exec_lock();
+        let (_dir, workspace, source, _deck) = workspace("Old answer\n");
+        let command = fake_reply(
+            &workspace,
+            &proposal(
+                &source,
+                "## Old question\nOld answer\n> [!NOTE]\n> reviewed\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
+            ),
+        );
+        stage(
+            &workspace,
+            &GenerateDeckConfig::default(),
+            &ask_config(&command),
+        )
+        .unwrap();
+        let staging = staging_path(&workspace);
+        let staged_deck = staging.join("decks/facts.md");
+        let renamed = fs::read_to_string(&staged_deck)
+            .unwrap()
+            .replace("deck-deck1", "deck-other");
+        fs::write(&staged_deck, renamed).unwrap();
+        let manifest_path = staging.join(MANIFEST);
+        let mut manifest: UpdateManifest =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        manifest.decks[0].staged = digest_file(&staged_deck).unwrap();
+        fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+        let error = apply(&workspace).unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("changed deck identity"),
+            "the current deck still matches the manifest, the staged one does not: {error:#}"
+        );
     }
 }

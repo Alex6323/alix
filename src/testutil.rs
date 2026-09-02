@@ -49,3 +49,14 @@ pub(crate) fn ask_config(command: &Path) -> AskConfig {
         ..AskConfig::default()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_fake_cli_config_bounds_the_child_to_ten_seconds() {
+        assert_eq!(
+            10,
+            super::ask_config(std::path::Path::new("fake")).timeout_secs
+        );
+    }
+}
