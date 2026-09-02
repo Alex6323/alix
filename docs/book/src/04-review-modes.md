@@ -195,8 +195,9 @@ Grading a draw card is entirely **self-reported**: there's no OCR or vision mode
 reading the canvas, so it works like a self-graded flip/explain card. You judge
 your own drawing against the reveal. In this version `input:` is honored on
 **self-graded** checks only (a `flip` reveal or an explain); it's ignored
-elsewhere. One case needs no directive at all: a cloze hole cut out of a
-formula is always sketched rather than typed.
+elsewhere. One case needs no directive on mobile: a cloze hole cut out of a
+formula defaults to the sketch canvas there. The desktop web app does not
+honor that default yet and serves a formula span as the typed check.
 
 ---
 

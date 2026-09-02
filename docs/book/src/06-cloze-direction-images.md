@@ -43,8 +43,9 @@ complete structural unit of it: a lone term such as `4ac`, a base with its
 whole script such as `b^2`, a standalone symbol such as `\pm` or `\alpha`,
 or the whole formula. A script cut from its base (`^2` alone) or a command
 cut from its arguments (`\frac{a}` without its `{b}`) is a loud error
-naming the cut. At review a formula span is **sketched rather than typed**,
-since a formula's piece has no keyboard spelling; write `input: type` on the
+naming the cut. At review a formula span **defaults to the sketch canvas on
+mobile**, since a formula's piece has no keyboard spelling (the desktop web
+app does not honor the default yet and types it); write `input: type` on the
 card or the deck to keep the keyboard, and an authored `input:` always wins.
 `alix doctor` warns when a typed span's answer would need LaTeX to type.
 

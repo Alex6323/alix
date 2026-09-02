@@ -1643,10 +1643,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   clear; a stylus locks out touch so a resting palm cannot draw; the
   sketch survives a rotation and stays on screen beside the answer.
 
-- A cloze hole cut out of a formula is now sketched rather than typed,
+- A cloze hole cut out of a formula now defaults to the sketch input,
   because the hole's content is the expected answer and a formula's piece
-  has no keyboard spelling. An `input:` written on the card or the deck
-  still wins: the rule only fills in where nothing was authored.
+  has no keyboard spelling. The mobile client honors the default; the
+  desktop web app still serves the typed check. An `input:` written on the
+  card or the deck still wins: the rule only fills in where nothing was
+  authored.
 
 - A formula span whose hidden text sits directly against the next token
   renders again. In a derivative ending `nx^{...}`, a `blank: span` hiding
