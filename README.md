@@ -36,7 +36,7 @@ curl -sSf https://alix.study/install.sh | sh
 The prebuilt installer resolves one release tag, downloads that release's
 archive and SHA-256 record, and verifies the archive before extracting it.
 Pin a particular release with
-`curl -sSf https://alix.study/install.sh | ALIX_VERSION=v0.7.0 sh`.
+`curl -sSf https://alix.study/install.sh | ALIX_VERSION=v0.8.0 sh`.
 
 The core needs nothing else. The AI features (the `generate` subcommands, `deck
 augment`, the

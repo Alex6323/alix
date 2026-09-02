@@ -7,6 +7,14 @@ Release notes, so a release without its section fails loud.
 
 ## [Unreleased]
 
+### Added
+
+- A draw card is answerable on the mobile client. It asked for typed text
+  before, including for a formula's piece, because the client dropped the
+  card's input kind on the way in from the core. Pen, eraser, undo, and
+  clear; a stylus locks out touch so a resting palm cannot draw; the
+  sketch survives a rotation and stays on screen beside the answer.
+
 ### Fixed
 
 - A tutor note taken on a fill-in-the-blank card landed on the block's
@@ -14,6 +22,32 @@ Release notes, so a release without its section fails loud.
   addressed by source line, which every blank of one block shares. The
   tutor now addresses the exact card id. Found by Codex with a red
   bridge-level reproduction.
+
+- An Explain reveal and a reshaped flip walked raw answer lines, so a card
+  carrying a supporting quotation read correctly line by line and then showed
+  its `>` markers the moment the whole answer appeared. The full answer now
+  walks the same steps the reveal does.
+
+- Mobile asks for every blank of a grouped cloze. Two blanks sharing a name
+  are one card asking both spans, and the mobile client sized its typed fields
+  as "one, unless the card reveals line by line", so it drew a single field and
+  the second span had nowhere to go: the card could not be passed on a phone at
+  all. Field count now follows the answer's own lines, as the web clients
+  already did. Found while checking a pre-work item Codex raised during a
+  design review.
+
+- The mobile app now closes longer code fences by the CommonMark
+  closing-length rule like the parser and both web clients, found by
+  Codex during reciprocal review: its walks had collapsed every opener
+  to three markers and required an exact three-marker closer, so a
+  four-backtick fence quoting a literal triple-backtick line closed
+  early and silently swallowed the display-math block after it.
+
+- A cloze blank inside subscript or superscript keeps its raised or
+  lowered position on the phone, found by Codex during reciprocal
+  review: marker-bearing script runs had skipped the baseline placement
+  to keep their hole coloring, putting scripted blanks back on the
+  normal baseline; placement and coloring now compose.
 
 ## [0.3.0] - 2026-08-03
 

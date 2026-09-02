@@ -15,7 +15,7 @@ archive and SHA-256 record and verifies the archive before extracting it. To
 pin the install to a particular release, use:
 
 ```sh
-curl -sSf https://alix.study/install.sh | ALIX_VERSION=v0.7.0 sh
+curl -sSf https://alix.study/install.sh | ALIX_VERSION=v0.8.0 sh
 ```
 
 Verification uses `sha256sum` on Linux or `shasum -a 256` on macOS. The

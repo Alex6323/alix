@@ -575,7 +575,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            "alix-bug-report-0.7.0-20260810T160000Z.zip",
+            "alix-bug-report-0.8.0-20260810T160000Z.zip",
             bundle.path.file_name().unwrap()
         );
         assert!(bundle.bytes > 0);

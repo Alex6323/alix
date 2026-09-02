@@ -46,7 +46,7 @@ so is every client.
 - Several instances can serve side by side: `alix <dir>` scopes an instance to
   one decks folder with its own state (`--lan --port <p>` per instance). Each
   instance is its own host/port/token triple to pair against.
-- `GET /api/version` → `{"version": "0.7.0"}` is the cheap "am I talking to
+- `GET /api/version` → `{"version": "0.8.0"}` is the cheap "am I talking to
   alix, and which one" check.
 
 ## 2. Authentication

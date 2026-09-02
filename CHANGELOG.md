@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-02
+
 ### Added
 - Deck normalization drops invisible bytes with no rendered role from
   prose: form feed, DEL, an interior BOM, an interior carriage return,
@@ -1304,10 +1306,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   claims. An atomic choice keeps the whole answer as its option, quotation
   included, but shows it without the `>` marker.
 
-- Mobile does the same: an Explain reveal and a reshaped flip walked raw answer
-  lines, so the same card read correctly line by line and then showed its `>`
-  markers the moment the whole answer appeared.
-
 - Every adult surface that shows a WHOLE answer renders a quotation as a quote
   block. Only the progressive line reveal walked the answer's steps; the
   Explain reveal (with and without cached key points), a reshaped flip, a
@@ -1337,14 +1335,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A second fenced block after a line-reveal boundary renders its own diagram
   rather than repeating the first one. The answer was rendered in two passes
   and the second pass restarted fence pairing at zero.
-
-- Mobile asks for every blank of a grouped cloze. Two blanks sharing a name
-  are one card asking both spans, and the mobile client sized its typed fields
-  as "one, unless the card reveals line by line", so it drew a single field and
-  the second span had nowhere to go: the card could not be passed on a phone at
-  all. Field count now follows the answer's own lines, as the web clients
-  already did. Found while checking a pre-work item Codex raised during a
-  design review.
 
 - A card whose answer an AI reshape replaced can be typed again. Every client
   shows `display_back`, while the check graded the authored answer, so a
@@ -1402,19 +1392,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   backslash, so an entity at the start of a line killed the whole parse
   and a masked span next to an entity spliced the wrong bytes. Splices
   now cover an entity's whole authored footprint.
-
-- The mobile app now closes longer code fences by the CommonMark
-  closing-length rule like the parser and both web clients, found by
-  Codex during reciprocal review: its walks had collapsed every opener
-  to three markers and required an exact three-marker closer, so a
-  four-backtick fence quoting a literal triple-backtick line closed
-  early and silently swallowed the display-math block after it.
-
-- A cloze blank inside subscript or superscript keeps its raised or
-  lowered position on the phone, found by Codex during reciprocal
-  review: marker-bearing script runs had skipped the baseline placement
-  to keep their hole coloring, putting scripted blanks back on the
-  normal baseline; placement and coloring now compose.
 
 - Multi-backtick code spans keep their body as code in the display
   projection, found by Codex during reciprocal review: the glyph scan
@@ -1644,12 +1621,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   id changed with it, detaching that row's review history. Found by the new
   stamper fuzzing.
 
-- A draw card is answerable on the mobile client. It asked for typed text
-  before, including for a formula's piece, because the client dropped the
-  card's input kind on the way in from the core. Pen, eraser, undo, and
-  clear; a stylus locks out touch so a resting palm cannot draw; the
-  sketch survives a rotation and stays on screen beside the answer.
-
 - A cloze hole cut out of a formula now defaults to the sketch input,
   because the hole's content is the expected answer and a formula's piece
   has no keyboard spelling. The mobile client honors the default; the
@@ -1775,6 +1746,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The warning printed when assembled decks disagree on their scheduling
   setting names the `review:` key. It previously pointed the reader at a key
   the current format does not define.
+
+### Release gates
+
+- The semantic documentation audit (`make docs-audit`) did not reach a clean
+  sample for this release. Fifteen rounds ran on the candidate; every round
+  reported findings, every finding was verified against the code and fixed,
+  and the round count was capped at fifteen instead of rerunning to PASS.
+  Grader calibration (its matrix is stored under `docs/results/`), the
+  card-shape evaluation, and the old-format audit ran to PASS on the
+  release candidate's production code.
 
 ## [0.7.0] - 2026-08-02
 
