@@ -28,8 +28,8 @@ repository and independently deciding what to build.
    approach, narrow the scope, request another implementation, or approve a
    commit. The agent is not allowed to commit or push merely because its tests
    pass.
-5. **Release checks examine the candidate.** Prompt changes receive live-model
-   calibration. Public documentation and screenshots receive a read-only
+5. **Release checks examine the candidate.** Every desktop or mobile release
+   receives live-model calibration, prompt changes or not. Public documentation and screenshots receive a read-only
    semantic audit against the implementation. Release artifacts have their own
    platform checks.
 
@@ -86,8 +86,8 @@ variance.
 
 Live-model calibration asks a different question: do current prompts produce
 useful, appropriately strict results? It is costed and non-deterministic, so it
-is run deliberately for prompt changes rather than pretending to be an ordinary
-unit test. The documentation audit is also a deliberate model call: it compares
+is run deliberately before every desktop or mobile release, and again after any
+grading-prompt change, rather than pretending to be an ordinary unit test. The documentation audit is also a deliberate model call: it compares
 public text and images with current implementation evidence before a release.
 
 Neither layer proves that every future model response will be good. A green

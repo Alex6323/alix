@@ -212,11 +212,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   three clients: options toggle, a Submit chip grades the set through the
   embedded core, and the feedback marks the same three option states.
 
-- A blank-surrounded `---` ends a section early: the cards after it carry no
-  context until the next `#` heading, and a sub-card chain does not cross it.
-  Prose directly after it, before any heading, is a parse error, and a
-  terminator that ends nothing is an `alix doctor` finding.
-
 - `alix doctor --repair-frontmatter-order` rewrites each checked deck's
   frontmatter into the canonical key order. Opt-in only; frontmatter it
   cannot safely permute (a blank line or comment inside the block) is left

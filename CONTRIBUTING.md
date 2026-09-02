@@ -113,7 +113,8 @@ Dart tests plus a full-app integration run in a headless Linux window, against
 the real embedded core), `e2e` (Playwright, browser-driven, blocking),
 `orchestrator` (the Python orchestrator suite), `persistence-os` (the test
 suite on macOS and the lib tests on Windows), `web-lint` (the composed web
-JavaScript check), and an informational `coverage` job. Three scheduled drift detectors run off the PR
+JavaScript check), `gfm-baseline` (the GFM harness build and its baseline
+comparison), and an informational `coverage` job. Three scheduled drift detectors run off the PR
 path: the backend CLI flag-drift smoke test, a nightly RustSec advisory scan
 (`make audit` is the blocking tag-time run), and a weekly mobile toolchain
 build (`make frb-check` + an APK build against current stable Flutter).

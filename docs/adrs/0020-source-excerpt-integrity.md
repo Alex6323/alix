@@ -47,7 +47,7 @@ citation or apply a unique exact rebase. It writes atomically and preserves
 deck and card IDs.
 
 Generated workspaces continue to snapshot cited excerpts at the end of
-`alix generate`. Snapshot rewriting stamps each copied asset citation. Frozen
+`alix workspace generate`. Snapshot rewriting stamps each copied asset citation. Frozen
 asset fingerprints protect the captured evidence itself; origin drift remains
 a separate comparison between that evidence and live upstream source.
 
