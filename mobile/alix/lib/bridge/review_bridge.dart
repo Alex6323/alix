@@ -1,6 +1,4 @@
-import 'package:flutter_rust_bridge/flutter_rust_bridge.dart'
-    show AnyhowException;
-
+import 'package:alix_mobile/bridge/bridge_error.dart';
 import 'package:alix_mobile/bridge/inline_run_bridge.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/review_port.dart';
@@ -26,9 +24,7 @@ class ReviewBridgeFactory implements ReviewPortFactory {
         ),
       );
     } catch (error) {
-      throw ReviewOpenFailure(
-        error is AnyhowException ? error.message : '$error',
-      );
+      throw ReviewOpenFailure(bridgeErrorText(error));
     }
   }
 }

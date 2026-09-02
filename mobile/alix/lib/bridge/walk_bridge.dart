@@ -1,6 +1,4 @@
-import 'package:flutter_rust_bridge/flutter_rust_bridge.dart'
-    show AnyhowException;
-
+import 'package:alix_mobile/bridge/bridge_error.dart';
 import 'package:alix_mobile/bridge/inline_run_bridge.dart';
 import 'package:alix_mobile/src/rust/api/review.dart' as bridge;
 import 'package:alix_mobile/walk/walk_models.dart';
@@ -24,9 +22,7 @@ class WalkBridgeFactory implements WalkPortFactory {
         ),
       );
     } catch (error) {
-      throw WalkOpenFailure(
-        error is AnyhowException ? error.message : '$error',
-      );
+      throw WalkOpenFailure(bridgeErrorText(error));
     }
   }
 }

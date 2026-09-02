@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart'
     show AnyhowException;
 
+import 'package:alix_mobile/bridge/bridge_error.dart';
+
 import 'package:alix_mobile/server_client.dart';
 
 /// The exact wording for a 401 mid-conversation: the paired server is right
@@ -253,7 +255,7 @@ class _TutorSheetState extends State<TutorSheet> {
     try {
       await widget.mint(front, back);
     } on AnyhowException catch (e) {
-      _snack(e.message);
+      _snack(bridgeErrorText(e));
       return;
     }
     if (!mounted) return;
