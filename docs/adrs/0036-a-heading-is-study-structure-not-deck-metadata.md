@@ -57,12 +57,13 @@ belongs to the frontmatter.** Concretely:
    effective-question `context` family (which cloze, region and
    table cards already require), projected under that family's law,
    and shown only on a review toggle. Nothing is shown by default.
-2. **`### ` and `#### ` are sub-cards.** Parentage is one stack
-   rule: a front of depth N closes every open chain at depth >= N,
-   and a sub-card front parses only while the most recently opened
-   front one level shallower is still open; anything else, skipped
-   levels, orphans, five and more hashes, empty headings, is a
-   line-numbered parse error. A sub-card is invisible to every
+2. **`### ` through `###### ` are sub-cards.** Parentage is one
+   stack rule: a front of depth N closes every open chain at depth
+   >= N, and a sub-card front parses only while the most recently
+   opened front one level shallower is still open; anything else,
+   skipped levels, orphans, empty headings, is a line-numbered parse
+   error, while seven or more hashes are ordinary prose (the ATX
+   ceiling, per the evolution note above). A sub-card is invisible to every
    selection, count and status surface until its parent block has
    graduated on the RECALL schedule (ADR 0035: left the learning
    stage), all expanded units counted, independent of the session's

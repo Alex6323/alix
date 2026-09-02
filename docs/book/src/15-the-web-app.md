@@ -25,7 +25,7 @@ Prev/Next, Esc to leave. Focusing any deck opens an inline **focus drawer**
 beneath it: it shows the deck's frontmatter `description:`, if any, and
 a per-card **tier heatmap**: neutral for an untouched card, grey for one merely
 **seen** (met: acknowledged, or answered and got wrong), white once **learning**
-(correct at least once, not yet graduated), green/yellow/red for a **learned** card by how well you'd recall it right
+(at least one full or partly pass, not yet graduated), green/yellow/red for a **learned** card by how well you'd recall it right
 now, purple once retired, and an unfilled **outline** for a
 [sub-card](03-the-deck-format.md#sections-and-sub-cards) still gated on its
 parent's graduation. When the deck has a [review order](05-scheduling.md) that

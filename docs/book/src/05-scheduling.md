@@ -216,8 +216,8 @@ emphasized) so you see *where you are* in the material, not just what's in front
 of you. The names are deliberately coarse: they orient without giving away any
 card's answer. Under each region is a **card-tier heatmap**: one small cell
 per card. Neutral means untouched; grey means **seen** (you met the card:
-acknowledged it, or answered and got it wrong); white means **learning** (you
-got it right at least once, not yet graduated); a **learned** (graduated) card is green, yellow, or red by how
+acknowledged it, or answered and got it wrong); white means **learning** (at
+least one full or partly pass, not yet graduated); a **learned** (graduated) card is green, yellow, or red by how
 well you'd recall it right now; purple means retired. An **outlined** cell,
 unfilled, is a [sub-card](03-the-deck-format.md#sections-and-sub-cards) still
 gated on its parent's graduation, which is why it is usually untouched as well.
