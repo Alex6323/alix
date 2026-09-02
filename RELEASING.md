@@ -197,8 +197,8 @@ The Android app releases on its **own version stream**: pubspec `version:
 X.Y.Z+N` and a **`mobile-vX.Y.Z` tag** (disjoint from the crate's `v*`
 pattern, so neither track ever triggers the other). The `mobile-release`
 workflow builds one signed arm64 APK (`alix-arm64-v8a.apk`) and attaches it
-to a GitHub Release, notes lifted from `mobile/alix/CHANGELOG.md`'s matching
-section.
+with its `.sha256` to a GitHub Release, notes lifted from
+`mobile/alix/CHANGELOG.md`'s matching section.
 
 Rules:
 

@@ -9,6 +9,8 @@ Release notes, so a release without its section fails loud.
 
 ### Added
 
+- The release attaches `alix-arm64-v8a.apk.sha256` beside the APK, so a
+  download can be verified with `sha256sum -c` like the desktop archives.
 - A draw card is answerable on the mobile client. It asked for typed text
   before, including for a formula's piece, because the client dropped the
   card's input kind on the way in from the core. Pen, eraser, undo, and
