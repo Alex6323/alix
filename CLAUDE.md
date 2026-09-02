@@ -329,7 +329,11 @@ to this codebase. When in doubt, mirror the surrounding code.
   carries a contiguous
   `<!-- at: file:lines fingerprint: xxh64-... -->` locator after its answer and
   notes, followed by its regularly stamped `<!-- id: card-<token> -->`;
-  `alix doctor` on the shared workspace must resolve and fingerprint every locator. For decision
+  `alix doctor` on the shared workspace must resolve and fingerprint every locator. A locator
+  never names `ROADMAP.md`, `PLAN.md`, or any other gitignored file (Alex,
+  2026-09-02): their lines move under every edit and a fresh checkout cannot
+  see them. A decision that no spec, ADR, doc, or code carries yet leaves its
+  card without a locator until one does. For decision
   cards, prefer authored task-list
   answers (exactly one `[x]`, plausible `[ ]` distractors) so they are useful at
   Recognize depth without an AI augmentation pass. Authored distractors must
