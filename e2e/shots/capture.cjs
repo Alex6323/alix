@@ -674,8 +674,9 @@ function fabricateGraduation() {
     const m = block.match(/<!-- id: (card-[a-z0-9]+) -->/);
     if (!m) continue;
     ids.push(m[1]);
-    for (const bm of block.matchAll(/<!-- blank:[^>]*?\bb:([a-z0-9]+) -->/g)) {
-      ids.push(`${m[1]}-b${bm[1]}`);
+    for (const cm of block.matchAll(/<!-- blank:[\s\S]*?-->/g)) {
+      const bm = cm[0].match(/\bb:([a-z0-9]+)/);
+      if (bm) ids.push(`${m[1]}-b${bm[1]}`);
     }
   }
   if (!ids.length) throw new Error(`no card ids in ${HERO_FILE}`);

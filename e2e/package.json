@@ -5,7 +5,7 @@
   "description": "Playwright smoke suite for the alix web clients.",
   "scripts": {
     "test": "playwright test",
-    "unit": "node --test unit/*.test.mjs"
+    "unit": "node --test unit/*.test.mjs shots/*.test.cjs"
   },
   "devDependencies": {
     "@playwright/test": "~1.61.1"
