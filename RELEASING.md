@@ -112,9 +112,12 @@ at. **crates.io is not automated.**
    then add a fresh empty `## [Unreleased]` (Added / Changed / Fixed) above it.
    The release notes come from this section, so its heading must match the tag.
 4. **Live grader calibration.** Run `make calibrate` even when no grading prompt
-   changed: the configured model can drift independently of this repository.
-   These are the ignored, real-model grader tests, so this gate is costed,
-   non-deterministic, authenticated, and deliberately manual rather than CI.
+   changed: the live models can drift independently of this repository. Each
+   probe grades on every calibrated backend CLI (the list and any per-backend
+   floor model live in `tests/calibrate.rs`), so those CLIs must be installed
+   and logged in. These are the ignored, real-model grader tests, so this gate
+   is costed, non-deterministic, authenticated, and deliberately manual rather
+   than CI.
    Treat a failure as evidence to investigate and resolve before tagging. A
    diagnostic rerun is fine, but do not discard a failure and release merely
    because a later run got lucky.

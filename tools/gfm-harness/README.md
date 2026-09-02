@@ -55,6 +55,8 @@ are not part of the published alix package (the root `Cargo.toml`
 ## Crate shape
 
 Standalone on purpose: not a workspace member, so `make check`, CI, and
-the published crate never build it. Its `Cargo.lock` is gitignored; the
-path dependency on the root crate keeps it honest against the current
-parser.
+the published crate never build it. Only `/target` and `/out` are
+gitignored; its `Cargo.lock` is tracked, repinned to the production
+dependency graph by `scripts/sync_gfm_harness_lock.py`, and a tooling test
+fails when the two graphs drift. The path dependency on the root crate
+keeps it honest against the current parser.

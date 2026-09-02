@@ -279,8 +279,9 @@ nothing between them but blank lines:
 The heading names the group and is shown as the card's first context line,
 above the column labels; it is a title only when its body is empty, so a
 heading with an answer under it is an ordinary card that happens to be
-followed by a table. Directives written on the title line (including the
-table's own ID) belong to the table.
+followed by a table. The table's directives, including its own ID, trail the
+table on their own lines below it; a directive on the heading line is a parse
+error.
 
 At Recognize, a table card's wrong options are drawn from its own column: the
 other rows' answers are the distractors, so a table needs no AI `choices`

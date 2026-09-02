@@ -270,14 +270,16 @@
   <div class="inner">
     <p class="eyebrow"><span class="k">II</span> · alix</p>
     <h2>Your cards are <em class="k">plain text</em> you own.</h2>
-    <pre class="deck panel"><span class="cf">## What does the CAP theorem state?</span> <span class="cd">&lt;!-- reveal: line --&gt;</span>
+    <pre class="deck panel"><span class="cf">## What does the CAP theorem state?</span>
 A distributed store can guarantee only two of:
 Consistency, Availability, Partition tolerance.
-<span class="cn">&gt; The trade-off only bites while a partition is happening.</span></pre>
+<span class="cn">&gt; [!NOTE]
+&gt; The trade-off only bites while a partition is happening.</span>
+<span class="cd">&lt;!-- reveal: line --&gt;</span></pre>
     <p class="sub">A deck is a file. Write it in any editor, version it with git, grep it, keep it for decades. No account, no database, no lock-in — and one comment-style directive can change how a card quizzes you.</p>
   </div>
   <aside class="notes">
-    <p>Walk the sample: <code>##</code> starts a question, the plain lines below are the answer, <code>&gt;</code> is a note shown after answering, and <code>&lt;!-- key: value --&gt;</code> comments are directives — this one reveals the answer one line at a time, so an ordered idea is recalled step by step.</p>
+    <p>Walk the sample: <code>##</code> starts a question, the plain lines below are the answer, a <code>&gt; [!NOTE]</code> blockquote is a note shown after answering, and <code>&lt;!-- key: value --&gt;</code> comments trailing the card are directives — this one reveals the answer one line at a time, so an ordered idea is recalled step by step.</p>
     <p>Plain text is a values statement: your knowledge shouldn't live in someone's database.</p>
   </aside>
 </section>
@@ -333,7 +335,7 @@ Consistency, Availability, Partition tolerance.
     <ul class="pts">
       <li>predict &#8594; reveal &#8594; judge — the retrieval effect, applied to <em>connections</em></li>
       <li>the frozen excerpt is the evidence; the live source stays the oracle when reachable</li>
-      <li>the AI can discover the path for you (<span class="dim" style="font-family:var(--mono)">alix generate deck --trace</span>)</li>
+      <li>the AI can discover the path for you (<span class="dim" style="font-family:var(--mono)">alix deck generate --trace</span>)</li>
     </ul>
   </div>
   <aside class="notes">
@@ -346,8 +348,8 @@ Consistency, Availability, Partition tolerance.
     <p class="eyebrow"><span class="k">II</span> · alix</p>
     <h2>Start from <em class="k">your</em> material.</h2>
     <ul class="pts">
-      <li><span style="font-family:var(--mono)">alix generate deck &lt;url-or-path&gt;</span> — a facts deck from a lecture page, a chapter, a file, a repo — with citations back into the source.</li>
-      <li><span style="font-family:var(--mono)">alix generate workspace &lt;dir&gt; --goal "&#8230;"</span> — a whole learning workspace: decks and traces, ordered by prerequisites, from one goal.</li>
+      <li><span style="font-family:var(--mono)">alix deck generate &lt;url-or-path&gt;</span> — a facts deck from a lecture page, a chapter, a file, a repo — with citations back into the source.</li>
+      <li><span style="font-family:var(--mono)">alix workspace generate &lt;dir&gt; --goal "&#8230;"</span> — a whole learning workspace: decks and traces, ordered by prerequisites, from one goal.</li>
       <li class="dim">Generated decks are a starting point — read them before you trust them.</li>
     </ul>
   </div>
@@ -426,7 +428,7 @@ Consistency, Availability, Partition tolerance.
     <h2><em class="k">Try it</em> in five minutes.</h2>
     <div class="cmd"><span class="d">$</span> curl -sSf https://alix.study/install.sh | sh</div>
     <table class="tbl">
-      <tr><td>alix generate deck &lt;lecture-url&gt;</td><td>turn something you must learn into a deck</td></tr>
+      <tr><td>alix deck generate &lt;lecture-url&gt;</td><td>turn something you must learn into a deck</td></tr>
       <tr><td>alix</td><td>review it — the deck picker opens in your browser</td></tr>
       <tr><td>alix &#8594; Exam</td><td>when it&#8217;s drilled: prove you understood it — one click in the picker</td></tr>
     </table>
@@ -458,7 +460,7 @@ Consistency, Availability, Partition tolerance.
       <tr><td>## front</td><td>starts a card; the plain lines below are the answer</td></tr>
       <tr><td>&lt;!-- blank: span hidden="..." --&gt;</td><td>cloze: each hidden span of the answer becomes its own sub-card</td></tr>
       <tr><td>- [x] / - [ ]</td><td>a task-list answer is an authored multiple-choice card</td></tr>
-      <tr><td>&gt; note</td><td>shown after answering</td></tr>
+      <tr><td>&gt; [!NOTE] + &gt; text</td><td>a badged blockquote is a note shown after answering</td></tr>
       <tr><td>&lt;!-- reveal: line --&gt;</td><td>flip &#183; line — how a card presents; how deeply you drill is a per-session choice</td></tr>
       <tr><td>direction: both</td><td>review a card in both directions (frontmatter or per card)</td></tr>
       <tr><td>requires: &lt;deck&gt;</td><td>frontmatter prerequisite — builds the unlock tree</td></tr>
@@ -496,7 +498,8 @@ source: ..
 grade(g) POSTs /api/grade with { grade: g } and the session revision
 echoed in a header &#8212; no card id; the server owns the seat.
 <span class="cd">&lt;!-- at: web/alix/review/study.js:125 fingerprint: xxh64-9f21c07d3ab54e68 --&gt;</span>
-<span class="cn">&gt; The page is a thin view; the server owns the session.</span></pre>
+<span class="cn">&gt; [!NOTE]
+&gt; The page is a thin view; the server owns the session.</span></pre>
     <p class="sub">You answer the question <em>before</em> the cited lines are revealed — then judge your own gap. The next checkpoint picks up exactly where this one left off.</p>
   </div>
   <aside class="notes"><p>Taken from alix's own docs — a trace through alix's web review flow. Each checkpoint cites real lines; the walk reads them live so the source stays the oracle.</p></aside>

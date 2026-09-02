@@ -3,7 +3,8 @@
 `alix` is an **AI-augmented** spaced-repetition learning tool in Rust,
 web-first (bare `alix` opens its web frontend). On top of a plain-text
 flashcard core, an AI backend is woven in: an in-session tutor on any card, AI
-deck/workspace generation (`alix generate`), and the **AI exam** that gates
+deck/workspace generation (`alix deck generate`, `alix workspace generate`),
+and the **AI exam** that gates
 progression on verified understanding. The AI backend is pluggable (`[ask]
 backend` — Claude by default; Gemini, Codex, and Copilot also supported). The
 tool is increasingly AI-centric — weight that when prioritizing. The **library
@@ -125,7 +126,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make ci` | The Rust CI bundle: `fmt-check` + `check` and lean-core build under `-Dwarnings` + `coverage`. GitHub separately gates the bridge, Flutter, JavaScript, and Playwright jobs. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
 | `make shape-eval` | Costed LLM release gate: does `docs/include/card-shapes.md` actually steer the deck generator? Deterministic tests prove the rule reaches the prompt; only this proves it steers. Never CI. |
-| `make calibrate` | Real-Claude grader calibration (`tests/calibrate.rs`, costed): before every desktop/mobile release and after touching `grade_*`. |
+| `make calibrate` | Real-backend grader calibration (claude, codex, copilot; `tests/calibrate.rs`, costed): before every desktop/mobile release and after touching `grade_*`. |
 | `make run ARGS="stats mydeck.md"` | Run the binary with args. |
 | `make web ARGS="~/decks-test"` | Web frontend; no ARGS → the picker over the configured decks dir. |
 | `make web-debug` | `web` + `--log http`: per-request timings are recorded and mirrored to stderr. `at=` is when the request was popped (ms since start), `took=` how long it was held, and `w=` which worker. A late `at=` means the request waited to be read; a large `took=` means the handler was slow. The `{#server-subresource-stall}` net. |
@@ -214,7 +215,7 @@ to this codebase. When in doubt, mirror the surrounding code.
   `#[cfg(test)] mod tests` at the bottom of the module they cover. `tests/` holds
   the end-to-end suites: `tests/cli.rs` drives the built binary as a subprocess
   (deterministic — temp decks + `--store`, no real Claude — so it runs in CI),
-  and `tests/calibrate.rs` is the `#[ignore]`d real-Claude grader-calibration harness
+  and `tests/calibrate.rs` is the `#[ignore]`d real-backend grader-calibration harness
   (`make calibrate`). Name tests as full snake_case sentences stating condition +
   expectation (`passing_the_exam_masters_an_undrilled_deck`). Anything that shells
   out to Claude uses the shared harness in `src/testutil.rs`: `fake_reply` (drains

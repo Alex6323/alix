@@ -71,7 +71,8 @@ Once paired, review gains things it doesn't have offline:
   but not before: the same attempt-first rule the web tutor follows. It opens
   the same question/answer flow as the desktop tutor, including **Make a
   card** and **Make a note** (condenses the exchange into up to three lines
-  and appends them to the deck file on the phone, an empty result saying so
+  and appends them to the deck's personal sidecar, `<deck>.personal.md`, on
+  the phone; sync that file alongside the deck, and an empty result says so
   rather than doing nothing silently), re-sending the whole exchange to the
   paired desktop on every turn (the server keeps no session of its own for a
   remote turn).

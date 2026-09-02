@@ -100,7 +100,7 @@ generated PRs without prior discussion are usually closed unread.
 | `make fmt-check` | Verify formatting without writing. |
 | `make check` | The normal local gate: lint, tests, media/docs manifests, and toolchain-pin invariants. |
 | `make coverage` | Coverage report (`cargo-llvm-cov`, HTML). |
-| `make calibrate` | Real-Claude grader calibration (costed): before every desktop/mobile release and after touching `grade_*`. |
+| `make calibrate` | Real-backend grader calibration (claude, codex, copilot; costed): before every desktop/mobile release and after touching `grade_*`. |
 | `make run ARGS="stats mydeck.md"` | Run the binary. |
 | `make web ARGS="~/decks-test --lan"` | Web frontend (a scoped root). |
 | `make book` | Serve the mdBook manual live. |
@@ -210,8 +210,8 @@ today). That splits testing into two jobs, and it helps to know which you're in:
    model. This is the **blocking gate** (`make check`, enforced by CI).
 2. **AI-behaviour quality** — do the *prompts* produce good output: fair grades,
    coherent traces, a non-lenient exam? The fake CLI can't see this, so it needs
-   the **calibration harness** (`make calibrate`), which runs the real prompts against a live
-   model and scores them. It's non-deterministic and costs money, so it lives
+   the **calibration harness** (`make calibrate`), which runs the real prompts against the live
+   backends and scores them. It's non-deterministic and costs money, so it lives
    **outside** the blocking gate — run it before every release and after any
    change to a `grade_*` prompt; note the calibration delta for prompt changes.
 

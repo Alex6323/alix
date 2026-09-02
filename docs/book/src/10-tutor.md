@@ -39,10 +39,11 @@ enable it on a network you trust.
 ## Saving what you learn: `Ctrl-N`
 
 When an exchange clears something up, press `Ctrl-N`: the tutor condenses the
-conversation into at most three short note lines and appends them to the card in
-its deck file. Notes aren't part of the card's identity, so its progress is
-untouched: you just keep the insight. (In the web panel, **Make this a note**
-does the same.)
+conversation into at most three short note lines and appends them, addressed
+to the card, to the deck's personal sidecar (`<deck>.personal.md`); the deck
+file itself is untouched. Notes aren't part of the card's identity, so its
+progress is untouched: you just keep the insight. (In the web panel, **Make
+this a note** does the same.)
 
 ## Reference links: `link:`
 

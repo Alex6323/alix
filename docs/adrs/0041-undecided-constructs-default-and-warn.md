@@ -14,6 +14,10 @@ sequence. The deck format resolves such shapes by explicit invocation
 (`<!-- cards -->`, `<!-- plain -->`, deck-wide `table:` in frontmatter),
 and a shape with no invocation renders in its literal form.
 
+> Note (2026-09-02): the deck-wide `table:` key has since been removed from
+> the format; a table is decided by its trailing invocation alone, and the
+> default-and-warn behavior below is unconditional.
+
 That opt-in model has one silent failure: an author who pastes a
 fifty-row vocabulary table and forgets the invocation gets a single
 explain-this-table card instead of fifty drills, and nothing tells them.

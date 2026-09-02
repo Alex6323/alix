@@ -202,7 +202,8 @@ the grant expressed only as `--allowedTools Read Glob Grep`, the subprocess ran
 an arbitrary shell command; with the tool set bounded, the same prompt could
 not, and a read within the grant still succeeded.
 
-During `alix generate`, Claude and Codex return structured event streams. Alix
+During `alix deck generate` and `alix workspace generate`, Claude and Codex
+return structured event streams. Alix
 prints fixed status labels instead of model text, tool inputs, tool results, or
 partial generated content. It retains stdout for final extraction and
 validation, forwards each provider stderr line as a bounded local diagnostic,
