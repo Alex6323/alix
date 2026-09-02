@@ -22,6 +22,8 @@ const path = require("node:path");
 const ROOT = __dirname;
 const SRC = path.join(ROOT, "fixtures", "decks");
 const TMP = path.join(ROOT, ".tmp");
+// One scratch copy per server in playwright.config.ts.
+const CLIENTS = ["kids", "adult", "kids-graded"];
 
 function isPrivateState(src) {
   const base = path.basename(src);
@@ -39,12 +41,12 @@ function prepareFixtures(name) {
 
 if (require.main === module) {
   const name = process.argv[2];
-  if (name !== "kids" && name !== "adult") {
-    process.stderr.write('e2e: prepare-fixtures.cjs needs "kids" or "adult" as its argument\n');
+  if (!CLIENTS.includes(name)) {
+    process.stderr.write(`e2e: prepare-fixtures.cjs needs one of ${CLIENTS.join(", ")} as its argument\n`);
     process.exit(1);
   }
   const dest = prepareFixtures(name);
   process.stderr.write(`e2e: ${name} fixtures copied to ${dest}\n`);
 }
 
-module.exports = { prepareFixtures };
+module.exports = { prepareFixtures, CLIENTS };

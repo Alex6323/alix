@@ -39,9 +39,10 @@ make e2e
 
 This installs the pinned npm deps (`npm ci` — see "Dependency hygiene"
 below), installs the Chromium browser Playwright needs, then runs
-`playwright test`. Playwright starts both servers itself (kids on `:7788`,
-adult on `:7789`, each over its own scratch decks copy — see "The fixture
-contract"), waits for them to answer, runs the suite, and tears them down.
+`playwright test`. Playwright starts the servers itself (kids on `:7788`,
+adult on `:7789`, kids-graded on `:7787`, each over its own scratch decks
+copy — see "The fixture contract"), waits for them to answer, runs the suite,
+and tears them down.
 Nothing needs to be started by hand, and nothing should be — don't
 background-launch either server yourself; let Playwright's `webServer` own
 their lifecycle.
@@ -63,19 +64,18 @@ Output:
 This is a smoke suite, not exhaustive coverage. Known gaps, and why each is
 where it is rather than fixed:
 
-- **The honest-Recognize-grading rule** ("a wrong Recognize pick can only
-  record failed, never passed", fix `c46dad5`) has a real test body, but it's
-  marked `test.fixme` in `tests/kids-review.spec.ts` (see the annotation
-  there) — reaching it needs a card that is past introduction *and* due again, and
-  the real introduction cooldown is a server-side gap (5 min default; configurable
-  since 2026-07-14 via `[review] introduction_cooldown`, `"0"` = none — a fixture
-  config with a zero cooldown is now the cleanest route to close this gap).
-  Reaching that deterministically without the knob
-  would mean either a real wait (this suite avoids real-time waits — the
-  fixed exception is the adult grading test's pre-seeded card, see below,
-  which sidesteps the wait rather than taking it) or committing pre-warmed
-  progress state, which the fixture contract forbids. The `test.fixme`
-  reports the gap on every run instead of it rotting in this paragraph.
+- **Graded cards.** A fresh store holds only never-seen cards, and the
+  introduction cooldown (5 min default) keeps an introduced card out of an
+  ordinary session for longer than any test may wait. Two routes reach a real
+  graded quiz without a sleep or committed progress: the adult grading test
+  introduces `wild` and then **crams** it (cram queues cards that are not
+  due), and the kids honest-grading test runs on the `kids-graded` project, a
+  third server whose fixture config sets `[review] introduction_cooldown =
+  "0"` so an acknowledged card comes straight back as a quiz. The kids client
+  has no cram, which is why it needs the second server. The remaining gap is
+  the learned green/yellow/red drawer cells: a *graduated* card needs two
+  spaced Goods across the 10-minute learning hold, still a `test.fixme` in
+  `tests/adult-review.spec.ts`.
 - **Ask Alix's real model call** is never made. Adult tutor interaction is
   exercised with a deterministic intercepted `AskDto`, including its
   unsaved-conversation guard and return to the originating card; the kids

@@ -18,6 +18,16 @@ const ADULT_DECKS_DIR = path.join(ROOT, ".tmp", "adult", "decks");
 const ADULT_PORT = 7789;
 const ADULT_BASE_URL = `http://127.0.0.1:${ADULT_PORT}`;
 
+// The kids client again, on a server whose introduction cooldown is zero
+// (fixtures/kids-graded.toml): an introduced card is due at once, so a real
+// graded quiz is reachable in one run. The ordinary kids server keeps the
+// default cooldown, under which every card of a fresh store can only be
+// introduced, and kids has no cram to bring one back.
+const KIDS_GRADED_CONFIG = path.join(ROOT, "fixtures", "kids-graded.toml");
+const KIDS_GRADED_DECKS_DIR = path.join(ROOT, ".tmp", "kids-graded", "decks");
+const KIDS_GRADED_PORT = 7787;
+const KIDS_GRADED_BASE_URL = `http://127.0.0.1:${KIDS_GRADED_PORT}`;
+
 export default defineConfig({
   testDir: "./tests",
   globalSetup: require.resolve("./global-setup.ts"),
@@ -91,12 +101,27 @@ export default defineConfig({
       // The binary is already built, so a fresh spawn costs ~a second.
       reuseExistingServer: false,
     },
+    {
+      command:
+        `node "${PREPARE_SCRIPT}" kids-graded && ` +
+        `cargo run --quiet -- --config "${KIDS_GRADED_CONFIG}" "${KIDS_GRADED_DECKS_DIR}" --port ${KIDS_GRADED_PORT} --log http`,
+      cwd: REPO_ROOT,
+      url: KIDS_GRADED_BASE_URL,
+      timeout: 180_000,
+      stderr: "pipe",
+      reuseExistingServer: false,
+    },
   ],
   projects: [
     {
       name: "kids",
-      testMatch: /kids-.*\.spec\.ts/,
+      testMatch: /kids-(?!graded-).*\.spec\.ts/,
       use: { ...devices["Desktop Chrome"], baseURL: KIDS_BASE_URL },
+    },
+    {
+      name: "kids-graded",
+      testMatch: /kids-graded-.*\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], baseURL: KIDS_GRADED_BASE_URL },
     },
     {
       name: "adult",

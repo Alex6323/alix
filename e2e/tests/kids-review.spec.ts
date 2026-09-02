@@ -19,10 +19,6 @@
 // request, the expected response, the expected screen — never just the
 // screen. `pageErrors` (see helpers.ts) is an auto-fixture that fails any
 // test which logged an uncaught page error or console.error.
-//
-// The "a wrong Recognize pick can only record failed" rule (fix c46dad5) has
-// no automated coverage — see the `test.fixme` at the bottom of this file for
-// why, and what it would take.
 import { test, expect } from "./helpers";
 import { kidsDeckRow, openApp } from "./helpers";
 
@@ -229,42 +225,6 @@ test("a resynced study response does not close the kids tutor or lose its transc
   const expected = pageErrors.filter((entry) => entry.includes("status of 409"));
   expect(expected).toHaveLength(1);
   pageErrors.splice(pageErrors.indexOf(expected[0]), 1);
-});
-
-test("a wrong Recognize pick can only record failed, never passed", async ({ page }) => {
-  test.fixme(
-    true,
-    "Needs a card that is PAST introduction (already acknowledged once) AND due " +
-      "again for a real Recognize quiz. The introduction cooldown is a server-side " +
-      "gap (5 min default; [review] introduction_cooldown, '0' = none), so " +
-      "reaching that state deterministically means either a real ~60s wait " +
-      "(this suite avoids real-time waits) or committing pre-warmed progress " +
-      "state (forbidden by the fixture contract — see ../README.md). Left " +
-      "here as a real, runnable body — not deleted — so every `make e2e` " +
-      "keeps reporting the gap instead of it rotting in a comment.",
-  );
-
-  // The intended flow, once reachable: introduce "wild"'s Giraffe card, wait
-  // out the cooldown, come back to a genuine Recognize quiz on it, tap a
-  // WRONG option, and assert the fix (c46dad5) still holds — only "Keep
-  // going" (.rate-again, grades failed) is offered, never "✅ Got it!"
-  // (.rate-got, grades passed): a wrong tap can't self-rate as passed.
-  await openApp(page);
-  await page.locator(".box", { hasText: "Animals" }).click();
-  await kidsDeckRow(page, "wild").click();
-  await Promise.all([
-    page.waitForResponse((res) => res.url().includes("/api/select")),
-    page.getByRole("button", { name: "Tap the answer" }).click(),
-  ]);
-
-  const wrongOption = page.locator(".opt-btn:not(.opt-correct)").first();
-  await Promise.all([
-    page.waitForResponse((res) => res.url().includes("/api/choose")),
-    wrongOption.click(),
-  ]);
-
-  await expect(page.locator(".rate-got")).toHaveCount(0);
-  await expect(page.locator(".rate-again")).toBeVisible();
 });
 
 test("the kids client never shows a card's section, and offers no way to ask for it", async ({ page }) => {

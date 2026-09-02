@@ -1383,42 +1383,58 @@ test("library removal requires the exact focused name before posting", async ({ 
   await expect(adultDeckRow(page, "Removal Target")).toHaveCount(0);
 });
 
-// KNOWN GAP — reported as skipped on every run, deliberately.
-//
-// The fixture ships no progress store, so every card is never-seen (`introduction`)
-// and the adult app posts /api/introduce, never /api/grade. Reaching a genuinely
-// graded card needs one past the server's introduction cooldown (5 min default; a
-// sleep or a committed pre-warmed store are both banned — see ../README.md,
-// "fixture contract").
-//
-// Two leads worth verifying: (a) since 2026-07-14 the cooldown is configurable
-// (`[review] introduction_cooldown`, "0" = none) — a fixture config with a zero
-// cooldown would make graded cards reachable in one run. (b) `POST /api/select
-// {cram: true}` is documented to queue cards that are not due; if it bypasses
-// the cooldown for an already-introduced card, this test becomes cheap. Verify
-// either with curl before writing the test — do not assume.
-//
-// The same gap blocks the kids honest-grading rule (a wrong Recognize pick must
-// only ever record `failed`). Neither has automated coverage today.
-test.fixme("grading fires POST /api/grade and advances the session", async ({ page }) => {
+// A never-seen card is introduced, never graded (POST /api/introduce), and the
+// introduction cooldown then keeps it out of an ordinary session for minutes,
+// which the fixture contract forbids waiting for. Cram queues cards that are
+// not due, so an introduced card comes back inside the cooldown as a real quiz
+// and the grade path is reachable in one run on the ordinary server (checked
+// against the binary first: a cram select after two introductions serves
+// `introducing: false`, and POST /api/grade answers 200 and advances).
+test("grading fires POST /api/grade and advances the session", async ({ page, request }) => {
+  const reset = await request.post("/api/reset", { data: { deck: "animals/wild.md" } });
+  expect(reset.ok(), await reset.text()).toBeTruthy();
+  await openApp(page);
+
+  // Pass one: introduce both cards through the UI (a pick acknowledges, Seen
+  // posts /api/introduce), until the session ends.
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click();
+  await page.getByTitle("choose a depth").click();
   await Promise.all([
     page.waitForResponse((res) => res.url().includes("/api/select")),
-    page.getByRole("button", { name: "Learn" }).click(),
+    page.getByRole("button", { name: /^Recall/ }).click(),
   ]);
+  for (let introduced = 0; introduced < 2; introduced += 1) {
+    await answerCurrentWildCard(page);
+    const [introduceResponse] = await Promise.all([
+      page.waitForResponse((res) => res.url().includes("/api/introduce") && res.request().method() === "POST"),
+      page.getByRole("button", { name: "Seen" }).click(),
+    ]);
+    expect(introduceResponse.status()).toBe(200);
+  }
+  await expect(page.locator(".summary")).toBeVisible();
+
+  // Pass two: cram serves the introduced cards as real quizzes.
+  await request.post("/api/deselect", { data: {} });
+  await openApp(page);
+  await openWildCram(page, "Recall");
   await expect(page.locator(".front-text")).toBeVisible();
   const firstFront = await page.locator(".front-text").textContent();
+  await expect(page.getByRole("button", { name: "Seen" })).toHaveCount(0);
 
-  // Reveal key (default Space), then a grade key (default "n" = passed) —
-  // see [keys.review] / Bindings::default in src/config.rs.
+  // Reveal (Space), then grade passed ("n"): the [keys.review] defaults in
+  // src/config.rs Bindings::default.
   await page.keyboard.press("Space");
-  const [response] = await Promise.all([
+  const [gradeRequest, gradeResponse] = await Promise.all([
+    page.waitForRequest((req) => req.url().includes("/api/grade") && req.method() === "POST"),
     page.waitForResponse((res) => res.url().includes("/api/grade") && res.request().method() === "POST"),
     page.keyboard.press("n"),
   ]);
-  expect(response.status()).toBe(200);
-
+  expect(gradeRequest.postDataJSON()).toEqual({ grade: "passed" });
+  expect(gradeResponse.status()).toBe(200);
+  const graded = await gradeResponse.json();
+  expect(graded.reviews, "the grade is a real review, not an introduction").toBe(1);
+  expect(graded.passed).toBe(1);
   await expect(page.locator(".front-text")).not.toHaveText(firstFront ?? "");
 });
 
