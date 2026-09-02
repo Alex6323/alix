@@ -83,6 +83,11 @@ class PublishCheckTest(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn("scratch.log", result.stderr)
 
+    def test_a_tag_matching_the_version_only_as_a_pattern_fails(self):
+        result = run_check(tagged_repo(tags=("v0x8x0",)))
+        self.assertEqual(1, result.returncode)
+        self.assertIn("no tag v0.8.0", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

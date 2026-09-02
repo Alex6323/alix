@@ -16,7 +16,7 @@ dirty=$(git status --porcelain)
 $dirty"
 
 tags=$(git tag --points-at HEAD)
-echo "$tags" | grep -qx "$tag" \
+echo "$tags" | grep -qxF "$tag" \
     || fail "HEAD carries no tag $tag (tags on HEAD: ${tags:-none}); git checkout $tag first"
 
 echo "publish-check: OK (HEAD is $tag with a clean tree)"
