@@ -2064,11 +2064,6 @@ fn capture_answer_fences(
     fences
 }
 
-/// Synthesizes the region cards a block's blanks ask (ADR 0034): a named
-/// group is one card asking every member, an ungrouped blank one card each,
-/// a cover no card. A blank-bearing block is a template: its region cards
-/// REPLACE the cards `build_card` pushed, so no plain card exists beside
-/// them; cover/crop-only blocks keep theirs.
 /// Whole-word, case-insensitive containment. Short answers are skipped:
 /// a three-letter answer matches too much prose to be worth reporting.
 fn names_answer(note: &str, answer: &str) -> bool {
@@ -2163,6 +2158,11 @@ fn resolve_note(
     Some(lines.join("\n"))
 }
 
+/// Synthesizes the region cards a block's blanks ask (ADR 0034): a named
+/// group is one card asking every member, an ungrouped blank one card each,
+/// a cover no card. A blank-bearing block is a template: its region cards
+/// REPLACE the cards `build_card` pushed, so no plain card exists beside
+/// them; cover/crop-only blocks keep theirs.
 fn build_region_cards(
     block_start: usize,
     cards: &mut Vec<Card>,
