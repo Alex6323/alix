@@ -50,6 +50,8 @@ card or the deck to keep the keyboard. An authored `input:` wins over the
 default on mobile; the desktop web app currently ignores `input: draw` on a
 cloze card and types it regardless.
 `alix doctor` warns when a typed span's answer would need LaTeX to type.
+It also warns when the card's front contains a blank's answer: the card
+would show its answer before the reveal.
 
 ### A note for one blank
 

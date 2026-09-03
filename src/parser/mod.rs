@@ -128,6 +128,12 @@ pub enum LintKind {
         blank: usize,
         answer: String,
     },
+    /// A front that spells out one blank's answer, so the card shows it
+    /// before the reveal. `blank` is 1-based, in author order.
+    FrontContainsBlankAnswer {
+        blank: usize,
+        answer: String,
+    },
     NoteNamesNoBlank {
         name: String,
     },
@@ -2359,6 +2365,20 @@ fn build_region_cards(
                 .collect(),
         };
         new_cards.push(region_card(slot, back));
+    }
+    for (index, blank) in blanks.iter().enumerate() {
+        let Some(hidden) = &blank.hidden else {
+            continue;
+        };
+        if names_answer(&template.front, hidden) {
+            lints.push(Lint {
+                line: template.line,
+                kind: LintKind::FrontContainsBlankAnswer {
+                    blank: index + 1,
+                    answer: hidden.clone(),
+                },
+            });
+        }
     }
     if new_cards.len() > 1 {
         for (index, blank) in blanks.iter().enumerate() {
@@ -7448,6 +7468,61 @@ a
             deck.lints,
             "only the blank whose answer appears is named, and 1-based"
         );
+    }
+
+    #[test]
+    fn a_front_naming_a_blanks_answer_is_reported_per_blank_before_the_reveal() {
+        let spans = "<!-- blank: span hidden=\"Unit\" -->\n\
+                     <!-- blank: span hidden=\"integration\" -->\n\
+                     <!-- blank: span hidden=\"end-to-end\" -->\n";
+        let rows = [
+            (
+                "a front naming the first blank, in another case",
+                "The test pyramid: unit tests sit at the base",
+                vec![(1, "Unit")],
+            ),
+            (
+                "a front naming two blanks",
+                "From integration to end-to-end",
+                vec![(2, "integration"), (3, "end-to-end")],
+            ),
+            (
+                "a front containing the answer only inside a longer word",
+                "Units of the pyramid",
+                vec![],
+            ),
+            (
+                "a front naming no blank",
+                "The test pyramid, bottom to top",
+                vec![],
+            ),
+            (
+                "a front naming the answer of a one-blank block",
+                "Unit tests, bottom of the pyramid",
+                vec![(1, "Unit")],
+            ),
+        ];
+        for (label, front, expected) in rows {
+            let body = if label.contains("one-blank") {
+                "<!-- blank: span hidden=\"Unit\" -->\n".to_string()
+            } else {
+                spans.to_string()
+            };
+            let deck = parse(&format!(
+                "## {front}\nUnit, integration, end-to-end\n{body}"
+            ));
+            let want: Vec<Lint> = expected
+                .into_iter()
+                .map(|(blank, answer)| Lint {
+                    line: 1,
+                    kind: LintKind::FrontContainsBlankAnswer {
+                        blank,
+                        answer: answer.to_string(),
+                    },
+                })
+                .collect();
+            assert_eq!(want, deck.lints, "{label}: front {front:?}");
+        }
     }
 
     #[test]

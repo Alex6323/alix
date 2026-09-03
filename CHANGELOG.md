@@ -12,6 +12,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the file, with its id and history, but takes it out of review, the exam, and
   every count; an ignored card may lack an answer. `alix stats` reports the
   count and `alix list` marks the cards.
+- `alix doctor` warns when a cloze card's front contains a blank's answer,
+  the check that already covers a block note.
+
 ### Changed
 
 - `--lan` refuses a `--token` or `[serve] token` value shorter than 16

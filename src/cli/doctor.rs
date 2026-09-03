@@ -671,6 +671,10 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
             "the note contains the text of blank {blank}'s answer (`{answer}`); \
              the block's other cards show this note"
         ),
+        LintKind::FrontContainsBlankAnswer { blank, answer } => format!(
+            "the front contains the text of blank {blank}'s answer (`{answer}`); \
+             the card shows its answer before the reveal"
+        ),
         LintKind::NoteNamesNoBlank { name } => format!(
             "`{name}:` names no named blank of this block, so the line is \
              shown as the block note"
