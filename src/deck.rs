@@ -79,6 +79,7 @@ pub struct Deck {
     pub subject: String,
     pub deck_token: Option<String>,
     pub cards: Vec<Card>,
+    pub ignored: Vec<Card>,
     /// Deck-wide link-definition labels (`[label]: destination` lines),
     /// distinct from `links`, the frontmatter reference URLs.
     pub definitions: Vec<String>,
@@ -151,7 +152,8 @@ impl Deck {
         let trace = parsed.frontmatter.trace.clone();
         let deck_token = parsed.deck_token.clone();
         let mut settings = DeckSettings::from_frontmatter(&parsed.frontmatter);
-        let mut cards = parsed.cards;
+        let (ignored, mut cards): (Vec<Card>, Vec<Card>) =
+            parsed.cards.into_iter().partition(|card| card.ignored);
         settings.fill_from(defaults);
         for card in &mut cards {
             card.reveal = card.reveal.or(settings.reveal);
@@ -205,6 +207,7 @@ impl Deck {
             subject,
             deck_token,
             cards,
+            ignored,
             definitions,
             links,
             requires,
@@ -329,6 +332,10 @@ impl Deck {
     /// the supported cleanup prunes a re-exposable plain card's history.
     pub fn dormant_base_ids(&self) -> impl Iterator<Item = String> + '_ {
         crate::card::dormant_base_ids(&self.cards)
+    }
+
+    pub fn ignored_ids(&self) -> impl Iterator<Item = String> + '_ {
+        self.ignored.iter().filter_map(Card::id)
     }
 }
 
@@ -2483,5 +2490,37 @@ mod tests {
         assert!(lines.iter().all(|line| {
             !line.contains("private-deck-name") && !line.contains("private-card-front")
         }));
+    }
+
+    #[test]
+    fn ignored_cards_leave_the_review_set_unexpanded_and_never_block_graduation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(
+            dir.path(),
+            "d.md",
+            "---\ndirection: both\n---\n## a\n1\n<!-- id: card-q1 -->\n## draft\n2\n<!-- ignore -->\n<!-- id: card-q2 -->\n",
+        );
+        let deck = Deck::load(&path).unwrap();
+        assert_eq!(
+            2,
+            deck.cards.len(),
+            "the live card and its reversed half only: {:?}",
+            deck.cards
+        );
+        assert_eq!(1, deck.ignored.len(), "{:?}", deck.ignored);
+        assert_eq!("draft", deck.ignored[0].front);
+        assert_eq!(
+            vec!["card-q2".to_string()],
+            deck.ignored_ids().collect::<Vec<_>>()
+        );
+        let (mut store, _s) = empty_store();
+        for card in &deck.cards {
+            graduate(&mut store, &card.id().unwrap());
+        }
+        assert_eq!(
+            DeckState::Finished,
+            deck.state(&store),
+            "an ignored card has no say in graduation"
+        );
     }
 }

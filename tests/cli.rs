@@ -7595,3 +7595,28 @@ fn doctor_does_not_call_an_unreadable_deck_file_empty_and_healthy() {
         "doctor must name the unreadable deck instead of issuing a successful zero-deck bill of health: {text}"
     );
 }
+
+#[test]
+fn stats_and_list_report_ignored_cards_beside_the_live_ones() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "drafts.md",
+        "---\nformat-version: 1\nid: \"deck-draftdeck\"\n---\n## live\na\n<!-- id: card-live1 -->\n## draft\nb\n<!-- ignore -->\n<!-- id: card-draft1 -->\n",
+    );
+    let store = dir.path().join("state");
+    let stats = alix(&["stats", &deck, "--store", store.to_str().unwrap()]);
+    assert!(stats.status.success(), "stderr: {}", stderr(&stats));
+    assert!(
+        stdout(&stats).contains("(1 cards, 1 ignored)"),
+        "stdout: {}",
+        stdout(&stats)
+    );
+    let list = alix(&["list", &deck, "--store", store.to_str().unwrap()]);
+    assert!(list.status.success(), "stderr: {}", stderr(&list));
+    assert!(
+        stdout(&list).contains("[ignored] draft"),
+        "stdout: {}",
+        stdout(&list)
+    );
+}

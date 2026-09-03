@@ -27,6 +27,7 @@ full.
 | `input` | deck · card | `type` (default) or `draw`: answer on a canvas instead of typing. [→ ch 4](04-review-modes.md) |
 | `direction` | deck · card | [Review direction](06-cloze-direction-images.md): forward, reverse, both. |
 | `sampling` | deck · card | `on` (default) or `off`: whether a [card table](03-the-deck-format.md)'s rows may draw Recognize options from their own column. A table's value overrides the deck's in either direction. |
+| `ignore` | card | Bare `<!-- ignore -->` in the card's trailing machinery: the card stays in the file with its id and history but leaves review, the exam, and the counts, and it may lack an answer. For a draft you have not finished, or a card you no longer want to learn. [→ ch 3](03-the-deck-format.md#ignoring-a-card) |
 | `strictness` | workspace | [Exam](12-the-ai-exam.md) grading rigor for the members, in `alix.toml`'s `[defaults]` only: a learner setting, so a deck declaring it gets an unknown-key lint. |
 | `requires` | deck | [Prerequisite deck](09-dependencies.md) that gates unlocks (repeatable). |
 | `title` | deck | The deck's display name, a single non-empty line. Without it a deck is named by its condensed `trace:`, else by its filename stem; a `#` heading is never the name. [→ ch 3](03-the-deck-format.md) |

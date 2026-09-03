@@ -449,6 +449,25 @@ answer text, as CommonMark reads them.
 
 A `##` closes every open sub-card chain, and a `#` clears the chain entirely.
 
+## Ignoring a card
+
+A bare `<!-- ignore -->` among a card's trailing comments takes the card out
+of learning without taking it out of the file: it is never served for review,
+the exam does not ask about it, and it counts in no total. Its id line stays,
+so removing the word later brings the card back with its history. An ignored
+card is the one card that may have no answer yet.
+
+```markdown
+## Why does the borrow checker reject this loop?
+<!-- ignore -->
+<!-- id: card-3g12jfjv4pypppsrx5wvtx65y5 -->
+```
+
+The word trails its card like every other directive: above the card's content
+it is an error, and outside any card it is one too. After a card table it
+applies to every row. `alix stats` shows the count and `alix list` marks the
+cards `[ignored]`.
+
 ## Reserved Markdown shapes
 
 Four Markdown spellings have no alix meaning and fail loudly with the line

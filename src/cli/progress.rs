@@ -116,7 +116,15 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
             DeckState::Finished if store.deck_mastered(deck_id) => "mastered ✓",
             DeckState::Finished => "finished ✓",
         };
-        println!("{} ({} cards)", deck.display_name(), deck.cards.len());
+        let ignored = match deck.ignored.len() {
+            0 => String::new(),
+            n => format!(", {n} ignored"),
+        };
+        println!(
+            "{} ({} cards{ignored})",
+            deck.display_name(),
+            deck.cards.len()
+        );
         println!("  state:   {state}");
         println!("  due:     {due_now} now, {due_24h} within 24h");
         println!("  due now (recognize):   {due_now_recognize}");
@@ -161,6 +169,10 @@ pub(crate) fn list(args: DeckArgs) -> Result<()> {
             };
             let front: String = card.front.chars().take(60).collect();
             println!("  [{cells}] {front}");
+        }
+        for card in &deck.ignored {
+            let front: String = card.front.chars().take(60).collect();
+            println!("  [ignored] {front}");
         }
     }
     Ok(())
@@ -299,7 +311,8 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
                 .iter()
                 .filter_map(Card::id)
                 .chain(alix::personal::card_ids(deck))
-                .chain(deck.dormant_base_ids());
+                .chain(deck.dormant_base_ids())
+                .chain(deck.ignored_ids());
             for id in deck_ids {
                 if store.get(&id).is_some() {
                     ids.insert(id);
@@ -403,6 +416,7 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
         known_cards.extend(deck.cards.iter().filter_map(Card::id));
         known_cards.extend(alix::personal::card_ids(&deck));
         known_cards.extend(deck.dormant_base_ids());
+        known_cards.extend(deck.ignored_ids());
     }
 
     let mut store = match args.target.as_deref() {

@@ -186,6 +186,12 @@ pub enum ParseError {
     )]
     LeadingInvocation { line: usize, word: String },
     #[error(
+        "line {0}: `<!-- ignore -->` sits above card content; comment machinery trails: move it below the card's last content line"
+    )]
+    LeadingIgnore(usize),
+    #[error("line {0}: `<!-- ignore -->` belongs to no card; it trails the card it excludes")]
+    OrphanIgnore(usize),
+    #[error(
         "line {line}: `<!-- {key}: ... -->` sits above card content; comment machinery trails: move it below the card's last content line"
     )]
     LeadingDirective { line: usize, key: String },
@@ -293,6 +299,8 @@ impl ParseError {
             Self::OrphanCardId(_) => "orphan_card_id",
             Self::SubCardTableTitle(_) => "sub_card_table_title",
             Self::LeadingInvocation { .. } => "leading_invocation",
+            Self::LeadingIgnore(_) => "leading_ignore",
+            Self::OrphanIgnore(_) => "orphan_ignore",
             Self::LeadingDirective { .. } => "leading_directive",
             Self::ContentAfterNote { .. } => "content_after_note",
             Self::FrontDirective { .. } => "front_directive",
@@ -340,6 +348,8 @@ impl ParseError {
             | Self::SetextUnderline(line)
             | Self::UnclosedDisplayMath(line)
             | Self::IndentedCode(line)
+            | Self::LeadingIgnore(line)
+            | Self::OrphanIgnore(line)
             | Self::NestedQuote(line) => *line,
             Self::InvalidTitle { line, .. }
             | Self::FrontmatterSyntax { line, .. }
@@ -576,6 +586,9 @@ fn section_carries_directive(rest: &str, line: usize) -> bool {
         let Some(close) = after.find("-->") else {
             return false;
         };
+        if trim_ws(&after[..close]) == "ignore" {
+            return true;
+        }
         if let Some((key, _)) = directive(&after[..close]) {
             let mut probe = CardDirectives::default();
             let mut probe_lints = Vec::new();
@@ -677,6 +690,7 @@ struct RawCard {
 enum TrailingStart {
     Directive { line: usize, key: String },
     Note { line: usize },
+    Ignore { line: usize },
 }
 
 /// What the blockquote run currently being scanned turned out to be.
@@ -694,6 +708,7 @@ impl RawCard {
                 key: key.clone(),
             }),
             Some(TrailingStart::Note { line }) => Err(ParseError::ContentAfterNote { line: *line }),
+            Some(TrailingStart::Ignore { line }) => Err(ParseError::LeadingIgnore(*line)),
             None => Ok(()),
         }
     }
@@ -732,6 +747,7 @@ struct CardDirectives {
     citations: Vec<crate::card::SourceCitation>,
     diagrams: Vec<crate::card::DiagramStamp>,
     givens: Vec<String>,
+    ignore: bool,
 }
 
 /// `fingerprint: xxh64-<16 hex> asset: <object>.png geometry: <object>.json`,
@@ -1359,6 +1375,19 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                     prev_heading = false;
                     continue;
                 }
+                if trim_ws(body) == "ignore" {
+                    let Some(card) = current.as_mut() else {
+                        return Err(ParseError::OrphanIgnore(lineno));
+                    };
+                    card.directives.ignore = true;
+                    if card.machinery.is_none() {
+                        card.machinery = Some(TrailingStart::Ignore { line: lineno });
+                    }
+                    mappable_block = block_above;
+                    prev_blank = false;
+                    prev_heading = false;
+                    continue;
+                }
                 if let Some((key, value)) = directive(body) {
                     match current.as_mut() {
                         Some(card) => {
@@ -1767,6 +1796,9 @@ fn table_line(
         }
         tbl.rows_done = true;
         tbl.end_line = lineno;
+        if trim_ws(body) == "ignore" {
+            tbl.directives.ignore = true;
+        }
         if let Some((key, value)) = directive(body) {
             apply_directive(&mut tbl.directives, &key, value, lineno, lints)?;
         }
@@ -1818,6 +1850,9 @@ fn machinery_rank(content: &str) -> Option<usize> {
         .map(trim_ws)?;
     if Mapping::parse(body).is_some() {
         return Some(0);
+    }
+    if body == "ignore" {
+        return Some(1);
     }
     let (key, _) = directive(body)?;
     match key.as_str() {
@@ -2419,6 +2454,7 @@ fn build_table_cards_inner(
         card.input = raw.directives.input;
         card.direction = raw.directives.direction;
         card.sampling = raw.directives.sampling;
+        card.ignored = raw.directives.ignore;
         card.citations = raw.directives.citations.clone();
         card.diagrams = raw.directives.diagrams.clone();
         card.givens = raw.directives.givens.clone();
@@ -2490,6 +2526,12 @@ fn heading(
     let mut directives = CardDirectives::default();
     let (text, bodies) = split_trailing_comments(rest);
     for body in bodies {
+        if trim_ws(&body) == "ignore" {
+            return Err(ParseError::FrontDirective {
+                line: lineno,
+                key: "ignore".into(),
+            });
+        }
         if let Some((key, value)) = directive(&body) {
             let before = lints.len();
             let recognized = match apply_directive(&mut directives, &key, value, lineno, lints) {
@@ -2806,7 +2848,7 @@ fn build_card_inner(
     } else {
         (heading, front_extra)
     };
-    if answer.is_empty() {
+    if answer.is_empty() && !directives.ignore {
         return Err(ParseError::FrontWithoutAnswer(line));
     }
 
@@ -3151,6 +3193,7 @@ fn build_card_inner(
         let mut card = Card::plain(Arc::clone(subject), front, correct, notes, line);
         card.deck_id = Arc::clone(deck_id);
         card.token = directives.token.as_deref().map(Arc::from);
+        card.ignored = directives.ignore;
         card.images = images;
         card.images_back = images_back;
         card.span_regions = span_regions;
@@ -3173,6 +3216,7 @@ fn build_card_inner(
     let mut card = Card::plain(Arc::clone(subject), front, back_lines, notes, line);
     card.deck_id = Arc::clone(deck_id);
     card.token = directives.token.as_deref().map(Arc::from);
+    card.ignored = directives.ignore;
     card.reveal = directives.reveal;
     card.input = directives.input;
     card.direction = directives.direction;
@@ -7697,6 +7741,7 @@ the answer
                     "state - the parser position".into(),
                     "partial - the card".into(),
                 ],
+                ignore: false,
             },
             raw_card.directives
         );
@@ -9730,5 +9775,107 @@ the answer
                 "{why}: `{stamp}` must be rejected as invalid input"
             );
         }
+    }
+
+    #[test]
+    fn an_ignored_card_is_parsed_flagged_and_keeps_its_id() {
+        let deck = parse(
+            "## live\na\n## draft\nb\n<!-- ignore -->\n<!-- id: card-3g12jfjv4pypppsrx5wvtx65y5 -->\n## live too\nc\n",
+        );
+        let flags: Vec<(&str, bool)> = deck
+            .cards
+            .iter()
+            .map(|card| (card.front.as_str(), card.ignored))
+            .collect();
+        assert_eq!(
+            vec![("live", false), ("draft", true), ("live too", false)],
+            flags,
+            "the word flags exactly the card it trails"
+        );
+        assert_eq!(
+            Some("card-3g12jfjv4pypppsrx5wvtx65y5".to_string()),
+            deck.cards[1].id(),
+            "an ignored card keeps its id"
+        );
+        assert!(
+            deck.lints.is_empty(),
+            "the word is recognized machinery: {:?}",
+            deck.lints
+        );
+    }
+
+    #[test]
+    fn an_ignored_card_may_lack_an_answer_while_a_live_one_may_not() {
+        let deck = parse("## draft\n<!-- ignore -->\n");
+        assert_eq!(1, deck.cards.len(), "{:?}", deck.cards);
+        assert!(
+            deck.cards[0].ignored && deck.cards[0].back.is_empty(),
+            "{:?}",
+            deck.cards[0]
+        );
+        assert!(
+            matches!(err("## draft\n"), ParseError::FrontWithoutAnswer(1)),
+            "the control: without the word an answerless card is still refused"
+        );
+    }
+
+    #[test]
+    fn ignore_in_a_tables_trailing_zone_flags_every_row() {
+        let deck = parse(
+            "| front | back |\n|---|---|\n| q | a |\n| r | b |\n<!-- cards -->\n<!-- ignore -->\n",
+        );
+        assert_eq!(2, deck.cards.len(), "{:?}", deck.cards);
+        assert!(
+            deck.cards.iter().all(|card| card.ignored),
+            "{:?}",
+            deck.cards
+        );
+    }
+
+    #[test]
+    fn ignore_flags_every_card_a_blank_block_expands_to() {
+        let deck = parse(
+            "## cloze\nalpha and beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n<!-- ignore -->\n",
+        );
+        assert!(!deck.cards.is_empty());
+        assert!(
+            deck.cards.iter().all(|card| card.ignored),
+            "{:?}",
+            deck.cards
+        );
+    }
+
+    #[test]
+    fn ignore_above_card_content_or_on_a_heading_line_is_machinery_out_of_position() {
+        assert!(matches!(
+            err("## q\n<!-- ignore -->\nanswer\n"),
+            ParseError::LeadingIgnore(2)
+        ));
+        assert!(matches!(
+            err("## q <!-- ignore -->\nanswer\n"),
+            ParseError::FrontDirective { line: 1, .. }
+        ));
+        assert!(matches!(
+            err("# s <!-- ignore -->\n## q\na\n"),
+            ParseError::SectionDirective(1)
+        ));
+    }
+
+    #[test]
+    fn ignore_outside_any_card_is_an_error() {
+        assert!(matches!(
+            err("<!-- ignore -->\n## q\na\n"),
+            ParseError::OrphanIgnore(1)
+        ));
+        assert!(matches!(
+            err("# s\n\n<!-- ignore -->\n## q\na\n"),
+            ParseError::OrphanIgnore(3)
+        ));
+    }
+
+    #[test]
+    fn ignore_ranks_as_directive_machinery() {
+        assert_eq!(Some(1), machinery_rank("<!-- ignore -->"));
+        assert_eq!(None, machinery_rank("<!-- ignored -->"));
     }
 }

@@ -179,6 +179,7 @@ pub struct Card {
     pub row: Option<Arc<str>>,
     /// Resolved table-over-deck at parse time; None means the default (on).
     pub sampling: Option<bool>,
+    pub ignored: bool,
     pub reversed: bool,
     pub content_fingerprint: u64,
     /// The block-level dedup key (front + cover-masked raw answer lines):
@@ -292,6 +293,7 @@ impl Card {
             token: None,
             row: None,
             sampling: None,
+            ignored: false,
             reversed: false,
             content_fingerprint,
             block_fingerprint,
@@ -340,6 +342,7 @@ impl Card {
         card.token = self.token.clone();
         card.row = self.row.clone();
         card.sampling = self.sampling;
+        card.ignored = self.ignored;
         card.context = self.context.clone();
         card.context_leads = self.context_leads;
         card.reversed = true;

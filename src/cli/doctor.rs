@@ -903,6 +903,7 @@ fn findings_in(dir: &Path) -> Report {
                     }
                     known_cards.extend(alix::personal::card_ids(&deck));
                     known_cards.extend(deck.dormant_base_ids());
+                    known_cards.extend(deck.ignored_ids());
                 }
             }
             let orphans = store.orphans(&known_cards, &known_deck_ids);
@@ -1951,12 +1952,13 @@ mod tests {
         w(
             dir.path(),
             "stamped.md",
-            "---\nformat-version: 1\nid: deck-ready\n---\n## q <!-- id: card-ready -->\na\n",
+            "---\nformat-version: 1\nid: deck-ready\n---\n## q\na\n<!-- id: card-ready -->\n",
         );
 
         let mut report = Report::default();
         deck_findings(&path, &mut report);
 
+        assert!(report.errors.is_empty(), "{:#?}", report.errors);
         assert!(
             report
                 .warnings
@@ -3504,5 +3506,62 @@ printf ']}}'
                 after.warnings
             );
         }
+    }
+
+    #[test]
+    fn an_ignored_cards_progress_is_not_an_orphan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let decks = dir.join("decks");
+        std::fs::create_dir(&decks).unwrap();
+        w(dir, "alix.toml", "title = \"Drafts\"\n");
+        w(
+            &decks,
+            "drafts.md",
+            "---\nformat-version: 1\nid: deck-draftdoc\n---\n## live\na\n<!-- id: card-live1 -->\n## draft\nb\n<!-- ignore -->\n<!-- id: card-draft1 -->\n",
+        );
+        let mut store = alix::store::Store::open_deck(
+            dir.join("progress/deck-draftdoc.json"),
+            "deck-draftdoc",
+            "drafts.md",
+        )
+        .unwrap();
+        store.get_or_insert("card-draft1");
+        store.save().unwrap();
+
+        let report = workspace_findings(dir);
+        assert!(
+            report.errors.is_empty(),
+            "the fixture itself must be clean: {:?}",
+            report.errors
+        );
+        let warnings = report.warnings.join("\n");
+        assert!(
+            !warnings.contains("orphaned store key (card) `card-draft1`"),
+            "ignoring is not deleting, so the history stays owned: {warnings}"
+        );
+    }
+
+    #[test]
+    fn an_ignored_card_without_an_id_counts_as_unstamped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("drafts.md");
+        w(
+            dir.path(),
+            "drafts.md",
+            "---\nformat-version: 1\nid: deck-ready\n---\n## q\na\n<!-- id: card-ready -->\n## draft\nb\n<!-- ignore -->\n",
+        );
+
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("1 entries are card content without ids")),
+            "{:#?}",
+            report.warnings
+        );
     }
 }

@@ -2352,4 +2352,28 @@ mod tests {
         assert_eq!(line.rfind("b:a1b2c3"), Some(offset));
         assert_eq!(None, stamp_token_offset(line, "d4e5f6"));
     }
+
+    #[test]
+    fn an_ignored_card_is_stamped_like_any_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "deck.md",
+            "## live\na\n## draft\nb\n<!-- ignore -->\n",
+        );
+
+        let outcome = stamp_deck(&path).unwrap();
+        let stamped = fs::read_to_string(&path).unwrap();
+
+        assert_eq!(2, outcome.minted_cards.len(), "{:?}", outcome.minted_cards);
+        let parsed = parser::parse("deck.md", &stamped).unwrap();
+        assert!(
+            parsed.cards.iter().all(|card| card.token.is_some()),
+            "{stamped}"
+        );
+        assert!(
+            parsed.cards[1].ignored,
+            "stamping keeps the word where it was: {stamped}"
+        );
+    }
 }
