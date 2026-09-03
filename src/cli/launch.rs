@@ -22,11 +22,20 @@ fn serve_addr(port: Option<u16>, lan: bool, config: &Config) -> SocketAddr {
 
 /// Fails closed: if `--lan` needs a token but generation fails, this errors
 /// rather than leaving the network API open.
+const MIN_LAN_TOKEN_CHARS: usize = 16;
+
 fn resolve_serve_token(cli: Option<String>, lan: bool, config: &Config) -> Result<Option<String>> {
     if let Some(t) = cli
         .or_else(|| config.serve.token.clone())
         .filter(|t| !t.is_empty())
     {
+        let chars = t.chars().count();
+        if lan && chars < MIN_LAN_TOKEN_CHARS {
+            bail!(
+                "the pairing token has {chars} characters; `--lan` needs at least \
+                 {MIN_LAN_TOKEN_CHARS} (drop `--token` and `[serve] token` to have one minted)"
+            );
+        }
         return Ok(Some(t));
     }
     if lan {
@@ -228,15 +237,43 @@ mod tests {
     fn serve_token_is_generated_only_when_exposed() {
         let cfg = Config::default();
         assert_eq!(resolve_serve_token(None, false, &cfg).unwrap(), None);
-        assert_eq!(
-            resolve_serve_token(Some("abc".into()), true, &cfg).unwrap(),
-            Some("abc".into())
-        );
         assert!(
             resolve_serve_token(None, true, &cfg)
                 .unwrap()
                 .is_some_and(|t| !t.is_empty())
         );
+    }
+
+    #[test]
+    fn an_explicit_token_shorter_than_sixteen_characters_is_refused_only_on_the_lan() {
+        let long = "sixteen-chars-ok";
+        let sixteen_multibyte = "äöüäöüäöüäöüäöüä";
+        let rows = [
+            ("abc", false, true),
+            ("abc", true, false),
+            ("fifteen-chars-x", true, false),
+            (long, true, true),
+            (sixteen_multibyte, true, true),
+        ];
+        for (token, lan, accepted) in rows {
+            let mut cfg = Config::default();
+            cfg.serve.token = Some(token.to_string());
+            for (label, cli, config) in [
+                ("cli", Some(token.to_string()), &Config::default()),
+                ("config", None, &cfg),
+            ] {
+                let result = resolve_serve_token(cli, lan, config);
+                match (accepted, result) {
+                    (true, Ok(Some(t))) => assert_eq!(token, t, "{label} {token:?} lan={lan}"),
+                    (false, Err(error)) => assert!(
+                        error.to_string().contains("needs at least 16")
+                            && !error.to_string().contains(token),
+                        "{label} {token:?} lan={lan}: {error}"
+                    ),
+                    (_, other) => panic!("{label} {token:?} lan={lan}: {other:?}"),
+                }
+            }
+        }
     }
 
     #[test]

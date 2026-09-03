@@ -14,6 +14,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   count and `alix list` marks the cards.
 ### Changed
 
+- `--lan` refuses a `--token` or `[serve] token` value shorter than 16
+  characters before the server binds; minted tokens are unaffected.
+
 ### Fixed
 
 - Adult web review keeps several formulas and question images visible together

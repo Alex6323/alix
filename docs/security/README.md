@@ -101,7 +101,10 @@ code still process content supplied to the app.
 ### Browser and LAN client
 
 The server binds to `127.0.0.1` unless LAN mode is explicitly selected. LAN
-launch generates a random 16-byte token unless a token is configured. Guarded
+launch generates a random 16-byte token unless a token is configured, and it
+refuses a configured or `--token` value shorter than 16 characters before the
+server binds (`a_short_pairing_token_is_refused_before_the_lan_server_binds`,
+`tests/cli.rs`). Guarded
 `/api/*` requests accept a bearer header or bootstrap query token and compare it
 in constant time (`src/cli/launch.rs`, `src/serve/respond.rs`).
 

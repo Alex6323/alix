@@ -7620,3 +7620,41 @@ fn stats_and_list_report_ignored_cards_beside_the_live_ones() {
         stdout(&list)
     );
 }
+
+#[test]
+fn a_short_pairing_token_is_refused_before_the_lan_server_binds() {
+    let dir = TempDir::new().unwrap();
+    let decks = dir.path().join("decks");
+    std::fs::create_dir(&decks).unwrap();
+    let out = alix(&[
+        decks.to_str().unwrap(),
+        "--lan",
+        "--token",
+        "abc",
+        "--port",
+        "0",
+    ]);
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    assert!(
+        stderr(&out).contains("needs at least 16") && !stdout(&out).contains("token abc"),
+        "stderr: {}\nstdout: {}",
+        stderr(&out),
+        stdout(&out)
+    );
+
+    let config = write(dir.path(), "alix.toml", "[serve]\ntoken = \"abc\"\n");
+    let out = alix(&[
+        decks.to_str().unwrap(),
+        "--lan",
+        "--port",
+        "0",
+        "--config",
+        &config,
+    ]);
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    assert!(
+        stderr(&out).contains("needs at least 16"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}

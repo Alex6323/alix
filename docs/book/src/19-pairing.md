@@ -19,7 +19,8 @@ token = "pick-your-own-fixed-token"
 ```
 
 With `token` set, `--lan` reuses it instead of generating a new one, so a
-saved pairing survives restarts.
+saved pairing survives restarts. A pinned token (or a `--token` value) must
+be at least 16 characters; `--lan` refuses a shorter one before it binds.
 
 ## What the remote surface does
 
