@@ -444,9 +444,13 @@ pub fn replace_card_tokens(
     // The keepers are read first so the loser's text is the last thing
     // validated before the write that replaces it.
     let mut checked: HashSet<&Path> = HashSet::new();
-    for repair in repairs {
-        if repair.keeper != loser && checked.insert(repair.keeper) {
-            read_as_scanned(repair.keeper, digests)?;
+    let keepers = repairs
+        .iter()
+        .map(|repair| repair.keeper)
+        .filter(|keeper| *keeper != loser);
+    for keeper in keepers {
+        if checked.insert(keeper) {
+            read_as_scanned(keeper, digests)?;
         }
     }
     let original = parser::normalize(&read_as_scanned(loser, digests)?).into_owned();
@@ -552,15 +556,13 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), StampError> {
 fn block_end_line(text: &str, front_line: usize, card_tables: Option<&HashSet<usize>>) -> usize {
     let mut last = front_line;
     let mut fence: Option<(char, usize)> = None;
+    let Some(start) = nth_line_start(text, front_line + 1) else {
+        return last;
+    };
+    let mut lines = text[start..].split('\n').peekable();
     let mut line = front_line;
-    loop {
+    while let Some(raw) = lines.next() {
         line += 1;
-        let Some(start) = nth_line_start(text, line) else {
-            return last;
-        };
-        let rest = &text[start..];
-        let raw = &rest[..rest.find('\n').unwrap_or(rest.len())];
-
         if let Some((ch, open)) = fence {
             if parser::closes_fence(raw, ch, open) {
                 fence = None;
@@ -588,10 +590,7 @@ fn block_end_line(text: &str, front_line: usize, card_tables: Option<&HashSet<us
             Some(set) => set.contains(&line),
             None => {
                 raw.starts_with('|')
-                    && nth_line_start(text, line + 1).is_some_and(|next_start| {
-                        let next_rest = &text[next_start..];
-                        let next_raw =
-                            &next_rest[..next_rest.find('\n').unwrap_or(next_rest.len())];
+                    && lines.peek().is_some_and(|next_raw| {
                         next_raw.starts_with('|') && parser::is_delimiter_row(next_raw)
                     })
             }
@@ -603,6 +602,7 @@ fn block_end_line(text: &str, front_line: usize, card_tables: Option<&HashSet<us
             last = line;
         }
     }
+    last
 }
 
 /// 1-based lines of card `<!-- id: -->` markers away from the position
@@ -732,20 +732,20 @@ fn line_start_offset(text: &str, line: usize) -> usize {
 
 fn first_id_token_span(text: &str, target: &str) -> Option<Range<usize>> {
     let fenced = fenced_spans(text);
-    let mut cursor = 0;
-    while let Some(rel) = text[cursor..].find("<!--") {
-        let body_start = cursor + rel + 4;
-        let Some(rel_end) = text[body_start..].find("-->") else {
-            break;
-        };
-        let body_end = body_start + rel_end;
+    let mut resume = 0;
+    for (open, _) in text.match_indices("<!--") {
+        if open < resume {
+            continue;
+        }
+        let body_start = open + "<!--".len();
+        let body_end = body_start + text[body_start..].find("-->")?;
         if let Some(range) = id_value_range(body_start, &text[body_start..body_end])
             && &text[range.clone()] == target
             && !fenced.iter().any(|span| span.contains(&range.start))
         {
             return Some(range);
         }
-        cursor = body_end + 3;
+        resume = body_end + "-->".len();
     }
     None
 }
@@ -1322,7 +1322,23 @@ mod tests {
             )
         });
 
-        let mut keeper_writer = fs::OpenOptions::new().write(true).open(&keeper).unwrap();
+        // The writer open returns only once the repair opens the keeper for
+        // reading; a repair that never does fails the test instead of
+        // hanging it.
+        let (opened, wait_open) = std::sync::mpsc::channel();
+        let writer_keeper = keeper.clone();
+        let writer = std::thread::spawn(move || {
+            let keeper_writer = fs::OpenOptions::new()
+                .write(true)
+                .open(&writer_keeper)
+                .unwrap();
+            opened.send(()).unwrap();
+            keeper_writer
+        });
+        wait_open
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("the repair never opened the keeper for reading");
+        let mut keeper_writer = writer.join().unwrap();
         keeper_writer.write_all(keeper_text.as_bytes()).unwrap();
         fs::write(&loser, &edited).unwrap();
         drop(keeper_writer);
@@ -1996,6 +2012,62 @@ mod tests {
         let overlapping = "## q\na\n<!-- x <!-->\n<!-- id: card-q1 -->\n";
         let range = first_id_token_span(overlapping, "card-q1").unwrap();
         assert_eq!("card-q1", &overlapping[range]);
+
+        let adjacent = "## q\na\n<!-- note --><!-- id: card-q1 -->\n";
+        let range = first_id_token_span(adjacent, "card-q1").unwrap();
+        assert_eq!(
+            "card-q1",
+            &adjacent[range.clone()],
+            "a comment opening right after another's terminator is scanned"
+        );
+        assert_eq!(adjacent.rfind("card-q1"), Some(range.start));
+
+        let decoy = "## q\n```\n<!-- id: card-q1 -->\n```\n<!-- id: card-q1 -->\n";
+        let range = first_id_token_span(decoy, "card-q1").unwrap();
+        assert_eq!(
+            decoy.rfind("card-q1"),
+            Some(range.start),
+            "a fenced copy of the id line is not the token"
+        );
+        assert_eq!(
+            None,
+            first_id_token_span("## q\n<!-- id: card-q1", "card-q1")
+        );
+    }
+
+    #[test]
+    fn fenced_spans_end_after_the_closing_line_or_at_the_end_of_an_unclosed_fence() {
+        assert_eq!(vec![2..12], fenced_spans("a\n```\nx\n```\nb\n"));
+        assert_eq!(vec![2..8], fenced_spans("a\n```\nx\n"));
+        assert_eq!(
+            vec![0..10, 11..23],
+            fenced_spans("~~~\nx\n~~~\n\n````\ny\n````\n"),
+            "two fences are two spans"
+        );
+        assert!(fenced_spans("a\nb\n").is_empty());
+    }
+
+    #[test]
+    fn read_as_scanned_returns_the_scanned_text_and_refuses_a_changed_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let text = "## q\na\n<!-- id: card-q1 -->\n";
+        let path = write(&dir, "deck.md", text);
+        let scanned = HashMap::from([(path.clone(), crate::dedup::digest(text))]);
+        assert_eq!(text, read_as_scanned(&path, &scanned).unwrap());
+
+        fs::write(&path, "## q\nedited\n<!-- id: card-q1 -->\n").unwrap();
+        assert!(
+            matches!(
+                read_as_scanned(&path, &scanned),
+                Err(StampError::DeckChangedSinceScan { path: changed }) if changed == path
+            ),
+            "a deck edited after the scan is refused"
+        );
+        let unscanned = HashMap::new();
+        assert!(matches!(
+            read_as_scanned(&path, &unscanned),
+            Err(StampError::DeckChangedSinceScan { .. })
+        ));
     }
 
     // ── Region stamps (ADR 0034) ──

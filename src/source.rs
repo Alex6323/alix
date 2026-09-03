@@ -1080,6 +1080,29 @@ mod tests {
     }
 
     #[test]
+    fn excerpt_fingerprints_keep_line_boundaries() {
+        let excerpt = |lines: &[&str]| Excerpt {
+            path: PathBuf::from("a.rs"),
+            lines: lines
+                .iter()
+                .enumerate()
+                .map(|(index, line)| (index + 1, (*line).to_string()))
+                .collect(),
+            truncated: false,
+        };
+        assert_ne!(
+            excerpt_fingerprint(&excerpt(&["ab", "c"])),
+            excerpt_fingerprint(&excerpt(&["a", "bc"])),
+            "the same bytes split at another line boundary are another excerpt"
+        );
+        assert_ne!(
+            excerpt_fingerprint(&excerpt(&["ab", "c"])),
+            excerpt_fingerprint(&excerpt(&["abc"])),
+            "two lines are not their concatenation"
+        );
+    }
+
+    #[test]
     fn a_moved_excerpt_is_found_by_fingerprint() {
         let directory = tempfile::tempdir().unwrap();
         write(
@@ -1345,6 +1368,36 @@ mod tests {
                 .unwrap(),
             CitationIntegrity::Current(_)
         ));
+    }
+
+    #[test]
+    fn stamping_a_deck_whose_citations_are_all_current_writes_nothing() {
+        let directory = tempfile::tempdir().unwrap();
+        write(directory.path(), "code.rs", "alpha\nbeta\ngamma\n");
+        let deck_path = write(
+            directory.path(),
+            "deck.md",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: .\n---\n\
+             ## q\nanswer\n<!-- at: code.rs:2-3 -->\n<!-- id: card-card1 -->\n",
+        );
+        assert_eq!(1, stamp_citations(&deck_path).unwrap());
+        let stamped = std::fs::read_to_string(&deck_path).unwrap();
+        let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
+        std::fs::File::options()
+            .write(true)
+            .open(&deck_path)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+
+        assert_eq!(0, stamp_citations(&deck_path).unwrap());
+
+        assert_eq!(stamped, std::fs::read_to_string(&deck_path).unwrap());
+        assert_eq!(
+            old,
+            std::fs::metadata(&deck_path).unwrap().modified().unwrap(),
+            "a deck with nothing to stamp is not rewritten"
+        );
     }
 
     #[test]

@@ -154,6 +154,11 @@ mod tests {
             "How the VM Reads execute_signed",
             condense("how the VM reads execute_signed")
         );
+        assert_eq!(
+            "The iOS Build Reads foo()",
+            condense("the iOS build reads foo()"),
+            "an inner capital and a call paren each mark a code token on their own"
+        );
     }
 
     #[test]

@@ -1571,6 +1571,94 @@ mod tests {
         validate_workspace_material(root).unwrap();
     }
 
+    #[test]
+    fn workspace_material_refuses_an_unresolvable_image_and_a_stray_asset_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("alix.toml"), "title = \"W\"\n").unwrap();
+        std::fs::create_dir(root.join("decks")).unwrap();
+        let deck = root.join("decks/m.md");
+        std::fs::write(
+            &deck,
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\n![](gone.png)\n<!-- id: card-m1c1 -->\n",
+        )
+        .unwrap();
+        let error = validate_workspace_material(root).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("gone.png"),
+            "an image the deck cannot resolve fails the workspace: {error:#}"
+        );
+
+        std::fs::write(
+            &deck,
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\na\n<!-- id: card-m1c1 -->\n",
+        )
+        .unwrap();
+        validate_workspace_material(root).unwrap();
+        std::fs::create_dir_all(root.join(crate::assets::ROOT).join("deck-zz")).unwrap();
+        let error = validate_workspace_material(root).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("is not owned by a deck"),
+            "an asset directory no deck owns fails the workspace: {error:#}"
+        );
+    }
+
+    #[test]
+    fn a_sourced_bundle_deck_is_validated_against_the_root_assets() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("code.rs"), "alpha\n").unwrap();
+        let deck_path = root.join("m.md");
+        std::fs::write(
+            &deck_path,
+            "---\nformat-version: 1\nid: \"deck-m1\"\nsource: .\n---\n## q\na\n\
+             <!-- at: code.rs:1 fingerprint: xxh64-0000000000000000 \
+             asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.rs -->\n\
+             <!-- id: card-m1c1 -->\n",
+        )
+        .unwrap();
+        let deck = crate::deck::Deck::load(&deck_path).unwrap();
+        assert!(!deck.sources.is_empty(), "the fixture declares a source");
+
+        let error = validate_bundle_material(&deck, root).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("sha256-"),
+            "a frozen excerpt whose asset object is absent fails the bundle: {error:#}"
+        );
+    }
+
+    #[test]
+    fn a_deck_share_marker_is_refused_for_a_wrong_version_or_a_pathed_or_non_markdown_deck() {
+        for (marker, case) in [
+            (r#"{"version":2,"deck":"x.md"}"#, "another bundle version"),
+            (
+                r#"{"version":1,"deck":"sub/x.md"}"#,
+                "a deck name carrying a path",
+            ),
+            (
+                r#"{"version":1,"deck":"x.txt"}"#,
+                "a deck name that is not markdown",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let bundle = bundle_fixture(dir.path());
+            std::fs::write(bundle.join(DECK_BUNDLE_MARKER), marker).unwrap();
+            let dest = dir.path().join("decks");
+            std::fs::create_dir_all(&dest).unwrap();
+
+            let error = land_deck_bundle(&bundle, &dest).unwrap_err();
+
+            assert!(
+                format!("{error:#}").contains("is not a supported deck share"),
+                "{case}: {error:#}"
+            );
+            assert!(
+                std::fs::read_dir(&dest).unwrap().next().is_none(),
+                "{case}: nothing lands"
+            );
+        }
+    }
+
     /// A workspace deck is validated because it is in a workspace, whether
     /// or not it owns an assets directory: the material it names lives at the
     /// workspace root either way.
