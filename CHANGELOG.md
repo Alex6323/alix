@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix profile add` refuses a decks folder that equals, contains, or sits
+  inside another profile's folder; bare `alix doctor` reports every existing
+  overlap without rewriting profiles.
 - A bare `<!-- ignore -->` among a card's trailing comments keeps the card in
   the file, with its id and history, but takes it out of review, the exam, and
   every count; an ignored card may lack an answer. `alix stats` reports the

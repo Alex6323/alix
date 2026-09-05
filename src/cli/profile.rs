@@ -4,7 +4,7 @@ use std::{
     process::Command,
 };
 
-use alix::config::{Audience, Config};
+use alix::config::{Audience, Config, ProfileFolder};
 use anyhow::{Context, Result, bail};
 
 use crate::{ProfileAddArgs, ProfileCommand, ProfileDefaultArgs, common::confirm};
@@ -64,6 +64,21 @@ fn add_in(dir: &Path, args: &ProfileAddArgs, config: &Config) -> Result<()> {
         .clone()
         .or_else(|| config.decks_dir())
         .context("cannot determine the decks directory")?;
+    let mut folders = profile_folders_in(dir)?;
+    folders.push(ProfileFolder {
+        name: args.name.clone(),
+        folder: decks.clone(),
+    });
+    if let Some(conflict) = alix::config::profile_folder_conflicts(&folders)?
+        .into_iter()
+        .find(|conflict| conflict.second.name == args.name)
+    {
+        bail!(
+            "profile `{}` already serves `{}`, which overlaps this decks folder",
+            conflict.first.name,
+            conflict.first.folder.display()
+        );
+    }
     let decks = decks
         .to_str()
         .context("the decks path is not valid UTF-8")?;
@@ -175,6 +190,23 @@ fn profile_paths_in(dir: &Path) -> Result<Vec<PathBuf>> {
     }
     paths.sort();
     Ok(paths)
+}
+
+pub(crate) fn profile_folders_in(dir: &Path) -> Result<Vec<ProfileFolder>> {
+    let mut folders = Vec::new();
+    for path in profile_paths_in(dir)? {
+        let name = path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .context("a profile filename is not valid UTF-8")?
+            .to_string();
+        let config = Config::load(Some(&path))?;
+        let folder = config
+            .decks_dir()
+            .context("cannot determine the decks directory")?;
+        folders.push(ProfileFolder { name, folder });
+    }
+    Ok(folders)
 }
 
 fn remove(name: &str, yes: bool) -> Result<()> {
@@ -469,6 +501,7 @@ mod tests {
             },
             ..Config::default()
         };
+        fs::create_dir_all(&decks).unwrap();
         let args = ProfileAddArgs {
             name: "timmy".to_string(),
             decks: Some(decks.clone()),
@@ -500,6 +533,246 @@ mod tests {
         remove_in(&dir, "timmy", true).unwrap();
         assert!(!path.exists());
         assert!(profile_rows_in(&dir).unwrap().is_empty());
+    }
+
+    #[test]
+    fn profile_folder_overlap_is_one_law_for_create_and_doctor() {
+        struct Case {
+            name: &'static str,
+            existing_parts: &'static [&'static str],
+            candidate_parts: &'static [&'static str],
+            create_candidate: bool,
+            overlaps: bool,
+        }
+
+        let cases = [
+            Case {
+                name: "equal",
+                existing_parts: &["decks"],
+                candidate_parts: &["decks"],
+                create_candidate: true,
+                overlaps: true,
+            },
+            Case {
+                name: "existing-contains-candidate",
+                existing_parts: &["decks"],
+                candidate_parts: &["decks", "child"],
+                create_candidate: true,
+                overlaps: true,
+            },
+            Case {
+                name: "candidate-contains-existing",
+                existing_parts: &["decks", "child"],
+                candidate_parts: &["decks"],
+                create_candidate: true,
+                overlaps: true,
+            },
+            Case {
+                name: "component-normalized-alias",
+                existing_parts: &["decks", "a"],
+                candidate_parts: &["decks", "b", "..", "a"],
+                create_candidate: true,
+                overlaps: true,
+            },
+            Case {
+                name: "component-prefix-siblings",
+                existing_parts: &["decks"],
+                candidate_parts: &["decks-archive"],
+                create_candidate: true,
+                overlaps: false,
+            },
+            Case {
+                name: "missing-nested-candidate",
+                existing_parts: &["decks"],
+                candidate_parts: &["decks", "future"],
+                create_candidate: false,
+                overlaps: true,
+            },
+            Case {
+                name: "missing-sibling-candidate",
+                existing_parts: &["decks"],
+                candidate_parts: &["future"],
+                create_candidate: false,
+                overlaps: false,
+            },
+        ];
+
+        for case in cases {
+            let temp = TempDir::new().unwrap();
+            let profiles = temp.path().join("profiles");
+            let existing = case
+                .existing_parts
+                .iter()
+                .fold(temp.path().to_path_buf(), |path, part| path.join(part));
+            let candidate = case
+                .candidate_parts
+                .iter()
+                .fold(temp.path().to_path_buf(), |path, part| path.join(part));
+            fs::create_dir_all(&existing).unwrap();
+            if case.create_candidate {
+                fs::create_dir_all(&candidate).unwrap();
+            }
+            fs::create_dir_all(&profiles).unwrap();
+            fs::write(
+                config_path_in(&profiles, "anna"),
+                format!("decks_dir = {:?}\n", existing.to_str().unwrap()),
+            )
+            .unwrap();
+            let args = ProfileAddArgs {
+                name: "bob".to_string(),
+                decks: Some(candidate.clone()),
+                port: None,
+                kids: false,
+                adult: false,
+            };
+
+            let added = add_in(&profiles, &args, &Config::default());
+            if case.overlaps {
+                let error = added.unwrap_err().to_string();
+                assert_eq!(
+                    format!(
+                        "profile `anna` already serves `{}`, which overlaps this decks folder",
+                        existing.display()
+                    ),
+                    error,
+                    "{} must reject profile pair anna={} bob={}",
+                    case.name,
+                    existing.display(),
+                    candidate.display()
+                );
+                fs::write(
+                    config_path_in(&profiles, "bob"),
+                    format!("decks_dir = {:?}\n", candidate.to_str().unwrap()),
+                )
+                .unwrap();
+            } else {
+                assert!(
+                    added.is_ok(),
+                    "{} must accept profile pair anna={} bob={}",
+                    case.name,
+                    existing.display(),
+                    candidate.display()
+                );
+            }
+
+            let errors = crate::doctor::profile_folder_errors(&profiles).unwrap();
+            let expected = case.overlaps.then(|| {
+                format!(
+                    "profiles `anna` and `bob` serve overlapping decks folders `{}` and `{}`",
+                    existing.display(),
+                    candidate.display()
+                )
+            });
+            assert_eq!(
+                expected.into_iter().collect::<Vec<_>>(),
+                errors,
+                "{} doctor result for profile pair anna={} bob={}",
+                case.name,
+                existing.display(),
+                candidate.display()
+            );
+        }
+
+        let temp = TempDir::new().unwrap();
+        let profiles = temp.path().join("profiles");
+        let root = temp.path().join("decks");
+        let child = root.join("child");
+        let sibling = temp.path().join("decks-archive");
+        fs::create_dir_all(&child).unwrap();
+        fs::create_dir_all(&sibling).unwrap();
+        fs::create_dir_all(&profiles).unwrap();
+        for (name, folder) in [
+            ("anna", root.as_path()),
+            ("bob", child.as_path()),
+            ("carol", child.as_path()),
+            ("dora", sibling.as_path()),
+        ] {
+            fs::write(
+                config_path_in(&profiles, name),
+                format!("decks_dir = {:?}\n", folder.to_str().unwrap()),
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            vec![
+                format!(
+                    "profiles `anna` and `bob` serve overlapping decks folders `{}` and `{}`",
+                    root.display(),
+                    child.display()
+                ),
+                format!(
+                    "profiles `anna` and `carol` serve overlapping decks folders `{}` and `{}`",
+                    root.display(),
+                    child.display()
+                ),
+                format!(
+                    "profiles `bob` and `carol` serve overlapping decks folders `{}` and `{}`",
+                    child.display(),
+                    child.display()
+                ),
+            ],
+            crate::doctor::profile_folder_errors(&profiles).unwrap(),
+            "doctor must report pairs anna/bob {}/{}, anna/carol {}/{}, and bob/carol {}/{} once while excluding sibling dora={}",
+            root.display(),
+            child.display(),
+            root.display(),
+            child.display(),
+            child.display(),
+            child.display(),
+            sibling.display()
+        );
+
+        #[cfg(unix)]
+        {
+            let temp = TempDir::new().unwrap();
+            let profiles = temp.path().join("profiles");
+            let real = temp.path().join("real-decks");
+            let alias = temp.path().join("linked-decks");
+            fs::create_dir_all(&real).unwrap();
+            fs::create_dir_all(&profiles).unwrap();
+            std::os::unix::fs::symlink(&real, &alias).unwrap();
+            fs::write(
+                config_path_in(&profiles, "anna"),
+                format!("decks_dir = {:?}\n", real.to_str().unwrap()),
+            )
+            .unwrap();
+            let args = ProfileAddArgs {
+                name: "bob".to_string(),
+                decks: Some(alias.clone()),
+                port: None,
+                kids: false,
+                adult: false,
+            };
+
+            assert_eq!(
+                format!(
+                    "profile `anna` already serves `{}`, which overlaps this decks folder",
+                    real.display()
+                ),
+                add_in(&profiles, &args, &Config::default())
+                    .unwrap_err()
+                    .to_string(),
+                "symlink-alias pair anna={} bob={} must be rejected",
+                real.display(),
+                alias.display()
+            );
+            fs::write(
+                config_path_in(&profiles, "bob"),
+                format!("decks_dir = {:?}\n", alias.to_str().unwrap()),
+            )
+            .unwrap();
+            assert_eq!(
+                vec![format!(
+                    "profiles `anna` and `bob` serve overlapping decks folders `{}` and `{}`",
+                    real.display(),
+                    alias.display()
+                )],
+                crate::doctor::profile_folder_errors(&profiles).unwrap(),
+                "doctor must report symlink-alias pair anna={} bob={} once",
+                real.display(),
+                alias.display()
+            );
+        }
     }
 
     #[test]

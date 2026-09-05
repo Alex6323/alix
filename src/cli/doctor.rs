@@ -1328,6 +1328,22 @@ fn repair_after_explicit_path(path: Option<&Path>) -> bool {
     path.is_none_or(|path| !workspace::is_workspace(path))
 }
 
+pub(crate) fn profile_folder_errors(profiles_dir: &Path) -> Result<Vec<String>> {
+    let profiles = crate::profile::profile_folders_in(profiles_dir)?;
+    Ok(alix::config::profile_folder_conflicts(&profiles)?
+        .into_iter()
+        .map(|conflict| {
+            format!(
+                "profiles `{}` and `{}` serve overlapping decks folders `{}` and `{}`",
+                conflict.first.name,
+                conflict.second.name,
+                conflict.first.folder.display(),
+                conflict.second.folder.display()
+            )
+        })
+        .collect())
+}
+
 // Exits non-zero only on a hard fail; a missing optional binary (a warn)
 // never breaks a script.
 pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
@@ -1467,6 +1483,15 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
         println!("{glyph} {:<8} {}", f.name, f.detail);
         if let Some(remedy) = &f.remedy {
             println!("  ↳ {remedy}");
+        }
+    }
+    if args.dir.is_none() {
+        let mut report = Report::default();
+        for error in profile_folder_errors(&crate::profile::profiles_dir()?)? {
+            report.error(error);
+        }
+        if report.render() {
+            failed = true;
         }
     }
     // A standalone deck-file target returned above and skips this: it stays

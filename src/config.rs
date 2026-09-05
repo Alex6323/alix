@@ -990,6 +990,72 @@ pub fn profiles_dir() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.config_dir().join("profiles"))
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProfileFolder {
+    pub name: String,
+    pub folder: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProfileFolderConflict {
+    pub first: ProfileFolder,
+    pub second: ProfileFolder,
+}
+
+fn canonical_profile_folder(path: &Path) -> Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .context("cannot determine the current directory")?
+            .join(path)
+    };
+    let mut ancestor = absolute.as_path();
+    let mut missing = Vec::new();
+    while !ancestor.exists() {
+        let name = ancestor
+            .file_name()
+            .with_context(|| format!("cannot resolve decks folder `{}`", path.display()))?;
+        missing.push(name.to_os_string());
+        ancestor = ancestor
+            .parent()
+            .with_context(|| format!("cannot resolve decks folder `{}`", path.display()))?;
+    }
+
+    let mut canonical = ancestor.canonicalize()?;
+    for component in missing.into_iter().rev() {
+        canonical.push(component);
+    }
+    Ok(canonical)
+}
+
+pub fn profile_folder_conflicts(profiles: &[ProfileFolder]) -> Result<Vec<ProfileFolderConflict>> {
+    let mut canonical = Vec::with_capacity(profiles.len());
+    for profile in profiles {
+        let folder = canonical_profile_folder(&profile.folder).with_context(|| {
+            format!(
+                "cannot resolve decks folder `{}` for profile `{}`",
+                profile.folder.display(),
+                profile.name
+            )
+        })?;
+        canonical.push((profile, folder));
+    }
+
+    let mut conflicts = Vec::new();
+    for (index, (first, first_folder)) in canonical.iter().enumerate() {
+        for (second, second_folder) in &canonical[index + 1..] {
+            if first_folder.starts_with(second_folder) || second_folder.starts_with(first_folder) {
+                conflicts.push(ProfileFolderConflict {
+                    first: (*first).clone(),
+                    second: (*second).clone(),
+                });
+            }
+        }
+    }
+    Ok(conflicts)
+}
+
 pub fn default_decks_dir() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|dirs| dirs.home_dir().join("decks"))
 }

@@ -53,6 +53,12 @@ profile, and clears it with `--clear`; bare `alix` launches that default.
 `alix --launch-all` starts every profile in the foreground on its configured
 port. Ctrl-C or closing the terminal stops them together.
 
+Each profile's decks folder must be separate: it cannot equal, contain, or sit
+inside another profile's folder. `alix profile add` refuses an overlap, and
+bare `alix doctor` reports every existing pair without rewriting either
+profile. Paths are resolved before comparison, so symlink aliases count as the
+same folder.
+
 ## Progress
 
 `alix stats`, `alix list`, and `alix reset` each take a **deck file, a plain
