@@ -3270,10 +3270,22 @@ fn an_exhausted_recognize_deck_reports_the_gap_not_a_bare_empty_done() {
         |_opts| {},
     );
 
-    // A bare select resolves the deck's default depth: it has authored picks,
-    // so that is Recognize — whose pool is exhausted.
     let resp = post_json(&base, "/api/select", r#"{"deck":"choice-mixed.md"}"#);
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!("review", body["phase"], "mixed-deck default body: {body}");
+    assert_eq!("recall", body["depth"], "mixed-deck default body: {body}");
+    assert!(
+        body["recognize_gap"].is_null(),
+        "mixed-deck Recall default has no Recognize gap: {body}"
+    );
+    assert_eq!(200, post_json(&base, "/api/deselect", "{}").status);
 
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"choice-mixed.md","depth":"recognize"}"#,
+    );
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!("done", body["phase"], "body: {body}");

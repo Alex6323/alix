@@ -121,7 +121,7 @@ pub fn card_recognizable(card: &Card, cache: &AugmentCache, deck_cards: &[Card])
 }
 
 pub fn deck_recognizable(cards: &[Card], cache: &AugmentCache) -> bool {
-    cards.iter().any(|c| card_recognizable(c, cache, cards))
+    !cards.is_empty() && cards.iter().all(|c| card_recognizable(c, cache, cards))
 }
 
 pub fn default_depth(cards: &[Card], cache: &AugmentCache) -> Depth {
@@ -196,18 +196,75 @@ mod tests {
     }
 
     #[test]
-    fn default_depth_is_recognize_when_any_card_is_recognizable() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
-        let covered = card("a");
-        let uncovered = card("b");
-        cache.set_distractors(
-            &covered.id().unwrap(),
-            vec!["x".into(), "y".into(), "z".into()],
-            covered.content_fingerprint,
-        );
-        let cards = vec![covered, uncovered];
-        assert_eq!(Depth::Recognize, default_depth(&cards, &cache));
+    fn default_depth_is_recognize_only_when_every_card_is_recognizable() {
+        struct Case {
+            name: &'static str,
+            recognizable: usize,
+            unrecognizable: usize,
+            expected: Depth,
+        }
+
+        let cases = [
+            Case {
+                name: "all-cards-recognizable",
+                recognizable: 2,
+                unrecognizable: 0,
+                expected: Depth::Recognize,
+            },
+            Case {
+                name: "one-among-unrecognizable",
+                recognizable: 1,
+                unrecognizable: 2,
+                expected: Depth::Recall,
+            },
+            Case {
+                name: "no-cards-recognizable",
+                recognizable: 0,
+                unrecognizable: 2,
+                expected: Depth::Recall,
+            },
+            Case {
+                name: "empty-deck",
+                recognizable: 0,
+                unrecognizable: 0,
+                expected: Depth::Recall,
+            },
+        ];
+
+        for case in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
+            let cards: Vec<_> = ["a", "b", "c"]
+                .into_iter()
+                .take(case.recognizable + case.unrecognizable)
+                .map(card)
+                .collect();
+            for covered in &cards[..case.recognizable] {
+                cache.set_distractors(
+                    &covered.id().unwrap(),
+                    vec!["x".into(), "y".into(), "z".into()],
+                    covered.content_fingerprint,
+                );
+            }
+            let actual_recognizable = cards
+                .iter()
+                .filter(|card| card_recognizable(card, &cache, &cards))
+                .count();
+
+            assert_eq!(
+                case.recognizable, actual_recognizable,
+                "{} fixture: expected {} recognizable and {} unrecognizable cards",
+                case.name, case.recognizable, case.unrecognizable
+            );
+            assert_eq!(
+                case.expected,
+                default_depth(&cards, &cache),
+                "{} default: {} recognizable and {} unrecognizable cards",
+                case.name,
+                case.recognizable,
+                case.unrecognizable
+            );
+        }
     }
 
     #[test]
@@ -298,13 +355,6 @@ mod tests {
                 "deck {deck_key:?} table {table_directive:?}"
             );
         }
-    }
-
-    #[test]
-    fn default_depth_stays_recall_for_an_empty_deck() {
-        let dir = tempfile::tempdir().unwrap();
-        let cache = AugmentCache::open(dir.path().join("deck1.json"));
-        assert_eq!(Depth::Recall, default_depth(&[], &cache));
     }
 
     #[test]

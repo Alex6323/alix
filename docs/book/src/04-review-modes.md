@@ -50,10 +50,11 @@ of the three (on the keyboard: `v`, then `1`/`2`/`3`; `Esc` cancels; rebindable 
 [`[keys.picker]`](16-configuration.md)). The menu also carries the **cram**
 tick-box (`c`); see [Cramming](05-scheduling.md). Plain **Learn** reuses the
 deck's own last-used depth, remembered per deck. The first time you ever open a
-deck, that default is Recognize if a genuine multiple-choice pick is ready to
-go: authored choice options on a card (an invoked task list), AI-generated distractors
-(`alix deck augment --target choices`, or the web Augment screen), or a
-[card table's](03-the-deck-format.md) own column; otherwise it's Recall.
+deck, that default is Recognize only when every card has a genuine
+multiple-choice pick ready to go: authored choice options (an invoked task
+list), AI-generated distractors (`alix deck augment --target choices`, or the
+web Augment screen), or a [card table's](03-the-deck-format.md) own column. If
+even one card has no buildable pick, the default is Recall.
 
 - **Recognize**: **pick-only**, and scheduled on its own FSRS state at a laxer
   desired retention (`recognize_retention`, default 0.85), because recognition
