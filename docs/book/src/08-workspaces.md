@@ -47,9 +47,9 @@ destination have to be workspaces already (see [Moving decks between
 workspaces](#moving-decks-between-workspaces)), so neither promoting a loose
 deck nor demoting a member is covered. Promoting one means creating the
 workspace and moving the file into its `decks/` yourself. The ids inside the
-file are untouched by that, but where your progress is stored depends on the
-workspace's own settings, so run [`alix doctor`](17-command-reference.md) on
-the result and check that the deck still reports the history you expect.
+file are untouched by that, but progress now resolves at the new workspace
+root, so run [`alix doctor`](17-command-reference.md) on the result and check
+that the deck still reports the history you expect.
 
 ## Making a workspace
 
@@ -252,8 +252,8 @@ stays on [`alix deck augment`](17-command-reference.md).
 
 ## Its own files
 
-A workspace keeps shareable material at the workspace root and private
-learning state in its selected user-files root:
+A workspace keeps shareable material and private learning state at the
+workspace root:
 
 ```text
 augment/deck-<token>.json    # shareable generated choices, notes, and topologies
@@ -262,11 +262,8 @@ progress/deck-<token>.json   # private schedules, history, exam state
 ```
 
 Renaming a deck file leaves these paths unchanged because the name comes from
-its deck id (`deck-<token>`), not its display name. By default the private files are colocated
-with the workspace, so folder synchronization carries progress too. A
-`store = "..."` line in `alix.toml` moves only private files such as
-`progress/` and `recent.json`; augmentation and assets stay beside the decks
-they describe.
+its deck id (`deck-<token>`), not its display name. Private files are colocated
+with the workspace, so folder synchronization carries progress too.
 
 That makes a workspace a **self-contained, portable unit** for moving, backup,
 and folder synchronization: authored decks in `decks/`, frozen excerpts and

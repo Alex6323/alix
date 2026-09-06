@@ -1215,41 +1215,6 @@ mod tests {
         );
     }
 
-    /// Codex: `store = "../shared"` is a supported layout, and two workspaces
-    /// pointing at one store returned the same document under two lexical
-    /// spellings, so the phone asked for the same conflict to be resolved twice.
-    #[test]
-    fn sync_conflicts_under_counts_one_shared_store_document_once() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        for name in ["a", "b"] {
-            std::fs::create_dir_all(root.join(name).join("decks")).unwrap();
-            write(
-                &root.join(name).join("alix.toml"),
-                "store = \"../shared\"\n",
-            );
-            write(
-                &root.join(name).join("decks/m.md"),
-                "## q\na\n<!-- id: card-qm -->\n",
-            );
-        }
-        std::fs::create_dir_all(root.join("shared/progress")).unwrap();
-        let conflict = root.join("shared/progress/m.sync-conflict-20260715-101112-BBBBBBB.json");
-        write(&conflict, "{}");
-
-        let found = sync_conflicts_under(root);
-
-        assert_eq!(
-            1,
-            found.len(),
-            "one physical document is one conflict to resolve: {found:?}"
-        );
-        assert_eq!(
-            conflict.canonicalize().unwrap(),
-            found[0].canonicalize().unwrap()
-        );
-    }
-
     #[cfg(unix)]
     #[test]
     fn a_member_reachable_under_two_names_is_one_row_and_one_deadline_unit() {

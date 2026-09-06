@@ -10,6 +10,7 @@ use crate::deck::DeckSettings;
 
 pub const MANIFEST: &str = "alix.toml";
 pub const DECKS: &str = "decks";
+pub const PERSONAL_SIDECAR_SUFFIX: &str = ".personal.md";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WorkspaceFiles {
@@ -57,11 +58,11 @@ impl WorkspaceFiles {
 }
 
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct Manifest {
     title: Option<String>,
     description: Option<String>,
     icon: Option<String>,
-    store: Option<String>,
     source: Option<ManifestSource>,
     source_access: Option<bool>,
     #[serde(default)]
@@ -147,6 +148,11 @@ pub fn manifest_source(dir: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
+pub fn manifest_parse_error(dir: &Path) -> Option<toml::de::Error> {
+    let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
+    toml::from_str::<Manifest>(&text).err()
+}
+
 /// A missing or malformed manifest yields no title/description and default
 /// settings, never an error.
 pub(crate) fn read_manifest(
@@ -202,7 +208,7 @@ pub fn is_conventional_non_deck(name: &str) -> bool {
 /// The suffix alone decides discovery, so no file is read to skip a sidecar,
 /// and one carrying an `id:` by mistake is still never offered as a deck.
 pub fn is_sidecar_name(name: &str) -> bool {
-    name.ends_with(".personal.md")
+    name.ends_with(PERSONAL_SIDECAR_SUFFIX)
 }
 
 /// A closed list of sync/backup name patterns. Dropbox's "conflicted copy"
@@ -436,10 +442,7 @@ pub fn has_decks(path: &Path) -> bool {
 /// Assumes `dir` is already a workspace; callers must check first (see
 /// [`root_store_path`]).
 pub fn store_path(dir: &Path) -> PathBuf {
-    match manifest_store(dir) {
-        Some(store) => dir.join(store),
-        None => dir.to_path_buf(),
-    }
+    dir.to_path_buf()
 }
 
 pub fn root_store_path(dir: &Path) -> PathBuf {
@@ -449,11 +452,6 @@ pub fn root_store_path(dir: &Path) -> PathBuf {
     root_for_member_dir(dir)
         .map(|root| store_path(&root))
         .unwrap_or_else(|| dir.to_path_buf())
-}
-
-fn manifest_store(dir: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
-    toml::from_str::<Manifest>(&text).ok()?.store
 }
 
 pub fn manifest_source_access(dir: &Path) -> Option<bool> {
@@ -795,21 +793,6 @@ mod tests {
     }
 
     #[test]
-    fn store_path_honors_a_relative_or_absolute_user_root_override() {
-        let dir = tempfile::tempdir().unwrap();
-        write(&dir.path().join(MANIFEST), "store = \"sub/state\"\n");
-        assert_eq!(dir.path().join("sub/state"), store_path(dir.path()));
-
-        let abs = if cfg!(windows) {
-            "C:/alix-state"
-        } else {
-            "/tmp/alix-state"
-        };
-        write(&dir.path().join(MANIFEST), &format!("store = \"{abs}\"\n"));
-        assert_eq!(PathBuf::from(abs), store_path(dir.path()));
-    }
-
-    #[test]
     fn manifest_source_access_override() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(None, manifest_source_access(dir.path()));
@@ -828,14 +811,10 @@ mod tests {
     }
 
     #[test]
-    fn root_store_path_honors_a_workspace_store_override() {
+    fn root_store_path_uses_the_workspace_directory() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("alix.toml"),
-            "title = \"W\"\nstore = \"custom-state\"\n",
-        )
-        .unwrap();
-        assert_eq!(root_store_path(dir.path()), dir.path().join("custom-state"));
+        std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
+        assert_eq!(root_store_path(dir.path()), dir.path());
         assert_eq!(root_store_path(dir.path()), store_path(dir.path()));
     }
 

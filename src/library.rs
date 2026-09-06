@@ -1357,17 +1357,13 @@ mod tests {
     }
 
     #[test]
-    fn removing_a_workspace_does_not_recursively_delete_an_external_store() {
+    fn removing_a_workspace_does_not_recursively_delete_an_explicit_external_store() {
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("ws");
         let members = ws.join("decks");
         let user = dir.path().join("user");
         std::fs::create_dir_all(&members).unwrap();
-        std::fs::write(
-            ws.join("alix.toml"),
-            format!("title = \"W\"\nstore = {:?}\n", user.display().to_string()),
-        )
-        .unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
         write_deck(&members, "a.md", "da1", "ca1");
         let paths = vec![members.join("a.md")];
         let mut store = crate::state::open_stores(&paths, &user).unwrap();

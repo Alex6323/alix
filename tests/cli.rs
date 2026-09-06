@@ -5091,15 +5091,11 @@ fn augment_choices_caches_distractors_for_two_cards() {
 }
 
 #[test]
-fn a_workspace_store_override_does_not_relocate_augmentation() {
+fn a_cli_store_override_does_not_relocate_workspace_augmentation() {
     let dir = TempDir::new().unwrap();
     let workspace = dir.path().join("workspace");
     std::fs::create_dir_all(workspace.join("decks")).unwrap();
-    std::fs::write(
-        workspace.join("alix.toml"),
-        "title = \"Quiz\"\nstore = \"user-files\"\n",
-    )
-    .unwrap();
+    std::fs::write(workspace.join("alix.toml"), "title = \"Quiz\"\n").unwrap();
     let deck = write(
         &workspace.join("decks"),
         "quiz.md",
@@ -5112,8 +5108,17 @@ fn a_workspace_store_override_does_not_relocate_augmentation() {
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
 
+    let store = workspace.join("user-files");
     let out = alix(&[
-        "deck", "augment", &deck, "--target", "choices", "--config", &config,
+        "deck",
+        "augment",
+        &deck,
+        "--target",
+        "choices",
+        "--store",
+        store.to_str().unwrap(),
+        "--config",
+        &config,
     ]);
 
     assert!(out.status.success(), "stderr: {}", stderr(&out));

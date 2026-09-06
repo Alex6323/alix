@@ -1547,6 +1547,34 @@ mod tests {
     }
 
     #[test]
+    fn book_stignore_names_the_code_owned_private_set() {
+        let book = include_str!("../docs/book/src/16-configuration.md");
+        let (_, after_intro) = book
+            .split_once("add this `.stignore`")
+            .expect("chapter 16 must introduce the private-set .stignore block");
+        let (_, after_fence) = after_intro
+            .split_once("```text\n")
+            .expect("the .stignore block must be a text fence");
+        let (block, _) = after_fence
+            .split_once("\n```")
+            .expect("the .stignore text fence must close");
+
+        for name in PERSONAL {
+            assert!(
+                block
+                    .lines()
+                    .any(|line| line.strip_suffix('/').unwrap_or(line) == name),
+                "the .stignore block must name private entry `{name}`: {block}"
+            );
+        }
+        let sidecar = format!("*{}", crate::workspace::PERSONAL_SIDECAR_SUFFIX);
+        assert!(
+            block.lines().any(|line| line == sidecar),
+            "the .stignore block must name private sidecars `{sidecar}`: {block}"
+        );
+    }
+
+    #[test]
     fn counting_files_walks_nested_directories() {
         let dir = tempfile::tempdir().unwrap();
         touch(dir.path(), "f1");

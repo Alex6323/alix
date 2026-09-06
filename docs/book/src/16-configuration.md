@@ -223,10 +223,10 @@ Bare `alix` and `alix <dir>` use the same user-files root when `<dir>` is the
 configured `decks_dir`. A workspace, or any other folder served with `alix
 <dir>`, keeps its shareable `augment/` and `assets/` beside its decks. The
 `stats`/`list`/`reset` commands take a deck, folder, or workspace and resolve
-the same private progress documents. `--store <directory>` and a workspace's
-`store = "..."` manifest setting override only the user-files root for
-`progress/` and `recent.json`; they do not relocate augmentation or assets.
-Relative workspace `store` values are anchored to the workspace.
+the same private progress documents. `--store <directory>` overrides only the
+user-files root for `progress/` and `recent.json`; it does not relocate
+augmentation or assets. Without that CLI flag, a workspace's private files
+always live at its root.
 
 Each document carries its owner ID, format version, and revision. Saves write a
 sibling `.json.tmp` and atomically rename it into place. A process that can see
@@ -271,9 +271,23 @@ accidental deletion.
 
 With the defaults, your decks, augmentation, assets, and progress live in one
 folder. Put that folder in a cloud drive you already use (Dropbox, iCloud,
-OneDrive, Syncthing) and it follows you across devices. Set `store` when you
-want progress and recent history to remain private to one device. Alix stays
-unaware that the folder is synced and uploads nothing itself.
+OneDrive, Syncthing) and it follows you across devices. Alix stays unaware that
+the folder is synced and uploads nothing itself.
+
+To share only the workspace's authored and regenerable material while keeping
+private files on each person's device, add this `.stignore` to the shared
+folder:
+
+```text
+progress/
+recent.json
+alix.local.toml
+*.personal.md
+*.json.tmp
+```
+
+The mobile chapter has the related [Syncthing temporary-file
+tip](18-the-mobile-app.md#your-own-decks-a-shared-folder).
 
 For a free, no-account option that fits alix's local-first grain,
 [Syncthing](https://syncthing.net) works well: install it on each machine, pair

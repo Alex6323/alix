@@ -483,15 +483,10 @@ fn with_rollback(error: anyhow::Error, leftovers: &[PathBuf]) -> anyhow::Error {
 mod tests {
     use super::*;
 
-    fn workspace(root: &Path, store: Option<&Path>, defaults: &str) {
+    fn workspace(root: &Path, defaults: &str) {
         std::fs::create_dir_all(root.join("decks")).unwrap();
         std::fs::create_dir_all(root.join("assets")).unwrap();
-        let mut manifest = String::new();
-        if let Some(store) = store {
-            manifest.push_str(&format!("store = {:?}\n", store.display().to_string()));
-        }
-        manifest.push_str(defaults);
-        std::fs::write(root.join("alix.toml"), manifest).unwrap();
+        std::fs::write(root.join("alix.toml"), defaults).unwrap();
     }
 
     fn deck(root: &Path, name: &str, frontmatter: &str) -> PathBuf {
@@ -511,8 +506,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, None, "");
-        workspace(&destination, None, "");
+        workspace(&source, "");
+        workspace(&destination, "");
         let asset_name = crate::assets::object_name(b"evidence\n", "txt");
         std::fs::create_dir_all(source.join("assets/deck-deck1")).unwrap();
         std::fs::write(
@@ -555,8 +550,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, None, "");
-        workspace(&destination, None, "");
+        workspace(&source, "");
+        workspace(&destination, "");
         let deck = deck(&source, "facts.md", "");
         let dirty = format!(
             "\u{feff}{}",
@@ -582,8 +577,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, None, "");
-        workspace(&destination, None, "");
+        workspace(&source, "");
+        workspace(&destination, "");
         let deck = deck(&source, "facts.md", "");
         let mut progress = crate::state::open_store(&deck, &source).unwrap();
         progress.get_or_insert("card-card1");
@@ -604,32 +599,12 @@ mod tests {
     }
 
     #[test]
-    fn move_keeps_progress_in_a_shared_user_root() {
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("source");
-        let destination = dir.path().join("destination");
-        let user = dir.path().join("user");
-        workspace(&source, Some(&user), "");
-        workspace(&destination, None, "");
-        std::fs::write(destination.join("alix.toml"), "store = \"../user\"\n").unwrap();
-        let deck = deck(&source, "facts.md", "");
-        let mut progress = crate::state::open_store(&deck, &user).unwrap();
-        progress.get_or_insert("card-card1");
-        progress.save().unwrap();
-
-        let report = transfer(&deck, &destination, TransferMode::Move).unwrap();
-
-        assert!(!report.progress);
-        assert!(user.join("progress/deck-deck1.json").is_file());
-    }
-
-    #[test]
     fn target_requirements_and_source_dependents_fail_before_writes() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, None, "");
-        workspace(&destination, None, "");
+        workspace(&source, "");
+        workspace(&destination, "");
         let deck = deck(&source, "facts.md", "requires:\n  - foundations\n");
 
         let error = transfer(&deck, &destination, TransferMode::Copy).unwrap_err();
@@ -661,8 +636,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, None, "");
-        workspace(&destination, None, "");
+        workspace(&source, "");
+        workspace(&destination, "");
         let deck = deck(&source, "facts.md", "");
         std::fs::write(
             destination.join("decks/other.md"),
@@ -681,8 +656,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, None, "");
-        workspace(&destination, None, "");
+        workspace(&source, "");
+        workspace(&destination, "");
         std::fs::create_dir(source.join("material")).unwrap();
         let deck = deck(&source, "facts.md", "source: material\n");
 
@@ -707,8 +682,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, None, "source = \"material\"\n");
-        workspace(&destination, None, "");
+        workspace(&source, "source = \"material\"\n");
+        workspace(&destination, "");
         std::fs::create_dir(source.join("material")).unwrap();
         let deck = deck(&source, "facts.md", "");
 
@@ -735,8 +710,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, None, "");
-        workspace(&destination, None, "");
+        workspace(&source, "");
+        workspace(&destination, "");
         let deck = deck(&source, "facts.md", "");
         let mut progress = crate::state::open_store(&deck, &source).unwrap();
         progress.get_or_insert("card-card1");
@@ -764,8 +739,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, None, "");
-        workspace(&destination, None, "");
+        workspace(&source, "");
+        workspace(&destination, "");
         let deck = deck(&source, "facts.md", "");
         let loaded = Deck::load(&deck).unwrap();
         let mut augmentation = crate::augment::AugmentCache::open_for_deck(&loaded).unwrap();
@@ -800,8 +775,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, None, "");
-        workspace(&destination, None, "");
+        workspace(&source, "");
+        workspace(&destination, "");
         let deck_path = deck(&source, "facts.md", "");
         let loaded = Deck::load(&deck_path).unwrap();
         let mut augmentation = crate::augment::AugmentCache::open_for_deck(&loaded).unwrap();

@@ -834,8 +834,18 @@ fn workspace_findings(dir: &Path) -> Report {
     report
 }
 
+fn workspace_manifest_findings(dir: &Path, report: &mut Report) {
+    if let Some(error) = alix::workspace::manifest_parse_error(dir) {
+        report.error(format!(
+            "{}: {error}",
+            dir.join(alix::workspace::MANIFEST).display()
+        ));
+    }
+}
+
 fn findings_in(dir: &Path) -> Report {
     let mut report = Report::default();
+    workspace_manifest_findings(dir, &mut report);
     if alix::workspace::has_manifest(dir)
         && let Err(error) = alix::workspace::Workspace::load(dir)
     {
@@ -1002,6 +1012,7 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
         // Deck::load would error on a directory, so a workspace target is
         // handled separately here.
         if path.is_dir() && path.join(alix::workspace::MANIFEST).is_file() {
+            workspace_manifest_findings(path, &mut report);
             if let Some(rel) = alix::workspace::manifest_icon(path)
                 && !path.join(&rel).is_file()
             {
@@ -2149,6 +2160,109 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         assert!(check(vec![dir.path().to_path_buf()]).is_err());
+    }
+
+    #[test]
+    fn workspace_manifest_schema_is_closed_without_hiding_workspace_surfaces() {
+        let cases = [
+            (
+                "unknown-key",
+                "mystery = true\n",
+                Some("mystery"),
+                "unknown-key",
+            ),
+            (
+                "retired-store",
+                "store = \"state\"\n",
+                Some("store"),
+                "retired-store",
+            ),
+            (
+                "known-keys",
+                "title = \"Known\"\ndescription = \"Description\"\nicon = \"icon.svg\"\nsource = \"source.txt\"\nsource_access = true\n[defaults]\nreveal = \"line\"\n",
+                None,
+                "Known",
+            ),
+        ];
+
+        for (name, manifest, rejected_key, expected_title) in cases {
+            let root = tempfile::tempdir().unwrap();
+            let dir = root.path().join(name);
+            std::fs::create_dir_all(dir.join(workspace::DECKS)).unwrap();
+            w(&dir, workspace::MANIFEST, manifest);
+            w(&dir, "icon.svg", "<svg/>\n");
+            w(
+                &dir.join(workspace::DECKS),
+                "facts.md",
+                "---\nformat-version: 1\nid: deck-manifestschema\n---\n## q\na\n<!-- id: card-manifestschema -->\n",
+            );
+
+            let parse_error =
+                alix::workspace::manifest_parse_error(&dir).map(|error| error.to_string());
+            assert_eq!(
+                rejected_key.is_some(),
+                parse_error.is_some(),
+                "{name}: parse outcome was {parse_error:?}"
+            );
+            if let Some(key) = rejected_key {
+                let error = parse_error.as_deref().unwrap_or_default();
+                assert!(
+                    error.contains("unknown field") && error.contains(&format!("`{key}`")),
+                    "{name}: parse error must name `{key}`: {error}"
+                );
+
+                let mut explicit = Report::default();
+                workspace_manifest_findings(&dir, &mut explicit);
+                assert!(
+                    explicit
+                        .errors
+                        .iter()
+                        .any(|error| error.contains(&format!("`{key}`"))),
+                    "{name}: explicit doctor errors were {:?}",
+                    explicit.errors
+                );
+                let bare = workspace_findings(root.path());
+                assert!(
+                    bare.errors
+                        .iter()
+                        .any(|error| error.contains(&format!("`{key}`"))),
+                    "{name}: bare doctor errors were {:?}",
+                    bare.errors
+                );
+            }
+            assert_eq!(
+                rejected_key.is_some(),
+                check(vec![dir.clone()]).is_err(),
+                "{name}: explicit doctor status"
+            );
+
+            let review = alix::config::ReviewConfig::default();
+            let listing = alix::listing::list_root(root.path(), &review, 1_000_000);
+            assert_eq!(1, listing.len(), "{name}: listing rows were {listing:?}");
+            assert_eq!(expected_title, listing[0].title, "{name}: listing title");
+            assert_eq!(
+                1,
+                alix::listing::list_members(root.path(), &dir, &review, 1_000_000).len(),
+                "{name}: listing must retain the workspace member"
+            );
+
+            let recent = alix::recent::RecentDecks::load(root.path().join("recent.json"));
+            let picker =
+                alix::picker::catalog(root.path(), &recent, &mut alix::cache::DeckCache::default())
+                    .unwrap();
+            assert_eq!(1, picker.len(), "{name}: picker row count");
+            assert_eq!(expected_title, picker[0].label, "{name}: picker title");
+            assert_eq!(1, picker[0].members.len(), "{name}: picker members");
+            assert_eq!(dir, alix::workspace::store_path(&dir), "{name}: store");
+
+            let no_manifest = root.path().join("without-manifest");
+            std::fs::create_dir(&no_manifest).unwrap();
+            assert_eq!(
+                no_manifest,
+                alix::workspace::store_path(&no_manifest),
+                "{name}: a plain folder is its own store too"
+            );
+        }
     }
 
     #[test]

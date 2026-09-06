@@ -242,9 +242,9 @@ config section; `--port` overrides it.
 
 `alix <dir>` serves that folder as a **self-contained scoped root**: its own
 catalog, shareable augmentation and assets, plus private per-deck progress and
-recent history colocated by default. A workspace `store` setting can move the
-private user files without moving shareable material. Several instances run
-happily side by side, one per family member, say:
+recent history colocated unless the CLI `--store` flag selects another
+user-files root. Several instances run happily side by side, one per family
+member, say:
 `alix ~/decks-maria --lan --port 7781`.
 
 If a launch misbehaves, `alix doctor` checks the setup (config, progress

@@ -20,6 +20,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A workspace's `alix.toml` no longer accepts `store`; progress and recent
+  history live at the workspace root, and doctor reports any unknown manifest
+  key instead of silently ignoring it.
 - `--lan` refuses a `--token` or `[serve] token` value shorter than 16
   characters before the server binds; minted tokens are unaffected.
 

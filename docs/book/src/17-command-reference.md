@@ -9,10 +9,9 @@ depth, where there is one. Run any command with `--help` for its full flags.
   your decks directory (`~/decks`), printing its URL.
 - `alix <dir>`: serve that folder as a **self-contained scoped root**: its own
   catalog and shareable `augment/` and `assets/`, with private per-deck
-  `progress/` plus `recent.json` colocated by default. A
-  [workspace](08-workspaces.md) dir opens the picker drilled into it; its
-  `store` setting may relocate the private user files without moving shareable
-  material.
+  `progress/` plus `recent.json` colocated unless the CLI `--store` flag selects
+  another user-files root. A [workspace](08-workspaces.md) dir opens the picker
+  drilled into it.
 
 Every review starts from the picker. There's no direct deck launch. Browsing a
 deck read-only, sitting the AI exam, and walking a [trace](13-trace-decks.md)
@@ -64,7 +63,7 @@ same folder.
 `alix stats`, `alix list`, and `alix reset` each take a **deck file, a plain
 folder, or a [workspace](08-workspaces.md)**: a folder or workspace expands to
 its member decks, and each deck resolves to the user-files root the launcher
-would serve it with (`--store` > its workspace's store > a served folder or
+would serve it with (`--store` > the workspace or served folder > the
 configured decks root > the global store). Inside that boundary, progress is
 loaded from `progress/deck-<token>.json`; folder-wide commands aggregate the
 relevant documents in memory without creating an authoritative combined file.
