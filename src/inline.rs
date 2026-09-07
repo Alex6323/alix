@@ -1761,6 +1761,11 @@ mod tests {
     }
 
     #[test]
+    fn a_closer_skips_a_mismatched_inner_opener() {
+        assert_eq!(vec![italic("a _b")], parse_inline("*a _b*"));
+    }
+
+    #[test]
     fn intraword_underscore_is_literal() {
         assert_eq!(
             vec![plain("snake_case_word")],
