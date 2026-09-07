@@ -136,4 +136,24 @@ class FakeSyncPort implements SyncPort {
 
   @override
   void removeEntry(String entry) => removeEntryCalls.add(entry);
+
+  List<String> Function(List<String> listed)? pairedOrphansImpl;
+
+  // Defaults to the same "known minus listed" rule the lib now owns, so a
+  // test that never sets pairedOrphansImpl (nearly all of them) keeps
+  // seeing orphans derived from pairedEntriesImpl exactly as before.
+  @override
+  List<String> pairedOrphans(List<String> listed) {
+    final impl = pairedOrphansImpl;
+    if (impl != null) return impl(listed);
+    final known = pairedEntries().map((e) => e.entry).toSet();
+    final listedSet = listed.toSet();
+    return [for (final name in known) if (!listedSet.contains(name)) name];
+  }
+
+  String Function(String entry)? pairedStagingZipImpl;
+
+  @override
+  String pairedStagingZip(String entry) =>
+      pairedStagingZipImpl?.call(entry) ?? '$rootDir/.alix/staging/$entry.zip';
 }

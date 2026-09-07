@@ -115,7 +115,7 @@ void main() {
       expect(
         conflictKeepPhoneLabel(conflict),
         "Keep the phone's progress (discards the desktop's, "
-        'last written by desk-1 at 09:12)',
+        'last written by desk-1 at 2026-01-01 09:12)',
       );
     });
 
@@ -137,7 +137,7 @@ void main() {
       expect(
         conflictKeepPhoneLabel(conflict),
         "Keep the phone's progress (discards the desktop's, "
-        'last written by desk-2 at 08:05)',
+        'last written by desk-2 at 2026-01-01 08:05)',
       );
     });
 

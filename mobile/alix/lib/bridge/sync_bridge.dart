@@ -148,6 +148,14 @@ class SyncBridgePort implements SyncPort {
   @override
   void removeEntry(String entry) =>
       bridge.pairedRemoveEntry(rootDir: rootDir, entry: entry);
+
+  @override
+  List<String> pairedOrphans(List<String> listed) =>
+      bridge.pairedOrphans(rootDir: rootDir, listed: listed);
+
+  @override
+  String pairedStagingZip(String entry) =>
+      bridge.pairedStagingZip(rootDir: rootDir, entry: entry);
 }
 
 SyncEntryState _entryState(bridge.PairedEntryState entry) {

@@ -23,10 +23,16 @@ const String syncPairingExpiredMessage =
 /// conflict resolution. No retries, no timers: each flow is a plain
 /// sequence over `SyncPort`.
 class SyncController extends ChangeNotifier {
-  factory SyncController({required SyncPort port}) =>
-      SyncController._(port);
+  factory SyncController({required SyncPort port, String? initialError}) =>
+      SyncController._(port, initialError);
 
-  SyncController._(this._port);
+  SyncController._(this._port, String? initialError) {
+    _refreshPairedState();
+    if (initialError != null) {
+      _lastReport = SyncReport(error: initialError);
+      _reportUnread = true;
+    }
+  }
 
   final SyncPort _port;
 
@@ -66,19 +72,6 @@ class SyncController extends ChangeNotifier {
   /// port directly.
   List<SyncEntryState> get pairedEntries => _port.pairedEntries();
 
-  /// Entries the last successful listing named that this phone has no
-  /// manifest for: never pulled, so tapping one (`cycle(entry: name)`)
-  /// does a first pull rather than a re-sync. Empty before any listing.
-  List<SyncEntry> get availableEntries {
-    final listing = _lastListing;
-    if (listing == null) return const [];
-    final known = _port.pairedEntries().map((e) => e.entry).toSet();
-    return [
-      for (final entry in listing.entries)
-        if (!known.contains(entry.name)) entry,
-    ];
-  }
-
   /// One line for the picker's status readout while a cycle runs or its
   /// last report is unread; null the rest of the time.
   String? get statusLine {
@@ -98,20 +91,66 @@ class SyncController extends ChangeNotifier {
     _notify();
   }
 
-  /// Every deck that currently needs a conflict choice, read live from the
-  /// port (not from a past report) so it reflects conflicts left over from
-  /// an earlier session too.
-  List<SyncPendingConflict> get pendingConflicts => [
-    for (final entry in _port.pairedEntries())
-      for (final deck in entry.decks)
-        if (deck.conflict case final conflict?)
-          SyncPendingConflict(
-            deckId: deck.deckId,
-            entry: entry.entry,
-            path: deck.path,
-            conflict: conflict,
-          ),
-  ];
+  List<SyncPendingConflict> _pendingConflicts = const [];
+  Set<String> _unpushedEntries = const {};
+  List<SyncEntry> _availableEntries = const [];
+
+  /// Every deck that currently needs a conflict choice: refreshed after
+  /// every call that can change it (construction, a cycle, a resolve, a
+  /// push, a removal), never scanned fresh from a widget build, so it
+  /// reflects conflicts left over from an earlier session too without ever
+  /// running the underlying disk scan on the UI thread.
+  List<SyncPendingConflict> get pendingConflicts => _pendingConflicts;
+
+  /// Names of paired entries with at least one deck carrying unpushed local
+  /// progress, refreshed alongside [pendingConflicts]. The report sheet's
+  /// orphan Remove confirmation uses it to name what a removal discards.
+  Set<String> get unpushedEntries => _unpushedEntries;
+
+  /// Entries the last successful listing named that this phone has no
+  /// manifest for: never pulled, so tapping one (`cycle(entry: name)`)
+  /// does a first pull rather than a re-sync. Empty before any listing,
+  /// refreshed alongside [pendingConflicts].
+  List<SyncEntry> get availableEntries => _availableEntries;
+
+  /// Rebuilds [pendingConflicts], [unpushedEntries], and [availableEntries]
+  /// from `_port.pairedEntries()` (one scan) and [_lastListing]. A failed
+  /// scan (a corrupt state file) leaves all three empty rather than
+  /// throwing: an unresolvable local state is not worth crashing over.
+  void _refreshPairedState() {
+    final List<SyncEntryState> entries;
+    try {
+      entries = _port.pairedEntries();
+    } on Object {
+      _pendingConflicts = const [];
+      _unpushedEntries = const {};
+      _availableEntries = const [];
+      return;
+    }
+    _pendingConflicts = [
+      for (final entry in entries)
+        for (final deck in entry.decks)
+          if (deck.conflict case final conflict?)
+            SyncPendingConflict(
+              deckId: deck.deckId,
+              entry: entry.entry,
+              path: deck.path,
+              conflict: conflict,
+            ),
+    ];
+    final knownNames = entries.map((e) => e.entry).toSet();
+    _unpushedEntries = {
+      for (final entry in entries)
+        if (entry.decks.any((deck) => deck.unpushed)) entry.entry,
+    };
+    final listing = _lastListing;
+    _availableEntries = listing == null
+        ? const []
+        : [
+            for (final entry in listing.entries)
+              if (!knownNames.contains(entry.name)) entry,
+          ];
+  }
 
   /// Runs one sync cycle: lists what the desktop serves, pushes every
   /// locally changed deck in order, pulls [entry] (or, when null, every
@@ -122,11 +161,18 @@ class SyncController extends ChangeNotifier {
     _running = true;
     _runningEntry = entry;
     _notify();
-    final report = await _runCycle(entry);
-    _running = false;
-    _runningEntry = null;
+    SyncReport report;
+    try {
+      report = await _runCycle(entry);
+    } on Object catch (error) {
+      report = SyncReport(error: 'sync failed: $error');
+    } finally {
+      _running = false;
+      _runningEntry = null;
+    }
+    _refreshPairedState();
     _lastReport = report;
-    _reportUnread = true;
+    _reportUnread = !report.isEmpty;
     _notify();
   }
 
@@ -209,6 +255,8 @@ class SyncController extends ChangeNotifier {
         return aborted(syncPairingExpiredMessage);
       } on SyncTransportFailure catch (error) {
         return aborted('could not pull $name: status ${error.status}');
+      } on Object catch (error) {
+        return aborted('could not apply $name: $error');
       }
       final entryLabels = _deckLabelsFor(name);
       landed.addAll(
@@ -229,14 +277,12 @@ class SyncController extends ChangeNotifier {
         '${r.old} → ${r.new_}',
     ];
 
+    final desktopNames = [for (final e in desktop.entries) e.name];
+    final orphaned = _port.pairedOrphans(desktopNames);
     final knownEntryNames = _port.pairedEntries().map((e) => e.entry).toSet();
-    final desktopNames = desktop.entries.map((e) => e.name).toSet();
-    final orphaned = [
-      for (final name in knownEntryNames)
-        if (!desktopNames.contains(name)) name,
-    ];
+    final desktopNameSet = desktopNames.toSet();
     final notOnPhone = [
-      for (final name in desktopNames)
+      for (final name in desktopNameSet)
         if (!knownEntryNames.contains(name)) name,
     ];
     final leftOut = [
@@ -260,7 +306,7 @@ class SyncController extends ChangeNotifier {
   }
 
   Future<SyncPullReport> _pullEntry(String entry, int unpackedBytes) async {
-    final zipPath = '${_port.rootDir}/.alix/staging/$entry.zip';
+    final zipPath = _port.pairedStagingZip(entry);
     final zipFile = File(zipPath);
     await zipFile.parent.create(recursive: true);
     await _port.pull(entry, zipFile, unpackedBytes: unpackedBytes);
@@ -306,6 +352,7 @@ class SyncController extends ChangeNotifier {
   /// nothing is planned for [deckId]; a conflict is recorded and then
   /// visible through [pendingConflicts], for the summary screen's choice.
   Future<void> pushOne(String deckId) async {
+    if (_running) return;
     final items = _port.planPushes().where((i) => i.deckId == deckId);
     if (items.isEmpty) return;
     try {
@@ -315,17 +362,19 @@ class SyncController extends ChangeNotifier {
     } on SyncTransportFailure {
       return;
     }
+    _refreshPairedState();
     _notify();
   }
 
   /// Acts on a conflict choice: `Push` pushes now with the returned base;
   /// `Pull` pulls the returned entry; `Done` means the lib already applied
-  /// the choice.
+  /// the choice. No-op for a [deckId] outside [pendingConflicts].
   Future<void> resolve(String deckId, {required bool keepPhone}) async {
+    if (!_pendingConflicts.any((c) => c.deckId == deckId)) return;
     final resolution = _port.resolveConflict(deckId, keepPhone: keepPhone);
     switch (resolution) {
       case SyncResolutionDone():
-        _notify();
+        break;
       case SyncResolutionPush(:final item):
         try {
           await _attemptPush(item);
@@ -334,14 +383,15 @@ class SyncController extends ChangeNotifier {
         } on SyncTransportFailure {
           // Silent, matching pushOne.
         }
-        _notify();
       case SyncResolutionPull(:final entry):
         await _resolvePull(entry);
-        _notify();
     }
+    _refreshPairedState();
+    _notify();
   }
 
   Future<void> _resolvePull(String entry) async {
+    SyncReport report;
     try {
       final desktop = await _port.entries();
       _lastListing = desktop;
@@ -352,7 +402,7 @@ class SyncController extends ChangeNotifier {
         desktopEntry.first.unpackedBytes,
       );
       final entryLabels = _deckLabelsFor(entry);
-      _lastReport = SyncReport(
+      report = SyncReport(
         landed: [
           for (final id in pullReport.landed) entryLabels[id] ?? '$entry/$id',
         ],
@@ -366,30 +416,29 @@ class SyncController extends ChangeNotifier {
         phoneOnly: [for (final rel in pullReport.phoneOnly) '$entry/$rel'],
         removed: [for (final rel in pullReport.removed) '$entry/$rel'],
       );
-      _reportUnread = true;
     } on PairingExpired {
-      _lastReport = const SyncReport(error: syncPairingExpiredMessage);
-      _reportUnread = true;
+      report = const SyncReport(error: syncPairingExpiredMessage);
     } on SyncTransportFailure catch (error) {
-      _lastReport = SyncReport(
-        error: 'could not pull $entry: status ${error.status}',
-      );
-      _reportUnread = true;
+      report = SyncReport(error: 'could not pull $entry: status ${error.status}');
     } on SyncFreeSpaceRefusal catch (error) {
-      _lastReport = SyncReport(
+      report = SyncReport(
         refused: [
           '$entry: needs ${humanBytes(error.needed)}, '
               '${humanBytes(error.free)} free',
         ],
       );
-      _reportUnread = true;
     }
+    _lastReport = report;
+    _reportUnread = !report.isEmpty;
   }
 
   /// Removes an orphaned entry's local copy (the report sheet's Remove
-  /// action); leaving it alone (Keep) needs no call at all.
+  /// action, after its own confirmation); leaving it alone (Keep) needs no
+  /// call at all.
   Future<void> removeOrphan(String entry) async {
     _port.removeEntry(entry);
+    if (_lastReport case final report?) _lastReport = report.withoutOrphan(entry);
+    _refreshPairedState();
     _notify();
   }
 

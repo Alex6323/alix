@@ -225,6 +225,25 @@ class SyncReport {
       orphaned.isEmpty &&
       refused.isEmpty;
 
+  /// The same report with [entry] dropped from [orphaned]; every other
+  /// field is unchanged.
+  SyncReport withoutOrphan(String entry) {
+    if (!orphaned.contains(entry)) return this;
+    return SyncReport(
+      landed: landed,
+      kept: kept,
+      conflicts: conflicts,
+      phoneOnly: phoneOnly,
+      removed: removed,
+      leftOut: leftOut,
+      notOnPhone: notOnPhone,
+      renamed: renamed,
+      orphaned: [for (final e in orphaned) if (e != entry) e],
+      refused: refused,
+      error: error,
+    );
+  }
+
   /// The picker's one-line status once a cycle ends and its report is
   /// unread. Names the categories that actually happened with their
   /// counts; a cycle that changed nothing reads as "up to date".
@@ -305,11 +324,16 @@ String conflictKeepPhoneLabel(PairedConflict conflict) {
 const String conflictTakeDesktopLabel =
     "Take the desktop's (discards the phone's progress since the last sync)";
 
+// `YYYY-MM-DD HH:MM`, local time: date included, since a stale conflict can
+// be days old.
 String _formatTime(int atMs) {
   final local = DateTime.fromMillisecondsSinceEpoch(atMs).toLocal();
+  final yyyy = local.year.toString().padLeft(4, '0');
+  final month = local.month.toString().padLeft(2, '0');
+  final day = local.day.toString().padLeft(2, '0');
   final hh = local.hour.toString().padLeft(2, '0');
   final mm = local.minute.toString().padLeft(2, '0');
-  return '$hh:$mm';
+  return '$yyyy-$month-$day $hh:$mm';
 }
 
 /// A byte count in the coarsest unit that keeps one decimal of precision,

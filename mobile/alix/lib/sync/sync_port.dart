@@ -60,6 +60,14 @@ abstract class SyncPort {
 
   /// `paired_remove_entry`.
   void removeEntry(String entry);
+
+  /// `paired_orphans`: entries this phone has a manifest for that [listed]
+  /// (the desktop's current `entries()` listing) does not name.
+  List<String> pairedOrphans(List<String> listed);
+
+  /// `paired_staging_zip`: the temporary archive path a pull writes [entry]
+  /// to and removes once applied.
+  String pairedStagingZip(String entry);
 }
 
 /// Thrown by `SyncPort.pull` when the entry would not fit; [needed] and

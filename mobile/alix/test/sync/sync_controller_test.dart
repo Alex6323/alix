@@ -187,6 +187,56 @@ void main() {
       expect(port.pullCalls, ['Biology']);
     });
 
+    test('a pull stages its zip at the path the lib names, not one the '
+        'controller derives itself', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.entriesImpl = () async => const SyncEntries(
+        rootId: 'root-a',
+        entries: [
+          SyncEntry(
+            name: 'Biology',
+            kind: 'workspace',
+            members: 1,
+            unpackedBytes: 10,
+            leftOut: [],
+          ),
+        ],
+      );
+      final namedZip = '${scratch.path}/lib-named-staging/Biology.zip';
+      port.pairedStagingZipImpl = (entry) => namedZip;
+      String? seenZipPath;
+      port.applyPullImpl = (entry, zipPath) async {
+        seenZipPath = zipPath;
+        return const SyncPullReport(
+          entry: 'Biology',
+          kind: 'workspace',
+          landed: [],
+          kept: [],
+          conflicts: [],
+          phoneOnly: [],
+          removed: [],
+        );
+      };
+
+      final controller = SyncController(port: port);
+      await controller.cycle(entry: 'Biology');
+
+      expect(seenZipPath, namedZip);
+    });
+
+    test('an orphan the lib reports is used as-is, not re-derived by the '
+        'controller', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.entriesImpl = () async =>
+          const SyncEntries(rootId: 'root-a', entries: []);
+      port.pairedOrphansImpl = (listed) => const ['lib-named-orphan'];
+      final controller = SyncController(port: port);
+
+      await controller.cycle();
+
+      expect(controller.lastReport?.orphaned, ['lib-named-orphan']);
+    });
+
     test(
       'orphaned names an entry the phone tracks that the desktop no longer serves',
       () async {
@@ -293,6 +343,50 @@ void main() {
 
       expect(port.entriesCalls, [0]);
     });
+
+    test(
+      'an apply failure ends the cycle and reports it, naming the entry',
+      () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.entriesImpl = () async => const SyncEntries(
+          rootId: 'root-a',
+          entries: [
+            SyncEntry(
+              name: 'Biology',
+              kind: 'workspace',
+              members: 1,
+              unpackedBytes: 10,
+              leftOut: [],
+            ),
+          ],
+        );
+        port.pairedEntriesImpl = () => const [
+          SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+        ];
+        port.applyPullImpl = (entry, zipPath) async =>
+            throw Exception('boom');
+
+        final controller = SyncController(port: port);
+        await controller.cycle();
+
+        expect(controller.running, isFalse);
+        expect(controller.lastReport?.error, contains('Biology'));
+      },
+    );
+
+    test(
+      'a cycle that changed nothing leaves reportUnread false, so the '
+      'picker stays silent',
+      () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        final controller = SyncController(port: port);
+
+        await controller.cycle();
+
+        expect(controller.lastReport?.isEmpty, isTrue);
+        expect(controller.reportUnread, isFalse);
+      },
+    );
   });
 
   group('pushOne', () {
@@ -304,6 +398,29 @@ void main() {
 
       expect(port.pushCalls, isEmpty);
     });
+
+    test(
+      'a running cycle holds off a summary push for the same deck; the '
+      'cycle pushes it once, the summary push does not double it',
+      () async {
+        final gate = Completer<void>();
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.planPushesImpl = () => [item('deck-a')];
+        port.pushImpl = (deckId, _, _) async {
+          await gate.future;
+          return SyncPushAccepted(deckId: deckId, revision: 1);
+        };
+        final controller = SyncController(port: port);
+
+        final cycle = controller.cycle();
+        final push = controller.pushOne('deck-a');
+        gate.complete();
+        await cycle;
+        await push;
+
+        expect(port.pushCalls, ['deck-a']);
+      },
+    );
 
     test('is silent on a transport failure', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
@@ -348,9 +465,25 @@ void main() {
   });
 
   group('resolve', () {
+    List<SyncEntryState> pendingConflictFor(String deckId) => [
+      SyncEntryState(
+        entry: 'Biology',
+        kind: 'workspace',
+        decks: [
+          SyncDeckState(
+            deckId: deckId,
+            path: 'decks/a.md',
+            unpushed: true,
+            conflict: const PairedConflictPush(desktopRevision: 4),
+          ),
+        ],
+      ),
+    ];
+
     test('keep-phone pushes with the returned item', () async {
       final pushItem = item('deck-a', base: 3);
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.pairedEntriesImpl = () => pendingConflictFor('deck-a');
       port.resolveConflictImpl = (deckId, keepPhone) =>
           SyncResolutionPush(pushItem);
       final controller = SyncController(port: port);
@@ -363,6 +496,7 @@ void main() {
 
     test('take-desktop pulls the returned entry', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.pairedEntriesImpl = () => pendingConflictFor('deck-a');
       port.resolveConflictImpl = (deckId, keepPhone) =>
           const SyncResolutionPull('Biology');
       port.entriesImpl = () async => const SyncEntries(
@@ -386,6 +520,7 @@ void main() {
 
     test('done refreshes without pushing or pulling', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.pairedEntriesImpl = () => pendingConflictFor('deck-a');
       port.resolveConflictImpl = (deckId, keepPhone) =>
           const SyncResolutionDone();
       final controller = SyncController(port: port);
@@ -398,6 +533,22 @@ void main() {
       expect(port.pullCalls, isEmpty);
       expect(notifications, greaterThan(0));
     });
+
+    test(
+      'a resolve for a deck with no pending conflict is a silent no-op, '
+      'so a second tap on an already-resolved conflict cannot throw',
+      () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        final controller = SyncController(port: port);
+        var notifications = 0;
+        controller.addListener(() => notifications++);
+
+        await controller.resolve('deck-a', keepPhone: true);
+
+        expect(port.resolveConflictCalls, isEmpty);
+        expect(notifications, 0);
+      },
+    );
   });
 
   group('removeOrphan', () {
@@ -408,6 +559,23 @@ void main() {
       await controller.removeOrphan('Old Deck');
 
       expect(port.removeEntryCalls, ['Old Deck']);
+    });
+
+    test('drops the entry from the last report, so the sheet reflects it '
+        'without waiting for the next cycle', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.entriesImpl = () async =>
+          const SyncEntries(rootId: 'root-a', entries: []);
+      port.pairedEntriesImpl = () => const [
+        SyncEntryState(entry: 'Old Deck', kind: 'workspace', decks: []),
+      ];
+      final controller = SyncController(port: port);
+      await controller.cycle();
+      expect(controller.lastReport?.orphaned, ['Old Deck']);
+
+      await controller.removeOrphan('Old Deck');
+
+      expect(controller.lastReport?.orphaned, isEmpty);
     });
   });
 
@@ -491,6 +659,12 @@ void main() {
         await gate.future;
         return const SyncEntries(rootId: 'root-a', entries: []);
       };
+      // A renamed pair makes the cycle non-empty (so reportUnread stays
+      // true) without changing summary()'s text: only landed/conflicts/
+      // refused/orphaned feed the summary line, so this keeps the wording
+      // 'Synced: up to date' below while still exercising the report phase.
+      port.tidyRenamedImpl = (listed) =>
+          const [SyncRenamedEntry(old: 'A', new_: 'B')];
       final controller = SyncController(port: port);
 
       final future = controller.cycle(entry: 'Biology');
@@ -502,5 +676,17 @@ void main() {
       controller.markReportRead();
       expect(controller.statusLine, isNull);
     });
+
+    test(
+      'an empty cycle leaves the status line clear, never "up to date"',
+      () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        final controller = SyncController(port: port);
+
+        await controller.cycle();
+
+        expect(controller.statusLine, isNull);
+      },
+    );
   });
 }
