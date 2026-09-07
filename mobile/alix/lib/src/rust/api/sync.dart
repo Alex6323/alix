@@ -66,6 +66,20 @@ List<RenamedEntry> pairedTidyRenamed({
   listed: listed,
 );
 
+List<String> pairedOrphans({
+  required String rootDir,
+  required List<String> listed,
+}) => RustLib.instance.api.crateApiSyncPairedOrphans(
+  rootDir: rootDir,
+  listed: listed,
+);
+
+String pairedStagingZip({required String rootDir, required String entry}) =>
+    RustLib.instance.api.crateApiSyncPairedStagingZip(
+      rootDir: rootDir,
+      entry: entry,
+    );
+
 void pairedRemoveEntry({required String rootDir, required String entry}) =>
     RustLib.instance.api.crateApiSyncPairedRemoveEntry(
       rootDir: rootDir,

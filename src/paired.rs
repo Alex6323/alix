@@ -56,6 +56,10 @@ impl PairedRoot {
         self.private().join(PULL_DIR).join(format!("{entry}.json"))
     }
 
+    pub fn staging_zip(&self, entry: &str) -> PathBuf {
+        self.staging().join(format!("{entry}.zip"))
+    }
+
     pub fn staging(&self) -> PathBuf {
         self.private().join(STAGING_DIR)
     }
@@ -1052,6 +1056,14 @@ pub fn remove_entry(root: &PairedRoot, entry: &str) -> Result<()> {
     write_conflicts(root, &marks)
 }
 
+pub fn orphans(root: &PairedRoot, listed: &[String]) -> Result<Vec<String>> {
+    Ok(manifests(root)?
+        .into_iter()
+        .map(|manifest| manifest.entry)
+        .filter(|entry| !listed.contains(entry))
+        .collect())
+}
+
 pub fn tidy_renamed(root: &PairedRoot, listed: &[String]) -> Result<Vec<(String, String)>> {
     let all = manifests(root)?;
     let states = pulled_entries(root)?;
@@ -1937,6 +1949,21 @@ mod tests {
             "a deleted entry stays"
         );
         assert!(root.dir().join("Biology").is_dir());
+        assert_eq!(
+            orphans(&root, &listed(&["Biology", "physics.md"])).unwrap(),
+            Vec::<String>::new(),
+            "listed entries are not orphans"
+        );
+        assert_eq!(
+            orphans(&root, &listed(&["physics.md"])).unwrap(),
+            vec!["Biology".to_string()],
+            "an unlisted entry with a manifest is an orphan"
+        );
+        assert_eq!(
+            root.staging_zip("Biology"),
+            root.staging().join("Biology.zip"),
+            "the staging zip path is the lib's"
+        );
 
         let renamed = Bundle::new("Life", KIND_WORKSPACE)
             .file("alix.toml", b"title = \"Life\"\n")

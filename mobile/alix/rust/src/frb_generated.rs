@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1710344704;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -227097323;
 
 // Section: executor
 
@@ -1487,6 +1487,39 @@ fn wire__crate__api__sync__paired_needs_space_impl(
         },
     )
 }
+fn wire__crate__api__sync__paired_orphans_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "paired_orphans",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api_listed = <Vec<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::sync::paired_orphans(api_root_dir, api_listed)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
 fn wire__crate__api__sync__paired_plan_pushes_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1685,6 +1718,40 @@ fn wire__crate__api__sync__paired_root_dir_impl(
                 let output_ok = Result::<_, ()>::Ok(crate::api::sync::paired_root_dir(
                     api_support,
                     api_root_id,
+                ))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__sync__paired_staging_zip_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "paired_staging_zip",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api_entry = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::api::sync::paired_staging_zip(
+                    api_root_dir,
+                    api_entry,
                 ))?;
                 Ok(output_ok)
             })())
@@ -3640,7 +3707,7 @@ fn pde_ffi_dispatcher_primary_impl(
     match func_id {
         25 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
         29 => wire__crate__api__sync__paired_apply_pull_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__simple__stamp_deck_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__simple__stamp_deck_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3711,16 +3778,18 @@ fn pde_ffi_dispatcher_sync_impl(
         30 => wire__crate__api__sync__paired_entries_impl(ptr, rust_vec_len, data_len),
         31 => wire__crate__api__sync__paired_free_space_impl(ptr, rust_vec_len, data_len),
         32 => wire__crate__api__sync__paired_needs_space_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__sync__paired_plan_pushes_impl(ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__sync__paired_record_push_impl(ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__sync__paired_recover_impl(ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__sync__paired_remove_entry_impl(ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__sync__paired_resolve_conflict_impl(ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__sync__paired_root_dir_impl(ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__listing__workspace_deadline_impl(ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__sync__paired_orphans_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__sync__paired_plan_pushes_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__sync__paired_record_push_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__sync__paired_recover_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__sync__paired_remove_entry_impl(ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__sync__paired_resolve_conflict_impl(ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__sync__paired_root_dir_impl(ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__sync__paired_staging_zip_impl(ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__listing__workspace_deadline_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

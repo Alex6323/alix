@@ -254,6 +254,19 @@ pub fn paired_tidy_renamed(root_dir: String, listed: Vec<String>) -> Result<Vec<
 }
 
 #[flutter_rust_bridge::frb(sync)]
+pub fn paired_orphans(root_dir: String, listed: Vec<String>) -> Result<Vec<String>> {
+    paired::orphans(&root(&root_dir), &listed)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn paired_staging_zip(root_dir: String, entry: String) -> String {
+    root(&root_dir)
+        .staging_zip(&entry)
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[flutter_rust_bridge::frb(sync)]
 pub fn paired_remove_entry(root_dir: String, entry: String) -> Result<()> {
     paired::remove_entry(&root(&root_dir), &entry)
 }
