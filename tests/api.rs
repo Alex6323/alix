@@ -7079,6 +7079,7 @@ fn remote_exam_trace_grade_pass_settles_to_results_and_writes_no_store() {
     );
     let (base, guard) = spawn_full_server(Some(&fake));
     let fixture_state = private_state_root(guard.dir());
+    let _ = sync_root_id(&base);
     let before = snapshot_dir(&fixture_state);
 
     post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
@@ -7116,6 +7117,7 @@ fn remote_exam_trace_grade_fail_refuses_remediation_and_writes_no_store() {
     );
     let (base, guard) = spawn_full_server(Some(&fake));
     let fixture_state = private_state_root(guard.dir());
+    let _ = sync_root_id(&base);
     let before = snapshot_dir(&fixture_state);
 
     post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
@@ -7259,6 +7261,7 @@ fn remote_endpoints_never_write_the_server_store() {
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
     let fixture_state = private_state_root(guard.dir());
+    let _ = sync_root_id(&base);
     let before = snapshot_dir(&fixture_state);
     let decks_before = snapshot_dir(guard.dir());
 
