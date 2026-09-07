@@ -7826,3 +7826,120 @@ fn a_tutor_note_leaves_the_authored_deck_untouched_and_writes_the_sidecar() {
         "the note it carries follows it: {written}"
     );
 }
+
+#[test]
+fn one_unparseable_deck_is_left_out_without_disabling_healthy_sync_routes() {
+    let (base, guard) = spawn_test_server_booted(|dir| {
+        std::fs::write(
+            dir.join("broken.md"),
+            "---\nformat-version: 1\nid: deck-brok0000000000000000000a\n---\n## q\n",
+        )
+        .unwrap();
+    });
+    let version = http(&base, "GET", "/api/version", &[], &[]);
+    assert_eq!(200, version.status, "the phone still pairs");
+
+    let entries = http(&base, "GET", "/api/sync/entries", &[], &[]);
+    assert_eq!(
+        200,
+        entries.status,
+        "one unparseable deck must not disable the entries listing: body {:?}",
+        String::from_utf8_lossy(&entries.body)
+    );
+    let entries_json: serde_json::Value = serde_json::from_slice(&entries.body).unwrap();
+    let broken = entries_json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "broken.md")
+        .unwrap();
+    assert_eq!(0, broken["members"], "the rejected deck is not a member");
+    assert_eq!(
+        serde_json::json!(["broken.md"]),
+        broken["left_out"],
+        "the listing names the rejected entry-relative path"
+    );
+    let healthy = entries_json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "sample.md")
+        .unwrap();
+    assert_eq!(serde_json::json!([]), healthy["left_out"]);
+
+    let pull = http(&base, "GET", "/api/sync/pull?entry=sample.md", &[], &[]);
+    assert_eq!(200, pull.status, "the healthy entry must still pull");
+
+    let root_id = sync_root_id(&base);
+    let push = sync_push(
+        &base,
+        "deck-sample",
+        &root_id,
+        "none",
+        &sync_document("deck-sample", "phone"),
+    );
+    assert_eq!(
+        200, push.status,
+        "the healthy deck must still accept a push"
+    );
+    let _ = guard;
+}
+
+#[test]
+fn percent_encoded_space_and_unicode_names_resolve_for_pull_and_share() {
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| {
+        for (name, deck_id, card_id) in [
+            (
+                "German Verbs.md",
+                "deck-germ0000000000000000000a",
+                "card-germ0000000000000000000a",
+            ),
+            (
+                "日本語.md",
+                "deck-japa0000000000000000000a",
+                "card-japa0000000000000000000a",
+            ),
+        ] {
+            std::fs::write(
+                dir.join(name),
+                format!(
+                    "---\nformat-version: 1\nid: {deck_id}\n---\n## q\na\n<!-- id: {card_id} -->\n"
+                ),
+            )
+            .unwrap();
+        }
+    });
+
+    let entries = http(&base, "GET", "/api/sync/entries", &[], &[]);
+    assert_eq!(200, entries.status);
+    let listed: serde_json::Value = serde_json::from_slice(&entries.body).unwrap();
+    for (name, encoded) in [
+        ("German Verbs.md", "German%20Verbs.md"),
+        ("日本語.md", "%E6%97%A5%E6%9C%AC%E8%AA%9E.md"),
+    ] {
+        assert!(
+            listed["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["name"] == name),
+            "entries advertises {name}: {listed}"
+        );
+        let pull = http(
+            &base,
+            "GET",
+            &format!("/api/sync/pull?entry={encoded}"),
+            &[],
+            &[],
+        );
+        assert_eq!(200, pull.status, "pull resolves {name}");
+        let share = http(
+            &base,
+            "GET",
+            &format!("/api/share/zip?deck={encoded}"),
+            &[],
+            &[],
+        );
+        assert_eq!(200, share.status, "share resolves {name}");
+    }
+}

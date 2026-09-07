@@ -2,6 +2,9 @@
   "entries": [
     {
       "kind": "workspace",
+      "left_out": [
+        "decks/draft.md"
+      ],
       "members": 2,
       "name": "Biology",
       "unpacked_bytes": 4096

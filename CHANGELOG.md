@@ -13,16 +13,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deck id. Each served folder gets a stable `.alix/sync.toml` root identity;
   pulls are streamed from bounded temporary archives and pushes have a 64 MiB
   cap.
+
 - `alix deck restore` can swap the progress-only backup left by an accepted
   paired-phone push. Bare `alix doctor` reports malformed or duplicate profile
   root identities and nested `.alix/sync.toml` files.
+
 - `alix profile add` refuses a decks folder that equals, contains, or sits
   inside another profile's folder; bare `alix doctor` reports every existing
   overlap without rewriting profiles.
+
 - A bare `<!-- ignore -->` among a card's trailing comments keeps the card in
   the file, with its id and history, but takes it out of review, the exam, and
   every count; an ignored card may lack an answer. `alix stats` reports the
   count and `alix list` marks the cards.
+
 - `alix doctor` warns when a cloze card's front contains a blank's answer,
   the check that already covers a block note.
 
@@ -33,16 +37,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   for loose decks. CLI and server resolution are identical, workspace
   `alix.toml` no longer accepts `store`, and the `--store` override and global
   deck-state fallback have been removed.
+
 - A deck's personal-file twin is now `<deck>.local.md` instead of
   `<deck>.personal.md`, matching the private `*.local.*` naming rule.
+
 - `--lan` refuses a `--token` or `[serve] token` value shorter than 16
   characters before the server binds; minted tokens are unaffected.
 
 ### Fixed
 
+- Paired sync reports a member it cannot canonicalize or fully parse through
+  the entry's `left_out` paths instead of disabling every sync route. Pulls
+  omit that member and its owned bundle files, percent-encoded entry names
+  resolve for pull and share, and a served-root identity failure prints before
+  the success banner.
+
 - A deck where only some cards have buildable choice options now opens its
   first sitting at Recall; Recognize is the default only when every card has
   options.
+
 - Adult web review keeps several formulas and question images visible together
   instead of clipping a later formula or shrinking an image to a speck.
 

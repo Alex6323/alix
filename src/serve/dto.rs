@@ -308,6 +308,7 @@ pub(super) struct SyncEntryDto {
     pub(super) kind: String,
     pub(super) members: u64,
     pub(super) unpacked_bytes: u64,
+    pub(super) left_out: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]

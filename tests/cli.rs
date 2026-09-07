@@ -7446,3 +7446,30 @@ fn a_short_pairing_token_is_refused_before_the_lan_server_binds() {
         stderr(&out)
     );
 }
+
+#[test]
+fn a_sync_identity_write_failure_precedes_the_success_banner() {
+    let dir = TempDir::new().unwrap();
+    let decks = dir.path().join("decks");
+    std::fs::create_dir(&decks).unwrap();
+    std::fs::write(decks.join(".alix"), "not a directory\n").unwrap();
+
+    let out = alix(&[decks.to_str().unwrap(), "--port", "0"]);
+    let out_stdout = stdout(&out);
+    let out_stderr = stderr(&out);
+
+    assert!(
+        !out.status.success(),
+        "the identity failure must stop startup"
+    );
+    assert!(
+        !out_stdout.contains("Serving "),
+        "startup must not announce success before recording the root identity: {out_stdout}"
+    );
+    assert!(
+        out_stderr.contains("cannot record the served folder's sync identity")
+            && out_stderr.contains(".alix")
+            && out_stderr.contains("the folder must be writable"),
+        "the error names the policy and location: {out_stderr}"
+    );
+}

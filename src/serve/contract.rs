@@ -1934,6 +1934,7 @@ fn sync_wire_shapes() {
                 kind: "workspace".to_string(),
                 members: 2,
                 unpacked_bytes: 4096,
+                left_out: vec!["decks/draft.md".to_string()],
             }],
         },
         json!({
@@ -1942,7 +1943,8 @@ fn sync_wire_shapes() {
                 "name": "Biology",
                 "kind": "workspace",
                 "members": 2,
-                "unpacked_bytes": 4096
+                "unpacked_bytes": 4096,
+                "left_out": ["decks/draft.md"]
             }]
         }),
     );

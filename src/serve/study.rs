@@ -250,6 +250,27 @@ pub(super) enum SyncPushReply {
     Failed(String),
 }
 
+#[cfg(test)]
+static SYNC_OWNER_THREADS: std::sync::Mutex<Vec<(String, thread::ThreadId)>> =
+    std::sync::Mutex::new(Vec::new());
+
+#[cfg(test)]
+pub(super) fn take_sync_owner_threads(deck_id: &str) -> Vec<thread::ThreadId> {
+    let mut all = SYNC_OWNER_THREADS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut matched = Vec::new();
+    all.retain(|(owned_deck_id, thread)| {
+        if owned_deck_id == deck_id {
+            matched.push(*thread);
+            false
+        } else {
+            true
+        }
+    });
+    matched
+}
+
 /// A walk-tutor start: a question begins a new exchange only when one was
 /// given; a note condenses the transcript unconditionally.
 pub(super) enum WalkAskAction {
@@ -1262,6 +1283,11 @@ impl StudyState {
         pulled_revision: Option<u64>,
         document: crate::store::ValidatedDeckDocument,
     ) -> SyncPushReply {
+        #[cfg(test)]
+        SYNC_OWNER_THREADS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push((deck_id.to_string(), thread::current().id()));
         if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
             return SyncPushReply::Failed("cannot flush desktop progress".to_string());
         }

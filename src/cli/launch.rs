@@ -109,6 +109,12 @@ pub(crate) fn launch(args: LaunchArgs, instance: &str) -> Result<()> {
     };
 
     let token = resolve_serve_token(args.token.clone(), args.lan, &config)?;
+    alix::sync::root_id(&decks_dir).with_context(|| {
+        format!(
+            "cannot record the served folder's sync identity in {}: the folder must be writable",
+            decks_dir.join(".alix").display()
+        )
+    })?;
     let pair = announce(addr, args.lan, token.as_deref(), &decks_dir);
 
     let opts = serve::ReviewOptions {

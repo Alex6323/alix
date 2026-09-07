@@ -82,9 +82,12 @@ pub struct SyncEntry {
     pub kind: String,
     pub members: u64,
     pub unpacked_bytes: u64,
+    pub left_out: Vec<String>,
     path: PathBuf,
     store_root: PathBuf,
     decks: Vec<EntryDeck>,
+    excluded_decks: HashSet<PathBuf>,
+    excluded_deck_ids: HashSet<String>,
 }
 
 #[cfg(feature = "full")]
@@ -183,14 +186,10 @@ impl SyncCatalog {
                 vec![path.clone()]
             };
             let mut entry_decks = Vec::new();
+            let mut left_out = Vec::new();
+            let mut excluded_decks = HashSet::new();
+            let mut excluded_deck_ids = HashSet::new();
             for deck_path in source_decks {
-                let deck_path = deck_path
-                    .canonicalize()
-                    .with_context(|| format!("cannot resolve deck {}", deck_path.display()))?;
-                let deck = crate::deck::Deck::load(&deck_path)?;
-                let deck_id = deck
-                    .deck_token
-                    .ok_or_else(|| anyhow::anyhow!("{} is not initialized", deck_path.display()))?;
                 let relative_path = if row.is_workspace {
                     deck_path
                         .strip_prefix(&path)
@@ -206,6 +205,31 @@ impl SyncCatalog {
                     PathBuf::from(deck_path.file_name().ok_or_else(|| {
                         anyhow::anyhow!("{} has no file name", deck_path.display())
                     })?)
+                };
+                let wire_relative_path = wire_path(&relative_path)?;
+                let deck_path = match deck_path.canonicalize() {
+                    Ok(deck_path) if !row.is_workspace || deck_path.starts_with(&path) => deck_path,
+                    Ok(_) | Err(_) => {
+                        excluded_decks.insert(deck_path);
+                        left_out.push(wire_relative_path);
+                        continue;
+                    }
+                };
+                let deck = match crate::deck::Deck::load(&deck_path) {
+                    Ok(deck) => deck,
+                    Err(_) => {
+                        if let Some(deck_id) = lightweight_deck_id(&deck_path) {
+                            excluded_deck_ids.insert(deck_id);
+                        }
+                        excluded_decks.insert(deck_path);
+                        left_out.push(wire_relative_path);
+                        continue;
+                    }
+                };
+                let Some(deck_id) = deck.deck_token else {
+                    excluded_decks.insert(deck_path);
+                    left_out.push(wire_relative_path);
+                    continue;
                 };
                 let target = DeckTarget {
                     path: deck_path.clone(),
@@ -229,13 +253,20 @@ impl SyncCatalog {
                 });
             }
             entry_decks.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+            left_out.sort();
             let kind = if row.is_workspace {
                 "workspace"
             } else {
                 "deck"
             };
             let public_bytes = if row.is_workspace {
-                crate::share::staged_size(&path)?
+                crate::share::staged_workspace_size_excluding(
+                    &path,
+                    &excluded_decks,
+                    &excluded_deck_ids,
+                )?
+            } else if entry_decks.is_empty() {
+                0
             } else {
                 crate::share::staged_deck_contents_size(&path)?
             };
@@ -247,9 +278,12 @@ impl SyncCatalog {
                 unpacked_bytes: public_bytes.checked_add(private_bytes).ok_or_else(|| {
                     anyhow::anyhow!("sync entry {} is too large to count", path.display())
                 })?,
+                left_out,
                 path,
                 store_root,
                 decks: entry_decks,
+                excluded_decks,
+                excluded_deck_ids,
             });
         }
         Ok(Self {
@@ -292,6 +326,12 @@ impl SyncCatalog {
         };
         stage_entry(entry, root_id, stage)
     }
+}
+
+#[cfg(feature = "full")]
+fn lightweight_deck_id(path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    crate::parser::deck_identity(&text).ok().flatten()
 }
 
 #[cfg(feature = "full")]
@@ -338,7 +378,12 @@ fn stage_entry(entry: &SyncEntry, root_id: &str, stage: &Path) -> Result<StagedP
     std::fs::create_dir_all(stage).with_context(|| format!("cannot create {}", stage.display()))?;
     let root = stage.join(&entry.name);
     if entry.kind == "workspace" {
-        let (staged, _) = crate::share::stage_path(&entry.path, stage)?;
+        let (staged, _) = crate::share::stage_workspace_excluding(
+            &entry.path,
+            stage,
+            &entry.excluded_decks,
+            &entry.excluded_deck_ids,
+        )?;
         if staged != root {
             bail!(
                 "staged entry {} did not keep its picker name {}",
@@ -346,6 +391,9 @@ fn stage_entry(entry: &SyncEntry, root_id: &str, stage: &Path) -> Result<StagedP
                 entry.name
             );
         }
+    } else if entry.decks.is_empty() {
+        std::fs::create_dir_all(&root)
+            .with_context(|| format!("cannot create {}", root.display()))?;
     } else {
         let (bundle, _) = crate::share::stage_deck_bundle(&entry.path, stage)?;
         std::fs::remove_file(bundle.join(crate::share::DECK_BUNDLE_MARKER))
@@ -722,6 +770,22 @@ mod tests {
         )
         .unwrap();
 
+        let share_stage = tempfile::tempdir().unwrap();
+        let (shared, _) = crate::share::stage_path(&workspace, share_stage.path()).unwrap();
+        let shared_files: HashSet<_> = files(&shared).into_iter().collect();
+        std::fs::write(
+            workspace.join("decks/broken.md"),
+            "---\nformat-version: 1\nid: deck-brokenmember\n---\n## missing answer\n",
+        )
+        .unwrap();
+        std::fs::write(workspace.join("augment/deck-brokenmember.json"), "{}\n").unwrap();
+        std::fs::create_dir_all(workspace.join("assets/deck-brokenmember")).unwrap();
+        std::fs::write(
+            workspace.join("assets/deck-brokenmember/left-out.txt"),
+            "left out\n",
+        )
+        .unwrap();
+
         let served_root = root_id(served.path()).unwrap();
         assert!(
             !workspace.join(".alix/sync.toml").exists(),
@@ -745,10 +809,12 @@ mod tests {
             .unwrap();
         assert_eq!("workspace", entry.kind);
         assert_eq!(2, entry.members, "only initialized members are counted");
+        assert_eq!(
+            vec!["decks/broken.md"],
+            entry.left_out,
+            "a parser-rejected initialized member is named but not indexed"
+        );
 
-        let share_stage = tempfile::tempdir().unwrap();
-        let (shared, _) = crate::share::stage_path(&workspace, share_stage.path()).unwrap();
-        let shared_files: HashSet<_> = files(&shared).into_iter().collect();
         let pull_stage = tempfile::tempdir().unwrap();
         let pull = catalog
             .stage_pull("course", &served_root, pull_stage.path())
@@ -771,6 +837,12 @@ mod tests {
             "pull re-adds only progress by deck id and the two *.local.* shapes"
         );
         assert!(shared_files.contains("decks/draft.md"));
+        assert!(
+            !pull_files.contains("decks/broken.md"),
+            "a left-out member is absent from the pull manifest projection"
+        );
+        assert!(!pull_files.contains("augment/deck-brokenmember.json"));
+        assert!(!pull_files.contains("assets/deck-brokenmember/left-out.txt"));
         for private in [
             ".alix/progress/deck-ready.json",
             "alix.local.toml",
@@ -808,7 +880,7 @@ mod tests {
             pull.manifest
                 .decks
                 .iter()
-                .all(|deck| deck.path != "decks/draft.md")
+                .all(|deck| deck.path != "decks/draft.md" && deck.path != "decks/broken.md")
         );
         for file in &pull.manifest.files {
             let bytes = std::fs::read(pull.root.join(&file.path)).unwrap();

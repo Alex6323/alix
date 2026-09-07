@@ -84,8 +84,7 @@ pub fn staged_deck_bundle_size(path: &Path) -> Result<u64> {
     deck_bundle_size(path, &parts)
 }
 
-/// The deck-bundle projection without the share-only marker. Paired sync has
-/// its own manifest and lands the loose deck as an ordinary entry root.
+/// The deck-bundle projection without the share-only marker.
 pub fn staged_deck_contents_size(path: &Path) -> Result<u64> {
     staged_deck_bundle_size(path)?
         .checked_sub(deck_bundle_marker(path)?.len() as u64)
@@ -133,11 +132,31 @@ fn tree_size(dir: &Path) -> Result<u64> {
 }
 
 fn staged_dir_size(dir: &Path) -> Result<u64> {
+    staged_dir_size_excluding(dir, &HashSet::new(), &HashSet::new())
+}
+
+pub(crate) fn staged_workspace_size_excluding(
+    dir: &Path,
+    excluded_decks: &HashSet<PathBuf>,
+    excluded_deck_ids: &HashSet<String>,
+) -> Result<u64> {
+    if !dir.is_dir() {
+        bail!("`{}` is not a folder", dir.display());
+    }
+    staged_dir_size_excluding(dir, excluded_decks, excluded_deck_ids)
+}
+
+fn staged_dir_size_excluding(
+    dir: &Path,
+    excluded_decks: &HashSet<PathBuf>,
+    excluded_deck_ids: &HashSet<String>,
+) -> Result<u64> {
     if crate::workspace::is_workspace(dir) {
-        validate_workspace_material(dir)?;
+        validate_workspace_material_excluding(dir, excluded_decks, excluded_deck_ids)?;
     }
     let deck_ids: HashSet<String> = crate::workspace::deck_files(dir)
         .into_iter()
+        .filter(|path| !excluded_decks.contains(path))
         .filter_map(|path| crate::deck::Deck::load(path).ok()?.deck_token)
         .collect();
     let mut bytes = 0;
@@ -145,7 +164,7 @@ fn staged_dir_size(dir: &Path) -> Result<u64> {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = entry.path();
-        if stays_home(&name) {
+        if stays_home(&name) || excluded_decks.contains(&path) {
             continue;
         }
         refuse_link(&path)?;
@@ -167,11 +186,36 @@ fn staged_dir_size(dir: &Path) -> Result<u64> {
                     bytes += augmentation.metadata()?.len();
                 }
             }
+        } else if name == crate::assets::ROOT && path.is_dir() {
+            bytes += staged_assets_size(&path, excluded_decks, excluded_deck_ids)?;
         } else if path.is_dir() {
-            bytes += staged_dir_size(&path)?;
+            bytes += staged_dir_size_excluding(&path, excluded_decks, excluded_deck_ids)?;
         } else {
             bytes += entry.metadata()?.len();
         }
+    }
+    Ok(bytes)
+}
+
+fn staged_assets_size(
+    dir: &Path,
+    excluded_decks: &HashSet<PathBuf>,
+    excluded_deck_ids: &HashSet<String>,
+) -> Result<u64> {
+    let mut bytes = 0;
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if stays_home(&name) || excluded_deck_ids.contains(&name) {
+            continue;
+        }
+        let kind = entry.file_type()?;
+        refuse_link(&entry.path())?;
+        bytes += if kind.is_dir() {
+            staged_dir_size_excluding(&entry.path(), excluded_decks, excluded_deck_ids)?
+        } else {
+            entry.metadata()?.len()
+        };
     }
     Ok(bytes)
 }
@@ -319,12 +363,40 @@ fn count_files(dir: &Path) -> Result<usize> {
 }
 
 pub fn stage_dir(dir: &Path, stage: &Path) -> Result<usize> {
+    stage_dir_excluding(dir, stage, &HashSet::new(), &HashSet::new())
+}
+
+pub(crate) fn stage_workspace_excluding(
+    dir: &Path,
+    stage_root: &Path,
+    excluded_decks: &HashSet<PathBuf>,
+    excluded_deck_ids: &HashSet<String>,
+) -> Result<(PathBuf, usize)> {
+    if !dir.is_dir() {
+        bail!("`{}` is not a folder", dir.display());
+    }
+    let name = dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("shared-decks");
+    let stage = stage_root.join(name);
+    let staged = stage_dir_excluding(dir, &stage, excluded_decks, excluded_deck_ids)?;
+    Ok((stage, staged))
+}
+
+fn stage_dir_excluding(
+    dir: &Path,
+    stage: &Path,
+    excluded_decks: &HashSet<PathBuf>,
+    excluded_deck_ids: &HashSet<String>,
+) -> Result<usize> {
     if crate::workspace::is_workspace(dir) {
-        validate_workspace_material(dir)?;
+        validate_workspace_material_excluding(dir, excluded_decks, excluded_deck_ids)?;
     }
     std::fs::create_dir_all(stage).with_context(|| format!("cannot create {}", stage.display()))?;
     let deck_ids: std::collections::HashSet<String> = crate::workspace::deck_files(dir)
         .into_iter()
+        .filter(|path| !excluded_decks.contains(path))
         .filter_map(|path| crate::deck::Deck::load(path).ok()?.deck_token)
         .collect();
     let mut staged = 0;
@@ -332,15 +404,17 @@ pub fn stage_dir(dir: &Path, stage: &Path) -> Result<usize> {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
         let from = entry.path();
-        if stays_home(&name) {
+        if stays_home(&name) || excluded_decks.contains(&from) {
             continue;
         }
         refuse_link(&from)?;
         let to = stage.join(&name);
         if name == "augment" && from.is_dir() {
             staged += stage_augmentation(&from, &to, &deck_ids)?;
+        } else if name == crate::assets::ROOT && from.is_dir() {
+            staged += stage_assets(&from, &to, excluded_decks, excluded_deck_ids)?;
         } else if from.is_dir() {
-            staged += stage_dir(&from, &to)?;
+            staged += stage_dir_excluding(&from, &to, excluded_decks, excluded_deck_ids)?;
         } else {
             std::fs::copy(&from, &to).with_context(|| format!("cannot copy {}", from.display()))?;
             staged += 1;
@@ -349,10 +423,49 @@ pub fn stage_dir(dir: &Path, stage: &Path) -> Result<usize> {
     Ok(staged)
 }
 
+fn stage_assets(
+    dir: &Path,
+    stage: &Path,
+    excluded_decks: &HashSet<PathBuf>,
+    excluded_deck_ids: &HashSet<String>,
+) -> Result<usize> {
+    let mut staged = 0;
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if stays_home(&name) || excluded_deck_ids.contains(&name) {
+            continue;
+        }
+        let from = entry.path();
+        refuse_link(&from)?;
+        let to = stage.join(entry.file_name());
+        if from.is_dir() {
+            staged += stage_dir_excluding(&from, &to, excluded_decks, excluded_deck_ids)?;
+        } else {
+            std::fs::create_dir_all(stage)
+                .with_context(|| format!("cannot create {}", stage.display()))?;
+            std::fs::copy(&from, &to).with_context(|| format!("cannot copy {}", from.display()))?;
+            staged += 1;
+        }
+    }
+    Ok(staged)
+}
+
 fn validate_workspace_material(root: &Path) -> Result<()> {
+    validate_workspace_material_excluding(root, &HashSet::new(), &HashSet::new())
+}
+
+fn validate_workspace_material_excluding(
+    root: &Path,
+    excluded_decks: &HashSet<PathBuf>,
+    excluded_deck_ids: &HashSet<String>,
+) -> Result<()> {
     let decks = crate::workspace::deck_files(root);
     let mut deck_ids = std::collections::HashSet::new();
     for path in decks {
+        if excluded_decks.contains(&path) {
+            continue;
+        }
         let deck = crate::deck::Deck::load(&path)?;
         if let Some(deck_id) = deck.deck_token.as_deref() {
             deck_ids.insert(deck_id.to_string());
@@ -366,6 +479,9 @@ fn validate_workspace_material(root: &Path) -> Result<()> {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
+        if excluded_deck_ids.contains(&name) {
+            continue;
+        }
         if !deck_ids.contains(&name) {
             bail!(
                 "{} is not owned by a deck in this workspace",
@@ -511,10 +627,6 @@ fn copy_stream(mut reader: impl Read, mut writer: impl Write) -> std::io::Result
     }
 }
 
-/// Writes a staged entry's contents at the archive root. Share archives keep
-/// their wrapper directory through [`zip_to`]; paired sync already owns the
-/// destination entry directory and therefore carries only entry-relative
-/// names.
 pub fn zip_contents_to(path: &Path, out: &Path) -> Result<usize> {
     if !path.is_dir() {
         bail!("{} is not a staged entry directory", path.display());

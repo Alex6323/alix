@@ -28,6 +28,31 @@ use crate::{
 };
 
 #[test]
+fn query_parameters_decode_space_and_unicode_percent_octets() {
+    assert_eq!(
+        Some("German Verbs.md".to_string()),
+        query_param("/api/sync/pull?entry=German%20Verbs.md", "entry")
+    );
+    assert_eq!(
+        Some("日本語.md".to_string()),
+        query_param(
+            "/api/sync/pull?entry=%E6%97%A5%E6%9C%AC%E8%AA%9E.md",
+            "entry"
+        )
+    );
+    assert_eq!(
+        None,
+        query_param("/api/sync/pull?entry=%E6%97", "entry"),
+        "invalid UTF-8 is not a name"
+    );
+    assert_eq!(
+        None,
+        query_param("/api/sync/pull?entry=%GG", "entry"),
+        "invalid percent escapes are not a name"
+    );
+}
+
+#[test]
 fn pulled_revision_header_accepts_only_the_canonical_advancable_grammar() {
     assert_eq!(Some(None), parse_pulled_revision(Some("none")));
     assert_eq!(Some(Some(0)), parse_pulled_revision(Some("0")));
@@ -92,6 +117,96 @@ fn sync_pull_archive_file_is_deleted_when_its_response_lease_ends() {
         !temp.exists(),
         "the staging directory is removed after the lease"
     );
+}
+
+#[test]
+fn sync_push_handler_commits_once_on_the_study_owner_thread() {
+    use std::io::{Read, Write};
+
+    let dir = tempfile::tempdir().unwrap();
+    let deck_id = "deck-handlerowner";
+    let deck = dir.path().join("deck.md");
+    std::fs::write(
+        &deck,
+        "---\nformat-version: 1\nid: deck-handlerowner\n---\n## q\na\n<!-- id: card-handlerowner -->\n",
+    )
+    .unwrap();
+    let root_id = crate::sync::root_id(dir.path()).unwrap();
+    let store = crate::state::open_aggregate_store(dir.path()).unwrap();
+    let recent = RecentDecks::load(dir.path().join(".alix/recent.json"));
+    let server = Arc::new(crate::serve::bind("127.0.0.1:0".parse().unwrap()).unwrap());
+    let address = server
+        .server_addr()
+        .to_ip()
+        .expect("the test server binds an IP address");
+    let config = crate::config::Config::default();
+    let opts = ReviewOptions {
+        keys: config.keys,
+        picker: config.picker,
+        browse: config.browse,
+        exam: config.exam,
+        ai: config.ai,
+        generate: config.generate,
+        audience: config.serve.audience,
+        auth: None,
+        config_path: None,
+        log_path: None,
+        pair: PairInfo {
+            url: format!("http://{address}"),
+            lan: false,
+        },
+        scoped: true,
+        cfg: assemble::AssembleConfig {
+            review: config.review,
+            ask: config.ask,
+            pacing: assemble::Pacing {
+                max_session: 10,
+                new_cards_percent: 30,
+            },
+            instance_store: Some(dir.path().to_path_buf()),
+        },
+    };
+    let stop = Arc::clone(&server);
+    let decks_dir = dir.path().to_path_buf();
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let serve_thread = std::thread::spawn(move || {
+        let _ = done_tx.send(run_review(store, recent, decks_dir, server, opts));
+    });
+    let body = br#"{"version":1,"deck_id":"deck-handlerowner","subject":"deck.md","revision":0,"cards":{},"writer":{"device":"phone","at_ms":7}}"#;
+    let _ = study::take_sync_owner_threads(deck_id);
+    let _ = crate::store::take_sync_commit_threads(deck_id);
+    let mut stream = std::net::TcpStream::connect(address).unwrap();
+    write!(
+        stream,
+        "POST /api/sync/push?deck={deck_id} HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Alix-Root: {root_id}\r\nX-Alix-Pulled-Revision: none\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    )
+    .unwrap();
+    stream.write_all(body).unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 200"), "response: {response}");
+
+    let owners = study::take_sync_owner_threads(deck_id);
+    assert_eq!(
+        1,
+        owners.len(),
+        "the real route must dispatch exactly one command to the Study owner"
+    );
+    assert_eq!(
+        owners,
+        crate::store::take_sync_commit_threads(deck_id),
+        "the real route's exact progress commit must run on its Study owner thread"
+    );
+
+    stop.unblock();
+    done_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("run_review must finish after the server is unblocked")
+        .expect("run_review shutdown must succeed");
+    serve_thread
+        .join()
+        .expect("run_review thread must not panic");
 }
 
 /// A panicked owner must drain an idle server by itself: the trip unblocks

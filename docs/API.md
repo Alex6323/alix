@@ -46,8 +46,8 @@ so is every client.
 - Several instances can serve side by side: `alix <dir>` scopes an instance to
   one decks folder with its own state (`--lan --port <p>` per instance). Each
   instance is its own host/port/token triple to pair against.
-- `GET /api/version` → `{"version": "0.8.0"}` is the cheap "am I talking to
-  alix, and which one" check.
+- `GET /api/version` → `{"version":"0.8.0","root_id":"root-00000000000000000000000000"}`
+  is the cheap "am I talking to alix, and which served folder" check.
 
 ## 2. Authentication
 
@@ -433,7 +433,14 @@ and every initialized member deck. The ZIP includes the same authored and
 generated material as share, plus that person's progress document, the
 member's `*.local.*` sidecar, and the entry's `alix.local.toml`. It never
 includes recent state, `.alix/sync.toml`, backups, temporary files, or conflict
-copies.
+copies. External recent entries are not sync entries. Query parameter values
+are UTF-8 percent-decoded, so clients percent-encode spaces and non-ASCII entry
+names for both sync pull and share ZIP requests.
+
+An initialized member the desktop cannot canonicalize or fully parse is named
+in its entry's `left_out` list and omitted from `members`, the pull manifest,
+and the push index. Its authored bundle files do not travel in that pull, and a
+push addressed to its deck id answers 404.
 
 Before pulling a newer entry, the client pushes each locally changed progress
 document with `POST /api/sync/push?deck=<deck-id>`. It sends the root identity
@@ -492,7 +499,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| GET | `/api/version` | – | `VersionDto` | – |
+| GET | `/api/version` | – | `VersionDto` | 500 root identity unreadable; 503 catalog owner unavailable |
 | GET | `/api/bug-report` | – | private diagnostics ZIP | 500 collection or archive failure |
 | GET | `/api/doctor` | – | `DoctorDto` | – |
 | GET | `/api/pair` | – | `PairDto` | – |
@@ -1065,10 +1072,11 @@ Clients must treat an id as an opaque string and never parse it as a number.
 |---|---|---|
 | `name` | string | Exact top-level picker name accepted by `entry=`. |
 | `kind` | string | Exactly `workspace` or `deck`. |
-| `members` | integer | Initialized member count; 1 for a loose deck. |
+| `members` | integer | Successfully loaded initialized member count; 1 for a loadable loose deck. |
 | `unpacked_bytes` | integer | Sum of `bytes` in this entry's pull manifest. |
+| `left_out` | `[string]` | Entry-relative paths that could not be loaded and are omitted from the pull and push index. |
 
-Example: `{"root_id":"root-00000000000000000000000000","entries":[{"name":"Biology","kind":"workspace","members":2,"unpacked_bytes":4096}]}`.
+Example: `{"root_id":"root-00000000000000000000000000","entries":[{"name":"Biology","kind":"workspace","members":2,"unpacked_bytes":4096,"left_out":["decks/draft.md"]}]}`.
 
 ### SyncPullManifest / SyncFileDto / SyncDeckDto
 

@@ -563,6 +563,7 @@ pub fn run_review(
                             kind: entry.kind.clone(),
                             members: entry.members,
                             unpacked_bytes: entry.unpacked_bytes,
+                            left_out: entry.left_out.clone(),
                         })
                         .collect();
                     respond_json(

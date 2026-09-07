@@ -60,8 +60,26 @@ pub(super) fn query_param(url: &str, key: &str) -> Option<String> {
     let (_, query) = url.split_once('?')?;
     query.split('&').find_map(|pair| {
         let (k, v) = pair.split_once('=')?;
-        (k == key).then(|| v.to_string())
+        (k == key).then(|| decode_query_component(v))?
     })
+}
+
+fn decode_query_component(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let hex = bytes.get(index + 1..index + 3)?;
+            let digits = std::str::from_utf8(hex).ok()?;
+            decoded.push(u8::from_str_radix(digits, 16).ok()?);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).ok()
 }
 
 pub(super) fn content_type(path: &Path) -> &'static str {
