@@ -12,6 +12,24 @@ String? _asString(dynamic v) => v is String ? v : null;
 
 int? _asInt(dynamic v) => v is num ? v.toInt() : null;
 
+List<String>? _asStringList(dynamic v) {
+  if (v is! List) return null;
+  final result = <String>[];
+  for (final item in v) {
+    if (item is! String) return null;
+    result.add(item);
+  }
+  return result;
+}
+
+bool _stringListEquals(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
 /// A wire response that did not match `docs/API.md`'s contract: a non-200
 /// status the caller has no dedicated mapping for, a malformed success body,
 /// or (for [SyncClient.pull]) a body shorter or longer than the
@@ -33,6 +51,7 @@ class SyncEntry {
     required this.kind,
     required this.members,
     required this.unpackedBytes,
+    required this.leftOut,
   });
 
   final String name;
@@ -42,14 +61,33 @@ class SyncEntry {
   final int members;
   final int unpackedBytes;
 
+  /// Entry-relative member paths the desktop could not load into this
+  /// listing (`SyncEntryDto.left_out`). Always present on the wire, so
+  /// [fromJson] rejects an entry that lacks it or carries a non-string
+  /// element, the same way it rejects a missing `name`.
+  final List<String> leftOut;
+
   static SyncEntry? fromJson(dynamic json) {
     if (json is! Map) return null;
     final name = _asString(json['name']);
     final kind = _asString(json['kind']);
     final members = _asInt(json['members']);
     final unpackedBytes = _asInt(json['unpacked_bytes']);
-    if (name == null || kind == null || members == null || unpackedBytes == null) return null;
-    return SyncEntry(name: name, kind: kind, members: members, unpackedBytes: unpackedBytes);
+    final leftOut = _asStringList(json['left_out']);
+    if (name == null ||
+        kind == null ||
+        members == null ||
+        unpackedBytes == null ||
+        leftOut == null) {
+      return null;
+    }
+    return SyncEntry(
+      name: name,
+      kind: kind,
+      members: members,
+      unpackedBytes: unpackedBytes,
+      leftOut: leftOut,
+    );
   }
 
   @override
@@ -58,10 +96,12 @@ class SyncEntry {
       other.name == name &&
       other.kind == kind &&
       other.members == members &&
-      other.unpackedBytes == unpackedBytes;
+      other.unpackedBytes == unpackedBytes &&
+      _stringListEquals(other.leftOut, leftOut);
 
   @override
-  int get hashCode => Object.hash(name, kind, members, unpackedBytes);
+  int get hashCode =>
+      Object.hash(name, kind, members, unpackedBytes, Object.hashAll(leftOut));
 }
 
 /// The reply to `GET /api/sync/entries`. Mirrors `SyncEntriesDto`.
@@ -251,12 +291,19 @@ class HttpSyncClient implements SyncClient {
   final ServerConfig config;
   final HttpClient _client;
 
+  // Uri(queryParameters:) form-encodes a space as `+`, but the desktop
+  // decodes only `%XX` (a `+` stays a literal plus there), so a pull of an
+  // entry whose name has a space answers 400. Uri.encodeComponent encodes
+  // a space as %20 and a literal `+` as %2B, matching what the desktop
+  // decodes back.
   Uri _uri(String path, [Map<String, String>? query]) => Uri(
         scheme: config.scheme,
         host: config.host,
         port: config.port,
         path: path,
-        queryParameters: query,
+        query: query?.entries
+            .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
+            .join('&'),
       );
 
   void _authorize(HttpClientRequest request) {

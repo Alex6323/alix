@@ -52,7 +52,13 @@ void main() {
           await respondJson(request, 200, {
             'root_id': 'root-00000000000000000000000000',
             'entries': [
-              {'name': 'Biology', 'kind': 'workspace', 'members': 2, 'unpacked_bytes': 4096},
+              {
+                'name': 'Biology',
+                'kind': 'workspace',
+                'members': 2,
+                'unpacked_bytes': 4096,
+                'left_out': <String>[],
+              },
             ],
           });
         });
@@ -64,7 +70,15 @@ void main() {
         expect(result.rootId, 'root-00000000000000000000000000');
         expect(
           result.entries,
-          const [SyncEntry(name: 'Biology', kind: 'workspace', members: 2, unpackedBytes: 4096)],
+          const [
+            SyncEntry(
+              name: 'Biology',
+              kind: 'workspace',
+              members: 2,
+              unpackedBytes: 4096,
+              leftOut: [],
+            ),
+          ],
         );
       });
 
@@ -88,7 +102,13 @@ void main() {
           await respondJson(request, 200, {
             'root_id': 'root-a',
             'entries': [
-              {'name': 'Biology', 'kind': 'workspace', 'members': 2, 'unpacked_bytes': 4096},
+              {
+                'name': 'Biology',
+                'kind': 'workspace',
+                'members': 2,
+                'unpacked_bytes': 4096,
+                'left_out': <String>[],
+              },
               {'name': 'missing kind field'},
               'not even a map',
             ],
@@ -101,8 +121,83 @@ void main() {
 
         expect(
           result.entries,
-          const [SyncEntry(name: 'Biology', kind: 'workspace', members: 2, unpackedBytes: 4096)],
+          const [
+            SyncEntry(
+              name: 'Biology',
+              kind: 'workspace',
+              members: 2,
+              unpackedBytes: 4096,
+              leftOut: [],
+            ),
+          ],
         );
+      });
+
+      test('an entry names its left-out members, parsed verbatim', () async {
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondJson(request, 200, {
+            'root_id': 'root-a',
+            'entries': [
+              {
+                'name': 'Biology',
+                'kind': 'workspace',
+                'members': 2,
+                'unpacked_bytes': 4096,
+                'left_out': ['decks/broken.md'],
+              },
+            ],
+          });
+        });
+        final client = HttpSyncClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+        addTearDown(client.close);
+
+        final result = await client.entries();
+
+        expect(result.entries.single.leftOut, ['decks/broken.md']);
+      });
+
+      test('an entry missing left_out is rejected, the pre-1.0 rule for a '
+          'field always present on the wire', () async {
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondJson(request, 200, {
+            'root_id': 'root-a',
+            'entries': [
+              {'name': 'Biology', 'kind': 'workspace', 'members': 2, 'unpacked_bytes': 4096},
+            ],
+          });
+        });
+        final client = HttpSyncClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+        addTearDown(client.close);
+
+        final result = await client.entries();
+
+        expect(result.entries, isEmpty);
+      });
+
+      test('an entry whose left_out is not a list of strings is rejected', () async {
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondJson(request, 200, {
+            'root_id': 'root-a',
+            'entries': [
+              {
+                'name': 'Biology',
+                'kind': 'workspace',
+                'members': 2,
+                'unpacked_bytes': 4096,
+                'left_out': 'decks/broken.md',
+              },
+            ],
+          });
+        });
+        final client = HttpSyncClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+        addTearDown(client.close);
+
+        final result = await client.entries();
+
+        expect(result.entries, isEmpty);
       });
 
       test('a 401 throws PairingExpired', () async {
@@ -206,6 +301,29 @@ void main() {
           );
 
           expect(target.existsSync(), isFalse);
+        },
+      );
+
+      test(
+        'percent-encodes the entry name in the raw query, never '
+        'form-encoding a space as +',
+        () async {
+          String? seenRawQuery;
+          final s = await startServer((request) async {
+            seenRawQuery = request.uri.query;
+            await request.drain<void>();
+            request.response.contentLength = 0;
+            await request.response.close();
+          });
+          final client = HttpSyncClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+          addTearDown(client.close);
+
+          await client.pull('German Verbs+C++.md', targetFile());
+
+          // request.uri.query is the raw wire query, still percent-encoded;
+          // request.uri.queryParameters would decode both %XX and a literal
+          // +, hiding the bug this test exists to catch.
+          expect(seenRawQuery, 'entry=German%20Verbs%2BC%2B%2B.md');
         },
       );
 
