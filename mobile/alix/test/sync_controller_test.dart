@@ -9,7 +9,7 @@ import 'package:alix_mobile/sync/sync_models.dart';
 import 'package:alix_mobile/sync/sync_port.dart';
 import 'package:alix_mobile/sync_client.dart';
 
-import '../support/fake_sync_port.dart';
+import 'support/fake_sync_port.dart';
 
 void main() {
   late Directory scratch;
