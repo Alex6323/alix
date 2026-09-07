@@ -183,8 +183,16 @@ class SyncController extends ChangeNotifier {
       report = SyncReport(error: 'sync failed: $error');
     } finally {
       _runningEntry = null;
-      await _drainPendingPushes();
-      _running = false;
+      try {
+        await _drainPendingPushes();
+      } finally {
+        _running = false;
+        final orphaned = _pendingPushes.values.expand((c) => c).toList();
+        _pendingPushes.clear();
+        for (final completer in orphaned) {
+          completer.complete();
+        }
+      }
     }
     _refreshPairedState();
     _lastReport = report;
@@ -389,13 +397,14 @@ class SyncController extends ChangeNotifier {
   }
 
   Future<void> _pushOneNow(String deckId) async {
-    final items = _port.planPushes().where((i) => i.deckId == deckId);
-    if (items.isEmpty) return;
     try {
+      final items = _port.planPushes().where((i) => i.deckId == deckId);
+      if (items.isEmpty) return;
       await _attemptPush(items.first);
     } on Object {
-      // Deliberately broad: also covers a closed port's connection
-      // tearing this attempt down mid-flight after dispose.
+      // Deliberately broad: also covers a local planning failure and a
+      // closed port's connection tearing this attempt down mid-flight
+      // after dispose.
       return;
     }
     _refreshPairedState();
@@ -406,8 +415,26 @@ class SyncController extends ChangeNotifier {
   /// one at a time, releasing each deck's completers only once its own
   /// attempt (and the paired-state refresh) finished. Re-checks the map
   /// each pass, so a push queued during the drain itself is also caught.
+  /// Observing the map empty and clearing [_running] is one synchronous
+  /// step, with no await between them, so a [pushOne] call can never land
+  /// in a seam where the map looks empty but the drain has not yet gone
+  /// idle. Before committing to that empty observation, two microtask
+  /// turns are given to a [pushOne] triggered from within the same
+  /// callback chain that just finished the cycle (a port callback's own
+  /// deferred work, itself often one microtask removed from where it
+  /// schedules the trigger), so it is caught here rather than racing the
+  /// caller that queued it.
   Future<void> _drainPendingPushes() async {
-    while (_pendingPushes.isNotEmpty) {
+    while (true) {
+      if (_pendingPushes.isEmpty) {
+        await Future<void>.value();
+        await Future<void>.value();
+        if (_pendingPushes.isEmpty) {
+          _running = false;
+          return;
+        }
+        continue;
+      }
       final deckId = _pendingPushes.keys.first;
       final completers = _pendingPushes.remove(deckId)!;
       try {
@@ -426,7 +453,17 @@ class SyncController extends ChangeNotifier {
   Future<void> resolve(String deckId, {required bool keepPhone}) async {
     final pending = _pendingConflicts.where((c) => c.deckId == deckId);
     if (pending.isEmpty) return;
-    final resolution = _port.resolveConflict(deckId, keepPhone: keepPhone);
+    final SyncResolution resolution;
+    try {
+      resolution = _port.resolveConflict(deckId, keepPhone: keepPhone);
+    } on Object catch (error) {
+      // Nothing was written yet, so the conflict stays exactly as it was;
+      // report it rather than let it reach the tap as an unhandled error.
+      _lastReport = SyncReport(error: 'could not resolve $deckId: $error');
+      _reportUnread = true;
+      _notify();
+      return;
+    }
     switch (resolution) {
       case SyncResolutionDone():
         break;
@@ -453,12 +490,28 @@ class SyncController extends ChangeNotifier {
   }
 
   Future<void> _resolvePull(String entry) async {
+    void land(SyncReport report) {
+      _lastReport = report;
+      _reportUnread = !report.isEmpty;
+    }
+
     SyncReport report;
     try {
       final desktop = await _port.entries();
+      if (desktop.rootId != _port.rootId) {
+        land(
+          SyncReport(
+            error: syncRootMismatchMessage(desktop.rootId, _port.rootId),
+          ),
+        );
+        return;
+      }
       _lastListing = desktop;
       final desktopEntry = desktop.entries.where((e) => e.name == entry);
-      if (desktopEntry.isEmpty) return;
+      if (desktopEntry.isEmpty) {
+        land(SyncReport(error: 'the desktop no longer serves $entry'));
+        return;
+      }
       final pullReport = await _pullEntry(
         entry,
         desktopEntry.first.unpackedBytes,
@@ -493,8 +546,7 @@ class SyncController extends ChangeNotifier {
     } on Object catch (error) {
       report = SyncReport(error: 'could not apply $entry: $error');
     }
-    _lastReport = report;
-    _reportUnread = !report.isEmpty;
+    land(report);
   }
 
   /// Removes an orphaned entry's local copy (the report sheet's Remove

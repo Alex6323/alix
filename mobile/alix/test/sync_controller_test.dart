@@ -901,6 +901,102 @@ void main() {
         expect(notifications, 0);
       },
     );
+
+    test(
+      'a local resolver failure before a resolution exists reports the '
+      'error and leaves the conflict pending',
+      () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.pairedEntriesImpl = () => pendingConflictFor('deck-a');
+        port.resolveConflictImpl = (_, _) =>
+            throw StateError('conflict state corrupt');
+        final controller = SyncController(port: port);
+
+        await controller.resolve('deck-a', keepPhone: true);
+
+        expect(controller.lastReport?.error, contains('conflict state corrupt'));
+        expect(
+          controller.pendingConflicts.map((c) => c.deckId),
+          contains('deck-a'),
+          reason: 'nothing was written, so the conflict must still be there',
+        );
+      },
+    );
+
+    test(
+      'a take-desktop refusal recovers on the next cycle once the '
+      'listing is correct',
+      () async {
+        var conflictConsumed = false;
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.pairedEntriesImpl = () => conflictConsumed
+            ? const [
+                SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+              ]
+            : pendingConflictFor('deck-a');
+        port.resolveConflictImpl = (_, _) {
+          conflictConsumed = true;
+          return const SyncResolutionPull('Biology');
+        };
+        port.entriesImpl = () async => const SyncEntries(
+          rootId: 'root-b',
+          entries: [
+            SyncEntry(
+              name: 'Biology',
+              kind: 'workspace',
+              members: 1,
+              unpackedBytes: 10,
+              leftOut: [],
+            ),
+          ],
+        );
+        final controller = SyncController(port: port);
+
+        await controller.resolve('deck-a', keepPhone: false);
+
+        expect(port.pullCalls, isEmpty);
+        expect(
+          controller.lastReport?.error,
+          syncRootMismatchMessage('root-b', 'root-a'),
+        );
+        expect(
+          controller.pendingConflicts,
+          isEmpty,
+          reason: 'the choice was already consumed locally',
+        );
+
+        port.entriesImpl = () async => const SyncEntries(
+          rootId: 'root-a',
+          entries: [
+            SyncEntry(
+              name: 'Biology',
+              kind: 'workspace',
+              members: 1,
+              unpackedBytes: 10,
+              leftOut: [],
+            ),
+          ],
+        );
+        var pulled = false;
+        port.pullImpl = (entry, target, unpackedBytes) async {
+          pulled = true;
+          await target.writeAsBytes(const []);
+          return 0;
+        };
+
+        await controller.cycle();
+
+        expect(
+          port.pullCalls,
+          ['Biology'],
+          reason:
+              'a later cycle against a corrected listing must re-plan the '
+              'pull the refusal held back',
+        );
+        expect(pulled, isTrue);
+        expect(controller.pendingConflicts, isEmpty);
+      },
+    );
   });
 
   group('removeOrphan', () {
