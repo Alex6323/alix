@@ -15,6 +15,7 @@ import 'package:alix_mobile/server_client.dart';
 class FakeServerClient implements ServerClient {
   FakeServerClient({
     this.versionReply,
+    this.rootIdReply = 'root-test',
     this.expireOnVersion = false,
     this.versionGate,
     this.backendReply = 'Claude',
@@ -50,6 +51,10 @@ class FakeServerClient implements ServerClient {
 
   // ── probe (version / backendName) ────────────────────────────────────
   final String? versionReply;
+
+  /// `VersionDto.root_id` on a non-null [versionReply]; pass null to
+  /// exercise the pairing sheet's "too old for sync" refusal.
+  final String? rootIdReply;
   final bool expireOnVersion;
   final Completer<void>? versionGate;
   final String? backendReply;
@@ -118,10 +123,12 @@ class FakeServerClient implements ServerClient {
   int _generateGetCall = 0;
 
   @override
-  Future<String?> version() async {
+  Future<ServerVersion?> version() async {
     if (versionGate != null) await versionGate!.future;
     if (expireOnVersion) throw const PairingExpired();
-    return versionReply;
+    final reply = versionReply;
+    if (reply == null) return null;
+    return ServerVersion(version: reply, rootId: rootIdReply);
   }
 
   @override

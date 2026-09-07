@@ -100,39 +100,82 @@ void main() {
     expect(prepared.root, '${support.path}/decks');
   });
 
-  group('readServer / setServer', () {
-    test('a paired server round-trips through set and read', () async {
+  group('readPairings / readActivePairing / savePairing / setActiveRoot / removePairing', () {
+    const configA = ServerConfig(host: '192.168.1.5', port: 7777, token: 'abc123', rootId: 'root-a');
+    const configB = ServerConfig(host: '192.168.1.9', port: 7778, token: 'def456', rootId: 'root-b');
+
+    test('a saved pairing round-trips through readPairings and becomes active', () async {
       final support = temp('alix-support-');
-      const config = ServerConfig(host: '192.168.1.5', port: 7777, token: 'abc123');
-      await setServer(config, support: support);
-      expect(readServer(support), config);
+      await savePairing(configA, support: support);
+      expect(readPairings(support), [configA]);
+      expect(readActivePairing(support), configA);
     });
 
-    test('an absent server key reads as null', () async {
+    test('no pairings and no active_root read as empty / null', () async {
       final support = temp('alix-support-');
-      expect(readServer(support), isNull);
+      expect(readPairings(support), isEmpty);
+      expect(readActivePairing(support), isNull);
     });
 
-    test('a malformed server value reads as null, never throws', () async {
+    test('saving a second, different rootId appends rather than replaces', () async {
       final support = temp('alix-support-');
-
-      File('${support.path}/settings.json').writeAsStringSync(jsonEncode({'server': 'not a map'}));
-      expect(readServer(support), isNull);
-
-      File('${support.path}/settings.json').writeAsStringSync(jsonEncode({
-        'server': {'host': '1.2.3.4', 'port': 'eight', 'token': 'abc'},
-      }));
-      expect(readServer(support), isNull);
+      await savePairing(configA, support: support);
+      await savePairing(configB, support: support);
+      expect(readPairings(support), containsAll([configA, configB]));
+      expect(readPairings(support), hasLength(2));
+      expect(readActivePairing(support), configB, reason: 'the most recently saved pairing is active');
     });
 
-    test('setServer(null) removes the key', () async {
+    test('saving the same rootId again replaces the stored pairing, at most one per rootId', () async {
       final support = temp('alix-support-');
-      const config = ServerConfig(host: '192.168.1.5', port: 7777, token: 'abc123');
-      await setServer(config, support: support);
-      await setServer(null, support: support);
-      expect(readServer(support), isNull);
-      final raw = jsonDecode(File('${support.path}/settings.json').readAsStringSync()) as Map;
-      expect(raw.containsKey('server'), isFalse);
+      await savePairing(configA, support: support);
+      const updated = ServerConfig(host: '10.0.0.1', port: 9999, token: 'newtok', rootId: 'root-a');
+      await savePairing(updated, support: support);
+      expect(readPairings(support), [updated]);
+      expect(readActivePairing(support), updated);
+    });
+
+    test('setActiveRoot switches which saved pairing readActivePairing returns', () async {
+      final support = temp('alix-support-');
+      await savePairing(configA, support: support);
+      await savePairing(configB, support: support);
+      await setActiveRoot(configA.rootId, support: support);
+      expect(readActivePairing(support), configA);
+    });
+
+    test('removePairing drops the entry and clears active_root when it pointed there', () async {
+      final support = temp('alix-support-');
+      await savePairing(configA, support: support);
+      await removePairing(configA.rootId, support: support);
+      expect(readPairings(support), isEmpty);
+      expect(readActivePairing(support), isNull);
+    });
+
+    test('removePairing leaves active_root alone when it names a different pairing', () async {
+      final support = temp('alix-support-');
+      await savePairing(configA, support: support);
+      await savePairing(configB, support: support);
+      await removePairing(configA.rootId, support: support);
+      expect(readPairings(support), [configB]);
+      expect(readActivePairing(support), configB);
+    });
+
+    test('a malformed pairings entry is skipped, valid ones still read', () async {
+      final support = temp('alix-support-');
+      await savePairing(configA, support: support);
+      final settings = readSettings(support);
+      final pairings = List<dynamic>.from(settings['pairings'] as List)
+        ..add('not a map')
+        ..add({'host': '1.2.3.4', 'port': 'eight', 'token': 'abc', 'root_id': 'root-c'});
+      settings['pairings'] = pairings;
+      File('${support.path}/settings.json').writeAsStringSync(jsonEncode(settings));
+      expect(readPairings(support), [configA]);
+    });
+
+    test('an entirely malformed pairings value reads as empty, never throws', () async {
+      final support = temp('alix-support-');
+      File('${support.path}/settings.json').writeAsStringSync(jsonEncode({'pairings': 'not a list'}));
+      expect(readPairings(support), isEmpty);
     });
   });
 
@@ -172,8 +215,8 @@ void main() {
     test('setTheme(null) removes only the theme key; other keys survive',
         () async {
       final support = temp('alix-support-');
-      const config = ServerConfig(host: '192.168.1.5', port: 7777, token: 'abc123');
-      await setServer(config, support: support);
+      const config = ServerConfig(host: '192.168.1.5', port: 7777, token: 'abc123', rootId: 'root-a');
+      await savePairing(config, support: support);
       await setTheme('solarized-light', support: support);
 
       await setTheme(null, support: support);
@@ -181,7 +224,7 @@ void main() {
       expect(readTheme(support), isNull);
       final raw = jsonDecode(File('${support.path}/settings.json').readAsStringSync()) as Map;
       expect(raw.containsKey('theme'), isFalse);
-      expect(readServer(support), config);
+      expect(readActivePairing(support), config);
     });
   });
 }

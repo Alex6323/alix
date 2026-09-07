@@ -30,8 +30,8 @@ void main() {
     return dir;
   }
 
-  Future<void> pair(Directory support) => setServer(
-        const ServerConfig(host: 'desktop.local', port: 7777, token: 'abc123'),
+  Future<void> pair(Directory support) => savePairing(
+        const ServerConfig(host: 'desktop.local', port: 7777, token: 'abc123', rootId: 'root-test'),
         support: support,
       );
 

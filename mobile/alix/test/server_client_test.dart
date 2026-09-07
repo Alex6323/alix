@@ -40,11 +40,16 @@ void main() {
       expect(parsePairingUrl('http://[::1/broken?token=abc'), isNull);
     });
 
-    test('an https URL is accepted', () {
+    test('an https URL is accepted and its scheme is kept', () {
       expect(
         parsePairingUrl('https://192.168.1.5:7777/?token=abc123'),
-        const ServerConfig(host: '192.168.1.5', port: 7777, token: 'abc123'),
+        const ServerConfig(scheme: 'https', host: '192.168.1.5', port: 7777, token: 'abc123'),
       );
+    });
+
+    test('an http URL keeps scheme: http', () {
+      final parsed = parsePairingUrl('http://192.168.1.5:7777/?token=abc123');
+      expect(parsed?.scheme, 'http');
     });
 
     test('a missing port defaults to 80', () {
@@ -131,7 +136,7 @@ void main() {
       final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'secret-tok'));
       addTearDown(client.close);
 
-      expect(await client.version(), '0.6.0');
+      expect((await client.version())?.version, '0.6.0');
       expect(
         await client.postAsk(
           const TutorCardContext(subject: 's', front: 'f', back: ['b']),
@@ -184,7 +189,37 @@ void main() {
       final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
       addTearDown(client.close);
 
-      expect(await client.version(), '0.6.0');
+      expect((await client.version())?.version, '0.6.0');
+    });
+
+    test('version() reads root_id when the wire sends it', () async {
+      final s = await startServer((request) async {
+        await request.drain<void>();
+        await respondJson(request, 200, {
+          'version': '0.8.0',
+          'root_id': 'root-00000000000000000000000000',
+        });
+      });
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+      addTearDown(client.close);
+
+      final probe = await client.version();
+      expect(probe, isNotNull);
+      expect(probe!.rootId, 'root-00000000000000000000000000');
+    });
+
+    test('version() reads rootId as null when the wire omits root_id', () async {
+      final s = await startServer((request) async {
+        await request.drain<void>();
+        await respondJson(request, 200, {'version': '0.5.0'});
+      });
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+      addTearDown(client.close);
+
+      final probe = await client.version();
+      expect(probe, isNotNull);
+      expect(probe!.version, '0.5.0');
+      expect(probe.rootId, isNull);
     });
 
     test('getAsk maps a corpus-shaped RemoteAskDto, including its draft', () async {

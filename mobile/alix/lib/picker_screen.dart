@@ -94,22 +94,22 @@ class _PickerScreenState extends State<PickerScreen> {
 
   Future<void> _loadPairing() async {
     final support = await _support();
-    final config = readServer(support);
+    final config = readActivePairing(support);
     if (config == null) {
       if (mounted) _controller.setServerReachable(false);
       return;
     }
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
-    String? version;
+    ServerVersion? probe;
     try {
-      version = await client.version();
+      probe = await client.version();
     } on PairingExpired {
-      version = null;
+      probe = null;
     } finally {
       client.close();
     }
     final live =
-        version != null && compareVersions(version, minServerVersion) >= 0;
+        probe != null && compareVersions(probe.version, minServerVersion) >= 0;
     if (mounted) _controller.setServerReachable(live);
   }
 
@@ -359,7 +359,7 @@ class _PickerScreenState extends State<PickerScreen> {
   Future<void> _generateSheet() async {
     final support = await _support();
     if (!mounted) return;
-    final config = readServer(support);
+    final config = readActivePairing(support);
     if (config == null) return;
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
     final controller = GenerateController(

@@ -321,8 +321,8 @@ void main() {
     (tester) async {
       final root = tempDir('alix-picker-structure-generate-');
       final support = tempDir('alix-picker-structure-generate-support-');
-      await setServer(
-        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc'),
+      await savePairing(
+        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc', rootId: 'root-test'),
         support: support,
       );
       final busyClient = FakeServerClient(

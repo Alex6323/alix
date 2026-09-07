@@ -28,7 +28,7 @@ Future<String?> showPairingSheet(
     isScrollControlled: true,
     builder: (sheet) => _PairSheet(
       support: support,
-      current: readServer(support),
+      current: readActivePairing(support),
       buildClient: buildClient,
     ),
   );
@@ -75,10 +75,10 @@ class _PairSheetState extends State<_PairSheet> {
       _status = null;
     });
     final client = widget.buildClient(parsed);
-    String? version;
+    ServerVersion? probe;
     var refused = false;
     try {
-      version = await client.version();
+      probe = await client.version();
     } on PairingExpired {
       // alix answered and rejected the token: the pasted URL is stale (a
       // restarted server mints a fresh token). Say so distinctly; "no alix
@@ -96,13 +96,14 @@ class _PairSheetState extends State<_PairSheet> {
       });
       return;
     }
-    if (version == null) {
+    if (probe == null) {
       setState(() {
         _busy = false;
         _status = 'no alix answered at ${parsed.host}:${parsed.port}';
       });
       return;
     }
+    final version = probe.version;
     if (compareVersions(version, minServerVersion) < 0) {
       setState(() {
         _busy = false;
@@ -110,13 +111,31 @@ class _PairSheetState extends State<_PairSheet> {
       });
       return;
     }
-    await setServer(parsed, support: widget.support);
+    final rootId = probe.rootId;
+    if (rootId == null) {
+      setState(() {
+        _busy = false;
+        _status = "this desktop's alix is older than this app's sync";
+      });
+      return;
+    }
+    final config = ServerConfig(
+      scheme: parsed.scheme,
+      host: parsed.host,
+      port: parsed.port,
+      token: parsed.token,
+      rootId: rootId,
+    );
+    await savePairing(config, support: widget.support);
     if (!mounted) return;
     Navigator.of(context).pop('Paired with ${parsed.host}');
   }
 
   Future<void> _unpair() async {
-    await setServer(null, support: widget.support);
+    final current = widget.current;
+    if (current != null) {
+      await removePairing(current.rootId, support: widget.support);
+    }
     if (!mounted) return;
     Navigator.of(context).pop('Unpaired');
   }

@@ -78,12 +78,12 @@ class _WalkScreenState extends State<WalkScreen> {
   Future<void> _probeServer() async {
     final support = widget.supportDir ?? await getApplicationSupportDirectory();
     _support = support;
-    final config = readServer(support);
+    final config = readActivePairing(support);
     if (config == null) return;
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
-    String? version;
+    ServerVersion? probe;
     try {
-      version = await client.version();
+      probe = await client.version();
     } on PairingExpired {
       client.close();
       if (!mounted) return;
@@ -108,7 +108,7 @@ class _WalkScreenState extends State<WalkScreen> {
       return;
     }
     final live =
-        version != null && compareVersions(version, minServerVersion) >= 0;
+        probe != null && compareVersions(probe.version, minServerVersion) >= 0;
     if (!live || !mounted) {
       client.close();
       return;

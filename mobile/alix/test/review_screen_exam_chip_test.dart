@@ -78,8 +78,8 @@ void main() {
     'an examinable deck with a live paired desktop: the chip appears on the done summary',
     (tester) async {
       final support = tempSupport();
-      await setServer(
-        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'),
+      await savePairing(
+        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
         support: support,
       );
 
@@ -100,8 +100,8 @@ void main() {
     'a deck with no source: the chip does not exist even with a live paired desktop',
     (tester) async {
       final support = tempSupport();
-      await setServer(
-        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'),
+      await savePairing(
+        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
         support: support,
       );
 
@@ -150,8 +150,8 @@ void main() {
       );
 
       final support = tempSupport();
-      await setServer(
-        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'),
+      await savePairing(
+        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
         support: support,
       );
 

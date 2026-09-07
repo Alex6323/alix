@@ -3,7 +3,6 @@
 // real temp support Directory (settings.json). PickerScreen's own listing
 // calls the real bridge in initState, so RustLib.init() is required to
 // mount it at all, same as bridge_test.dart's own screens.
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -106,7 +105,7 @@ void main() {
           'Copy a fresh pairing URL from the server.'),
       findsOneWidget,
     );
-    expect(readSettings(support)['server'], isNull, reason: 'a refused token must not persist');
+    expect(readActivePairing(support), isNull, reason: 'a refused token must not persist');
   });
 
   testWidgets('an older server version shows the too-old inline message', (tester) async {
@@ -130,12 +129,13 @@ void main() {
     );
   });
 
-  testWidgets('a successful pair persists the config and shows a SnackBar', (tester) async {
+  testWidgets('a successful pair persists the config, keyed by root_id, and shows a SnackBar',
+      (tester) async {
     final support = temp('alix-support-');
     await openPairSheet(
       tester,
       support: support,
-      buildClient: (_) => FakeServerClient(versionReply: '0.6.0'),
+      buildClient: (_) => FakeServerClient(versionReply: '0.6.0', rootIdReply: 'root-abc'),
     );
 
     await tester.enterText(
@@ -147,14 +147,44 @@ void main() {
 
     expect(find.textContaining('Paired with desktop.local'), findsOneWidget);
 
-    final saved = ServerConfig.fromJson(readSettings(support)['server']);
-    expect(saved, const ServerConfig(host: 'desktop.local', port: 7777, token: 'abc123'));
+    final saved = readActivePairing(support);
+    expect(
+      saved,
+      const ServerConfig(
+        host: 'desktop.local',
+        port: 7777,
+        token: 'abc123',
+        rootId: 'root-abc',
+      ),
+    );
+  });
+
+  testWidgets('a server whose /api/version carries no root_id is refused', (tester) async {
+    final support = temp('alix-support-');
+    await openPairSheet(
+      tester,
+      support: support,
+      buildClient: (_) => FakeServerClient(versionReply: '0.6.0', rootIdReply: null),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pairing-url-field')),
+      'http://desktop.local:7777/?token=abc123',
+    );
+    await tester.tap(find.text('Pair'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining("this desktop's alix is older than this app's sync"),
+      findsOneWidget,
+    );
+    expect(readActivePairing(support), isNull, reason: 'a refused server must not persist');
   });
 
   testWidgets('Unpair removes the setting and shows a SnackBar', (tester) async {
     final support = temp('alix-support-');
-    const config = ServerConfig(host: 'desktop.local', port: 7777, token: 'abc123');
-    await setServer(config, support: support);
+    const config = ServerConfig(host: 'desktop.local', port: 7777, token: 'abc123', rootId: 'root-abc');
+    await savePairing(config, support: support);
 
     await openPairSheet(
       tester,
@@ -167,7 +197,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Unpaired'), findsOneWidget);
-    final raw = jsonDecode(File('${support.path}/settings.json').readAsStringSync()) as Map;
-    expect(raw.containsKey('server'), isFalse);
+    expect(readActivePairing(support), isNull);
   });
 }

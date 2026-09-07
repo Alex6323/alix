@@ -132,20 +132,57 @@ void _writeSettings(Directory support, Map<String, dynamic> settings) {
   _settingsFile(support).writeAsStringSync(jsonEncode(settings));
 }
 
-/// The paired desktop, if any (a `server` key in settings.json holding
-/// `{host, port, token}`). Absent or malformed reads as unpaired, never
-/// throws.
-ServerConfig? readServer(Directory support) => ServerConfig.fromJson(readSettings(support)['server']);
+/// Every stored pairing (a `pairings` key in settings.json holding a list of
+/// `ServerConfig.toJson()` maps, at most one per `rootId`). A malformed row
+/// is skipped rather than failing the whole read.
+List<ServerConfig> readPairings(Directory support) => _pairingsFrom(readSettings(support));
 
-/// Persists the pairing; `null` un-pairs (removes the key).
-Future<void> setServer(ServerConfig? config, {Directory? support}) async {
+List<ServerConfig> _pairingsFrom(Map<String, dynamic> settings) {
+  final raw = settings['pairings'];
+  if (raw is! List) return const [];
+  return raw.map(ServerConfig.fromJson).whereType<ServerConfig>().toList();
+}
+
+/// The pairing named by the `active_root` key, or null when unset or no
+/// longer among [readPairings].
+ServerConfig? readActivePairing(Directory support) {
+  final settings = readSettings(support);
+  final activeRoot = settings['active_root'];
+  if (activeRoot is! String) return null;
+  for (final pairing in _pairingsFrom(settings)) {
+    if (pairing.rootId == activeRoot) return pairing;
+  }
+  return null;
+}
+
+/// Persists [config]: replaces any existing pairing for the same `rootId`,
+/// or appends a new one, and makes it the active pairing.
+Future<void> savePairing(ServerConfig config, {Directory? support}) async {
   support ??= await getApplicationSupportDirectory();
   final settings = readSettings(support);
-  if (config == null) {
-    settings.remove('server');
-  } else {
-    settings['server'] = config.toJson();
-  }
+  final pairings = _pairingsFrom(settings).where((p) => p.rootId != config.rootId).toList()
+    ..add(config);
+  settings['pairings'] = pairings.map((p) => p.toJson()).toList();
+  settings['active_root'] = config.rootId;
+  _writeSettings(support, settings);
+}
+
+/// Makes the pairing named [rootId] the active one.
+Future<void> setActiveRoot(String rootId, {Directory? support}) async {
+  support ??= await getApplicationSupportDirectory();
+  final settings = readSettings(support);
+  settings['active_root'] = rootId;
+  _writeSettings(support, settings);
+}
+
+/// Removes the pairing named [rootId]; clears `active_root` when it pointed
+/// there.
+Future<void> removePairing(String rootId, {Directory? support}) async {
+  support ??= await getApplicationSupportDirectory();
+  final settings = readSettings(support);
+  final pairings = _pairingsFrom(settings).where((p) => p.rootId != rootId).toList();
+  settings['pairings'] = pairings.map((p) => p.toJson()).toList();
+  if (settings['active_root'] == rootId) settings.remove('active_root');
   _writeSettings(support, settings);
 }
 

@@ -20,43 +20,65 @@ class PairingExpired implements Exception {
       "app's token";
 }
 
-/// A paired desktop: enough to reach it and prove who we are. No scheme
-/// field on purpose, alix itself only ever speaks plain HTTP (see the
-/// project's TLS stance); `parsePairingUrl` tolerates an `https://` input
-/// without remembering it, since [HttpServerClient] always dials http.
+/// A paired desktop: enough to reach it and prove who we are, and which
+/// served root it was paired against. `scheme` defaults to `http`
+/// ([HttpServerClient] still always dials http; only [HttpSyncClient] in
+/// `sync_client.dart` reaches through the scheme this carries). `rootId`
+/// defaults to the empty string for a config built before a probe has run
+/// (e.g. `parsePairingUrl`'s return); a persisted pairing always carries the
+/// real one, since `fromJson` rejects an empty one.
 class ServerConfig {
-  const ServerConfig({required this.host, required this.port, required this.token});
+  const ServerConfig({
+    required this.host,
+    required this.port,
+    required this.token,
+    this.scheme = 'http',
+    this.rootId = '',
+  });
 
+  final String scheme;
   final String host;
   final int port;
   final String token;
+  final String rootId;
 
-  Map<String, dynamic> toJson() => {'host': host, 'port': port, 'token': token};
+  Map<String, dynamic> toJson() =>
+      {'scheme': scheme, 'host': host, 'port': port, 'token': token, 'root_id': rootId};
 
   /// Reconstructs from a settings map; null on any malformed shape (missing
   /// or wrong-typed field, or `json` not even a map). The caller treats
   /// that the same as "never paired", never throws.
   static ServerConfig? fromJson(dynamic json) {
     if (json is! Map) return null;
+    final scheme = json['scheme'];
     final host = json['host'];
     final port = json['port'];
     final token = json['token'];
+    final rootId = json['root_id'];
+    if (scheme != 'http' && scheme != 'https') return null;
     if (host is! String || host.isEmpty) return null;
     if (port is! int) return null;
     if (token is! String || token.isEmpty) return null;
-    return ServerConfig(host: host, port: port, token: token);
+    if (rootId is! String || rootId.isEmpty) return null;
+    return ServerConfig(scheme: scheme, host: host, port: port, token: token, rootId: rootId);
   }
 
   @override
   bool operator ==(Object other) =>
-      other is ServerConfig && other.host == host && other.port == port && other.token == token;
+      other is ServerConfig &&
+      other.scheme == scheme &&
+      other.host == host &&
+      other.port == port &&
+      other.token == token &&
+      other.rootId == rootId;
 
   @override
-  int get hashCode => Object.hash(host, port, token);
+  int get hashCode => Object.hash(scheme, host, port, token, rootId);
 
   // The token is a secret; keep it out of every print/interpolation path.
   @override
-  String toString() => 'ServerConfig(host: $host, port: $port, token: <redacted>)';
+  String toString() =>
+      'ServerConfig(scheme: $scheme, host: $host, port: $port, rootId: $rootId, token: <redacted>)';
 }
 
 /// Parses the URL `alix --lan` prints for pairing
@@ -65,7 +87,9 @@ class ServerConfig {
 /// a non-empty `token` query parameter reads as null, never throws. IPv4,
 /// hostnames, and bracketed IPv6 hosts all survive `Uri.parse`; a URL with
 /// no port defaults to 80 (the server always prints one, but a client must
-/// not crash on a hand-typed URL that omits it).
+/// not crash on a hand-typed URL that omits it). The URL's own scheme is
+/// kept on the returned config; `rootId` is not known yet, a probe fills it
+/// in before the config is saved.
 ServerConfig? parsePairingUrl(String input) {
   final trimmed = input.trim();
   if (trimmed.isEmpty) return null;
@@ -80,7 +104,7 @@ ServerConfig? parsePairingUrl(String input) {
   final token = uri.queryParameters['token'];
   if (token == null || token.isEmpty) return null;
   final port = uri.hasPort ? uri.port : 80;
-  return ServerConfig(host: uri.host, port: port, token: token);
+  return ServerConfig(scheme: uri.scheme, host: uri.host, port: port, token: token);
 }
 
 /// Numeric, semver-shaped compare of `major.minor.patch`: a missing part
@@ -110,6 +134,16 @@ int compareVersions(String a, String b) {
 /// (the `/api/remote/*` routes shipped in 0.6.0). The pairing sheet refuses
 /// an older server rather than call routes it does not have.
 const minServerVersion = '0.6.0';
+
+/// The reply to `GET /api/version`. Mirrors `VersionDto`; `rootId` is null
+/// when the server did not send `root_id` (a desktop older than the sync
+/// surface), the signal the pairing sheet refuses on.
+class ServerVersion {
+  const ServerVersion({required this.version, this.rootId});
+
+  final String version;
+  final String? rootId;
+}
 
 String? _asString(dynamic v) => v is String ? v : null;
 
@@ -362,9 +396,9 @@ class RemoteGenerate {
 /// - any other status (400, 403, 409, ...) -> false/null for v1; callers
 ///   treat it as a generic failed tap, there is no per-status exception.
 abstract class ServerClient {
-  /// The paired server's crate version (`GET /api/version`), or null if it
-  /// cannot be reached or does not answer with JSON.
-  Future<String?> version();
+  /// The paired server's version and root identity (`GET /api/version`), or
+  /// null if it cannot be reached or does not answer with JSON.
+  Future<ServerVersion?> version();
 
   /// The configured AI backend's display name (`GET /api/ask-info`,
   /// `AskInfoDto.backend`), or null on any failure; callers fall back to a
@@ -471,7 +505,12 @@ class HttpServerClient implements ServerClient {
   Future<Map<String, dynamic>?> _post(String path, [Object? body]) => _call('POST', path, body);
 
   @override
-  Future<String?> version() async => _asString((await _get('/api/version'))?['version']);
+  Future<ServerVersion?> version() async {
+    final json = await _get('/api/version');
+    final version = _asString(json?['version']);
+    if (version == null) return null;
+    return ServerVersion(version: version, rootId: _asString(json?['root_id']));
+  }
 
   @override
   Future<String?> backendName() async => _asString((await _get('/api/ask-info'))?['backend']);

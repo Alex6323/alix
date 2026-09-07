@@ -276,8 +276,8 @@ void main() {
       (tester) async {
         final root = oneHopRoot();
         final support = tempSupport();
-        await setServer(
-          const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'),
+        await savePairing(
+          const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
           support: support,
         );
 
@@ -313,8 +313,8 @@ void main() {
       (tester) async {
         final root = oneHopRoot();
         final support = tempSupport();
-        await setServer(
-          const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'),
+        await savePairing(
+          const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
           support: support,
         );
 
@@ -343,8 +343,8 @@ void main() {
     ) async {
       final root = oneHopRoot();
       final support = tempSupport();
-      await setServer(
-        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'),
+      await savePairing(
+        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
         support: support,
       );
 
@@ -371,8 +371,8 @@ void main() {
       (tester) async {
         final root = oneHopRoot();
         final support = tempSupport();
-        await setServer(
-          const ServerConfig(host: '127.0.0.1', port: 7777, token: 'stale'),
+        await savePairing(
+          const ServerConfig(host: '127.0.0.1', port: 7777, token: 'stale', rootId: 'root-test'),
           support: support,
         );
 
@@ -438,8 +438,8 @@ void main() {
       (tester) async {
         final root = oneHopRoot();
         final support = tempSupport();
-        await setServer(
-          const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok'),
+        await savePairing(
+          const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
           support: support,
         );
 
