@@ -25,14 +25,6 @@ import 'support/deck_fixture.dart';
 
 /// The platform seam's test double: no channels exist under `flutter test`.
 class FakeAccess implements PlatformAccess {
-  FakeAccess({this.dir});
-
-  /// What the "picker" returns; null models a cancel.
-  final String? dir;
-
-  @override
-  Future<String?> pickDirectory() async => dir;
-
   @override
   Future<String?> appVersion() async => '9.9.9+9';
 }

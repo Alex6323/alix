@@ -395,7 +395,4 @@ class _FakeAccess implements PlatformAccess {
 
   @override
   Future<String?> appVersion() async => '0.2.0+3';
-
-  @override
-  Future<String?> pickDirectory() async => null;
 }

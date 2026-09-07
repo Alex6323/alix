@@ -14,12 +14,6 @@ A new install starts with a small tutorial deck that teaches the app while
 you review it. Delete it when it has nothing left to teach you; it will not
 come back.
 
-Optional shared decks folder: you can point alix at a folder you choose
-(for example one synced by Syncthing), so decks and progress roam between
-your devices. On Android 11 and newer this uses the "All files access"
-permission. It is opt-in: if you never pick a shared folder, alix keeps
-everything in its own app storage and the permission is not used.
-
 Review, including a trace deck's walk, stays fully offline. Optionally, you
 can pair the app with your own alix desktop app on your Wi-Fi (paste the URL
 alix prints), and the phone borrows the desktop for the tutor, the AI exam

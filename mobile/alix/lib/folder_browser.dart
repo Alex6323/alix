@@ -6,8 +6,7 @@ import 'theme.dart';
 
 /// The immediate subdirectories of [path] (names only), sorted
 /// case-insensitively. Empty on any listing error, so an unreadable folder
-/// (e.g. `Android/data`, still restricted under All Files Access) degrades to
-/// "no subfolders" instead of throwing.
+/// degrades to "no subfolders" instead of throwing.
 List<String> subdirsOf(String path) {
   try {
     final names = [
@@ -31,11 +30,9 @@ String? parentOf(String current, String floor) {
   return parent.length >= floor.length ? parent : null;
 }
 
-/// An in-app folder chooser over the real filesystem (All Files Access on
-/// Android). It replaces the system SAF picker, whose DocumentsUI crashes on
-/// some devices with a `CACHE_CONTENT` SecurityException; alix holds full
-/// filesystem access, so it never needed SAF to name a folder. Pushed as a
-/// route; pops the chosen absolute path, or null on back/cancel.
+/// An in-app folder chooser below a floor inside the app's own storage (the
+/// generated-deck destination). Pushed as a route; pops the chosen absolute
+/// path, or null on back/cancel.
 class FolderBrowser extends StatefulWidget {
   const FolderBrowser({
     super.key,
