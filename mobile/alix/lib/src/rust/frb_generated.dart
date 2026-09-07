@@ -69,7 +69,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1334261246;
+  int get rustContentHash => 1712274234;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -228,8 +228,6 @@ abstract class RustLibApi extends BaseApi {
   void crateApiListingSetWorkspaceDeadline({required String dir, String? date});
 
   Future<void> crateApiSimpleStampDeck({required String path});
-
-  List<String> crateApiListingSyncConflicts({required String root});
 
   Deadline? crateApiListingWorkspaceDeadline({
     required String root,
@@ -1281,29 +1279,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "stamp_deck", argNames: ["path"]);
 
   @override
-  List<String> crateApiListingSyncConflicts({required String root}) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(root, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 33)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_list_String,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiListingSyncConflictsConstMeta,
-        argValues: [root],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiListingSyncConflictsConstMeta =>
-      const TaskConstMeta(debugName: "sync_conflicts", argNames: ["root"]);
-
-  @override
   Deadline? crateApiListingWorkspaceDeadline({
     required String root,
     required String dir,
@@ -1316,7 +1291,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(root, serializer);
           sse_encode_String(dir, serializer);
           sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 34)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 33)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_deadline,

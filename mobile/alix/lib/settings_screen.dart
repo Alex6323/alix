@@ -10,7 +10,6 @@ class SettingsScreen extends StatelessWidget {
     super.key,
     required this.onSupport,
     required this.onConnectedDevices,
-    required this.onDecksFolder,
     required this.onTheme,
     required this.onAbout,
     this.onGenerate,
@@ -18,7 +17,6 @@ class SettingsScreen extends StatelessWidget {
 
   final VoidCallback onSupport;
   final VoidCallback onConnectedDevices;
-  final VoidCallback onDecksFolder;
   final VoidCallback onTheme;
   final VoidCallback onAbout;
 
@@ -29,11 +27,10 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // The content-changing rows return to the picker first (Settings slides
-    // back down), then act, so you see the result on the list; Decks folder
-    // MUST, since choosing one remounts the picker (its state, which these
-    // callbacks are bound to, is disposed). The config rows below just open a
-    // sheet over Settings and leave you here (Signal-style dwell).
+    // Generate deck returns to the picker first (Settings slides back down),
+    // then acts, so the saved deck shows on the list. The config rows below
+    // just open a sheet over Settings and leave you here (Signal-style
+    // dwell).
     void popThen(VoidCallback action) {
       Navigator.of(context).pop();
       action();
@@ -61,11 +58,6 @@ class SettingsScreen extends StatelessWidget {
               indent: 16,
               endIndent: 16,
               color: theme.dividerColor,
-            ),
-            ListTile(
-              leading: const Icon(Icons.folder_outlined),
-              title: const Text('Decks folder'),
-              onTap: () => popThen(onDecksFolder),
             ),
             if (onGenerate != null)
               ListTile(

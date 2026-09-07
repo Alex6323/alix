@@ -276,8 +276,7 @@ class PickerEmptyHint extends StatelessWidget {
       children: [
         Text(
           atRoot
-              ? 'No decks here yet. Put Markdown (.md) decks in this folder, or '
-                    'choose a shared folder from Settings.'
+              ? 'No decks here yet. Put Markdown (.md) decks in this folder.'
               : 'no decks here',
           style: theme.textTheme.bodyMedium?.copyWith(color: theme.alix.dim),
         ),
@@ -290,68 +289,6 @@ class PickerEmptyHint extends StatelessWidget {
           ),
         ],
       ],
-    );
-  }
-}
-
-class PickerNotice extends StatelessWidget {
-  const PickerNotice({super.key, required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Text(
-        text,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-}
-
-class PickerConflictBanner extends StatelessWidget {
-  const PickerConflictBanner({
-    super.key,
-    required this.count,
-    required this.onDismiss,
-  });
-
-  final int count;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              'A sync conflict file sits next to your progress ($count). '
-              'Review on one device at a time and resolve it first; see the '
-              'manual.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onErrorContainer,
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 18),
-            onPressed: onDismiss,
-          ),
-        ],
-      ),
     );
   }
 }
@@ -483,70 +420,6 @@ class PickerDepthSheet extends StatelessWidget {
               onTap: () => onChoose(depth),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class PickerFolderSheet extends StatelessWidget {
-  const PickerFolderSheet({
-    super.key,
-    required this.root,
-    required this.supported,
-    required this.hasSharedDir,
-    required this.onChoose,
-    required this.onUseAppStorage,
-  });
-
-  final String root;
-  final bool supported;
-  final bool hasSharedDir;
-  final VoidCallback onChoose;
-  final VoidCallback onUseAppStorage;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Decks folder', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              root,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontFamily: 'monospace',
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (supported)
-              FilledButton(
-                onPressed: onChoose,
-                child: const Text('Choose shared folder…'),
-              )
-            else
-              Text(
-                'Shared folders need Android 11 or newer.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            if (hasSharedDir) ...[
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: onUseAppStorage,
-                child: const Text('Use app storage'),
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }

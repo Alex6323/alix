@@ -8,35 +8,27 @@ class PickerView extends StatelessWidget {
   const PickerView({
     super.key,
     required this.entries,
-    required this.conflicts,
-    required this.conflictsDismissed,
     required this.deadline,
     required this.isRoot,
     required this.isMasteredView,
     required this.leading,
     this.title,
-    this.staleDecksDir,
     required this.onOpenEntry,
     required this.onLongPressEntry,
     required this.onOpenMastered,
     required this.onAddTutorial,
-    required this.onDismissConflicts,
   });
 
   final List<PickerEntry> entries;
-  final List<String> conflicts;
-  final bool conflictsDismissed;
   final PickerDeadline? deadline;
   final bool isRoot;
   final bool isMasteredView;
   final Widget leading;
   final String? title;
-  final String? staleDecksDir;
   final ValueChanged<PickerEntry> onOpenEntry;
   final ValueChanged<PickerEntry> onLongPressEntry;
   final ValueChanged<List<PickerEntry>> onOpenMastered;
   final VoidCallback onAddTutorial;
-  final VoidCallback onDismissConflicts;
 
   @override
   Widget build(BuildContext context) {
@@ -51,17 +43,6 @@ class PickerView extends StatelessWidget {
       appBar: alixAppBar(context, leading: leading),
       body: Column(
         children: [
-          if (staleDecksDir != null)
-            PickerNotice(
-              text:
-                  'Shared folder $staleDecksDir is unavailable; using app '
-                  'storage for now.',
-            ),
-          if (conflicts.isNotEmpty && !conflictsDismissed)
-            PickerConflictBanner(
-              count: conflicts.length,
-              onDismiss: onDismissConflicts,
-            ),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),

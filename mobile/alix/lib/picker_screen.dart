@@ -30,10 +30,7 @@ class PickerScreen extends StatefulWidget {
     this.dir,
     this.title,
     this.device,
-    this.sharedDir,
-    this.staleDecksDir,
     this.access,
-    this.onSetDecksDir,
     this.currentThemeId,
     this.onSetTheme,
     this.supportDir,
@@ -49,10 +46,7 @@ class PickerScreen extends StatefulWidget {
   }) : masteredEntries = entries,
        dir = null,
        title = null,
-       sharedDir = null,
-       staleDecksDir = null,
        access = null,
-       onSetDecksDir = null,
        currentThemeId = null,
        onSetTheme = null,
        supportDir = null,
@@ -63,10 +57,7 @@ class PickerScreen extends StatefulWidget {
   final String? dir;
   final String? title;
   final String? device;
-  final String? sharedDir;
-  final String? staleDecksDir;
   final PlatformAccess? access;
-  final Future<void> Function(String?)? onSetDecksDir;
   final String? currentThemeId;
   final Future<void> Function(String?)? onSetTheme;
   final Directory? supportDir;
@@ -130,7 +121,6 @@ class _PickerScreenState extends State<PickerScreen> {
         pageBuilder: (_, _, _) => SettingsScreen(
           onSupport: _supportSheet,
           onConnectedDevices: _pairSheet,
-          onDecksFolder: _folderSheet,
           onTheme: _themeSheet,
           onAbout: _about,
           onGenerate: _controller.serverReachable ? _generateSheet : null,
@@ -312,14 +302,12 @@ class _PickerScreenState extends State<PickerScreen> {
       listenable: _controller,
       builder: (context, _) => PickerView(
         entries: _controller.entries,
-        conflicts: _controller.conflicts,
-        conflictsDismissed: _controller.conflictsDismissed,
         deadline: _controller.deadline,
         isRoot: widget.dir == null,
         isMasteredView: _controller.isMasteredView,
         leading: Navigator.of(context).canPop()
             ? const BackButton()
-            : widget.dir == null && widget.onSetDecksDir != null
+            : widget.dir == null && widget.onSetTheme != null
             ? IconButton(
                 icon: const Icon(Icons.menu),
                 tooltip: 'Settings',
@@ -327,35 +315,10 @@ class _PickerScreenState extends State<PickerScreen> {
               )
             : const SizedBox(width: 56),
         title: widget.title,
-        staleDecksDir: widget.staleDecksDir,
         onOpenEntry: _openEntry,
         onLongPressEntry: _longPressEntry,
         onOpenMastered: _openMastered,
         onAddTutorial: _addTutorial,
-        onDismissConflicts: _controller.dismissConflicts,
-      ),
-    );
-  }
-
-  Future<void> _folderSheet() async {
-    final access = widget.access;
-    if (access == null) return;
-    final supported = await access.supportsSharedFolders();
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (sheet) => PickerFolderSheet(
-        root: widget.root,
-        supported: supported,
-        hasSharedDir: widget.sharedDir != null,
-        onChoose: () {
-          Navigator.of(sheet).pop();
-          _chooseShared();
-        },
-        onUseAppStorage: () {
-          Navigator.of(sheet).pop();
-          widget.onSetDecksDir?.call(null);
-        },
       ),
     );
   }
@@ -441,31 +404,6 @@ class _PickerScreenState extends State<PickerScreen> {
     if (!mounted) return;
     _snack('saved as $written');
     _controller.reload();
-  }
-
-  Future<void> _chooseShared() async {
-    final access = widget.access;
-    if (access == null) return;
-    if (!await access.ensureAllFilesAccess()) {
-      _snack(
-        'Allow "All files access" for alix on the settings page that '
-        'just opened, then try again.',
-      );
-      return;
-    }
-    if (!mounted) return;
-    final dir = Platform.isAndroid
-        ? await Navigator.of(context).push<String>(
-            MaterialPageRoute(
-              builder: (_) => const FolderBrowser(start: '/storage/emulated/0'),
-            ),
-          )
-        : await access.pickDirectory();
-    if (dir == null) {
-      _snack('alix stays on its current decks folder.');
-      return;
-    }
-    await widget.onSetDecksDir?.call(dir);
   }
 
   void _snack(String text) {

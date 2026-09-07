@@ -4,7 +4,7 @@ Scaffold
       Expanded
         ListView
           Column
-            Text("No decks here yet. Put Markdown (.md) decks in this folder, or choose a shared folder from Settings.")
+            Text("No decks here yet. Put Markdown (.md) decks in this folder.")
             SizedBox(width=null, height=16.0)
             OutlinedButton(enabled=true)
               ConstrainedBox

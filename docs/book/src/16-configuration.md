@@ -290,13 +290,12 @@ folder:
 *.local.*
 ```
 
-The mobile chapter has the related [Syncthing temporary-file
-tip](18-the-mobile-app.md#your-own-decks-a-shared-folder).
-
 For a free, no-account option that fits alix's local-first grain,
 [Syncthing](https://syncthing.net) works well: install it on each machine, pair
 the devices, and share your decks folder between them. It syncs the folder
-peer-to-peer over your own network, with no cloud company in the middle.
+peer-to-peer over your own network, with no cloud company in the middle. Add
+`*.json.tmp` to the folder's `.stignore` too, since alix writes documents
+through a temporary file before the atomic rename above.
 
 The writer boundary is now **one deck**, not the whole workspace. Different
 devices may review different decks in the same synchronized folder: their

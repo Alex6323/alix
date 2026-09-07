@@ -5,8 +5,6 @@ abstract interface class PickerPort {
 
   List<PickerEntry> listMembers({required String root, required String dir});
 
-  List<String> syncConflicts(String root);
-
   PickerDeadline? workspaceDeadline({
     required String root,
     required String dir,

@@ -96,7 +96,11 @@ against a malicious author who controls both content and metadata
 
 The mobile build excludes desktop server listeners, sharing, and provider
 subprocesses, but the embedded core is not a sandbox. Parsers and filesystem
-code still process content supplied to the app.
+code still process content supplied to the app. The app reads and writes only
+its own app-private storage; it requests no broad filesystem permission
+(Android's `MANAGE_EXTERNAL_STORAGE`), so decks reach it only as bundled
+samples or through the paired desktop's `Generate deck` (`docs/book/src/18-the-mobile-app.md`,
+`docs/book/src/19-pairing.md`).
 
 ### Browser and LAN client
 

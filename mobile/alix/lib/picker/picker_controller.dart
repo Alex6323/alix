@@ -30,15 +30,11 @@ class PickerController extends ChangeNotifier {
   final List<PickerEntry>? _masteredEntries;
 
   List<PickerEntry> _entries = const [];
-  List<String> _conflicts = const [];
   PickerDeadline? _deadline;
-  bool _conflictsDismissed = false;
   bool _serverReachable = false;
 
   List<PickerEntry> get entries => _entries;
-  List<String> get conflicts => _conflicts;
   PickerDeadline? get deadline => _deadline;
-  bool get conflictsDismissed => _conflictsDismissed;
   bool get serverReachable => _serverReachable;
   bool get isMasteredView => _masteredEntries != null;
 
@@ -63,12 +59,6 @@ class PickerController extends ChangeNotifier {
     reload();
   }
 
-  void dismissConflicts() {
-    if (_conflictsDismissed) return;
-    _conflictsDismissed = true;
-    notifyListeners();
-  }
-
   Future<void> addTutorial() async {
     await _port.addTutorialDeck(_root);
     reload();
@@ -83,7 +73,6 @@ class PickerController extends ChangeNotifier {
     final dir = _dir;
     if (dir == null) {
       _entries = List.unmodifiable(_port.listRoot(_root));
-      _conflicts = List.unmodifiable(_port.syncConflicts(_root));
       return;
     }
     _entries = List.unmodifiable(_port.listMembers(root: _root, dir: dir));

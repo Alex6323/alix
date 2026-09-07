@@ -93,14 +93,6 @@ pub fn list_root(root: String, now_ms: Option<u64>) -> Vec<DeckEntry> {
 }
 
 #[flutter_rust_bridge::frb(sync)]
-pub fn sync_conflicts(root: String) -> Vec<String> {
-    alix::listing::sync_conflicts_under(Path::new(&root))
-        .into_iter()
-        .map(|p| p.to_string_lossy().into_owned())
-        .collect()
-}
-
-#[flutter_rust_bridge::frb(sync)]
 pub fn list_members(root: String, dir: String, now_ms: Option<u64>) -> Vec<DeckEntry> {
     let now = now_ms.unwrap_or_else(alix::time::now_ms);
     alix::listing::list_members(
@@ -144,23 +136,6 @@ mod tests {
         );
         assert_eq!(members.len(), 1);
         assert!(!members[0].is_workspace);
-    }
-
-    #[test]
-    fn sync_conflicts_surfaces_a_conflict_copy_and_is_quiet_without_one() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        std::fs::write(root.join("loose.md"), "## q\na\n").unwrap();
-        assert!(sync_conflicts(root.to_string_lossy().into_owned()).is_empty());
-
-        let progress = alix::state::UserFiles::new(root).progress();
-        std::fs::create_dir_all(&progress).unwrap();
-        let conflict = progress.join("deck1.sync-conflict-20260714-101112-ABCDEF7.json");
-        std::fs::write(&conflict, "{}").unwrap();
-        assert_eq!(
-            sync_conflicts(root.to_string_lossy().into_owned()),
-            vec![conflict.to_string_lossy().into_owned()]
-        );
     }
 
     const T0: u64 = 1_000_000;

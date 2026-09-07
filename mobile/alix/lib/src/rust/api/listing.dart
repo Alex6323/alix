@@ -27,9 +27,6 @@ void setWorkspaceDeadline({required String dir, String? date}) => RustLib
 List<DeckEntry> listRoot({required String root, BigInt? nowMs}) =>
     RustLib.instance.api.crateApiListingListRoot(root: root, nowMs: nowMs);
 
-List<String> syncConflicts({required String root}) =>
-    RustLib.instance.api.crateApiListingSyncConflicts(root: root);
-
 List<DeckEntry> listMembers({
   required String root,
   required String dir,

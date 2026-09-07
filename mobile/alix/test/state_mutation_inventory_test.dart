@@ -43,10 +43,10 @@ void main() {
         'lib/picker/picker_controller.dart',
         'notifyListeners();',
       ),
-      [48, 53, 69],
+      [44, 49],
       reason:
-          'setServerReachable, reload, and dismissConflicts own every picker '
-          'listing mutation; deadline and tutorial transitions reload',
+          'setServerReachable and reload own every picker listing mutation; '
+          'deadline and tutorial transitions reload',
     );
     expect(
       _linesContaining(
@@ -74,7 +74,7 @@ void main() {
       ],
       [
         'lib/review_screen.dart:243',
-        'lib/picker_screen.dart:311',
+        'lib/picker_screen.dart:301',
         'lib/picker/generate_sheet.dart:42',
         'lib/walk_screen.dart:192',
       ],

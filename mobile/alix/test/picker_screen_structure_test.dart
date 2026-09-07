@@ -34,7 +34,6 @@ void main() {
     required Directory root,
     Directory? support,
     PlatformAccess? access,
-    Future<void> Function(String?)? onSetDecksDir,
     Future<void> Function(String?)? onSetTheme,
     ServerClient Function(ServerConfig)? buildClient,
     Duration? pollInterval,
@@ -51,7 +50,6 @@ void main() {
           title: title,
           supportDir: support,
           access: access,
-          onSetDecksDir: onSetDecksDir,
           currentThemeId: 'dark',
           onSetTheme: onSetTheme,
           buildClient: buildClient,
@@ -150,30 +148,6 @@ void main() {
     },
   );
 
-  testWidgets('picker tree: conflict banner before and after dismissal', (
-    tester,
-  ) async {
-    final root = tempDir('alix-picker-structure-conflict-');
-    writeTestDeck('${root.path}/deck.md', '---\ntitle: Deck\n---\n## q\na\n');
-    Directory('${root.path}/.alix/progress').createSync(recursive: true);
-    File(
-      '${root.path}/.alix/progress/deck.sync-conflict-20260801.json',
-    ).writeAsStringSync('{}');
-    await pumpPicker(tester, root: root);
-    await expectWidgetTree(
-      tester,
-      'picker_conflict_visible',
-      root: find.byType(PickerScreen),
-    );
-    await tester.tap(find.byIcon(Icons.close));
-    await tester.pump();
-    await expectWidgetTree(
-      tester,
-      'picker_conflict_dismissed',
-      root: find.byType(PickerScreen),
-    );
-  });
-
   testWidgets('picker tree: workspace dependency tree, locks, and deadline', (
     tester,
   ) async {
@@ -208,7 +182,7 @@ void main() {
   });
 
   testWidgets(
-    'picker tree: settings, depth, deadline, folder, theme, support, and about sheets',
+    'picker tree: settings, depth, deadline, theme, support, and about sheets',
     (tester) async {
       final root = tempDir('alix-picker-structure-settings-');
       final support = tempDir('alix-picker-structure-settings-support-');
@@ -226,7 +200,6 @@ void main() {
         root: root,
         support: support,
         access: const _FakeAccess(),
-        onSetDecksDir: (_) async {},
         onSetTheme: (_) async {},
         buildClient: (_) => FakeServerClient(),
       );
@@ -288,15 +261,6 @@ void main() {
       );
       await tester.tapAt(const Offset(10, 10));
       await tester.pumpAndSettle();
-
-      await openSettings(tester);
-      await tester.tap(find.text('Decks folder'));
-      await tester.pumpAndSettle();
-      await expectWidgetTree(
-        tester,
-        'picker_folder_sheet',
-        root: find.byType(MaterialApp),
-      );
     },
   );
 
@@ -311,7 +275,6 @@ void main() {
       root: root,
       support: support,
       access: const _FakeAccess(),
-      onSetDecksDir: (_) async {},
       onSetTheme: (_) async {},
       buildClient: (_) => client,
     );
@@ -379,7 +342,6 @@ void main() {
         root: root,
         support: support,
         access: const _FakeAccess(),
-        onSetDecksDir: (_) async {},
         onSetTheme: (_) async {},
         buildClient: (_) => busyClient,
         pollInterval: const Duration(seconds: 10),
@@ -427,6 +389,7 @@ void main() {
     },
   );
 }
+
 class _FakeAccess implements PlatformAccess {
   const _FakeAccess();
 
@@ -434,14 +397,5 @@ class _FakeAccess implements PlatformAccess {
   Future<String?> appVersion() async => '0.2.0+3';
 
   @override
-  Future<bool> ensureAllFilesAccess() async => true;
-
-  @override
-  Future<bool> hasAllFilesAccess() async => true;
-
-  @override
   Future<String?> pickDirectory() async => null;
-
-  @override
-  Future<bool> supportsSharedFolders() async => true;
 }

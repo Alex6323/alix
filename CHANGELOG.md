@@ -30,6 +30,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `alix doctor` warns when a cloze card's front contains a blank's answer,
   the check that already covers a block note.
 
+### Removed
+
+- The phone's shared-folder decks root and its `MANAGE_EXTERNAL_STORAGE`
+  permission, and the review screen's "another device wrote the store"
+  notice; decks reach the phone through the paired desktop instead.
+
 ### Changed
 
 - Machine-managed progress and recent history now live under `.alix/` beside

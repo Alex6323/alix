@@ -20,28 +20,13 @@ const _samples = [
 
 /// What [prepare] resolved for this launch.
 class Prepared {
-  const Prepared({
-    required this.root,
-    required this.device,
-    this.sharedDir,
-    this.staleDecksDir,
-    this.themeId,
-  });
+  const Prepared({required this.root, required this.device, this.themeId});
 
   /// The decks root to list.
   final String root;
 
   /// This install's label in the store's last-writer marker.
   final String device;
-
-  /// The persisted shared-folder setting, stale or not (`null` when the
-  /// user never chose one).
-  final String? sharedDir;
-
-  /// Set when the settings pointed at a folder that is gone or unreadable:
-  /// this launch fell back to app storage, the setting was kept so a
-  /// re-grant or re-mount heals it.
-  final String? staleDecksDir;
 
   /// The persisted color theme choice, if any; `null` resolves to the dark
   /// default via `themeById`.
@@ -51,64 +36,22 @@ class Prepared {
 /// Resolves the decks root and this install's device label.
 ///
 /// Order: `ALIX_DECKS_DIR` (the Linux desktop pointing at a real host
-/// folder), then the settings' shared folder while it is still usable,
-/// else the app-private `<support>/decks`, seeded with the bundled samples
-/// on first run. Existing files are never overwritten, so the file names
-/// the store keys on stay stable. `support` and `env` inject the platform
-/// pieces for tests.
-///
-/// `hasStorageAccess` is the All-Files-Access query: a revoked grant does
-/// not make a shared dir unlistable (Android's FUSE filters it to empty),
-/// so a configured shared folder counts as usable only when this reports
-/// true. `null` skips the check (desktop, tests).
-Future<Prepared> prepare({
-  Directory? support,
-  String? env,
-  Future<bool> Function()? hasStorageAccess,
-}) async {
+/// folder), else the app-private `<support>/decks`, seeded with the bundled
+/// samples on first run. Existing files are never overwritten, so the file
+/// names the store keys on stay stable. `support` and `env` inject the
+/// platform pieces for tests.
+Future<Prepared> prepare({Directory? support, String? env}) async {
   support ??= await getApplicationSupportDirectory();
   final settings = readSettings(support);
   final device = await _ensureDevice(support, settings);
-  final shared = settings['decksDir'];
-  final sharedDir = shared is String && shared.isNotEmpty ? shared : null;
   final theme = settings['theme'];
   final themeId = theme is String ? theme : null;
 
   env ??= Platform.environment['ALIX_DECKS_DIR'];
   if (env != null && env.isNotEmpty) {
-    return Prepared(root: env, device: device, sharedDir: sharedDir, themeId: themeId);
-  }
-
-  if (sharedDir != null) {
-    final granted = await hasStorageAccess?.call() ?? true;
-    if (granted && _listable(sharedDir)) {
-      return Prepared(
-        root: sharedDir,
-        device: device,
-        sharedDir: sharedDir,
-        themeId: themeId,
-      );
-    }
-    return Prepared(
-      root: await _appPrivate(support),
-      device: device,
-      sharedDir: sharedDir,
-      staleDecksDir: sharedDir,
-      themeId: themeId,
-    );
+    return Prepared(root: env, device: device, themeId: themeId);
   }
   return Prepared(root: await _appPrivate(support), device: device, themeId: themeId);
-}
-
-/// True when the directory exists and can actually be listed (a revoked
-/// permission surfaces as a listing error, not a missing dir).
-bool _listable(String dir) {
-  try {
-    Directory(dir).listSync();
-    return true;
-  } on FileSystemException {
-    return false;
-  }
 }
 
 /// The app-private decks dir, created and sample-seeded on first use.
@@ -152,9 +95,8 @@ Future<void> _stampSeed(String path) async {
 
 /// Copies the bundled tutorial deck into [root] (the current decks folder)
 /// unless a `tutorial.md` is already there. The first-run seed only ever fills
-/// a brand-new app-private dir, so this is how a folder that never got it (a
-/// shared folder, or an emptied one) can still start the tutorial from the
-/// picker's empty state.
+/// a brand-new app-private dir, so this is how a folder that never got it (an
+/// emptied one) can still start the tutorial from the picker's empty state.
 Future<void> addTutorialDeck(String root) async {
   final file = File('$root/tutorial.md');
   if (!await file.exists()) {
@@ -169,8 +111,8 @@ Future<void> addTutorialDeck(String root) async {
 File _settingsFile(Directory support) => File('${support.path}/settings.json');
 
 /// The app's persisted choices (`settings.json` in the support dir), e.g.
-/// `{"decksDir": "/storage/emulated/0/decks", "device": "phone-3f2a"}`.
-/// Unreadable or malformed settings read as empty.
+/// `{"device": "phone-3f2a"}`. Unreadable or malformed settings read as
+/// empty.
 Map<String, dynamic> readSettings(Directory support) {
   try {
     final decoded = jsonDecode(_settingsFile(support).readAsStringSync());
@@ -188,18 +130,6 @@ Map<String, dynamic> readSettings(Directory support) {
 void _writeSettings(Directory support, Map<String, dynamic> settings) {
   support.createSync(recursive: true);
   _settingsFile(support).writeAsStringSync(jsonEncode(settings));
-}
-
-/// Persists the shared decks folder choice; `null` reverts to app storage.
-Future<void> setDecksDir(String? dir, {Directory? support}) async {
-  support ??= await getApplicationSupportDirectory();
-  final settings = readSettings(support);
-  if (dir == null) {
-    settings.remove('decksDir');
-  } else {
-    settings['decksDir'] = dir;
-  }
-  _writeSettings(support, settings);
 }
 
 /// The paired desktop, if any (a `server` key in settings.json holding

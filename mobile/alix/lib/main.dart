@@ -10,19 +10,16 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
   final access = RealPlatformAccess();
-  final prepared = await prepare(hasStorageAccess: access.hasAllFilesAccess);
+  final prepared = await prepare();
   runApp(AlixApp(prepared: prepared, access: access));
 }
 
-/// The app shell: holds the resolved decks root and swaps it live when the
-/// user points alix at a different folder.
+/// The app shell: holds the resolved decks root and the live theme choice.
 class AlixApp extends StatefulWidget {
   const AlixApp({
     super.key,
     required this.prepared,
     this.access,
-    this.reprepare,
-    this.persistDecksDir,
     this.persistTheme,
   });
 
@@ -30,14 +27,6 @@ class AlixApp extends StatefulWidget {
 
   /// Injected in widget tests; the real platform plumbing otherwise.
   final PlatformAccess? access;
-
-  /// Re-resolves the root after a folder change; tests inject one bound to
-  /// their temp support dir.
-  final Future<Prepared> Function()? reprepare;
-
-  /// Persists the folder choice; tests inject one bound to their temp
-  /// support dir.
-  final Future<void> Function(String?)? persistDecksDir;
 
   /// Persists the theme choice; tests inject one bound to their temp
   /// support dir.
@@ -48,22 +37,12 @@ class AlixApp extends StatefulWidget {
 }
 
 class _AlixAppState extends State<AlixApp> {
-  late Prepared _prepared = widget.prepared;
   late String? _themeId = widget.prepared.themeId;
 
   PlatformAccess get _access => widget.access ?? RealPlatformAccess();
 
-  Future<Prepared> _defaultReprepare() =>
-      prepare(hasStorageAccess: _access.hasAllFilesAccess);
-
-  Future<void> _setDecksDir(String? dir) async {
-    await (widget.persistDecksDir ?? setDecksDir)(dir);
-    final fresh = await (widget.reprepare ?? _defaultReprepare)();
-    setState(() => _prepared = fresh);
-  }
-
   /// Persists the theme choice, then re-themes the whole app live: no
-  /// restart, no reprepare (the theme never affects the decks root).
+  /// restart needed.
   Future<void> _setTheme(String? id) async {
     await (widget.persistTheme ?? setTheme)(id);
     setState(() => _themeId = id);
@@ -78,14 +57,9 @@ class _AlixAppState extends State<AlixApp> {
       // the dark default for an unknown or absent saved id.
       theme: themeById(_themeId),
       home: PickerScreen(
-        // Remount the whole picker tree when the root swaps.
-        key: ValueKey(_prepared.root),
-        root: _prepared.root,
-        device: _prepared.device,
-        sharedDir: _prepared.sharedDir,
-        staleDecksDir: _prepared.staleDecksDir,
+        root: widget.prepared.root,
+        device: widget.prepared.device,
         access: _access,
-        onSetDecksDir: _setDecksDir,
         currentThemeId: _themeId,
         onSetTheme: _setTheme,
       ),

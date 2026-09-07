@@ -25,11 +25,6 @@ class PickerBridge implements PickerPort {
   }
 
   @override
-  List<String> syncConflicts(String root) {
-    return listing_bridge.syncConflicts(root: root);
-  }
-
-  @override
   PickerDeadline? workspaceDeadline({
     required String root,
     required String dir,

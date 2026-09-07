@@ -41,7 +41,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: PickerScreen(
         root: decksRoot().path,
-        onSetDecksDir: (_) async {},
+        onSetTheme: (_) async {},
         supportDir: support,
         buildClient: buildClient,
       ),

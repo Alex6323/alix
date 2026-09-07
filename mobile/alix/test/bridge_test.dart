@@ -31,15 +31,6 @@ class FakeAccess implements PlatformAccess {
   final String? dir;
 
   @override
-  Future<bool> supportsSharedFolders() async => true;
-
-  @override
-  Future<bool> hasAllFilesAccess() async => true;
-
-  @override
-  Future<bool> ensureAllFilesAccess() async => true;
-
-  @override
   Future<String?> pickDirectory() async => dir;
 
   @override
@@ -534,70 +525,6 @@ void main() {
     });
   });
 
-  testWidgets('choosing a shared folder swaps the picker root live', (
-    tester,
-  ) async {
-    final support = Directory.systemTemp.createTempSync('alix-support-');
-    addTearDown(() => support.deleteSync(recursive: true));
-    final rootA = makeRoot();
-    addTearDown(() => rootA.deleteSync(recursive: true));
-    final rootB = Directory.systemTemp.createTempSync('alix-shared-');
-    addTearDown(() => rootB.deleteSync(recursive: true));
-    writeTestDeck(
-      '${rootB.path}/shared.md',
-      '---\ntitle: Shared Deck\n---\n## q\na\n',
-    );
-
-    await tester.pumpWidget(
-      AlixApp(
-        prepared: Prepared(root: rootA.path, device: 'phone-test'),
-        access: FakeAccess(dir: rootB.path),
-        persistDecksDir: (dir) => setDecksDir(dir, support: support),
-        reprepare: () => prepare(support: support, env: ''),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Loose'), findsOneWidget);
-
-    await tester.tap(find.byIcon(Icons.menu));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Decks folder'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Choose shared folder…'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Shared Deck'), findsOneWidget);
-    expect(find.text('Loose'), findsNothing);
-  });
-
-  testWidgets('a cancelled folder pick leaves the root unchanged', (
-    tester,
-  ) async {
-    final support = Directory.systemTemp.createTempSync('alix-support-');
-    addTearDown(() => support.deleteSync(recursive: true));
-    final root = makeRoot();
-    addTearDown(() => root.deleteSync(recursive: true));
-
-    await tester.pumpWidget(
-      AlixApp(
-        prepared: Prepared(root: root.path, device: 'phone-test'),
-        access: FakeAccess(dir: null),
-        persistDecksDir: (dir) => setDecksDir(dir, support: support),
-        reprepare: () => prepare(support: support, env: ''),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.menu));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Decks folder'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Choose shared folder…'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Loose'), findsOneWidget);
-    expect(find.textContaining('stays on its current'), findsOneWidget);
-  });
-
   testWidgets('About shows the app and the embedded core versions', (
     tester,
   ) async {
@@ -607,8 +534,6 @@ void main() {
       AlixApp(
         prepared: Prepared(root: root.path, device: 'phone-test'),
         access: FakeAccess(),
-        persistDecksDir: (_) async {},
-        reprepare: () async => Prepared(root: root.path, device: 'phone-test'),
       ),
     );
     await tester.pumpAndSettle();
@@ -628,9 +553,6 @@ void main() {
         AlixApp(
           prepared: Prepared(root: root.path, device: 'phone-test'),
           access: FakeAccess(),
-          persistDecksDir: (_) async {},
-          reprepare: () async =>
-              Prepared(root: root.path, device: 'phone-test'),
         ),
       );
       await tester.pumpAndSettle();
@@ -790,24 +712,6 @@ void main() {
         expect(readTheme(support), 'dracula');
       },
     );
-  });
-
-  testWidgets('the picker warns about a sync conflict file until dismissed', (
-    tester,
-  ) async {
-    final root = makeRoot();
-    addTearDown(() => root.deleteSync(recursive: true));
-    Directory('${root.path}/.alix/progress').createSync(recursive: true);
-    File(
-      '${root.path}/.alix/progress/loose.sync-conflict-20260714-101112-AAAAAAA.json',
-    ).writeAsStringSync('{}');
-
-    await tester.pumpWidget(MaterialApp(home: PickerScreen(root: root.path)));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('sync conflict'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.close));
-    await tester.pump();
-    expect(find.textContaining('sync conflict'), findsNothing);
   });
 
   testWidgets('the review screen warns when another device wrote the store', (

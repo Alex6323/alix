@@ -18,33 +18,14 @@ themes (the three Kids palettes are web-only; see
 Grab `alix-arm64-v8a.apk` from the project's GitHub Releases (the
 `alix mobile vX.Y.Z` releases) and install it. Android will warn about
 installing outside a store; that is expected for now. The app works on
-Android 7+ and ships a few sample decks so a fresh install has something to
-review.
+Android 7+ and keeps its decks in private app storage: a fresh install ships
+a few sample decks so there is something to review immediately, and pairing
+with a desktop server (see [Pairing a device](19-pairing.md)) adds the
+**Generate deck** row for bringing in more.
 
 Settings → **About** shows two versions: the app's own and the embedded
 core's. The app has its own release stream; it does not track the CLI's
 version.
-
-## Your own decks: a shared folder
-
-By default the app keeps decks in its private storage. To review the decks
-you actually maintain, point it at a real folder on the phone:
-
-1. Sync your decks folder to the phone with whatever you already use
-   (Syncthing is the natural fit: local, no accounts).
-2. In the app: Settings → **Decks folder**, then **Choose shared
-   folder…**. Android 11 or newer.
-3. The first time, Android opens its **All files access** page: alix reads
-   and writes plain files in a folder another app manages, which is exactly
-   what this permission grants. Enable it, go back, choose again.
-4. Pick the folder. The app lists it immediately; each initialized deck's
-   progress is written as `.alix/progress/deck-<token>.json`, exactly like the
-   desktop, so it travels with the folder.
-
-**Use app storage** in the same sheet switches back; nothing is deleted
-either way. If the folder becomes unavailable (permission revoked, folder
-gone), the app falls back to its private decks for that launch and says so;
-fixing the cause heals it on the next start.
 
 ## Workspace deadlines
 
@@ -52,38 +33,6 @@ A workspace's personal "ready by" date shows on its row (date, days left,
 and ready percent, colored to flag urgency inside the last week or past
 due) and again once you drill in, the same readout as the web picker.
 **Long-press the workspace row** to set, move, or clear it. The date lives
-in the workspace's own `alix.local.toml` (see
-[Workspaces](08-workspaces.md)), so a synced folder carries it between
-phone and desktop, and the phone's own offline sessions bend their
-scheduling toward the date exactly as the desktop does.
-
-## One writer per deck
-
-Progress is split into one versioned document per deck. A computer and phone
-can review **different decks** in the same synced folder without rewriting the
-same file. Alix does not merge concurrent histories for the **same deck**
-(deliberately: fail loud beats a silent merge that corrupts scheduling), so
-let sync settle before switching that deck to another device.
-
-Two guards back the rule:
-
-- If another device wrote that deck's progress minutes ago, the review screen
-  says so before you grade anything.
-- If the folder contains a sync conflict file (Syncthing's
-  `.alix/progress/deck-<token>.sync-conflict-….json`), the deck list warns loudly.
-  Stop both writers and sync, back up the folder, and deliberately keep the
-  complete document you trust at `.alix/progress/deck-<token>.json`. Do not combine
-  schedules by hand; there is no merge. `alix doctor <folder>` on the desktop
-  lists every conflict and should be clean before you resume.
-
-For Syncthing, add `*.json.tmp` to the folder's `.stignore` because alix writes
-through temporary files. When private state should stay on one device, also use
-chapter 16's `.alix/` and `*.local.*` private-set block. Prefer "send & receive"
-on both sides so the phone's grades actually travel back.
-
-Install the same Alix version on every device that writes a synchronized
-folder. Before 1.0 there is no migration and no conversion tool: a
-persisted-state format break makes documents written by an earlier version fail
-to open. Stop every writer, back up the folder, then `alix reset` the affected
-decks (that clears the documents that no longer parse) and start their history
-again. Synchronize once before resuming review on a second device.
+in the workspace's own `alix.local.toml` (see [Workspaces](08-workspaces.md));
+the phone's own offline sessions bend their scheduling toward the date
+exactly as the desktop does.

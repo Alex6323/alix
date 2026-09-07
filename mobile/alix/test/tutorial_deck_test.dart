@@ -1,8 +1,8 @@
 // The picker's empty-state "Add the tutorial deck" action: a folder that
-// never got the first-run seed (a shared folder, or an emptied one) can still
-// start the tutorial. The copy itself (addTutorialDeck) is a plain async unit
-// test against the real bundle; the button's presence/absence is a widget
-// test (its listing calls the embedded core, so RustLib.init() is required).
+// never got the first-run seed (an emptied one) can still start the
+// tutorial. The copy itself (addTutorialDeck) is a plain async unit test
+// against the real bundle; the button's presence/absence is a widget test
+// (its listing calls the embedded core, so RustLib.init() is required).
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -56,7 +56,6 @@ void main() {
       MaterialApp(
         home: PickerScreen(
           root: root.path,
-          onSetDecksDir: (_) async {},
           supportDir: support,
         ),
       ),
@@ -79,7 +78,6 @@ void main() {
           root: root.path,
           dir: root.path,
           title: 'Some workspace',
-          onSetDecksDir: (_) async {},
           supportDir: support,
         ),
       ),

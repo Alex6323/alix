@@ -6,28 +6,21 @@ import 'package:alix_mobile/picker/picker_port.dart';
 
 void main() {
   test('root loading and named mutations publish one coherent state', () {
-    final port = _FakePickerPort(
-      rootEntries: [_entry('active')],
-      conflicts: const ['progress.sync-conflict.json'],
-    );
+    final port = _FakePickerPort(rootEntries: [_entry('active')]);
     final controller = PickerController(port: port, root: '/decks');
     var notifications = 0;
     controller.addListener(() => notifications++);
 
     expect(controller.entries.single.title, 'active');
-    expect(controller.conflicts, ['progress.sync-conflict.json']);
     expect(controller.serverReachable, isFalse);
-    expect(controller.conflictsDismissed, isFalse);
 
     controller.setServerReachable(true);
-    controller.dismissConflicts();
     port.rootEntries = [_entry('refreshed')];
     controller.reload();
 
     expect(controller.serverReachable, isTrue);
-    expect(controller.conflictsDismissed, isTrue);
     expect(controller.entries.single.title, 'refreshed');
-    expect(notifications, 3);
+    expect(notifications, 2);
   });
 
   test('member loading and deadline writes refresh through the port', () {
@@ -115,13 +108,11 @@ class _FakePickerPort implements PickerPort {
   _FakePickerPort({
     this.rootEntries = const [],
     this.memberEntries = const [],
-    this.conflicts = const [],
     this.deadline,
   });
 
   List<PickerEntry> rootEntries;
   List<PickerEntry> memberEntries;
-  List<String> conflicts;
   PickerDeadline? deadline;
   int listRootCalls = 0;
   final List<(String, String?)> deadlineWrites = [];
@@ -137,9 +128,6 @@ class _FakePickerPort implements PickerPort {
   List<PickerEntry> listMembers({required String root, required String dir}) {
     return memberEntries;
   }
-
-  @override
-  List<String> syncConflicts(String root) => conflicts;
 
   @override
   PickerDeadline? workspaceDeadline({
