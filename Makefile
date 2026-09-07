@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core lean-check mobile-unit test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust gfm-measure package-verify publish
+.PHONY: build build-core lean-check mobile-unit mobile-test-one windows-check test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust gfm-measure package-verify publish
 
 # Compile the workspace.
 build:
@@ -20,6 +20,18 @@ build:
 # CONTRIBUTING.md).
 build-core:
 	cargo build --no-default-features --lib
+
+# Compile the lib and its tests for the Windows target when it is installed
+# (`rustup target add x86_64-pc-windows-msvc`, no linker needed for check);
+# CI's Windows job is otherwise the first place a unix-only call in test
+# code fails. Part of preflight.
+WINDOWS_TARGET := x86_64-pc-windows-msvc
+windows-check:
+	@if rustup target list --installed | grep -qx $(WINDOWS_TARGET); then \
+		cargo check --tests --target $(WINDOWS_TARGET); \
+	else \
+		echo "windows-check: $(WINDOWS_TARGET) not installed, skipped (rustup target add $(WINDOWS_TARGET))"; \
+	fi
 
 # Deny warnings on the lean feature shape the mobile core builds with: a
 # serve-only helper left ungated compiles clean under `make check`'s full
@@ -267,6 +279,7 @@ preflight:
 	$(MAKE) fmt-check
 	RUSTFLAGS="-Dwarnings" $(MAKE) check
 	RUSTFLAGS="-Dwarnings" $(MAKE) build-core
+	$(MAKE) windows-check
 	RUSTFLAGS="-Dwarnings" cargo test --manifest-path mobile/alix/rust/Cargo.toml
 	RUSTFLAGS="-Dwarnings" cargo test --locked --all-targets --manifest-path tools/gfm-harness/Cargo.toml
 	$(MAKE) gfm-measure
@@ -425,7 +438,15 @@ mobile-test:
 # suite again (it did once: a stale line-number pin sat red on main unnoticed).
 mobile-unit:
 	cargo build --release --manifest-path mobile/alix/rust/Cargo.toml
-	cd mobile/alix && flutter test test/
+	cd mobile/alix && TZ=UTC flutter test test/
+
+# One Dart test file on the host dylib, optionally one test by name, under
+# the CI runner's UTC clock like mobile-unit:
+# `make mobile-test-one TEST=test/sync_sheet_test.dart NAME='drain'`.
+mobile-test-one:
+	@test -n "$(TEST)" || { echo 'usage: make mobile-test-one TEST=test/<file>_test.dart [NAME=<pattern>]'; exit 2; }
+	cargo build --release --manifest-path mobile/alix/rust/Cargo.toml
+	cd mobile/alix && TZ=UTC flutter test --concurrency=1 $(TEST) $(if $(NAME),--name "$(NAME)",)
 
 # The release APK (one arm64 artifact, matching the mobile-release workflow);
 # debug-signed unless android/key.properties exists. Smoke-install this on a

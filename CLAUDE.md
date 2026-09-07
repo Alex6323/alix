@@ -135,6 +135,8 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make push-decks DIR=~/decks` | One-way copy of a host decks folder into the running emulator's app (dev-only; restart the app to re-list). |
 | `make mobile-test` | Mobile suite vs the real core, no emulator: Dart unit/widget tests on the host dylib + the full-app integration test in a Linux window. |
 | `make mobile-unit` | The Dart unit/widget half alone (host dylib + `flutter test test/`), no integration window; part of `make preflight`. Run it after any lib change a mobile surface consumes (listing, review state, bridge API). |
+| `make windows-check` | `cargo check --tests` for `x86_64-pc-windows-msvc` when that target is installed, else a printed skip; part of `make preflight`, since CI's Windows job is otherwise the first place a unix-only call in test code fails. |
+| `make mobile-test-one TEST=<file> [NAME=<pattern>]` | One Dart test file (optionally one test by name) on the host dylib under `TZ=UTC`, the CI runner's clock, which `mobile-unit` now also uses. |
 | `make apk` | The arm64 release APK (debug-signed while `android/key.properties` is absent); smoke-install it before a `mobile-vX.Y.Z` tag (RELEASING.md). |
 | `make book` | Serve the mdBook manual (`docs/book`), live reload. |
 | `make site` | Preview the `alix.study` landing page locally (`site/`). |
