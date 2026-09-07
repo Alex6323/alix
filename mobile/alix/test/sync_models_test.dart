@@ -141,11 +141,43 @@ void main() {
       );
     });
 
-    test('take-desktop wording never invents a review count', () {
-      expect(conflictTakeDesktopWording.title, "Take the desktop's");
+    test('take-desktop names nothing to discard with no unsynced saves', () {
+      const conflict = SyncPendingConflict(
+        deckId: 'deck-1',
+        label: 'German/Verbs.md',
+        conflict: PairedConflictPull(),
+      );
+      final wording = conflictTakeDesktopWording(conflict);
+      expect(wording.title, "Take the desktop's");
+      expect(wording.subtitle, 'nothing to discard on the phone');
+    });
+
+    test('take-desktop names the save count without a time when none is '
+        'known', () {
+      const conflict = SyncPendingConflict(
+        deckId: 'deck-1',
+        label: 'German/Verbs.md',
+        conflict: PairedConflictPull(),
+        phoneSaves: 3,
+      );
       expect(
-        conflictTakeDesktopWording.subtitle,
-        "discards the phone's progress since the last sync",
+        conflictTakeDesktopWording(conflict).subtitle,
+        'discards 3 phone saves',
+      );
+    });
+
+    test('take-desktop names one save as singular, with the last save '
+        'time', () {
+      final conflict = SyncPendingConflict(
+        deckId: 'deck-1',
+        label: 'German/Verbs.md',
+        conflict: const PairedConflictPull(),
+        phoneSaves: 1,
+        phoneAtMs: DateTime(2026, 1, 1, 9, 12).millisecondsSinceEpoch,
+      );
+      expect(
+        conflictTakeDesktopWording(conflict).subtitle,
+        'discards 1 phone save, last at 2026-01-01 09:12',
       );
     });
   });

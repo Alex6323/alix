@@ -2,6 +2,8 @@
 // title/subtitle wording (what each side discards), that only non-empty
 // report sections render, and that a row tap calls onResolve with the right
 // deckId/keepPhone pair. Pure presentation, no bridge or dylib needed.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,7 +18,7 @@ void main() {
     SyncReport? report,
     List<SyncPendingConflict> conflicts = const [],
     Set<String> unpushedOrphans = const {},
-    void Function(String deckId, bool keepPhone)? onResolve,
+    Future<void> Function(String deckId, bool keepPhone)? onResolve,
     ValueChanged<String>? onRemoveOrphan,
   }) async {
     await tester.pumpWidget(
@@ -26,7 +28,7 @@ void main() {
             report: report,
             conflicts: conflicts,
             unpushedOrphans: unpushedOrphans,
-            onResolve: onResolve ?? (_, _) {},
+            onResolve: onResolve ?? (_, _) async {},
             onRemoveOrphan: onRemoveOrphan ?? (_) {},
           ),
         ),
@@ -57,7 +59,7 @@ void main() {
       );
       expect(find.text("Take the desktop's"), findsOneWidget);
       expect(
-        find.text("discards the phone's progress since the last sync"),
+        find.text('nothing to discard on the phone'),
         findsOneWidget,
       );
     },
@@ -158,7 +160,7 @@ void main() {
     await pump(
       tester,
       conflicts: const [conflict],
-      onResolve: (deckId, keepPhone) {
+      onResolve: (deckId, keepPhone) async {
         resolvedId = deckId;
         resolvedKeepPhone = keepPhone;
       },
@@ -181,10 +183,10 @@ void main() {
     await pump(
       tester,
       conflicts: const [conflict],
-      onResolve: (_, keepPhone) => resolvedKeepPhone = keepPhone,
+      onResolve: (_, keepPhone) async => resolvedKeepPhone = keepPhone,
     );
 
-    await tester.tap(find.text(conflictTakeDesktopWording.title));
+    await tester.tap(find.text(conflictTakeDesktopWording(conflict).title));
     expect(resolvedKeepPhone, isFalse);
   });
 
@@ -294,6 +296,35 @@ void main() {
       await tester.tap(find.text("Keep the phone's progress"));
       await tester.pump();
 
+      expect(find.byType(OutlinedButton), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a conflict row stays until its resolve future completes, not before',
+    (tester) async {
+      const conflict = SyncPendingConflict(
+        deckId: 'deck-9',
+        label: 'German/Verbs.md',
+        conflict: PairedConflictPull(),
+      );
+      final resolved = Completer<void>();
+      await pump(
+        tester,
+        conflicts: const [conflict],
+        onResolve: (_, _) => resolved.future,
+      );
+
+      await tester.tap(find.text("Keep the phone's progress"));
+      await tester.pump();
+      expect(
+        find.byType(OutlinedButton),
+        findsNWidgets(2),
+        reason: 'the row must not vanish before the resolve future lands',
+      );
+
+      resolved.complete();
+      await tester.pump();
       expect(find.byType(OutlinedButton), findsNothing);
     },
   );

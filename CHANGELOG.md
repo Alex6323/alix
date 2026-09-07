@@ -35,7 +35,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   renamed entries), app open runs one in the background once the desktop
   answers with the same root, and a review session's summary silently
   pushes that deck's progress. A one-line status shows while a cycle runs
-  or its report is unread; tapping it opens the report (landed, kept,
+  or its report is unread; tapping it opens the report (landed, pushed, kept,
   phone-only, removed, renamed, left out, not on this phone, orphaned,
   refused), and a push or pull conflict surfaces a choice naming what each
   side discards. A desktop entry the phone has never pulled now shows as

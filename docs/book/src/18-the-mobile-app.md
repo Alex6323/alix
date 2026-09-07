@@ -54,7 +54,7 @@ review action. Tapping it pulls it for the first time; once it lands it
 becomes an ordinary entry, reviewable like any other.
 
 Tapping the status line above the deck list (shown while a cycle runs, or
-its last report is unread) opens the full report: landed, kept,
+its last report is unread) opens the full report: landed, pushed, kept,
 phone-only, removed, renamed, and refused categories, plus **left out on
 the desktop** (members inside an entry the desktop could not load) and
 **not on this phone** (entries the desktop serves that this phone has

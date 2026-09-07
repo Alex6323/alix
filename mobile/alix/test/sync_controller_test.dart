@@ -56,6 +56,33 @@ void main() {
       },
     );
 
+    test('an entries answer naming another root is never exposed as this '
+        "pairing's available entries", () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.entriesImpl = () async => const SyncEntries(
+        rootId: 'root-b',
+        entries: [
+          SyncEntry(
+            name: 'Other Root Deck.md',
+            kind: 'deck',
+            members: 1,
+            unpackedBytes: 10,
+            leftOut: [],
+          ),
+        ],
+      );
+      final controller = SyncController(port: port);
+
+      await controller.cycle();
+
+      expect(controller.lastReport?.error, syncRootMismatchMessage);
+      expect(
+        controller.availableEntries,
+        isEmpty,
+        reason: 'a refused root must not populate actionable picker rows',
+      );
+    });
+
     test('pushes every planned item in order, recording each result', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
       port.planPushesImpl = () => [
@@ -81,6 +108,22 @@ void main() {
       expect(port.recordPushCalls[2].$2, isA<SyncPushNotServedOutcome>());
       expect(controller.lastReport?.conflicts, ['Biology/deck-b']);
       expect(controller.lastReport?.error, isNull);
+    });
+
+    test('an accepted push is present in the cycle report', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.planPushesImpl = () => [item('deck-a')];
+      final controller = SyncController(port: port);
+
+      await controller.cycle();
+
+      expect(port.pushCalls, ['deck-a']);
+      expect(
+        controller.reportUnread,
+        isTrue,
+        reason: 'the spec requires the sync report to list pushed decks',
+      );
+      expect(controller.statusLine, contains('pushed'));
     });
 
     test('a pairing-expired push ends the cycle', () async {
@@ -254,64 +297,64 @@ void main() {
       },
     );
 
-    test('notOnPhone names a desktop entry the phone has never pulled', () async {
-      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
-      port.entriesImpl = () async => const SyncEntries(
-        rootId: 'root-a',
-        entries: [
-          SyncEntry(
-            name: 'New Deck',
-            kind: 'deck',
-            members: 1,
-            unpackedBytes: 10,
-            leftOut: [],
-          ),
-        ],
-      );
-      final controller = SyncController(port: port);
-
-      await controller.cycle();
-
-      expect(controller.lastReport?.notOnPhone, ['New Deck']);
-      expect(controller.lastReport?.leftOut, isEmpty);
-    });
-
     test(
-      'leftOut and notOnPhone split correctly: an entry on the phone '
-      'carries its own left_out members, an entry not on the phone is '
-      'named in notOnPhone instead',
+      'notOnPhone names a desktop entry the phone has never pulled',
       () async {
         final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
         port.entriesImpl = () async => const SyncEntries(
           rootId: 'root-a',
           entries: [
             SyncEntry(
-              name: 'Biology',
-              kind: 'workspace',
-              members: 2,
-              unpackedBytes: 10,
-              leftOut: ['decks/broken.md'],
-            ),
-            SyncEntry(
-              name: 'Chemistry',
-              kind: 'workspace',
+              name: 'New Deck',
+              kind: 'deck',
               members: 1,
               unpackedBytes: 10,
               leftOut: [],
             ),
           ],
         );
-        port.pairedEntriesImpl = () => const [
-          SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
-        ];
         final controller = SyncController(port: port);
 
         await controller.cycle();
 
-        expect(controller.lastReport?.leftOut, ['Biology/decks/broken.md']);
-        expect(controller.lastReport?.notOnPhone, ['Chemistry']);
+        expect(controller.lastReport?.notOnPhone, ['New Deck']);
+        expect(controller.lastReport?.leftOut, isEmpty);
       },
     );
+
+    test('leftOut and notOnPhone split correctly: an entry on the phone '
+        'carries its own left_out members, an entry not on the phone is '
+        'named in notOnPhone instead', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.entriesImpl = () async => const SyncEntries(
+        rootId: 'root-a',
+        entries: [
+          SyncEntry(
+            name: 'Biology',
+            kind: 'workspace',
+            members: 2,
+            unpackedBytes: 10,
+            leftOut: ['decks/broken.md'],
+          ),
+          SyncEntry(
+            name: 'Chemistry',
+            kind: 'workspace',
+            members: 1,
+            unpackedBytes: 10,
+            leftOut: [],
+          ),
+        ],
+      );
+      port.pairedEntriesImpl = () => const [
+        SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+      ];
+      final controller = SyncController(port: port);
+
+      await controller.cycle();
+
+      expect(controller.lastReport?.leftOut, ['Biology/decks/broken.md']);
+      expect(controller.lastReport?.notOnPhone, ['Chemistry']);
+    });
 
     test('renamed reports the tidy pairs from the lib', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
@@ -363,8 +406,7 @@ void main() {
         port.pairedEntriesImpl = () => const [
           SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
         ];
-        port.applyPullImpl = (entry, zipPath) async =>
-            throw Exception('boom');
+        port.applyPullImpl = (entry, zipPath) async => throw Exception('boom');
 
         final controller = SyncController(port: port);
         await controller.cycle();
@@ -373,6 +415,39 @@ void main() {
         expect(controller.lastReport?.error, contains('Biology'));
       },
     );
+
+    test('an apply failure discards the downloaded staging zip', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.entriesImpl = () async => const SyncEntries(
+        rootId: 'root-a',
+        entries: [
+          SyncEntry(
+            name: 'Biology',
+            kind: 'workspace',
+            members: 1,
+            unpackedBytes: 10,
+            leftOut: [],
+          ),
+        ],
+      );
+      port.pairedEntriesImpl = () => const [
+        SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+      ];
+      final zip = File('${scratch.path}/staging/Biology.zip');
+      port.pairedStagingZipImpl = (_) => zip.path;
+      port.applyPullImpl = (entry, zipPath) async =>
+          throw Exception('the pull names another root');
+      final controller = SyncController(port: port);
+
+      await controller.cycle();
+
+      expect(controller.lastReport?.error, contains('Biology'));
+      expect(
+        zip.existsSync(),
+        isFalse,
+        reason: 'a discarded pull must not leave its private zip behind',
+      );
+    });
 
     test(
       'a cycle that changed nothing leaves reportUnread false, so the '
@@ -448,6 +523,53 @@ void main() {
         expect(port.pushCalls, ['deck-a']);
       },
     );
+
+    test('a summary push that becomes eligible after the running cycle planned '
+        'its pushes is still attempted', () async {
+      final pullStarted = Completer<void>();
+      final finishPull = Completer<void>();
+      var changedAfterPlanning = false;
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.entriesImpl = () async => const SyncEntries(
+        rootId: 'root-a',
+        entries: [
+          SyncEntry(
+            name: 'Biology',
+            kind: 'workspace',
+            members: 1,
+            unpackedBytes: 10,
+            leftOut: [],
+          ),
+        ],
+      );
+      port.pairedEntriesImpl = () => const [
+        SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+      ];
+      port.planPushesImpl = () =>
+          changedAfterPlanning ? [item('deck-a')] : const [];
+      port.pullImpl = (entry, target, unpackedBytes) async {
+        pullStarted.complete();
+        await finishPull.future;
+        await target.writeAsBytes(const []);
+        return 0;
+      };
+      final controller = SyncController(port: port);
+
+      final cycle = controller.cycle();
+      await pullStarted.future;
+      changedAfterPlanning = true;
+      await controller.pushOne('deck-a');
+      finishPull.complete();
+      await cycle;
+
+      expect(
+        port.pushCalls,
+        ['deck-a'],
+        reason:
+            'finishing review after the cycle planned must not drop '
+            'the summary trigger',
+      );
+    });
 
     test('is silent on a transport failure', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
@@ -613,6 +735,37 @@ void main() {
       expect(port.pullCalls, ['Biology']);
     });
 
+    test('take-desktop reports an apply failure instead of leaking it from '
+        'the conflict action', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.pairedEntriesImpl = () => pendingConflictFor('deck-a');
+      port.resolveConflictImpl = (deckId, keepPhone) =>
+          const SyncResolutionPull('Biology');
+      port.entriesImpl = () async => const SyncEntries(
+        rootId: 'root-a',
+        entries: [
+          SyncEntry(
+            name: 'Biology',
+            kind: 'workspace',
+            members: 1,
+            unpackedBytes: 10,
+            leftOut: [],
+          ),
+        ],
+      );
+      port.applyPullImpl = (entry, zipPath) async =>
+          throw Exception('the pull names root `root-b`');
+      final controller = SyncController(port: port);
+
+      await expectLater(
+        controller.resolve('deck-a', keepPhone: false),
+        completes,
+        reason: 'a failed choice must stay in the report, not escape its tap',
+      );
+
+      expect(controller.lastReport?.error, contains('root-b'));
+    });
+
     test('done refreshes without pushing or pulling', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
       port.pairedEntriesImpl = () => pendingConflictFor('deck-a');
@@ -746,7 +899,9 @@ void main() {
         );
         var pulled = false;
         port.pairedEntriesImpl = () => pulled
-            ? const [SyncEntryState(entry: 'Biology', kind: 'workspace', decks: [])]
+            ? const [
+                SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+              ]
             : const [];
         port.applyPullImpl = (entry, zipPath) async {
           pulled = true;
@@ -783,8 +938,9 @@ void main() {
       // true) without changing summary()'s text: only landed/conflicts/
       // refused/orphaned feed the summary line, so this keeps the wording
       // 'Synced: up to date' below while still exercising the report phase.
-      port.tidyRenamedImpl = (listed) =>
-          const [SyncRenamedEntry(old: 'A', new_: 'B')];
+      port.tidyRenamedImpl = (listed) => const [
+        SyncRenamedEntry(old: 'A', new_: 'B'),
+      ];
       final controller = SyncController(port: port);
 
       final future = controller.cycle(entry: 'Biology');

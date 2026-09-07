@@ -9,7 +9,7 @@ import 'package:alix_mobile/sync/sync_models.dart';
 Future<void> showConflictChoiceSheet(
   BuildContext context, {
   required SyncPendingConflict conflict,
-  required void Function(String deckId, bool keepPhone) onResolve,
+  required Future<void> Function(String deckId, bool keepPhone) onResolve,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -17,9 +17,9 @@ Future<void> showConflictChoiceSheet(
     builder: (sheet) => SyncReportSheet(
       report: null,
       conflicts: [conflict],
-      onResolve: (deckId, keepPhone) {
-        onResolve(deckId, keepPhone);
-        Navigator.of(sheet).pop();
+      onResolve: (deckId, keepPhone) async {
+        await onResolve(deckId, keepPhone);
+        if (sheet.mounted) Navigator.of(sheet).pop();
       },
       onRemoveOrphan: (_) {},
     ),
@@ -48,7 +48,7 @@ class SyncReportSheet extends StatefulWidget {
   /// Names of orphaned entries with unpushed local progress; the orphan
   /// row's confirmation names this when removing one.
   final Set<String> unpushedOrphans;
-  final void Function(String deckId, bool keepPhone) onResolve;
+  final Future<void> Function(String deckId, bool keepPhone) onResolve;
   final ValueChanged<String> onRemoveOrphan;
 
   @override
@@ -59,8 +59,9 @@ class _SyncReportSheetState extends State<SyncReportSheet> {
   late List<SyncPendingConflict> _conflicts = List.of(widget.conflicts);
   late SyncReport? _report = widget.report;
 
-  void _resolve(String deckId, bool keepPhone) {
-    widget.onResolve(deckId, keepPhone);
+  Future<void> _resolve(String deckId, bool keepPhone) async {
+    await widget.onResolve(deckId, keepPhone);
+    if (!mounted) return;
     setState(() {
       _conflicts = [
         for (final conflict in _conflicts)
@@ -102,6 +103,7 @@ class _SyncReportSheetState extends State<SyncReportSheet> {
                 _ConflictChoice(conflict: conflict, onResolve: _resolve),
               if (report != null) ...[
                 _Section(title: 'Landed', lines: report.landed),
+                _Section(title: 'Pushed', lines: report.pushed),
                 _Section(title: 'Kept (unpushed)', lines: report.kept),
                 _Section(title: 'Phone-only', lines: report.phoneOnly),
                 _Section(title: 'Removed', lines: report.removed),
@@ -225,6 +227,7 @@ class _ConflictChoice extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final keepWording = conflictKeepPhoneWording(conflict.conflict);
+    final takeWording = conflictTakeDesktopWording(conflict);
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
@@ -243,7 +246,7 @@ class _ConflictChoice extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _ConflictChoiceRow(
-            wording: conflictTakeDesktopWording,
+            wording: takeWording,
             onPressed: () => onResolve(conflict.deckId, false),
           ),
         ],

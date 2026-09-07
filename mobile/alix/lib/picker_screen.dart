@@ -122,6 +122,11 @@ class _PickerScreenState extends State<PickerScreen> {
   /// heading; null alongside [_pairedDir].
   String? _pairedLabel;
 
+  /// The token [_syncController] was built with (root-screen-owned
+  /// instances only); a re-pair that lands a fresh token must rebuild the
+  /// port and controller, not keep dialing the expired one.
+  String? _syncControllerToken;
+
   @override
   void initState() {
     super.initState();
@@ -192,12 +197,20 @@ class _PickerScreenState extends State<PickerScreen> {
       _controller.setPairedRoot(pairedDir);
     }
 
-    final freshlyBuilt = _syncController == null && isPairedRootScreen;
+    final freshlyBuilt =
+        isPairedRootScreen &&
+        (_syncController == null || _syncControllerToken != config.token);
     if (freshlyBuilt) {
+      final stale = _syncController;
+      if (stale != null) {
+        stale.removeListener(_controller.reload);
+        stale.dispose();
+      }
       final buildPort =
           widget.buildSyncPort ??
           (config, rootDir) =>
               sync_bridge.SyncBridgePort(config: config, rootDir: rootDir);
+      _syncControllerToken = config.token;
       _attachSyncController(
         SyncController(
           port: buildPort(config, pairedDir),

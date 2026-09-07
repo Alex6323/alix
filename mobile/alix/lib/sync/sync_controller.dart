@@ -48,6 +48,17 @@ class SyncController extends ChangeNotifier {
   /// again, so switching roots clears this without any code here.
   SyncEntries? _lastListing;
 
+  /// Deck ids the running cycle's own push loop has already attempted
+  /// (any outcome), so the drain below skips one a concurrent [pushOne]
+  /// queued for the same deck rather than pushing it twice. Empty outside
+  /// a cycle.
+  final Set<String> _cycleAttemptedPushDeckIds = {};
+
+  /// Deck ids [pushOne] deferred because a cycle was running; drained
+  /// (each re-attempted, unless the cycle's own loop already attempted it)
+  /// once the cycle ends, so finishing a review mid-cycle is never dropped.
+  final Set<String> _pendingPushes = {};
+
   @override
   void dispose() {
     _disposed = true;
@@ -66,11 +77,13 @@ class SyncController extends ChangeNotifier {
   SyncReport? get lastReport => _lastReport;
   bool get reportUnread => _reportUnread;
 
-  /// Every entry the phone has pulled, read fresh from the port on each
-  /// call. Lets a caller (the review summary's push hook) resolve a
-  /// document path to a deck id via `deckIdForPath` without reaching the
-  /// port directly.
-  List<SyncEntryState> get pairedEntries => _port.pairedEntries();
+  /// Every entry the phone has pulled, as of the last guarded scan
+  /// ([_refreshPairedState]), never a fresh fallible port call: a caller
+  /// resolving a document path to a deck id via `deckIdForPath` (a tap
+  /// callback, a listener) must not risk a corrupt state file throwing
+  /// through it. Empty before the first scan or after a failed one.
+  List<SyncEntryState> get pairedEntries => _pairedEntriesCache;
+  List<SyncEntryState> _pairedEntriesCache = const [];
 
   /// One line for the picker's status readout while a cycle runs or its
   /// last report is unread; null the rest of the time.
@@ -125,8 +138,10 @@ class SyncController extends ChangeNotifier {
       _pendingConflicts = const [];
       _unpushedEntries = const {};
       _availableEntries = const [];
+      _pairedEntriesCache = const [];
       return;
     }
+    _pairedEntriesCache = entries;
     _pendingConflicts = [
       for (final entry in entries)
         for (final deck in entry.decks)
@@ -135,6 +150,8 @@ class SyncController extends ChangeNotifier {
               deckId: deck.deckId,
               label: _deckLabel(entry, deck),
               conflict: conflict,
+              phoneSaves: deck.phoneSaves,
+              phoneAtMs: deck.phoneAtMs,
             ),
     ];
     final knownNames = entries.map((e) => e.entry).toSet();
@@ -168,6 +185,14 @@ class SyncController extends ChangeNotifier {
     } finally {
       _running = false;
       _runningEntry = null;
+      final deferred = _pendingPushes.toList();
+      _pendingPushes.clear();
+      for (final deckId in deferred) {
+        if (!_cycleAttemptedPushDeckIds.contains(deckId)) {
+          await pushOne(deckId);
+        }
+      }
+      _cycleAttemptedPushDeckIds.clear();
     }
     _refreshPairedState();
     _lastReport = report;
@@ -182,6 +207,7 @@ class SyncController extends ChangeNotifier {
     final phoneOnly = <String>[];
     final removed = <String>[];
     final refused = <String>[];
+    final pushed = <String>[];
 
     SyncReport aborted(String error) => SyncReport(
       landed: landed,
@@ -190,13 +216,13 @@ class SyncController extends ChangeNotifier {
       phoneOnly: phoneOnly,
       removed: removed,
       refused: refused,
+      pushed: pushed,
       error: error,
     );
 
     final SyncEntries desktop;
     try {
       desktop = await _port.entries();
-      _lastListing = desktop;
     } on PairingExpired {
       return aborted(syncPairingExpiredMessage);
     } on SyncTransportFailure catch (error) {
@@ -207,9 +233,11 @@ class SyncController extends ChangeNotifier {
     if (desktop.rootId != _port.rootId) {
       return aborted(syncRootMismatchMessage);
     }
+    _lastListing = desktop;
 
     final pushLabels = _deckLabels();
     for (final item in _port.planPushes()) {
+      _cycleAttemptedPushDeckIds.add(item.deckId);
       final label = pushLabels[item.deckId] ?? '${item.entry}/${item.deckId}';
       final SyncPushResult result;
       try {
@@ -221,7 +249,7 @@ class SyncController extends ChangeNotifier {
       }
       switch (result) {
         case SyncPushAccepted():
-          break;
+          pushed.add(label);
         case SyncPushConflict():
           conflicts.add(label);
         case SyncPushRootMismatch():
@@ -301,6 +329,7 @@ class SyncController extends ChangeNotifier {
       renamed: renamed,
       orphaned: orphaned,
       refused: refused,
+      pushed: pushed,
     );
   }
 
@@ -309,9 +338,11 @@ class SyncController extends ChangeNotifier {
     final zipFile = File(zipPath);
     await zipFile.parent.create(recursive: true);
     await _port.pull(entry, zipFile, unpackedBytes: unpackedBytes);
-    final report = await _port.applyPull(entry, zipPath);
-    if (await zipFile.exists()) await zipFile.delete();
-    return report;
+    try {
+      return await _port.applyPull(entry, zipPath);
+    } finally {
+      if (await zipFile.exists()) await zipFile.delete();
+    }
   }
 
   /// Reads [item]'s document, pushes it, and records whatever the lib
@@ -350,8 +381,14 @@ class SyncController extends ChangeNotifier {
   /// (`review_screen.dart`'s post-summary hook). Silent on failure or when
   /// nothing is planned for [deckId]; a conflict is recorded and then
   /// visible through [pendingConflicts], for the summary screen's choice.
+  /// A running cycle defers the push instead of dropping it: drained once
+  /// the cycle ends, unless its own push loop already attempted this deck,
+  /// so a review finished mid-cycle is never dropped nor pushed twice.
   Future<void> pushOne(String deckId) async {
-    if (_running) return;
+    if (_running) {
+      _pendingPushes.add(deckId);
+      return;
+    }
     final items = _port.planPushes().where((i) => i.deckId == deckId);
     if (items.isEmpty) return;
     try {
@@ -431,6 +468,8 @@ class SyncController extends ChangeNotifier {
               '${humanBytes(error.free)} free',
         ],
       );
+    } on Object catch (error) {
+      report = SyncReport(error: 'could not apply $entry: $error');
     }
     _lastReport = report;
     _reportUnread = !report.isEmpty;

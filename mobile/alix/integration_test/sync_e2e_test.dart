@@ -31,8 +31,6 @@ import 'package:alix_mobile/picker/picker_widgets.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
-import 'package:alix_mobile/sync/sync_models.dart'
-    show conflictTakeDesktopWording;
 
 import '../test/support/deck_fixture.dart';
 import 'sync_e2e_support.dart';
@@ -314,7 +312,7 @@ void main() {
         () => tester.any(find.textContaining(_keepPhonePrefix)),
       );
       expect(
-        find.text(conflictTakeDesktopWording.title),
+        find.text("Take the desktop's"),
         findsOneWidget,
         reason:
             'step 4b: the choice must name what taking the desktop discards',

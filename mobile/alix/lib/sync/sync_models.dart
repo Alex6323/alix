@@ -54,12 +54,22 @@ class SyncDeckState {
     required this.deckId,
     required this.path,
     required this.unpushed,
+    this.phoneSaves = 0,
+    this.phoneAtMs,
     this.conflict,
   });
 
   final String deckId;
   final String path;
   final bool unpushed;
+
+  /// The local document's revision past the last pushed phone revision:
+  /// how many phone saves a take-desktop choice on this deck would discard.
+  final int phoneSaves;
+
+  /// The local document head's writer time, whenever it has one; null only
+  /// when the phone holds no local copy to read a writer from.
+  final int? phoneAtMs;
   final PairedConflict? conflict;
 }
 
@@ -189,6 +199,7 @@ class SyncReport {
     this.renamed = const [],
     this.orphaned = const [],
     this.refused = const [],
+    this.pushed = const [],
     this.error,
   });
 
@@ -197,6 +208,11 @@ class SyncReport {
   final List<String> conflicts;
   final List<String> phoneOnly;
   final List<String> removed;
+
+  /// Deck labels the desktop accepted this cycle (`SyncPushAccepted`). No
+  /// "unchanged" counterpart: silence is the calm default when nothing
+  /// changed, so a cycle that pushed nothing says nothing about it.
+  final List<String> pushed;
 
   /// `'<entry>/<path>'` for every member the desktop could not load into an
   /// entry this phone has (or just pulled this cycle): `SyncEntry.leftOut`,
@@ -225,7 +241,8 @@ class SyncReport {
       leftOut.isEmpty &&
       renamed.isEmpty &&
       orphaned.isEmpty &&
-      refused.isEmpty;
+      refused.isEmpty &&
+      pushed.isEmpty;
 
   /// The same report with [entry] dropped from [orphaned]; every other
   /// field is unchanged.
@@ -242,6 +259,7 @@ class SyncReport {
       renamed: renamed,
       orphaned: [for (final e in orphaned) if (e != entry) e],
       refused: refused,
+      pushed: pushed,
       error: error,
     );
   }
@@ -263,17 +281,20 @@ class SyncReport {
       renamed: renamed,
       orphaned: orphaned,
       refused: refused,
+      pushed: pushed,
       error: error,
     );
   }
 
   /// The picker's one-line status once a cycle ends and its report is
   /// unread. Names the categories that actually happened with their
-  /// counts; a cycle that changed nothing reads as "up to date".
+  /// counts; a cycle that changed nothing reads as "up to date". No
+  /// "unchanged" part: silence is the calm default, not a category.
   String summary() {
     if (error != null) return error!;
     final parts = <String>[
       if (landed.isNotEmpty) '${landed.length} landed',
+      if (pushed.isNotEmpty) '${pushed.length} pushed',
       if (conflicts.isNotEmpty)
         '${conflicts.length} conflict${conflicts.length == 1 ? '' : 's'}',
       if (refused.isNotEmpty) '${refused.length} refused',
@@ -293,6 +314,8 @@ class SyncPendingConflict {
     required this.deckId,
     required this.label,
     required this.conflict,
+    this.phoneSaves = 0,
+    this.phoneAtMs,
   });
 
   final String deckId;
@@ -302,6 +325,13 @@ class SyncPendingConflict {
   final String label;
 
   final PairedConflict conflict;
+
+  /// Mirrors the conflicted deck's [SyncDeckState.phoneSaves] as of the
+  /// scan that found this conflict, for [conflictTakeDesktopWording].
+  final int phoneSaves;
+
+  /// Mirrors the conflicted deck's [SyncDeckState.phoneAtMs].
+  final int? phoneAtMs;
 }
 
 /// Resolves the deck id a local document path corresponds to, from the
@@ -346,12 +376,26 @@ ConflictChoiceWording conflictKeepPhoneWording(PairedConflict conflict) {
   return (title: "Keep the phone's progress", subtitle: subtitle);
 }
 
-/// "Take the desktop's": the bridge carries no review count for the phone
-/// side, so this names what is discarded without inventing a number.
-const ConflictChoiceWording conflictTakeDesktopWording = (
-  title: "Take the desktop's",
-  subtitle: "discards the phone's progress since the last sync",
-);
+/// "Take the desktop's": names the phone saves this choice discards, with
+/// the last save's time when the local document carries a writer. A
+/// conflict with nothing unsynced (`phoneSaves == 0`) has nothing to name.
+ConflictChoiceWording conflictTakeDesktopWording(
+  SyncPendingConflict conflict,
+) {
+  final saves = conflict.phoneSaves;
+  if (saves <= 0) {
+    return (
+      title: "Take the desktop's",
+      subtitle: 'nothing to discard on the phone',
+    );
+  }
+  final noun = saves == 1 ? 'phone save' : 'phone saves';
+  final atMs = conflict.phoneAtMs;
+  final subtitle = atMs == null
+      ? 'discards $saves $noun'
+      : 'discards $saves $noun, last at ${_formatTime(atMs)}';
+  return (title: "Take the desktop's", subtitle: subtitle);
+}
 
 // `YYYY-MM-DD HH:MM`, local time: date included, since a stale conflict can
 // be days old.

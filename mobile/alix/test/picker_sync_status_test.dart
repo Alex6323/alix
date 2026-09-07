@@ -94,8 +94,9 @@ void main() {
       // A renamed pair makes the cycle non-empty (an empty cycle now leaves
       // no status line at all) without changing the summary text: only
       // landed/conflicts/refused/orphaned feed it.
-      port.tidyRenamedImpl = (listed) =>
-          const [SyncRenamedEntry(old: 'A', new_: 'B')];
+      port.tidyRenamedImpl = (listed) => const [
+        SyncRenamedEntry(old: 'A', new_: 'B'),
+      ];
 
       await pumpPaired(tester, root: root, support: support, port: port);
 
@@ -120,27 +121,26 @@ void main() {
     },
   );
 
-  testWidgets(
-    'no pairing means no status line and no per-entry Sync action',
-    (tester) async {
-      final root = tempDir('alix-sync-status-unpaired-');
-      final support = tempDir('alix-sync-status-unpaired-support-');
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PickerScreen(
-            key: UniqueKey(),
-            root: root.path,
-            supportDir: support,
-            currentThemeId: 'dark',
-            onSetTheme: (_) async {},
-          ),
+  testWidgets('no pairing means no status line and no per-entry Sync action', (
+    tester,
+  ) async {
+    final root = tempDir('alix-sync-status-unpaired-');
+    final support = tempDir('alix-sync-status-unpaired-support-');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PickerScreen(
+          key: UniqueKey(),
+          root: root.path,
+          supportDir: support,
+          currentThemeId: 'dark',
+          onSetTheme: (_) async {},
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('sync-status')), findsNothing);
-    },
-  );
+    expect(find.byKey(const Key('sync-status')), findsNothing);
+  });
 
   testWidgets(
     "a paired root's entry row menu offers Sync, and tapping it runs a "
@@ -148,10 +148,7 @@ void main() {
     (tester) async {
       final support = tempDir('alix-sync-status-row-support-');
       final root = await pairedRoot(support);
-      writeTestDeck(
-        '${root.path}/deck.md',
-        '---\ntitle: Deck\n---\n## q\na\n',
-      );
+      writeTestDeck('${root.path}/deck.md', '---\ntitle: Deck\n---\n## q\na\n');
       final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
       port.entriesImpl = () async => const SyncEntries(
         rootId: 'root-test',
@@ -379,6 +376,105 @@ void main() {
         ),
         findsOneWidget,
       );
+    },
+  );
+
+  testWidgets(
+    're-pairing the active root with a fresh token rebuilds its sync port '
+    'without an app restart',
+    (tester) async {
+      final support = tempDir('alix-sync-repair-support-');
+      final phoneRoot = tempDir('alix-sync-repair-phone-');
+      const oldConfig = ServerConfig(
+        host: '127.0.0.1',
+        port: 7777,
+        token: 'old-token',
+        rootId: 'root-test',
+      );
+      await savePairing(oldConfig, support: support);
+      final pairedDir = Directory(
+        sync_bridge.pairedRootDirFor(
+          support: support.path,
+          rootId: 'root-test',
+        ),
+      )..createSync(recursive: true);
+      writeTestDeck(
+        '${pairedDir.path}/deck.md',
+        '---\ntitle: Deck\n---\n## q\na\n',
+      );
+      final oldPort = FakeSyncPort(
+        rootId: 'root-test',
+        rootDir: pairedDir.path,
+      );
+      final freshPort = FakeSyncPort(
+        rootId: 'root-test',
+        rootDir: pairedDir.path,
+      );
+      final builtTokens = <String>[];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PickerScreen(
+            root: phoneRoot.path,
+            supportDir: support,
+            currentThemeId: 'dark',
+            onSetTheme: (_) async {},
+            buildClient: (_) => FakeServerClient(
+              versionReply: minServerVersion,
+              rootIdReply: 'root-test',
+            ),
+            buildSyncPort: (config, _) {
+              builtTokens.add(config.token);
+              return config.token == 'fresh-token' ? freshPort : oldPort;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(builtTokens, ['old-token']);
+
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Connected devices'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('pairing-url-field')),
+        'http://127.0.0.1:7777/?token=fresh-token',
+      );
+      await tester.tap(find.text('Pair'));
+      await tester.pumpAndSettle();
+
+      expect(readActivePairing(support)?.token, 'fresh-token');
+      expect(
+        builtTokens,
+        ['old-token', 'fresh-token'],
+        reason: 'the successful re-pair must stop using the expired client',
+      );
+    },
+  );
+
+  testWidgets(
+    'a paired-state read failure while opening a deck is handled instead '
+    'of becoming an unhandled widget error',
+    (tester) async {
+      final support = tempDir('alix-sync-open-state-fail-support-');
+      final root = await pairedRoot(support);
+      writeTestDeck('${root.path}/deck.md', '---\ntitle: Deck\n---\n## q\na\n');
+      final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      port.pairedEntriesImpl = () => throw Exception('state file corrupt');
+
+      await pumpPaired(tester, root: root, support: support, port: port);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('Deck'));
+      await tester.pump();
+
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'conflict gating must not leak a bridge error into InkWell',
+      );
+      expect(find.byType(ReviewScreen), findsNothing);
     },
   );
 }
