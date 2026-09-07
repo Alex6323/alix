@@ -36,34 +36,31 @@ void main() {
     );
   }
 
-  testWidgets(
-    'a conflict names what each row discards, including the desktop '
-    "writer when the bridge reports one",
-    (tester) async {
-      const conflict = SyncPendingConflict(
-        deckId: 'deck-1',
-        label: 'German/Verbs.md',
-        conflict: PairedConflictPush(
-          desktopWriter: SyncWriter(device: 'desk-1', atMs: 0),
+  testWidgets('a conflict names what each row discards, including the desktop '
+      "writer when the bridge reports one", (tester) async {
+    final conflict = SyncPendingConflict(
+      deckId: 'deck-1',
+      label: 'German/Verbs.md',
+      conflict: PairedConflictPush(
+        desktopWriter: SyncWriter(
+          device: 'desk-1',
+          atMs: DateTime(2026, 9, 7, 8, 30).millisecondsSinceEpoch,
         ),
-      );
-      await pump(tester, conflicts: const [conflict]);
+      ),
+    );
+    await pump(tester, conflicts: [conflict]);
 
-      expect(find.text("Keep the phone's progress"), findsOneWidget);
-      expect(
-        find.text(
-          "discards the desktop's, last written by desk-1 at "
-          '1970-01-01 01:00',
-        ),
-        findsOneWidget,
-      );
-      expect(find.text("Take the desktop's"), findsOneWidget);
-      expect(
-        find.text('nothing to discard on the phone'),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(find.text("Keep the phone's progress"), findsOneWidget);
+    expect(
+      find.text(
+        "discards the desktop's, last written by desk-1 at "
+        '2026-09-07 08:30',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text("Take the desktop's"), findsOneWidget);
+    expect(find.text('nothing to discard on the phone'), findsOneWidget);
+  });
 
   testWidgets(
     'the writer subtitle carries the date, not only the time, since a '
@@ -190,29 +187,26 @@ void main() {
     expect(resolvedKeepPhone, isFalse);
   });
 
-  testWidgets(
-    'only the non-empty report sections render; an empty category is '
-    'never shown as a blank heading',
-    (tester) async {
-      const report = SyncReport(
-        landed: ['German/Verbs.md'],
-        conflicts: [],
-        refused: ['French/Nouns.md: too large to push'],
-      );
-      await pump(tester, report: report);
+  testWidgets('only the non-empty report sections render; an empty category is '
+      'never shown as a blank heading', (tester) async {
+    const report = SyncReport(
+      landed: ['German/Verbs.md'],
+      conflicts: [],
+      refused: ['French/Nouns.md: too large to push'],
+    );
+    await pump(tester, report: report);
 
-      expect(find.text('Landed'), findsOneWidget);
-      expect(find.text('German/Verbs.md'), findsOneWidget);
-      expect(find.text('Refused'), findsOneWidget);
-      expect(find.text('French/Nouns.md: too large to push'), findsOneWidget);
-      expect(find.text('Kept (unpushed)'), findsNothing);
-      expect(find.text('Phone-only'), findsNothing);
-      expect(find.text('Removed'), findsNothing);
-      expect(find.text('Renamed'), findsNothing);
-      expect(find.text('Left out'), findsNothing);
-      expect(find.text('Orphaned'), findsNothing);
-    },
-  );
+    expect(find.text('Landed'), findsOneWidget);
+    expect(find.text('German/Verbs.md'), findsOneWidget);
+    expect(find.text('Refused'), findsOneWidget);
+    expect(find.text('French/Nouns.md: too large to push'), findsOneWidget);
+    expect(find.text('Kept (unpushed)'), findsNothing);
+    expect(find.text('Phone-only'), findsNothing);
+    expect(find.text('Removed'), findsNothing);
+    expect(find.text('Renamed'), findsNothing);
+    expect(find.text('Left out'), findsNothing);
+    expect(find.text('Orphaned'), findsNothing);
+  });
 
   testWidgets(
     'an orphaned entry asks for confirmation before Remove fires, naming '
@@ -241,45 +235,37 @@ void main() {
     },
   );
 
-  testWidgets(
-    'canceling the confirmation leaves the entry and never fires '
-    'onRemoveOrphan',
-    (tester) async {
-      const report = SyncReport(orphaned: ['Old Deck']);
-      String? removed;
-      await pump(tester, report: report, onRemoveOrphan: (e) => removed = e);
+  testWidgets('canceling the confirmation leaves the entry and never fires '
+      'onRemoveOrphan', (tester) async {
+    const report = SyncReport(orphaned: ['Old Deck']);
+    String? removed;
+    await pump(tester, report: report, onRemoveOrphan: (e) => removed = e);
 
-      await tester.tap(find.text('Remove'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
 
-      expect(removed, isNull);
-      expect(find.text('Old Deck'), findsOneWidget);
-    },
-  );
+    expect(removed, isNull);
+    expect(find.text('Old Deck'), findsOneWidget);
+  });
 
-  testWidgets(
-    'unpushed progress on an orphan is named in the confirmation',
-    (tester) async {
-      const report = SyncReport(orphaned: ['Old Deck']);
-      await pump(
-        tester,
-        report: report,
-        unpushedOrphans: const {'Old Deck'},
-      );
+  testWidgets('unpushed progress on an orphan is named in the confirmation', (
+    tester,
+  ) async {
+    const report = SyncReport(orphaned: ['Old Deck']);
+    await pump(tester, report: report, unpushedOrphans: const {'Old Deck'});
 
-      await tester.tap(find.text('Remove'));
-      await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
 
-      expect(
-        find.text(
-          'Remove "Old Deck" from this phone? Its unpushed progress goes too.',
-        ),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(
+      find.text(
+        'Remove "Old Deck" from this phone? Its unpushed progress goes too.',
+      ),
+      findsOneWidget,
+    );
+  });
 
   testWidgets(
     'a resolved conflict leaves the sheet immediately, and a second tap '
@@ -339,9 +325,7 @@ void main() {
     await pump(tester, report: report);
 
     expect(
-      find.text(
-        'the desktop now serves another folder; pair it as a new root',
-      ),
+      find.text('the desktop now serves another folder; pair it as a new root'),
       findsOneWidget,
     );
     // The lib still fills report lists alongside an abort in some paths;

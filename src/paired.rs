@@ -2416,6 +2416,7 @@ mod tests {
                 none_m,
                 Some(|dir| std::fs::remove_file(dir.join("physics.local.md")).unwrap()),
             ),
+            #[cfg(unix)]
             (
                 "a link",
                 none_m,
