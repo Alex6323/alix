@@ -341,11 +341,6 @@ pub fn seed_choice_distractors(deck_path: String, _root_dir: String) -> Result<(
     Ok(())
 }
 
-pub struct ForeignWriter {
-    pub device: String,
-    pub age_ms: u64,
-}
-
 pub struct TutorCard {
     pub id: String,
     pub subject: String,
@@ -490,15 +485,6 @@ impl ReviewSession {
         self.session.poll(&mut self.store, now);
         self.save_store();
         Ok(self.state(Some(now)))
-    }
-
-    #[flutter_rust_bridge::frb(sync)]
-    pub fn foreign_writer(&self, now_ms: Option<u64>) -> Option<ForeignWriter> {
-        let now = now_ms.unwrap_or_else(alix::time::now_ms);
-        let mine = self.store.device.as_deref()?;
-        self.store
-            .recent_foreign_writer(mine, now)
-            .map(|(device, age_ms)| ForeignWriter { device, age_ms })
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -1247,38 +1233,6 @@ mod tests {
             s.state(Some(LATER)).keypoints,
             Some(vec!["one claim".to_string()])
         );
-    }
-
-    #[test]
-    fn foreign_writer_warns_the_other_device_and_never_the_writer() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        write_deck(&root.join("d.md"), "## q\na\n");
-        let open_as = |device: &str| {
-            ReviewSession::open(
-                root.join("d.md").to_string_lossy().into_owned(),
-                root.to_string_lossy().into_owned(),
-                None,
-                Some(T0),
-                Some(device.to_string()),
-            )
-            .unwrap()
-        };
-        // Opening a session itself saves (it records the last depth), so
-        // every `open` below counts as that device's write.
-        assert!(open_as("phone-1").foreign_writer(None).is_none());
-
-        let mut desk = open_as("desk-1");
-        desk.introduce(Some(T0)).unwrap();
-        assert!(
-            open_as("desk-1").foreign_writer(None).is_none(),
-            "a device's own writes are not foreign"
-        );
-        let seen = open_as("phone-1")
-            .foreign_writer(None)
-            .expect("the other device sees the fresh write");
-        assert_eq!(seen.device, "desk-1");
-        assert!(seen.age_ms < alix::store::FOREIGN_WRITE_WARN_WINDOW_MS);
     }
 
     #[test]

@@ -307,13 +307,6 @@ class ReviewCheckFeedbackModel {
   final bool passed;
 }
 
-class ReviewForeignWriterModel {
-  const ReviewForeignWriterModel({required this.device, required this.ageMs});
-
-  final String device;
-  final int ageMs;
-}
-
 class ReviewCrumbModel {
   ReviewCrumbModel({
     required Iterable<String> regions,

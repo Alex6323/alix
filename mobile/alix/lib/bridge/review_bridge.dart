@@ -38,17 +38,6 @@ class ReviewBridgePort implements ReviewPort {
   ReviewStateModel get state => _stateFromBridge(_session.state());
 
   @override
-  ReviewForeignWriterModel? get foreignWriter {
-    final writer = _session.foreignWriter();
-    return writer == null
-        ? null
-        : ReviewForeignWriterModel(
-            device: writer.device,
-            ageMs: writer.ageMs.toInt(),
-          );
-  }
-
-  @override
   ReviewTutorCardModel? get tutorCard {
     final tutor = _session.tutorCard();
     return tutor == null

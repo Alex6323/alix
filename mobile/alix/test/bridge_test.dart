@@ -714,55 +714,6 @@ void main() {
     );
   });
 
-  testWidgets('the review screen warns when another device wrote the store', (
-    tester,
-  ) async {
-    final root = makeRoot();
-    addTearDown(() => root.deleteSync(recursive: true));
-    final deck = '${root.path}/loose.md';
-    final backdated = BigInt.from(
-      DateTime.now().millisecondsSinceEpoch - 600000,
-    );
-    final s = ReviewSession.open(
-      deckPath: deck,
-      rootDir: root.path,
-      nowMs: backdated,
-      device: 'desk-1',
-    );
-    s.introduce(nowMs: backdated);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ReviewScreen(
-          deckPath: deck,
-          rootDir: root.path,
-          depth: ReviewDepth.recall,
-          device: 'phone-1',
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.textContaining("Last written by 'desk-1'"), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.close));
-    await tester.pump();
-    expect(find.textContaining('Last written by'), findsNothing);
-
-    // The store's last writer is now this screen's own device (opening
-    // saves), so a re-open as the same device stays quiet.
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ReviewScreen(
-          deckPath: deck,
-          rootDir: root.path,
-          depth: ReviewDepth.recall,
-          device: 'phone-1',
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Last written by'), findsNothing);
-  });
-
   test('keypointGrade maps the tally like core', () {
     expect(keypointGrade(covered: 0, total: 3), Grade.fail);
     expect(keypointGrade(covered: 2, total: 3), Grade.partial);

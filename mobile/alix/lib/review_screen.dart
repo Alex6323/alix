@@ -256,7 +256,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
         return ReviewView(
           state: state,
           crumb: _controller.crumb(nowMs),
-          foreignWriter: _controller.foreignWriter,
           revealed: _controller.revealed,
           revealedLines: _controller.revealedLines,
           choice: _controller.choice,
@@ -282,7 +281,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
               card == null && _controller.serverLive && _controller.deckHasExam,
           nowMs: nowMs,
           confirmLeave: _confirmLeave,
-          onDismissForeignWriter: _controller.dismissForeignWriter,
           onChoose: _controller.choose,
           onToggleChoice: _controller.toggleChoice,
           onSubmitChoices: _controller.submitChoices,

@@ -37,9 +37,6 @@ pub(crate) fn take_sync_commit_threads(deck_id: &str) -> Vec<std::thread::Thread
     matched
 }
 
-// Below this age a foreign write is ordinary roaming, not a live conflict.
-pub const FOREIGN_WRITE_WARN_WINDOW_MS: u64 = 60 * 60 * 1000;
-
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Review {
@@ -1098,19 +1095,6 @@ impl Store {
         Ok(())
     }
 
-    pub fn foreign_writer(&self, my_device: &str, now_ms: u64) -> Option<(String, u64)> {
-        let writer = self.last_writer.as_ref()?;
-        if writer.device == my_device {
-            return None;
-        }
-        Some((writer.device.clone(), now_ms.saturating_sub(writer.at_ms)))
-    }
-
-    pub fn recent_foreign_writer(&self, my_device: &str, now_ms: u64) -> Option<(String, u64)> {
-        self.foreign_writer(my_device, now_ms)
-            .filter(|(_, age_ms)| *age_ms < FOREIGN_WRITE_WARN_WINDOW_MS)
-    }
-
     pub fn get(&self, card_id: &str) -> Option<&CardState> {
         self.cards.get(card_id)
     }
@@ -1872,7 +1856,7 @@ mod tests {
     }
 
     #[test]
-    fn save_stamps_the_writer_and_a_reopen_sees_it_as_foreign_elsewhere() {
+    fn save_stamps_the_writer_and_a_reopen_sees_it() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("deck1.json");
         let mut store = Store::open(&path).unwrap();
@@ -1880,16 +1864,7 @@ mod tests {
         store.save().unwrap();
 
         let reopened = Store::open(&path).unwrap();
-        let (device, _) = reopened
-            .foreign_writer("phone-1", crate::time::now_ms())
-            .expect("another device sees the marker");
-        assert_eq!(device, "desk-1");
-        assert!(
-            reopened
-                .foreign_writer("desk-1", crate::time::now_ms())
-                .is_none(),
-            "a device's own writes are not foreign"
-        );
+        assert_eq!("desk-1", reopened.last_writer.unwrap().device);
     }
 
     #[test]
@@ -1903,43 +1878,7 @@ mod tests {
         let unnamed = Store::open(&path).unwrap();
         unnamed.save().unwrap();
         let reopened = Store::open(&path).unwrap();
-        let (device, _) = reopened
-            .foreign_writer("phone-1", crate::time::now_ms())
-            .expect("the marker survives an unnamed save");
-        assert_eq!(device, "desk-1");
-    }
-
-    #[test]
-    fn a_store_without_a_writer_marker_loads_and_reports_none() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("deck1.json");
-        Store::open(&path).unwrap().save().unwrap();
-        let store = Store::open(&path).unwrap();
-        assert!(store.foreign_writer("phone-1", 0).is_none());
-    }
-
-    #[test]
-    fn the_warn_window_separates_roaming_from_concurrent_writes() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
-        store.last_writer = Some(Writer {
-            device: "desk-1".into(),
-            at_ms: 1_000,
-        });
-        let just_inside = 1_000 + FOREIGN_WRITE_WARN_WINDOW_MS - 1;
-        let at_the_edge = 1_000 + FOREIGN_WRITE_WARN_WINDOW_MS;
-        assert!(
-            store
-                .recent_foreign_writer("phone-1", just_inside)
-                .is_some()
-        );
-        assert!(
-            store
-                .recent_foreign_writer("phone-1", at_the_edge)
-                .is_none(),
-            "an old write is ordinary roaming, not a warning"
-        );
-        assert!(store.recent_foreign_writer("desk-1", just_inside).is_none());
+        assert_eq!("desk-1", reopened.last_writer.unwrap().device);
     }
 
     #[test]
@@ -3103,11 +3042,6 @@ mod tests {
     }
 
     #[test]
-    fn the_foreign_write_warn_window_is_one_hour() {
-        assert_eq!(3_600_000, FOREIGN_WRITE_WARN_WINDOW_MS);
-    }
-
-    #[test]
     fn an_overfull_history_from_disk_trims_to_the_cap_on_the_next_review() {
         let mut state = CardState::new();
         for i in 0..(HISTORY_CAP + 5) {
@@ -3265,8 +3199,11 @@ mod tests {
 
         let store = Store::open(dir.path()).unwrap();
         assert_eq!(
-            Some(("beta".to_string(), 800)),
-            store.foreign_writer("me", 1_000)
+            Some(Writer {
+                device: "beta".to_string(),
+                at_ms: 200,
+            }),
+            store.last_writer
         );
     }
 

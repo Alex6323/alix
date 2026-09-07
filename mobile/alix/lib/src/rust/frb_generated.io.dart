@@ -120,9 +120,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth dco_decode_box_autoadd_depth(dynamic raw);
 
   @protected
-  ForeignWriter dco_decode_box_autoadd_foreign_writer(dynamic raw);
-
-  @protected
   MathView dco_decode_box_autoadd_math_view(dynamic raw);
 
   @protected
@@ -178,9 +175,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double dco_decode_f_64(dynamic raw);
-
-  @protected
-  ForeignWriter dco_decode_foreign_writer(dynamic raw);
 
   @protected
   Grade dco_decode_grade(dynamic raw);
@@ -298,9 +292,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth? dco_decode_opt_box_autoadd_depth(dynamic raw);
-
-  @protected
-  ForeignWriter? dco_decode_opt_box_autoadd_foreign_writer(dynamic raw);
 
   @protected
   MathView? dco_decode_opt_box_autoadd_math_view(dynamic raw);
@@ -483,11 +474,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth sse_decode_box_autoadd_depth(SseDeserializer deserializer);
 
   @protected
-  ForeignWriter sse_decode_box_autoadd_foreign_writer(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   MathView sse_decode_box_autoadd_math_view(SseDeserializer deserializer);
 
   @protected
@@ -547,9 +533,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
-
-  @protected
-  ForeignWriter sse_decode_foreign_writer(SseDeserializer deserializer);
 
   @protected
   Grade sse_decode_grade(SseDeserializer deserializer);
@@ -681,11 +664,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth? sse_decode_opt_box_autoadd_depth(SseDeserializer deserializer);
-
-  @protected
-  ForeignWriter? sse_decode_opt_box_autoadd_foreign_writer(
-    SseDeserializer deserializer,
-  );
 
   @protected
   MathView? sse_decode_opt_box_autoadd_math_view(SseDeserializer deserializer);
@@ -902,12 +880,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_depth(Depth self, SseSerializer serializer);
 
   @protected
-  void sse_encode_box_autoadd_foreign_writer(
-    ForeignWriter self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_box_autoadd_math_view(
     MathView self,
     SseSerializer serializer,
@@ -984,9 +956,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_foreign_writer(ForeignWriter self, SseSerializer serializer);
 
   @protected
   void sse_encode_grade(Grade self, SseSerializer serializer);
@@ -1173,12 +1142,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_depth(Depth? self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_opt_box_autoadd_foreign_writer(
-    ForeignWriter? self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_opt_box_autoadd_math_view(

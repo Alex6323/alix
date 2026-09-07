@@ -61,7 +61,6 @@ class ReviewView extends StatelessWidget {
     super.key,
     required this.state,
     required this.crumb,
-    required this.foreignWriter,
     required this.revealed,
     required this.revealedLines,
     required this.choice,
@@ -86,7 +85,6 @@ class ReviewView extends StatelessWidget {
     required this.examAvailable,
     required this.nowMs,
     required this.confirmLeave,
-    required this.onDismissForeignWriter,
     required this.onChoose,
     required this.onToggleChoice,
     required this.onSubmitChoices,
@@ -104,7 +102,6 @@ class ReviewView extends StatelessWidget {
 
   final ReviewStateModel state;
   final ReviewCrumbModel? crumb;
-  final ReviewForeignWriterModel? foreignWriter;
   final bool revealed;
   final int revealedLines;
   final ReviewChoiceFeedbackModel? choice;
@@ -129,7 +126,6 @@ class ReviewView extends StatelessWidget {
   final bool examAvailable;
   final int nowMs;
   final Future<bool> Function(BuildContext context) confirmLeave;
-  final VoidCallback onDismissForeignWriter;
   final ValueChanged<int> onChoose;
   final ValueChanged<int> onToggleChoice;
   final VoidCallback onSubmitChoices;
@@ -177,11 +173,6 @@ class ReviewView extends StatelessWidget {
                 const SizedBox.shrink()
               else
                 CrumbStrip(crumb: crumb!),
-              if (foreignWriter case final writer?)
-                _ForeignWriterBanner(
-                  writer: writer,
-                  onDismiss: onDismissForeignWriter,
-                ),
               if (state.saveError case final saveError?)
                 _SaveBanner(saveError: saveError),
               Expanded(
@@ -266,41 +257,3 @@ class _SaveBanner extends StatelessWidget {
   }
 }
 
-class _ForeignWriterBanner extends StatelessWidget {
-  const _ForeignWriterBanner({required this.writer, required this.onDismiss});
-
-  final ReviewForeignWriterModel writer;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final minutes = (writer.ageMs / 60000).round();
-    final age = minutes < 1 ? 'moments' : '$minutes min';
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              "Last written by '${writer.device}' $age ago. "
-              'Review on one device at a time.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onErrorContainer,
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 18),
-            onPressed: onDismiss,
-          ),
-        ],
-      ),
-    );
-  }
-}

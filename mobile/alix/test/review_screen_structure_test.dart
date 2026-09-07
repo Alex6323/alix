@@ -116,7 +116,7 @@ void main() {
   });
 
   testWidgets(
-    'review tree: flip before reveal, after reveal, and with both banners',
+    'review tree: flip before reveal, after reveal, and with the save banner',
     (tester) async {
       final root = tempDir('alix-review-structure-flip-');
       final deck = '${root.path}/flip.md';
@@ -125,7 +125,7 @@ void main() {
         '## First question?\nFirst answer\n<!-- id: card-first -->\n\n'
         '## Second question?\nSecond answer\n<!-- id: card-second -->\n',
       );
-      makeDue(deck, root.path, device: 'desktop');
+      makeDue(deck, root.path);
       await pumpReview(
         tester,
         root: root,
@@ -155,10 +155,9 @@ void main() {
       File(progress.path).deleteSync();
       savedProgress.renameSync(progress.path);
       expect(find.textContaining("Progress isn't being saved"), findsOneWidget);
-      expect(find.textContaining("Last written by 'desktop'"), findsOneWidget);
       await expectWidgetTree(
         tester,
-        'review_flip_save_and_foreign_banners',
+        'review_flip_save_banner',
         root: find.byType(ReviewScreen),
       );
     },

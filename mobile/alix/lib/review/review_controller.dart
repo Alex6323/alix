@@ -45,7 +45,6 @@ class ReviewController extends ChangeNotifier {
   final Set<int> _tickedKeypoints = {};
   final Sketch _sketch = Sketch();
   bool _attemptOpen = false;
-  ReviewForeignWriterModel? _foreignWriter;
   bool _serverLive = false;
 
   ReviewStateModel get state {
@@ -70,7 +69,6 @@ class ReviewController extends ChangeNotifier {
   Sketch get sketch => _sketch;
   bool get isDrawing => state.input == ReviewInput.draw;
   bool get attemptOpen => _attemptOpen;
-  ReviewForeignWriterModel? get foreignWriter => _foreignWriter;
   bool get serverLive => _serverLive;
   ReviewTutorCardModel? get tutorCard => _requirePort().tutorCard;
   bool get deckHasExam => _requirePort().deckHasExam;
@@ -185,11 +183,6 @@ class ReviewController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void dismissForeignWriter() {
-    _foreignWriter = null;
-    notifyListeners();
-  }
-
   void restart() {
     _open();
     notifyListeners();
@@ -240,7 +233,6 @@ class ReviewController extends ChangeNotifier {
       );
       _port = port;
       _openError = null;
-      _foreignWriter = _device == null ? null : port.foreignWriter;
       _install(port.state);
     } on ReviewOpenFailure catch (error) {
       _port = null;

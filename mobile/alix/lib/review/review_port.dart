@@ -12,8 +12,6 @@ abstract interface class ReviewPortFactory {
 abstract interface class ReviewPort {
   ReviewStateModel get state;
 
-  ReviewForeignWriterModel? get foreignWriter;
-
   ReviewTutorCardModel? get tutorCard;
 
   bool get deckHasExam;

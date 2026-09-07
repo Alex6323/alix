@@ -11,31 +11,29 @@ void main() {
         'notifyListeners();',
       ),
       [
-        94,
-        99,
-        104,
-        109,
-        114,
-        135,
-        140,
-        145,
-        150,
-        155,
-        160,
-        165,
-        170,
-        175,
-        180,
-        185,
-        190,
-        195,
+        92,
+        97,
+        102,
+        107,
+        112,
+        133,
+        138,
+        143,
+        148,
+        153,
+        158,
+        163,
+        168,
+        173,
+        178,
+        183,
+        188,
       ],
       reason:
           'setServerLive, install, choose, toggleChoice, submitChoices, '
           'check, openAttempt, toggleKeypoint, reveal, the six sketch '
           'transitions (tool, begin, extend, end, undo, clear), '
-          'revealNextLine, dismissForeignWriter, and restart own every '
-          'ReviewController mutation',
+          'revealNextLine, and restart own every ReviewController mutation',
     );
     expect(_linesContaining('lib/picker_screen.dart', 'setState('), isEmpty);
     expect(

@@ -42,8 +42,6 @@ abstract class ReviewSession implements RustOpaqueInterface {
 
   bool deckHasExam();
 
-  ForeignWriter? foreignWriter({BigInt? nowMs});
-
   ReviewState grade({required Grade grade, BigInt? nowMs});
 
   ReviewState introduce({BigInt? nowMs});
@@ -372,24 +370,6 @@ class CrumbState {
 }
 
 enum Depth { recognize, recall, reconstruct }
-
-class ForeignWriter {
-  final String device;
-  final BigInt ageMs;
-
-  const ForeignWriter({required this.device, required this.ageMs});
-
-  @override
-  int get hashCode => device.hashCode ^ ageMs.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ForeignWriter &&
-          runtimeType == other.runtimeType &&
-          device == other.device &&
-          ageMs == other.ageMs;
-}
 
 enum Grade { fail, partial, pass }
 

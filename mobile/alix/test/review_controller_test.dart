@@ -26,7 +26,6 @@ void main() {
     controller.check(const ['answer']);
     controller.openAttempt();
     controller.toggleKeypoint(0);
-    controller.dismissForeignWriter();
 
     expect(controller.serverLive, isTrue);
     expect(controller.revealed, isTrue);
@@ -37,8 +36,7 @@ void main() {
     expect(controller.checkFeedback?.passed, isTrue);
     expect(controller.attemptOpen, isTrue);
     expect(controller.tickedKeypoints, {0});
-    expect(controller.foreignWriter, isNull);
-    expect(notifications, 10);
+    expect(notifications, 9);
   });
 
   test('install resets card interaction state after introduce and grade', () {
@@ -171,10 +169,6 @@ class _FakeReviewPort implements ReviewPort {
 
   @override
   ReviewStateModel get state => _state;
-
-  @override
-  ReviewForeignWriterModel? get foreignWriter =>
-      const ReviewForeignWriterModel(device: 'laptop', ageMs: 1000);
 
   @override
   ReviewStateModel introduce() => _state = introduceResult ?? _state;
