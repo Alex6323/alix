@@ -1694,6 +1694,42 @@ mod tests {
     }
 
     #[test]
+    fn pulled_entries_count_a_never_pushed_phone_document_from_zero() {
+        let (_tmp, root) = fresh_root();
+        apply(&root, &workspace_bundle());
+        let doc = root.document_path(KIND_WORKSPACE, "Biology", DECK_B);
+        let state = |root: &PairedRoot| {
+            pulled_entries(root)
+                .unwrap()
+                .remove(0)
+                .decks
+                .into_iter()
+                .find(|deck| deck.deck_id == DECK_B)
+                .unwrap()
+        };
+        let landed = state(&root);
+        assert_eq!(
+            (landed.unpushed, landed.phone_saves, landed.phone_at_ms),
+            (false, 0, None),
+            "a pull with no desktop document starts with no phone history"
+        );
+
+        bump_as(&doc, DECK_B, "phone");
+        let reviewed = state(&root);
+        let head = document_head(&doc, DECK_B).unwrap().unwrap();
+        assert_eq!(
+            (reviewed.unpushed, reviewed.phone_saves),
+            (true, 1),
+            "the first never-pushed phone save starts the count at one"
+        );
+        assert_eq!(
+            reviewed.phone_at_ms,
+            head.writer.map(|writer| writer.at_ms),
+            "the never-pushed document reports its first phone save time"
+        );
+    }
+
+    #[test]
     fn a_pull_keeps_or_conflicts_an_unpushed_document_by_desktop_movement() {
         let (_tmp, root) = fresh_root();
         apply(&root, &deck_bundle());
