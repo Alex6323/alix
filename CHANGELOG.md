@@ -30,6 +30,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `alix doctor` warns when a cloze card's front contains a blank's answer,
   the check that already covers a block note.
 
+- The mobile app gained a `dart:io`-only sync transport (`HttpSyncClient`)
+  for the paired desktop's `/api/sync/*` surface: listing served entries,
+  pulling one entry's zip to a file, and pushing one deck's progress
+  document with the conflict/root-mismatch/too-large outcomes it maps to.
+  Not yet wired into any screen.
+
 ### Removed
 
 - The phone's shared-folder decks root and its `MANAGE_EXTERNAL_STORAGE`
@@ -49,6 +55,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `--lan` refuses a `--token` or `[serve] token` value shorter than 16
   characters before the server binds; minted tokens are unaffected.
+
+- The mobile app now stores pairings keyed by the paired desktop's root
+  identity, keeping one entry per root instead of a single overwritten
+  config, and refuses a desktop whose `/api/version` predates that identity.
+  Pre-1.0: re-pair once after upgrading.
 
 ### Fixed
 
