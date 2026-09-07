@@ -101,7 +101,7 @@ CI_ONLY = {
     "mobile/alix/integration_test": (
         "The integration suite needs a Linux window, so preflight runs the "
         "unit half and CI runs this one under xvfb.",
-        "flutter test integration_test",
+        "for f in integration_test/*_test.dart",
     ),
     "orchestrator/pyproject.toml": (
         "The orchestrator is a standalone uv project outside Cargo, "

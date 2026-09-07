@@ -179,7 +179,11 @@ jobs:
       - run: cd mobile/alix && flutter analyze --fatal-infos
       - run: cargo build --release --manifest-path mobile/alix/rust/Cargo.toml
       - run: cd mobile/alix && flutter test
-      - run: cd mobile/alix && xvfb-run -a flutter test integration_test -d linux
+      # The sync e2e drives this checkout's debug desktop binary.
+      - run: cargo build
+      # One invocation per file: the second app launch inside a single
+      # `flutter test integration_test -d linux` run never connects on Linux.
+      - run: cd mobile/alix && for f in integration_test/*_test.dart; do xvfb-run -a flutter test "$f" -d linux || exit 1; done
 
   # Browser-driven smoke over the real binary: a click must reach the server and
   # change the screen, with no uncaught page errors. This is the only layer that

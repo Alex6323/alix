@@ -429,6 +429,7 @@ push-decks:
 # to grow.
 mobile-test:
 	cargo build --release --manifest-path mobile/alix/rust/Cargo.toml
+	cargo build
 	cd mobile/alix && flutter test
 	cd mobile/alix && for f in integration_test/*_test.dart; do flutter test "$$f" -d linux || exit 1; done
 
