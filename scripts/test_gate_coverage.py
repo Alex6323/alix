@@ -326,5 +326,25 @@ class SeparatesBlockingFromScheduled(unittest.TestCase):
                         )
 
 
+class PinsMobileTestsToTheCiClock(unittest.TestCase):
+    def test_every_mobile_test_flutter_invocation_runs_under_utc(self):
+        _prerequisites, recipes = gate.make_targets(gate.MAKEFILE.read_text())[
+            "mobile-test"
+        ]
+        flutter_tests = [line for line in recipes if "flutter test" in line]
+        self.assertGreaterEqual(
+            len(flutter_tests),
+            2,
+            "mobile-test must keep both unit and integration Flutter tiers",
+        )
+        for line in flutter_tests:
+            with self.subTest(recipe=line):
+                self.assertIn(
+                    "TZ=UTC flutter test",
+                    line,
+                    "each mobile-test tier must use the CI runner's UTC clock",
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
