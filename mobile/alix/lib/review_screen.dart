@@ -12,6 +12,9 @@ import 'package:alix_mobile/review/review_controller.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/review_view.dart';
 import 'package:alix_mobile/server_client.dart';
+import 'package:alix_mobile/sync/sync_controller.dart';
+import 'package:alix_mobile/sync/sync_models.dart';
+import 'package:alix_mobile/sync/sync_sheet.dart';
 import 'package:alix_mobile/tutor_sheet.dart';
 
 class ReviewScreen extends StatefulWidget {
@@ -23,6 +26,7 @@ class ReviewScreen extends StatefulWidget {
     this.device,
     this.supportDir,
     this.buildClient,
+    this.syncController,
   });
 
   final String deckPath;
@@ -40,6 +44,10 @@ class ReviewScreen extends StatefulWidget {
   /// Builds the server probe's client. Tests inject a fake.
   final ServerClient Function(ServerConfig)? buildClient;
 
+  /// Non-null only when [rootDir] is the active paired root: once the
+  /// summary renders, this deck's local progress is pushed silently.
+  final SyncController? syncController;
+
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();
 }
@@ -51,6 +59,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   ServerClient? _client;
   Directory? _support;
+  bool _summaryPushed = false;
 
   @override
   void initState() {
@@ -66,7 +75,55 @@ class _ReviewScreenState extends State<ReviewScreen> {
       _resetInputs();
       _probeServer();
       _surfaceLoadWarnings();
+      _controller.addListener(_maybePushSummary);
     }
+  }
+
+  /// Fires once, the first time the summary renders (`state.card` turns
+  /// null), pushing this deck's local progress silently; a 409 opens the
+  /// same conflict choice the sync report sheet uses.
+  void _maybePushSummary() {
+    if (_summaryPushed || _controller.state.card != null) return;
+    final syncController = widget.syncController;
+    if (syncController == null) return;
+    final deckId = deckIdForPath(
+      entries: syncController.pairedEntries,
+      rootDir: widget.rootDir,
+      path: widget.deckPath,
+    );
+    if (deckId == null) return;
+    _summaryPushed = true;
+    syncController
+        .pushOne(deckId)
+        .then((_) {
+          if (!mounted) return;
+          final conflicts = syncController.pendingConflicts.where(
+            (c) => c.deckId == deckId,
+          );
+          if (conflicts.isNotEmpty) _showConflictSheet(conflicts.first);
+        })
+        // Silent on failure, matching the doc comment above: an unexpected
+        // error here must not become an unhandled Future error (a crash
+        // report the user never sees a symptom for).
+        .catchError((_) {});
+  }
+
+  void _showConflictSheet(SyncPendingConflict conflict) {
+    final syncController = widget.syncController;
+    if (syncController == null || !mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheet) => SyncReportSheet(
+        report: null,
+        conflicts: [conflict],
+        onResolve: (deckId, keepPhone) {
+          syncController.resolve(deckId, keepPhone: keepPhone);
+          Navigator.of(sheet).pop();
+        },
+        onRemoveOrphan: (_) {},
+      ),
+    );
   }
 
   // One transient line at open (the web client's notice semantics): the
@@ -88,6 +145,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       controller.dispose();
     }
     _attempt.dispose();
+    _controller.removeListener(_maybePushSummary);
     _controller.dispose();
     _client?.close();
     super.dispose();

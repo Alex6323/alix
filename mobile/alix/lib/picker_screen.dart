@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/bridge/picker_bridge.dart';
+import 'package:alix_mobile/bridge/sync_bridge.dart' as sync_bridge;
 import 'package:alix_mobile/folder_browser.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/picker/generate_controller.dart';
@@ -20,6 +21,10 @@ import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/settings_screen.dart';
+import 'package:alix_mobile/sync/root_switcher_sheet.dart';
+import 'package:alix_mobile/sync/sync_controller.dart';
+import 'package:alix_mobile/sync/sync_port.dart';
+import 'package:alix_mobile/sync/sync_sheet.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/walk_screen.dart';
 
@@ -36,6 +41,8 @@ class PickerScreen extends StatefulWidget {
     this.supportDir,
     this.buildClient,
     this.generatePollInterval,
+    this.syncController,
+    this.buildSyncPort,
   }) : masteredEntries = null;
 
   const PickerScreen.mastered({
@@ -43,6 +50,7 @@ class PickerScreen extends StatefulWidget {
     required this.root,
     required List<PickerEntry> entries,
     this.device,
+    this.syncController,
   }) : masteredEntries = entries,
        dir = null,
        title = null,
@@ -51,7 +59,8 @@ class PickerScreen extends StatefulWidget {
        onSetTheme = null,
        supportDir = null,
        buildClient = null,
-       generatePollInterval = null;
+       generatePollInterval = null,
+       buildSyncPort = null;
 
   final String root;
   final String? dir;
@@ -65,6 +74,17 @@ class PickerScreen extends StatefulWidget {
   final Duration? generatePollInterval;
   final List<PickerEntry>? masteredEntries;
 
+  /// The active paired root's sync controller, forwarded from the
+  /// screen that first built it (the root mount or a root switch) down
+  /// through a drill-in or the mastered view, so every depth shares one
+  /// running cycle rather than each starting its own. Null while unpaired
+  /// or showing a root that is not the paired one.
+  final SyncController? syncController;
+
+  /// Builds the port a freshly-mounted screen's sync controller talks to.
+  /// Tests inject a fake; the real bridge otherwise.
+  final SyncPort Function(ServerConfig config, String rootDir)? buildSyncPort;
+
   @override
   State<PickerScreen> createState() => _PickerScreenState();
 }
@@ -72,6 +92,8 @@ class PickerScreen extends StatefulWidget {
 class _PickerScreenState extends State<PickerScreen> {
   late final PickerPort _port;
   late final PickerController _controller;
+  SyncController? _syncController;
+  bool _hasPairings = false;
 
   @override
   void initState() {
@@ -83,22 +105,61 @@ class _PickerScreenState extends State<PickerScreen> {
       dir: widget.dir,
       masteredEntries: widget.masteredEntries,
     );
+    final forwarded = widget.syncController;
+    if (forwarded != null) _attachSyncController(forwarded);
     _loadPairing();
   }
 
   @override
   void dispose() {
+    _syncController?.removeListener(_controller.reload);
     _controller.dispose();
+    // Only dispose a controller this screen built itself; one forwarded
+    // through widget.syncController is still owned by whichever screen
+    // built it, and keeps running for that screen and any of its own
+    // descendants.
+    if (widget.syncController == null) _syncController?.dispose();
     super.dispose();
+  }
+
+  /// `_controller` is the one listenable `build()`'s `ListenableBuilder`
+  /// ever subscribes to, so a sync controller discovered after the first
+  /// frame (the paired root is only known once `_loadPairing` resolves)
+  /// still needs a way to trigger a rebuild: every notification from
+  /// [controller] is forwarded through `_controller.reload()`, which
+  /// `ListenableBuilder` was already listening to from the start.
+  void _attachSyncController(SyncController controller) {
+    _syncController = controller;
+    controller.addListener(_controller.reload);
   }
 
   Future<void> _loadPairing() async {
     final support = await _support();
+    _hasPairings = readPairings(support).isNotEmpty;
     final config = readActivePairing(support);
     if (config == null) {
       if (mounted) _controller.setServerReachable(false);
       return;
     }
+    final pairedDir = sync_bridge.pairedRootDirFor(
+      support: support.path,
+      rootId: config.rootId,
+    );
+    final isPairedRootScreen =
+        widget.dir == null &&
+        widget.masteredEntries == null &&
+        widget.root == pairedDir;
+    final freshlyBuilt = _syncController == null && isPairedRootScreen;
+    if (freshlyBuilt) {
+      sync_bridge.pairedRecoverFor(rootDir: pairedDir);
+      final buildPort =
+          widget.buildSyncPort ??
+          (config, rootDir) =>
+              sync_bridge.SyncBridgePort(config: config, rootDir: rootDir);
+      _attachSyncController(SyncController(port: buildPort(config, pairedDir)));
+      if (mounted) _controller.reload();
+    }
+
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
     ServerVersion? probe;
     try {
@@ -111,6 +172,71 @@ class _PickerScreenState extends State<PickerScreen> {
     final live =
         probe != null && compareVersions(probe.version, minServerVersion) >= 0;
     if (mounted) _controller.setServerReachable(live);
+
+    if (freshlyBuilt && live && probe.rootId == config.rootId) {
+      final syncController = _syncController!;
+      unawaited(
+        syncController.cycle().then((_) {
+          if (mounted) _controller.reload();
+        }),
+      );
+    }
+  }
+
+  void _syncEntry(PickerEntry entry) {
+    _syncController?.cycle(entry: entry.title);
+  }
+
+  Future<void> _openSyncReport() async {
+    final syncController = _syncController;
+    if (syncController == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SyncReportSheet(
+        report: syncController.lastReport,
+        conflicts: syncController.pendingConflicts,
+        onResolve: (deckId, keepPhone) =>
+            syncController.resolve(deckId, keepPhone: keepPhone),
+        onRemoveOrphan: syncController.removeOrphan,
+      ),
+    );
+    syncController.markReportRead();
+  }
+
+  Future<void> _rootSwitcherSheet() async {
+    final support = await _support();
+    if (!mounted) return;
+    final pairings = readPairings(support);
+    final active = readActivePairing(support);
+    final chosen = await showRootSwitcherSheet(
+      context,
+      pairings: pairings,
+      activeRootId: active?.rootId,
+    );
+    if (chosen == null) return;
+    await setActiveRoot(chosen.rootId, support: support);
+    final newRootDir = sync_bridge.pairedRootDirFor(
+      support: support.path,
+      rootId: chosen.rootId,
+    );
+    sync_bridge.pairedRecoverFor(rootDir: newRootDir);
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => PickerScreen(
+          root: newRootDir,
+          device: widget.device,
+          access: widget.access,
+          currentThemeId: widget.currentThemeId,
+          onSetTheme: widget.onSetTheme,
+          supportDir: widget.supportDir,
+          buildClient: widget.buildClient,
+          generatePollInterval: widget.generatePollInterval,
+          buildSyncPort: widget.buildSyncPort,
+        ),
+      ),
+    );
   }
 
   void _openSettings() {
@@ -124,6 +250,7 @@ class _PickerScreenState extends State<PickerScreen> {
           onTheme: _themeSheet,
           onAbout: _about,
           onGenerate: _controller.serverReachable ? _generateSheet : null,
+          onPairedDesktop: _hasPairings ? _rootSwitcherSheet : null,
         ),
         transitionsBuilder: (_, animation, _, child) {
           final curved = CurvedAnimation(
@@ -169,6 +296,9 @@ class _PickerScreenState extends State<PickerScreen> {
             null => null,
           },
           device: widget.device,
+          supportDir: widget.supportDir,
+          buildClient: widget.buildClient,
+          syncController: _syncController,
         ),
       ),
     );
@@ -271,6 +401,7 @@ class _PickerScreenState extends State<PickerScreen> {
           dir: entry.path,
           title: entry.title,
           device: widget.device,
+          syncController: _syncController,
         ),
       ),
     );
@@ -283,6 +414,7 @@ class _PickerScreenState extends State<PickerScreen> {
           root: widget.root,
           entries: mastered,
           device: widget.device,
+          syncController: _syncController,
         ),
       ),
     );
@@ -300,26 +432,36 @@ class _PickerScreenState extends State<PickerScreen> {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: _controller,
-      builder: (context, _) => PickerView(
-        entries: _controller.entries,
-        deadline: _controller.deadline,
-        isRoot: widget.dir == null,
-        isMasteredView: _controller.isMasteredView,
-        leading: Navigator.of(context).canPop()
-            ? const BackButton()
-            : widget.dir == null && widget.onSetTheme != null
-            ? IconButton(
-                icon: const Icon(Icons.menu),
-                tooltip: 'Settings',
-                onPressed: _openSettings,
-              )
-            : const SizedBox(width: 56),
-        title: widget.title,
-        onOpenEntry: _openEntry,
-        onLongPressEntry: _longPressEntry,
-        onOpenMastered: _openMastered,
-        onAddTutorial: _addTutorial,
-      ),
+      builder: (context, _) {
+        // Read fresh on every rebuild (not snapshotted above): this
+        // callback re-runs on a plain _controller.reload() forwarded
+        // from _syncController, so a stale local would still show the
+        // pre-cycle state.
+        final syncController = _syncController;
+        return PickerView(
+          entries: _controller.entries,
+          deadline: _controller.deadline,
+          isRoot: widget.dir == null,
+          isMasteredView: _controller.isMasteredView,
+          leading: Navigator.of(context).canPop()
+              ? const BackButton()
+              : widget.dir == null && widget.onSetTheme != null
+              ? IconButton(
+                  icon: const Icon(Icons.menu),
+                  tooltip: 'Settings',
+                  onPressed: _openSettings,
+                )
+              : const SizedBox(width: 56),
+          title: widget.title,
+          onOpenEntry: _openEntry,
+          onLongPressEntry: _longPressEntry,
+          onOpenMastered: _openMastered,
+          onAddTutorial: _addTutorial,
+          onSyncEntry: syncController == null ? null : _syncEntry,
+          syncStatus: syncController?.statusLine,
+          onOpenSyncReport: syncController == null ? null : _openSyncReport,
+        );
+      },
     );
   }
 

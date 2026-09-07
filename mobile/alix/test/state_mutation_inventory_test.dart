@@ -71,11 +71,16 @@ void main() {
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
-        'lib/review_screen.dart:243',
-        'lib/picker_screen.dart:301',
+        'lib/review_screen.dart:301',
+        'lib/picker_screen.dart:433',
         'lib/picker/generate_sheet.dart:42',
         'lib/walk_screen.dart:192',
       ],
+      reason:
+          'sync wiring added imports, fields, and methods above build() in '
+          'review_screen.dart and picker_screen.dart, moving their single '
+          'ListenableBuilder site; generate_sheet.dart and walk_screen.dart '
+          'are unchanged',
     );
   });
 

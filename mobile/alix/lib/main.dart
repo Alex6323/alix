@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/bridge/sync_bridge.dart' as sync_bridge;
 import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
@@ -10,8 +14,33 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
   final access = RealPlatformAccess();
-  final prepared = await prepare();
+  final prepared = await _prepareWithPairing();
   runApp(AlixApp(prepared: prepared, access: access));
+}
+
+/// `prepare()`'s root, redirected to the active paired root when one is
+/// set and no dev override (`ALIX_DECKS_DIR`) is in play: once paired, the
+/// phone opens on the desktop's content rather than its own bundled
+/// samples. Ensures the paired directory exists and rolls back an
+/// interrupted apply before the picker ever lists it.
+Future<Prepared> _prepareWithPairing() async {
+  final prepared = await prepare();
+  if ((Platform.environment['ALIX_DECKS_DIR'] ?? '').isNotEmpty) {
+    return prepared;
+  }
+  final support = await getApplicationSupportDirectory();
+  final pairing = readActivePairing(support);
+  if (pairing == null) return prepared;
+  final pairedDir = sync_bridge.pairedRootDirFor(
+    support: support.path,
+    rootId: pairing.rootId,
+  );
+  sync_bridge.pairedRecoverFor(rootDir: pairedDir);
+  return Prepared(
+    root: pairedDir,
+    device: prepared.device,
+    themeId: prepared.themeId,
+  );
 }
 
 /// The app shell: holds the resolved decks root and the live theme choice.

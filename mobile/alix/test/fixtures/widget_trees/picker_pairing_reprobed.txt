@@ -43,6 +43,15 @@ Scaffold
               Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
                 SafeArea
                   Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                    Icon(e62f)
+                      SizedBox(width=24.0, height=24.0)
+                        Center
+                    Text("Paired desktop")
+          ListTile(enabled=true, tap=true)
+            InkWell(tap=true, longPress=false)
+              Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                SafeArea
+                  Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
                     Icon(f24f)
                       SizedBox(width=24.0, height=24.0)
                         Center

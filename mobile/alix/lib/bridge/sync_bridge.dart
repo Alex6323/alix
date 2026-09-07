@@ -12,6 +12,14 @@ String pairedRootDirFor({required String support, required String rootId}) {
   return bridge.pairedRootDir(support: support, rootId: rootId);
 }
 
+/// Creates [rootDir] if missing and rolls back an interrupted apply; the
+/// same call `SyncBridgePort.recover` makes, exposed standalone for a
+/// caller (app open, the root switcher) that only needs the directory
+/// ready before a `SyncPort` exists yet.
+List<String> pairedRecoverFor({required String rootDir}) {
+  return bridge.pairedRecover(rootDir: rootDir);
+}
+
 /// The real `SyncPort`: dials the paired desktop's `/api/sync/*` transport
 /// through [SyncClient] and the phone-local `paired_*` bridge calls through
 /// the generated `src/rust/api/sync.dart`. The only file allowed to import
