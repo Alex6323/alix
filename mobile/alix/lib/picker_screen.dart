@@ -187,6 +187,10 @@ class _PickerScreenState extends State<PickerScreen> {
     _syncController?.cycle(entry: entry.title);
   }
 
+  void _pullAvailable(String name) {
+    _syncController?.cycle(entry: name);
+  }
+
   Future<void> _openSyncReport() async {
     final syncController = _syncController;
     if (syncController == null) return;
@@ -438,6 +442,8 @@ class _PickerScreenState extends State<PickerScreen> {
         // from _syncController, so a stale local would still show the
         // pre-cycle state.
         final syncController = _syncController;
+        final isPairedRootScreen =
+            widget.dir == null && widget.masteredEntries == null;
         return PickerView(
           entries: _controller.entries,
           deadline: _controller.deadline,
@@ -460,6 +466,12 @@ class _PickerScreenState extends State<PickerScreen> {
           onSyncEntry: syncController == null ? null : _syncEntry,
           syncStatus: syncController?.statusLine,
           onOpenSyncReport: syncController == null ? null : _openSyncReport,
+          availableEntries: syncController != null && isPairedRootScreen
+              ? syncController.availableEntries
+              : const [],
+          onPullAvailable: syncController != null && isPairedRootScreen
+              ? _pullAvailable
+              : null,
         );
       },
     );

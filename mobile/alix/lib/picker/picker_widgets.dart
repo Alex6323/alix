@@ -5,6 +5,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/tree_guides.dart';
+import 'package:alix_mobile/sync/sync_models.dart' show humanBytes;
+import 'package:alix_mobile/sync_client.dart' show SyncEntry;
 import 'package:alix_mobile/theme.dart';
 
 class PickerLede extends StatelessWidget {
@@ -268,6 +270,68 @@ class PickerMasteredAffordance extends StatelessWidget {
                   ),
                 ),
                 Icon(Icons.chevron_right, size: 22, color: tokens.good),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A desktop entry this phone has never pulled (`SyncController.
+/// availableEntries`): name and size only, subdued, no `⋮` menu and no
+/// review action. Tapping it pulls the entry for the first time; once the
+/// pull lands the entry gains a manifest and this row is gone next build.
+class PickerAvailableEntryRow extends StatelessWidget {
+  const PickerAvailableEntryRow({
+    super.key,
+    required this.entry,
+    required this.onTap,
+  });
+
+  final SyncEntry entry;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = theme.alix;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(11),
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 54),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              border: Border.all(color: tokens.line),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    entry.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: tokens.dim,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  humanBytes(entry.unpackedBytes),
+                  style: TextStyle(
+                    fontFamily: 'IBM Plex Mono',
+                    fontSize: 11,
+                    color: tokens.dim,
+                  ),
+                ),
               ],
             ),
           ),

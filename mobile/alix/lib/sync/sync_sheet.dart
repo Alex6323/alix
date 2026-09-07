@@ -49,7 +49,11 @@ class SyncReportSheet extends StatelessWidget {
                 _Section(title: 'Phone-only', lines: report.phoneOnly),
                 _Section(title: 'Removed', lines: report.removed),
                 _Section(title: 'Renamed', lines: report.renamed),
-                _Section(title: 'Left out', lines: report.leftOut),
+                _Section(
+                  title: 'Left out on the desktop',
+                  lines: report.leftOut,
+                ),
+                _Section(title: 'Not on this phone', lines: report.notOnPhone),
                 _Section(title: 'Refused', lines: report.refused),
                 if (report.orphaned.isNotEmpty) ...[
                   Text('Orphaned', style: theme.textTheme.labelMedium),

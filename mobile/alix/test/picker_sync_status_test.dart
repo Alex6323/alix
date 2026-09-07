@@ -19,6 +19,7 @@ import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/sync/sync_port.dart';
 import 'package:alix_mobile/sync/sync_sheet.dart';
+import 'package:alix_mobile/sync_client.dart' show SyncEntries, SyncEntry;
 
 import 'support/deck_fixture.dart';
 import 'support/fake_server_client.dart';
@@ -149,6 +150,48 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(port.entriesCalls.length, 2);
+    },
+  );
+
+  testWidgets(
+    "a desktop entry the phone has never pulled shows below the phone's "
+    'own entries with its name and size, and tapping it pulls it',
+    (tester) async {
+      final support = tempDir('alix-sync-available-support-');
+      final root = await pairedRoot(support);
+      final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      port.entriesImpl = () async => const SyncEntries(
+        rootId: 'root-test',
+        entries: [
+          SyncEntry(
+            name: 'Biology',
+            kind: 'workspace',
+            members: 3,
+            unpackedBytes: 2048,
+            leftOut: [],
+          ),
+        ],
+      );
+
+      await pumpPaired(tester, root: root, support: support, port: port);
+
+      expect(find.text('Biology'), findsOneWidget);
+      expect(find.text('2.0 KB'), findsOneWidget);
+
+      // The pull writes real files (a staging directory, the zip target)
+      // before FakeSyncPort.pull is ever reached; the fake test zone never
+      // services that dart:io I/O on its own, so this needs runAsync, same
+      // as review_screen_sync_push_test.dart's summary push.
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Biology'));
+        final deadline = DateTime.now().add(const Duration(seconds: 2));
+        while (port.pullCalls.isEmpty && DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        await tester.pumpAndSettle();
+      });
+
+      expect(port.pullCalls, ['Biology']);
     },
   );
 }

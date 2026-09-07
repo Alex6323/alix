@@ -46,12 +46,17 @@ progress or take the desktop's, naming what each choice discards. An entry
 the desktop no longer serves stays on the phone, reviewable, listed as
 orphaned, with a Remove action once you're done with it.
 
+A desktop entry the phone has never pulled shows below the phone's own
+entries: its name and size only, in a subdued row with no `⋮` menu and no
+review action. Tapping it pulls it for the first time; once it lands it
+becomes an ordinary entry, reviewable like any other.
+
 Tapping the status line above the deck list (shown while a cycle runs, or
 its last report is unread) opens the full report: landed, kept,
-phone-only, removed, renamed, and refused categories, plus a **left out**
-list, entries the desktop serves that the phone has never pulled. This is
-early software: there is no way yet to pull one of those from the phone;
-only an entry already on the phone syncs.
+phone-only, removed, renamed, and refused categories, plus **left out on
+the desktop** (members inside an entry the desktop could not load) and
+**not on this phone** (entries the desktop serves that this phone has
+never pulled, the same ones shown as rows below the deck list).
 
 Settings gains a **Paired desktop** row once a pairing is saved, opening a
 sheet to switch which root's entries the picker shows.

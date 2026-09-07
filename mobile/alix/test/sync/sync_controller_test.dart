@@ -106,6 +106,7 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 500,
+              leftOut: [],
             ),
           ],
         );
@@ -136,6 +137,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            leftOut: [],
           ),
         ],
       );
@@ -163,12 +165,14 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            leftOut: [],
           ),
           SyncEntry(
             name: 'Chemistry',
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            leftOut: [],
           ),
         ],
       );
@@ -200,7 +204,7 @@ void main() {
       },
     );
 
-    test('leftOut names a desktop entry the phone has never pulled', () async {
+    test('notOnPhone names a desktop entry the phone has never pulled', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
       port.entriesImpl = () async => const SyncEntries(
         rootId: 'root-a',
@@ -210,6 +214,7 @@ void main() {
             kind: 'deck',
             members: 1,
             unpackedBytes: 10,
+            leftOut: [],
           ),
         ],
       );
@@ -217,8 +222,46 @@ void main() {
 
       await controller.cycle();
 
-      expect(controller.lastReport?.leftOut, ['New Deck']);
+      expect(controller.lastReport?.notOnPhone, ['New Deck']);
+      expect(controller.lastReport?.leftOut, isEmpty);
     });
+
+    test(
+      'leftOut and notOnPhone split correctly: an entry on the phone '
+      'carries its own left_out members, an entry not on the phone is '
+      'named in notOnPhone instead',
+      () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.entriesImpl = () async => const SyncEntries(
+          rootId: 'root-a',
+          entries: [
+            SyncEntry(
+              name: 'Biology',
+              kind: 'workspace',
+              members: 2,
+              unpackedBytes: 10,
+              leftOut: ['decks/broken.md'],
+            ),
+            SyncEntry(
+              name: 'Chemistry',
+              kind: 'workspace',
+              members: 1,
+              unpackedBytes: 10,
+              leftOut: [],
+            ),
+          ],
+        );
+        port.pairedEntriesImpl = () => const [
+          SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+        ];
+        final controller = SyncController(port: port);
+
+        await controller.cycle();
+
+        expect(controller.lastReport?.leftOut, ['Biology/decks/broken.md']);
+        expect(controller.lastReport?.notOnPhone, ['Chemistry']);
+      },
+    );
 
     test('renamed reports the tidy pairs from the lib', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
@@ -330,6 +373,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            leftOut: [],
           ),
         ],
       );
@@ -365,6 +409,78 @@ void main() {
 
       expect(port.removeEntryCalls, ['Old Deck']);
     });
+  });
+
+  group('availableEntries', () {
+    test('empty before any listing', () {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      final controller = SyncController(port: port);
+
+      expect(controller.availableEntries, isEmpty);
+    });
+
+    test('lists a desktop entry the phone has no manifest for', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.entriesImpl = () async => const SyncEntries(
+        rootId: 'root-a',
+        entries: [
+          SyncEntry(
+            name: 'Biology',
+            kind: 'workspace',
+            members: 1,
+            unpackedBytes: 10,
+            leftOut: [],
+          ),
+        ],
+      );
+      final controller = SyncController(port: port);
+
+      await controller.cycle();
+
+      expect(controller.availableEntries.map((e) => e.name), ['Biology']);
+    });
+
+    test(
+      'a first pull lands the entry, and the row is gone from the next read',
+      () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.entriesImpl = () async => const SyncEntries(
+          rootId: 'root-a',
+          entries: [
+            SyncEntry(
+              name: 'Biology',
+              kind: 'workspace',
+              members: 1,
+              unpackedBytes: 10,
+              leftOut: [],
+            ),
+          ],
+        );
+        var pulled = false;
+        port.pairedEntriesImpl = () => pulled
+            ? const [SyncEntryState(entry: 'Biology', kind: 'workspace', decks: [])]
+            : const [];
+        port.applyPullImpl = (entry, zipPath) async {
+          pulled = true;
+          return const SyncPullReport(
+            entry: 'Biology',
+            kind: 'workspace',
+            landed: [],
+            kept: [],
+            conflicts: [],
+            phoneOnly: [],
+            removed: [],
+          );
+        };
+        final controller = SyncController(port: port);
+
+        await controller.cycle();
+        expect(controller.availableEntries.map((e) => e.name), ['Biology']);
+
+        await controller.cycle(entry: 'Biology');
+        expect(controller.availableEntries, isEmpty);
+      },
+    );
   });
 
   group('statusLine', () {

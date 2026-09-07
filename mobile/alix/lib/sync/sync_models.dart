@@ -185,6 +185,7 @@ class SyncReport {
     this.phoneOnly = const [],
     this.removed = const [],
     this.leftOut = const [],
+    this.notOnPhone = const [],
     this.renamed = const [],
     this.orphaned = const [],
     this.refused = const [],
@@ -196,7 +197,16 @@ class SyncReport {
   final List<String> conflicts;
   final List<String> phoneOnly;
   final List<String> removed;
+
+  /// `'<entry>/<path>'` for every member the desktop could not load into an
+  /// entry this phone has (or just pulled this cycle): `SyncEntry.leftOut`,
+  /// carried through under the entry's own name.
   final List<String> leftOut;
+
+  /// Names of desktop-served entries this phone has never pulled a
+  /// manifest for (`SyncController.availableEntries`'s names as of this
+  /// report).
+  final List<String> notOnPhone;
   final List<String> renamed;
   final List<String> orphaned;
   final List<String> refused;
@@ -210,6 +220,7 @@ class SyncReport {
       phoneOnly.isEmpty &&
       removed.isEmpty &&
       leftOut.isEmpty &&
+      notOnPhone.isEmpty &&
       renamed.isEmpty &&
       orphaned.isEmpty &&
       refused.isEmpty;
@@ -299,4 +310,15 @@ String _formatTime(int atMs) {
   final hh = local.hour.toString().padLeft(2, '0');
   final mm = local.minute.toString().padLeft(2, '0');
   return '$hh:$mm';
+}
+
+/// A byte count in the coarsest unit that keeps one decimal of precision,
+/// shared by the free-space refusal line and the picker's never-pulled
+/// entry rows.
+String humanBytes(int bytes) {
+  if (bytes >= 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  return '$bytes bytes';
 }

@@ -36,6 +36,12 @@ class SyncController extends ChangeNotifier {
   bool _reportUnread = false;
   bool _disposed = false;
 
+  /// The last successful `entries()` listing this controller made; null
+  /// while offline or before the first listing. A root switch always
+  /// builds a fresh controller (`picker_screen.dart`), which starts null
+  /// again, so switching roots clears this without any code here.
+  SyncEntries? _lastListing;
+
   @override
   void dispose() {
     _disposed = true;
@@ -59,6 +65,19 @@ class SyncController extends ChangeNotifier {
   /// document path to a deck id via `deckIdForPath` without reaching the
   /// port directly.
   List<SyncEntryState> get pairedEntries => _port.pairedEntries();
+
+  /// Entries the last successful listing named that this phone has no
+  /// manifest for: never pulled, so tapping one (`cycle(entry: name)`)
+  /// does a first pull rather than a re-sync. Empty before any listing.
+  List<SyncEntry> get availableEntries {
+    final listing = _lastListing;
+    if (listing == null) return const [];
+    final known = _port.pairedEntries().map((e) => e.entry).toSet();
+    return [
+      for (final entry in listing.entries)
+        if (!known.contains(entry.name)) entry,
+    ];
+  }
 
   /// One line for the picker's status readout while a cycle runs or its
   /// last report is unread; null the rest of the time.
@@ -132,6 +151,7 @@ class SyncController extends ChangeNotifier {
     final SyncEntries desktop;
     try {
       desktop = await _port.entries();
+      _lastListing = desktop;
     } on PairingExpired {
       return aborted(syncPairingExpiredMessage);
     } on SyncTransportFailure catch (error) {
@@ -181,8 +201,8 @@ class SyncController extends ChangeNotifier {
         pullReport = await _pullEntry(name, desktopEntry.first.unpackedBytes);
       } on SyncFreeSpaceRefusal catch (error) {
         refused.add(
-          '$name: needs ${_humanBytes(error.needed)}, '
-          '${_humanBytes(error.free)} free',
+          '$name: needs ${humanBytes(error.needed)}, '
+          '${humanBytes(error.free)} free',
         );
         continue;
       } on PairingExpired {
@@ -215,9 +235,14 @@ class SyncController extends ChangeNotifier {
       for (final name in knownEntryNames)
         if (!desktopNames.contains(name)) name,
     ];
-    final leftOut = [
+    final notOnPhone = [
       for (final name in desktopNames)
         if (!knownEntryNames.contains(name)) name,
+    ];
+    final leftOut = [
+      for (final entry in desktop.entries)
+        if (knownEntryNames.contains(entry.name))
+          for (final path in entry.leftOut) '${entry.name}/$path',
     ];
 
     return SyncReport(
@@ -227,6 +252,7 @@ class SyncController extends ChangeNotifier {
       phoneOnly: phoneOnly,
       removed: removed,
       leftOut: leftOut,
+      notOnPhone: notOnPhone,
       renamed: renamed,
       orphaned: orphaned,
       refused: refused,
@@ -318,6 +344,7 @@ class SyncController extends ChangeNotifier {
   Future<void> _resolvePull(String entry) async {
     try {
       final desktop = await _port.entries();
+      _lastListing = desktop;
       final desktopEntry = desktop.entries.where((e) => e.name == entry);
       if (desktopEntry.isEmpty) return;
       final pullReport = await _pullEntry(
@@ -351,8 +378,8 @@ class SyncController extends ChangeNotifier {
     } on SyncFreeSpaceRefusal catch (error) {
       _lastReport = SyncReport(
         refused: [
-          '$entry: needs ${_humanBytes(error.needed)}, '
-              '${_humanBytes(error.free)} free',
+          '$entry: needs ${humanBytes(error.needed)}, '
+              '${humanBytes(error.free)} free',
         ],
       );
       _reportUnread = true;
@@ -387,11 +414,3 @@ class SyncController extends ChangeNotifier {
 }
 
 String _basename(String path) => path.split('/').last;
-
-String _humanBytes(int bytes) {
-  if (bytes >= 1024 * 1024) {
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
-  if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-  return '$bytes bytes';
-}

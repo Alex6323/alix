@@ -36,9 +36,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers with the same root, and a review session's summary silently
   pushes that deck's progress. A one-line status shows while a cycle runs
   or its report is unread; tapping it opens the report (landed, kept,
-  phone-only, removed, renamed, left out, orphaned, refused), and a push or
-  pull conflict surfaces a choice naming what each side discards. Settings
-  gains a "Paired desktop" row to switch between saved pairings.
+  phone-only, removed, renamed, left out, not on this phone, orphaned,
+  refused), and a push or pull conflict surfaces a choice naming what each
+  side discards. A desktop entry the phone has never pulled now shows as
+  its own row below the picker's entries, name and size only, tap to pull
+  it for the first time. Settings gains a "Paired desktop" row to switch
+  between saved pairings.
 
 ### Removed
 

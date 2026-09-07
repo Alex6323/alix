@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/picker_widgets.dart';
+import 'package:alix_mobile/sync_client.dart' show SyncEntry;
 import 'package:alix_mobile/theme.dart';
 
 class PickerView extends StatelessWidget {
@@ -20,6 +21,8 @@ class PickerView extends StatelessWidget {
     this.onSyncEntry,
     this.syncStatus,
     this.onOpenSyncReport,
+    this.availableEntries = const [],
+    this.onPullAvailable,
   });
 
   final List<PickerEntry> entries;
@@ -41,6 +44,12 @@ class PickerView extends StatelessWidget {
   /// is unread; tapping it opens the report.
   final String? syncStatus;
   final VoidCallback? onOpenSyncReport;
+
+  /// Desktop entries this phone has never pulled, shown below the phone's
+  /// own entries regardless of whether the list above is empty. Non-empty
+  /// only on the paired root's own top-level screen.
+  final List<SyncEntry> availableEntries;
+  final ValueChanged<String>? onPullAvailable;
 
   @override
   Widget build(BuildContext context) {
@@ -107,6 +116,11 @@ class PickerView extends StatelessWidget {
                       onTap: () => onOpenMastered(mastered),
                     ),
                 ],
+                for (final entry in availableEntries)
+                  PickerAvailableEntryRow(
+                    entry: entry,
+                    onTap: () => onPullAvailable?.call(entry.name),
+                  ),
               ],
             ),
           ),
