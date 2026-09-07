@@ -135,6 +135,13 @@ src/icon.rs:199: replace < with <= in strip_attrs
 # glyph is unchanged. Line-pinned.
 src/inline.rs:237: replace + with * in classify_line
 
+# EQUIVALENT. Every candidate in `open` has positive `remaining` whenever
+# `rposition` runs. Push is guarded by `remaining[...] > 0`; the only later
+# mutation of a candidate is through selection as `opener_index`, and a zeroed
+# opener is removed before the search repeats. The `>= 0` mutant's extra zero
+# case is unreachable. Line-pinned.
+src/inline.rs:267: replace > with >= in classify_line
+
 # EQUIVALENT. The only extra candidate the widened bound admits is
 # `at == glyphs.len()`, and `raw` is `glyphs.get(at)` (src/inline.rs:617), so
 # that iteration reads `None`, the `matches!` is false, the loop advances once
