@@ -68,6 +68,10 @@ abstract class SyncPort {
   /// `paired_staging_zip`: the temporary archive path a pull writes [entry]
   /// to and removes once applied.
   String pairedStagingZip(String entry);
+
+  /// The deck's own `title:` for the local copy at [path] (relative to
+  /// [rootDir]); null when the phone holds no such file to read one from.
+  String? deckTitle(String path);
 }
 
 /// Thrown by `SyncPort.pull` when the entry would not fit; [needed] and

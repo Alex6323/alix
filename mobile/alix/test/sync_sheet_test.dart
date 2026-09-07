@@ -1,8 +1,9 @@
-// Widget tests for lib/sync/sync_sheet.dart: the conflict choice's exact
-// button wording (what each side discards), that only non-empty report
-// sections render, and that a button tap calls onResolve with the right
+// Widget tests for lib/sync/sync_sheet.dart: the conflict choice row's exact
+// title/subtitle wording (what each side discards), that only non-empty
+// report sections render, and that a row tap calls onResolve with the right
 // deckId/keepPhone pair. Pure presentation, no bridge or dylib needed.
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/sync/sync_models.dart';
@@ -34,46 +35,42 @@ void main() {
   }
 
   testWidgets(
-    'a conflict names what each button discards, including the desktop '
+    'a conflict names what each row discards, including the desktop '
     "writer when the bridge reports one",
     (tester) async {
       const conflict = SyncPendingConflict(
         deckId: 'deck-1',
-        entry: 'German',
-        path: 'Verbs.md',
+        label: 'German/Verbs.md',
         conflict: PairedConflictPush(
           desktopWriter: SyncWriter(device: 'desk-1', atMs: 0),
         ),
       );
       await pump(tester, conflicts: const [conflict]);
 
+      expect(find.text("Keep the phone's progress"), findsOneWidget);
       expect(
         find.text(
-          "Keep the phone's progress (discards the desktop's, "
-          'last written by desk-1 at 1970-01-01 01:00)',
+          "discards the desktop's, last written by desk-1 at "
+          '1970-01-01 01:00',
         ),
         findsOneWidget,
       );
+      expect(find.text("Take the desktop's"), findsOneWidget);
       expect(
-        find.text(
-          "Take the desktop's (discards the phone's progress since the "
-          'last sync)',
-        ),
+        find.text("discards the phone's progress since the last sync"),
         findsOneWidget,
       );
     },
   );
 
   testWidgets(
-    'the writer label carries the date, not only the time, since a stale '
-    'conflict can be days old',
+    'the writer subtitle carries the date, not only the time, since a '
+    'stale conflict can be days old',
     (tester) async {
-      final twoDaysAgo = DateTime(2026, 9, 5, 9, 15)
-          .millisecondsSinceEpoch;
+      final twoDaysAgo = DateTime(2026, 9, 5, 9, 15).millisecondsSinceEpoch;
       final conflict = SyncPendingConflict(
         deckId: 'deck-1',
-        entry: 'German',
-        path: 'Verbs.md',
+        label: 'German/Verbs.md',
         conflict: PairedConflictPush(
           desktopWriter: SyncWriter(device: 'desk-1', atMs: twoDaysAgo),
         ),
@@ -82,8 +79,8 @@ void main() {
 
       expect(
         find.text(
-          "Keep the phone's progress (discards the desktop's, "
-          'last written by desk-1 at 2026-09-05 09:15)',
+          "discards the desktop's, last written by desk-1 at "
+          '2026-09-05 09:15',
         ),
         findsOneWidget,
       );
@@ -91,23 +88,61 @@ void main() {
   );
 
   testWidgets(
-    'a conflict with no known desktop writer keeps the keep-phone label '
+    'the writer subtitle stays fully visible, never ellipsized, for a '
+    '24-character device label on a 1080px-wide phone',
+    (tester) async {
+      final conflict = SyncPendingConflict(
+        deckId: 'deck-1',
+        label: 'German/Verbs.md',
+        conflict: PairedConflictPush(
+          desktopWriter: SyncWriter(
+            device: 'alix-workstation-1a2b3cd',
+            atMs: DateTime(2026, 9, 7, 13, 19).millisecondsSinceEpoch,
+          ),
+        ),
+      );
+      final view = tester.view;
+      addTearDown(view.resetPhysicalSize);
+      addTearDown(view.resetDevicePixelRatio);
+      view.physicalSize = const Size(1080, 2424);
+      view.devicePixelRatio = 1;
+      await pump(tester, conflicts: [conflict]);
+
+      final subtitleText =
+          "discards the desktop's, last written by "
+          'alix-workstation-1a2b3cd at 2026-09-07 13:19';
+      final finder = find.text(subtitleText);
+      expect(finder, findsOneWidget);
+      final subtitle = tester.widget<Text>(finder);
+      final renderObject = tester.renderObject<RenderParagraph>(finder);
+      final painter = TextPainter(
+        text: TextSpan(text: subtitle.data, style: subtitle.style),
+        maxLines: subtitle.maxLines,
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: renderObject.size.width);
+
+      expect(
+        painter.didExceedMaxLines,
+        isFalse,
+        reason:
+            'the timestamp is the one fact that distinguishes the two '
+            'choices; it must fit, not clip',
+      );
+    },
+  );
+
+  testWidgets(
+    'a conflict with no known desktop writer keeps the keep-phone subtitle '
     'writer-free rather than inventing one',
     (tester) async {
       const conflict = SyncPendingConflict(
         deckId: 'deck-1',
-        entry: 'German',
-        path: 'Verbs.md',
+        label: 'German/Verbs.md',
         conflict: PairedConflictPull(),
       );
       await pump(tester, conflicts: const [conflict]);
 
-      expect(
-        find.text(
-          "Keep the phone's progress (discards the desktop's version)",
-        ),
-        findsOneWidget,
-      );
+      expect(find.text("discards the desktop's version"), findsOneWidget);
     },
   );
 
@@ -115,8 +150,7 @@ void main() {
       "conflict's own deckId", (tester) async {
     const conflict = SyncPendingConflict(
       deckId: 'deck-9',
-      entry: 'German',
-      path: 'Verbs.md',
+      label: 'German/Verbs.md',
       conflict: PairedConflictPull(),
     );
     String? resolvedId;
@@ -130,11 +164,7 @@ void main() {
       },
     );
 
-    await tester.tap(
-      find.text(
-        "Keep the phone's progress (discards the desktop's version)",
-      ),
-    );
+    await tester.tap(find.text("Keep the phone's progress"));
     expect(resolvedId, 'deck-9');
     expect(resolvedKeepPhone, isTrue);
   });
@@ -144,8 +174,7 @@ void main() {
   ) async {
     const conflict = SyncPendingConflict(
       deckId: 'deck-9',
-      entry: 'German',
-      path: 'Verbs.md',
+      label: 'German/Verbs.md',
       conflict: PairedConflictPull(),
     );
     bool? resolvedKeepPhone;
@@ -155,7 +184,7 @@ void main() {
       onResolve: (_, keepPhone) => resolvedKeepPhone = keepPhone,
     );
 
-    await tester.tap(find.text(conflictTakeDesktopLabel));
+    await tester.tap(find.text(conflictTakeDesktopWording.title));
     expect(resolvedKeepPhone, isFalse);
   });
 
@@ -256,16 +285,13 @@ void main() {
     (tester) async {
       const conflict = SyncPendingConflict(
         deckId: 'deck-9',
-        entry: 'German',
-        path: 'Verbs.md',
+        label: 'German/Verbs.md',
         conflict: PairedConflictPull(),
       );
       await pump(tester, conflicts: const [conflict]);
 
       expect(find.byType(OutlinedButton), findsNWidgets(2));
-      await tester.tap(
-        find.text("Keep the phone's progress (discards the desktop's version)"),
-      );
+      await tester.tap(find.text("Keep the phone's progress"));
       await tester.pump();
 
       expect(find.byType(OutlinedButton), findsNothing);

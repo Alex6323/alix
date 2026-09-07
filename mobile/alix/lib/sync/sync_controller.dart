@@ -133,8 +133,7 @@ class SyncController extends ChangeNotifier {
           if (deck.conflict case final conflict?)
             SyncPendingConflict(
               deckId: deck.deckId,
-              entry: entry.entry,
-              path: deck.path,
+              label: _deckLabel(entry, deck),
               conflict: conflict,
             ),
     ];
@@ -370,7 +369,9 @@ class SyncController extends ChangeNotifier {
   /// `Pull` pulls the returned entry; `Done` means the lib already applied
   /// the choice. No-op for a [deckId] outside [pendingConflicts].
   Future<void> resolve(String deckId, {required bool keepPhone}) async {
-    if (!_pendingConflicts.any((c) => c.deckId == deckId)) return;
+    final pending = _pendingConflicts.where((c) => c.deckId == deckId);
+    if (pending.isEmpty) return;
+    final label = pending.first.label;
     final resolution = _port.resolveConflict(deckId, keepPhone: keepPhone);
     switch (resolution) {
       case SyncResolutionDone():
@@ -385,6 +386,9 @@ class SyncController extends ChangeNotifier {
         }
       case SyncResolutionPull(:final entry):
         await _resolvePull(entry);
+    }
+    if (_lastReport case final report?) {
+      _lastReport = report.withoutConflict(label);
     }
     _refreshPairedState();
     _notify();
@@ -445,8 +449,7 @@ class SyncController extends ChangeNotifier {
   Map<String, String> _deckLabels() {
     return {
       for (final entry in _port.pairedEntries())
-        for (final deck in entry.decks)
-          deck.deckId: '${entry.entry}/${_basename(deck.path)}',
+        for (final deck in entry.decks) deck.deckId: _deckLabel(entry, deck),
     };
   }
 
@@ -454,11 +457,22 @@ class SyncController extends ChangeNotifier {
     for (final entry in _port.pairedEntries()) {
       if (entry.entry != entryName) continue;
       return {
-        for (final deck in entry.decks)
-          deck.deckId: '${entry.entry}/${_basename(deck.path)}',
+        for (final deck in entry.decks) deck.deckId: _deckLabel(entry, deck),
       };
     }
     return const {};
+  }
+
+  /// A workspace member reads `<entry>/<basename>` (`Biology/cells.md`); a
+  /// loose deck IS its entry (`deck.path == entry.entry`), so that shape
+  /// would double the name (`greek.md/greek.md`). Its title stands in
+  /// instead, falling back to the entry name when the phone holds no local
+  /// copy to read one from.
+  String _deckLabel(SyncEntryState entry, SyncDeckState deck) {
+    if (entry.kind != 'workspace') {
+      return _port.deckTitle(deck.path) ?? entry.entry;
+    }
+    return '${entry.entry}/${_basename(deck.path)}';
   }
 }
 

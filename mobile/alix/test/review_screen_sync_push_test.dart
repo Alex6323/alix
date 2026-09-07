@@ -199,12 +199,8 @@ void main() {
       await finishReview(tester, settled: () => port.pushCalls.isNotEmpty);
 
       expect(find.byType(SyncReportSheet), findsOneWidget);
-      expect(
-        find.text(
-          "Keep the phone's progress (discards the desktop's version)",
-        ),
-        findsOneWidget,
-      );
+      expect(find.text("Keep the phone's progress"), findsOneWidget);
+      expect(find.text("discards the desktop's version"), findsOneWidget);
     },
   );
 }

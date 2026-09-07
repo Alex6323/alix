@@ -212,6 +212,9 @@ class SyncReport {
   final List<String> refused;
   final String? error;
 
+  /// Whether the cycle changed or found nothing worth flagging as unread.
+  /// [notOnPhone] is excluded on purpose: the picker's own never-pulled
+  /// rows already say so, so it alone must not mark the status unread.
   bool get isEmpty =>
       error == null &&
       landed.isEmpty &&
@@ -220,7 +223,6 @@ class SyncReport {
       phoneOnly.isEmpty &&
       removed.isEmpty &&
       leftOut.isEmpty &&
-      notOnPhone.isEmpty &&
       renamed.isEmpty &&
       orphaned.isEmpty &&
       refused.isEmpty;
@@ -239,6 +241,27 @@ class SyncReport {
       notOnPhone: notOnPhone,
       renamed: renamed,
       orphaned: [for (final e in orphaned) if (e != entry) e],
+      refused: refused,
+      error: error,
+    );
+  }
+
+  /// The same report with [label] dropped from [conflicts]; every other
+  /// field is unchanged. A no-op when [label] is not present, so a resolve
+  /// for a conflict the last cycle never reported (one left over from an
+  /// earlier session) leaves the report alone.
+  SyncReport withoutConflict(String label) {
+    if (!conflicts.contains(label)) return this;
+    return SyncReport(
+      landed: landed,
+      kept: kept,
+      conflicts: [for (final c in conflicts) if (c != label) c],
+      phoneOnly: phoneOnly,
+      removed: removed,
+      leftOut: leftOut,
+      notOnPhone: notOnPhone,
+      renamed: renamed,
+      orphaned: orphaned,
       refused: refused,
       error: error,
     );
@@ -268,14 +291,16 @@ class SyncReport {
 class SyncPendingConflict {
   const SyncPendingConflict({
     required this.deckId,
-    required this.entry,
-    required this.path,
+    required this.label,
     required this.conflict,
   });
 
   final String deckId;
-  final String entry;
-  final String path;
+
+  /// A workspace member's `<entry>/<basename>`, or a loose deck's title
+  /// (falling back to the entry name); never `<entry>/<entry>`.
+  final String label;
+
   final PairedConflict conflict;
 }
 
@@ -306,23 +331,27 @@ String? deckIdForPath({
   return null;
 }
 
-/// "Keep the phone's progress" button wording for the conflict choice
-/// sheet: names what it discards, and who last wrote the desktop side when
-/// known.
-String conflictKeepPhoneLabel(PairedConflict conflict) {
+/// A conflict choice row's short title, plus a subtitle naming what
+/// choosing it discards.
+typedef ConflictChoiceWording = ({String title, String subtitle});
+
+/// "Keep the phone's progress": names what it discards, and who last wrote
+/// the desktop side when known.
+ConflictChoiceWording conflictKeepPhoneWording(PairedConflict conflict) {
   final writer = conflict.desktopSideWriter;
-  if (writer == null) {
-    return "Keep the phone's progress (discards the desktop's version)";
-  }
-  return "Keep the phone's progress (discards the desktop's, "
-      'last written by ${writer.device} at ${_formatTime(writer.atMs)})';
+  final subtitle = writer == null
+      ? "discards the desktop's version"
+      : "discards the desktop's, last written by ${writer.device} at "
+            '${_formatTime(writer.atMs)}';
+  return (title: "Keep the phone's progress", subtitle: subtitle);
 }
 
-/// "Take the desktop's" button wording. The bridge carries no review count
-/// for the phone side, so this names what is discarded without inventing a
-/// number.
-const String conflictTakeDesktopLabel =
-    "Take the desktop's (discards the phone's progress since the last sync)";
+/// "Take the desktop's": the bridge carries no review count for the phone
+/// side, so this names what is discarded without inventing a number.
+const ConflictChoiceWording conflictTakeDesktopWording = (
+  title: "Take the desktop's",
+  subtitle: "discards the phone's progress since the last sync",
+);
 
 // `YYYY-MM-DD HH:MM`, local time: date included, since a stale conflict can
 // be days old.

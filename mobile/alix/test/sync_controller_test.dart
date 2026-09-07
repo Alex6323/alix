@@ -387,6 +387,33 @@ void main() {
         expect(controller.reportUnread, isFalse);
       },
     );
+
+    test(
+      'a cycle whose only content is a never-pulled desktop entry leaves '
+      'reportUnread false too: the picker row already says so',
+      () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.entriesImpl = () async => const SyncEntries(
+          rootId: 'root-a',
+          entries: [
+            SyncEntry(
+              name: 'New Deck',
+              kind: 'deck',
+              members: 1,
+              unpackedBytes: 10,
+              leftOut: [],
+            ),
+          ],
+        );
+        final controller = SyncController(port: port);
+
+        await controller.cycle();
+
+        expect(controller.lastReport?.notOnPhone, ['New Deck']);
+        expect(controller.lastReport?.isEmpty, isTrue);
+        expect(controller.reportUnread, isFalse);
+      },
+    );
   });
 
   group('pushOne', () {
@@ -464,6 +491,74 @@ void main() {
     });
   });
 
+  group('deck labels', () {
+    List<SyncEntryState> looseDeckConflict() => const [
+      SyncEntryState(
+        entry: 'greek.md',
+        kind: 'deck',
+        decks: [
+          SyncDeckState(
+            deckId: 'deck-1',
+            path: 'greek.md',
+            unpushed: false,
+            conflict: PairedConflictPush(desktopRevision: 2),
+          ),
+        ],
+      ),
+    ];
+
+    test(
+      'a loose deck in conflict is labeled by its title, never doubled '
+      'as entry/entry',
+      () {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.pairedEntriesImpl = looseDeckConflict;
+        port.deckTitleImpl = (path) => path == 'greek.md' ? 'Greek' : null;
+        final controller = SyncController(port: port);
+
+        expect(controller.pendingConflicts.single.label, 'Greek');
+      },
+    );
+
+    test(
+      'a loose deck the phone holds no local copy of falls back to the '
+      'entry name, never entry/entry',
+      () {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.pairedEntriesImpl = looseDeckConflict;
+        final controller = SyncController(port: port);
+
+        expect(controller.pendingConflicts.single.label, 'greek.md');
+      },
+    );
+
+    test(
+      'a workspace member still reads entry/basename, unaffected by the '
+      'deck-title lookup',
+      () {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.pairedEntriesImpl = () => const [
+          SyncEntryState(
+            entry: 'Biology',
+            kind: 'workspace',
+            decks: [
+              SyncDeckState(
+                deckId: 'deck-1',
+                path: 'decks/cells.md',
+                unpushed: false,
+                conflict: PairedConflictPush(desktopRevision: 2),
+              ),
+            ],
+          ),
+        ];
+        port.deckTitleImpl = (path) => 'must not be used for a workspace';
+        final controller = SyncController(port: port);
+
+        expect(controller.pendingConflicts.single.label, 'Biology/cells.md');
+      },
+    );
+  });
+
   group('resolve', () {
     List<SyncEntryState> pendingConflictFor(String deckId) => [
       SyncEntryState(
@@ -533,6 +628,31 @@ void main() {
       expect(port.pullCalls, isEmpty);
       expect(notifications, greaterThan(0));
     });
+
+    test(
+      'resolving a conflict updates the stale status line behind the '
+      'sheet at once, rather than waiting for the sheet to close',
+      () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.planPushesImpl = () => [item('deck-a')];
+        port.pushImpl = (deckId, _, _) async => SyncPushConflict(
+          deckId: deckId,
+          desktopRevision: 4,
+          desktopWriter: const SyncWriter(device: 'desk-1', atMs: 0),
+        );
+        port.pairedEntriesImpl = () => pendingConflictFor('deck-a');
+        final controller = SyncController(port: port);
+
+        await controller.cycle();
+        expect(controller.statusLine, contains('1 conflict'));
+
+        port.resolveConflictImpl = (deckId, keepPhone) =>
+            const SyncResolutionDone();
+        await controller.resolve('deck-a', keepPhone: true);
+
+        expect(controller.statusLine, isNot(contains('conflict')));
+      },
+    );
 
     test(
       'a resolve for a deck with no pending conflict is a silent no-op, '

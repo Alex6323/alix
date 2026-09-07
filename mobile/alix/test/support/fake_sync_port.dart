@@ -156,4 +156,9 @@ class FakeSyncPort implements SyncPort {
   @override
   String pairedStagingZip(String entry) =>
       pairedStagingZipImpl?.call(entry) ?? '$rootDir/.alix/staging/$entry.zip';
+
+  String? Function(String path)? deckTitleImpl;
+
+  @override
+  String? deckTitle(String path) => deckTitleImpl?.call(path);
 }

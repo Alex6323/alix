@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:alix_mobile/server_client.dart' show ServerConfig;
+import 'package:alix_mobile/src/rust/api/listing.dart' as listing_bridge;
 import 'package:alix_mobile/src/rust/api/sync.dart' as bridge;
 import 'package:alix_mobile/sync/sync_models.dart';
 import 'package:alix_mobile/sync/sync_port.dart';
@@ -156,6 +157,14 @@ class SyncBridgePort implements SyncPort {
   @override
   String pairedStagingZip(String entry) =>
       bridge.pairedStagingZip(rootDir: rootDir, entry: entry);
+
+  @override
+  String? deckTitle(String path) {
+    for (final entry in listing_bridge.listRoot(root: rootDir)) {
+      if (entry.path == path) return entry.title;
+    }
+    return null;
+  }
 }
 
 SyncEntryState _entryState(bridge.PairedEntryState entry) {

@@ -224,37 +224,65 @@ class _ConflictChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final label = '${conflict.entry}/${conflict.path.split('/').last}';
+    final keepWording = conflictKeepPhoneWording(conflict.conflict);
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            label,
+            conflict.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleSmall,
           ),
           const SizedBox(height: 8),
-          OutlinedButton(
+          _ConflictChoiceRow(
+            wording: keepWording,
             onPressed: () => onResolve(conflict.deckId, true),
-            child: Text(
-              conflictKeepPhoneLabel(conflict.conflict),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-            ),
           ),
           const SizedBox(height: 8),
-          OutlinedButton(
+          _ConflictChoiceRow(
+            wording: conflictTakeDesktopWording,
             onPressed: () => onResolve(conflict.deckId, false),
-            child: const Text(
-              conflictTakeDesktopLabel,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One conflict choice: a short title plus a subtitle naming what it
+/// discards, the whole row tappable. A sentence in a button's own label
+/// wraps and clips before the fact that distinguishes the two choices (the
+/// timestamp) ever reaches the reader; splitting it into title and subtitle
+/// gives the subtitle its own two lines to hold that fact.
+class _ConflictChoiceRow extends StatelessWidget {
+  const _ConflictChoiceRow({required this.wording, required this.onPressed});
+
+  final ConflictChoiceWording wording;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(wording.title, style: theme.textTheme.titleSmall),
+          const SizedBox(height: 2),
+          Text(
+            wording.subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall,
           ),
         ],
       ),

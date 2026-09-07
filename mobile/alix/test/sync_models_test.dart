@@ -112,18 +112,19 @@ void main() {
           atMs: DateTime(2026, 1, 1, 9, 12).millisecondsSinceEpoch,
         ),
       );
+      final wording = conflictKeepPhoneWording(conflict);
+      expect(wording.title, "Keep the phone's progress");
       expect(
-        conflictKeepPhoneLabel(conflict),
-        "Keep the phone's progress (discards the desktop's, "
-        'last written by desk-1 at 2026-01-01 09:12)',
+        wording.subtitle,
+        "discards the desktop's, last written by desk-1 at 2026-01-01 09:12",
       );
     });
 
     test('keep-phone omits the writer clause when none is known', () {
       const conflict = PairedConflictPush();
       expect(
-        conflictKeepPhoneLabel(conflict),
-        "Keep the phone's progress (discards the desktop's version)",
+        conflictKeepPhoneWording(conflict).subtitle,
+        "discards the desktop's version",
       );
     });
 
@@ -135,16 +136,16 @@ void main() {
         ),
       );
       expect(
-        conflictKeepPhoneLabel(conflict),
-        "Keep the phone's progress (discards the desktop's, "
-        'last written by desk-2 at 2026-01-01 08:05)',
+        conflictKeepPhoneWording(conflict).subtitle,
+        "discards the desktop's, last written by desk-2 at 2026-01-01 08:05",
       );
     });
 
     test('take-desktop wording never invents a review count', () {
+      expect(conflictTakeDesktopWording.title, "Take the desktop's");
       expect(
-        conflictTakeDesktopLabel,
-        "Take the desktop's (discards the phone's progress since the last sync)",
+        conflictTakeDesktopWording.subtitle,
+        "discards the phone's progress since the last sync",
       );
     });
   });
