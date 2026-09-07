@@ -7,6 +7,8 @@ pub struct PairedDeckState {
     pub deck_id: String,
     pub path: String,
     pub unpushed: bool,
+    pub phone_saves: u64,
+    pub phone_at_ms: Option<u64>,
     pub conflict: Option<PairedConflict>,
 }
 
@@ -185,6 +187,8 @@ pub fn paired_entries(root_dir: String) -> Result<Vec<PairedEntryState>> {
                     deck_id: deck.deck_id,
                     path: deck.path,
                     unpushed: deck.unpushed,
+                    phone_saves: deck.phone_saves,
+                    phone_at_ms: deck.phone_at_ms,
                     conflict: deck.conflict.map(Into::into),
                 })
                 .collect(),

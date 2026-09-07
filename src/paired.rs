@@ -171,6 +171,8 @@ pub struct DeckState {
     pub deck_id: String,
     pub path: String,
     pub unpushed: bool,
+    pub phone_saves: u64,
+    pub phone_at_ms: Option<u64>,
     pub conflict: Option<Conflict>,
 }
 
@@ -634,15 +636,22 @@ pub fn pulled_entries(root: &PairedRoot) -> Result<Vec<PulledEntry>> {
         for deck in &manifest.decks {
             let document = root.document_path(&manifest.kind, &manifest.entry, &deck.deck_id);
             let head = document_head(&document, &deck.deck_id)?;
-            let unpushed = head.as_ref().is_some_and(|h| {
-                pushed
-                    .get(&deck.deck_id)
-                    .is_none_or(|s| s.phone != h.revision)
-            });
+            let pushed_phone = pushed.get(&deck.deck_id).map(|s| s.phone);
+            let unpushed = head
+                .as_ref()
+                .is_some_and(|h| pushed_phone.is_none_or(|p| p != h.revision));
+            let phone_saves = head
+                .as_ref()
+                .map_or(0, |h| h.revision.saturating_sub(pushed_phone.unwrap_or(0)));
+            let phone_at_ms = head
+                .as_ref()
+                .and_then(|h| h.writer.as_ref().map(|w| w.at_ms));
             decks.push(DeckState {
                 deck_id: deck.deck_id.clone(),
                 path: deck.path.clone(),
                 unpushed,
+                phone_saves,
+                phone_at_ms,
                 conflict: marks.get(&deck.deck_id).cloned(),
             });
         }
@@ -1301,6 +1310,12 @@ mod tests {
             .unwrap();
     }
 
+    fn bump_as(path: &Path, deck_id: &str, device: &str) {
+        let mut store = Store::open_deck(path, deck_id, "subject").unwrap();
+        store.device = Some(device.to_string());
+        store.save().unwrap();
+    }
+
     fn revision(path: &Path, deck_id: &str) -> Option<u64> {
         document_head(path, deck_id).unwrap().map(|h| h.revision)
     }
@@ -1633,6 +1648,48 @@ mod tests {
                 .iter()
                 .any(|item| item.deck_id == DECK_A),
             "the kept orphan must remain pushable and reviewable"
+        );
+    }
+
+    #[test]
+    fn pulled_entries_count_the_phone_saves_since_the_last_push_and_their_time() {
+        let (_tmp, root) = fresh_root();
+        apply(&root, &deck_bundle());
+        let doc = root.document_path(KIND_DECK, "physics.md", DECK_C);
+        let state = |root: &PairedRoot| pulled_entries(root).unwrap().remove(0).decks.remove(0);
+        let landed = state(&root);
+        assert_eq!(
+            (landed.unpushed, landed.phone_saves),
+            (false, 0),
+            "landed: nothing the phone wrote"
+        );
+
+        bump_as(&doc, DECK_C, "phone");
+        bump_as(&doc, DECK_C, "phone");
+        let reviewed = state(&root);
+        let head = document_head(&doc, DECK_C).unwrap().unwrap();
+        assert_eq!(
+            (reviewed.unpushed, reviewed.phone_saves),
+            (true, 2),
+            "two saves since the pull"
+        );
+        assert_eq!(
+            reviewed.phone_at_ms,
+            head.writer.map(|w| w.at_ms),
+            "the last phone save's time"
+        );
+        assert!(
+            reviewed.phone_at_ms.is_some(),
+            "a phone save stamps its writer"
+        );
+
+        let items = plan_pushes(&root).unwrap();
+        record_push(&root, &items[0], PushOutcome::Accepted { revision: 3 }).unwrap();
+        let pushed = state(&root);
+        assert_eq!(
+            (pushed.unpushed, pushed.phone_saves),
+            (false, 0),
+            "pushed: nothing left to discard"
         );
     }
 

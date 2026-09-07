@@ -116,18 +116,27 @@ class PairedDeckState {
   final String deckId;
   final String path;
   final bool unpushed;
+  final BigInt phoneSaves;
+  final BigInt? phoneAtMs;
   final PairedConflict? conflict;
 
   const PairedDeckState({
     required this.deckId,
     required this.path,
     required this.unpushed,
+    required this.phoneSaves,
+    this.phoneAtMs,
     this.conflict,
   });
 
   @override
   int get hashCode =>
-      deckId.hashCode ^ path.hashCode ^ unpushed.hashCode ^ conflict.hashCode;
+      deckId.hashCode ^
+      path.hashCode ^
+      unpushed.hashCode ^
+      phoneSaves.hashCode ^
+      phoneAtMs.hashCode ^
+      conflict.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -137,6 +146,8 @@ class PairedDeckState {
           deckId == other.deckId &&
           path == other.path &&
           unpushed == other.unpushed &&
+          phoneSaves == other.phoneSaves &&
+          phoneAtMs == other.phoneAtMs &&
           conflict == other.conflict;
 }
 
