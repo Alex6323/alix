@@ -356,13 +356,15 @@ class HttpSyncClient implements SyncClient {
         await response.drain<void>();
         return const SyncPushNotServed();
       case 409:
-        final (_, json) = await _readBody(response);
-        final map = json is Map ? json : const {};
+        final (text, json) = await _readBody(response);
+        if (json is! Map) throw SyncTransportFailure(409, text);
+        final conflictDeckId = _asString(json['deck_id']);
+        if (conflictDeckId == null) throw SyncTransportFailure(409, text);
         return SyncPushConflict(
-          deckId: _asString(map['deck_id']) ?? deckId,
-          desktopRevision: _asInt(map['desktop_revision']),
-          pulledRevision: _asInt(map['pulled_revision']),
-          desktopWriter: SyncWriter.fromJson(map['desktop_writer']),
+          deckId: conflictDeckId,
+          desktopRevision: _asInt(json['desktop_revision']),
+          pulledRevision: _asInt(json['pulled_revision']),
+          desktopWriter: SyncWriter.fromJson(json['desktop_writer']),
         );
       case 412:
         final (text, json) = await _readBody(response);
