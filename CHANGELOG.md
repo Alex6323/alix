@@ -20,9 +20,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- A workspace's `alix.toml` no longer accepts `store`; progress and recent
-  history live at the workspace root, and doctor reports any unknown manifest
-  key instead of silently ignoring it.
+- Machine-managed progress and recent history now live under `.alix/` beside
+  every deck: at the workspace root for members and in the containing folder
+  for loose decks. CLI and server resolution are identical, workspace
+  `alix.toml` no longer accepts `store`, and the `--store` override and global
+  deck-state fallback have been removed.
+- A deck's personal-file twin is now `<deck>.local.md` instead of
+  `<deck>.personal.md`, matching the private `*.local.*` naming rule.
 - `--lan` refuses a `--token` or `[serve] token` value shorter than 16
   characters before the server binds; minted tokens are unaffected.
 

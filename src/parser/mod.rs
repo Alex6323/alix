@@ -3348,7 +3348,7 @@ mod tests {
         );
 
         let personal = parse_sidecar(
-            "deck.personal.md",
+            "deck.local.md",
             &format!(
                 "#### reader label\n## personal\nanswer\n> [!NOTE]\n> context\n<!-- id: {id} -->\n"
             ),
@@ -3965,7 +3965,7 @@ mod tests {
     #[test]
     fn a_sidecar_never_turns_leading_headings_into_section_context() {
         let cards = parse_sidecar(
-            "deck.personal.md",
+            "deck.local.md",
             "#### reader label\n## personal\nanswer\n<!-- id: card-personal -->\n",
         )
         .unwrap();

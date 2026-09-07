@@ -4,6 +4,10 @@ Spaced repetition is really just bookkeeping: each card remembers how well you
 know it and when to show it next. This chapter is that bookkeeping: the
 scheduler, retirement, and how a whole deck reaches "done."
 
+Each initialized deck keeps this bookkeeping in
+`.alix/progress/deck-<token>.json` at its content root: the workspace root for a
+workspace member, or the containing folder for a loose deck.
+
 ## FSRS
 
 alix schedules with **FSRS**, the Free Spaced Repetition Scheduler (FSRS-5, via

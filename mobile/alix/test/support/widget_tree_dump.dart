@@ -157,7 +157,7 @@ String _clean(String value) {
         "Last written by '<device>' <age> ago",
       )
       .replaceAll(RegExp(r'GlobalKey#[0-9a-f]+'), 'GlobalKey#<id>')
-      .replaceAll(RegExp(r'<tmp>/progress/.*'), '<save-error>')
+      .replaceAll(RegExp(r'<tmp>/.alix/progress/.*'), '<save-error>')
       .replaceAll(RegExp(r'Next due in \d+ min\.'), 'Next due in <minutes>.')
       .replaceAll(RegExp(r'Next due in \d+ h\.'), 'Next due in <hours>.')
       .replaceAll(RegExp(r'Next due in \d+ days\.'), 'Next due in <days>.')

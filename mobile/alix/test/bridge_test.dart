@@ -45,7 +45,6 @@ class FakeAccess implements PlatformAccess {
   @override
   Future<String?> appVersion() async => '9.9.9+9';
 }
-
 /// Introduced at T0, quizzed once the cooldown has elapsed. 301000 = the
 /// core's DEFAULT_INTRODUCTION_COOLDOWN_MS (5 min, src/scheduler.rs) + 1s; keep
 /// them in step.
@@ -86,7 +85,7 @@ void introduceAll(String deck, String root) {
 
 String onlyProgressDocument(String stateRoot) {
   final files = Directory(
-    '$stateRoot/progress',
+    '$stateRoot/.alix/progress',
   ).listSync().whereType<File>().toList();
   expect(files, hasLength(1));
   return files.single.readAsStringSync();
@@ -410,7 +409,7 @@ void main() {
     s.grade(grade: Grade.pass, nowMs: later);
     final store = onlyProgressDocument('${root.path}/ws');
     expect(store, contains('"stability"'));
-    final rootProgress = Directory('${root.path}/progress');
+    final rootProgress = Directory('${root.path}/.alix/progress');
     expect(
       !rootProgress.existsSync() ||
           rootProgress.listSync().whereType<File>().every(
@@ -798,9 +797,9 @@ void main() {
   ) async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    Directory('${root.path}/progress').createSync();
+    Directory('${root.path}/.alix/progress').createSync(recursive: true);
     File(
-      '${root.path}/progress/loose.sync-conflict-20260714-101112-AAAAAAA.json',
+      '${root.path}/.alix/progress/loose.sync-conflict-20260714-101112-AAAAAAA.json',
     ).writeAsStringSync('{}');
 
     await tester.pumpWidget(MaterialApp(home: PickerScreen(root: root.path)));

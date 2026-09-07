@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn a_stray_deep_heading_stays_the_personal_cards_own_content() {
         let text = "## personal\nanswer\n### stray label\ntail\n<!-- id: card-p1 -->\n";
-        let cards = crate::parser::parse_sidecar("deck.personal.md", text).unwrap();
+        let cards = crate::parser::parse_sidecar("deck.local.md", text).unwrap();
         assert_eq!(1, cards.len());
         assert_eq!(vec!["answer", "### stray label", "tail"], cards[0].back);
     }
@@ -111,7 +111,7 @@ mod tests {
         let text = "## personal\nanswer\n<!-- id: card-p1 -->\n\n\
                     ###### why\n<!-- note: card-q1 -->\n> because\n";
         let stripped = without_notes(text);
-        let cards = crate::parser::parse_sidecar("deck.personal.md", &stripped)
+        let cards = crate::parser::parse_sidecar("deck.local.md", &stripped)
             .expect("a legal note label must not make the personal file unparseable");
         assert_eq!(1, cards.len());
         assert_eq!(Some("card-p1".to_string()), cards[0].id());

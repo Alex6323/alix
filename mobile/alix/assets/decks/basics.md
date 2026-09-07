@@ -18,7 +18,7 @@ in a plain text file
 Partly or Got it (only Missed it brings it back)
 
 ## Which folder holds per-deck review progress?
-progress/
+.alix/progress/
 
 ## What opens a note in a deck file?
 a blockquote whose first line is a badge, such as [!NOTE]

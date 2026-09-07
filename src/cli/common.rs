@@ -8,33 +8,18 @@ use anyhow::{Context, Result, bail};
 
 pub(crate) struct Target {
     pub(crate) decks: Vec<PathBuf>,
-    pub(crate) default_store: Option<PathBuf>,
 }
 
 impl Target {
-    pub(crate) fn store_for_deck(&self, deck: &Path, cli_override: Option<&Path>) -> Result<Store> {
-        let path = cli_override
-            .map(Path::to_path_buf)
-            .or_else(|| store_path_for(std::slice::from_ref(&deck.to_path_buf()), None))
-            .or_else(|| self.default_store.clone());
-        match path {
-            Some(path) => state::open_store(deck, &path).map_err(Into::into),
-            None => {
-                let path = alix::store::default_store_path()
-                    .context("cannot determine the data directory")?;
-                state::open_store(deck, &path).map_err(Into::into)
-            }
-        }
+    pub(crate) fn store_for_deck(&self, deck: &Path) -> Result<Store> {
+        state::open_store(deck, &workspace::content_root(deck)).map_err(Into::into)
     }
 }
 
-pub(crate) fn expand_target(path: &Path, config: &Config) -> Result<Target> {
+pub(crate) fn expand_target(path: &Path) -> Result<Target> {
     if path.is_file() {
         return Ok(Target {
             decks: vec![path.to_path_buf()],
-            // A loose deck defaults to the bare-`alix` root store;
-            // `store_for_deck`'s workspace lookup may override this.
-            default_store: config.decks_dir().map(|d| workspace::root_store_path(&d)),
         });
     }
     if !path.is_dir() {
@@ -44,28 +29,12 @@ pub(crate) fn expand_target(path: &Path, config: &Config) -> Result<Target> {
     if decks.is_empty() {
         bail!("no decks in `{}`", path.display());
     }
-    let default_store = if workspace::is_workspace(path) {
-        None // members resolve to the workspace's own store anyway
-    } else {
-        Some(workspace::root_store_path(path))
-    };
-    Ok(Target {
-        decks,
-        default_store,
-    })
+    Ok(Target { decks })
 }
 
-pub(crate) fn store_for(
-    decks: &[PathBuf],
-    cli_override: Option<PathBuf>,
-    config: &Config,
-) -> Result<Store> {
-    let path = store_path_for(decks, cli_override.as_deref())
-        .or_else(|| config.decks_dir().map(|d| workspace::root_store_path(&d)));
-    let path = match path {
-        Some(path) => path,
-        None => alix::store::default_store_path().context("cannot determine the data directory")?,
-    };
+pub(crate) fn store_for(decks: &[PathBuf]) -> Result<Store> {
+    let path =
+        store_path_for(decks).ok_or_else(|| anyhow::anyhow!("decks do not share a store"))?;
     state::open_stores(decks, &path).map_err(Into::into)
 }
 
@@ -303,75 +272,92 @@ mod tests {
     }
 
     #[test]
-    fn store_for_resolves_a_loose_deck_to_the_decks_dir_root_store() {
+    fn cli_and_server_resolve_every_deck_shape_to_its_colocated_dot_alix_store() {
         let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("loose.md");
-        std::fs::write(
-            &deck,
-            "---\nformat-version: 1\nid: deck-loose\n---\n## q\na\n<!-- id: card-q -->\n",
-        )
-        .unwrap();
-        let config = Config {
-            decks_dir: Some(dir.path().to_path_buf()),
-            ..Default::default()
+        let configured = dir.path().join("configured");
+        let unrelated = dir.path().join("unrelated");
+        let served = dir.path().join("served");
+        let workspace = dir.path().join("workspace");
+        let served_workspace = dir.path().join("served-workspace");
+        for folder in [&configured, &unrelated, &served] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        for folder in [&workspace, &served_workspace] {
+            std::fs::create_dir_all(folder.join(alix::workspace::DECKS)).unwrap();
+            std::fs::write(folder.join("alix.toml"), "title = \"Workspace\"\n").unwrap();
+        }
+        let write_deck = |path: &Path, id: &str| {
+            std::fs::write(
+                path,
+                format!(
+                    "---\nformat-version: 1\nid: \"{id}\"\n---\n## q\na\n<!-- id: card-q -->\n"
+                ),
+            )
+            .unwrap();
         };
+        let workspace_member = workspace.join("decks/member.md");
+        let configured_loose = configured.join("configured.md");
+        let unrelated_loose = unrelated.join("unrelated.md");
+        let served_plain = served.join("served.md");
+        let served_member = served_workspace.join("decks/served.md");
+        for (path, id) in [
+            (&workspace_member, "deck-workspace"),
+            (&configured_loose, "deck-configured"),
+            (&unrelated_loose, "deck-unrelated"),
+            (&served_plain, "deck-served"),
+            (&served_member, "deck-servedworkspace"),
+        ] {
+            write_deck(path, id);
+        }
+        let rows = [
+            (
+                "workspace-member",
+                workspace_member,
+                workspace.clone(),
+                workspace,
+                "deck-workspace",
+            ),
+            (
+                "configured-loose",
+                configured_loose,
+                configured.clone(),
+                configured,
+                "deck-configured",
+            ),
+            (
+                "unrelated-loose",
+                unrelated_loose,
+                unrelated.clone(),
+                unrelated,
+                "deck-unrelated",
+            ),
+            (
+                "served-plain",
+                served_plain,
+                served.clone(),
+                served,
+                "deck-served",
+            ),
+            (
+                "served-workspace",
+                served_member,
+                served_workspace.clone(),
+                served_workspace,
+                "deck-servedworkspace",
+            ),
+        ];
 
-        let store = store_for(std::slice::from_ref(&deck), None, &config).unwrap();
+        for (name, deck, server_folder, expected_root, deck_id) in rows {
+            let expected = expected_root
+                .join(".alix/progress")
+                .join(format!("{deck_id}.json"));
+            let cli = store_for(std::slice::from_ref(&deck)).unwrap();
+            assert_eq!(expected, cli.path(), "{name}: CLI store");
 
-        assert_eq!(
-            store.path(),
-            dir.path().join("progress/deck-loose.json").as_path()
-        );
-    }
-
-    #[test]
-    fn store_for_lets_a_cli_override_win_over_the_decks_dir_fallback() {
-        let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("loose.md");
-        std::fs::write(
-            &deck,
-            "---\nformat-version: 1\nid: deck-loose\n---\n## q\na\n<!-- id: card-q -->\n",
-        )
-        .unwrap();
-        let override_path = dir.path().join("custom");
-        let config = Config {
-            decks_dir: Some(dir.path().to_path_buf()),
-            ..Default::default()
-        };
-
-        let store = store_for(
-            std::slice::from_ref(&deck),
-            Some(override_path.clone()),
-            &config,
-        )
-        .unwrap();
-
-        assert_eq!(
-            store.path(),
-            dir.path().join("custom/progress/deck-loose.json").as_path()
-        );
-    }
-
-    #[test]
-    fn store_for_still_resolves_a_workspace_deck_to_the_workspace_store() {
-        let dir = tempfile::tempdir().unwrap();
-        let ws = dir.path().join("box");
-        std::fs::create_dir_all(ws.join(workspace::DECKS)).unwrap();
-        std::fs::write(ws.join("alix.toml"), "title = \"Box\"\n").unwrap();
-        let member = ws.join("decks/a.md");
-        std::fs::write(
-            &member,
-            "---\nformat-version: 1\nid: \"deck-a\"\n---\n## q\na\n<!-- id: card-q -->\n",
-        )
-        .unwrap();
-        let config = Config {
-            decks_dir: Some(dir.path().to_path_buf()),
-            ..Default::default()
-        };
-
-        let store = store_for(std::slice::from_ref(&member), None, &config).unwrap();
-
-        assert_eq!(store.path(), ws.join("progress/deck-a.json").as_path());
+            let server_root = alix::workspace::root_store_path(&server_folder);
+            let server = alix::state::UserFiles::new(server_root).progress_for(deck_id);
+            assert_eq!(expected, server, "{name}: server store");
+        }
     }
 
     #[test]

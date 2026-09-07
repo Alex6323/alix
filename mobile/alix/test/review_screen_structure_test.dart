@@ -146,8 +146,8 @@ void main() {
         root: find.byType(ReviewScreen),
       );
 
-      final progress = Directory('${root.path}/progress');
-      final savedProgress = Directory('${root.path}/progress.saved');
+      final progress = Directory('${root.path}/.alix/progress');
+      final savedProgress = Directory('${root.path}/.alix/progress.saved');
       progress.renameSync(savedProgress.path);
       File(progress.path).writeAsStringSync('blocks the progress directory');
       await tester.tap(find.text('Got it'));

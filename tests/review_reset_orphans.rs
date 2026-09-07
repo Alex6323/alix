@@ -25,14 +25,7 @@ fn reset_orphans_does_not_prune_progress_for_a_malformed_live_deck() {
     )
     .unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_alix"))
-        .args([
-            "reset",
-            "--orphans",
-            dir.path().to_str().unwrap(),
-            "--yes",
-            "--store",
-            dir.path().to_str().unwrap(),
-        ])
+        .args(["reset", "--orphans", dir.path().to_str().unwrap(), "--yes"])
         .env("HOME", dir.path())
         .env("XDG_CONFIG_HOME", dir.path())
         .env("XDG_DATA_HOME", dir.path())

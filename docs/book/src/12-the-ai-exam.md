@@ -63,7 +63,7 @@ responsive while it thinks.
   cards it added.
 
 Those remediation cards land in the deck's
-[personal file](03-the-deck-format.md#your-personal-file) (`<deck>.personal.md`),
+[personal file](03-the-deck-format.md#your-personal-file) (`<deck>.local.md`),
 never in the authored deck. They drill like any other card (a first pass one
 introduction cooldown later, then FSRS schedules them) and count toward the deck's
 *due* total but not toward its card count. Regenerating the same gap won't

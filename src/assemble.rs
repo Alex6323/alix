@@ -18,17 +18,14 @@ use crate::{
     session::{DeckInfo, Order, Session, SessionOptions},
     source::SourceBase,
     stamp, state,
-    store::{Store, default_store_path},
+    store::Store,
     time::now_ms,
     trace::{Trace, Walk},
     workspace,
 };
 
 pub fn open_store(path: Option<PathBuf>) -> Result<Store> {
-    let path = match path {
-        Some(path) => path,
-        None => default_store_path().context("cannot determine the data directory")?,
-    };
+    let path = path.context("cannot determine the served folder")?;
     state::open_aggregate_store(&path).context("cannot open the progress store")
 }
 
@@ -37,39 +34,25 @@ pub fn open_store(path: Option<PathBuf>) -> Result<Store> {
 /// that operates on the whole store (`reset --all`) keeps the strict
 /// [`open_store`] and fails loud on the same damage.
 pub fn open_store_tolerant(path: Option<PathBuf>) -> Result<Store> {
-    let path = match path {
-        Some(path) => path,
-        None => default_store_path().context("cannot determine the data directory")?,
-    };
+    let path = path.context("cannot determine the served folder")?;
     state::open_aggregate_store_tolerant(&path).context("cannot open the progress store")
 }
 
-pub fn store_path_for(decks: &[PathBuf], cli_override: Option<&Path>) -> Option<PathBuf> {
-    if let Some(path) = cli_override {
-        return Some(path.to_path_buf());
-    }
-    let mut stores = decks
-        .iter()
-        .map(|deck| workspace::root_for_deck(deck).map(|root| workspace::store_path(&root)));
+pub fn store_path_for(decks: &[PathBuf]) -> Option<PathBuf> {
+    let mut stores = decks.iter().map(|deck| workspace::content_root(deck));
     match stores.next() {
-        Some(Some(first)) if stores.all(|s| s.as_ref() == Some(&first)) => Some(first),
+        Some(first) if stores.all(|store| store == first) => Some(first),
         _ => None,
     }
 }
 
 pub fn store_for(paths: &[PathBuf], instance: Option<&Path>) -> Result<Store> {
-    store_for_with_default(paths, instance, default_store_path())
-}
-
-fn store_for_with_default(
-    paths: &[PathBuf],
-    instance: Option<&Path>,
-    default: Option<PathBuf>,
-) -> Result<Store> {
-    let user_root = store_path_for(paths, None).or_else(|| instance.map(Path::to_path_buf));
-    let user_root = match user_root {
-        Some(path) => path,
-        None => default.context("cannot determine the data directory")?,
+    let user_root = if paths.is_empty() {
+        instance
+            .map(Path::to_path_buf)
+            .context("cannot determine the served folder")?
+    } else {
+        store_path_for(paths).context("selected decks do not share a store root")?
     };
     state::open_stores(paths, &user_root).context("cannot open deck progress")
 }
@@ -1407,7 +1390,7 @@ mod tests {
     }
 
     #[test]
-    fn store_for_prefers_workspace_then_instance_then_global() {
+    fn store_for_uses_each_decks_root_and_the_instance_only_without_decks() {
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("box");
         std::fs::create_dir_all(ws.join(workspace::DECKS)).unwrap();
@@ -1418,28 +1401,21 @@ mod tests {
         write_initialized(&loose, "## q\na\n<!-- id: card-q2 -->\n");
         let instance = dir.path().join("instance-state");
 
-        let p = store_path_for(std::slice::from_ref(&member), None).expect("workspace store");
+        let p = store_path_for(std::slice::from_ref(&member)).expect("workspace store");
         assert_eq!(p, ws);
         let s = store_for(std::slice::from_ref(&member), Some(&instance)).unwrap();
-        assert_eq!(s.path(), ws.join("progress/deck-a.json").as_path());
+        assert_eq!(s.path(), ws.join(".alix/progress/deck-a.json").as_path());
         let s = store_for(std::slice::from_ref(&loose), Some(&instance)).unwrap();
         assert_eq!(
             s.path(),
-            dir.path()
-                .join("instance-state/progress/deck-loose.json")
-                .as_path()
+            dir.path().join(".alix/progress/deck-loose.json").as_path()
         );
-        let global = dir.path().join("global-state");
-        let g = store_for_with_default(std::slice::from_ref(&loose), None, Some(global.clone()))
-            .unwrap();
-        assert_eq!(
-            g.path(),
-            dir.path().join("global-state/progress/deck-loose.json")
-        );
+        let aggregate = store_for(&[], Some(&instance)).unwrap();
+        assert_eq!(aggregate.path(), instance.join(".alix/progress"));
     }
 
     #[test]
-    fn store_path_for_picks_workspace_else_global_else_override() {
+    fn store_path_for_requires_one_colocated_content_root() {
         let dir = tempfile::tempdir().unwrap();
         let mk_ws = |name: &str| {
             let ws = dir.path().join(name);
@@ -1457,27 +1433,25 @@ mod tests {
 
         assert_eq!(
             Some(ws_store.clone()),
-            store_path_for(&[ws.join("decks/a.md")], None)
+            store_path_for(&[ws.join("decks/a.md")])
         );
         assert_eq!(
             Some(ws_store.clone()),
-            store_path_for(&[ws.join("decks/a.md"), ws.join("decks/b.md")], None)
+            store_path_for(&[ws.join("decks/a.md"), ws.join("decks/b.md")])
         );
-        assert_eq!(None, store_path_for(std::slice::from_ref(&loose), None));
+        assert_eq!(
+            Some(dir.path().to_path_buf()),
+            store_path_for(std::slice::from_ref(&loose))
+        );
         assert_eq!(
             None,
-            store_path_for(&[ws.join("decks/a.md"), loose.clone()], None)
+            store_path_for(&[ws.join("decks/a.md"), loose.clone()])
         );
         assert_eq!(
             None,
-            store_path_for(&[ws.join("decks/a.md"), ws2.join("decks/a.md")], None)
+            store_path_for(&[ws.join("decks/a.md"), ws2.join("decks/a.md")])
         );
-        assert_eq!(None, store_path_for(&[], None));
-        let over = dir.path().join("x.json");
-        assert_eq!(
-            Some(over.clone()),
-            store_path_for(&[ws.join("decks/a.md")], Some(&over))
-        );
+        assert_eq!(None, store_path_for(&[]));
     }
 
     const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nsource: source.txt\n---\n\
@@ -1776,13 +1750,7 @@ it reads line two\n\
         std::fs::create_dir(&ws).unwrap();
         let member = ws.join("m.md");
         write_initialized(&member, "## q\na\n<!-- id: card-qm -->\n");
-        // Pin the store explicitly: a bare `None` would fall through to the
-        // real global data dir.
-        let mut store = store_for(
-            std::slice::from_ref(&member),
-            Some(&dir.path().join("state")),
-        )
-        .unwrap();
+        let mut store = store_for(std::slice::from_ref(&member), None).unwrap();
 
         let err = select(
             vec![ws],
@@ -1801,10 +1769,7 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
         write_initialized(&path, "## q1\na1\n<!-- id: card-q1 -->\n");
-        // Not a workspace, so pass an explicit `--store`-style override: a
-        // bare `None` here would fall through to the real global data dir.
-        let mut store =
-            store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
+        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
         write_personal_card(&mut store, &path, "deck-rust");
 
         let Selected::Review(build) = select(
@@ -1824,8 +1789,7 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
         write_initialized(&path, "## q1\na1\n<!-- id: card-q1 -->\n");
-        let mut store =
-            store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
+        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
         write_personal_card(&mut store, &path, "deck-rust");
         crate::personal::append_note(
             &path,
@@ -1877,8 +1841,7 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
         write_initialized(&path, "## q1\na1\n<!-- id: card-q1 -->\n");
-        let mut store =
-            store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
+        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
         crate::personal::append_note(
             &path,
             "deck-rust",
@@ -1911,8 +1874,7 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
         write_initialized(&path, "## q1\na1\n<!-- id: card-q1 -->\n");
-        let mut store =
-            store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
+        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
         write_named_personal_card(&mut store, &path, "deck-rust", "card-vq1", "personal one");
         write_named_personal_card(&mut store, &path, "deck-rust", "card-vq2", "personal two");
 
@@ -1951,10 +1913,7 @@ it reads line two\n\
             "---\nformat-version: 1\nid: \"deck-dtok1\"\n---\n## q1\na1\n<!-- id: card-q1 -->\n",
         )
         .unwrap();
-        // Not a workspace, so pass an explicit `--store`-style override: a
-        // bare `None` here would fall through to the real global data dir.
-        let mut store =
-            store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
+        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
 
         let deck = Deck::load(&path).unwrap();
         let card_id = deck.cards[0].id().unwrap();
@@ -2030,10 +1989,7 @@ it reads line two\n\
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
         write_initialized(&path, "## q1\na1\n<!-- id: card-q1 -->\n");
-        // Not a workspace, so pass an explicit `--store`-style override: a
-        // bare `None` here would fall through to the real global data dir.
-        let mut store =
-            store_for(std::slice::from_ref(&path), Some(&dir.path().join("state"))).unwrap();
+        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
         write_personal_card(&mut store, &path, "deck-rust");
         let personal_card = crate::parser::parse_str(
             "rust.md",

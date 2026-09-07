@@ -539,7 +539,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
-            root.join("divorce-lawyer-questions.personal.md"),
+            root.join("divorce-lawyer-questions.local.md"),
             "private-personal-sidecar",
         )
         .unwrap();

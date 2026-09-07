@@ -50,9 +50,9 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     let now = now_ms();
 
-    let target = expand_target(&args.target, &config)?;
+    let target = expand_target(&args.target)?;
     for path in &target.decks {
-        let store = target.store_for_deck(path, args.store.as_deref())?;
+        let store = target.store_for_deck(path)?;
         let deck = Deck::load(path)?;
         let review = config.review.for_workspace(&workspace::content_root(path));
         let scheduler = Fsrs::new(review.retention, review.introduction_cooldown_ms);
@@ -144,9 +144,9 @@ pub(crate) fn list(args: DeckArgs) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     let now = now_ms();
 
-    let target = expand_target(&args.target, &config)?;
+    let target = expand_target(&args.target)?;
     for path in &target.decks {
-        let store = target.store_for_deck(path, args.store.as_deref())?;
+        let store = target.store_for_deck(path)?;
         let deck = Deck::load(path)?;
         let review = config.review.for_workspace(&workspace::content_root(path));
         let scheduler = Fsrs::new(review.retention, review.introduction_cooldown_ms);
@@ -208,9 +208,9 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
     // store's health must not gate it.
     let default_store = || {
         open_store(
-            args.store
-                .clone()
-                .or_else(|| config.decks_dir().map(|d| workspace::root_store_path(&d))),
+            config
+                .decks_dir()
+                .map(|dir| workspace::root_store_path(&dir)),
         )
     };
 
@@ -253,18 +253,12 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
     let Some(target_path) = &args.target else {
         bail!("name a deck, folder, or workspace to reset, or pass `--card <id>` or `--all`");
     };
-    let target = expand_target(target_path, &config)?;
+    let target = expand_target(target_path)?;
     let deck_paths = target.decks.clone();
 
     // Mirrors the launcher's store precedence, so reset hits the same
     // progress that serving uses.
-    let store_path = args
-        .store
-        .clone()
-        .or_else(|| store_path_for(&deck_paths, None))
-        .or_else(|| target.default_store.clone())
-        .or_else(alix::store::default_store_path)
-        .context("cannot determine the data directory")?;
+    let store_path = store_path_for(&deck_paths).context("decks do not share a store")?;
     let (cards, label, _, _) = load_decks(&deck_paths, &HashMap::new())?;
 
     // A full-deck reset (no `--card` subset) resets authored-card progress,
@@ -373,10 +367,7 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
 
 fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
     let folder_scope = |dir: &Path| -> Result<(Vec<PathBuf>, PathBuf)> {
-        let store = args
-            .store
-            .clone()
-            .unwrap_or_else(|| workspace::root_store_path(dir));
+        let store = workspace::root_store_path(dir);
         let found = workspace::classify_deck_files(dir)
             .context("refusing to judge orphans while the target cannot be listed")?;
         Ok((
@@ -391,13 +382,7 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
     let (deck_paths, store_path) = match &args.target {
         Some(target) if target.is_file() => {
             let decks = vec![target.clone()];
-            let store = args
-                .store
-                .clone()
-                .or_else(|| store_path_for(&decks, None))
-                .or_else(|| config.decks_dir().map(|d| workspace::root_store_path(&d)))
-                .or_else(alix::store::default_store_path)
-                .context("cannot determine the data directory")?;
+            let store = store_path_for(&decks).context("cannot determine the deck folder")?;
             (decks, store)
         }
         Some(target) if target.is_dir() => folder_scope(target)?,

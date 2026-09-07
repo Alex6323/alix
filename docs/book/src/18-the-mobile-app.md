@@ -38,8 +38,8 @@ you actually maintain, point it at a real folder on the phone:
    and writes plain files in a folder another app manages, which is exactly
    what this permission grants. Enable it, go back, choose again.
 4. Pick the folder. The app lists it immediately; each initialized deck's
-   progress is written as `progress/deck-<token>.json`, exactly like the desktop,
-   so it travels with the folder.
+   progress is written as `.alix/progress/deck-<token>.json`, exactly like the
+   desktop, so it travels with the folder.
 
 **Use app storage** in the same sheet switches back; nothing is deleted
 either way. If the folder becomes unavailable (permission revoked, folder
@@ -70,15 +70,16 @@ Two guards back the rule:
 - If another device wrote that deck's progress minutes ago, the review screen
   says so before you grade anything.
 - If the folder contains a sync conflict file (Syncthing's
-  `progress/deck-<token>.sync-conflict-….json`), the deck list warns loudly.
+  `.alix/progress/deck-<token>.sync-conflict-….json`), the deck list warns loudly.
   Stop both writers and sync, back up the folder, and deliberately keep the
-  complete document you trust at `progress/deck-<token>.json`. Do not combine
+  complete document you trust at `.alix/progress/deck-<token>.json`. Do not combine
   schedules by hand; there is no merge. `alix doctor <folder>` on the desktop
   lists every conflict and should be clean before you resume.
 
-Two Syncthing tips: add `*.json.tmp` to the folder's `.stignore` (alix
-writes through a temp file; there is no point syncing it), and prefer
-"send & receive" on both sides so the phone's grades actually travel back.
+For Syncthing, add `*.json.tmp` to the folder's `.stignore` because alix writes
+through temporary files. When private state should stay on one device, also use
+chapter 16's `.alix/` and `*.local.*` private-set block. Prefer "send & receive"
+on both sides so the phone's grades actually travel back.
 
 Install the same Alix version on every device that writes a synchronized
 folder. Before 1.0 there is no migration and no conversion tool: a

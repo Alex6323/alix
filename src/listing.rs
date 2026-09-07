@@ -76,7 +76,7 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
             && path.extension().is_some_and(|e| e == "md")
             && !workspace::is_conventional_non_deck(name)
             && !workspace::is_conflict_name(name)
-            && !workspace::is_sidecar_name(name)
+            && !workspace::is_private_name(name)
             && workspace::file_is_deck(&path)
             && offered.first_visit(&path)
         {
@@ -863,7 +863,7 @@ mod tests {
         std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
         write(&ws.join("decks").join("a.md"), "## qa\nans-a\n");
         write(&ws.join("decks").join("b.md"), "## qb\nans-b\n");
-        let progress = workspace::store_path(&ws).join("progress");
+        let progress = workspace::store_path(&ws).join(".alix/progress");
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::write(progress.join("deck-b.json"), "{ not json").unwrap();
 
@@ -893,7 +893,7 @@ mod tests {
         std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
         write(&ws.join("decks").join("a.md"), "## qa\nans-a\n");
         write(&ws.join("decks").join("b.md"), "## qb\nans-b\n");
-        let progress = workspace::store_path(&ws).join("progress");
+        let progress = workspace::store_path(&ws).join(".alix/progress");
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::write(
             progress.join("deck-a.json"),
@@ -1025,7 +1025,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("a.md"), "## qa\nans-a\n<!-- id: card-qa1 -->\n");
-        let progress = root.join("progress");
+        let progress = root.join(".alix/progress");
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::write(progress.join("deck-a.json"), "{ not json").unwrap();
 
@@ -1070,8 +1070,9 @@ mod tests {
         write(&ws.join("decks").join("a.md"), "## qa\nans-a\n");
         write(&ws.join("decks").join("b.md"), "## qb\nans-b\n");
         let store_root = workspace::store_path(&ws);
-        std::fs::create_dir_all(&store_root).unwrap();
-        std::fs::write(store_root.join("progress"), "not a directory").unwrap();
+        let progress = store_root.join(".alix/progress");
+        std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
+        std::fs::write(progress, "not a directory").unwrap();
 
         let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
         assert_eq!(2, rows.len());
@@ -1157,14 +1158,15 @@ mod tests {
             "## q\na\n<!-- id: card-qm -->\n",
         );
 
-        std::fs::create_dir(root.join("progress")).unwrap();
+        std::fs::create_dir_all(root.join(".alix/progress")).unwrap();
         std::fs::create_dir(root.join("augment")).unwrap();
-        std::fs::create_dir(root.join("ws/progress")).unwrap();
+        std::fs::create_dir_all(root.join("ws/.alix/progress")).unwrap();
         std::fs::create_dir(root.join("ws/augment")).unwrap();
-        let root_conflict = root.join("progress/loose.sync-conflict-20260714-101112-AAAAAAA.json");
+        let root_conflict =
+            root.join(".alix/progress/loose.sync-conflict-20260714-101112-AAAAAAA.json");
         let root_augment = root.join("augment/loose.sync-conflict-20260714-101112-DDDDDDD.json");
         let ws_conflict =
-            root.join("ws/progress/member.sync-conflict-20260715-101112-BBBBBBB.json");
+            root.join("ws/.alix/progress/member.sync-conflict-20260715-101112-BBBBBBB.json");
         let ws_augment = root.join("ws/augment/member.sync-conflict-20260715-101112-EEEEEEE.json");
         write(&root_conflict, "{}");
         write(&root_augment, "{}");
@@ -1197,8 +1199,9 @@ mod tests {
             &root.join("ws/decks/m.md"),
             "## q\na\n<!-- id: card-qm -->\n",
         );
-        std::fs::create_dir(root.join("ws/progress")).unwrap();
-        let conflict = root.join("ws/progress/member.sync-conflict-20260715-101112-BBBBBBB.json");
+        std::fs::create_dir_all(root.join("ws/.alix/progress")).unwrap();
+        let conflict =
+            root.join("ws/.alix/progress/member.sync-conflict-20260715-101112-BBBBBBB.json");
         write(&conflict, "{}");
         std::os::unix::fs::symlink(root.join("ws"), root.join("alias")).unwrap();
 

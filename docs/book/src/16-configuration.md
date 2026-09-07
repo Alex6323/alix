@@ -207,11 +207,12 @@ per initialized deck:
 ```text
 <decks_dir>/
 ├── augment/deck-<token>.json
-├── progress/deck-<token>.json
-└── recent.json
+└── .alix/
+    ├── progress/deck-<token>.json
+    └── recent.json
 ```
 
-`progress/` is private, indispensable learning state: schedules, review
+`.alix/progress/` is private, indispensable learning state: schedules, review
 history, exam state, and the last writer. `augment/` is
 regenerable, shareable material: generated choices, notes, key points,
 variants, and topologies. It stays beside the deck so sharing the deck can
@@ -219,14 +220,11 @@ carry its generated study material without carrying personal history. The
 stable deck id (`deck-<token>`), not the Markdown filename, selects both
 documents, so renaming a deck keeps their ownership stable.
 
-Bare `alix` and `alix <dir>` use the same user-files root when `<dir>` is the
-configured `decks_dir`. A workspace, or any other folder served with `alix
-<dir>`, keeps its shareable `augment/` and `assets/` beside its decks. The
-`stats`/`list`/`reset` commands take a deck, folder, or workspace and resolve
-the same private progress documents. `--store <directory>` overrides only the
-user-files root for `progress/` and `recent.json`; it does not relocate
-augmentation or assets. Without that CLI flag, a workspace's private files
-always live at its root.
+`decks_dir` chooses what bare `alix` serves; it does not relocate state for a
+deck named elsewhere. Every deck uses its content root: the workspace root for
+a workspace member, or the containing folder for a loose deck. Bare `alix`,
+`alix <dir>`, `stats`, `list`, and `reset` therefore resolve the same colocated
+`.alix/` documents. Shareable `augment/` and `assets/` stay beside the decks.
 
 Each document carries its owner ID, format version, and revision. Saves write a
 sibling `.json.tmp` and atomically rename it into place. A process that can see
@@ -279,11 +277,8 @@ private files on each person's device, add this `.stignore` to the shared
 folder:
 
 ```text
-progress/
-recent.json
-alix.local.toml
-*.personal.md
-*.json.tmp
+.alix/
+*.local.*
 ```
 
 The mobile chapter has the related [Syncthing temporary-file
@@ -306,7 +301,7 @@ deck (grades made after the collision are not kept).
 
 Run `alix doctor <folder>` before recovery. For a progress conflict, stop both
 writers and synchronization, back up the folder, compare the canonical
-`progress/deck-<token>.json` with its
+`.alix/progress/deck-<token>.json` with its
 `deck-<token>.sync-conflict-….json` copies, and deliberately keep the complete
 history you trust at the canonical path. Do not combine schedules by hand.
 Augmentation conflicts are regenerable: keep one complete

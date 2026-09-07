@@ -153,8 +153,9 @@ mod tests {
         std::fs::write(root.join("loose.md"), "## q\na\n").unwrap();
         assert!(sync_conflicts(root.to_string_lossy().into_owned()).is_empty());
 
-        std::fs::create_dir(root.join("progress")).unwrap();
-        let conflict = root.join("progress/deck1.sync-conflict-20260714-101112-ABCDEF7.json");
+        let progress = alix::state::UserFiles::new(root).progress();
+        std::fs::create_dir_all(&progress).unwrap();
+        let conflict = progress.join("deck1.sync-conflict-20260714-101112-ABCDEF7.json");
         std::fs::write(&conflict, "{}").unwrap();
         assert_eq!(
             sync_conflicts(root.to_string_lossy().into_owned()),

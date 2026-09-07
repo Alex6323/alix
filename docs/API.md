@@ -227,7 +227,7 @@ and returns immediately, `thinking` while it's in flight; poll the shared
 (`DraftCardDto`), which persists there until the subject changes. `POST
 /api/ask/card/create {front, back}` (`CreateCardReq`) mints the learner's
 edited version of that draft into the deck's personal file
-(`<deck>.personal.md`), never the authored deck; synchronous, no polling. Both endpoints are adult-only (`403` when
+(`<deck>.local.md`), never the authored deck; synchronous, no polling. Both endpoints are adult-only (`403` when
 `[serve] audience = "kids"`) and both require an active review (`409`);
 `/api/ask/card/create` further `409`s when the review has no current card,
 and rejects an unparseable body with `400`. Success is `200` with `{"id":
@@ -276,7 +276,7 @@ Augment.
 following §3's polling pattern: poll `GET /api/share` while
 `phase:"staging"`/`"code"`, then read `error` or `"sent"`. A folder includes
 only augmentation documents whose stable IDs match its initialized decks and
-recursively excludes `progress/`, recent state, local pacing, temporary files,
+recursively excludes `.alix/`, `*.local.*`, temporary files,
 backups, hidden files, and conflict copies. A single
 deck with augmentation or deck-owned assets travels in an internal bundle
 containing the `.md` file, `assets/deck-<token>/`, and
@@ -971,7 +971,7 @@ always been, since JSON object keys are strings). Its *value* is the card's
 prefixed **id**: `card-<token>` for a plain card, `card-<token>-b<stamp>`
 for a blank span (`-g<hash>` for a group), or `card-<token>-r` for the reversed
 half of a dual-direction card. Deck ids are `deck-<token>` and name the deck's
-state documents (`progress/deck-<token>.json`, `augment/deck-<token>.json`) and
+state documents (`.alix/progress/deck-<token>.json`, `augment/deck-<token>.json`) and
 asset directory (`assets/deck-<token>/`). It is no longer a decimal `u64`.
 Clients must treat an id as an opaque string and never parse it as a number.
 

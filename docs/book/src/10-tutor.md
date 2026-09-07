@@ -40,7 +40,7 @@ enable it on a network you trust.
 
 When an exchange clears something up, press `Ctrl-N`: the tutor condenses the
 conversation into at most three short note lines and appends them, addressed
-to the card, to the deck's personal sidecar (`<deck>.personal.md`); the deck
+to the card, to the deck's personal sidecar (`<deck>.local.md`); the deck
 file itself is untouched. Notes aren't part of the card's identity, so its
 progress is untouched: you just keep the insight. (In the web panel, **Make
 this a note** does the same.)
@@ -124,7 +124,7 @@ The tutor distills the conversation into a draft front/back for you to edit.
 Once you're satisfied, click **Add** to land it as a new card on the current deck.
 
 The card goes into the deck's [personal file](03-the-deck-format.md#your-personal-file)
-(`<deck>.personal.md`), not the deck itself, so the authored `.md` is left
+(`<deck>.local.md`), not the deck itself, so the authored `.md` is left
 byte-identical. It joins your sessions from then on and is drilled and scheduled
 like any other card. It is a plain Markdown block in a file you can open and
 edit.

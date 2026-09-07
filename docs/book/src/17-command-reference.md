@@ -9,9 +9,8 @@ depth, where there is one. Run any command with `--help` for its full flags.
   your decks directory (`~/decks`), printing its URL.
 - `alix <dir>`: serve that folder as a **self-contained scoped root**: its own
   catalog and shareable `augment/` and `assets/`, with private per-deck
-  `progress/` plus `recent.json` colocated unless the CLI `--store` flag selects
-  another user-files root. A [workspace](08-workspaces.md) dir opens the picker
-  drilled into it.
+  progress plus recent history under its colocated `.alix/` directory. A
+  [workspace](08-workspaces.md) dir opens the picker drilled into it.
 
 Every review starts from the picker. There's no direct deck launch. Browsing a
 deck read-only, sitting the AI exam, and walking a [trace](13-trace-decks.md)
@@ -62,10 +61,10 @@ same folder.
 
 `alix stats`, `alix list`, and `alix reset` each take a **deck file, a plain
 folder, or a [workspace](08-workspaces.md)**: a folder or workspace expands to
-its member decks, and each deck resolves to the user-files root the launcher
-would serve it with (`--store` > the workspace or served folder > the
-configured decks root > the global store). Inside that boundary, progress is
-loaded from `progress/deck-<token>.json`; folder-wide commands aggregate the
+its member decks, and each deck resolves exactly as the launcher does: a
+workspace member uses the workspace root and a loose deck uses its containing
+folder. Inside that boundary, progress is loaded from
+`.alix/progress/deck-<token>.json`; folder-wide commands aggregate the
 relevant documents in memory without creating an authoritative combined file.
 
 - `alix stats <target>`: progress overview, completion state, and a
@@ -84,8 +83,9 @@ relevant documents in memory without creating an authoritative combined file.
   `<!-- id: … -->` comment, a hand-deleted deck, a double-mint).
   Orphans are never removed automatically (they are evidence), so this is the
   explicit opt-in. It scopes to a named folder/workspace
-  store, else the decks-dir root store, and reads every progress document under
-  it (the same documents `alix doctor` reports on). A single deck file scopes
+  store, else the configured decks folder, and reads every progress document
+  under its `.alix/` directory (the same documents `alix doctor` reports on).
+  A single deck file scopes
   to that deck's own document instead. A folder whose last deck was deleted is
   still a valid target. Every deck-like file in a folder is scanned for live
   ids, including one still awaiting its `id:` line, and any of them failing to
@@ -134,12 +134,12 @@ The rest of the AI-and-deck surface:
 - `alix deck init <file>`: explicitly initialize a hand-authored Markdown deck
   with stable deck and card IDs. Uninitialized `.md` files are ignored by
   discovery and never stamped merely because they contain `##` headings, and a
-  `<deck>.personal.md` is refused outright: it belongs to the deck beside it
+  `<deck>.local.md` is refused outright: it belongs to the deck beside it
   and never gets an `id:` of its own.
 - `alix deck augment <deck> --target <...>`: precompute AI augmentations
   (choices, notes, questions, keypoints, format, order). The augmentation
-  document stays beside the deck. `--store` affects only the private progress
-  needed when the `format` target considers personal cards.
+  document stays beside the deck; private progress is read from the deck's
+  colocated `.alix/` directory when `format` considers personal cards.
 - `alix deck copy <deck> <workspace>`: copy one initialized workspace member,
   its owned frozen assets, and its augmentation into another workspace. Stable
   deck and card IDs are preserved; progress is not copied.
@@ -156,9 +156,9 @@ The rest of the AI-and-deck surface:
   A deck that others `require:` warns and names them; they unlock rather
   than break.
 - `alix deck restore <deck>`: swap a deck with its `.bak` backups (file,
-  review history, augmentations), undoing the last overwrite (a forced
-  import, a trace or workspace regeneration). Nothing is destroyed: the
-  swapped-away state becomes the new backup, so running it again swaps
+  `.alix/progress` history, augmentations), undoing the last overwrite (a
+  forced import, a trace or workspace regeneration). Nothing is destroyed:
+  the swapped-away state becomes the new backup, so running it again swaps
   back. There is nothing to restore after `deck remove`, which deletes the
   backups too.
 - `alix workspace init <dir>`: scaffold an empty
@@ -196,8 +196,8 @@ notes it.
 - `alix share <path>`: send a deck file, a plain folder, or a workspace to
   someone over [magic-wormhole](https://magic-wormhole.readthedocs.io) (the
   `wormhole` binary must be installed, `alix doctor` checks). A folder is
-  staged first so your personal state stays home: `progress/`, the recent list,
-  `alix.local.toml`, temporary files, and conflict or backup files never travel.
+  staged first so your personal state stays home: `.alix/`, `*.local.*`,
+  temporary files, and conflict or backup files never travel.
   Matching `augment/deck-<token>.json` documents do travel, including when sharing
   one deck. A single frozen deck also carries its complete
   `assets/deck-<token>/` directory. A symbolic link inside what you share is

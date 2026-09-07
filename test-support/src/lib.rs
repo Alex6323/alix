@@ -56,7 +56,7 @@ pub fn seed(dir: &Path) -> PathBuf {
 }
 
 pub fn capture(deck: &Path, store_root: &Path) -> Effects {
-    let sidecar = std::fs::read_to_string(deck.with_extension("personal.md")).ok();
+    let sidecar = std::fs::read_to_string(deck.with_extension("local.md")).ok();
     let minted = sidecar.as_deref().map(minted_tokens).unwrap_or_default();
     Effects {
         deck: std::fs::read_to_string(deck).expect("the deck survives every action"),
@@ -103,7 +103,9 @@ fn minted_tokens(text: &str) -> Vec<String> {
 }
 
 fn progress(store_root: &Path, minted: &[String]) -> Vec<(String, u64, u64)> {
-    let progress = store_root.join("progress").join(format!("{DECK_ID}.json"));
+    let progress = store_root
+        .join(".alix/progress")
+        .join(format!("{DECK_ID}.json"));
     let Ok(text) = std::fs::read_to_string(&progress) else {
         return Vec::new();
     };
@@ -131,7 +133,9 @@ fn progress(store_root: &Path, minted: &[String]) -> Vec<(String, u64, u64)> {
 }
 
 fn introduced(store_root: &Path, minted: &[String]) -> Vec<String> {
-    let progress = store_root.join("progress").join(format!("{DECK_ID}.json"));
+    let progress = store_root
+        .join(".alix/progress")
+        .join(format!("{DECK_ID}.json"));
     let Ok(text) = std::fs::read_to_string(&progress) else {
         return Vec::new();
     };
@@ -217,10 +221,10 @@ mod tests {
             "alix-parity-id-repro-{}",
             std::process::id()
         ));
-        std::fs::create_dir_all(root.join("progress")).unwrap();
+        std::fs::create_dir_all(root.join(".alix/progress")).unwrap();
         let deck = seed(&root);
         std::fs::write(
-            deck.with_extension("personal.md"),
+            deck.with_extension("local.md"),
             format!(
                 "---\nformat-version: 1\nfor: {DECK_ID}\n---\n\n\
                  ## {MINTED_FRONT}\n{MINTED_BACK}\n<!-- id: {SIDECAR_ID} -->\n"
@@ -228,7 +232,8 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
-            root.join("progress").join(format!("{DECK_ID}.json")),
+            root.join(".alix/progress")
+                .join(format!("{DECK_ID}.json")),
             serde_json::json!({
                 "cards": {
                     PROGRESS_ID: {

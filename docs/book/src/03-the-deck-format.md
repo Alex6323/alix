@@ -655,9 +655,11 @@ words.
 
 A deck you didn't write is still yours to annotate. Anything alix or you add to
 someone else's deck goes into a **personal file** beside it, never into the deck
-itself: `spanish.md` gets `spanish.personal.md`. The deck file stays
+itself: `spanish.md` gets `spanish.local.md`. The deck file stays
 byte-identical, so you can pull an updated copy of it without losing your work,
 and your notes never leak back when you share the deck.
+The personal file is the deck's `.local.md` twin, following the same `.local`
+rule as `alix.local.toml`.
 
 It is an ordinary Markdown file with one extra frontmatter key naming the deck
 it belongs to:

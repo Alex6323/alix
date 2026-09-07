@@ -29,7 +29,7 @@ pub(crate) fn remove_cmd(args: DeckRemoveArgs) -> Result<()> {
     if !deck.is_file() {
         bail!("no deck at {}", deck.display());
     }
-    let root = removal_store_root(deck, args.store.as_deref())?;
+    let root = removal_store_root(deck);
     let store = alix::state::open_store(deck, &root)?;
     let preview = library::removal_preview(deck, &store);
 
@@ -68,7 +68,7 @@ pub(crate) fn remove_cmd(args: DeckRemoveArgs) -> Result<()> {
 
 pub(crate) fn restore_cmd(args: DeckRestoreArgs) -> Result<()> {
     let deck = &args.deck;
-    let root = removal_store_root(deck, args.store.as_deref())?;
+    let root = removal_store_root(deck);
     let report = library::restore_deck(deck, &root)?;
     let describe = |swapped: bool| {
         if swapped {
@@ -87,19 +87,8 @@ pub(crate) fn restore_cmd(args: DeckRestoreArgs) -> Result<()> {
     Ok(())
 }
 
-fn removal_store_root(
-    deck: &std::path::Path,
-    cli_override: Option<&std::path::Path>,
-) -> Result<std::path::PathBuf> {
-    assemble::store_path_for(std::slice::from_ref(&deck.to_path_buf()), cli_override)
-        .or_else(|| {
-            Config::load(None)
-                .ok()
-                .and_then(|config| config.decks_dir())
-                .map(|dir| workspace::root_store_path(&dir))
-        })
-        .or_else(alix::store::default_store_path)
-        .context("cannot determine the progress store for this deck")
+fn removal_store_root(deck: &std::path::Path) -> std::path::PathBuf {
+    workspace::content_root(deck)
 }
 
 pub(crate) fn workspace_update_cmd(args: WorkspaceUpdateArgs) -> Result<()> {
@@ -257,7 +246,6 @@ pub(crate) fn augment_cmd(args: AugmentArgs) -> Result<()> {
         AugmentTarget::Format => format_candidates(
             std::slice::from_ref(&deck),
             std::slice::from_ref(&args.deck),
-            args.store.clone(),
             &config,
         )?,
         _ => Vec::new(),
@@ -316,7 +304,7 @@ pub(crate) fn workspace_augment_cmd(args: WorkspaceAugmentArgs) -> Result<()> {
 
     announce(target_label(target), &title, &config, &ask_cfg);
     let format_cards = match target {
-        AugmentTarget::Format => format_candidates(&decks, &paths, args.store.clone(), &config)?,
+        AugmentTarget::Format => format_candidates(&decks, &paths, &config)?,
         _ => Vec::new(),
     };
     let cards: Vec<Card> = decks
@@ -366,10 +354,9 @@ fn announce(what: &str, subject: &str, config: &Config, ask_cfg: &alix::config::
 fn format_candidates(
     decks: &[alix::deck::Deck],
     paths: &[std::path::PathBuf],
-    store_override: Option<std::path::PathBuf>,
     config: &Config,
 ) -> Result<Vec<Card>> {
-    let store = store_for(paths, store_override, config)?;
+    let store = store_for(paths)?;
     let mut out = Vec::new();
     for deck in decks {
         let subject: Arc<str> = Arc::from(deck.subject.as_str());
@@ -692,7 +679,7 @@ pub(crate) fn import_cmd(args: ImportArgs) -> Result<()> {
                 target.display()
             );
         }
-        let mut store = store_for(std::slice::from_ref(&target), None, &config)?;
+        let mut store = store_for(std::slice::from_ref(&target))?;
         let report = library::replace_deck(&dir, &name, &text, &mut store)?;
         println!(
             "Replaced {}: {} cards, wiped progress for {} card(s).",
@@ -782,7 +769,7 @@ mod tests {
         let deck = decks.join("facts.md");
         std::fs::write(&deck, "## q\na\n").unwrap();
 
-        assert_eq!(workspace, removal_store_root(&deck, None).unwrap());
+        assert_eq!(workspace, removal_store_root(&deck));
     }
 
     #[test]

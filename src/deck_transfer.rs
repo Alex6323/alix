@@ -542,7 +542,7 @@ mod tests {
                 .is_file()
         );
         assert!(destination.join("augment/deck-deck1.json").is_file());
-        assert!(!destination.join("progress/deck-deck1.json").exists());
+        assert!(!destination.join(".alix/progress/deck-deck1.json").exists());
     }
 
     #[test]
@@ -583,7 +583,7 @@ mod tests {
         let mut progress = crate::state::open_store(&deck, &source).unwrap();
         progress.get_or_insert("card-card1");
         progress.save().unwrap();
-        let progress_bytes = std::fs::read(source.join("progress/deck-deck1.json")).unwrap();
+        let progress_bytes = std::fs::read(source.join(".alix/progress/deck-deck1.json")).unwrap();
 
         let report = transfer(&deck, &destination, TransferMode::Move).unwrap();
 
@@ -593,9 +593,9 @@ mod tests {
         assert!(destination.join("decks/facts.md").is_file());
         assert_eq!(
             progress_bytes,
-            std::fs::read(destination.join("progress/deck-deck1.json")).unwrap()
+            std::fs::read(destination.join(".alix/progress/deck-deck1.json")).unwrap()
         );
-        assert!(!source.join("progress/deck-deck1.json").exists());
+        assert!(!source.join(".alix/progress/deck-deck1.json").exists());
     }
 
     #[test]
@@ -728,7 +728,7 @@ mod tests {
         assert!(format!("{error:#}").contains("cannot remove"));
         assert!(deck.is_file());
         assert!(!destination.join("decks/facts.md").exists());
-        assert!(!destination.join("progress/deck-deck1.json").exists());
+        assert!(!destination.join(".alix/progress/deck-deck1.json").exists());
     }
 
     #[cfg(unix)]

@@ -309,10 +309,6 @@ struct WorkspaceAugmentArgs {
     #[arg(long)]
     with: Option<String>,
 
-    /// User-files root used to include personal cards while augmenting.
-    #[arg(long)]
-    store: Option<PathBuf>,
-
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
     config: Option<PathBuf>,
@@ -564,20 +560,12 @@ struct DeckRemoveArgs {
     /// Skip the confirmation prompt.
     #[arg(short, long)]
     yes: bool,
-
-    /// Progress store path override (default: resolved per deck).
-    #[arg(long)]
-    store: Option<PathBuf>,
 }
 
 #[derive(Args)]
 struct DeckRestoreArgs {
     /// The deck file (or its former path) whose backups to swap in.
     deck: PathBuf,
-
-    /// Progress store path override (default: resolved per deck).
-    #[arg(long)]
-    store: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -620,11 +608,6 @@ struct AugmentArgs {
     /// "use common misconceptions", "add a surprising historical fact").
     #[arg(long)]
     with: Option<String>,
-
-    /// User-files root used to include personal cards while augmenting. It does
-    /// not change where workspace augmentation is written.
-    #[arg(long)]
-    store: Option<PathBuf>,
 
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
@@ -691,10 +674,6 @@ struct DeckArgs {
     #[arg(value_name = "DECK|FOLDER|WORKSPACE")]
     target: PathBuf,
 
-    /// State-root directory (default: resolved from the target).
-    #[arg(long)]
-    store: Option<PathBuf>,
-
     /// Path of the config file (default: platform config dir).
     #[arg(long)]
     config: Option<PathBuf>,
@@ -727,11 +706,6 @@ struct ResetArgs {
     /// Skip the confirmation prompt (for scripts / test loops).
     #[arg(short = 'y', long)]
     yes: bool,
-
-    /// User-files directory (default: resolved from the target, or the
-    /// decks-dir user root for `--all`/`--card` with no target).
-    #[arg(long)]
-    store: Option<PathBuf>,
 
     /// Path of the config file (default: platform config dir).
     #[arg(long)]

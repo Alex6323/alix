@@ -523,20 +523,24 @@ fn remove_if_empty(
 }
 
 fn user_root_for_store(store_path: &Path) -> Option<PathBuf> {
-    if store_path
+    let progress = if store_path
         .file_name()
         .is_some_and(|name| name == "progress")
     {
-        return store_path.parent().map(Path::to_path_buf);
-    }
-    if store_path
+        store_path
+    } else if store_path
         .parent()
         .and_then(Path::file_name)
         .is_some_and(|name| name == "progress")
     {
-        return store_path.parent()?.parent().map(Path::to_path_buf);
-    }
-    None
+        store_path.parent()?
+    } else {
+        return None;
+    };
+    let private = progress.parent()?;
+    (private.file_name().is_some_and(|name| name == ".alix"))
+        .then(|| private.parent().map(Path::to_path_buf))
+        .flatten()
 }
 
 fn path_is_within(path: &Path, root: &Path) -> bool {
@@ -640,7 +644,7 @@ pub fn restore_deck(deck_path: &Path, store_root: &Path) -> Result<RestoreReport
     let dir = deck_path.parent().unwrap_or_else(|| Path::new("."));
     let workspace_root = workspace::root_for_member_dir(dir).unwrap_or_else(|| dir.to_path_buf());
     let workspace_files = WorkspaceFiles::new(workspace_root);
-    let progress_dir = store_root.join("progress");
+    let progress_dir = crate::state::UserFiles::new(store_root).progress();
 
     // Lenient on both sides, like replace is on the old file: an
     // unparseable side contributes no document pairs, never an abort.
@@ -1000,7 +1004,7 @@ mod tests {
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
         store.get_or_insert("card-c1").introduced_ms = Some(0);
         store.save().unwrap();
-        let progress = dir.path().join("progress/deck-da1.json");
+        let progress = dir.path().join(".alix/progress/deck-da1.json");
         let orig_progress = std::fs::read(&progress).unwrap();
         let deck = Deck::load(dir.path().join("a.md")).unwrap();
         let mut cache = AugmentCache::open_for_decks(dir.path(), &[deck]).unwrap();
@@ -1018,7 +1022,7 @@ mod tests {
         );
         assert_eq!(
             orig_progress,
-            std::fs::read(dir.path().join("progress/deck-da1.json.bak")).unwrap(),
+            std::fs::read(dir.path().join(".alix/progress/deck-da1.json.bak")).unwrap(),
             "the progress backup holds the pre-wipe document"
         );
         assert_eq!(
@@ -1102,7 +1106,7 @@ mod tests {
         cache.set_distractors("card-c1", vec!["x".into()], 1);
         cache.save().unwrap();
         let orig_deck = std::fs::read_to_string(dir.join("a.md")).unwrap();
-        let orig_progress = std::fs::read(dir.join("progress/deck-da1.json")).unwrap();
+        let orig_progress = std::fs::read(dir.join(".alix/progress/deck-da1.json")).unwrap();
         let orig_augment = std::fs::read(dir.join("augment/deck-da1.json")).unwrap();
         replace_deck(dir, "a", "## new q\nnew ans\n", &mut store).unwrap();
         (orig_progress, orig_augment, orig_deck)
@@ -1131,7 +1135,7 @@ mod tests {
         );
         assert_eq!(
             orig_progress,
-            std::fs::read(dir.path().join("progress/deck-da1.json")).unwrap(),
+            std::fs::read(dir.path().join(".alix/progress/deck-da1.json")).unwrap(),
             "the review history is live again"
         );
         assert_eq!(
@@ -1183,7 +1187,7 @@ mod tests {
     fn a_partial_trio_swaps_the_deck_and_reports_the_absent_members() {
         let dir = tempfile::tempdir().unwrap();
         let (_, _, orig_deck) = trio_fixture(dir.path());
-        std::fs::remove_file(dir.path().join("progress/deck-da1.json.bak")).unwrap();
+        std::fs::remove_file(dir.path().join(".alix/progress/deck-da1.json.bak")).unwrap();
         std::fs::remove_file(dir.path().join("augment/deck-da1.json.bak")).unwrap();
 
         let report = restore_deck(&dir.path().join("a.md"), dir.path()).unwrap();
@@ -1313,7 +1317,7 @@ mod tests {
         store.get_or_insert("card-ca1").introduced_ms = Some(100);
         store.get_or_insert("card-cb1").introduced_ms = Some(200);
         store.save().unwrap();
-        std::fs::write(ws.join("recent.json"), "{}\n").unwrap();
+        std::fs::write(ws.join(".alix/recent.json"), "{}\n").unwrap();
         for deck_id in ["deck-da1", "deck-db1"] {
             let augment = WorkspaceFiles::new(&ws).augment_for(deck_id);
             std::fs::create_dir_all(augment.parent().unwrap()).unwrap();
@@ -1336,10 +1340,10 @@ mod tests {
         for removed in [
             ws.join("alix.toml"),
             ws.join("alix.local.toml"),
-            ws.join("recent.json"),
+            ws.join(".alix/recent.json"),
             ws.join("assets"),
             ws.join("augment"),
-            ws.join("progress"),
+            ws.join(".alix/progress"),
             members.join("a.md"),
             members.join("a.md.bak"),
             members.join("b.md"),
@@ -1369,21 +1373,21 @@ mod tests {
         let mut store = crate::state::open_stores(&paths, &user).unwrap();
         store.get_or_insert("card-ca1").introduced_ms = Some(100);
         store.save().unwrap();
-        std::fs::write(user.join("progress/unrelated.json"), "keep\n").unwrap();
-        std::fs::write(user.join("recent.json"), "keep\n").unwrap();
+        std::fs::write(user.join(".alix/progress/unrelated.json"), "keep\n").unwrap();
+        std::fs::write(user.join(".alix/recent.json"), "keep\n").unwrap();
 
         let report = remove_workspace(&ws, &store).unwrap();
 
         assert!(report.root_removed, "an empty workspace root is removed");
         assert!(!ws.exists());
-        assert!(!user.join("progress/deck-da1.json").exists());
+        assert!(!user.join(".alix/progress/deck-da1.json").exists());
         assert_eq!(
             "keep\n",
-            std::fs::read_to_string(user.join("progress/unrelated.json")).unwrap()
+            std::fs::read_to_string(user.join(".alix/progress/unrelated.json")).unwrap()
         );
         assert_eq!(
             "keep\n",
-            std::fs::read_to_string(user.join("recent.json")).unwrap()
+            std::fs::read_to_string(user.join(".alix/recent.json")).unwrap()
         );
     }
 
@@ -1391,7 +1395,7 @@ mod tests {
     fn workspace_store_containment_accepts_its_boundary_and_rejects_every_outside_shape() {
         let dir = tempfile::tempdir().unwrap();
         let user = dir.path().join("user");
-        let progress = user.join("progress");
+        let progress = user.join(".alix/progress");
         let child = user.join("child");
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::create_dir_all(&child).unwrap();
@@ -1490,7 +1494,7 @@ mod tests {
             store.get_or_insert(card_id).introduced_ms = Some(0);
         }
         store.save().unwrap();
-        let failed = ws.join("progress/deck-db1.json");
+        let failed = ws.join(".alix/progress/deck-db1.json");
 
         let error = with_removal_failure_at(&failed, || remove_workspace(&ws, &store)).unwrap_err();
         let failure = error.downcast_ref::<RemovalFailure>().unwrap();
@@ -1550,7 +1554,7 @@ mod tests {
             preview
                 .files
                 .iter()
-                .any(|p| p.ends_with("progress/deck-da1.json")),
+                .any(|p| p.ends_with(".alix/progress/deck-da1.json")),
             "{preview:?}"
         );
         assert_eq!(vec!["b.md".to_string()], preview.dependents);
@@ -1565,7 +1569,7 @@ mod tests {
         store.save().unwrap();
         // Make the progress document undeletable as a file by replacing it
         // with a directory: deck-first ordering then fails on member two.
-        let progress = dir.path().join("progress/deck-da1.json");
+        let progress = dir.path().join(".alix/progress/deck-da1.json");
         std::fs::remove_file(&progress).unwrap();
         std::fs::create_dir_all(progress.join("x")).unwrap();
 
@@ -1726,12 +1730,12 @@ mod tests {
 
         replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut aggregate).unwrap();
 
-        assert!(!dir.path().join("progress/deck-da1.json").exists());
+        assert!(!dir.path().join(".alix/progress/deck-da1.json").exists());
         assert!(!dir.path().join("augment/deck-da1.json").exists());
-        assert!(dir.path().join("progress/deck-db1.json").exists());
+        assert!(dir.path().join(".alix/progress/deck-db1.json").exists());
         assert!(dir.path().join("augment/deck-db1.json").exists());
         let untouched = Store::open_deck(
-            dir.path().join("progress/deck-db1.json"),
+            dir.path().join(".alix/progress/deck-db1.json"),
             "deck-db1",
             "b.md",
         )

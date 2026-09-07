@@ -113,8 +113,8 @@ void main() {
         '---\ntitle: Mastered\n---\n## q\na\n<!-- id: card-mastered -->\n',
         id: 'mastered',
       );
-      Directory('${root.path}/progress').createSync();
-      File('${root.path}/progress/deck-mastered.json').writeAsStringSync(
+      Directory('${root.path}/.alix/progress').createSync(recursive: true);
+      File('${root.path}/.alix/progress/deck-mastered.json').writeAsStringSync(
         jsonEncode({
           'version': 1,
           'deck_id': 'deck-mastered',
@@ -155,9 +155,9 @@ void main() {
   ) async {
     final root = tempDir('alix-picker-structure-conflict-');
     writeTestDeck('${root.path}/deck.md', '---\ntitle: Deck\n---\n## q\na\n');
-    Directory('${root.path}/progress').createSync();
+    Directory('${root.path}/.alix/progress').createSync(recursive: true);
     File(
-      '${root.path}/progress/deck.sync-conflict-20260801.json',
+      '${root.path}/.alix/progress/deck.sync-conflict-20260801.json',
     ).writeAsStringSync('{}');
     await pumpPicker(tester, root: root);
     await expectWidgetTree(
@@ -427,7 +427,6 @@ void main() {
     },
   );
 }
-
 class _FakeAccess implements PlatformAccess {
   const _FakeAccess();
 

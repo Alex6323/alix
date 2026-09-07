@@ -35,7 +35,7 @@ fn dir_candidates(
                 && path.extension().is_some_and(|e| e == "md")
                 && !workspace::is_conventional_non_deck(&name)
                 && !workspace::is_conflict_name(&name)
-                && !workspace::is_sidecar_name(&name)
+                && !workspace::is_private_name(&name)
                 && cache.is_deck(&path);
             if is_deck {
                 Some((path, false))
@@ -290,7 +290,7 @@ mod tests {
         assert_eq!("just now", progress_age(3_000, 2_000));
 
         let dir = tempfile::tempdir().unwrap();
-        let progress = dir.path().join("progress/deck-test.json");
+        let progress = dir.path().join(".alix/progress/deck-test.json");
         let mut store = crate::store::Store::open_deck(&progress, "deck-test", "test.md").unwrap();
         store.get_or_insert("card-test").record_review(
             1,

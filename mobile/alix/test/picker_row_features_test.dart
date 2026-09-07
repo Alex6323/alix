@@ -300,8 +300,8 @@ void main() {
         '---\nformat-version: 1\nid: "deck-masteredz"\ntitle: Mastered Z\n---\n'
         '## q\na\n<!-- id: card-masteredzq -->\n',
       );
-      Directory('${root.path}/progress').createSync();
-      File('${root.path}/progress/deck-masteredz.json').writeAsStringSync(
+      Directory('${root.path}/.alix/progress').createSync(recursive: true);
+      File('${root.path}/.alix/progress/deck-masteredz.json').writeAsStringSync(
         jsonEncode({
           'version': 1,
           'deck_id': 'deck-masteredz',
@@ -508,8 +508,8 @@ void main() {
       '---\nformat-version: 1\nid: "deck-00000000000000000000000000"\ntitle: Damaged\n---\n'
       '## q\na\n<!-- id: card-11111111111111111111111111 -->\n',
     );
-    Directory('${root.path}/progress').createSync();
-    File('${root.path}/progress/deck-00000000000000000000000000.json')
+    Directory('${root.path}/.alix/progress').createSync(recursive: true);
+    File('${root.path}/.alix/progress/deck-00000000000000000000000000.json')
         .writeAsStringSync('{ corrupt');
 
     await tester.pumpWidget(MaterialApp(

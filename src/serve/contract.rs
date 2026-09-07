@@ -257,7 +257,7 @@ fn statedto_review_phase_wire_shape() {
         recognize_gap: None,
         label: "rust.md".to_string(),
         save_error: Some(
-            "progress/deck-rust1.json: stale progress revision 3; disk is at 4".to_string(),
+            ".alix/progress/deck-rust1.json: stale progress revision 3; disk is at 4".to_string(),
         ),
         load_warnings: vec!["2 frozen diagram(s) did not resolve and fall back to source; run `alix doctor` for details".to_string()],
     };
@@ -373,7 +373,7 @@ fn statedto_review_phase_wire_shape() {
             "label": "rust.md",
             "topology": "order",
             "region": "intro",
-            "save_error": "progress/deck-rust1.json: stale progress revision 3; disk is at 4",
+            "save_error": ".alix/progress/deck-rust1.json: stale progress revision 3; disk is at 4",
             "load_warnings": ["2 frozen diagram(s) did not resolve and fall back to source; run `alix doctor` for details"]
         }),
     );
@@ -1992,7 +1992,7 @@ fn removalpreviewdto_wire_shape() {
         earliest_review_ms: Some(1_700_000_000_000),
         files: vec![
             "decks/basics.md".to_string(),
-            "progress/deck-basics.json".to_string(),
+            ".alix/progress/deck-basics.json".to_string(),
             "alix.toml".to_string(),
         ],
         directories: vec!["assets".to_string()],
@@ -2007,7 +2007,7 @@ fn removalpreviewdto_wire_shape() {
             "decks": 2,
             "cards_with_progress": 17,
             "earliest_review_ms": 1_700_000_000_000_u64,
-            "files": ["decks/basics.md", "progress/deck-basics.json", "alix.toml"],
+            "files": ["decks/basics.md", ".alix/progress/deck-basics.json", "alix.toml"],
             "directories": ["assets"],
             "dependents": ["advanced.md"]
         }),
@@ -2044,7 +2044,7 @@ fn removalfailuredto_wire_shape() {
         target: "rust".to_string(),
         error: "removal incomplete",
         completed: vec!["decks/basics.md".to_string()],
-        failed: "progress/deck-basics.json".to_string(),
+        failed: ".alix/progress/deck-basics.json".to_string(),
         recovery: "Run alix doctor to inspect and repair the remaining artifacts.",
     };
     pin(
@@ -2054,7 +2054,7 @@ fn removalfailuredto_wire_shape() {
             "target": "rust",
             "error": "removal incomplete",
             "completed": ["decks/basics.md"],
-            "failed": "progress/deck-basics.json",
+            "failed": ".alix/progress/deck-basics.json",
             "recovery": "Run alix doctor to inspect and repair the remaining artifacts."
         }),
     );

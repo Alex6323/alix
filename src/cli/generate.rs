@@ -221,8 +221,12 @@ fn build_workspace(
         );
     }
     let existing_decks = alix::workspace::deck_files(&dir);
-    let mut store = store_for(&existing_decks, None, config)
-        .with_context(|| format!("opening the store for {}", dir.display()))?;
+    let mut store = if existing_decks.is_empty() {
+        alix::state::open_aggregate_store(&dir).map_err(anyhow::Error::from)
+    } else {
+        store_for(&existing_decks)
+    }
+    .with_context(|| format!("opening the store for {}", dir.display()))?;
     let merged = alix::explore::merge_built(&staging, &dir, args.common.force, &mut store)?;
 
     let total = materialized.traces + materialized.decks;
@@ -356,7 +360,7 @@ fn generate_single_deck(
 
     let (dir, target) = destination.expect("resolved above unless --print returned early");
     if target.exists() {
-        let mut store = store_for(std::slice::from_ref(&target), None, config)?;
+        let mut store = store_for(std::slice::from_ref(&target))?;
         let report = library::replace_deck(&dir, &name, &text, &mut store)?;
         if Path::new(&source).exists() {
             alix::source::stamp_citations(&target)?;
@@ -448,7 +452,7 @@ fn trace_build(
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("trace.md");
-        let mut store = store_for(std::slice::from_ref(&deck_path.to_path_buf()), None, config)?;
+        let mut store = store_for(std::slice::from_ref(&deck_path.to_path_buf()))?;
         let report = library::replace_deck(dir, name, &new_text, &mut store)?;
         println!(
             "Rebuilt {}: {} checkpoints, wiped progress for {} card(s). Review them \
@@ -546,7 +550,7 @@ fn generate_trace_walk(
         .unwrap_or("explore.md")
         .to_string();
     if out.exists() {
-        let mut store = store_for(std::slice::from_ref(&out), None, config)?;
+        let mut store = store_for(std::slice::from_ref(&out))?;
         let report = library::replace_deck(&out_dir, &name, &deck_text, &mut store)?;
         println!(
             "Rebuilt the explore walk at {}: {} checkpoints, wiped progress for {} card(s).",

@@ -37,7 +37,7 @@ Alix does not claim to provide:
 | Asset | Primary harm if compromised |
 | --- | --- |
 | Decks, notes, images, source citations, and frozen excerpts | Private learning or source material is disclosed or altered. |
-| `progress/<deck-id>.json`, `recent.json`, and `alix.local.toml` | Learning history, device-local settings, or scheduling state is disclosed or corrupted. |
+| `.alix/progress/<deck-id>.json`, `.alix/recent.json`, and `alix.local.toml` | Learning history, device-local settings, or scheduling state is disclosed or corrupted. |
 | Pairing tokens and profile configuration | An unintended LAN client can invoke guarded API operations. |
 | User-created bug-report archive | Redacted diagnostics or metadata are disclosed after the user attaches the file. |
 | Explicit `source` trees | A grounded AI call reads files outside the evidence the learner expected to share. |
@@ -271,8 +271,8 @@ data rather than executable HTML.
 `alix share` stages content locally and invokes the separately installed
 `magic-wormhole` CLI for transfer. That executable and its protocol
 implementation are part of the sharing trust boundary. Staging excludes the
-entire `progress/` tree, recent state, local overrides, temporary and
-backup-shaped files, hidden files, and synchronization conflicts. Receive
+private `.alix/` and `*.local.*` set, temporary and backup-shaped files, hidden
+files, and synchronization conflicts. Receive
 strips private state recursively even if the sender used another tool
 (`src/share.rs`). Matching `augment/<deck-id>.json`
 documents are intentionally shareable generated deck material; unrelated or

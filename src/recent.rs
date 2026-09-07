@@ -61,30 +61,9 @@ impl RecentDecks {
     }
 }
 
-pub fn default_recent_path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.data_dir().join("recent.json"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_default_recent_path_names_the_alix_recent_document() {
-        let path = default_recent_path().expect("this platform has an application data directory");
-        assert_eq!(
-            Some("recent.json"),
-            path.file_name().and_then(|name| name.to_str())
-        );
-        // Windows data dirs end in a `data` component (`...\\alix\\data`), so
-        // `alix` is an ancestor rather than always the parent.
-        assert!(
-            path.ancestors()
-                .any(|ancestor| ancestor.file_name().and_then(|n| n.to_str()) == Some("alix")),
-            "the recent document lives under an `alix` directory: {}",
-            path.display()
-        );
-    }
 
     #[test]
     fn record_moves_to_front_and_dedups() {

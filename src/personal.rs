@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub fn sidecar_path(deck: &Path) -> PathBuf {
-    deck.with_extension("personal.md")
+    deck.with_extension(crate::workspace::LOCAL_SIDECAR_SUFFIX.trim_start_matches('.'))
 }
 
 #[derive(Debug, Default)]
@@ -183,7 +183,7 @@ mod tests {
                     ### hand-written detail\n\
                     more detail\n\
                     <!-- id: card-personal -->\n";
-        let cards = crate::parser::parse_sidecar("deck.personal.md", text).unwrap();
+        let cards = crate::parser::parse_sidecar("deck.local.md", text).unwrap();
         assert_eq!(1, cards.len(), "sub-card syntax is disabled in a sidecar");
         assert_eq!(
             vec!["answer", "### hand-written detail", "more detail"],
@@ -196,14 +196,14 @@ mod tests {
     #[test]
     fn a_leading_deep_heading_never_empties_a_sidecar() {
         let text = "## personal\nanswer\n#### deep\ntail\n<!-- id: card-p2 -->\n";
-        let cards = crate::parser::parse_sidecar("deck.personal.md", text).unwrap();
+        let cards = crate::parser::parse_sidecar("deck.local.md", text).unwrap();
         assert_eq!(1, cards.len());
     }
 
     #[test]
     fn a_sidecar_sits_beside_its_deck_under_the_personal_suffix() {
         assert_eq!(
-            Path::new("/decks/spanish.personal.md"),
+            Path::new("/decks/spanish.local.md"),
             sidecar_path(Path::new("/decks/spanish.md"))
         );
     }

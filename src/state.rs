@@ -42,7 +42,7 @@ impl UserFiles {
     }
 
     pub fn progress(&self) -> PathBuf {
-        self.root.join("progress")
+        self.private_root().join("progress")
     }
 
     pub fn progress_for(&self, deck_id: &str) -> PathBuf {
@@ -50,11 +50,16 @@ impl UserFiles {
     }
 
     pub fn recent(&self) -> PathBuf {
-        self.root.join("recent.json")
+        self.private_root().join("recent.json")
     }
 
     pub fn local_manifest(&self) -> PathBuf {
         self.root.join(crate::config::LOCAL_MANIFEST)
+    }
+
+    fn private_root(&self) -> PathBuf {
+        self.root
+            .join(crate::workspace::PRIVATE_PATTERNS[0].trim_end_matches('/'))
     }
 }
 
@@ -138,7 +143,7 @@ pub(crate) fn progress_document_for(
     store_path: &Path,
     deck_id: &str,
 ) -> Result<PathBuf, StateError> {
-    if store_path
+    let progress = if store_path
         .parent()
         .and_then(Path::file_name)
         .is_some_and(|name| name == "progress")
@@ -146,22 +151,31 @@ pub(crate) fn progress_document_for(
             .extension()
             .is_some_and(|extension| extension == "json")
     {
-        let progress = store_path
+        store_path
             .parent()
             .ok_or_else(|| StateError::InvalidStorePath {
                 path: store_path.to_path_buf(),
-            })?;
-        return Ok(progress.join(format!("{deck_id}.json")));
-    }
-    if store_path
+            })?
+    } else if store_path
         .file_name()
         .is_some_and(|name| name == "progress")
     {
-        return Ok(store_path.join(format!("{deck_id}.json")));
+        store_path
+    } else {
+        return Err(StateError::InvalidStorePath {
+            path: store_path.to_path_buf(),
+        });
+    };
+    if !progress
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == ".alix")
+    {
+        return Err(StateError::InvalidStorePath {
+            path: store_path.to_path_buf(),
+        });
     }
-    Err(StateError::InvalidStorePath {
-        path: store_path.to_path_buf(),
-    })
+    Ok(progress.join(format!("{deck_id}.json")))
 }
 
 #[cfg(test)]
@@ -184,10 +198,14 @@ mod tests {
     fn user_files_address_private_documents() {
         let files = UserFiles::new("/data/alix");
         assert_eq!(
-            Path::new("/data/alix/progress/deck1.json"),
+            Path::new("/data/alix/.alix/progress/deck1.json"),
             files.progress_for("deck1")
         );
-        assert_eq!(Path::new("/data/alix/recent.json"), files.recent());
+        assert_eq!(Path::new("/data/alix/.alix/recent.json"), files.recent());
+        assert_eq!(
+            Path::new("/data/alix/alix.local.toml"),
+            files.local_manifest()
+        );
     }
 
     #[test]
@@ -217,12 +235,12 @@ mod tests {
         store.save().unwrap();
 
         assert_eq!(
-            dir.path().join("progress/deck-deck1.json"),
+            dir.path().join(".alix/progress/deck-deck1.json"),
             store.path().to_path_buf()
         );
-        assert!(dir.path().join("progress/deck-deck1.json").is_file());
+        assert!(dir.path().join(".alix/progress/deck-deck1.json").is_file());
         assert_eq!(
-            vec![dir.path().join("deck.md"), dir.path().join("progress")],
+            vec![dir.path().join(".alix"), dir.path().join("deck.md")],
             {
                 let mut entries = std::fs::read_dir(dir.path())
                     .unwrap()
@@ -248,7 +266,10 @@ mod tests {
 
         let renamed = open_store(&new_path, dir.path()).unwrap();
 
-        assert_eq!(dir.path().join("progress/deck-deck1.json"), renamed.path());
+        assert_eq!(
+            dir.path().join(".alix/progress/deck-deck1.json"),
+            renamed.path()
+        );
         assert!(renamed.get("card-card1").is_some());
         assert!(renamed.deck_mastered("deck-deck1"));
     }
@@ -309,8 +330,8 @@ mod tests {
         aggregate.get_or_insert("card-card1");
         aggregate.get_or_insert("card-card2");
         aggregate.save().unwrap();
-        let first = dir.path().join("progress/deck-deck1.json");
-        let second = dir.path().join("progress/deck-deck2.json");
+        let first = dir.path().join(".alix/progress/deck-deck1.json");
+        let second = dir.path().join(".alix/progress/deck-deck2.json");
         let second_before = std::fs::read(&second).unwrap();
 
         aggregate.remove("card-card1");
@@ -331,7 +352,11 @@ mod tests {
         let mut aggregate = open_stores(&paths, dir.path()).unwrap();
         aggregate.get_or_insert("card-card1");
         aggregate.save().unwrap();
-        std::fs::write(dir.path().join("progress/deck-other.json"), "{ corrupt").unwrap();
+        std::fs::write(
+            dir.path().join(".alix/progress/deck-other.json"),
+            "{ corrupt",
+        )
+        .unwrap();
 
         let reopened = open_stores(&paths, dir.path()).unwrap();
         assert!(
@@ -356,7 +381,11 @@ mod tests {
         let mut aggregate = open_stores(&paths, dir.path()).unwrap();
         aggregate.get_or_insert("card-card1");
         aggregate.save().unwrap();
-        std::fs::write(dir.path().join("progress/deck-deck1.json"), "{ corrupt").unwrap();
+        std::fs::write(
+            dir.path().join(".alix/progress/deck-deck1.json"),
+            "{ corrupt",
+        )
+        .unwrap();
 
         let error = match open_stores(&paths, dir.path()) {
             Ok(_) => panic!("an expected deck's own corrupt document must fail the open"),
@@ -382,7 +411,7 @@ mod tests {
         };
 
         assert!(matches!(error, StateError::MissingDeckId { .. }));
-        assert!(!dir.path().join("progress").exists());
+        assert!(!dir.path().join(".alix").exists());
     }
 
     #[test]
@@ -393,8 +422,8 @@ mod tests {
         ];
         for (kind, body) in filled {
             let dir = tempfile::tempdir().unwrap();
-            let progress = dir.path().join("progress");
-            std::fs::create_dir(&progress).unwrap();
+            let progress = dir.path().join(".alix/progress");
+            std::fs::create_dir_all(&progress).unwrap();
             let doc = progress.join("deck-r.json");
             std::fs::write(
                 &doc,
@@ -411,7 +440,7 @@ mod tests {
 
     #[test]
     fn progress_document_files_require_both_the_progress_parent_and_json_extension() {
-        let root = Path::new("/decks");
+        let root = Path::new("/decks/.alix");
         assert_eq!(
             root.join("progress/deck-next.json"),
             progress_document_for(&root.join("progress/deck-current.json"), "deck-next").unwrap()
@@ -426,6 +455,10 @@ mod tests {
         ));
         assert!(matches!(
             progress_document_for(&root.join("other/deck-current.json"), "deck-next"),
+            Err(StateError::InvalidStorePath { .. })
+        ));
+        assert!(matches!(
+            progress_document_for(Path::new("/decks/progress/deck-current.json"), "deck-next"),
             Err(StateError::InvalidStorePath { .. })
         ));
     }

@@ -157,13 +157,15 @@ fn write(dir: &Path, name: &str, contents: &str) -> String {
     path.to_str().unwrap().to_string()
 }
 
-fn deck_store(deck: &str, state_root: &Path) -> alix::store::Store {
-    alix::state::open_store(Path::new(deck), state_root).unwrap()
+fn deck_store(deck: &str) -> alix::store::Store {
+    let deck = Path::new(deck);
+    alix::state::open_store(deck, &alix::workspace::content_root(deck)).unwrap()
 }
 
-fn decks_store(decks: &[&str], state_root: &Path) -> alix::store::Store {
+fn decks_store(decks: &[&str]) -> alix::store::Store {
     let paths = decks.iter().map(PathBuf::from).collect::<Vec<_>>();
-    alix::state::open_stores(&paths, state_root).unwrap()
+    let root = alix::assemble::store_path_for(&paths).expect("the decks share a folder");
+    alix::state::open_stores(&paths, &root).unwrap()
 }
 
 fn augmentation_text(deck: &str) -> String {
@@ -191,6 +193,14 @@ fn write_progress_document(
     )
     .unwrap();
     path
+}
+
+fn decks_config(dir: &Path) -> String {
+    write(
+        dir,
+        "config.toml",
+        &format!("decks_dir = {:?}\n", dir.as_os_str()),
+    )
 }
 
 fn stdout(out: &Output) -> String {
@@ -443,7 +453,7 @@ fn deck_move_requires_confirmation_and_reports_progress() {
     );
     assert!(!Path::new(&deck).exists());
     assert!(destination.join("decks/facts.md").is_file());
-    assert!(destination.join("progress/deck-deck1.json").is_file());
+    assert!(destination.join(".alix/progress/deck-deck1.json").is_file());
 }
 
 #[test]
@@ -522,7 +532,7 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
     .unwrap();
     // A note for a card that exists nowhere, and a card copying the deck's id.
     std::fs::write(
-        decks.join("spanish.personal.md"),
+        decks.join("spanish.local.md"),
         "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
          <!-- note: card-gonegonegonegonegonegonego -->\n> addressed to nothing\n\n\
          ## a copy\nmine\n<!-- id: card-onetwothreefourfivesixsev -->\n",
@@ -530,7 +540,7 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
     .unwrap();
     // Names a deck that is not here at all.
     std::fs::write(
-        decks.join("german.personal.md"),
+        decks.join("german.local.md"),
         "---\nformat-version: 1\nfor: deck-nosuchdecknosuchdecknos\n---\n\n\
          <!-- note: card-onetwothreefourfivesixsev -->\n> stray\n",
     )
@@ -548,11 +558,11 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
         "the orphan note is reported: {err}"
     );
     assert!(
-        err.contains("spanish.personal.md") && err.contains("already in"),
+        err.contains("spanish.local.md") && err.contains("already in"),
         "the duplicate card id is reported: {err}"
     );
     assert!(
-        err.contains("german.personal.md"),
+        err.contains("german.local.md"),
         "the file naming an absent deck is reported: {err}"
     );
 }
@@ -790,13 +800,7 @@ fn stats_on_a_folder_reports_every_deck_inside() {
         "beta.md",
         "---\nformat-version: 1\nid: deck-beta\n---\n## b?\nb\n<!-- id: card-b1 -->\n",
     );
-    let store = dir.path().join("state");
-    let out = alix(&[
-        "stats",
-        dir.path().to_str().unwrap(),
-        "--store",
-        store.to_str().unwrap(),
-    ]);
+    let out = alix(&["stats", dir.path().to_str().unwrap()]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let text = stdout(&out);
     assert!(text.contains("alpha"), "stdout: {text}");
@@ -822,8 +826,7 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
         "b.md",
         "---\nformat-version: 1\nid: deck-deckb\n---\n## qb\nans-b\n<!-- id: card-qb1 -->\n",
     );
-    let store_path = ws.clone();
-    let mut store = decks_store(&[&a, &b], &store_path);
+    let mut store = decks_store(&[&a, &b]);
     for deck in [&a, &b] {
         let cards = alix::parser::parse_str(
             Path::new(deck).file_name().unwrap().to_str().unwrap(),
@@ -838,7 +841,7 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
     let out = alix(&["reset", ws.to_str().unwrap(), "--yes"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
-    let reloaded = decks_store(&[&a, &b], &store_path);
+    let reloaded = decks_store(&[&a, &b]);
     assert_eq!(0, reloaded.len(), "member card progress should be gone");
     assert!(
         !reloaded.deck_mastered("deck-decka"),
@@ -853,8 +856,8 @@ fn a_target_reset_ignores_an_unreadable_default_store() {
     // carries its own store.
     let dir = TempDir::new().unwrap();
     let global = dir.path().join("global");
-    std::fs::create_dir_all(global.join("progress")).unwrap();
-    std::fs::write(global.join("progress").join("deck-junk.json"), "{ not json").unwrap();
+    std::fs::create_dir_all(global.join(".alix/progress")).unwrap();
+    std::fs::write(global.join(".alix/progress/deck-junk.json"), "{ not json").unwrap();
     let config = write(
         dir.path(),
         "config.toml",
@@ -870,7 +873,7 @@ fn a_target_reset_ignores_an_unreadable_default_store() {
         "a.md",
         "---\nformat-version: 1\nid: deck-decka\n---\n## qa\nans-a\n<!-- id: card-qa1 -->\n",
     );
-    let mut store = decks_store(&[&a], &ws);
+    let mut store = decks_store(&[&a]);
     let cards = alix::parser::parse_str("a.md", &std::fs::read_to_string(&a).unwrap()).unwrap();
     store.get_or_insert(&cards[0].id().unwrap());
     store.save().unwrap();
@@ -883,7 +886,7 @@ fn a_target_reset_ignores_an_unreadable_default_store() {
     );
     assert_eq!(
         0,
-        decks_store(&[&a], &ws).len(),
+        decks_store(&[&a]).len(),
         "the workspace's own store resets"
     );
 }
@@ -907,11 +910,11 @@ fn a_corrupt_progress_document_cannot_block_its_own_reset() {
         "b.md",
         "---\nformat-version: 1\nid: deck-deckb\n---\n## qb\nans-b\n<!-- id: card-qb1 -->\n",
     );
-    let mut store = decks_store(&[&a], &ws);
+    let mut store = decks_store(&[&a]);
     let cards = alix::parser::parse_str("a.md", &std::fs::read_to_string(&a).unwrap()).unwrap();
     store.get_or_insert(&cards[0].id().unwrap());
     store.save().unwrap();
-    let garbage = ws.join("progress").join("deck-deckb.json");
+    let garbage = ws.join(".alix/progress/deck-deckb.json");
     std::fs::write(&garbage, "{ not json").unwrap();
 
     let out = alix(&["reset", ws.to_str().unwrap(), "--yes"]);
@@ -926,7 +929,7 @@ fn a_corrupt_progress_document_cannot_block_its_own_reset() {
     );
     assert_eq!(
         0,
-        decks_store(&[&a], &ws).len(),
+        decks_store(&[&a]).len(),
         "the readable member resets surgically"
     );
     let _ = b;
@@ -946,11 +949,11 @@ fn a_corrupt_sibling_outside_the_target_is_never_parsed_or_touched() {
         "a.md",
         "---\nformat-version: 1\nid: deck-decka\n---\n## qa\nans-a\n<!-- id: card-qa1 -->\n",
     );
-    let mut store = decks_store(&[&a], &ws);
+    let mut store = decks_store(&[&a]);
     let cards = alix::parser::parse_str("a.md", &std::fs::read_to_string(&a).unwrap()).unwrap();
     store.get_or_insert(&cards[0].id().unwrap());
     store.save().unwrap();
-    let sibling = ws.join("progress").join("deck-unrelated.json");
+    let sibling = ws.join(".alix/progress/deck-unrelated.json");
     std::fs::write(&sibling, "{ not json").unwrap();
 
     let out = alix(&["reset", &a, "--yes"]);
@@ -964,7 +967,7 @@ fn a_corrupt_sibling_outside_the_target_is_never_parsed_or_touched() {
         std::fs::read_to_string(&sibling).unwrap(),
         "the sibling document is untouched"
     );
-    assert_eq!(0, decks_store(&[&a], &ws).len(), "the target resets");
+    assert_eq!(0, decks_store(&[&a]).len(), "the target resets");
 }
 
 #[test]
@@ -1141,21 +1144,13 @@ fn unrelated_damage_never_changes_a_targeted_commands_outcome() {
         let home = dir.path().join("home");
         std::fs::create_dir_all(test_config_dir(&home)).unwrap();
         let global = dir.path().join("global");
-        std::fs::create_dir_all(global.join("progress")).unwrap();
-        std::fs::write(global.join("progress").join("deck-junk.json"), "{ not json").unwrap();
+        std::fs::create_dir_all(global.join(".alix/progress")).unwrap();
+        std::fs::write(global.join(".alix/progress/deck-junk.json"), "{ not json").unwrap();
         std::fs::write(
             test_config_dir(&home).join("config.toml"),
             format!("decks_dir = {:?}\n", global),
         )
         .unwrap();
-        // BOTH canonical outside roots are poisoned: the configured decks
-        // root above, and the platform-default data store here, or an eager
-        // open against the unconfigured default (open_store(None) with no
-        // decks_dir) would survive the law.
-        let platform = test_state_dir(&home).join("progress");
-        std::fs::create_dir_all(&platform).unwrap();
-        std::fs::write(platform.join("deck-platform-junk.json"), "{ not json").unwrap();
-
         let ws = dir.path().join("ws");
         let members = ws.join("decks");
         std::fs::create_dir_all(&members).unwrap();
@@ -1165,7 +1160,7 @@ fn unrelated_damage_never_changes_a_targeted_commands_outcome() {
             "a.md",
             "---\nformat-version: 1\nid: deck-decka\n---\n## qa\nans-a\n<!-- id: card-qa1 -->\n",
         );
-        let mut store = decks_store(&[&member], &ws);
+        let mut store = decks_store(&[&member]);
         let cards =
             alix::parser::parse_str("a.md", &std::fs::read_to_string(&member).unwrap()).unwrap();
         store.get_or_insert(&cards[0].id().unwrap());
@@ -1210,8 +1205,7 @@ fn unrelated_damage_never_changes_a_targeted_commands_outcome() {
 fn stats_reports_a_fresh_deck_against_an_empty_store() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
-    let store = dir.path().join("state");
-    let out = alix(&["stats", &deck, "--store", store.to_str().unwrap()]);
+    let out = alix(&["stats", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         stdout(&out).contains("not started"),
@@ -1235,8 +1229,7 @@ fn stats_aggregates_authored_and_personal_due_windows_and_review_totals() {
 ## Q4\nA4\n<!-- id: card-stats4 -->\n";
     let deck = write(dir.path(), "all-stats.md", deck_text);
     let parsed = alix::deck::Deck::load(&deck).unwrap();
-    let state_root = dir.path().join("state");
-    let mut store = deck_store(&deck, &state_root);
+    let mut store = deck_store(&deck);
     let now = alix::time::now_ms();
     let due_times = [
         now.saturating_sub(1_000),
@@ -1277,7 +1270,7 @@ fn stats_aggregates_authored_and_personal_due_windows_and_review_totals() {
     }
     store.save().unwrap();
 
-    let out = alix(&["stats", &deck, "--store", state_root.to_str().unwrap()]);
+    let out = alix(&["stats", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let result = stdout(&out);
     for exact in [
@@ -1294,12 +1287,11 @@ fn stats_aggregates_authored_and_personal_due_windows_and_review_totals() {
 fn stats_reserves_mastered_for_a_recorded_mastery_marker() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
-    let state_root = dir.path().join("state");
-    let mut store = deck_store(&deck, &state_root);
+    let mut store = deck_store(&deck);
     store.set_deck_mastered("deck-mathdeck", alix::time::now_ms());
     store.save().unwrap();
 
-    let out = alix(&["stats", &deck, "--store", state_root.to_str().unwrap()]);
+    let out = alix(&["stats", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         stdout(&out).contains("  state:   mastered ✓"),
@@ -1312,24 +1304,18 @@ fn stats_reserves_mastered_for_a_recorded_mastery_marker() {
 fn reset_all_clears_a_seeded_store() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
-    let state_root = dir.path().join("state");
-    let mut store = deck_store(&deck, &state_root);
+    let mut store = deck_store(&deck);
     store.get_or_insert("card-math1");
     store.save().unwrap();
-    let out = alix(&[
-        "reset",
-        "--all",
-        "--yes",
-        "--store",
-        state_root.to_str().unwrap(),
-    ]);
+    let config = decks_config(dir.path());
+    let out = alix(&["reset", "--all", "--yes", "--config", &config]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         stdout(&out).contains("Reset 1 card(s)."),
         "stdout: {}",
         stdout(&out)
     );
-    let reloaded = deck_store(&deck, &state_root);
+    let reloaded = deck_store(&deck);
     assert!(reloaded.get("card-math1").is_none());
 }
 
@@ -1340,15 +1326,14 @@ fn reset_all_declined_in_a_terminal_preserves_the_seeded_store() {
 
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
-    let state_root = dir.path().join("state");
-    let mut store = deck_store(&deck, &state_root);
+    let mut store = deck_store(&deck);
     store.get_or_insert("card-math1");
     store.save().unwrap();
 
     let runner = dir.path().join("reset.sh");
     std::fs::write(
         &runner,
-        "#!/bin/sh\nexec \"$ALIX_BIN\" reset --all --store \"$ALIX_STORE\"\n",
+        "#!/bin/sh\nexec \"$ALIX_BIN\" reset --all --config \"$ALIX_CONFIG\"\n",
     )
     .unwrap();
     std::fs::set_permissions(&runner, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -1356,7 +1341,7 @@ fn reset_all_declined_in_a_terminal_preserves_the_seeded_store() {
     let mut child = Command::new("script")
         .args(["-q", "-e", "-c", runner.to_str().unwrap(), "/dev/null"])
         .env("ALIX_BIN", env!("CARGO_BIN_EXE_alix"))
-        .env("ALIX_STORE", &state_root)
+        .env("ALIX_CONFIG", decks_config(dir.path()))
         .env("HOME", dir.path())
         .env("XDG_CONFIG_HOME", dir.path())
         .env("XDG_DATA_HOME", dir.path())
@@ -1375,7 +1360,7 @@ fn reset_all_declined_in_a_terminal_preserves_the_seeded_store() {
         stdout(&out)
     );
     assert!(
-        deck_store(&deck, &state_root).get("card-math1").is_some(),
+        deck_store(&deck).get("card-math1").is_some(),
         "a declined reset removed the stored card"
     );
 }
@@ -1395,7 +1380,7 @@ fn a_declined_reset_keeps_the_unreadable_document_it_would_have_removed() {
         "a.md",
         "---\nformat-version: 1\nid: deck-decka\n---\n## qa\nans-a\n<!-- id: card-qa1 -->\n",
     );
-    let mut store = decks_store(&[&a], &ws);
+    let mut store = decks_store(&[&a]);
     let cards = alix::parser::parse_str("a.md", &std::fs::read_to_string(&a).unwrap()).unwrap();
     store.get_or_insert(&cards[0].id().unwrap());
     store.save().unwrap();
@@ -1404,7 +1389,7 @@ fn a_declined_reset_keeps_the_unreadable_document_it_would_have_removed() {
         "b.md",
         "---\nformat-version: 1\nid: deck-deckb\n---\n## qb\nans-b\n<!-- id: card-qb1 -->\n",
     );
-    let garbage = ws.join("progress").join("deck-deckb.json");
+    let garbage = ws.join(".alix/progress/deck-deckb.json");
     std::fs::write(&garbage, "{ not json").unwrap();
 
     let runner = dir.path().join("reset.sh");
@@ -1446,9 +1431,7 @@ fn a_declined_reset_keeps_the_unreadable_document_it_would_have_removed() {
         "a declined reset must not remove the unreadable document"
     );
     assert!(
-        decks_store(&[&a], &ws)
-            .get(&cards[0].id().unwrap())
-            .is_some(),
+        decks_store(&[&a]).get(&cards[0].id().unwrap()).is_some(),
         "a declined reset must leave the readable member untouched"
     );
     let _ = b;
@@ -1475,7 +1458,7 @@ fn a_failed_unreadable_document_removal_does_not_partially_reset_readable_member
     );
     let cards = alix::parser::parse_str("a.md", &std::fs::read_to_string(&a).unwrap()).unwrap();
     let card_id = cards[0].id().unwrap();
-    let mut store = decks_store(&[&a], &ws);
+    let mut store = decks_store(&[&a]);
     store.get_or_insert(&card_id);
     store.save().unwrap();
     let b = write(
@@ -1483,7 +1466,7 @@ fn a_failed_unreadable_document_removal_does_not_partially_reset_readable_member
         "b.md",
         "---\nformat-version: 1\nid: deck-deckb\n---\n## qb\nans-b\n<!-- id: card-qb1 -->\n",
     );
-    let garbage = ws.join("progress").join("deck-deckb.json");
+    let garbage = ws.join(".alix/progress/deck-deckb.json");
     std::fs::write(&garbage, "{ not json").unwrap();
 
     let runner = dir.path().join("reset.sh");
@@ -1534,7 +1517,7 @@ fn a_failed_unreadable_document_removal_does_not_partially_reset_readable_member
         "the forced removal failure must be reported"
     );
     assert!(
-        decks_store(&[&a], &ws).get(&card_id).is_some(),
+        decks_store(&[&a]).get(&card_id).is_some(),
         "a reset that reports failure must not have erased the readable member"
     );
     let _ = b;
@@ -1566,19 +1549,13 @@ fn reset_all_clears_a_personal_only_store() {
     // `--all`, and the personal file itself must survive: it is the user's.
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
-    let store_path = dir.path().join("state");
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     let id = sample_personal_card(&deck, "math.md");
     store.get_or_insert(&id);
     store.save().unwrap();
 
-    let out = alix(&[
-        "reset",
-        "--all",
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let config = decks_config(dir.path());
+    let out = alix(&["reset", "--all", "--yes", "--config", &config]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         !stdout(&out).contains("No stored progress"),
@@ -1586,7 +1563,7 @@ fn reset_all_clears_a_personal_only_store() {
         stdout(&out)
     );
 
-    let reloaded = deck_store(&deck, &store_path);
+    let reloaded = deck_store(&deck);
     assert!(reloaded.get(&id).is_none(), "the schedule was not cleared");
     assert!(
         alix::personal::sidecar_path(Path::new(&deck)).exists(),
@@ -1611,9 +1588,9 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
         "other.md",
         "---\nformat-version: 1\nid: \"deck-otherdeck\"\n---\n## other\nb\n<!-- id: card-other1 -->\n",
     );
-    let store_path = dir.path().join("state");
+    let store_path = dir.path().to_path_buf();
 
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     store.get_or_insert("card-math1"); // the live card
     store.get_or_insert("orphan1"); // an orphaned card key
     store.save().unwrap();
@@ -1628,13 +1605,7 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
 
     // A normal full-deck reset clears the live card but leaves the orphans,
     // proof they are never auto-pruned.
-    let out = alix(&[
-        "reset",
-        &deck,
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", &deck, "--yes"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let after = std::fs::read_to_string(store.path()).unwrap();
     assert!(
@@ -1653,14 +1624,7 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
     );
 
     // `reset --orphans` over the folder clears exactly the orphaned keys.
-    let out = alix(&[
-        "reset",
-        "--orphans",
-        dir.path().to_str().unwrap(),
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", "--orphans", dir.path().to_str().unwrap(), "--yes"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         stdout(&out).contains("Reset 2 orphaned key(s)."),
@@ -1691,19 +1655,11 @@ fn a_dormant_template_base_id_survives_reset_orphans() {
         "regions.md",
         "---\nformat-version: 1\nid: \"deck-regiondoc\"\n---\n## anatomy\nthe lunate is carpal\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-parent1 -->\n",
     );
-    let store_path = dir.path().join("state");
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     store.get_or_insert("card-parent1"); // history from before the blank existed
     store.save().unwrap();
 
-    let out = alix(&[
-        "reset",
-        "--orphans",
-        dir.path().to_str().unwrap(),
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", "--orphans", dir.path().to_str().unwrap(), "--yes"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         stdout(&out).contains("No orphaned progress to reset."),
@@ -1725,18 +1681,11 @@ fn a_full_deck_reset_clears_dormant_template_base_history() {
         "regions.md",
         "---\nformat-version: 1\nid: \"deck-regiondoc\"\n---\n## anatomy\nthe lunate is carpal\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-parent1 -->\n",
     );
-    let store_path = dir.path().join("state");
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     store.get_or_insert("card-parent1");
     store.save().unwrap();
 
-    let out = alix(&[
-        "reset",
-        dir.path().to_str().unwrap(),
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", dir.path().to_str().unwrap(), "--yes"]);
 
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let after = std::fs::read_to_string(store.path()).unwrap();
@@ -1758,15 +1707,14 @@ fn a_dormant_only_deck_reset_prompt_counts_the_schedule_it_will_delete() {
         "regions.md",
         "---\nformat-version: 1\nid: \"deck-regiondoc\"\n---\n## anatomy\nthe lunate is carpal\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-parent1 -->\n",
     );
-    let store_path = dir.path().join("state");
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     store.get_or_insert("card-parent1");
     store.save().unwrap();
 
     let runner = dir.path().join("reset.sh");
     std::fs::write(
         &runner,
-        "#!/bin/sh\nexec \"$ALIX_BIN\" reset \"$ALIX_DECK\" --store \"$ALIX_STORE\"\n",
+        "#!/bin/sh\nexec \"$ALIX_BIN\" reset \"$ALIX_DECK\"\n",
     )
     .unwrap();
     std::fs::set_permissions(&runner, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -1775,7 +1723,6 @@ fn a_dormant_only_deck_reset_prompt_counts_the_schedule_it_will_delete() {
         .args(["-q", "-e", "-c", runner.to_str().unwrap(), "/dev/null"])
         .env("ALIX_BIN", env!("CARGO_BIN_EXE_alix"))
         .env("ALIX_DECK", &deck)
-        .env("ALIX_STORE", &store_path)
         .env("HOME", dir.path())
         .env("XDG_CONFIG_HOME", dir.path())
         .env("XDG_DATA_HOME", dir.path())
@@ -1794,7 +1741,7 @@ fn a_dormant_only_deck_reset_prompt_counts_the_schedule_it_will_delete() {
         stdout(&out)
     );
     assert!(
-        deck_store(&deck, &store_path).get("card-parent1").is_some(),
+        deck_store(&deck).get("card-parent1").is_some(),
         "a declined reset removed the dormant schedule"
     );
 }
@@ -1809,22 +1756,14 @@ fn a_personal_templates_dormant_base_id_survives_reset_orphans() {
     );
     write(
         dir.path(),
-        "regions.personal.md",
+        "regions.local.md",
         "---\nformat-version: 1\nfor: deck-regiondoc\n---\n## anatomy\nthe lunate is carpal\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-personalbase -->\n",
     );
-    let store_path = dir.path().join("state");
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     store.get_or_insert("card-personalbase");
     store.save().unwrap();
 
-    let out = alix(&[
-        "reset",
-        "--orphans",
-        dir.path().to_str().unwrap(),
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", "--orphans", dir.path().to_str().unwrap(), "--yes"]);
 
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
@@ -1846,7 +1785,7 @@ fn reset_orphans_clears_an_orphaned_document_whatever_the_live_deck_count() {
     // whenever the target holds exactly one live deck.
     for live_decks in [1usize, 2] {
         let dir = TempDir::new().unwrap();
-        let store_path = dir.path().join("state");
+        let store_path = dir.path().to_path_buf();
         let mut live: Vec<(PathBuf, String)> = Vec::new();
         for index in 0..live_decks {
             let deck = write(
@@ -1857,7 +1796,7 @@ fn reset_orphans_clears_an_orphaned_document_whatever_the_live_deck_count() {
                      ## question {index}\nanswer\n<!-- id: card-live{index} -->\n"
                 ),
             );
-            let mut store = deck_store(&deck, &store_path);
+            let mut store = deck_store(&deck);
             let card = format!("card-live{index}");
             store.get_or_insert(&card);
             store.save().unwrap();
@@ -1869,14 +1808,7 @@ fn reset_orphans_clears_an_orphaned_document_whatever_the_live_deck_count() {
         ghost.get_or_insert("card-ghost1");
         ghost.save().unwrap();
 
-        let reset = &[
-            "reset",
-            "--orphans",
-            dir.path().to_str().unwrap(),
-            "--yes",
-            "--store",
-            store_path.to_str().unwrap(),
-        ];
+        let reset = &["reset", "--orphans", dir.path().to_str().unwrap(), "--yes"];
         let out = alix(reset);
 
         assert!(
@@ -1928,9 +1860,9 @@ fn reset_orphans_refuses_while_any_deck_like_file_in_the_target_cannot_be_read()
         ("a front without an answer", "## q <!-- id: card-b1 -->\n"),
     ] {
         let dir = TempDir::new().unwrap();
-        let store_path = dir.path().join("state");
+        let store_path = dir.path().to_path_buf();
         let live = write(dir.path(), "live.md", VALID_DECK);
-        let mut store = deck_store(&live, &store_path);
+        let mut store = deck_store(&live);
         store.get_or_insert("card-math1");
         store.save().unwrap();
         let live_progress = store.path().to_path_buf();
@@ -1942,14 +1874,7 @@ fn reset_orphans_refuses_while_any_deck_like_file_in_the_target_cannot_be_read()
             std::fs::read_to_string(&ghost_path).unwrap(),
         );
 
-        let out = alix(&[
-            "reset",
-            "--orphans",
-            dir.path().to_str().unwrap(),
-            "--yes",
-            "--store",
-            store_path.to_str().unwrap(),
-        ]);
+        let out = alix(&["reset", "--orphans", dir.path().to_str().unwrap(), "--yes"]);
 
         assert!(
             !out.status.success(),
@@ -1974,9 +1899,8 @@ fn reset_orphans_spares_the_cards_of_a_deck_that_lost_its_frontmatter_id() {
     // Stripping the `id:` line drops the file out of the initialized listing;
     // its cards are still live cards, not orphans.
     let dir = TempDir::new().unwrap();
-    let store_path = dir.path().join("state");
     let deck = write(dir.path(), "math.md", VALID_DECK);
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     store.get_or_insert("card-math1");
     store.save().unwrap();
     let progress = store.path().to_path_buf();
@@ -1986,14 +1910,7 @@ fn reset_orphans_spares_the_cards_of_a_deck_that_lost_its_frontmatter_id() {
         "## What is 2 + 2?\n4\n<!-- id: card-math1 -->\n",
     );
 
-    let out = alix(&[
-        "reset",
-        "--orphans",
-        dir.path().to_str().unwrap(),
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", "--orphans", dir.path().to_str().unwrap(), "--yes"]);
 
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
@@ -2011,7 +1928,6 @@ fn reset_orphans_on_a_deck_file_spares_a_neighbours_live_progress() {
     // neighbour sharing the store root is not in the scan, and its live
     // progress is not an orphan.
     let dir = TempDir::new().unwrap();
-    let store_path = dir.path().join("state");
     let target = write(dir.path(), "math.md", VALID_DECK);
     let neighbour = write(
         dir.path(),
@@ -2019,22 +1935,15 @@ fn reset_orphans_on_a_deck_file_spares_a_neighbours_live_progress() {
         "---\nformat-version: 1\nid: \"deck-otherdeck\"\n---\n## other\nb\n<!-- id: card-other1 -->\n",
     );
 
-    let mut store = deck_store(&target, &store_path);
+    let mut store = deck_store(&target);
     store.get_or_insert("card-math1");
     store.get_or_insert("orphan1");
     store.save().unwrap();
-    let mut neighbour_store = deck_store(&neighbour, &store_path);
+    let mut neighbour_store = deck_store(&neighbour);
     neighbour_store.get_or_insert("card-other1");
     neighbour_store.save().unwrap();
 
-    let out = alix(&[
-        "reset",
-        "--orphans",
-        &target,
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", "--orphans", &target, "--yes"]);
 
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
@@ -2058,7 +1967,6 @@ fn reset_orphans_on_a_deck_file_spares_a_neighbours_live_progress() {
 #[test]
 fn reset_orphans_names_a_target_that_is_neither_a_deck_file_nor_a_folder() {
     let dir = TempDir::new().unwrap();
-    let store_path = dir.path().join("state");
     let dangling = dir.path().join("dangling.md");
     std::os::unix::fs::symlink(dir.path().join("gone.md"), &dangling).unwrap();
 
@@ -2066,14 +1974,7 @@ fn reset_orphans_names_a_target_that_is_neither_a_deck_file_nor_a_folder() {
         ("a path that does not exist", dir.path().join("missing.md")),
         ("a symlink to a deleted deck", dangling),
     ] {
-        let out = alix(&[
-            "reset",
-            "--orphans",
-            target.to_str().unwrap(),
-            "--yes",
-            "--store",
-            store_path.to_str().unwrap(),
-        ]);
+        let out = alix(&["reset", "--orphans", target.to_str().unwrap(), "--yes"]);
 
         assert!(
             !out.status.success(),
@@ -2097,33 +1998,26 @@ fn deck_reset_drops_that_decks_personal_schedules() {
         "other.md",
         "---\nformat-version: 1\nid: deck-otherdeck\n---\n## Other\nanswer\n<!-- id: card-other1 -->\n",
     );
-    let store_path = dir.path().join("state");
 
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     let math_id = sample_personal_card(&deck, "deck-mathdeck");
     store.get_or_insert(&math_id);
     store.save().unwrap();
-    let mut other_store = deck_store(&other, &store_path);
+    let mut other_store = deck_store(&other);
     let other_id = sample_personal_card(&other, "deck-otherdeck");
     other_store.get_or_insert(&other_id);
     other_store.save().unwrap();
 
-    let out = alix(&[
-        "reset",
-        &deck,
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", &deck, "--yes"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
-    let reloaded = deck_store(&deck, &store_path);
+    let reloaded = deck_store(&deck);
     assert!(
         reloaded.get(&math_id).is_none(),
         "the reset deck's own personal schedule should be dropped"
     );
     assert!(
-        deck_store(&other, &store_path).get(&other_id).is_some(),
+        deck_store(&other).get(&other_id).is_some(),
         "another deck's personal schedule should survive"
     );
 }
@@ -2135,12 +2029,11 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
     // progress must all still be there afterwards, byte-for-byte.
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
-    let store_path = dir.path().join("state");
 
     let card_id = alix::deck::Deck::load(&deck).unwrap().cards[0]
         .id()
         .unwrap();
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     store.get_or_insert(&card_id);
     store.set_deck_mastered("deck-mathdeck", 0);
     let personal_id = sample_personal_card(&deck, "deck-mathdeck");
@@ -2149,7 +2042,7 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
     let before = std::fs::read_to_string(store.path()).unwrap();
 
     // No `--yes` and no TTY in the test subprocess: the command must error.
-    let out = alix(&["reset", &deck, "--store", store_path.to_str().unwrap()]);
+    let out = alix(&["reset", &deck]);
     assert!(
         !out.status.success(),
         "a no-TTY reset without --yes should error"
@@ -2160,7 +2053,7 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
         before, after,
         "the store on disk must be untouched by a declined/failed reset"
     );
-    let reloaded = deck_store(&deck, &store_path);
+    let reloaded = deck_store(&deck);
     assert!(
         reloaded.deck_mastered("deck-mathdeck"),
         "mastered flag wiped"
@@ -2176,18 +2069,11 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
 fn deck_reset_clears_a_mastery_only_store() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
-    let state_root = dir.path().join("state");
-    let mut store = deck_store(&deck, &state_root);
+    let mut store = deck_store(&deck);
     store.set_deck_mastered("deck-mathdeck", alix::time::now_ms());
     store.save().unwrap();
 
-    let out = alix(&[
-        "reset",
-        &deck,
-        "--yes",
-        "--store",
-        state_root.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", &deck, "--yes"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         stdout(&out).contains("Reset 0 card(s)."),
@@ -2195,7 +2081,7 @@ fn deck_reset_clears_a_mastery_only_store() {
         stdout(&out)
     );
     assert!(
-        !deck_store(&deck, &state_root).deck_mastered("deck-mathdeck"),
+        !deck_store(&deck).deck_mastered("deck-mathdeck"),
         "the mastery marker survived the reset"
     );
 }
@@ -2204,19 +2090,11 @@ fn deck_reset_clears_a_mastery_only_store() {
 fn targeted_reset_without_confirmation_names_the_card_and_preserves_it() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
-    let state_root = dir.path().join("state");
-    let mut store = deck_store(&deck, &state_root);
+    let mut store = deck_store(&deck);
     store.get_or_insert("card-math1");
     store.save().unwrap();
 
-    let out = alix(&[
-        "reset",
-        &deck,
-        "--card",
-        "2 + 2",
-        "--store",
-        state_root.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", &deck, "--card", "2 + 2"]);
     assert!(!out.status.success(), "stdout: {}", stdout(&out));
     assert!(
         stderr(&out).contains("Reset progress for What is 2 + 2?"),
@@ -2224,7 +2102,7 @@ fn targeted_reset_without_confirmation_names_the_card_and_preserves_it() {
         stderr(&out)
     );
     assert!(
-        deck_store(&deck, &state_root).get("card-math1").is_some(),
+        deck_store(&deck).get("card-math1").is_some(),
         "the unconfirmed targeted reset removed the card"
     );
 }
@@ -2235,23 +2113,16 @@ fn a_confirmed_personal_only_deck_reset_clears_the_schedule() {
     // must still have that schedule cleared and persisted on a confirmed reset.
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
-    let store_path = dir.path().join("state");
 
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     let personal_id = sample_personal_card(&deck, "deck-mathdeck");
     store.get_or_insert(&personal_id);
     store.save().unwrap();
 
-    let out = alix(&[
-        "reset",
-        &deck,
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", &deck, "--yes"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
-    let reloaded = deck_store(&deck, &store_path);
+    let reloaded = deck_store(&deck);
     assert!(reloaded.get(&personal_id).is_none());
 }
 
@@ -2259,7 +2130,7 @@ fn a_confirmed_personal_only_deck_reset_clears_the_schedule() {
 fn an_unsupported_progress_document_version_is_rejected() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
-    let state_root = dir.path().join("state");
+    let state_root = dir.path().to_path_buf();
     let store = write_progress_document(&state_root, "deck-mathdeck", "math.md", "");
     let text =
         std::fs::read_to_string(&store)
@@ -2267,7 +2138,7 @@ fn an_unsupported_progress_document_version_is_rejected() {
             .replacen("\"version\":1", "\"version\":999", 1);
     std::fs::write(&store, text).unwrap();
 
-    let out = alix(&["stats", &deck, "--store", state_root.to_str().unwrap()]);
+    let out = alix(&["stats", &deck]);
     assert!(!out.status.success());
 }
 
@@ -2278,12 +2149,12 @@ fn a_corrupt_progress_document_fails_without_overwriting_it() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let garbage = "{ this is not valid json";
-    let state_root = dir.path().join("state");
+    let state_root = dir.path().to_path_buf();
     let store = alix::state::UserFiles::new(&state_root).progress_for("deck-mathdeck");
     std::fs::create_dir_all(store.parent().unwrap()).unwrap();
     std::fs::write(&store, garbage).unwrap();
 
-    let out = alix(&["stats", &deck, "--store", state_root.to_str().unwrap()]);
+    let out = alix(&["stats", &deck]);
     assert!(
         !out.status.success(),
         "a corrupt store should fail the command"
@@ -2365,17 +2236,8 @@ fn augment_target_format_caches_a_reshape() {
         "config.toml",
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
-    let store = dir.path().join("state");
     let out = alix(&[
-        "deck",
-        "augment",
-        &deck,
-        "--target",
-        "format",
-        "--store",
-        store.to_str().unwrap(),
-        "--config",
-        &config,
+        "deck", "augment", &deck, "--target", "format", "--config", &config,
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
@@ -2408,8 +2270,7 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
         "---\nformat-version: 1\nid: \"deck-parts\"\n---\n## List the parts\nA, B, C\n<!-- id: card-parts1 -->\n",
     );
 
-    let store_path = dir.path().join("state");
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     let personal_id = sample_personal_card(&deck, "deck-parts");
     store.get_or_insert(&personal_id);
     store.save().unwrap();
@@ -2423,15 +2284,7 @@ fn augment_target_format_also_covers_a_decks_virtual_card() {
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
     let out = alix(&[
-        "deck",
-        "augment",
-        &deck,
-        "--target",
-        "format",
-        "--store",
-        store_path.to_str().unwrap(),
-        "--config",
-        &config,
+        "deck", "augment", &deck, "--target", "format", "--config", &config,
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
@@ -2453,8 +2306,7 @@ fn augment_target_format_skips_a_personal_card_colliding_with_a_real_deck_card()
     let deck_text = "---\nformat-version: 1\nid: \"deck-parts\"\n---\n## List the parts\nA, B, C\n<!-- id: card-parts1 -->\n";
     let deck = write(dir.path(), "parts.md", deck_text);
 
-    let store_path = dir.path().join("state");
-    let store = deck_store(&deck, &store_path);
+    let store = deck_store(&deck);
     // The personal card carries the deck card's own id.
     alix::personal::append_cards(
         Path::new(&deck),
@@ -2476,15 +2328,7 @@ fn augment_target_format_skips_a_personal_card_colliding_with_a_real_deck_card()
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
     let out = alix(&[
-        "deck",
-        "augment",
-        &deck,
-        "--target",
-        "format",
-        "--store",
-        store_path.to_str().unwrap(),
-        "--config",
-        &config,
+        "deck", "augment", &deck, "--target", "format", "--config", &config,
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
@@ -2822,14 +2666,14 @@ fn list_shows_three_per_depth_cells_shallow_to_deep() {
     let card2 = format!(
         r#""{id2}":{{"introduced_ms":1000,"recall":{{"stability":1.0,"difficulty":5.0,"reps":1,"lapses":0,"state":1,"scheduled_days":0,"last_review_ms":1000,"due_ms":2000,"learning_goods":1}},"total_reviews":1,"total_passes":1}}"#
     );
-    let state_root = dir.path().join("state");
+    let state_root = dir.path().to_path_buf();
     write_progress_document(
         &state_root,
         "deck-cardsdeck",
         "cards.md",
         &format!("{card1},{card2}"),
     );
-    let out = alix(&["list", &deck, "--store", state_root.to_str().unwrap()]);
+    let out = alix(&["list", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let result = stdout(&out);
     // Cell order is recognize|recall|reconstruct, shallow to deep, each cell
@@ -2855,9 +2699,9 @@ fn stats_shows_per_depth_due_counts() {
         .id()
         .unwrap();
     let card = both_depths_due_card(&card_id);
-    let state_root = dir.path().join("state");
+    let state_root = dir.path().to_path_buf();
     write_progress_document(&state_root, "deck-statsdeck", "stats.md", &card);
-    let out = alix(&["stats", &deck, "--store", state_root.to_str().unwrap()]);
+    let out = alix(&["stats", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let result = stdout(&out);
     assert!(
@@ -3083,7 +2927,7 @@ fn bug_report_include_deck_adds_exactly_the_requested_deck_verbatim() {
     )
     .unwrap();
     std::fs::write(
-        decks.join("requested-private-name.personal.md"),
+        decks.join("requested-private-name.local.md"),
         "personal-sidecar-sentinel",
     )
     .unwrap();
@@ -3150,7 +2994,7 @@ fn bug_report_include_deck_can_never_attach_a_personal_sidecar() {
         format!("decks_dir = {:?}\n", decks),
     )
     .unwrap();
-    let sidecar = decks.join("private.personal.md");
+    let sidecar = decks.join("private.local.md");
     std::fs::write(&sidecar, "personal-sidecar-sentinel").unwrap();
 
     let output = alix_env(
@@ -3379,29 +3223,28 @@ fn doctor_warns_on_a_missing_image_referenced_by_the_embed() {
 // ── `stats`/`list`/`reset` agree with the served root's store ───────────────
 
 #[test]
-fn stats_on_a_loose_deck_resolves_the_decks_dir_root_store_like_review_does() {
-    // Bare `alix` and `alix stats` must resolve the same in-folder state root.
-    let decks = tempfile::tempdir().unwrap();
-    let deck = write(decks.path(), "math.md", VALID_DECK);
+fn stats_on_an_unrelated_loose_deck_ignores_the_configured_decks_dir() {
+    let root = tempfile::tempdir().unwrap();
+    let configured = root.path().join("configured");
+    let unrelated = root.path().join("unrelated");
+    std::fs::create_dir(&configured).unwrap();
+    std::fs::create_dir(&unrelated).unwrap();
+    let deck = write(&unrelated, "math.md", VALID_DECK);
 
-    let cfg = decks.path().join("config.toml");
-    std::fs::write(
-        &cfg,
-        format!("decks_dir = \"{}\"\n", decks.path().display()),
-    )
-    .unwrap();
+    let cfg = root.path().join("config.toml");
+    std::fs::write(&cfg, format!("decks_dir = \"{}\"\n", configured.display())).unwrap();
     let cfg = cfg.to_str().unwrap();
 
     let garbage = "{ this is not valid json";
-    let progress = alix::state::UserFiles::new(decks.path()).progress_for("deck-mathdeck");
+    let progress = alix::state::UserFiles::new(&unrelated).progress_for("deck-mathdeck");
     std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
     std::fs::write(&progress, garbage).unwrap();
 
     let out = alix(&["stats", &deck, "--config", cfg]);
     assert!(
         !out.status.success(),
-        "stats must read the decks directory state root, not fall back to the \
-         platform state root: stdout:\n{}",
+        "an explicit loose deck must read its containing folder, not the configured decks_dir: \
+         stdout:\n{}",
         stdout(&out)
     );
 }
@@ -3680,8 +3523,8 @@ fn share_zip_of_a_workspace_folder_strips_personal_state() {
         "a.md",
         "---\nformat-version: 1\nid: \"deck-a\"\n---\n## q\na\n",
     );
-    std::fs::create_dir(ws.join("progress")).unwrap();
-    write(&ws.join("progress"), "a.json", "{}");
+    std::fs::create_dir_all(ws.join(".alix/progress")).unwrap();
+    write(&ws.join(".alix/progress"), "a.json", "{}");
     let out_dir = dir.path().join("out");
     std::fs::create_dir(&out_dir).unwrap();
     let out = alix(&[
@@ -3698,7 +3541,7 @@ fn share_zip_of_a_workspace_folder_strips_personal_state() {
     let landed = dir.path().join("landed");
     alix::share::unzip_to(&zip_path, &landed).unwrap();
     assert!(landed.join("eng/decks/a.md").is_file());
-    assert!(!landed.join("eng/progress").exists());
+    assert!(!landed.join("eng/.alix").exists());
 }
 
 #[test]
@@ -3880,20 +3723,20 @@ fn receive_a_zip_folder_strips_leaked_personal_files() {
     let ws = src.path().join("eng");
     std::fs::create_dir(&ws).unwrap();
     write(&ws, "a.md", "## q\na\n");
-    std::fs::create_dir(ws.join("progress")).unwrap();
-    write(&ws.join("progress"), "a.json", "{}");
+    std::fs::create_dir(ws.join(".alix")).unwrap();
+    write(&ws.join(".alix"), "recent.json", "{}");
     let zip_path = src.path().join("eng.zip");
     alix::share::zip_to(&ws, &zip_path).unwrap();
 
     let out = alix_env(&["receive", zip_path.to_str().unwrap()], home.path(), &[]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
-        stdout(&out).contains("stripped a leaked personal file: progress"),
+        stdout(&out).contains("stripped a leaked personal file: .alix"),
         "{}",
         stdout(&out)
     );
     assert!(home.path().join("decks/eng/a.md").is_file());
-    assert!(!home.path().join("decks/eng/progress").exists());
+    assert!(!home.path().join("decks/eng/.alix").exists());
 }
 
 #[test]
@@ -5063,17 +4906,8 @@ fn augment_choices_caches_distractors_for_two_cards() {
         "config.toml",
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
-    let store = dir.path().join("state");
     let out = alix(&[
-        "deck",
-        "augment",
-        &deck,
-        "--target",
-        "choices",
-        "--store",
-        store.to_str().unwrap(),
-        "--config",
-        &config,
+        "deck", "augment", &deck, "--target", "choices", "--config", &config,
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
@@ -5085,13 +4919,34 @@ fn augment_choices_caches_distractors_for_two_cards() {
     assert!(cached.contains("W1"), "{cached}");
     assert!(cached.contains("W3"), "{cached}");
     assert!(
-        !store.join("augment").exists(),
-        "--store selects user files and must not relocate workspace augmentation"
+        !dir.path().join(".alix/augment").exists(),
+        "machine state must not relocate shareable augmentation"
     );
 }
 
 #[test]
-fn a_cli_store_override_does_not_relocate_workspace_augmentation() {
+fn deck_progress_commands_do_not_offer_a_store_override() {
+    for (name, args) in [
+        ("stats", &["stats", "--help"][..]),
+        ("list", &["list", "--help"][..]),
+        ("reset", &["reset", "--help"][..]),
+        ("deck-augment", &["deck", "augment", "--help"][..]),
+        ("workspace-augment", &["workspace", "augment", "--help"][..]),
+        ("deck-remove", &["deck", "remove", "--help"][..]),
+        ("deck-restore", &["deck", "restore", "--help"][..]),
+    ] {
+        let out = alix(args);
+        assert!(out.status.success(), "{name}: stderr: {}", stderr(&out));
+        assert!(
+            !stdout(&out).contains("--store"),
+            "{name}: progress is colocated, so its help must not offer --store: {}",
+            stdout(&out)
+        );
+    }
+}
+
+#[test]
+fn workspace_augmentation_stays_in_the_content_root() {
     let dir = TempDir::new().unwrap();
     let workspace = dir.path().join("workspace");
     std::fs::create_dir_all(workspace.join("decks")).unwrap();
@@ -5108,22 +4963,13 @@ fn a_cli_store_override_does_not_relocate_workspace_augmentation() {
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
 
-    let store = workspace.join("user-files");
     let out = alix(&[
-        "deck",
-        "augment",
-        &deck,
-        "--target",
-        "choices",
-        "--store",
-        store.to_str().unwrap(),
-        "--config",
-        &config,
+        "deck", "augment", &deck, "--target", "choices", "--config", &config,
     ]);
 
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(workspace.join("augment/deck-quiz.json").is_file());
-    assert!(!workspace.join("user-files/augment").exists());
+    assert!(!workspace.join(".alix/augment").exists());
 }
 
 #[test]
@@ -5240,17 +5086,8 @@ fn augment_notes_caches_a_trivia_note() {
         "config.toml",
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
-    let store = dir.path().join("state");
     let out = alix(&[
-        "deck",
-        "augment",
-        &deck,
-        "--target",
-        "notes",
-        "--store",
-        store.to_str().unwrap(),
-        "--config",
-        &config,
+        "deck", "augment", &deck, "--target", "notes", "--config", &config,
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let cached = augmentation_text(&deck);
@@ -5258,7 +5095,7 @@ fn augment_notes_caches_a_trivia_note() {
 }
 
 #[test]
-fn augment_without_a_store_flag_caches_beside_the_loose_deck() {
+fn augment_caches_beside_the_loose_deck() {
     let decks = tempfile::tempdir().unwrap();
     let deck = write(
         decks.path(),
@@ -5301,15 +5138,12 @@ fn augment_questions_caches_a_reworded_variant() {
         "config.toml",
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
-    let store = dir.path().join("state");
     let out = alix(&[
         "deck",
         "augment",
         &deck,
         "--target",
         "questions",
-        "--store",
-        store.to_str().unwrap(),
         "--config",
         &config,
     ]);
@@ -5331,15 +5165,12 @@ fn augment_questions_on_a_cloze_only_deck_errors() {
         "config.toml",
         "[ask]\ncommand = \"/nonexistent/x\"\n",
     );
-    let store = dir.path().join("state");
     let out = alix(&[
         "deck",
         "augment",
         &deck,
         "--target",
         "questions",
-        "--store",
-        store.to_str().unwrap(),
         "--config",
         &config,
     ]);
@@ -5365,15 +5196,12 @@ fn augment_keypoints_caches_decomposed_claims() {
         "config.toml",
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
-    let store = dir.path().join("state");
     let out = alix(&[
         "deck",
         "augment",
         &deck,
         "--target",
         "keypoints",
-        "--store",
-        store.to_str().unwrap(),
         "--config",
         &config,
     ]);
@@ -5400,17 +5228,8 @@ fn augment_order_prints_and_caches_the_walk() {
         "config.toml",
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
-    let store = dir.path().join("state");
     let out = alix(&[
-        "deck",
-        "augment",
-        &deck,
-        "--target",
-        "order",
-        "--store",
-        store.to_str().unwrap(),
-        "--config",
-        &config,
+        "deck", "augment", &deck, "--target", "order", "--config", &config,
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let text = stdout(&out);
@@ -5432,17 +5251,8 @@ fn augment_on_an_empty_deck_errors_without_calling_the_backend() {
         "config.toml",
         "[ask]\ncommand = \"/nonexistent/x\"\n",
     );
-    let store = dir.path().join("state");
     let out = alix(&[
-        "deck",
-        "augment",
-        &deck,
-        "--target",
-        "choices",
-        "--store",
-        store.to_str().unwrap(),
-        "--config",
-        &config,
+        "deck", "augment", &deck, "--target", "choices", "--config", &config,
     ]);
     assert!(!out.status.success());
     assert!(
@@ -5662,7 +5472,7 @@ fn doctor_quotes_the_personal_key_the_parser_actually_accepts() {
     // Names a deck that exists, but not the one it sits beside.
     write(
         &decks,
-        "spanish.personal.md",
+        "spanish.local.md",
         "---\nformat-version: 1\nfor: deck-germangermangermangerm\n---\n\n\
          <!-- note: card-onetwothreefourfivesixsev -->\n> mine\n",
     );
@@ -5677,12 +5487,12 @@ fn doctor_quotes_the_personal_key_the_parser_actually_accepts() {
 
     assert!(
         err.contains(
-            "spanish.personal.md: `for: deck-germangermangermangerm` but the deck it sits beside is deck-spanishspanishspanishspa"
+            "spanish.local.md: `for: deck-germangermangermangerm` but the deck it sits beside is deck-spanishspanishspanishspa"
         ),
         "the mismatch quotes the key, the named deck and the neighbour: {err}"
     );
     assert!(
-        err.contains("notes.md: carries `for:` but is not named `<deck>.personal.md`"),
+        err.contains("notes.md: carries `for:` but is not named `<deck>.local.md`"),
         "the suffix finding quotes the key: {err}"
     );
 }
@@ -5693,7 +5503,7 @@ fn deck_init_refuses_a_personal_file_without_changing_it() {
     write(dir.path(), "spanish.md", "## darse cuenta\nto realise\n");
     let original = "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
                     <!-- note: card-onetwothreefourfivesixsev -->\n> mine\n";
-    let path = write(dir.path(), "spanish.personal.md", original);
+    let path = write(dir.path(), "spanish.local.md", original);
 
     let out = alix(&["deck", "init", &path]);
 
@@ -6184,14 +5994,8 @@ fn reset_without_target_or_flags_errors() {
 #[test]
 fn reset_all_on_an_empty_store_reports_nothing_to_reset() {
     let dir = TempDir::new().unwrap();
-    let store = dir.path().join("state");
-    let out = alix(&[
-        "reset",
-        "--all",
-        "--yes",
-        "--store",
-        store.to_str().unwrap(),
-    ]);
+    let config = decks_config(dir.path());
+    let out = alix(&["reset", "--all", "--yes", "--config", &config]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         stdout(&out).contains("No stored progress to reset."),
@@ -6204,22 +6008,15 @@ fn reset_all_on_an_empty_store_reports_nothing_to_reset() {
 fn reset_by_token_card_id_without_a_target() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
-    let store_path = dir.path().join("state");
     let card_id = alix::deck::Deck::load(&deck).unwrap().cards[0]
         .id()
         .unwrap();
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     store.get_or_insert(&card_id);
     store.save().unwrap();
 
-    let out = alix(&[
-        "reset",
-        "--card",
-        &card_id,
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let config = decks_config(dir.path());
+    let out = alix(&["reset", "--card", &card_id, "--yes", "--config", &config]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         stdout(&out).contains("Reset 1 card(s)."),
@@ -6234,22 +6031,13 @@ fn reset_by_text_query_within_a_target_resets_only_matching_cards() {
     let deck_text = "---\nformat-version: 1\nid: deck-geography\n---\n## Capital of Japan?\nTokyo\n<!-- id: card-gj1 -->\n\n## Largest planet?\nJupiter\n<!-- id: card-gp1 -->\n";
     let deck = write(dir.path(), "geo.md", deck_text);
     let cards = alix::parser::parse_str("geo.md", deck_text).unwrap();
-    let store_path = dir.path().join("state");
-    let mut store = deck_store(&deck, &store_path);
+    let mut store = deck_store(&deck);
     for c in &cards {
         store.get_or_insert(&c.id().unwrap());
     }
     store.save().unwrap();
 
-    let out = alix(&[
-        "reset",
-        &deck,
-        "--card",
-        "japan",
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", &deck, "--card", "japan", "--yes"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         stdout(&out).contains("Reset 1 card(s)."),
@@ -6257,7 +6045,7 @@ fn reset_by_text_query_within_a_target_resets_only_matching_cards() {
         stdout(&out)
     );
 
-    let reloaded = deck_store(&deck, &store_path);
+    let reloaded = deck_store(&deck);
     assert!(
         reloaded.get(&cards[0].id().unwrap()).is_none(),
         "the matched card should be cleared"
@@ -6276,16 +6064,7 @@ fn reset_by_text_query_with_no_match_reports_nothing() {
         "geo.md",
         "---\nformat-version: 1\nid: deck-geography\n---\n## Capital of Japan?\nTokyo\n<!-- id: card-gj1 -->\n",
     );
-    let store_path = dir.path().join("state");
-    let out = alix(&[
-        "reset",
-        &deck,
-        "--card",
-        "nonexistent-query",
-        "--yes",
-        "--store",
-        store_path.to_str().unwrap(),
-    ]);
+    let out = alix(&["reset", &deck, "--card", "nonexistent-query", "--yes"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
         stdout(&out).contains("No stored progress matching"),
@@ -7609,15 +7388,14 @@ fn stats_and_list_report_ignored_cards_beside_the_live_ones() {
         "drafts.md",
         "---\nformat-version: 1\nid: \"deck-draftdeck\"\n---\n## live\na\n<!-- id: card-live1 -->\n## draft\nb\n<!-- ignore -->\n<!-- id: card-draft1 -->\n",
     );
-    let store = dir.path().join("state");
-    let stats = alix(&["stats", &deck, "--store", store.to_str().unwrap()]);
+    let stats = alix(&["stats", &deck]);
     assert!(stats.status.success(), "stderr: {}", stderr(&stats));
     assert!(
         stdout(&stats).contains("(1 cards, 1 ignored)"),
         "stdout: {}",
         stdout(&stats)
     );
-    let list = alix(&["list", &deck, "--store", store.to_str().unwrap()]);
+    let list = alix(&["list", &deck]);
     assert!(list.status.success(), "stderr: {}", stderr(&list));
     assert!(
         stdout(&list).contains("[ignored] draft"),

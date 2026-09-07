@@ -774,7 +774,7 @@ fn sidecar_findings(dir: &Path, report: &mut Report) {
             } => format!("{sidecar}: card `{card}` is already in {deck}; one schedule, two cards"),
             alix::Finding::SuffixMissing { file } => {
                 format!(
-                    "{file}: carries `{key}:` but is not named `<deck>.personal.md`",
+                    "{file}: carries `{key}:` but is not named `<deck>.local.md`",
                     key = alix::parser::PERSONAL_PARENT_KEY
                 )
             }
@@ -795,7 +795,7 @@ fn orphan_note_findings(sidecar: &Path, report: &mut Report) {
         sidecar
             .file_name()
             .and_then(|n| n.to_str())
-            .and_then(|n| n.strip_suffix(".personal.md"))
+            .and_then(|n| n.strip_suffix(alix::workspace::LOCAL_SIDECAR_SUFFIX))
             .map(|stem| format!("{stem}.md"))
             .unwrap_or_default(),
     );
@@ -962,6 +962,7 @@ fn findings_in(dir: &Path) -> Report {
                 .unwrap_or("");
             if !path.is_file()
                 || path.extension().is_none_or(|extension| extension != "json")
+                || alix::workspace::is_private_name(name)
                 || alix::workspace::is_conflict_name(name)
             {
                 continue;
@@ -2088,15 +2089,55 @@ mod tests {
     }
 
     #[test]
+    fn a_root_progress_directory_is_ignored_like_any_unknown_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("unknown")).unwrap();
+        let before = workspace_findings(dir.path());
+
+        let path = dir.path().join("progress/deck-stray.json");
+        let mut store = alix::store::Store::open_deck(&path, "deck-stray", "stray.md").unwrap();
+        store.get_or_insert("card-stray");
+        store.save().unwrap();
+
+        let after = workspace_findings(dir.path());
+        assert_eq!(before.errors, after.errors, "unknown directory errors");
+        assert_eq!(
+            before.warnings, after.warnings,
+            "unknown directory warnings"
+        );
+        assert_eq!(before.notes, after.notes, "unknown directory notes");
+    }
+
+    #[test]
     fn document_scan_skips_directories_non_json_files_and_conflicts() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("progress/folder.json")).unwrap();
-        w(&dir.path().join("progress"), "notes.txt", "not a document");
-        w(
-            &dir.path().join("progress"),
-            "deck-x.sync-conflict-1.json",
-            "not json",
-        );
+        let progress = dir.path().join(".alix/progress");
+        std::fs::create_dir_all(progress.join("folder.json")).unwrap();
+        w(&progress, "notes.txt", "not a document");
+        w(&progress, "deck-x.sync-conflict-1.json", "not json");
+        for (pattern, name, directory) in [
+            (alix::workspace::PRIVATE_PATTERNS[0], ".alix", true),
+            (
+                alix::workspace::PRIVATE_PATTERNS[1],
+                "deck-x.local.json",
+                false,
+            ),
+        ] {
+            let before = workspace_findings(dir.path());
+            let path = progress.join(name);
+            if directory {
+                std::fs::create_dir(&path).unwrap();
+            } else {
+                std::fs::write(&path, "not json").unwrap();
+            }
+            let after = workspace_findings(dir.path());
+            assert_eq!(before.errors, after.errors, "{pattern}: doctor errors");
+            assert_eq!(
+                before.warnings, after.warnings,
+                "{pattern}: doctor warnings"
+            );
+            assert_eq!(before.notes, after.notes, "{pattern}: doctor notes");
+        }
 
         let report = workspace_findings(dir.path());
         let findings = report
@@ -2118,7 +2159,7 @@ mod tests {
     #[test]
     fn an_augmentation_document_in_progress_is_validated_as_progress() {
         let dir = tempfile::tempdir().unwrap();
-        let progress = dir.path().join("progress/deck-orphan.json");
+        let progress = dir.path().join(".alix/progress/deck-orphan.json");
         alix::augment::AugmentCache::open_deck(&progress, "deck-orphan")
             .unwrap()
             .save()
@@ -3189,7 +3230,7 @@ printf ']}}'
             "---\nformat-version: 1\nid: deck-regiondoc\n---\n## anatomy\nthe lunate is carpal\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-parent1 -->\n",
         );
         let mut store = alix::store::Store::open_deck(
-            dir.join("progress/deck-regiondoc.json"),
+            dir.join(".alix/progress/deck-regiondoc.json"),
             "deck-regiondoc",
             "regions.md",
         )
@@ -3282,7 +3323,7 @@ printf ']}}'
         );
 
         let mut store = alix::store::Store::open_deck(
-            dir.join("progress/orphan-owner.json"),
+            dir.join(".alix/progress/orphan-owner.json"),
             "orphan-owner",
             "orphan-owner.md",
         )
@@ -3386,10 +3427,10 @@ printf ']}}'
             .unwrap();
         let conflict = dir
             .path()
-            .join("progress/deck-deck1.sync-conflict-20260725-phone.json");
+            .join(".alix/progress/deck-deck1.sync-conflict-20260725-phone.json");
         w(
             dir.path(),
-            "progress/deck-deck1.sync-conflict-20260725-phone.json",
+            ".alix/progress/deck-deck1.sync-conflict-20260725-phone.json",
             "{}",
         );
 
@@ -3404,9 +3445,9 @@ printf ']}}'
     fn a_bare_token_state_document_is_reported_generically() {
         let dir = tempfile::tempdir().unwrap();
         w(dir.path(), "alix.toml", "");
-        std::fs::create_dir(dir.path().join("progress")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".alix/progress")).unwrap();
         w(
-            &dir.path().join("progress"),
+            &dir.path().join(".alix/progress"),
             "mathdeck.json",
             r#"{"version":1,"deck_id":"mathdeck","subject":"math.md","revision":1,"cards":{},"records":{},"writer":null}"#,
         );
@@ -3479,9 +3520,9 @@ printf ']}}'
             "facts.md",
             "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
         );
-        std::fs::create_dir(dir.path().join("progress")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".alix/progress")).unwrap();
         w(
-            &dir.path().join("progress"),
+            &dir.path().join(".alix/progress"),
             "deck-deck1.json",
             r#"{"version":1,"deck_id":"deck-deck1","subject":"facts.md","revision":1,"cards":{},"records":{},"writer":null}"#,
         );
@@ -3664,7 +3705,7 @@ printf ']}}'
             "---\nformat-version: 1\nid: deck-draftdoc\n---\n## live\na\n<!-- id: card-live1 -->\n## draft\nb\n<!-- ignore -->\n<!-- id: card-draft1 -->\n",
         );
         let mut store = alix::store::Store::open_deck(
-            dir.join("progress/deck-draftdoc.json"),
+            dir.join(".alix/progress/deck-draftdoc.json"),
             "deck-draftdoc",
             "drafts.md",
         )

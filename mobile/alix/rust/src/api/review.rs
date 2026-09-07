@@ -1040,7 +1040,7 @@ mod tests {
             "## one?\n1\n<!-- id: card-one -->\n\n## two?\n2\n<!-- id: card-two -->\n",
         );
         let mut s = opened_after_introduction(&root.join("d.md"), root, Some(Depth::Recall));
-        let progress = root.join("progress");
+        let progress = alix::state::UserFiles::new(root).progress();
 
         std::fs::set_permissions(&progress, std::fs::Permissions::from_mode(0o555)).unwrap();
         let state = s.grade(Grade::Pass, Some(LATER)).expect("grade stays Ok");
@@ -1091,7 +1091,7 @@ mod tests {
             );
         }
         let root_store = std::fs::read_to_string(
-            std::fs::read_dir(root.join("progress"))
+            std::fs::read_dir(alix::state::UserFiles::new(root).progress())
                 .unwrap()
                 .next()
                 .unwrap()
@@ -1100,7 +1100,7 @@ mod tests {
         )
         .unwrap();
         let ws_store = std::fs::read_to_string(
-            std::fs::read_dir(root.join("ws/progress"))
+            std::fs::read_dir(alix::state::UserFiles::new(root.join("ws")).progress())
                 .unwrap()
                 .next()
                 .unwrap()

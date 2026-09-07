@@ -88,7 +88,9 @@ spanish/
 │   ├── icon.svg
 │   └── deck-<token>/
 │       └── sha256-<digest>.<ext>
-├── progress/
+├── .alix/
+│   ├── progress/deck-<token>.json
+│   └── recent.json
 └── augment/
 ```
 
@@ -165,9 +167,8 @@ Both commands preserve the filename, deck ID, and card IDs. Copy installs the
 same public bundle that wormhole sharing sends: the deck,
 `assets/deck-<token>/`, and `augment/deck-<token>.json`. It never copies progress.
 Move requires confirmation, installs that public bundle first, carries
-`progress/deck-<token>.json` when the workspaces use different user roots, then
-removes the source. Workspaces configured to use one shared user root already
-address the same progress document by deck ID, so no progress file moves.
+`.alix/progress/deck-<token>.json` to the destination workspace, then removes
+the source.
 
 The destination must be another Alix workspace. Transfer refuses overwrites,
 stable-ID collisions, missing required decks, and moves that would break a
@@ -218,7 +219,8 @@ deadline_ramp = "14d"    # how early the pre-deadline retention ramp starts
 It uses the same `[review]` keys as the [config file](16-configuration.md), and
 it's kept separate from `alix.toml` on purpose, so it stays yours and never
 travels when you share the workspace. A missing or malformed one is simply
-ignored.
+ignored. Its `.local.` name follows the same private naming rule as a deck's
+`.local.md` personal file.
 
 `deadline` and `deadline_ramp` only take effect **inside a real workspace**
 (a directory with an `alix.toml`). Set them on a plain decks folder, or on a
@@ -258,7 +260,8 @@ workspace root:
 ```text
 augment/deck-<token>.json    # shareable generated choices, notes, and topologies
 assets/deck-<token>/         # shareable frozen excerpts and local images
-progress/deck-<token>.json   # private schedules, history, exam state
+.alix/progress/deck-<token>.json # private schedules, history, exam state
+.alix/recent.json            # private recent-deck history
 ```
 
 Renaming a deck file leaves these paths unchanged because the name comes from
@@ -271,11 +274,10 @@ images in deck-owned `assets/deck-<token>/` directories, workspace icons directl
 in `assets/`, and shareable augmentation all live under one boundary. Sharing
 strips progress and local configuration while carrying the matching
 augmentation and assets. Decks outside any workspace keep shareable material
-beside the deck and private files in the selected user-files root. The CLI
+beside the deck and private files in that deck's containing folder. The CLI
 commands (`alix stats`/`list`/`reset`) take a deck file, a plain folder, **or a
-workspace**: a folder or workspace expands to its member decks, each resolved
-against the same user-files root the launcher would use (`--store <path>` still
-overrides private files only).
+workspace**: a folder or workspace expands to its member decks, and every
+command resolves the same colocated `.alix/` root the launcher uses.
 
 ## In the picker
 
@@ -312,7 +314,7 @@ just applies no shared directives.
 A workspace is a self-contained folder, so sharing one is sending the folder
 with its `decks/` structure intact.
 `alix share <dir>` does that over magic-wormhole with the personal files
-(`progress/`, backups, recent list, `alix.local.toml`) left home; the
+(`.alix/`, `*.local.*`, backups, and conflict copies) left home; the
 other side runs `alix receive <code>` and gets it beside their own decks, ready
 to serve with `alix <dir>`. Precomputed augmentation documents matching the
 shared decks travel: the AI content comes along, unrelated augmentation and

@@ -416,7 +416,10 @@ pub(crate) fn progress_dir_stamp(progress_dir: &Path) -> u64 {
                 && path
                     .file_name()
                     .and_then(|name| name.to_str())
-                    .is_none_or(|name| !crate::workspace::is_conflict_name(name));
+                    .is_none_or(|name| {
+                        !crate::workspace::is_private_name(name)
+                            && !crate::workspace::is_conflict_name(name)
+                    });
             if !is_document {
                 continue;
             }
@@ -672,7 +675,10 @@ impl Store {
                 && path
                     .file_name()
                     .and_then(|name| name.to_str())
-                    .is_none_or(|name| !crate::workspace::is_conflict_name(name))
+                    .is_none_or(|name| {
+                        !crate::workspace::is_private_name(name)
+                            && !crate::workspace::is_conflict_name(name)
+                    })
         });
         document_paths.sort();
 
@@ -1459,16 +1465,17 @@ fn stamp_block(block: &str, token: &str) -> String {
     }
 }
 
-pub fn default_store_path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.data_dir().to_path_buf())
-}
-
 // Syncthing's own naming convention for conflict copies: `<stem>.sync-conflict-*.<ext>`.
 pub fn sync_conflicts(store_path: &Path) -> Vec<PathBuf> {
     let direct = store_path
         .parent()
         .and_then(Path::file_name)
         .is_some_and(|name| name == "progress")
+        && store_path
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::file_name)
+            .is_some_and(|name| name == ".alix")
         && store_path
             .extension()
             .is_some_and(|extension| extension == "json");
@@ -1478,10 +1485,14 @@ pub fn sync_conflicts(store_path: &Path) -> Vec<PathBuf> {
         let progress = if store_path
             .file_name()
             .is_some_and(|name| name == "progress")
+            && store_path
+                .parent()
+                .and_then(Path::file_name)
+                .is_some_and(|name| name == ".alix")
         {
             store_path.to_path_buf()
         } else {
-            store_path.join("progress")
+            crate::state::UserFiles::new(store_path).progress()
         };
         conflict_documents(&progress)
     };
@@ -1501,7 +1512,10 @@ fn conflict_documents(dir: &Path) -> Vec<PathBuf> {
                 && path
                     .file_name()
                     .and_then(|name| name.to_str())
-                    .is_some_and(crate::workspace::is_conflict_name)
+                    .is_some_and(|name| {
+                        !crate::workspace::is_private_name(name)
+                            && crate::workspace::is_conflict_name(name)
+                    })
         })
         .collect();
     out.sort();
@@ -1713,17 +1727,17 @@ mod tests {
     #[test]
     fn sync_conflicts_finds_syncthing_copies_and_ignores_near_misses() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join("progress")).unwrap();
-        let store_path = dir.path().join("progress/deck1.json");
+        std::fs::create_dir_all(dir.path().join(".alix/progress")).unwrap();
+        let store_path = dir.path().join(".alix/progress/deck1.json");
         std::fs::write(&store_path, "{}").unwrap();
         let conflict = dir
             .path()
-            .join("progress/deck1.sync-conflict-20260714-101112-ABCDEF7.json");
+            .join(".alix/progress/deck1.sync-conflict-20260714-101112-ABCDEF7.json");
         std::fs::write(&conflict, "{}").unwrap();
         for near_miss in [
-            "progress/recent.sync-conflict-20260714-101112-AAAAAAA.json",
-            "progress/deck1.sync-conflict-20260714.txt",
-            "progress/deck1.json.tmp",
+            ".alix/progress/recent.sync-conflict-20260714-101112-AAAAAAA.json",
+            ".alix/progress/deck1.sync-conflict-20260714.txt",
+            ".alix/progress/deck1.json.tmp",
         ] {
             std::fs::write(dir.path().join(near_miss), "{}").unwrap();
         }
@@ -1733,11 +1747,11 @@ mod tests {
             Vec::<PathBuf>::new()
         );
 
-        let wrong_extension = dir.path().join("progress/deck2.txt");
+        let wrong_extension = dir.path().join(".alix/progress/deck2.txt");
         std::fs::write(&wrong_extension, "{}").unwrap();
         std::fs::write(
             dir.path()
-                .join("progress/deck2.sync-conflict-20260714-phone.txt"),
+                .join(".alix/progress/deck2.sync-conflict-20260714-phone.txt"),
             "{}",
         )
         .unwrap();
@@ -1781,10 +1795,10 @@ mod tests {
     #[test]
     fn sync_conflicts_finds_per_deck_progress_copies() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join("progress")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".alix/progress")).unwrap();
         let progress = dir
             .path()
-            .join("progress/deck1.sync-conflict-20260714-phone.json");
+            .join(".alix/progress/deck1.sync-conflict-20260714-phone.json");
         std::fs::write(&progress, "{}").unwrap();
 
         assert_eq!(sync_conflicts(dir.path()), vec![progress]);
@@ -1818,7 +1832,10 @@ mod tests {
             return;
         };
         let root = PathBuf::from(root);
-        let path = default_store_path().expect("the process yields a data path");
+        let path = directories::ProjectDirs::from("", "", "alix")
+            .expect("the process yields project directories")
+            .data_dir()
+            .to_path_buf();
         // The layout BETWEEN them is the platform's, not ours: macOS resolves
         // a data home to `Library/Application Support`, so asserting
         // `root/alix` would pass only on Linux.

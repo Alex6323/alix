@@ -188,7 +188,22 @@ fn repair_state_dir(root: &Path) {
 }
 
 fn state_root(dir: &Path) -> PathBuf {
-    dir.join("state")
+    dir.to_path_buf()
+}
+
+fn private_state_root(dir: &Path) -> PathBuf {
+    progress_root(dir)
+        .parent()
+        .expect("the progress directory has the private state root as its parent")
+        .to_path_buf()
+}
+
+fn progress_root(dir: &Path) -> PathBuf {
+    alix::state::UserFiles::new(state_root(dir)).progress()
+}
+
+fn recent_path(dir: &Path) -> PathBuf {
+    alix::state::UserFiles::new(state_root(dir)).recent()
 }
 
 fn open_instance_store(dir: &Path) -> Store {
@@ -293,7 +308,7 @@ fn spawn_test_server_impl(
     extra(dir.path());
     let store_path = state_root(dir.path());
     let store = open(dir.path());
-    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let recent = RecentDecks::load(recent_path(dir.path()));
     let decks_dir = dir.path().to_path_buf();
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
@@ -473,7 +488,7 @@ fn spawn_full_server_fixture(
     }
 
     let store = open_instance_store(dir.path());
-    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let recent = RecentDecks::load(recent_path(dir.path()));
     let decks_dir = dir.path().to_path_buf();
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
@@ -766,7 +781,7 @@ fn a_rejected_exam_start_keeps_the_active_progress_store() {
     let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
     assert_eq!(200, select_fixture(&base).status);
 
-    let progress = state_root(guard.dir()).join("progress/deck-sample.json");
+    let progress = progress_root(guard.dir()).join("deck-sample.json");
     let before: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
 
@@ -811,7 +826,9 @@ fn an_active_workspace_listing_reads_the_progress_owner_projection() {
     assert_eq!(200, post_gated(&base, "/api/introduce", "{}").status);
 
     let before = member_row(&base);
-    let progress = guard.dir().join("animals/progress/deck-animalone.json");
+    let progress = guard
+        .dir()
+        .join("animals/.alix/progress/deck-animalone.json");
     let parked = progress.with_extension("json.parked");
     std::fs::rename(&progress, &parked).unwrap();
 
@@ -851,7 +868,9 @@ fn an_inactive_workspace_listing_reads_the_progress_owner_projection() {
     assert_eq!(200, post_gated(&base, "/api/deselect", "{}").status);
 
     let before = member_row(&base);
-    let progress = guard.dir().join("animals/progress/deck-animalone.json");
+    let progress = guard
+        .dir()
+        .join("animals/.alix/progress/deck-animalone.json");
     let parked = progress.with_extension("json.parked");
     std::fs::rename(&progress, &parked).unwrap();
 
@@ -1036,7 +1055,7 @@ fn an_unreadable_progress_document_reds_out_its_row_and_review_is_refused() {
             "---\nformat-version: 1\nid: \"deck-other\"\n---\n## 1 + 1\n2\n<!-- id: card-o1 -->\n",
         )
         .unwrap();
-        let progress = state_root(dir).join("progress");
+        let progress = progress_root(dir);
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::write(progress.join("deck-other.json"), "{ corrupt").unwrap();
     });
@@ -1099,7 +1118,7 @@ fn an_unreadable_progress_document_reds_out_its_row_and_review_is_refused() {
     // The documented recovery: remove the unreadable document. The strict
     // per-deck open then sees a fresh deck, the select succeeds, and the
     // carried damage for that exact document must drop rather than stick.
-    std::fs::remove_file(state_root(_guard.dir()).join("progress/deck-other.json")).unwrap();
+    std::fs::remove_file(progress_root(_guard.dir()).join("deck-other.json")).unwrap();
     let recovered = post_json(&base, "/api/select", r#"{"deck":"other.md"}"#);
     assert_eq!(
         200, recovered.status,
@@ -1128,7 +1147,7 @@ fn an_unreadable_progress_document_reds_out_its_row_and_review_is_refused() {
 fn a_member_sessions_store_does_not_erase_a_damaged_siblings_error_row() {
     let (base, _guard) = spawn_test_server_booted(|dir| {
         write_animals_workspace(dir);
-        let progress = dir.join("animals/progress");
+        let progress = dir.join("animals/.alix/progress");
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::write(progress.join("deck-animaltwo.json"), "{ corrupt").unwrap();
     });
@@ -1194,7 +1213,7 @@ fn progress_damage_arriving_after_boot_reds_the_row_on_the_next_listing() {
     let before: serde_json::Value = serde_json::from_slice(&before.body).unwrap();
     assert_ne!("error", row(&before)["state"], "fixture must boot healthy");
 
-    let progress = state_root(_guard.dir()).join("progress");
+    let progress = progress_root(_guard.dir());
     std::fs::create_dir_all(&progress).unwrap();
     std::fs::write(progress.join("deck-sample.json"), "{ corrupt").unwrap();
 
@@ -1220,7 +1239,7 @@ fn removing_a_damaged_document_heals_its_row_on_the_next_listing() {
             "---\nformat-version: 1\nid: \"deck-other\"\n---\n## 1 + 1\n2\n<!-- id: card-o1 -->\n",
         )
         .unwrap();
-        let progress = state_root(dir).join("progress");
+        let progress = progress_root(dir);
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::write(progress.join("deck-other.json"), "{ corrupt").unwrap();
     });
@@ -1240,7 +1259,7 @@ fn removing_a_damaged_document_heals_its_row_on_the_next_listing() {
     let before: serde_json::Value = serde_json::from_slice(&before.body).unwrap();
     assert_eq!("error", row(&before)["state"], "fixture must start red");
 
-    std::fs::remove_file(state_root(_guard.dir()).join("progress/deck-other.json")).unwrap();
+    std::fs::remove_file(progress_root(_guard.dir()).join("deck-other.json")).unwrap();
 
     let after = http(&base, "GET", "/api/decks", &[], &[]);
     assert_eq!(200, after.status);
@@ -1260,7 +1279,7 @@ fn removing_a_damaged_document_heals_its_row_on_the_next_listing() {
 fn a_foreign_workspaces_damaged_sibling_stays_red_after_selecting_a_healthy_member() {
     let (base, _guard) = spawn_test_server_booted(|dir| {
         write_animals_workspace(dir);
-        let progress = dir.join("animals/progress");
+        let progress = dir.join("animals/.alix/progress");
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::write(progress.join("deck-animaltwo.json"), "{ corrupt").unwrap();
     });
@@ -1317,7 +1336,7 @@ fn selecting_a_workspace_member_records_it_in_recent() {
     // record-recent command before it answered this list.
     let response = http(&base, "GET", "/api/decks", &[], &[]);
     assert_eq!(200, response.status);
-    let recent = std::fs::read_to_string(guard.dir().join("recent.json")).unwrap_or_default();
+    let recent = std::fs::read_to_string(recent_path(guard.dir())).unwrap_or_default();
     assert!(
         recent.contains("one.md"),
         "an unfinished member session must be recorded in recent; recent.json: {recent}"
@@ -1780,7 +1799,7 @@ fn a_grade_is_on_disk_before_its_response_returns() {
     let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
 
     assert_eq!(200, resp.status);
-    let document = state_root(guard.dir.path()).join("progress/deck-sample.json");
+    let document = progress_root(guard.dir.path()).join("deck-sample.json");
     let json = std::fs::read_to_string(&document).unwrap_or_default();
     assert!(
         json.contains("\"card-s1\"") && json.contains("\"history\""),
@@ -1797,7 +1816,7 @@ fn a_concurrent_writer_surfaces_save_error_in_the_review_state() {
     let body: serde_json::Value = serde_json::from_slice(&clean.body).unwrap();
     assert!(body.get("save_error").is_none(), "clean session: {body}");
 
-    let document = state_root(guard.dir.path()).join("progress/deck-sample.json");
+    let document = progress_root(guard.dir.path()).join("deck-sample.json");
     let mut other = Store::open_deck(&document, "deck-sample", "sample.md").unwrap();
     other.get_or_insert("card-elsewhere");
     other.save().unwrap();
@@ -1901,7 +1920,7 @@ fn a_failed_flush_refuses_deselect_until_the_store_saves_again() {
     let resp = select_fixture(&base);
     assert_eq!(200, resp.status);
 
-    let state_dir = state_root(guard.dir());
+    let state_dir = private_state_root(guard.dir());
     break_state_dir(&state_dir);
 
     // The introduce itself replies 200 with `save_error` set (existing
@@ -2594,14 +2613,14 @@ fn removing_a_loose_deck_drops_its_recent_entry() {
 
     assert_eq!(200, resp.status);
     let recent: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(guard.dir().join("recent.json")).unwrap()).unwrap();
+        serde_json::from_slice(&std::fs::read(recent_path(guard.dir())).unwrap()).unwrap();
     assert!(recent.as_array().unwrap().is_empty(), "recent: {recent}");
 }
 
 #[test]
 fn a_partial_removal_returns_safe_completed_and_failed_artifacts() {
     let (base, guard) = spawn_test_server();
-    let progress = state_root(guard.dir()).join("progress/deck-sample.json");
+    let progress = progress_root(guard.dir()).join("deck-sample.json");
     std::fs::create_dir_all(progress.join("entry")).unwrap();
 
     let resp = post_json(&base, "/api/library/remove", r#"{"name":"sample.md"}"#);
@@ -2614,7 +2633,7 @@ fn a_partial_removal_returns_safe_completed_and_failed_artifacts() {
     );
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!("removal incomplete", body["error"]);
-    assert_eq!("progress/deck-sample.json", body["failed"]);
+    assert_eq!(".alix/progress/deck-sample.json", body["failed"]);
     assert!(
         body["completed"]
             .as_array()
@@ -3800,7 +3819,7 @@ fn a_rejected_augment_open_keeps_the_active_progress_store() {
     });
     assert_eq!(200, select_fixture(&base).status);
 
-    let progress = state_root(guard.dir()).join("progress/deck-sample.json");
+    let progress = progress_root(guard.dir()).join("deck-sample.json");
     let before: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
 
@@ -4704,7 +4723,7 @@ fn walk_ask_question_then_note_writes_to_the_checkpoint() {
         !deck.contains("the hop forwards the value"),
         "the authored trace deck must not carry the note: {deck}"
     );
-    let sidecar = std::fs::read_to_string(guard.dir().join("trace.personal.md"))
+    let sidecar = std::fs::read_to_string(guard.dir().join("trace.local.md"))
         .expect("the walk note went to a sidecar");
     assert!(
         sidecar.contains("the hop forwards the value"),
@@ -5323,7 +5342,7 @@ fn a_mastery_save_failure_surfaces_and_the_mastery_survives_repair() {
     );
     let (base, guard) = spawn_full_server(Some(&fake));
     post_json(&base, "/api/exam/start", r#"{"deck":"trace.md"}"#);
-    let state_dir = state_root(guard.dir());
+    let state_dir = private_state_root(guard.dir());
     break_state_dir(&state_dir);
 
     post_json(
@@ -5526,7 +5545,7 @@ fn spawn_kids_server() -> (String, Guard) {
     std::fs::write(dir.path().join("sample.md"), FIXTURE_DECK).unwrap();
     let store_path = state_root(dir.path());
     let store = open_instance_store(dir.path());
-    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let recent = RecentDecks::load(recent_path(dir.path()));
     let decks_dir = dir.path().to_path_buf();
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
@@ -5662,8 +5681,7 @@ fn ask_card_draft_create_round_trips_a_learner_card_into_the_session() {
         !deck_text.contains("edited term?"),
         "the authored deck must never carry a minted card: {deck_text}"
     );
-    let sidecar =
-        std::fs::read_to_string(_guard.dir().join("sample.personal.md")).expect("a sidecar");
+    let sidecar = std::fs::read_to_string(_guard.dir().join("sample.local.md")).expect("a sidecar");
     assert!(sidecar.contains("edited term?"), "sidecar: {sidecar}");
 }
 
@@ -6465,7 +6483,7 @@ fn remote_exam_trace_grade_pass_settles_to_results_and_writes_no_store() {
         r#"{"verdict":"pass","feedback":"re-derives the chain","missed":[]}"#,
     );
     let (base, guard) = spawn_full_server(Some(&fake));
-    let fixture_state = state_root(guard.dir());
+    let fixture_state = private_state_root(guard.dir());
     let before = snapshot_dir(&fixture_state);
 
     post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
@@ -6502,7 +6520,7 @@ fn remote_exam_trace_grade_fail_refuses_remediation_and_writes_no_store() {
         r#"{"verdict":"fail","feedback":"missed the second hop","missed":["it reads the second line"]}"#,
     );
     let (base, guard) = spawn_full_server(Some(&fake));
-    let fixture_state = state_root(guard.dir());
+    let fixture_state = private_state_root(guard.dir());
     let before = snapshot_dir(&fixture_state);
 
     post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
@@ -6645,7 +6663,7 @@ fn remote_endpoints_never_write_the_server_store() {
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
-    let fixture_state = state_root(guard.dir());
+    let fixture_state = private_state_root(guard.dir());
     let before = snapshot_dir(&fixture_state);
     let decks_before = snapshot_dir(guard.dir());
 
@@ -7163,7 +7181,7 @@ fn a_tutor_note_leaves_the_authored_deck_untouched_and_writes_the_sidecar() {
     let fake = fake_reply(scripts.path(), "the condensed insight");
     let (base, guard) = spawn_full_server(Some(&fake));
     let deck = guard.dir().join("sample.md");
-    let sidecar = guard.dir().join("sample.personal.md");
+    let sidecar = guard.dir().join("sample.local.md");
     let before = std::fs::read(&deck).unwrap();
 
     post_json(

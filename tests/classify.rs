@@ -44,7 +44,7 @@ fn plain_deck_has_no_claim_and_no_findings() {
 fn matching_sidecar_is_clean() {
     let files = vec![
         fe("spanish.md", Some("spanish"), None, &["c1"]),
-        fe("spanish.personal.md", None, Some("spanish"), &["c2"]),
+        fe("spanish.local.md", None, Some("spanish"), &["c2"]),
     ];
     let (roles, findings) = classify(&files);
     assert_eq!(
@@ -64,41 +64,41 @@ fn matching_sidecar_is_clean() {
 
 #[test]
 fn personal_md_with_no_personal_for_is_parent_missing() {
-    // Rule 1: "A `.personal.md` file with no `personal_for` at all is also this [ParentMissing]."
-    let files = vec![fe("x.personal.md", None, None, &[])];
+    // Rule 1: "A `.local.md` file with no `personal_for` at all is also this [ParentMissing]."
+    let files = vec![fe("x.local.md", None, None, &[])];
     let (roles, findings) = classify(&files);
     assert_eq!(roles, vec![Role::Unpaired]);
     assert_eq!(
         findings,
         vec![Finding::ParentMissing {
-            file: "x.personal.md".into()
+            file: "x.local.md".into()
         }]
     );
 }
 
 #[test]
 fn personal_for_naming_an_absent_deck_id_is_parent_missing() {
-    let files = vec![fe("x.personal.md", None, Some("ghost"), &[])];
+    let files = vec![fe("x.local.md", None, Some("ghost"), &[])];
     let (roles, findings) = classify(&files);
     assert_eq!(roles, vec![Role::Unpaired]);
     assert_eq!(
         findings,
         vec![Finding::ParentMissing {
-            file: "x.personal.md".into()
+            file: "x.local.md".into()
         }]
     );
 }
 
 #[test]
 fn personal_for_resolves_elsewhere_but_disagrees_with_implied_neighbour_is_mismatch() {
-    // "x.personal.md" implies neighbour "x.md" (id "x-id"), but personal_for
+    // "x.local.md" implies neighbour "x.md" (id "x-id"), but personal_for
     // actually names "y-id" (a real deck, "y.md"). Both mechanisms disagree,
     // so a ParentMismatch is reported -- yet attachment still succeeds to
     // whatever personal_for actually named, per rule 1's literal wording.
     let files = vec![
         fe("x.md", Some("x-id"), None, &[]),
         fe("y.md", Some("y-id"), None, &[]),
-        fe("x.personal.md", None, Some("y-id"), &[]),
+        fe("x.local.md", None, Some("y-id"), &[]),
     ];
     let (roles, findings) = classify(&files);
     assert_eq!(
@@ -114,7 +114,7 @@ fn personal_for_resolves_elsewhere_but_disagrees_with_implied_neighbour_is_misma
     assert_eq!(
         findings,
         vec![Finding::ParentMismatch {
-            file: "x.personal.md".into(),
+            file: "x.local.md".into(),
             named: "y-id".into(),
             neighbour: "x-id".into(),
         }]
@@ -132,7 +132,7 @@ fn parent_mismatch_downgrades_to_parent_missing_when_implied_neighbour_is_absent
     // wrong, hence its own dedicated test.
     let files = vec![
         fe("y.md", Some("y-id"), None, &[]),
-        fe("x.personal.md", None, Some("y-id"), &[]),
+        fe("x.local.md", None, Some("y-id"), &[]),
     ];
     let (roles, findings) = classify(&files);
     assert_eq!(
@@ -147,7 +147,7 @@ fn parent_mismatch_downgrades_to_parent_missing_when_implied_neighbour_is_absent
     assert_eq!(
         findings,
         vec![Finding::ParentMissing {
-            file: "x.personal.md".into()
+            file: "x.local.md".into()
         }]
     );
 }
@@ -157,12 +157,7 @@ fn self_referential_sidecar_resolves_against_itself_but_has_no_named_neighbour()
     // Nothing in the spec excludes a file from satisfying its own
     // personal_for via its own deck_id. There is no "loop.md" file, so the
     // implied-neighbour override applies: ParentMissing despite resolving.
-    let files = vec![fe(
-        "loop.personal.md",
-        Some("loop-id"),
-        Some("loop-id"),
-        &[],
-    )];
+    let files = vec![fe("loop.local.md", Some("loop-id"), Some("loop-id"), &[])];
     let (roles, findings) = classify(&files);
     assert_eq!(
         roles,
@@ -173,7 +168,7 @@ fn self_referential_sidecar_resolves_against_itself_but_has_no_named_neighbour()
     assert_eq!(
         findings,
         vec![Finding::ParentMissing {
-            file: "loop.personal.md".into()
+            file: "loop.local.md".into()
         }]
     );
 }
@@ -198,12 +193,7 @@ fn duplicate_card_id_between_deck_and_its_sidecar() {
     // deck_id the same string, so the expected value is right either way.
     let files = vec![
         fe("spanish.md", Some("spanish.md"), None, &["c1", "c2"]),
-        fe(
-            "spanish.personal.md",
-            None,
-            Some("spanish.md"),
-            &["c2", "c3"],
-        ),
+        fe("spanish.local.md", None, Some("spanish.md"), &["c2", "c3"]),
     ];
     let (roles, findings) = classify(&files);
     assert_eq!(
@@ -219,7 +209,7 @@ fn duplicate_card_id_between_deck_and_its_sidecar() {
         findings,
         vec![Finding::DuplicateCardId {
             deck: "spanish.md".into(),
-            sidecar: "spanish.personal.md".into(),
+            sidecar: "spanish.local.md".into(),
             card: "c2".into(),
         }]
     );
@@ -231,15 +221,15 @@ fn exact_duplicate_findings_are_deduplicated_but_roles_are_one_per_entry() {
     // produce two roles (one per input entry) but only one ParentMissing
     // finding, since the two instances are exact duplicates.
     let files = vec![
-        fe("x.personal.md", None, None, &[]),
-        fe("x.personal.md", None, None, &[]),
+        fe("x.local.md", None, None, &[]),
+        fe("x.local.md", None, None, &[]),
     ];
     let (roles, findings) = classify(&files);
     assert_eq!(roles, vec![Role::Unpaired, Role::Unpaired]);
     assert_eq!(
         findings,
         vec![Finding::ParentMissing {
-            file: "x.personal.md".into()
+            file: "x.local.md".into()
         }]
     );
 }
@@ -247,11 +237,11 @@ fn exact_duplicate_findings_are_deduplicated_but_roles_are_one_per_entry() {
 #[test]
 fn mixed_listing_end_to_end_roles_in_input_order_findings_globally_sorted() {
     let files = vec![
-        fe("zz.personal.md", None, None, &[]), // ParentMissing (no personal_for)
+        fe("zz.local.md", None, None, &[]), // ParentMissing (no personal_for)
         fe("b.md", Some("b.md"), None, &["k1"]),
         fe("aa.md", None, Some("nope"), &[]), // SuffixMissing (claims, wrong suffix)
-        fe("b.personal.md", None, Some("b.md"), &["k1", "k2"]), // clean pair + dup card k1
-        fe("c.personal.md", None, Some("y-id"), &[]), // resolves to "other.md", mismatches "c.md"
+        fe("b.local.md", None, Some("b.md"), &["k1", "k2"]), // clean pair + dup card k1
+        fe("c.local.md", None, Some("y-id"), &[]), // resolves to "other.md", mismatches "c.md"
         fe("other.md", Some("y-id"), None, &[]),
         fe("c.md", Some("x-id"), None, &[]),
     ];
@@ -274,8 +264,8 @@ fn mixed_listing_end_to_end_roles_in_input_order_findings_globally_sorted() {
         ]
     );
 
-    // Sorted by (file name concerned, enum order): aa.md, b.personal.md,
-    // c.personal.md, zz.personal.md.
+    // Sorted by (file name concerned, enum order): aa.md, b.local.md,
+    // c.local.md, zz.local.md.
     assert_eq!(
         findings,
         vec![
@@ -284,16 +274,16 @@ fn mixed_listing_end_to_end_roles_in_input_order_findings_globally_sorted() {
             },
             Finding::DuplicateCardId {
                 deck: "b.md".into(),
-                sidecar: "b.personal.md".into(),
+                sidecar: "b.local.md".into(),
                 card: "k1".into(),
             },
             Finding::ParentMismatch {
-                file: "c.personal.md".into(),
+                file: "c.local.md".into(),
                 named: "y-id".into(),
                 neighbour: "x-id".into(),
             },
             Finding::ParentMissing {
-                file: "zz.personal.md".into()
+                file: "zz.local.md".into()
             },
         ]
     );
@@ -314,11 +304,11 @@ fn totality_smoke_no_panic_on_pathological_input() {
             Some(""),
             &["", "dup", "dup"],
         ),
-        fe(".personal.md", None, Some("x"), &[]),
-        fe("a.personal.md", Some("a"), Some("a"), &["x"]),
-        fe("a.personal.md", Some("b"), None, &["x"]),
+        fe(".local.md", None, Some("x"), &[]),
+        fe("a.local.md", Some("a"), Some("a"), &["x"]),
+        fe("a.local.md", Some("b"), None, &["x"]),
         fe(
-            "\u{1F389}.personal.md",
+            "\u{1F389}.local.md",
             Some("\u{1F389}"),
             Some("\u{1F389}"),
             &["\u{1F389}"],
@@ -343,7 +333,7 @@ fn finding_rank(f: &Finding) -> u8 {
 }
 
 // Best-effort reading of "the file name they concern" for DuplicateCardId:
-// every other finding variant's `file` field names the .personal.md side
+// every other finding variant's `file` field names the .local.md side
 // (the file making the claim), never the plain deck side, so DuplicateCardId
 // is read the same way here (sorts by `sidecar`). Not settled by the spec
 // text; flagged rather than asserted silently.
@@ -357,7 +347,7 @@ fn finding_sort_file(f: &Finding) -> &str {
 }
 
 fn ends_personal(name: &str) -> bool {
-    name.ends_with(".personal.md")
+    name.ends_with(".local.md")
 }
 
 fn resolves(files: &[FileEntry], personal_for: &Option<String>) -> bool {
@@ -402,7 +392,7 @@ fn expected_parent_missing(files: &[FileEntry], f: &FileEntry) -> bool {
     if !resolves(files, &f.personal_for) {
         return true;
     }
-    let stem = f.name.strip_suffix(".personal.md").unwrap();
+    let stem = f.name.strip_suffix(".local.md").unwrap();
     let neighbour_name = format!("{stem}.md");
     match neighbour_deck_id(files, &neighbour_name) {
         None => true,       // implied neighbour file absent -> ParentMissing per spec override
@@ -418,7 +408,7 @@ fn expected_parent_mismatch(files: &[FileEntry], f: &FileEntry) -> Option<Findin
     if !resolves(files, &f.personal_for) {
         return None;
     }
-    let stem = f.name.strip_suffix(".personal.md").unwrap();
+    let stem = f.name.strip_suffix(".local.md").unwrap();
     let neighbour_name = format!("{stem}.md");
     let nid = match neighbour_deck_id(files, &neighbour_name) {
         Some(Some(nid)) => nid,
@@ -455,7 +445,7 @@ fn stem() -> impl Strategy<Value = String> {
 fn small_name() -> impl Strategy<Value = String> {
     prop_oneof![
         stem().prop_map(|s| format!("{s}.md")),
-        stem().prop_map(|s| format!("{s}.personal.md")),
+        stem().prop_map(|s| format!("{s}.local.md")),
         stem(),
         "[a-z]{0,4}",
     ]

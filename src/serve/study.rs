@@ -151,14 +151,6 @@ impl LibraryTarget {
     }
 
     fn label(&self, path: &Path) -> String {
-        if path
-            .parent()
-            .and_then(Path::file_name)
-            .is_some_and(|name| name == "progress")
-            && let Some(name) = path.file_name()
-        {
-            return format!("progress/{}", name.to_string_lossy());
-        }
         if let Ok(relative) = path.strip_prefix(self.display_root()) {
             if relative.as_os_str().is_empty() {
                 return self.name().to_string();
@@ -182,6 +174,7 @@ impl LibraryTarget {
         let user_files = crate::state::UserFiles::new(
             progress_root
                 .parent()
+                .and_then(Path::parent)
                 .map(Path::to_path_buf)
                 .unwrap_or_else(|| self.display_root()),
         );
@@ -200,20 +193,25 @@ impl LibraryTarget {
 }
 
 fn progress_root_for_store(store_path: &Path) -> Option<PathBuf> {
-    if store_path
+    let progress = if store_path
         .file_name()
         .is_some_and(|name| name == "progress")
     {
-        Some(store_path.to_path_buf())
+        store_path
     } else if store_path
         .parent()
         .and_then(Path::file_name)
         .is_some_and(|name| name == "progress")
     {
-        store_path.parent().map(Path::to_path_buf)
+        store_path.parent()?
     } else {
-        None
-    }
+        return None;
+    };
+    progress
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == ".alix")
+        .then(|| progress.to_path_buf())
 }
 
 pub(super) enum RemovalOutcome {
@@ -1863,7 +1861,7 @@ mod tests {
     #[test]
     fn progress_store_roots_cover_only_the_aggregate_and_its_direct_documents() {
         let user = Path::new("user");
-        let progress = user.join("progress");
+        let progress = user.join(".alix/progress");
 
         assert_eq!(Some(progress.clone()), progress_root_for_store(&progress));
         assert_eq!(
@@ -1874,15 +1872,16 @@ mod tests {
             None,
             progress_root_for_store(&user.join("snapshots/deck-example.json"))
         );
+        assert_eq!(None, progress_root_for_store(&user.join("progress")));
     }
 
     #[test]
     fn finishing_removal_drops_only_covered_snapshots_and_their_aggregate() {
         let dir = tempfile::tempdir().unwrap();
         let active_root = dir.path().join("active");
-        let removed_root = dir.path().join("removed/progress");
+        let removed_root = dir.path().join("removed/.alix/progress");
         let covered = removed_root.join("deck-covered.json");
-        let unrelated = dir.path().join("other/progress/deck-unrelated.json");
+        let unrelated = dir.path().join("other/.alix/progress/deck-unrelated.json");
         let defaults = crate::config::Config::default();
         let mut state = StudyState {
             config: StudyConfig {

@@ -9,8 +9,6 @@ use std::{
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-/// Named personal entries excluded from staging and stripped on receive.
-pub const PERSONAL: [&str; 3] = ["progress", "recent.json", "alix.local.toml"];
 const DECK_BUNDLE_MARKER: &str = ".alix-deck-share.json";
 const DECK_BUNDLE_VERSION: u32 = 1;
 
@@ -28,9 +26,8 @@ struct DeckBundleParts {
 }
 
 fn stays_home(name: &str) -> bool {
-    PERSONAL.contains(&name)
+    crate::workspace::is_private_name(name)
         || name.starts_with('.')
-        || crate::workspace::is_sidecar_name(name)
         || crate::workspace::is_conflict_name(name)
         || name.ends_with("-bak")
         || name.ends_with(".json.tmp")
@@ -307,12 +304,7 @@ fn sanitize_within(dir: &Path, prefix: &str, removed: &mut Vec<String>) -> Resul
             format!("{prefix}/{name}")
         };
         refuse_received_link(&path, &shown)?;
-        let private = PERSONAL.contains(&name.as_str())
-            || crate::workspace::is_sidecar_name(&name)
-            || crate::workspace::is_conflict_name(&name)
-            || name.ends_with("-bak")
-            || name.ends_with(".json.tmp")
-            || (name.starts_with('.') && name != DECK_BUNDLE_MARKER);
+        let private = stays_home(&name) && name != DECK_BUNDLE_MARKER;
         if private {
             if path.is_dir() {
                 std::fs::remove_dir_all(&path)?;
@@ -959,7 +951,7 @@ mod tests {
     }
 
     #[test]
-    fn staging_excludes_personal_state_and_keeps_content() {
+    fn staging_excludes_private_state_and_keeps_unknown_old_names() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("ws");
         std::fs::create_dir_all(src.join("assets")).unwrap();
@@ -974,6 +966,9 @@ mod tests {
         touch(&src, "alix.local.toml");
         std::fs::create_dir(src.join("progress")).unwrap();
         touch(&src.join("progress"), "deck-deck1.json");
+        std::fs::create_dir_all(src.join(".alix/progress")).unwrap();
+        touch(&src.join(".alix"), "recent.json");
+        touch(&src.join(".alix/progress"), "deck-deck1.json");
         std::fs::create_dir(src.join("augment")).unwrap();
         touch(&src.join("augment"), "deck-deck1.json");
         touch(&src.join("augment"), "orphan.json");
@@ -983,16 +978,17 @@ mod tests {
         let n = stage_dir(&src, &stage).unwrap();
 
         assert_eq!(
-            4, n,
-            "decks/deck.md, alix.toml, augment/deck-deck1.json, assets/icon.svg"
+            6, n,
+            "content plus the retired root progress and recent names"
         );
         assert!(stage.join("decks/deck.md").exists());
         assert!(stage.join("alix.toml").exists());
         assert!(stage.join("augment/deck-deck1.json").exists());
         assert!(!stage.join("augment/orphan.json").exists());
         assert!(stage.join("assets/icon.svg").exists());
-        assert!(!stage.join("progress").exists());
-        assert!(!stage.join("recent.json").exists());
+        assert!(stage.join("progress/deck-deck1.json").exists());
+        assert!(stage.join("recent.json").exists());
+        assert!(!stage.join(".alix").exists());
         assert!(!stage.join("alix.local.toml").exists());
     }
 
@@ -1200,8 +1196,8 @@ mod tests {
         touch(&root, "a.txt");
         touch(&root, ".private");
         touch(&root.join("nested"), "alix.local.toml");
-        std::fs::create_dir(root.join("nested/progress")).unwrap();
-        touch(&root.join("nested/progress"), "deck1.json");
+        std::fs::create_dir(root.join("nested/.alix")).unwrap();
+        touch(&root.join("nested/.alix"), "recent.json");
         std::fs::create_dir(root.join("nested/augment")).unwrap();
         touch(
             &root.join("nested/augment"),
@@ -1213,7 +1209,7 @@ mod tests {
         assert!(root.join("a.txt").exists());
         assert!(!root.join(".private").exists());
         assert!(!root.join("nested/alix.local.toml").exists());
-        assert!(!root.join("nested/progress").exists());
+        assert!(!root.join("nested/.alix").exists());
         assert!(
             !root
                 .join("nested/augment/deck1.sync-conflict-20260725-phone.json")
@@ -1421,15 +1417,15 @@ mod tests {
         let tmp = dir.path().join("scratch");
         std::fs::create_dir_all(tmp.join("ws")).unwrap();
         std::fs::write(tmp.join("ws/a.txt"), "x").unwrap();
-        std::fs::create_dir(tmp.join("ws/progress")).unwrap();
-        std::fs::write(tmp.join("ws/progress/deck1.json"), "x").unwrap();
+        std::fs::create_dir(tmp.join("ws/.alix")).unwrap();
+        std::fs::write(tmp.join("ws/.alix/recent.json"), "x").unwrap();
         let dest = dir.path().join("decks");
         std::fs::create_dir_all(&dest).unwrap();
         let (landed, stripped) = land_received(&tmp, &dest).unwrap();
         assert_eq!("ws", landed);
-        assert_eq!(vec!["progress".to_string()], stripped);
+        assert_eq!(vec![".alix".to_string()], stripped);
         assert!(dest.join("ws/a.txt").exists());
-        assert!(!dest.join("ws/progress").exists());
+        assert!(!dest.join("ws/.alix").exists());
     }
 
     /// `zip` recreates a symbolic link an archive carries, and `move_into`
@@ -1531,11 +1527,11 @@ mod tests {
     }
 
     #[test]
-    fn every_personal_shape_stays_home_on_its_own() {
+    fn every_private_shape_stays_home_on_its_own() {
         for name in [
-            "progress",
-            "recent.json",
+            ".alix",
             "alix.local.toml",
+            "spanish.local.md",
             ".hidden",
             "x.sync-conflict-20260802",
             "x-bak",
@@ -1559,19 +1555,43 @@ mod tests {
             .split_once("\n```")
             .expect("the .stignore text fence must close");
 
-        for name in PERSONAL {
+        for name in crate::workspace::PRIVATE_PATTERNS {
             assert!(
-                block
-                    .lines()
-                    .any(|line| line.strip_suffix('/').unwrap_or(line) == name),
-                "the .stignore block must name private entry `{name}`: {block}"
+                block.lines().any(|line| line == name),
+                "the .stignore block must name private pattern `{name}`: {block}"
             );
         }
-        let sidecar = format!("*{}", crate::workspace::PERSONAL_SIDECAR_SUFFIX);
-        assert!(
-            block.lines().any(|line| line == sidecar),
-            "the .stignore block must name private sidecars `{sidecar}`: {block}"
-        );
+    }
+
+    #[test]
+    fn every_private_pattern_stays_home_at_any_depth() {
+        for (pattern, relative) in [
+            (
+                crate::workspace::PRIVATE_PATTERNS[0],
+                "nested/.alix/private.md",
+            ),
+            (
+                crate::workspace::PRIVATE_PATTERNS[1],
+                "nested/spanish.local.md",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let source = dir.path().join("source");
+            let stage = dir.path().join("stage");
+            let path = source.join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            touch(&source, "public.md");
+            std::fs::write(&path, "private").unwrap();
+
+            stage_dir(&source, &stage).unwrap();
+
+            assert!(stage.join("public.md").is_file(), "{pattern}: control");
+            assert!(
+                !stage.join(relative).exists(),
+                "{pattern}: a matching entry traveled from {}",
+                path.display()
+            );
+        }
     }
 
     #[test]
@@ -1852,7 +1872,7 @@ mod tests {
             "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
         )
         .unwrap();
-        touch(&src, "spanish.personal.md");
+        touch(&src, "spanish.local.md");
 
         let stage = dir.path().join("stage");
         let staged = stage_dir(&src, &stage).unwrap();
@@ -1860,7 +1880,7 @@ mod tests {
         assert_eq!(1, staged, "the authored deck alone travels");
         assert!(stage.join("spanish.md").exists());
         assert!(
-            !stage.join("spanish.personal.md").exists(),
+            !stage.join("spanish.local.md").exists(),
             "the sidecar is the sender's own writing and never leaves the machine"
         );
     }
@@ -1871,12 +1891,12 @@ mod tests {
         let landing = dir.path().join("landing");
         std::fs::create_dir_all(&landing).unwrap();
         touch(&landing, "spanish.md");
-        touch(&landing, "spanish.personal.md");
+        touch(&landing, "spanish.local.md");
 
         let removed = sanitize_received(&landing).unwrap();
 
         assert!(landing.join("spanish.md").exists());
-        assert!(!landing.join("spanish.personal.md").exists());
-        assert_eq!(vec!["spanish.personal.md".to_string()], removed);
+        assert!(!landing.join("spanish.local.md").exists());
+        assert_eq!(vec!["spanish.local.md".to_string()], removed);
     }
 }

@@ -13,8 +13,7 @@ fn reset_orphans_refuses_when_a_live_decks_frontmatter_is_malformed() {
         "---\nformat-version: 1\nid: deck-live\n---\n## question\nanswer\n<!-- id: card-live1 -->\n",
     )
     .unwrap();
-    let state = dir.path().join("state");
-    let mut store = alix::state::open_store(&deck, &state).unwrap();
+    let mut store = alix::state::open_store(&deck, dir.path()).unwrap();
     store.get_or_insert("card-live1");
     store.save().unwrap();
     let progress = store.path().to_path_buf();
@@ -26,14 +25,7 @@ fn reset_orphans_refuses_when_a_live_decks_frontmatter_is_malformed() {
     .unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_alix"))
-        .args([
-            "reset",
-            "--orphans",
-            dir.path().to_str().unwrap(),
-            "--yes",
-            "--store",
-            state.to_str().unwrap(),
-        ])
+        .args(["reset", "--orphans", dir.path().to_str().unwrap(), "--yes"])
         .env("HOME", dir.path())
         .env("XDG_CONFIG_HOME", dir.path())
         .env("XDG_DATA_HOME", dir.path())

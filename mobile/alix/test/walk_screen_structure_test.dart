@@ -185,7 +185,8 @@ void main() {
     final root = traceRoot('alix-walk-structure-save-');
     await pumpWalk(tester, root: root);
     await reveal(tester);
-    final progress = File('${root.path}/progress');
+    Directory('${root.path}/.alix').createSync();
+    final progress = File('${root.path}/.alix/progress');
     progress.writeAsStringSync('blocks the progress directory');
     await tester.tap(find.text('Got it'));
     await tester.pump();

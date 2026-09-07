@@ -16,7 +16,7 @@ for: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\n---\n\n\
 fn fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("spanish.md"), DECK).unwrap();
-    std::fs::write(dir.path().join("spanish.personal.md"), SIDECAR).unwrap();
+    std::fs::write(dir.path().join("spanish.local.md"), SIDECAR).unwrap();
     dir
 }
 

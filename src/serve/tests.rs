@@ -1066,7 +1066,7 @@ fn a_members_unreadable_document_reds_out_that_member_row_alone() {
         &ws.join("decks/two.md"),
         "## q2\na2\n<!-- id: card-qb -->\n",
     );
-    let progress = crate::workspace::store_path(&ws).join("progress");
+    let progress = crate::state::UserFiles::new(crate::workspace::store_path(&ws)).progress();
     std::fs::create_dir_all(&progress).unwrap();
     std::fs::write(progress.join("deck-two.json"), "{ corrupt").unwrap();
 
@@ -1196,7 +1196,9 @@ fn a_foreign_workspace_with_a_damaged_progress_root_reds_every_member() {
     write_initialized(&ws.join("decks/two.md"), "## q2 <!-- id: card-qb -->\na2\n");
     let store_root = crate::workspace::store_path(&ws);
     std::fs::create_dir_all(&store_root).unwrap();
-    std::fs::write(store_root.join("progress"), "not a directory").unwrap();
+    let progress = crate::state::UserFiles::new(&store_root).progress();
+    std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
+    std::fs::write(progress, "not a directory").unwrap();
 
     let global_store = Store::open(dir.path().join("global.json")).unwrap();
     let recent = RecentDecks::load(dir.path().join("recent.json"));
@@ -1418,8 +1420,8 @@ fn a_deck_with_an_unreadable_progress_document_reds_out_alone_in_the_catalog() {
         &dir.path().join("bad.md"),
         "## q\na\n<!-- id: card-qb -->\n",
     );
-    let progress = dir.path().join("progress");
-    std::fs::create_dir(&progress).unwrap();
+    let progress = dir.path().join(".alix/progress");
+    std::fs::create_dir_all(&progress).unwrap();
     std::fs::write(progress.join("deck-bad.json"), "{ corrupt").unwrap();
 
     let store = crate::state::open_aggregate_store_tolerant(dir.path()).unwrap();

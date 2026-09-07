@@ -10,7 +10,7 @@
   "earliest_review_ms": 1700000000000,
   "files": [
     "decks/basics.md",
-    "progress/deck-basics.json",
+    ".alix/progress/deck-basics.json",
     "alix.toml"
   ],
   "kind": "workspace",

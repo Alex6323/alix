@@ -10,7 +10,8 @@ use crate::deck::DeckSettings;
 
 pub const MANIFEST: &str = "alix.toml";
 pub const DECKS: &str = "decks";
-pub const PERSONAL_SIDECAR_SUFFIX: &str = ".personal.md";
+pub const LOCAL_SIDECAR_SUFFIX: &str = ".local.md";
+pub const PRIVATE_PATTERNS: [&str; 2] = [".alix/", "*.local.*"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WorkspaceFiles {
@@ -208,7 +209,12 @@ pub fn is_conventional_non_deck(name: &str) -> bool {
 /// The suffix alone decides discovery, so no file is read to skip a sidecar,
 /// and one carrying an `id:` by mistake is still never offered as a deck.
 pub fn is_sidecar_name(name: &str) -> bool {
-    name.ends_with(PERSONAL_SIDECAR_SUFFIX)
+    name.ends_with(LOCAL_SIDECAR_SUFFIX)
+}
+
+pub fn is_private_name(name: &str) -> bool {
+    name == PRIVATE_PATTERNS[0].trim_end_matches('/')
+        || name.contains(PRIVATE_PATTERNS[1].trim_matches('*'))
 }
 
 /// A closed list of sync/backup name patterns. Dropbox's "conflicted copy"
@@ -420,7 +426,7 @@ fn members_where_in(
         .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "md"))
         .filter(|p| {
             !p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
-                is_conventional_non_deck(n) || is_conflict_name(n) || is_sidecar_name(n)
+                is_conventional_non_deck(n) || is_conflict_name(n) || is_private_name(n)
             })
         })
         .filter(|p| is_deck(p))
@@ -914,15 +920,16 @@ mod tests {
         );
     }
 
-    /// One fixture, both listings: the only difference between them is the
-    /// personal file, and everything either one refuses it refuses for the
-    /// same reason.
+    /// One fixture, both listings: pairing sees the local twin while deck
+    /// discovery excludes it and treats the retired suffix as an ordinary
+    /// candidate.
     #[test]
-    fn both_listings_refuse_the_same_non_decks_and_only_one_shows_a_sidecar() {
+    fn the_local_twin_is_the_only_sidecar_suffix_in_discovery() {
         let dir = tempfile::tempdir().unwrap();
         for name in [
             "spanish.md",
-            "spanish.personal.md",
+            "spanish.local.md",
+            "old.personal.md",
             "README.md",
             "LICENSE.md",
             "spanish.sync-conflict-8FA2.md",
@@ -939,15 +946,61 @@ mod tests {
                 .collect()
         };
         assert_eq!(
-            vec!["spanish.md", "spanish.personal.md"],
+            vec!["old.personal.md", "spanish.local.md", "spanish.md"],
             names(listing_with_sidecars(dir.path()).unwrap()),
             "pairing checks need the personal file"
         );
         assert_eq!(
-            vec!["spanish.md"],
+            vec!["old.personal.md", "spanish.md"],
             names(members_where(dir.path(), |_| true).unwrap()),
-            "deck discovery excludes it by design"
+            "only the .local.md twin is private by name"
         );
+    }
+
+    #[test]
+    fn private_names_follow_the_two_published_patterns() {
+        for (name, private) in [
+            (".alix", true),
+            ("deck.local.md", true),
+            (".local.md", true),
+            ("deck.local.", true),
+            ("alix.local.toml", true),
+            ("alix", false),
+            ("local.md", false),
+            ("deck-local-md", false),
+        ] {
+            assert_eq!(private, is_private_name(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn every_private_pattern_is_absent_from_the_deck_listing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".alix")).unwrap();
+        for path in [
+            dir.path().join(".alix/hidden.md"),
+            dir.path().join("hidden.local.md"),
+            dir.path().join("public.md"),
+        ] {
+            std::fs::write(
+                path,
+                "---\nformat-version: 1\nid: deck-00000000000000000000000000\n---\n## q\na\n<!-- id: card-11111111111111111111111111 -->\n",
+            )
+            .unwrap();
+        }
+
+        let listed = deck_files(dir.path());
+        assert_eq!(vec![dir.path().join("public.md")], listed, "public control");
+        for (pattern, private) in [
+            (PRIVATE_PATTERNS[0], dir.path().join(".alix/hidden.md")),
+            (PRIVATE_PATTERNS[1], dir.path().join("hidden.local.md")),
+        ] {
+            assert!(
+                !listed.contains(&private),
+                "{pattern}: listing offered {} as a deck",
+                private.display()
+            );
+        }
     }
 
     #[cfg(unix)]
@@ -956,7 +1009,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("facts.md");
         std::fs::write(&deck, "## q\na\n").unwrap();
-        std::os::unix::fs::symlink(&deck, dir.path().join("facts.personal.md")).unwrap();
+        std::os::unix::fs::symlink(&deck, dir.path().join("facts.local.md")).unwrap();
 
         let names: Vec<String> = listing_with_sidecars(dir.path())
             .unwrap()
@@ -965,7 +1018,7 @@ mod tests {
             .collect();
 
         assert_eq!(
-            vec!["facts.md", "facts.personal.md"],
+            vec!["facts.local.md", "facts.md"],
             names,
             "doctor pairs by name, so it has to see both names"
         );

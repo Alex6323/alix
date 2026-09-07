@@ -1214,7 +1214,7 @@ mod tests {
         let dir = workspace();
         let decks = dir.path().join("decks");
         std::fs::write(decks.join("spanish.md"), "## darse cuenta\nto realise\n").unwrap();
-        let personal = decks.join("spanish.personal.md");
+        let personal = decks.join("spanish.local.md");
         let text = "---\nformat-version: 1\nfor: deck-abc\n---\n\n\
                     <!-- note: card-one -->\n> mine\n";
         std::fs::write(&personal, text).unwrap();

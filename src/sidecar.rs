@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 /// One file in a folder listing, already read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileEntry {
-    /// File name only, never a path, e.g. "spanish.personal.md".
+    /// File name only, never a path, e.g. "spanish.local.md".
     pub name: String,
     /// The file's own `id:` frontmatter value, when it has one.
     pub deck_id: Option<String>,
@@ -65,7 +65,6 @@ pub fn classify(files: &[FileEntry]) -> (Vec<Role>, Vec<Finding>) {
     (roles, findings)
 }
 
-const SIDECAR_SUFFIX: &str = ".personal.md";
 const DECK_SUFFIX: &str = ".md";
 
 struct Index<'a> {
@@ -105,7 +104,7 @@ impl<'a> Index<'a> {
 }
 
 fn role_of(entry: &FileEntry, index: &Index) -> Role {
-    let suffixed = entry.name.ends_with(SIDECAR_SUFFIX);
+    let suffixed = entry.name.ends_with(crate::workspace::LOCAL_SIDECAR_SUFFIX);
     if suffixed
         && let Some(parent) = entry.personal_for.as_deref()
         && index.resolves(parent)
@@ -122,7 +121,10 @@ fn role_of(entry: &FileEntry, index: &Index) -> Role {
 }
 
 fn pairing_findings(entry: &FileEntry, index: &Index, findings: &mut Vec<Finding>) {
-    let Some(stem) = entry.name.strip_suffix(SIDECAR_SUFFIX) else {
+    let Some(stem) = entry
+        .name
+        .strip_suffix(crate::workspace::LOCAL_SIDECAR_SUFFIX)
+    else {
         if entry.personal_for.is_some() {
             findings.push(Finding::SuffixMissing {
                 file: entry.name.clone(),
@@ -267,7 +269,7 @@ mod tests {
     fn a_pair_is_a_deck_and_the_sidecar_attached_to_it() {
         let files = vec![
             deck("spanish.md", "deck-1"),
-            sidecar("spanish.personal.md", "deck-1"),
+            sidecar("spanish.local.md", "deck-1"),
         ];
 
         let (roles, findings) = classify(&files);
@@ -284,9 +286,9 @@ mod tests {
     fn a_role_follows_the_suffix_and_the_named_parent() {
         let parent = deck("spanish.md", "deck-1");
         let cases: &[(&str, Option<&str>, Role)] = &[
-            ("spanish.personal.md", Some("deck-1"), attached("deck-1")),
-            ("spanish.personal.md", Some("deck-9"), Role::Unpaired),
-            ("spanish.personal.md", None, Role::Unpaired),
+            ("spanish.local.md", Some("deck-1"), attached("deck-1")),
+            ("spanish.local.md", Some("deck-9"), Role::Unpaired),
+            ("spanish.local.md", None, Role::Unpaired),
             ("mine.md", Some("deck-1"), Role::Unpaired),
             ("mine.md", Some("deck-9"), Role::Unpaired),
             ("mine.md", None, Role::Deck),
@@ -321,11 +323,11 @@ mod tests {
             vec![plain("a.md")],
             vec![
                 deck("spanish.md", "deck-1"),
-                sidecar("spanish.personal.md", "deck-1"),
+                sidecar("spanish.local.md", "deck-1"),
                 plain("french.md"),
             ],
             vec![
-                sidecar("orphan.personal.md", "deck-9"),
+                sidecar("orphan.local.md", "deck-9"),
                 file("mine.md", None, Some("deck-9"), &[]),
             ],
         ];
@@ -339,7 +341,7 @@ mod tests {
 
     #[test]
     fn a_suffixed_file_without_the_key_is_missing_its_parent() {
-        let files = vec![deck("spanish.md", "deck-1"), plain("spanish.personal.md")];
+        let files = vec![deck("spanish.md", "deck-1"), plain("spanish.local.md")];
 
         let (roles, findings) = classify(&files);
 
@@ -350,7 +352,7 @@ mod tests {
         );
         assert_eq!(
             findings,
-            vec![missing("spanish.personal.md")],
+            vec![missing("spanish.local.md")],
             "findings for a keyless sidecar"
         );
     }
@@ -359,7 +361,7 @@ mod tests {
     fn a_suffixed_file_naming_an_absent_id_is_missing_its_parent() {
         let files = vec![
             deck("spanish.md", "deck-1"),
-            sidecar("spanish.personal.md", "deck-9"),
+            sidecar("spanish.local.md", "deck-9"),
         ];
 
         let (roles, findings) = classify(&files);
@@ -371,7 +373,7 @@ mod tests {
         );
         assert_eq!(
             findings,
-            vec![missing("spanish.personal.md")],
+            vec![missing("spanish.local.md")],
             "findings for an absent parent"
         );
     }
@@ -381,7 +383,7 @@ mod tests {
         let files = vec![
             deck("spanish.md", "deck-1"),
             deck("french.md", "deck-2"),
-            sidecar("spanish.personal.md", "deck-2"),
+            sidecar("spanish.local.md", "deck-2"),
         ];
 
         let (roles, findings) = classify(&files);
@@ -393,7 +395,7 @@ mod tests {
         );
         assert_eq!(
             findings,
-            vec![mismatch("spanish.personal.md", "deck-2", "deck-1")],
+            vec![mismatch("spanish.local.md", "deck-2", "deck-1")],
             "findings name the id claimed and the id implied"
         );
     }
@@ -402,7 +404,7 @@ mod tests {
     fn a_named_parent_without_the_implied_neighbour_is_missing_not_mismatched() {
         let files = vec![
             deck("french.md", "deck-2"),
-            sidecar("spanish.personal.md", "deck-2"),
+            sidecar("spanish.local.md", "deck-2"),
         ];
 
         let (roles, findings) = classify(&files);
@@ -414,7 +416,7 @@ mod tests {
         );
         assert_eq!(
             findings,
-            vec![missing("spanish.personal.md")],
+            vec![missing("spanish.local.md")],
             "an absent neighbour is a missing parent, never a mismatch"
         );
     }
@@ -424,14 +426,14 @@ mod tests {
         let files = vec![
             plain("spanish.md"),
             deck("french.md", "deck-2"),
-            sidecar("spanish.personal.md", "deck-2"),
+            sidecar("spanish.local.md", "deck-2"),
         ];
 
         let (_, findings) = classify(&files);
 
         assert_eq!(
             findings,
-            vec![missing("spanish.personal.md")],
+            vec![missing("spanish.local.md")],
             "a neighbour carrying no id is no deck to mismatch against"
         );
     }
@@ -475,7 +477,7 @@ mod tests {
         let files = vec![
             file("spanish.md", Some("deck-1"), None, &["card-a", "card-b"]),
             file(
-                "spanish.personal.md",
+                "spanish.local.md",
                 None,
                 Some("deck-1"),
                 &["card-b", "card-c"],
@@ -486,7 +488,7 @@ mod tests {
 
         assert_eq!(
             findings,
-            vec![duplicate("spanish.md", "spanish.personal.md", "card-b")],
+            vec![duplicate("spanish.md", "spanish.local.md", "card-b")],
             "the shared card id is reported with the pair"
         );
     }
@@ -494,7 +496,7 @@ mod tests {
     #[test]
     fn a_duplicate_names_the_deck_by_its_file_name_never_by_its_id() {
         let files = vec![
-            file("a.personal.md", None, Some("deck-1"), &["card-a"]),
+            file("a.local.md", None, Some("deck-1"), &["card-a"]),
             file("other.md", Some("deck-1"), None, &["card-a"]),
         ];
 
@@ -503,8 +505,8 @@ mod tests {
         assert_eq!(
             findings,
             vec![
-                missing("a.personal.md"),
-                duplicate("other.md", "a.personal.md", "card-a"),
+                missing("a.local.md"),
+                duplicate("other.md", "a.local.md", "card-a"),
             ],
             "the deck side of a duplicate is the file name, not the id it named"
         );
@@ -515,7 +517,7 @@ mod tests {
         let files = vec![
             file("spanish.md", Some("deck-1"), None, &["card-a"]),
             file("french.md", Some("deck-2"), None, &["card-b"]),
-            file("spanish.personal.md", None, Some("deck-1"), &["card-b"]),
+            file("spanish.local.md", None, Some("deck-1"), &["card-b"]),
         ];
 
         let (_, findings) = classify(&files);
@@ -531,7 +533,7 @@ mod tests {
     fn an_unpaired_file_never_reports_a_duplicate_card_id() {
         let files = vec![
             file("spanish.md", Some("deck-1"), None, &["card-a"]),
-            file("spanish.personal.md", None, Some("deck-9"), &["card-a"]),
+            file("spanish.local.md", None, Some("deck-9"), &["card-a"]),
         ];
 
         let (roles, findings) = classify(&files);
@@ -539,7 +541,7 @@ mod tests {
         assert_eq!(roles[1], Role::Unpaired, "the named parent is absent");
         assert_eq!(
             findings,
-            vec![missing("spanish.personal.md")],
+            vec![missing("spanish.local.md")],
             "a card id is only shared through an attachment"
         );
     }
@@ -548,7 +550,7 @@ mod tests {
     fn a_card_id_repeated_inside_one_file_is_no_pairing_finding() {
         let files = vec![
             file("spanish.md", Some("deck-1"), None, &["card-a", "card-a"]),
-            file("spanish.personal.md", None, Some("deck-1"), &["card-b"]),
+            file("spanish.local.md", None, Some("deck-1"), &["card-b"]),
         ];
 
         let (_, findings) = classify(&files);
@@ -565,7 +567,7 @@ mod tests {
         let files = vec![
             file("spanish.md", Some("deck-1"), None, &["card-a", "card-a"]),
             file(
-                "spanish.personal.md",
+                "spanish.local.md",
                 None,
                 Some("deck-1"),
                 &["card-a", "card-a"],
@@ -576,7 +578,7 @@ mod tests {
 
         assert_eq!(
             findings,
-            vec![duplicate("spanish.md", "spanish.personal.md", "card-a")],
+            vec![duplicate("spanish.md", "spanish.local.md", "card-a")],
             "one shared card id is one finding however often it repeats"
         );
     }
@@ -587,7 +589,7 @@ mod tests {
             file("spanish.md", Some("deck-1"), None, &["card-a"]),
             file("copy.md", Some("deck-1"), None, &["card-a", "card-b"]),
             file(
-                "spanish.personal.md",
+                "spanish.local.md",
                 None,
                 Some("deck-1"),
                 &["card-a", "card-b"],
@@ -599,9 +601,9 @@ mod tests {
         assert_eq!(
             findings,
             vec![
-                duplicate("copy.md", "spanish.personal.md", "card-a"),
-                duplicate("copy.md", "spanish.personal.md", "card-b"),
-                duplicate("spanish.md", "spanish.personal.md", "card-a"),
+                duplicate("copy.md", "spanish.local.md", "card-a"),
+                duplicate("copy.md", "spanish.local.md", "card-b"),
+                duplicate("spanish.md", "spanish.local.md", "card-a"),
             ],
             "each deck file that shares a card is its own finding"
         );
@@ -610,7 +612,7 @@ mod tests {
     #[test]
     fn a_file_that_is_its_own_parent_shares_every_card_id_with_itself() {
         let files = vec![file(
-            "spanish.personal.md",
+            "spanish.local.md",
             Some("deck-1"),
             Some("deck-1"),
             &["card-a"],
@@ -626,8 +628,8 @@ mod tests {
         assert_eq!(
             findings,
             vec![
-                missing("spanish.personal.md"),
-                duplicate("spanish.personal.md", "spanish.personal.md", "card-a"),
+                missing("spanish.local.md"),
+                duplicate("spanish.local.md", "spanish.local.md", "card-a"),
             ],
             "a file attached to itself carries its card ids on both sides of the pair"
         );
@@ -637,7 +639,7 @@ mod tests {
     fn every_applicable_finding_on_one_file_is_reported() {
         let files = vec![
             file("mine.md", Some("deck-1"), Some("deck-9"), &["card-a"]),
-            file("mine.personal.md", None, Some("deck-1"), &["card-a"]),
+            file("mine.local.md", None, Some("deck-1"), &["card-a"]),
         ];
 
         let (_, findings) = classify(&files);
@@ -645,8 +647,8 @@ mod tests {
         assert_eq!(
             findings,
             vec![
+                duplicate("mine.md", "mine.local.md", "card-a"),
                 suffix_missing("mine.md"),
-                duplicate("mine.md", "mine.personal.md", "card-a"),
             ],
             "both findings are reported, each under the file name it concerns"
         );
@@ -656,8 +658,8 @@ mod tests {
     fn findings_are_sorted_by_file_name_then_by_enum_order() {
         let files = vec![
             file("mine.md", Some("deck-1"), Some("deck-9"), &["card-a"]),
-            file("mine.personal.md", None, Some("deck-1"), &["card-a"]),
-            plain("apple.personal.md"),
+            file("mine.local.md", None, Some("deck-1"), &["card-a"]),
+            plain("apple.local.md"),
         ];
 
         let (_, findings) = classify(&files);
@@ -665,9 +667,9 @@ mod tests {
         assert_eq!(
             findings,
             vec![
-                missing("apple.personal.md"),
+                missing("apple.local.md"),
+                duplicate("mine.md", "mine.local.md", "card-a"),
                 suffix_missing("mine.md"),
-                duplicate("mine.md", "mine.personal.md", "card-a"),
             ],
             "findings sort by file name first and by enum order second"
         );
@@ -675,7 +677,7 @@ mod tests {
 
     #[test]
     fn exact_duplicate_findings_appear_once() {
-        let files = vec![plain("spanish.personal.md"), plain("spanish.personal.md")];
+        let files = vec![plain("spanish.local.md"), plain("spanish.local.md")];
 
         let (roles, findings) = classify(&files);
 
@@ -686,7 +688,7 @@ mod tests {
         );
         assert_eq!(
             findings,
-            vec![missing("spanish.personal.md")],
+            vec![missing("spanish.local.md")],
             "two entries with the same defect report it once"
         );
     }
@@ -695,11 +697,11 @@ mod tests {
     fn permuting_the_listing_moves_the_roles_and_leaves_the_findings() {
         let files = vec![
             file("spanish.md", Some("deck-1"), None, &["card-a"]),
-            file("spanish.personal.md", None, Some("deck-1"), &["card-a"]),
+            file("spanish.local.md", None, Some("deck-1"), &["card-a"]),
             file("french.md", Some("deck-2"), None, &[]),
-            file("french.personal.md", None, Some("deck-1"), &[]),
+            file("french.local.md", None, Some("deck-1"), &[]),
             file("mine.md", None, Some("deck-2"), &[]),
-            plain("orphan.personal.md"),
+            plain("orphan.local.md"),
         ];
         let (expected_roles, expected_findings) = classify(&files);
 
@@ -723,9 +725,9 @@ mod tests {
     fn classifying_the_same_listing_twice_gives_the_same_answer() {
         let files = vec![
             file("spanish.md", Some("deck-1"), None, &["card-a", "card-b"]),
-            file("spanish.personal.md", None, Some("deck-2"), &["card-a"]),
+            file("spanish.local.md", None, Some("deck-2"), &["card-a"]),
             file("french.md", Some("deck-2"), None, &["card-b"]),
-            file("french.personal.md", None, Some("deck-2"), &["card-b"]),
+            file("french.local.md", None, Some("deck-2"), &["card-b"]),
             file("mine.md", None, Some("deck-1"), &[]),
         ];
 
@@ -749,8 +751,8 @@ mod tests {
     #[test]
     fn files_claiming_each_other_are_each_classified() {
         let files = vec![
-            file("a.personal.md", Some("id-b"), Some("id-a"), &[]),
-            file("b.personal.md", Some("id-a"), Some("id-b"), &[]),
+            file("a.local.md", Some("id-b"), Some("id-a"), &[]),
+            file("b.local.md", Some("id-a"), Some("id-b"), &[]),
         ];
 
         let (roles, findings) = classify(&files);
@@ -762,7 +764,7 @@ mod tests {
         );
         assert_eq!(
             findings,
-            vec![missing("a.personal.md"), missing("b.personal.md")],
+            vec![missing("a.local.md"), missing("b.local.md")],
             "neither implied neighbour is in the listing"
         );
     }
@@ -772,7 +774,7 @@ mod tests {
         let files = vec![
             file("spanish.md", Some("deck-1"), None, &["card-a"]),
             file("spanish.md", Some("deck-2"), None, &["card-a"]),
-            file("spanish.personal.md", None, Some("deck-2"), &["card-a"]),
+            file("spanish.local.md", None, Some("deck-2"), &["card-a"]),
         ];
 
         let (roles, findings) = classify(&files);
@@ -784,7 +786,7 @@ mod tests {
         );
         assert_eq!(
             findings,
-            vec![duplicate("spanish.md", "spanish.personal.md", "card-a")],
+            vec![duplicate("spanish.md", "spanish.local.md", "card-a")],
             "the sidecar names one of the neighbours, so nothing mismatches"
         );
     }
@@ -795,14 +797,14 @@ mod tests {
             deck("spanish.md", "deck-1"),
             deck("spanish.md", "deck-2"),
             deck("french.md", "deck-3"),
-            sidecar("spanish.personal.md", "deck-3"),
+            sidecar("spanish.local.md", "deck-3"),
         ];
 
         let (_, findings) = classify(&files);
 
         assert_eq!(
             findings,
-            vec![mismatch("spanish.personal.md", "deck-3", "deck-1")],
+            vec![mismatch("spanish.local.md", "deck-3", "deck-1")],
             "the first neighbour carrying an id is the one reported"
         );
     }
@@ -811,8 +813,8 @@ mod tests {
     fn a_name_is_read_as_a_sidecar_by_its_suffix_alone() {
         let files = vec![
             deck(".md", "deck-1"),
-            plain(".personal.md"),
-            plain("../weird name/x.personal.md"),
+            plain(".local.md"),
+            plain("../weird name/x.local.md"),
         ];
 
         let (roles, findings) = classify(&files);
@@ -824,10 +826,7 @@ mod tests {
         );
         assert_eq!(
             findings,
-            vec![
-                missing("../weird name/x.personal.md"),
-                missing(".personal.md")
-            ],
+            vec![missing("../weird name/x.local.md"), missing(".local.md")],
             "both keyless sidecars report a missing parent"
         );
     }
@@ -835,8 +834,8 @@ mod tests {
     #[test]
     fn a_doubled_suffix_implies_the_sidecar_next_to_it() {
         let files = vec![
-            deck("x.personal.md", "deck-1"),
-            sidecar("x.personal.personal.md", "deck-1"),
+            deck("x.local.md", "deck-1"),
+            sidecar("x.local.local.md", "deck-1"),
         ];
 
         let (roles, findings) = classify(&files);
@@ -848,7 +847,7 @@ mod tests {
         );
         assert_eq!(
             findings,
-            vec![missing("x.personal.md")],
+            vec![missing("x.local.md")],
             "only the file naming no parent is reported"
         );
     }

@@ -67,7 +67,7 @@ pub fn check_config(path: Option<&Path>) -> (Finding, Config) {
 }
 
 pub fn check_store(path: Option<PathBuf>) -> Finding {
-    let path = match path.or_else(crate::store::default_store_path) {
+    let path = match path {
         Some(p) => p,
         None => {
             return Finding::bad(
@@ -494,8 +494,8 @@ mod tests {
     #[test]
     fn a_corrupt_store_reports_fail_with_a_remedy() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join("progress")).unwrap();
-        let path = dir.path().join("progress/deck1.json");
+        std::fs::create_dir_all(dir.path().join(".alix/progress")).unwrap();
+        let path = dir.path().join(".alix/progress/deck1.json");
         std::fs::write(&path, "not json at all").unwrap();
         let finding = check_store(Some(dir.path().to_path_buf()));
         assert_eq!(Status::Fail, finding.status);

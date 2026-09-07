@@ -13,14 +13,7 @@ fn reset_orphans_clears_a_deleted_last_decks_progress() {
     store.save().unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_alix"))
-        .args([
-            "reset",
-            "--orphans",
-            dir.path().to_str().unwrap(),
-            "--yes",
-            "--store",
-            dir.path().to_str().unwrap(),
-        ])
+        .args(["reset", "--orphans", dir.path().to_str().unwrap(), "--yes"])
         .env("HOME", dir.path())
         .env("XDG_CONFIG_HOME", dir.path())
         .env("XDG_DATA_HOME", dir.path())
