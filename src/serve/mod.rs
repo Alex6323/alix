@@ -48,16 +48,57 @@ const MAX_REMOTE_BODY: usize = 256 * 1024;
 /// could grow the server's memory without bound. Generous next to what these
 /// routes carry (deck names, a card, a tutor question).
 const MAX_JSON_BODY: usize = 256 * 1024;
+pub const SYNC_PUSH_BODY_CAP: usize = 64 * 1024 * 1024;
 
 fn json_body<T: serde::de::DeserializeOwned>(request: &mut Request) -> Option<T> {
     let bytes = read_capped(request.as_reader(), MAX_JSON_BODY)?;
     serde_json::from_slice(&bytes).ok()
 }
 
+fn parse_pulled_revision(value: Option<&str>) -> Option<Option<u64>> {
+    let value = value?;
+    if value == "none" {
+        return Some(None);
+    }
+    let canonical = value == "0"
+        || (value
+            .as_bytes()
+            .first()
+            .is_some_and(|byte| matches!(byte, b'1'..=b'9'))
+            && value.as_bytes().iter().all(u8::is_ascii_digit));
+    if !canonical {
+        return None;
+    }
+    value
+        .parse::<u64>()
+        .ok()
+        .filter(|revision| *revision < u64::MAX)
+        .map(Some)
+}
+
 struct RequestTiming {
     worker: usize,
     popped: Instant,
     since_start: Duration,
+}
+
+struct SyncPullArchive {
+    temp: tempfile::TempDir,
+    file: std::fs::File,
+    path: PathBuf,
+}
+
+fn build_sync_pull_archive(snapshot: &SyncSnapshot, name: &str) -> Result<SyncPullArchive> {
+    let temp = tempfile::Builder::new()
+        .prefix("alix-sync-pull-")
+        .tempdir()?;
+    let staged = snapshot
+        .catalog
+        .stage_pull(name, &snapshot.root.root_id, temp.path())?;
+    let path = temp.path().join("pull.zip");
+    share::zip_contents_to(&staged.root, &path)?;
+    let file = std::fs::File::open(&path)?;
+    Ok(SyncPullArchive { temp, file, path })
 }
 
 impl Drop for RequestTiming {
@@ -207,6 +248,8 @@ pub fn run_review(
     let browse_keys = BrowseKeys::from(&browse_bindings);
     let ask_info = AskInfoDto::from(&ask_cfg);
     let started_at = Instant::now();
+    let decks_dir = effective_decks_dir(scoped, config_path.as_deref(), &decks_dir);
+    crate::sync::root_id(&decks_dir)?;
     let report_root = decks_dir.clone();
 
     let failure = OwnerFailure::new(Arc::clone(&server));
@@ -387,12 +430,17 @@ pub fn run_review(
                         continue;
                     }
                     (Method::Get, "/api/version") => {
-                        respond_json(
-                            request,
-                            &VersionDto {
-                                version: env!("CARGO_PKG_VERSION"),
-                            },
-                        );
+                        match catalog.sync_root() {
+                            Some(Ok(root)) => respond_json(
+                                request,
+                                &VersionDto {
+                                    version: env!("CARGO_PKG_VERSION"),
+                                    root_id: root.root_id,
+                                },
+                            ),
+                            Some(Err(_)) => respond_status(request, 500),
+                            None => respond_status(request, 503),
+                        }
                         continue;
                     }
                     (Method::Get, "/api/bug-report") => {
@@ -502,6 +550,172 @@ pub fn run_review(
                     _ => {}
                 }
                 match (&method, path.as_str()) {
+            (Method::Get, "/api/sync/entries") => match catalog.sync_snapshot() {
+                None => respond_status(request, 503),
+                Some(Err(_)) => respond_status(request, 500),
+                Some(Ok(snapshot)) => {
+                    let entries = snapshot
+                        .catalog
+                        .entries()
+                        .iter()
+                        .map(|entry| SyncEntryDto {
+                            name: entry.name.clone(),
+                            kind: entry.kind.clone(),
+                            members: entry.members,
+                            unpacked_bytes: entry.unpacked_bytes,
+                        })
+                        .collect();
+                    respond_json(
+                        request,
+                        &SyncEntriesDto {
+                            root_id: snapshot.root.root_id,
+                            entries,
+                        },
+                    );
+                }
+            },
+            (Method::Get, "/api/sync/pull") => {
+                let Some(name) = query_param(request.url(), "entry").filter(|name| !name.is_empty())
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let snapshot = match catalog.sync_snapshot() {
+                    None => {
+                        respond_status(request, 503);
+                        continue;
+                    }
+                    Some(Err(_)) => {
+                        respond_status(request, 500);
+                        continue;
+                    }
+                    Some(Ok(snapshot)) => snapshot,
+                };
+                if !matches!(snapshot.catalog.entry(&name), crate::sync::EntryLookup::One(_)) {
+                    respond_status(request, 400);
+                    continue;
+                }
+                let archive = match build_sync_pull_archive(&snapshot, &name) {
+                    Ok(archive) => archive,
+                    Err(_) => {
+                        respond_status(request, 500);
+                        continue;
+                    }
+                };
+                let SyncPullArchive {
+                    temp: _temp,
+                    file,
+                    path: _path,
+                } = archive;
+                respond_download_file(
+                    request,
+                    file,
+                    "application/zip",
+                    &format!("{name}.zip"),
+                );
+            }
+            (Method::Post, "/api/sync/push") => {
+                let root = match catalog.sync_root() {
+                    None => {
+                        respond_status(request, 503);
+                        continue;
+                    }
+                    Some(Err(_)) => {
+                        respond_status(request, 500);
+                        continue;
+                    }
+                    Some(Ok(root)) => root,
+                };
+                if header_value(&request, "X-Alix-Root") != Some(root.root_id.as_str()) {
+                    respond_json_status(
+                        request,
+                        412,
+                        &SyncRootDto {
+                            root_id: root.root_id,
+                        },
+                    );
+                    continue;
+                }
+                let Some(pulled_revision) =
+                    parse_pulled_revision(header_value(&request, "X-Alix-Pulled-Revision"))
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                if request
+                    .body_length()
+                    .is_some_and(|length| length > SYNC_PUSH_BODY_CAP)
+                {
+                    respond_status(request, 413);
+                    continue;
+                }
+                let Some(bytes) = read_capped(request.as_reader(), SYNC_PUSH_BODY_CAP) else {
+                    respond_status(request, 413);
+                    continue;
+                };
+                let Some(deck_id) = query_param(request.url(), "deck").filter(|id| !id.is_empty())
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let document =
+                    match crate::store::ValidatedDeckDocument::parse(&bytes, &deck_id) {
+                        Ok(document) => document,
+                        Err(_) => {
+                            respond_status(request, 400);
+                            continue;
+                        }
+                    };
+                let snapshot = match catalog.sync_snapshot_for(root) {
+                    None => {
+                        respond_status(request, 503);
+                        continue;
+                    }
+                    Some(Err(_)) => {
+                        respond_status(request, 500);
+                        continue;
+                    }
+                    Some(Ok(SyncSnapshotFor::RootChanged(current))) => {
+                        respond_json_status(
+                            request,
+                            412,
+                            &SyncRootDto {
+                                root_id: current.root_id,
+                            },
+                        );
+                        continue;
+                    }
+                    Some(Ok(SyncSnapshotFor::Same(snapshot))) => snapshot,
+                };
+                match study.sync_push(snapshot.catalog, deck_id.clone(), pulled_revision, document)
+                {
+                    None => respond_status(request, 503),
+                    Some(SyncPushReply::Accepted { revision }) => respond_json(
+                        request,
+                        &SyncPushDto { deck_id, revision },
+                    ),
+                    Some(SyncPushReply::Conflict {
+                        desktop_revision,
+                        pulled_revision,
+                        desktop_writer,
+                    }) => respond_json_status(
+                        request,
+                        409,
+                        &SyncConflictDto {
+                            deck_id,
+                            desktop_revision,
+                            pulled_revision,
+                            desktop_writer,
+                        },
+                    ),
+                    Some(SyncPushReply::Missing) => respond_status(request, 404),
+                    Some(SyncPushReply::Ambiguous) => respond_status(request, 400),
+                    Some(SyncPushReply::Failed(error)) => {
+                        eprintln!("sync push failed: {error}");
+                        respond_status(request, 500);
+                    }
+                }
+            }
             (Method::Get, "/api/decks") => {
                 let Some(projection) = study.projection() else {
                     respond_status(request, 503);

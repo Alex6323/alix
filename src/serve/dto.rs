@@ -293,6 +293,40 @@ pub(super) struct AskInfoDto {
 #[derive(Serialize)]
 pub(super) struct VersionDto {
     pub(super) version: &'static str,
+    pub(super) root_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct SyncEntriesDto {
+    pub(super) root_id: String,
+    pub(super) entries: Vec<SyncEntryDto>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct SyncEntryDto {
+    pub(super) name: String,
+    pub(super) kind: String,
+    pub(super) members: u64,
+    pub(super) unpacked_bytes: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct SyncPushDto {
+    pub(super) deck_id: String,
+    pub(super) revision: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct SyncConflictDto {
+    pub(super) deck_id: String,
+    pub(super) desktop_revision: Option<u64>,
+    pub(super) pulled_revision: Option<u64>,
+    pub(super) desktop_writer: Option<crate::store::Writer>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct SyncRootDto {
+    pub(super) root_id: String,
 }
 
 #[derive(Serialize)]

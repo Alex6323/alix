@@ -20,11 +20,11 @@
 use std::{
     collections::HashMap,
     ffi::OsString,
-    io::{Read, Write},
+    io::{Cursor, Read, Write},
     net::{SocketAddr, TcpStream},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Barrier, Mutex, MutexGuard},
     thread,
     time::{Duration, Instant},
 };
@@ -715,6 +715,601 @@ fn get_api_version_returns_200_json_with_a_version_field() {
     );
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert!(body.get("version").is_some(), "body: {body}");
+    assert!(
+        body["root_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("root-") && id.len() == 31),
+        "body: {body}"
+    );
+}
+
+fn sync_root_id(base: &str) -> String {
+    let response = http(base, "GET", "/api/version", &[], &[]);
+    assert_eq!(200, response.status);
+    serde_json::from_slice::<serde_json::Value>(&response.body).unwrap()["root_id"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+fn sync_document(deck_id: &str, device: &str) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "version": 1,
+        "deck_id": deck_id,
+        "subject": "deck.md",
+        "revision": 99,
+        "cards": {},
+        "writer": {"device": device, "at_ms": 7}
+    }))
+    .unwrap()
+}
+
+fn sync_push(
+    base: &str,
+    deck_id: &str,
+    root_id: &str,
+    pulled_revision: &str,
+    body: &[u8],
+) -> HttpResp {
+    http(
+        base,
+        "POST",
+        &format!("/api/sync/push?deck={deck_id}"),
+        &[
+            ("X-Alix-Root", root_id),
+            ("X-Alix-Pulled-Revision", pulled_revision),
+        ],
+        body,
+    )
+}
+
+#[test]
+fn sync_entries_and_pull_carry_one_root_and_exact_rootless_manifest() {
+    let (base, guard) = spawn_test_server();
+    let version = http(&base, "GET", "/api/version", &[], &[]);
+    let root_id = serde_json::from_slice::<serde_json::Value>(&version.body).unwrap()["root_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let entries = http(&base, "GET", "/api/sync/entries", &[], &[]);
+    assert_eq!(200, entries.status);
+    let entries_json: serde_json::Value = serde_json::from_slice(&entries.body).unwrap();
+    assert_eq!(root_id, entries_json["root_id"]);
+    let sample = entries_json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "sample.md")
+        .unwrap();
+    assert_eq!("deck", sample["kind"]);
+    assert_eq!(1, sample["members"]);
+
+    let pull = http(&base, "GET", "/api/sync/pull?entry=sample.md", &[], &[]);
+    assert_eq!(200, pull.status);
+    assert_eq!(Some("application/zip"), pull.header("Content-Type"));
+    assert_eq!(Some("no-store"), pull.header("Cache-Control"));
+    let content_length = pull.body.len().to_string();
+    assert_eq!(Some(content_length.as_str()), pull.header("Content-Length"));
+    let mut archive = zip::ZipArchive::new(Cursor::new(&pull.body)).unwrap();
+    let mut names: Vec<String> = (0..archive.len())
+        .map(|index| archive.by_index(index).unwrap().name().to_string())
+        .collect();
+    names.sort();
+    assert!(names.contains(&"sample.md".to_string()), "{names:?}");
+    assert!(names.contains(&".alix/pull.json".to_string()), "{names:?}");
+    assert!(!names.iter().any(|name| name == ".alix-deck-share.json"));
+    assert!(!names.iter().any(|name| name.ends_with("recent.json")));
+    assert!(!names.iter().any(|name| name.ends_with("sync.toml")));
+    let mut manifest_bytes = Vec::new();
+    archive
+        .by_name(".alix/pull.json")
+        .unwrap()
+        .read_to_end(&mut manifest_bytes)
+        .unwrap();
+    let manifest: alix::sync::SyncPullManifest = serde_json::from_slice(&manifest_bytes).unwrap();
+    assert_eq!(root_id, manifest.root_id);
+    assert_eq!("deck", manifest.kind);
+    assert_eq!(
+        sample["unpacked_bytes"].as_u64().unwrap(),
+        manifest.files.iter().map(|file| file.bytes).sum::<u64>()
+    );
+    let mut manifested: Vec<String> = manifest
+        .files
+        .iter()
+        .map(|file| file.path.clone())
+        .chain(std::iter::once(".alix/pull.json".to_string()))
+        .collect();
+    manifested.sort();
+    assert_eq!(names, manifested);
+    assert!(guard.dir().join(".alix/sync.toml").is_file());
+}
+
+#[test]
+fn sync_push_accepts_none_then_conflicts_and_backs_up_an_equal_revision() {
+    let (base, guard) = spawn_test_server();
+    let root_id = sync_root_id(&base);
+    let body = sync_document("deck-sample", "phone");
+    let push = |pulled: &str| sync_push(&base, "deck-sample", &root_id, pulled, &body);
+
+    let first = push("none");
+    assert_eq!(200, first.status);
+    assert_eq!(
+        1,
+        serde_json::from_slice::<serde_json::Value>(&first.body).unwrap()["revision"]
+    );
+    let progress = progress_root(guard.dir()).join("deck-sample.json");
+    let first_bytes = std::fs::read(&progress).unwrap();
+    assert!(!progress.with_extension("json.bak").exists());
+
+    let conflict = push("none");
+    assert_eq!(409, conflict.status);
+    let conflict: serde_json::Value = serde_json::from_slice(&conflict.body).unwrap();
+    assert_eq!(1, conflict["desktop_revision"]);
+    assert_eq!(serde_json::Value::Null, conflict["pulled_revision"]);
+    assert_eq!(first_bytes, std::fs::read(&progress).unwrap());
+
+    let second = push("1");
+    assert_eq!(200, second.status);
+    assert_eq!(
+        2,
+        serde_json::from_slice::<serde_json::Value>(&second.body).unwrap()["revision"]
+    );
+    assert_eq!(
+        first_bytes,
+        std::fs::read(progress.with_extension("json.bak")).unwrap()
+    );
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(progress).unwrap()).unwrap();
+    assert_eq!(2, saved["revision"], "the body revision is ignored");
+    assert_eq!("phone", saved["writer"]["device"]);
+}
+
+#[test]
+fn sync_push_refusal_law_checks_root_headers_body_and_deck_before_writing() {
+    let (base, guard) = spawn_test_server();
+    let root_id = sync_root_id(&base);
+    let body = sync_document("deck-sample", "phone");
+    let progress = progress_root(guard.dir()).join("deck-sample.json");
+    let assert_untouched = |step: &str| {
+        assert!(!progress.exists(), "{step}: no document is written");
+        assert!(
+            !progress.with_extension("json.bak").exists(),
+            "{step}: no backup is written"
+        );
+    };
+
+    let missing_root = http(
+        &base,
+        "POST",
+        "/api/sync/push?deck=deck-sample",
+        &[("X-Alix-Pulled-Revision", "none")],
+        &body,
+    );
+    assert_eq!(412, missing_root.status, "missing root: status");
+    assert_eq!(
+        root_id,
+        serde_json::from_slice::<serde_json::Value>(&missing_root.body).unwrap()["root_id"],
+        "missing root: response names the served root"
+    );
+    assert_untouched("missing root");
+
+    let wrong_root = sync_push(
+        &base,
+        "deck-sample",
+        "root-11111111111111111111111111",
+        "none",
+        &body,
+    );
+    assert_eq!(412, wrong_root.status, "wrong root: status");
+    assert_untouched("wrong root");
+
+    for pulled in ["", "00", "+1", "-1", "18446744073709551615"] {
+        let response = sync_push(&base, "deck-sample", &root_id, pulled, &body);
+        assert_eq!(400, response.status, "pulled header {pulled:?}: status");
+        assert_untouched(&format!("pulled header {pulled:?}"));
+    }
+    let missing_pulled = http(
+        &base,
+        "POST",
+        "/api/sync/push?deck=deck-sample",
+        &[("X-Alix-Root", root_id.as_str())],
+        &body,
+    );
+    assert_eq!(400, missing_pulled.status, "missing pulled header: status");
+    assert_untouched("missing pulled header");
+
+    let wrong_body = sync_document("deck-other", "phone");
+    let invalid_bodies: [(&str, &[u8]); 3] = [
+        ("malformed body", b"{"),
+        ("wrong body deck id", &wrong_body),
+        (
+            "unknown body key",
+            br#"{"version":1,"deck_id":"deck-sample","subject":"deck.md","revision":0,"cards":{},"writer":null,"extra":true}"#,
+        ),
+    ];
+    for (step, invalid) in invalid_bodies {
+        let response = sync_push(&base, "deck-sample", &root_id, "none", invalid);
+        assert_eq!(400, response.status, "{step}: status");
+        assert_untouched(step);
+    }
+
+    let absent_with_revision = sync_push(&base, "deck-sample", &root_id, "7", &body);
+    assert_eq!(409, absent_with_revision.status, "r + no document: status");
+    let conflict: serde_json::Value = serde_json::from_slice(&absent_with_revision.body).unwrap();
+    assert_eq!(serde_json::Value::Null, conflict["desktop_revision"]);
+    assert_eq!(7, conflict["pulled_revision"]);
+    assert_eq!(serde_json::Value::Null, conflict["desktop_writer"]);
+    assert_untouched("r + no document");
+
+    let unknown_body = sync_document("deck-unknown", "phone");
+    let unknown = sync_push(&base, "deck-unknown", &root_id, "none", &unknown_body);
+    assert_eq!(404, unknown.status, "unknown served deck: status");
+    assert_untouched("unknown served deck");
+}
+
+#[test]
+fn sync_root_refusal_precedes_loading_an_unreadable_desktop_document() {
+    let malformed = b"not json\n".to_vec();
+    let (base, guard) = spawn_test_server_booted(|dir| {
+        let progress = progress_root(dir).join("deck-sample.json");
+        std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
+        std::fs::write(progress, &malformed).unwrap();
+    });
+    let root_id = sync_root_id(&base);
+    let body = sync_document("deck-sample", "phone");
+    let progress = progress_root(guard.dir()).join("deck-sample.json");
+
+    let missing = http(
+        &base,
+        "POST",
+        "/api/sync/push?deck=deck-sample",
+        &[("X-Alix-Pulled-Revision", "none")],
+        &body,
+    );
+    assert_eq!(412, missing.status, "missing root refuses before load");
+    assert_eq!(malformed, std::fs::read(&progress).unwrap());
+
+    let wrong = sync_push(
+        &base,
+        "deck-sample",
+        "root-11111111111111111111111111",
+        "none",
+        &body,
+    );
+    assert_eq!(412, wrong.status, "wrong root refuses before load");
+    assert_eq!(malformed, std::fs::read(&progress).unwrap());
+
+    let matching = sync_push(&base, "deck-sample", &root_id, "none", &body);
+    assert_eq!(500, matching.status, "matching root reaches the load error");
+    assert_eq!(malformed, std::fs::read(&progress).unwrap());
+    assert!(!progress.with_extension("json.bak").exists());
+}
+
+#[test]
+fn sync_push_body_cap_refuses_before_any_progress_write() {
+    let (base, guard) = spawn_test_server();
+    let root_id = sync_root_id(&base);
+    let body = vec![b'x'; serve::SYNC_PUSH_BODY_CAP + 1];
+
+    let response = sync_push(&base, "deck-sample", &root_id, "none", &body);
+
+    assert_eq!(413, response.status);
+    let progress = progress_root(guard.dir()).join("deck-sample.json");
+    assert!(!progress.exists());
+    assert!(!progress.with_extension("json.bak").exists());
+}
+
+#[test]
+fn sync_push_refuses_a_deck_id_served_by_two_entries_as_ambiguous() {
+    let (base, guard) = spawn_test_server_fixture(None, |dir| {
+        std::fs::write(
+            dir.join("alias.md"),
+            "---\nformat-version: 1\nid: deck-sample\n---\n## alias\na\n<!-- id: card-alias -->\n",
+        )
+        .unwrap();
+    });
+    let root_id = sync_root_id(&base);
+
+    let response = sync_push(
+        &base,
+        "deck-sample",
+        &root_id,
+        "none",
+        &sync_document("deck-sample", "phone"),
+    );
+
+    assert_eq!(400, response.status);
+    let progress = progress_root(guard.dir()).join("deck-sample.json");
+    assert!(!progress.exists());
+    assert!(!progress.with_extension("json.bak").exists());
+}
+
+#[test]
+fn external_recent_entry_is_absent_from_sync_and_its_deck_push_is_not_found() {
+    let outside = TempDir::new().unwrap();
+    let external = outside.path().join("external.md");
+    std::fs::write(
+        &external,
+        "---\nformat-version: 1\nid: deck-external\n---\n## outside\na\n<!-- id: card-external -->\n",
+    )
+    .unwrap();
+    let external_for_fixture = external.clone();
+    let (base, guard) = spawn_test_server_fixture(None, move |dir| {
+        let mut recent = RecentDecks::load(recent_path(dir));
+        recent.record(&[external_for_fixture], 1);
+        recent.save().unwrap();
+    });
+    let root_id = sync_root_id(&base);
+
+    let entries = http(&base, "GET", "/api/sync/entries", &[], &[]);
+    assert_eq!(200, entries.status);
+    let body: serde_json::Value = serde_json::from_slice(&entries.body).unwrap();
+    assert!(
+        body["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["name"] != "external.md"),
+        "external recent rows do not belong to this served root: {body}"
+    );
+    let response = sync_push(
+        &base,
+        "deck-external",
+        &root_id,
+        "none",
+        &sync_document("deck-external", "phone"),
+    );
+    assert_eq!(404, response.status);
+    assert!(
+        !progress_root(guard.dir())
+            .join("deck-external.json")
+            .exists()
+    );
+}
+
+#[test]
+fn simultaneous_sync_pushes_have_one_winner_with_and_without_a_document() {
+    for (step, existing_revision, pulled) in [("absent", None, "none"), ("existing", Some(5), "5")]
+    {
+        let (base, guard) = spawn_test_server_fixture(None, |dir| {
+            if let Some(revision) = existing_revision {
+                let path = progress_root(dir).join("deck-sample.json");
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                let mut document: serde_json::Value =
+                    serde_json::from_slice(&sync_document("deck-sample", "desktop")).unwrap();
+                document["revision"] = revision.into();
+                std::fs::write(path, serde_json::to_vec(&document).unwrap()).unwrap();
+            }
+        });
+        let root_id = sync_root_id(&base);
+        let progress = progress_root(guard.dir()).join("deck-sample.json");
+        let before = std::fs::read(&progress).ok();
+        let barrier = Arc::new(Barrier::new(3));
+        let mut threads = Vec::new();
+        for device in ["phone-a", "phone-b"] {
+            let base = base.clone();
+            let root_id = root_id.clone();
+            let barrier = Arc::clone(&barrier);
+            threads.push(thread::spawn(move || {
+                let body = sync_document("deck-sample", device);
+                barrier.wait();
+                (
+                    device,
+                    sync_push(&base, "deck-sample", &root_id, pulled, &body),
+                )
+            }));
+        }
+        barrier.wait();
+        let responses: Vec<_> = threads
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect();
+        let statuses: Vec<_> = responses
+            .iter()
+            .map(|(_, response)| response.status)
+            .collect();
+        assert_eq!(
+            1,
+            statuses.iter().filter(|status| **status == 200).count(),
+            "{step}: one push wins: {statuses:?}"
+        );
+        assert_eq!(
+            1,
+            statuses.iter().filter(|status| **status == 409).count(),
+            "{step}: one push conflicts: {statuses:?}"
+        );
+        let winner = responses
+            .iter()
+            .find(|(_, response)| response.status == 200)
+            .unwrap()
+            .0;
+        let disk: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
+        assert_eq!(
+            winner, disk["writer"]["device"],
+            "{step}: winner reaches disk"
+        );
+        assert_eq!(
+            existing_revision.unwrap_or(0) + 1,
+            disk["revision"],
+            "{step}: exactly one revision commits"
+        );
+        match before {
+            Some(before) => assert_eq!(
+                before,
+                std::fs::read(progress.with_extension("json.bak")).unwrap(),
+                "{step}: the winner backs up the exact previous document"
+            ),
+            None => assert!(
+                !progress.with_extension("json.bak").exists(),
+                "{step}: the first document has no backup"
+            ),
+        }
+    }
+}
+
+#[test]
+fn sync_push_overlapping_a_desktop_grade_has_one_persistence_winner() {
+    let (base, guard) = spawn_test_server();
+    assert_eq!(200, select_fixture(&base).status);
+    let progress = progress_root(guard.dir()).join("deck-sample.json");
+
+    let first_grade = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    assert_eq!(200, first_grade.status);
+    assert!(
+        !progress.with_extension("json.bak").exists(),
+        "an ordinary desktop grade never creates a sync backup"
+    );
+    let before = std::fs::read(&progress).unwrap();
+    let before_json: serde_json::Value = serde_json::from_slice(&before).unwrap();
+    let pulled = before_json["revision"].as_u64().unwrap().to_string();
+    let root_id = sync_root_id(&base);
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let study_revision =
+        serde_json::from_slice::<serde_json::Value>(&state.body).unwrap()["study_revision"]
+            .as_u64()
+            .unwrap()
+            .to_string();
+    let barrier = Arc::new(Barrier::new(3));
+
+    let push_thread = {
+        let base = base.clone();
+        let root_id = root_id.clone();
+        let pulled = pulled.clone();
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            let body = sync_document("deck-sample", "phone");
+            barrier.wait();
+            sync_push(&base, "deck-sample", &root_id, &pulled, &body)
+        })
+    };
+    let grade_thread = {
+        let base = base.clone();
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            barrier.wait();
+            http(
+                &base,
+                "POST",
+                "/api/grade",
+                &[
+                    ("Content-Type", "application/json"),
+                    ("X-Alix-Study-Revision", &study_revision),
+                ],
+                br#"{"grade":"passed"}"#,
+            )
+        })
+    };
+    barrier.wait();
+    let push = push_thread.join().unwrap();
+    let grade = grade_thread.join().unwrap();
+
+    assert_eq!(200, grade.status, "the grade returns a state payload");
+    let grade_body: serde_json::Value = serde_json::from_slice(&grade.body).unwrap();
+    match push.status {
+        200 => {
+            assert!(
+                grade_body["save_error"]
+                    .as_str()
+                    .is_some_and(|error| error.contains("stale progress revision")),
+                "a winning push makes the overlapping desktop save visibly stale: {grade_body}"
+            );
+            let disk: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
+            assert_eq!("phone", disk["writer"]["device"]);
+            assert_eq!(
+                before,
+                std::fs::read(progress.with_extension("json.bak")).unwrap(),
+                "the winning push backs up the pre-race desktop document"
+            );
+        }
+        409 => {
+            assert_eq!(
+                serde_json::Value::Null,
+                grade_body["save_error"],
+                "a winning grade saves normally"
+            );
+            assert!(
+                !progress.with_extension("json.bak").exists(),
+                "a refused push and winning desktop grade create no backup"
+            );
+        }
+        status => panic!("push must either win or conflict, got {status}"),
+    }
+}
+
+#[test]
+fn accepted_sync_push_and_progress_restore_are_a_conflict_visible_round_trip() {
+    let (base, guard) = spawn_test_server_fixture(None, |dir| {
+        let progress = progress_root(dir).join("deck-sample.json");
+        std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
+        let mut document: serde_json::Value =
+            serde_json::from_slice(&sync_document("deck-sample", "desktop")).unwrap();
+        document["revision"] = 3.into();
+        std::fs::write(progress, serde_json::to_vec(&document).unwrap()).unwrap();
+    });
+    let root_id = sync_root_id(&base);
+    let progress = progress_root(guard.dir()).join("deck-sample.json");
+    let backup = progress.with_extension("json.bak");
+    let before = std::fs::read(&progress).unwrap();
+
+    let pushed = sync_push(
+        &base,
+        "deck-sample",
+        &root_id,
+        "3",
+        &sync_document("deck-sample", "phone-one"),
+    );
+    assert_eq!(200, pushed.status);
+    let phone_one = std::fs::read(&progress).unwrap();
+    assert_eq!(before, std::fs::read(&backup).unwrap());
+
+    let report = alix::library::restore_deck(&guard.dir().join("sample.md"), guard.dir()).unwrap();
+    assert!(
+        !report.deck,
+        "a pushed-progress restore does not swap deck text"
+    );
+    assert!(report.progress, "the pushed-progress backup is swapped");
+    assert!(!report.augment);
+    assert_eq!(before, std::fs::read(&progress).unwrap());
+    assert_eq!(phone_one, std::fs::read(&backup).unwrap());
+
+    let stale_phone = sync_push(
+        &base,
+        "deck-sample",
+        &root_id,
+        "4",
+        &sync_document("deck-sample", "phone-one"),
+    );
+    assert_eq!(409, stale_phone.status);
+    let conflict: serde_json::Value = serde_json::from_slice(&stale_phone.body).unwrap();
+    assert_eq!(3, conflict["desktop_revision"]);
+    assert_eq!(4, conflict["pulled_revision"]);
+    assert_eq!(before, std::fs::read(&progress).unwrap());
+    assert_eq!(phone_one, std::fs::read(&backup).unwrap());
+
+    alix::library::restore_deck(&guard.dir().join("sample.md"), guard.dir()).unwrap();
+    assert_eq!(phone_one, std::fs::read(&progress).unwrap());
+    assert_eq!(before, std::fs::read(&backup).unwrap());
+
+    let second = sync_push(
+        &base,
+        "deck-sample",
+        &root_id,
+        "4",
+        &sync_document("deck-sample", "phone-two"),
+    );
+    assert_eq!(200, second.status);
+    assert_eq!(
+        phone_one,
+        std::fs::read(&backup).unwrap(),
+        "a second accepted push replaces the one-generation backup"
+    );
+    let final_document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
+    assert_eq!(5, final_document["revision"]);
+    assert_eq!("phone-two", final_document["writer"]["device"]);
 }
 
 /// `POST`s a JSON body — the shape every mutating `/api/*` endpoint expects

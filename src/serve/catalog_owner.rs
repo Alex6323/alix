@@ -71,6 +71,24 @@ pub(super) enum BuildWait {
     Retry,
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct SyncRootSnapshot {
+    pub(super) path: PathBuf,
+    pub(super) root_id: String,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct SyncSnapshot {
+    pub(super) root: SyncRootSnapshot,
+    pub(super) catalog: crate::sync::SyncCatalog,
+}
+
+#[derive(Clone, Debug)]
+pub(super) enum SyncSnapshotFor {
+    Same(SyncSnapshot),
+    RootChanged(SyncRootSnapshot),
+}
+
 impl CatalogState {
     pub(super) fn new(config: CatalogConfig, decks_dir: PathBuf, recent: RecentDecks) -> Self {
         CatalogState {
@@ -85,6 +103,27 @@ impl CatalogState {
             build_generation: 0,
             builds_merged: 0,
         }
+    }
+
+    fn sync_root(&mut self) -> Result<SyncRootSnapshot, String> {
+        let path = effective_decks_dir(
+            self.config.scoped,
+            self.config.config_path.as_deref(),
+            &self.decks_dir,
+        );
+        if path != self.decks_dir {
+            self.decks_dir = path.clone();
+            self.invalidate();
+        }
+        let root_id = crate::sync::root_id(&path).map_err(|error| format!("{error:#}"))?;
+        Ok(SyncRootSnapshot { path, root_id })
+    }
+
+    fn sync_snapshot(&mut self) -> Result<SyncSnapshot, String> {
+        let root = self.sync_root()?;
+        let catalog = crate::sync::SyncCatalog::load(&root.path, &self.recent, &mut self.cache)
+            .map_err(|error| format!("{error:#}"))?;
+        Ok(SyncSnapshot { root, catalog })
     }
 }
 
@@ -146,6 +185,12 @@ pub(super) enum SetDeadlineError {
 type Reply<T> = mpsc::Sender<T>;
 
 pub(super) enum CatalogCommand {
+    SyncRoot(Reply<Result<SyncRootSnapshot, String>>),
+    SyncSnapshot(Reply<Result<SyncSnapshot, String>>),
+    SyncSnapshotFor {
+        expected: SyncRootSnapshot,
+        reply: Reply<Result<SyncSnapshotFor, String>>,
+    },
     Resolve {
         name: String,
         reply: Reply<Resolved>,
@@ -196,6 +241,19 @@ impl CatalogHandle {
         let (tx, rx) = mpsc::channel();
         self.tx.send(build(tx)).ok()?;
         rx.recv().ok()
+    }
+
+    pub(super) fn sync_root(&self) -> Option<Result<SyncRootSnapshot, String>> {
+        self.call(CatalogCommand::SyncRoot)
+    }
+    pub(super) fn sync_snapshot(&self) -> Option<Result<SyncSnapshot, String>> {
+        self.call(CatalogCommand::SyncSnapshot)
+    }
+    pub(super) fn sync_snapshot_for(
+        &self,
+        expected: SyncRootSnapshot,
+    ) -> Option<Result<SyncSnapshotFor, String>> {
+        self.call(|reply| CatalogCommand::SyncSnapshotFor { expected, reply })
     }
 
     pub(super) fn resolve(&self, name: String) -> Option<Resolved> {
@@ -286,6 +344,18 @@ pub(super) fn spawn(
 impl CatalogState {
     fn handle(&mut self, cmd: CatalogCommand) {
         match cmd {
+            CatalogCommand::SyncRoot(reply) => {
+                let out = self.sync_root();
+                let _ = reply.send(out);
+            }
+            CatalogCommand::SyncSnapshot(reply) => {
+                let out = self.sync_snapshot();
+                let _ = reply.send(out);
+            }
+            CatalogCommand::SyncSnapshotFor { expected, reply } => {
+                let out = self.sync_snapshot_for(&expected);
+                let _ = reply.send(out);
+            }
             CatalogCommand::Resolve { name, reply } => {
                 let _ = reply.send(self.resolve(&name));
             }
@@ -357,6 +427,19 @@ impl CatalogState {
             // finish instead of publishing stale rows and caches.
             self.invalidate();
         }
+    }
+
+    fn sync_snapshot_for(
+        &mut self,
+        expected: &SyncRootSnapshot,
+    ) -> Result<SyncSnapshotFor, String> {
+        let root = self.sync_root()?;
+        if root.path != expected.path || root.root_id != expected.root_id {
+            return Ok(SyncSnapshotFor::RootChanged(root));
+        }
+        let catalog = crate::sync::SyncCatalog::load(&root.path, &self.recent, &mut self.cache)
+            .map_err(|error| format!("{error:#}"))?;
+        Ok(SyncSnapshotFor::Same(SyncSnapshot { root, catalog }))
     }
 
     fn ensure_resolution(&mut self) {
@@ -712,6 +795,89 @@ mod tests {
             "a listing built from the old root must be discarded"
         );
         assert_eq!(0, s.builds_merged);
+    }
+
+    #[test]
+    fn sync_root_and_catalog_change_as_one_hot_reload_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first");
+        let second = dir.path().join("second");
+        std::fs::create_dir(&first).unwrap();
+        std::fs::create_dir(&second).unwrap();
+        write_deck(&first.join("alpha.md"), "alpha");
+        write_deck(&second.join("beta.md"), "beta");
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(&config_path, format!("decks_dir = {:?}\n", first)).unwrap();
+        let mut state = CatalogState::new(
+            CatalogConfig {
+                scoped: false,
+                config_path: Some(config_path.clone()),
+                review_cfg: ReviewConfig::default(),
+            },
+            first.clone(),
+            RecentDecks::load(dir.path().join("recent.json")),
+        );
+
+        let before = state.sync_snapshot().unwrap();
+        std::fs::write(&config_path, format!("decks_dir = {:?}\n", second)).unwrap();
+        let after = state.sync_snapshot().unwrap();
+
+        assert_ne!(before.root.root_id, after.root.root_id);
+        assert_eq!(first, before.root.path);
+        assert_eq!(second, after.root.path);
+        assert_eq!(
+            vec!["alpha.md"],
+            before
+                .catalog
+                .entries()
+                .iter()
+                .map(|e| e.name.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            vec!["beta.md"],
+            after
+                .catalog
+                .entries()
+                .iter()
+                .map(|e| e.name.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn malformed_reloaded_root_fails_sync_instead_of_serving_the_old_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first");
+        let broken = dir.path().join("broken");
+        std::fs::create_dir(&first).unwrap();
+        std::fs::create_dir_all(broken.join(".alix")).unwrap();
+        write_deck(&first.join("alpha.md"), "alpha");
+        std::fs::write(broken.join(".alix/sync.toml"), "root_id = \"bad\"\n").unwrap();
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(&config_path, format!("decks_dir = {:?}\n", first)).unwrap();
+        let mut state = CatalogState::new(
+            CatalogConfig {
+                scoped: false,
+                config_path: Some(config_path.clone()),
+                review_cfg: ReviewConfig::default(),
+            },
+            first,
+            RecentDecks::load(dir.path().join("recent.json")),
+        );
+        let old = state.sync_snapshot().unwrap();
+        std::fs::write(&config_path, format!("decks_dir = {:?}\n", broken)).unwrap();
+
+        let error = state.sync_snapshot().unwrap_err();
+
+        assert!(
+            error.contains("sync.toml"),
+            "the new root error is returned: {error}"
+        );
+        assert_ne!(
+            old.root.path, state.decks_dir,
+            "the old root must not remain the sync answer"
+        );
     }
 
     #[test]

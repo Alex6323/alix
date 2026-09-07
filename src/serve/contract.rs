@@ -1914,11 +1914,105 @@ fn askinfodto_and_versiondto_wire_shape() {
     );
     let version = VersionDto {
         version: env!("CARGO_PKG_VERSION"),
+        root_id: "root-00000000000000000000000000".to_string(),
     };
     pin(
         "VersionDto",
         &version,
-        json!({"version": env!("CARGO_PKG_VERSION")}),
+        json!({"version": env!("CARGO_PKG_VERSION"), "root_id": "root-00000000000000000000000000"}),
+    );
+}
+
+#[test]
+fn sync_wire_shapes() {
+    pin(
+        "SyncEntriesDto",
+        &SyncEntriesDto {
+            root_id: "root-00000000000000000000000000".to_string(),
+            entries: vec![SyncEntryDto {
+                name: "Biology".to_string(),
+                kind: "workspace".to_string(),
+                members: 2,
+                unpacked_bytes: 4096,
+            }],
+        },
+        json!({
+            "root_id": "root-00000000000000000000000000",
+            "entries": [{
+                "name": "Biology",
+                "kind": "workspace",
+                "members": 2,
+                "unpacked_bytes": 4096
+            }]
+        }),
+    );
+    pin(
+        "SyncPullManifest",
+        &crate::sync::SyncPullManifest {
+            version: crate::sync::SYNC_PULL_MANIFEST_VERSION,
+            root_id: "root-00000000000000000000000000".to_string(),
+            entry: "Biology".to_string(),
+            kind: "workspace".to_string(),
+            files: vec![crate::sync::SyncFileDto {
+                path: "decks/cells.md".to_string(),
+                bytes: 4,
+                digest: "xxh64-0123456789abcdef".to_string(),
+            }],
+            decks: vec![crate::sync::SyncDeckDto {
+                path: "decks/cells.md".to_string(),
+                deck_id: "deck-cells".to_string(),
+                revision: None,
+            }],
+        },
+        json!({
+            "version": 1,
+            "root_id": "root-00000000000000000000000000",
+            "entry": "Biology",
+            "kind": "workspace",
+            "files": [{
+                "path": "decks/cells.md",
+                "bytes": 4,
+                "digest": "xxh64-0123456789abcdef"
+            }],
+            "decks": [{
+                "path": "decks/cells.md",
+                "deck_id": "deck-cells",
+                "revision": null
+            }]
+        }),
+    );
+    pin(
+        "SyncPushDto",
+        &SyncPushDto {
+            deck_id: "deck-cells".to_string(),
+            revision: 8,
+        },
+        json!({"deck_id": "deck-cells", "revision": 8}),
+    );
+    pin(
+        "SyncConflictDto",
+        &SyncConflictDto {
+            deck_id: "deck-cells".to_string(),
+            desktop_revision: Some(9),
+            pulled_revision: Some(7),
+            desktop_writer: Some(crate::store::Writer {
+                device: "desktop".to_string(),
+                at_ms: 42,
+            }),
+        },
+        json!({
+            "deck_id": "deck-cells",
+            "desktop_revision": 9,
+            "pulled_revision": 7,
+            "desktop_writer": {"device": "desktop", "at_ms": 42}
+        }),
+    );
+    pin(
+        "SyncRootDto",
+        &SyncRootDto {
+            root_id: "root-00000000000000000000000000".to_string(),
+        },
+        json!({"root_id": "root-00000000000000000000000000"}),
     );
 }
 

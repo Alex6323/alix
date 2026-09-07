@@ -1,0 +1,20 @@
+{
+  "decks": [
+    {
+      "deck_id": "deck-cells",
+      "path": "decks/cells.md",
+      "revision": null
+    }
+  ],
+  "entry": "Biology",
+  "files": [
+    {
+      "bytes": 4,
+      "digest": "xxh64-0123456789abcdef",
+      "path": "decks/cells.md"
+    }
+  ],
+  "kind": "workspace",
+  "root_id": "root-00000000000000000000000000",
+  "version": 1
+}

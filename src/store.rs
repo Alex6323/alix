@@ -17,6 +17,26 @@ const HISTORY_CAP: usize = 50;
 
 const DECK_DOCUMENT_VERSION: u32 = 1;
 
+#[cfg(test)]
+static SYNC_COMMIT_THREADS: Mutex<Vec<(String, std::thread::ThreadId)>> = Mutex::new(Vec::new());
+
+#[cfg(test)]
+pub(crate) fn take_sync_commit_threads(deck_id: &str) -> Vec<std::thread::ThreadId> {
+    let mut all = SYNC_COMMIT_THREADS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut matched = Vec::new();
+    all.retain(|(committed_deck_id, thread)| {
+        if committed_deck_id == deck_id {
+            matched.push(*thread);
+            false
+        } else {
+            true
+        }
+    });
+    matched
+}
+
 // Below this age a foreign write is ordinary roaming, not a live conflict.
 pub const FOREIGN_WRITE_WARN_WINDOW_MS: u64 = 60 * 60 * 1000;
 
@@ -186,7 +206,7 @@ pub struct Writer {
     pub at_ms: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DeckStoreFile {
     version: u32,
@@ -199,6 +219,34 @@ struct DeckStoreFile {
     deck: DeckProgress,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     writer: Option<Writer>,
+}
+
+#[derive(Clone)]
+pub(crate) struct ValidatedDeckDocument(DeckStoreFile);
+
+impl ValidatedDeckDocument {
+    pub(crate) fn parse(bytes: &[u8], expected_deck_id: &str) -> Result<Self, StoreError> {
+        let path = PathBuf::from("sync push body");
+        let file: DeckStoreFile =
+            serde_json::from_slice(bytes).map_err(|source| StoreError::Format {
+                path: path.clone(),
+                source,
+            })?;
+        validate_deck_file(&path, expected_deck_id, &file)?;
+        Ok(Self(file))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SyncPushOutcome {
+    Accepted {
+        revision: u64,
+    },
+    Conflict {
+        desktop_revision: Option<u64>,
+        pulled_revision: Option<u64>,
+        desktop_writer: Option<Writer>,
+    },
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -304,12 +352,98 @@ pub enum StoreError {
         loaded: u64,
         disk: u64,
     },
+    #[error("{path}: progress revision cannot advance past u64::MAX")]
+    RevisionExhausted { path: PathBuf },
     #[error("duplicate {kind} key `{key}` across per-deck progress documents")]
     DuplicateKey { kind: &'static str, key: String },
     #[error("cannot save aggregate progress: {kind} key `{key}` has no owning deck")]
     UnownedKey { kind: &'static str, key: String },
     #[error("{subject}: deck is not initialized")]
     MissingDeckId { subject: String },
+}
+
+fn validate_deck_file(
+    path: &Path,
+    expected_deck_id: &str,
+    file: &DeckStoreFile,
+) -> Result<(), StoreError> {
+    if file.version != DECK_DOCUMENT_VERSION {
+        return Err(StoreError::Version {
+            path: path.to_path_buf(),
+            version: file.version,
+        });
+    }
+    if file.deck_id != expected_deck_id {
+        return Err(StoreError::DeckOwner {
+            path: path.to_path_buf(),
+            expected: expected_deck_id.to_string(),
+            actual: file.deck_id.clone(),
+        });
+    }
+    Ok(())
+}
+
+pub(crate) fn sync_push_document(
+    path: &Path,
+    expected_deck_id: &str,
+    pulled_revision: Option<u64>,
+    document: ValidatedDeckDocument,
+) -> Result<SyncPushOutcome, StoreError> {
+    let existing = match std::fs::read(path) {
+        Ok(bytes) => {
+            let file: DeckStoreFile =
+                serde_json::from_slice(&bytes).map_err(|source| StoreError::Format {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+            validate_deck_file(path, expected_deck_id, &file)?;
+            Some((bytes, file.revision, file.writer))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(source) => {
+            return Err(StoreError::Io {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+    let desktop_revision = existing.as_ref().map(|(_, revision, _)| *revision);
+    if desktop_revision != pulled_revision {
+        return Ok(SyncPushOutcome::Conflict {
+            desktop_revision,
+            pulled_revision,
+            desktop_writer: existing.and_then(|(_, _, writer)| writer),
+        });
+    }
+    let revision = pulled_revision.unwrap_or(0).checked_add(1).ok_or_else(|| {
+        StoreError::RevisionExhausted {
+            path: path.to_path_buf(),
+        }
+    })?;
+    #[cfg(test)]
+    SYNC_COMMIT_THREADS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push((expected_deck_id.to_string(), std::thread::current().id()));
+    if let Some(parent) = path.parent() {
+        crate::fsio::create_dir_all(parent).map_err(|source| StoreError::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    if let Some((bytes, _, _)) = existing {
+        let backup = path.with_extension("json.bak");
+        crate::fsio::replace_file(&path.with_extension("json.bak.tmp"), &backup, &bytes).map_err(
+            |source| StoreError::Io {
+                path: backup,
+                source,
+            },
+        )?;
+    }
+    let mut file = document.0;
+    file.revision = revision;
+    write_json_atomic(path, &file).map_err(WriteFailure::into_error)?;
+    Ok(SyncPushOutcome::Accepted { revision })
 }
 
 fn deck_revision(path: &Path, expected_deck_id: &str) -> Result<u64, StoreError> {
@@ -1581,6 +1715,85 @@ fn generate_device_label() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sync_document(deck_id: &str, revision: u64, device: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "version": 1,
+            "deck_id": deck_id,
+            "subject": "deck.md",
+            "revision": revision,
+            "cards": {},
+            "writer": { "device": device, "at_ms": 7 }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn sync_push_revision_law_preserves_conflicts_and_backs_up_accepts() {
+        let cases = [
+            ("none + absent", None, None, true, 1),
+            ("moved + present", Some(3), Some(2), false, 3),
+            ("none + present", Some(3), None, false, 3),
+            ("equal + present", Some(3), Some(3), true, 4),
+        ];
+        for (name, desktop, pulled, accepted, expected_revision) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("deck-sync.json");
+            if let Some(revision) = desktop {
+                std::fs::write(&path, sync_document("deck-sync", revision, "desktop")).unwrap();
+            }
+            let before = std::fs::read(&path).ok();
+            let document =
+                ValidatedDeckDocument::parse(&sync_document("deck-sync", 99, "phone"), "deck-sync")
+                    .unwrap();
+
+            let outcome = sync_push_document(&path, "deck-sync", pulled, document).unwrap();
+
+            match outcome {
+                SyncPushOutcome::Accepted { revision } => {
+                    assert!(accepted, "{name}: unexpected accept");
+                    assert_eq!(expected_revision, revision, "{name}: committed revision");
+                    let (disk, _, data) = read_deck_data(&path, "deck-sync", None).unwrap();
+                    assert_eq!(revision, disk, "{name}: disk revision");
+                    assert_eq!(
+                        Some("phone"),
+                        data.writer.as_ref().map(|w| w.device.as_str()),
+                        "{name}: body writer survives"
+                    );
+                    let backup = path.with_extension("json.bak");
+                    if let Some(before) = before {
+                        let backup = std::fs::read(&backup).unwrap_or_else(|error| {
+                            panic!("{name}: accepted push must write its backup: {error}")
+                        });
+                        assert_eq!(
+                            before, backup,
+                            "{name}: backup is the exact previous document"
+                        );
+                    } else {
+                        assert!(!backup.exists(), "{name}: first push creates no backup");
+                    }
+                }
+                SyncPushOutcome::Conflict {
+                    desktop_revision,
+                    pulled_revision,
+                    ..
+                } => {
+                    assert!(!accepted, "{name}: unexpected conflict");
+                    assert_eq!(desktop, desktop_revision, "{name}: desktop revision");
+                    assert_eq!(pulled, pulled_revision, "{name}: pulled revision");
+                    assert_eq!(
+                        before,
+                        std::fs::read(&path).ok(),
+                        "{name}: conflict leaves disk unchanged"
+                    );
+                    assert!(
+                        !path.with_extension("json.bak").exists(),
+                        "{name}: conflict creates no backup"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn open_creates_empty_store() {

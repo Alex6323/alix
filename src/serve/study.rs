@@ -236,6 +236,20 @@ pub(super) enum ImageSource {
     NoActive,
 }
 
+pub(super) enum SyncPushReply {
+    Accepted {
+        revision: u64,
+    },
+    Conflict {
+        desktop_revision: Option<u64>,
+        pulled_revision: Option<u64>,
+        desktop_writer: Option<crate::store::Writer>,
+    },
+    Missing,
+    Ambiguous,
+    Failed(String),
+}
+
 /// A walk-tutor start: a question begins a new exchange only when one was
 /// given; a note condenses the transcript unconditionally.
 pub(super) enum WalkAskAction {
@@ -389,11 +403,20 @@ pub(super) enum StudyCommand {
     },
     StorePath(Reply<PathBuf>),
     Projection(Reply<StudyProjection>),
+    SyncPush {
+        catalog: crate::sync::SyncCatalog,
+        deck_id: String,
+        pulled_revision: Option<u64>,
+        document: crate::store::ValidatedDeckDocument,
+        reply: Reply<SyncPushReply>,
+    },
 }
 
 #[derive(Clone)]
 pub(super) struct StudyHandle {
     tx: mpsc::Sender<StudyCommand>,
+    #[cfg(test)]
+    owner_thread: thread::ThreadId,
 }
 
 impl StudyHandle {
@@ -642,6 +665,25 @@ impl StudyHandle {
     pub(super) fn projection(&self) -> Option<StudyProjection> {
         self.call(StudyCommand::Projection)
     }
+    pub(super) fn sync_push(
+        &self,
+        catalog: crate::sync::SyncCatalog,
+        deck_id: String,
+        pulled_revision: Option<u64>,
+        document: crate::store::ValidatedDeckDocument,
+    ) -> Option<SyncPushReply> {
+        self.call(|reply| StudyCommand::SyncPush {
+            catalog,
+            deck_id,
+            pulled_revision,
+            document,
+            reply,
+        })
+    }
+    #[cfg(test)]
+    pub(super) fn owner_thread(&self) -> thread::ThreadId {
+        self.owner_thread
+    }
 }
 
 pub(super) fn spawn(
@@ -649,8 +691,23 @@ pub(super) fn spawn(
     state: StudyState,
 ) -> (StudyHandle, thread::JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
-    let handle = super::supervised(failure, move || run(state, rx));
-    (StudyHandle { tx }, handle)
+    #[cfg(test)]
+    let (owner_tx, owner_rx) = mpsc::sync_channel(1);
+    let handle = super::supervised(failure, move || {
+        #[cfg(test)]
+        let _ = owner_tx.send(thread::current().id());
+        run(state, rx);
+    });
+    #[cfg(test)]
+    let owner_thread = owner_rx.recv().expect("the Study owner reports its thread");
+    (
+        StudyHandle {
+            tx,
+            #[cfg(test)]
+            owner_thread,
+        },
+        handle,
+    )
 }
 
 fn run(mut s: StudyState, rx: mpsc::Receiver<StudyCommand>) {
@@ -1185,6 +1242,51 @@ impl StudyState {
                     writes: self.writes,
                 });
             }
+            StudyCommand::SyncPush {
+                catalog,
+                deck_id,
+                pulled_revision,
+                document,
+                reply,
+            } => {
+                let out = self.sync_push(catalog, &deck_id, pulled_revision, document);
+                let _ = reply.send(out);
+            }
+        }
+    }
+
+    fn sync_push(
+        &mut self,
+        catalog: crate::sync::SyncCatalog,
+        deck_id: &str,
+        pulled_revision: Option<u64>,
+        document: crate::store::ValidatedDeckDocument,
+    ) -> SyncPushReply {
+        if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
+            return SyncPushReply::Failed("cannot flush desktop progress".to_string());
+        }
+        let target = match catalog.deck(deck_id) {
+            crate::sync::DeckLookup::One(target) => target,
+            crate::sync::DeckLookup::Ambiguous => return SyncPushReply::Ambiguous,
+            crate::sync::DeckLookup::Missing => return SyncPushReply::Missing,
+        };
+        let path = crate::state::UserFiles::new(&target.store_root).progress_for(deck_id);
+        match crate::store::sync_push_document(&path, deck_id, pulled_revision, document) {
+            Ok(crate::store::SyncPushOutcome::Accepted { revision }) => {
+                self.writes = self.writes.wrapping_add(1);
+                self.progress_stamp = None;
+                SyncPushReply::Accepted { revision }
+            }
+            Ok(crate::store::SyncPushOutcome::Conflict {
+                desktop_revision,
+                pulled_revision,
+                desktop_writer,
+            }) => SyncPushReply::Conflict {
+                desktop_revision,
+                pulled_revision,
+                desktop_writer,
+            },
+            Err(error) => SyncPushReply::Failed(error.to_string()),
         }
     }
 
@@ -1793,10 +1895,86 @@ mod tests {
     fn a_closed_owner_returns_transport_failure_not_default_query_values() {
         let (tx, rx) = mpsc::channel();
         drop(rx);
-        let handle = StudyHandle { tx };
+        let handle = StudyHandle {
+            tx,
+            owner_thread: thread::current().id(),
+        };
 
         assert!(handle.store_path().is_none());
         assert!(handle.exam_remediate().is_none());
+    }
+
+    #[test]
+    fn sync_commit_runs_once_on_the_study_owner_thread() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("deck.md");
+        std::fs::write(
+            &deck,
+            "---\nformat-version: 1\nid: deck-syncowner\n---\n## q\na\n<!-- id: card-syncowner -->\n",
+        )
+        .unwrap();
+        let defaults = crate::config::Config::default();
+        let state = StudyState {
+            config: StudyConfig {
+                cfg: AssembleConfig {
+                    review: defaults.review,
+                    ask: defaults.ask,
+                    pacing: assemble::Pacing {
+                        max_session: 10,
+                        new_cards_percent: 30,
+                    },
+                    instance_store: Some(dir.path().to_path_buf()),
+                },
+                exam_cfg: defaults.exam,
+                review_cfg: defaults.review,
+                audience: defaults.serve.audience,
+            },
+            store: crate::state::open_aggregate_store(dir.path()).unwrap(),
+            retained: HashMap::new(),
+            store_dirty: false,
+            progress_stamp: None,
+            save_error: None,
+            reviewing: None,
+            revision: 0,
+            writes: 0,
+            browsing: None,
+            examining: None,
+            walking: None,
+            augmenting: None,
+        };
+        let catalog = crate::sync::SyncCatalog::load(
+            dir.path(),
+            &crate::recent::RecentDecks::load(dir.path().join(".alix/recent.json")),
+            &mut crate::cache::DeckCache::default(),
+        )
+        .unwrap();
+        let body = br#"{"version":1,"deck_id":"deck-syncowner","subject":"deck.md","revision":0,"cards":{},"writer":{"device":"phone","at_ms":7}}"#;
+        let document = crate::store::ValidatedDeckDocument::parse(body, "deck-syncowner").unwrap();
+        let (tx, rx) = mpsc::channel();
+        let (owner_tx, owner_rx) = mpsc::sync_channel(1);
+        let owner = thread::spawn(move || {
+            owner_tx.send(thread::current().id()).unwrap();
+            run(state, rx);
+        });
+        let handle = StudyHandle {
+            tx,
+            owner_thread: owner_rx.recv().unwrap(),
+        };
+        let expected = handle.owner_thread();
+        let _ = crate::store::take_sync_commit_threads("deck-syncowner");
+
+        let outcome = handle
+            .sync_push(catalog, "deck-syncowner".to_string(), None, document)
+            .expect("the owner replies");
+
+        assert!(matches!(outcome, SyncPushReply::Accepted { revision: 1 }));
+        assert_eq!(
+            vec![expected],
+            crate::store::take_sync_commit_threads("deck-syncowner"),
+            "the exact progress commit point must run once on the Study owner thread"
+        );
+        drop(handle);
+        owner.join().unwrap();
     }
 
     #[test]

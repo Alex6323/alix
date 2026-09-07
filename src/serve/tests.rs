@@ -27,6 +27,73 @@ use crate::{
     trace::{Delta, Walk},
 };
 
+#[test]
+fn pulled_revision_header_accepts_only_the_canonical_advancable_grammar() {
+    assert_eq!(Some(None), parse_pulled_revision(Some("none")));
+    assert_eq!(Some(Some(0)), parse_pulled_revision(Some("0")));
+    assert_eq!(Some(Some(17)), parse_pulled_revision(Some("17")));
+    for invalid in [
+        None,
+        Some(""),
+        Some("00"),
+        Some("+1"),
+        Some("-1"),
+        Some(" 1"),
+        Some("1 "),
+        Some("18446744073709551615"),
+        Some("18446744073709551616"),
+    ] {
+        assert_eq!(
+            None,
+            parse_pulled_revision(invalid),
+            "invalid header {invalid:?}"
+        );
+    }
+}
+
+#[test]
+fn sync_pull_archive_file_is_deleted_when_its_response_lease_ends() {
+    let dir = tempfile::tempdir().unwrap();
+    let deck = dir.path().join("sample.md");
+    std::fs::write(
+        &deck,
+        "---\nformat-version: 1\nid: deck-pulllease\n---\n## q\na\n<!-- id: card-pulllease -->\n",
+    )
+    .unwrap();
+    let catalog = crate::sync::SyncCatalog::load(
+        dir.path(),
+        &crate::recent::RecentDecks::load(dir.path().join(".alix/recent.json")),
+        &mut crate::cache::DeckCache::default(),
+    )
+    .unwrap();
+    let snapshot = SyncSnapshot {
+        root: SyncRootSnapshot {
+            path: dir.path().to_path_buf(),
+            root_id: "root-00000000000000000000000000".to_string(),
+        },
+        catalog,
+    };
+
+    let archive = build_sync_pull_archive(&snapshot, "sample.md").unwrap();
+    let path = archive.path.clone();
+    let temp = path.parent().unwrap().to_path_buf();
+    assert!(
+        path.is_file(),
+        "the response lease owns an open archive file"
+    );
+
+    drop(archive);
+
+    assert!(
+        !path.exists(),
+        "the archive file is removed after the lease"
+    );
+    assert!(
+        !temp.exists(),
+        "the staging directory is removed after the lease"
+    );
+}
+
 /// A panicked owner must drain an idle server by itself: the trip unblocks
 /// tiny_http directly instead of waiting for a next request to notice the
 /// flag. Bounded receives keep a regression a failure, never a hang.

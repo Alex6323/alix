@@ -247,6 +247,24 @@ pub(super) fn respond_download(
     };
 }
 
+pub(super) fn respond_download_file(
+    request: Request,
+    file: std::fs::File,
+    content_type: &str,
+    filename: &str,
+) {
+    let content_type_header =
+        Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
+    let disposition = format!("attachment; filename=\"{}\"", download_filename(filename));
+    let response = Response::from_file(file)
+        .with_header(content_type_header)
+        .with_header(cache_header(b"no-store"));
+    let _ = match Header::from_bytes(&b"Content-Disposition"[..], disposition.as_bytes()) {
+        Ok(disposition_header) => request.respond(response.with_header(disposition_header)),
+        Err(_) => request.respond(response),
+    };
+}
+
 pub(super) fn serve_image_path(request: Request, path: Option<&Path>) {
     match path {
         Some(path) => match std::fs::read(path) {
