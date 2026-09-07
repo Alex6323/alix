@@ -592,6 +592,19 @@ void main() {
       expect(port.recordPushCalls, isEmpty);
     });
 
+    test(
+      'an unexpected exception (a closed port mid-attempt, say) does not '
+      'escape the returned future',
+      () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.planPushesImpl = () => [item('deck-a')];
+        port.pushImpl = (_, _, _) async => throw StateError('boom');
+        final controller = SyncController(port: port);
+
+        await expectLater(controller.pushOne('deck-a'), completes);
+      },
+    );
+
     test('a conflict is recorded and then visible through pendingConflicts', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
       port.planPushesImpl = () => [item('deck-a')];
@@ -721,6 +734,25 @@ void main() {
       expect(port.pushCalls, ['deck-a']);
     });
 
+    test(
+      'keep-phone silently swallows an unexpected exception, matching '
+      'pushOne',
+      () async {
+        final pushItem = item('deck-a', base: 3);
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.pairedEntriesImpl = () => pendingConflictFor('deck-a');
+        port.resolveConflictImpl = (deckId, keepPhone) =>
+            SyncResolutionPush(pushItem);
+        port.pushImpl = (_, _, _) async => throw StateError('boom');
+        final controller = SyncController(port: port);
+
+        await expectLater(
+          controller.resolve('deck-a', keepPhone: true),
+          completes,
+        );
+      },
+    );
+
     test('take-desktop pulls the returned entry', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
       port.pairedEntriesImpl = () => pendingConflictFor('deck-a');
@@ -775,6 +807,39 @@ void main() {
 
       expect(controller.lastReport?.error, contains('root-b'));
     });
+
+    test(
+      'take-desktop reports an unexpected exception (a StateError) '
+      'instead of leaking it from the conflict action',
+      () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.pairedEntriesImpl = () => pendingConflictFor('deck-a');
+        port.resolveConflictImpl = (deckId, keepPhone) =>
+            const SyncResolutionPull('Biology');
+        port.entriesImpl = () async => const SyncEntries(
+          rootId: 'root-a',
+          entries: [
+            SyncEntry(
+              name: 'Biology',
+              kind: 'workspace',
+              members: 1,
+              unpackedBytes: 10,
+              leftOut: [],
+            ),
+          ],
+        );
+        port.applyPullImpl = (entry, zipPath) async => throw StateError('boom');
+        final controller = SyncController(port: port);
+
+        await expectLater(
+          controller.resolve('deck-a', keepPhone: false),
+          completes,
+          reason: 'a failed choice must stay in the report, not escape its tap',
+        );
+
+        expect(controller.lastReport?.error, contains('boom'));
+      },
+    );
 
     test('done refreshes without pushing or pulling', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
@@ -978,5 +1043,26 @@ void main() {
         expect(controller.statusLine, isNull);
       },
     );
+  });
+
+  group('dispose', () {
+    test('closes the port', () {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      final controller = SyncController(port: port);
+
+      controller.dispose();
+
+      expect(port.closeCalls, 1);
+    });
+
+    test('closing the port a second time directly stays idempotent', () {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      final controller = SyncController(port: port);
+
+      controller.dispose();
+      port.close();
+
+      expect(port.closeCalls, 2);
+    });
   });
 }
