@@ -341,6 +341,10 @@ mod tests {
                 r#"<svg onload=   "steal()" viewBox="0 0 24 24">"#,
                 r#"<svg viewBox="0 0 24 24">"#,
             ),
+            (
+                r#"<svg onload='steal()' viewBox="0 0 24 24">"#,
+                r#"<svg viewBox="0 0 24 24">"#,
+            ),
             ("<svg onload=   ", "<svg"),
             ("<svg onload=\"steal()", "<svg"),
         ] {
