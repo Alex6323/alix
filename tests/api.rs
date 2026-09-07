@@ -1240,6 +1240,80 @@ fn sync_push_overlapping_a_desktop_grade_has_one_persistence_winner() {
 }
 
 #[test]
+fn accepted_sync_push_is_the_base_of_the_next_desktop_grade() {
+    let (base, guard) = spawn_test_server();
+    assert_eq!(200, select_fixture(&base).status);
+    let progress = progress_root(guard.dir()).join("deck-sample.json");
+
+    let first_grade = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    assert_eq!(200, first_grade.status, "the first desktop grade succeeds");
+    let mut pushed: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
+    assert!(
+        pushed["cards"].get("card-s2").is_none(),
+        "desktop has no state for the second card before the phone push: {pushed}"
+    );
+    let desktop_revision = pushed["revision"].as_u64().unwrap();
+    pushed["cards"]["card-s2"] = serde_json::json!({"introduced_ms": 4242});
+    pushed["writer"] = serde_json::json!({"device": "phone", "at_ms": 7});
+
+    let root_id = sync_root_id(&base);
+    let push = sync_push(
+        &base,
+        "deck-sample",
+        &root_id,
+        &desktop_revision.to_string(),
+        &serde_json::to_vec(&pushed).unwrap(),
+    );
+    assert_eq!(200, push.status, "the phone push is accepted");
+    let pushed_revision =
+        serde_json::from_slice::<serde_json::Value>(&push.body).unwrap()["revision"]
+            .as_u64()
+            .unwrap();
+    assert_eq!(desktop_revision + 1, pushed_revision);
+
+    let selected = select_fixture(&base);
+    assert_eq!(200, selected.status, "desktop can select after the push");
+    let selected: serde_json::Value = serde_json::from_slice(&selected.body).unwrap();
+    assert_eq!(
+        "card-s2", selected["card"]["id"],
+        "the fresh desktop session loads the card state supplied by the push: {selected}"
+    );
+    let after_select: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
+    let selected_revision = after_select["revision"].as_u64().unwrap();
+    assert_eq!(
+        pushed_revision + 1,
+        selected_revision,
+        "the fresh selection advances from the accepted pushed revision"
+    );
+    assert_eq!(
+        4242, after_select["cards"]["card-s2"]["introduced_ms"],
+        "the fresh selection preserves the pushed second-card state"
+    );
+    let second_grade = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    assert_eq!(200, second_grade.status, "the next desktop grade succeeds");
+    let second_grade: serde_json::Value = serde_json::from_slice(&second_grade.body).unwrap();
+    assert_eq!(
+        serde_json::Value::Null,
+        second_grade["save_error"],
+        "the fresh session must not save through the stale pre-push store: {second_grade}"
+    );
+
+    let disk: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
+    assert_eq!(
+        selected_revision + 1,
+        disk["revision"],
+        "the desktop grade advances from the fresh selection revision"
+    );
+    assert_eq!(
+        4242, disk["cards"]["card-s2"]["introduced_ms"],
+        "the desktop grade preserves the pushed second-card state"
+    );
+}
+
+#[test]
 fn accepted_sync_push_and_progress_restore_are_a_conflict_visible_round_trip() {
     let (base, guard) = spawn_test_server_fixture(None, |dir| {
         let progress = progress_root(dir).join("deck-sample.json");
