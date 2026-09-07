@@ -204,6 +204,7 @@ class SyncController extends ChangeNotifier {
     final landed = <String>[];
     final kept = <String>[];
     final conflicts = <String>[];
+    final conflictDeckIds = <String>[];
     final phoneOnly = <String>[];
     final removed = <String>[];
     final refused = <String>[];
@@ -213,6 +214,7 @@ class SyncController extends ChangeNotifier {
       landed: landed,
       kept: kept,
       conflicts: conflicts,
+      conflictDeckIds: conflictDeckIds,
       phoneOnly: phoneOnly,
       removed: removed,
       refused: refused,
@@ -252,6 +254,7 @@ class SyncController extends ChangeNotifier {
           pushed.add(label);
         case SyncPushConflict():
           conflicts.add(label);
+          conflictDeckIds.add(item.deckId);
         case SyncPushRootMismatch():
           return aborted(syncRootMismatchMessage);
         case SyncPushNotServed():
@@ -293,6 +296,7 @@ class SyncController extends ChangeNotifier {
       conflicts.addAll(
         pullReport.conflicts.map((id) => entryLabels[id] ?? '$name/$id'),
       );
+      conflictDeckIds.addAll(pullReport.conflicts);
       phoneOnly.addAll(pullReport.phoneOnly.map((rel) => '$name/$rel'));
       removed.addAll(pullReport.removed.map((rel) => '$name/$rel'));
     }
@@ -322,6 +326,7 @@ class SyncController extends ChangeNotifier {
       landed: landed,
       kept: kept,
       conflicts: conflicts,
+      conflictDeckIds: conflictDeckIds,
       phoneOnly: phoneOnly,
       removed: removed,
       leftOut: leftOut,
@@ -408,7 +413,6 @@ class SyncController extends ChangeNotifier {
   Future<void> resolve(String deckId, {required bool keepPhone}) async {
     final pending = _pendingConflicts.where((c) => c.deckId == deckId);
     if (pending.isEmpty) return;
-    final label = pending.first.label;
     final resolution = _port.resolveConflict(deckId, keepPhone: keepPhone);
     switch (resolution) {
       case SyncResolutionDone():
@@ -424,10 +428,15 @@ class SyncController extends ChangeNotifier {
       case SyncResolutionPull(:final entry):
         await _resolvePull(entry);
     }
-    if (_lastReport case final report?) {
-      _lastReport = report.withoutConflict(label);
-    }
+    // `_refreshPairedState` first: a report's conflict rows are trimmed by
+    // the deck ids the lib still reports as conflicted, not by matching
+    // [deckId] itself, since a fresh conflict (a keep-phone retry that hit
+    // another 409) must stay visible.
     _refreshPairedState();
+    if (_lastReport case final report?) {
+      final stillConflicted = _pendingConflicts.map((c) => c.deckId).toSet();
+      _lastReport = report.keepingConflictsIn(stillConflicted);
+    }
     _notify();
   }
 
@@ -454,6 +463,7 @@ class SyncController extends ChangeNotifier {
           for (final id in pullReport.conflicts)
             entryLabels[id] ?? '$entry/$id',
         ],
+        conflictDeckIds: pullReport.conflicts,
         phoneOnly: [for (final rel in pullReport.phoneOnly) '$entry/$rel'],
         removed: [for (final rel in pullReport.removed) '$entry/$rel'],
       );

@@ -259,7 +259,10 @@ class _ConflictChoice extends StatelessWidget {
 /// discards, the whole row tappable. A sentence in a button's own label
 /// wraps and clips before the fact that distinguishes the two choices (the
 /// timestamp) ever reaches the reader; splitting it into title and subtitle
-/// gives the subtitle its own two lines to hold that fact.
+/// gives the subtitle its own line for that fact. The subtitle carries no
+/// line cap: a choice sheet is content, not chrome, and the writer's name
+/// and time are the one fact this row exists to show, so they must wrap
+/// rather than clip on a narrow phone.
 class _ConflictChoiceRow extends StatelessWidget {
   const _ConflictChoiceRow({required this.wording, required this.onPressed});
 
@@ -281,12 +284,7 @@ class _ConflictChoiceRow extends StatelessWidget {
         children: [
           Text(wording.title, style: theme.textTheme.titleSmall),
           const SizedBox(height: 2),
-          Text(
-            wording.subtitle,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall,
-          ),
+          Text(wording.subtitle, style: theme.textTheme.bodySmall),
         ],
       ),
     );

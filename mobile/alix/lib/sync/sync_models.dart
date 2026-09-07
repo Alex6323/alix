@@ -192,6 +192,7 @@ class SyncReport {
     this.landed = const [],
     this.kept = const [],
     this.conflicts = const [],
+    this.conflictDeckIds = const [],
     this.phoneOnly = const [],
     this.removed = const [],
     this.leftOut = const [],
@@ -206,6 +207,13 @@ class SyncReport {
   final List<String> landed;
   final List<String> kept;
   final List<String> conflicts;
+
+  /// Parallel to [conflicts]: the deck id behind each row, index-aligned.
+  /// A label is neither unique (two loose decks can share a `title:`) nor
+  /// proof a resolve cleared that deck (a keep-phone retry can land a
+  /// fresh conflict), so [SyncController.resolve] filters rows by this,
+  /// never by matching the label string.
+  final List<String> conflictDeckIds;
   final List<String> phoneOnly;
   final List<String> removed;
 
@@ -252,6 +260,7 @@ class SyncReport {
       landed: landed,
       kept: kept,
       conflicts: conflicts,
+      conflictDeckIds: conflictDeckIds,
       phoneOnly: phoneOnly,
       removed: removed,
       leftOut: leftOut,
@@ -264,16 +273,31 @@ class SyncReport {
     );
   }
 
-  /// The same report with [label] dropped from [conflicts]; every other
-  /// field is unchanged. A no-op when [label] is not present, so a resolve
-  /// for a conflict the last cycle never reported (one left over from an
-  /// earlier session) leaves the report alone.
-  SyncReport withoutConflict(String label) {
-    if (!conflicts.contains(label)) return this;
+  /// The same report with every conflict row whose deck id is not in
+  /// [deckIds] dropped; every other field is unchanged.
+  /// [SyncController.resolve] calls this with the refreshed
+  /// `pendingConflicts`' deck ids after a resolve, so a duplicate title
+  /// (two rows, same label, different deck) or a fresh conflict on a
+  /// keep-phone retry survives, instead of vanishing because its label
+  /// happened to match the one just resolved. A row with no recorded deck
+  /// id (an older report shape) is dropped, since its identity cannot be
+  /// checked.
+  SyncReport keepingConflictsIn(Set<String> deckIds) {
+    final keptLabels = <String>[];
+    final keptIds = <String>[];
+    for (var i = 0; i < conflicts.length; i++) {
+      final id = i < conflictDeckIds.length ? conflictDeckIds[i] : null;
+      if (id != null && deckIds.contains(id)) {
+        keptLabels.add(conflicts[i]);
+        keptIds.add(id);
+      }
+    }
+    if (keptLabels.length == conflicts.length) return this;
     return SyncReport(
       landed: landed,
       kept: kept,
-      conflicts: [for (final c in conflicts) if (c != label) c],
+      conflicts: keptLabels,
+      conflictDeckIds: keptIds,
       phoneOnly: phoneOnly,
       removed: removed,
       leftOut: leftOut,

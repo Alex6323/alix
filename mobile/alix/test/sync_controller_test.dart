@@ -786,6 +786,7 @@ void main() {
       'resolving a conflict updates the stale status line behind the '
       'sheet at once, rather than waiting for the sheet to close',
       () async {
+        var conflicted = true;
         final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
         port.planPushesImpl = () => [item('deck-a')];
         port.pushImpl = (deckId, _, _) async => SyncPushConflict(
@@ -793,14 +794,17 @@ void main() {
           desktopRevision: 4,
           desktopWriter: const SyncWriter(device: 'desk-1', atMs: 0),
         );
-        port.pairedEntriesImpl = () => pendingConflictFor('deck-a');
+        port.pairedEntriesImpl = () =>
+            conflicted ? pendingConflictFor('deck-a') : const [];
         final controller = SyncController(port: port);
 
         await controller.cycle();
         expect(controller.statusLine, contains('1 conflict'));
 
-        port.resolveConflictImpl = (deckId, keepPhone) =>
-            const SyncResolutionDone();
+        port.resolveConflictImpl = (deckId, keepPhone) {
+          conflicted = false;
+          return const SyncResolutionDone();
+        };
         await controller.resolve('deck-a', keepPhone: true);
 
         expect(controller.statusLine, isNot(contains('conflict')));
