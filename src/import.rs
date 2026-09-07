@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn skips_headers_blanks_and_half_rows() {
-        let tsv = "#separator:tab\n#html:true\n\nbonjour\thello\nlonely\nmerci\tthanks\n";
+        let tsv = "#separator:tab\n#html:true\n#ignored\tmust not become a card\n\nbonjour\thello\nlonely\nmerci\tthanks\n";
         let deck = tsv_to_deck(tsv).unwrap();
         let cards = parse_str("fr.md", &deck).unwrap();
         assert_eq!(2, cards.len());
