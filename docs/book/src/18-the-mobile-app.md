@@ -40,7 +40,9 @@ no visible step on a normal pass.
 A pull replaces the files the desktop owns for that entry (its decks,
 their augment and asset files) with the desktop's current copies; anything
 the phone added on its own inside the entry is left alone and reported as
-phone-only. A conflicting deck, one whose progress changed on both sides
+phone-only. A member the desktop deleted stays on the phone while its
+progress is not yet pushed, listed as kept, so nothing you reviewed is
+lost before it reached the desktop. A conflicting deck, one whose progress changed on both sides
 since the last sync, stops review of that deck and asks: keep the phone's
 progress or take the desktop's, naming what each choice discards. An entry
 the desktop no longer serves stays on the phone, reviewable, listed as
@@ -59,7 +61,8 @@ the desktop** (members inside an entry the desktop could not load) and
 never pulled, the same ones shown as rows below the deck list).
 
 Settings gains a **Paired desktop** row once a pairing is saved, opening a
-sheet to switch which root's entries the picker shows.
+sheet to choose which paired desktop's entries the picker shows below the
+phone's own; the phone's own decks stay listed whichever desktop is active.
 
 ## Workspace deadlines
 

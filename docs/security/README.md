@@ -99,7 +99,8 @@ subprocesses, but the embedded core is not a sandbox. Parsers and filesystem
 code still process content supplied to the app. The app reads and writes only
 its own app-private storage; it requests no broad filesystem permission
 (Android's `MANAGE_EXTERNAL_STORAGE`), so decks reach it only as bundled
-samples or through the paired desktop's `Generate deck` (`docs/book/src/18-the-mobile-app.md`,
+samples, through the paired desktop's `Generate deck`, or through a sync
+pull (`docs/book/src/18-the-mobile-app.md`,
 `docs/book/src/19-pairing.md`). Syncing writes only under the phone's own
 `paired/<root-id>/` app storage and reads or writes only the paired
 desktop's `/api/sync/*` surface, authenticated with the same pairing token
