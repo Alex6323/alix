@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
@@ -21,6 +23,7 @@ class AlixApp extends StatefulWidget {
     required this.prepared,
     this.access,
     this.persistTheme,
+    this.supportDir,
   });
 
   final Prepared prepared;
@@ -31,6 +34,11 @@ class AlixApp extends StatefulWidget {
   /// Persists the theme choice; tests inject one bound to their temp
   /// support dir.
   final Future<void> Function(String?)? persistTheme;
+
+  /// Where the app reads its pairings and writes its paired roots; tests
+  /// bind it to a temp dir, the same injection `persistTheme` serves.
+  /// Null resolves to the platform support dir inside `PickerScreen`.
+  final Directory? supportDir;
 
   @override
   State<AlixApp> createState() => _AlixAppState();
@@ -62,6 +70,7 @@ class _AlixAppState extends State<AlixApp> {
         access: _access,
         currentThemeId: _themeId,
         onSetTheme: _setTheme,
+        supportDir: widget.supportDir,
       ),
     );
   }
