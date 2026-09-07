@@ -10,9 +10,13 @@ import 'package:alix_mobile/sync_client.dart' show SyncEntry;
 import 'package:alix_mobile/theme.dart';
 
 class PickerLede extends StatelessWidget {
-  const PickerLede({super.key, required this.text});
+  const PickerLede({super.key, required this.text, this.color});
 
   final String text;
+
+  /// Overrides the default accent color, e.g. a subdued group label for a
+  /// paired desktop's section. Defaults to `tokens.bolt`.
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +28,7 @@ class PickerLede extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontFamily: 'IBM Plex Mono',
-          color: Theme.of(context).alix.bolt,
+          color: color ?? Theme.of(context).alix.bolt,
           fontSize: 12,
           letterSpacing: 2.2,
           fontWeight: FontWeight.w500,

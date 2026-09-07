@@ -12,10 +12,12 @@ import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/settings_screen.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
+import 'package:alix_mobile/sync/sync_port.dart';
 import 'package:alix_mobile/theme.dart';
 
 import 'support/deck_fixture.dart';
 import 'support/fake_server_client.dart';
+import 'support/fake_sync_port.dart';
 import 'support/widget_tree_dump.dart';
 
 void main() {
@@ -39,6 +41,7 @@ void main() {
     Duration? pollInterval,
     String? dir,
     String? title,
+    SyncPort Function(ServerConfig config, String rootDir)? buildSyncPort,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -54,6 +57,7 @@ void main() {
           onSetTheme: onSetTheme,
           buildClient: buildClient,
           generatePollInterval: pollInterval,
+          buildSyncPort: buildSyncPort,
         ),
       ),
     );
@@ -345,6 +349,12 @@ void main() {
         onSetTheme: (_) async {},
         buildClient: (_) => busyClient,
         pollInterval: const Duration(seconds: 10),
+        // A pairing is active (Settings needs it to offer Generate), so the
+        // root screen now also runs the app-open sync cycle; a fake port
+        // keeps it off the real network and, listing nothing, leaves no
+        // status line for this test's tree to capture.
+        buildSyncPort: (_, _) =>
+            FakeSyncPort(rootId: 'root-test', rootDir: root.path),
       );
       await openSettings(tester);
       await tester.tap(find.text('Generate deck'));

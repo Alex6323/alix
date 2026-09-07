@@ -23,6 +23,7 @@ import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/settings_screen.dart';
 import 'package:alix_mobile/sync/root_switcher_sheet.dart';
 import 'package:alix_mobile/sync/sync_controller.dart';
+import 'package:alix_mobile/sync/sync_models.dart';
 import 'package:alix_mobile/sync/sync_port.dart';
 import 'package:alix_mobile/sync/sync_sheet.dart';
 import 'package:alix_mobile/theme.dart';
@@ -43,6 +44,7 @@ class PickerScreen extends StatefulWidget {
     this.generatePollInterval,
     this.syncController,
     this.buildSyncPort,
+    this.isPairedSubtree = false,
   }) : masteredEntries = null;
 
   const PickerScreen.mastered({
@@ -60,7 +62,8 @@ class PickerScreen extends StatefulWidget {
        supportDir = null,
        buildClient = null,
        generatePollInterval = null,
-       buildSyncPort = null;
+       buildSyncPort = null,
+       isPairedSubtree = false;
 
   final String root;
   final String? dir;
@@ -85,6 +88,12 @@ class PickerScreen extends StatefulWidget {
   /// Tests inject a fake; the real bridge otherwise.
   final SyncPort Function(ServerConfig config, String rootDir)? buildSyncPort;
 
+  /// Whether [root] (and [dir], when set) is the active paired desktop's
+  /// tree rather than the phone's own: a drill-in forwards this from
+  /// whichever section its parent row came from. False for the root
+  /// screen's own phone-own list and for the mastered view.
+  final bool isPairedSubtree;
+
   @override
   State<PickerScreen> createState() => _PickerScreenState();
 }
@@ -94,6 +103,14 @@ class _PickerScreenState extends State<PickerScreen> {
   late final PickerController _controller;
   SyncController? _syncController;
   bool _hasPairings = false;
+
+  /// The active pairing's directory on disk, set once `_loadPairing`
+  /// resolves it at the root screen; null while unpaired.
+  String? _pairedDir;
+
+  /// The active pairing's "host:port" label for the paired section's group
+  /// heading; null alongside [_pairedDir].
+  String? _pairedLabel;
 
   @override
   void initState() {
@@ -136,8 +153,15 @@ class _PickerScreenState extends State<PickerScreen> {
   Future<void> _loadPairing() async {
     final support = await _support();
     _hasPairings = readPairings(support).isNotEmpty;
+    final isPairedRootScreen =
+        widget.dir == null && widget.masteredEntries == null;
     final config = readActivePairing(support);
     if (config == null) {
+      if (isPairedRootScreen) {
+        _pairedDir = null;
+        _pairedLabel = null;
+        _controller.setPairedRoot(null);
+      }
       if (mounted) _controller.setServerReachable(false);
       return;
     }
@@ -145,18 +169,31 @@ class _PickerScreenState extends State<PickerScreen> {
       support: support.path,
       rootId: config.rootId,
     );
-    final isPairedRootScreen =
-        widget.dir == null &&
-        widget.masteredEntries == null &&
-        widget.root == pairedDir;
+
+    String? recoveryError;
+    if (isPairedRootScreen) {
+      try {
+        sync_bridge.pairedRecoverFor(rootDir: pairedDir);
+      } on Object catch (error) {
+        recoveryError = 'could not prepare the paired folder: $error';
+      }
+      _pairedDir = pairedDir;
+      _pairedLabel = '${config.host}:${config.port}';
+      _controller.setPairedRoot(pairedDir);
+    }
+
     final freshlyBuilt = _syncController == null && isPairedRootScreen;
     if (freshlyBuilt) {
-      sync_bridge.pairedRecoverFor(rootDir: pairedDir);
       final buildPort =
           widget.buildSyncPort ??
           (config, rootDir) =>
               sync_bridge.SyncBridgePort(config: config, rootDir: rootDir);
-      _attachSyncController(SyncController(port: buildPort(config, pairedDir)));
+      _attachSyncController(
+        SyncController(
+          port: buildPort(config, pairedDir),
+          initialError: recoveryError,
+        ),
+      );
       if (mounted) _controller.reload();
     }
 
@@ -184,7 +221,19 @@ class _PickerScreenState extends State<PickerScreen> {
   }
 
   void _syncEntry(PickerEntry entry) {
-    _syncController?.cycle(entry: entry.title);
+    _syncController?.cycle(entry: _entryFileName(entry.path));
+  }
+
+  /// The manifest name a picker row's path implies: the file or directory
+  /// name relative to its root, exactly what `SyncEntry.name` carries. Not
+  /// [PickerEntry.title], which is the display name (falls back to a bare
+  /// file stem for a loose deck, or `alix.toml`'s `title` for a workspace).
+  String _entryFileName(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final trimmed = normalized.endsWith('/')
+        ? normalized.substring(0, normalized.length - 1)
+        : normalized;
+    return trimmed.split('/').last;
   }
 
   void _pullAvailable(String name) {
@@ -194,18 +243,33 @@ class _PickerScreenState extends State<PickerScreen> {
   Future<void> _openSyncReport() async {
     final syncController = _syncController;
     if (syncController == null) return;
+    final report = syncController.lastReport;
+    final conflicts = syncController.pendingConflicts;
+    final unpushedOrphans = syncController.unpushedEntries;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (_) => SyncReportSheet(
-        report: syncController.lastReport,
-        conflicts: syncController.pendingConflicts,
+        report: report,
+        conflicts: conflicts,
+        unpushedOrphans: unpushedOrphans,
         onResolve: (deckId, keepPhone) =>
             syncController.resolve(deckId, keepPhone: keepPhone),
         onRemoveOrphan: syncController.removeOrphan,
       ),
     );
     syncController.markReportRead();
+  }
+
+  Future<void> _openConflictChoice(SyncPendingConflict conflict) async {
+    final syncController = _syncController;
+    if (syncController == null || !mounted) return;
+    await showConflictChoiceSheet(
+      context,
+      conflict: conflict,
+      onResolve: (deckId, keepPhone) =>
+          syncController.resolve(deckId, keepPhone: keepPhone),
+    );
   }
 
   Future<void> _rootSwitcherSheet() async {
@@ -220,16 +284,14 @@ class _PickerScreenState extends State<PickerScreen> {
     );
     if (chosen == null) return;
     await setActiveRoot(chosen.rootId, support: support);
-    final newRootDir = sync_bridge.pairedRootDirFor(
-      support: support.path,
-      rootId: chosen.rootId,
-    );
-    sync_bridge.pairedRecoverFor(rootDir: newRootDir);
     if (!mounted) return;
+    // The phone's own root never changes on a switch: only which paired
+    // desktop's entries the second section shows, resolved fresh by the
+    // new screen's own _loadPairing.
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => PickerScreen(
-          root: newRootDir,
+          root: widget.root,
           device: widget.device,
           access: widget.access,
           currentThemeId: widget.currentThemeId,
@@ -281,8 +343,28 @@ class _PickerScreenState extends State<PickerScreen> {
     );
   }
 
-  Future<void> _openDeck(PickerEntry entry, {PickerDepth? depth}) async {
+  Future<void> _openDeck(
+    PickerEntry entry, {
+    required String root,
+    required bool isPaired,
+    PickerDepth? depth,
+  }) async {
     if (!mounted) return;
+    final syncController = _syncController;
+    if (isPaired && syncController != null) {
+      final deckId = deckIdForPath(
+        entries: syncController.pairedEntries,
+        rootDir: root,
+        path: entry.path,
+      );
+      final matches = deckId == null
+          ? const <SyncPendingConflict>[]
+          : syncController.pendingConflicts.where((c) => c.deckId == deckId);
+      if (matches.isNotEmpty) {
+        await _openConflictChoice(matches.first);
+        return;
+      }
+    }
     if (depth == null &&
         entry.lastDepth == PickerDepth.recognize &&
         !entry.canRecognize) {
@@ -292,7 +374,7 @@ class _PickerScreenState extends State<PickerScreen> {
       MaterialPageRoute(
         builder: (_) => ReviewScreen(
           deckPath: entry.path,
-          rootDir: widget.root,
+          rootDir: root,
           depth: switch (depth) {
             PickerDepth.recognize => ReviewDepth.recognize,
             PickerDepth.recall => ReviewDepth.recall,
@@ -302,20 +384,20 @@ class _PickerScreenState extends State<PickerScreen> {
           device: widget.device,
           supportDir: widget.supportDir,
           buildClient: widget.buildClient,
-          syncController: _syncController,
+          syncController: isPaired ? syncController : null,
         ),
       ),
     );
     _controller.reload();
   }
 
-  Future<void> _openWalk(PickerEntry entry) async {
+  Future<void> _openWalk(PickerEntry entry, {required String root}) async {
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => WalkScreen(
           deckPath: entry.path,
-          rootDir: widget.root,
+          rootDir: root,
           device: widget.device,
           buildClient: widget.buildClient,
         ),
@@ -324,7 +406,11 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.reload();
   }
 
-  Future<void> _rePickDepth(PickerEntry entry) async {
+  Future<void> _rePickDepth(
+    PickerEntry entry, {
+    required String root,
+    required bool isPaired,
+  }) async {
     final depth = await showModalBottomSheet<PickerDepth>(
       context: context,
       builder: (sheet) => PickerDepthSheet(
@@ -334,7 +420,7 @@ class _PickerScreenState extends State<PickerScreen> {
       ),
     );
     if (depth == null || !mounted) return;
-    await _openDeck(entry, depth: depth);
+    await _openDeck(entry, root: root, isPaired: isPaired, depth: depth);
   }
 
   String _ymd(DateTime value) =>
@@ -375,37 +461,71 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.setDeadline(dir: entry.path, date: _ymd(picked));
   }
 
-  void _openEntry(PickerEntry entry) {
+  void _openEntry(PickerEntry entry) =>
+      _openEntryIn(entry, root: widget.root, isPaired: widget.isPairedSubtree);
+
+  void _openPairedEntry(PickerEntry entry) {
+    final pairedDir = _pairedDir;
+    if (pairedDir == null) return;
+    _openEntryIn(entry, root: pairedDir, isPaired: true);
+  }
+
+  void _openEntryIn(
+    PickerEntry entry, {
+    required String root,
+    required bool isPaired,
+  }) {
     // A progress-error row is a diagnostic, not an action: the core refuses
     // the open, so navigating would only strand the user in a dead screen.
     if (entry.progressError && !entry.isWorkspace) return;
     if (entry.isWorkspace) {
-      _drillInto(entry);
+      _drillInto(entry, root: root, isPaired: isPaired);
     } else if (entry.isTrace) {
-      _openWalk(entry);
+      _openWalk(entry, root: root);
     } else {
-      _openDeck(entry);
+      _openDeck(entry, root: root, isPaired: isPaired);
     }
   }
 
-  void _longPressEntry(PickerEntry entry) {
+  void _longPressEntry(PickerEntry entry) => _longPressEntryIn(
+    entry,
+    root: widget.root,
+    isPaired: widget.isPairedSubtree,
+  );
+
+  void _longPressPairedEntry(PickerEntry entry) {
+    final pairedDir = _pairedDir;
+    if (pairedDir == null) return;
+    _longPressEntryIn(entry, root: pairedDir, isPaired: true);
+  }
+
+  void _longPressEntryIn(
+    PickerEntry entry, {
+    required String root,
+    required bool isPaired,
+  }) {
     if (entry.progressError && !entry.isWorkspace) return;
     if (entry.isWorkspace) {
       _deadlineSheet(entry);
     } else if (!entry.isTrace) {
-      _rePickDepth(entry);
+      _rePickDepth(entry, root: root, isPaired: isPaired);
     }
   }
 
-  void _drillInto(PickerEntry entry) {
+  void _drillInto(
+    PickerEntry entry, {
+    required String root,
+    required bool isPaired,
+  }) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PickerScreen(
-          root: widget.root,
+          root: root,
           dir: entry.path,
           title: entry.title,
           device: widget.device,
           syncController: _syncController,
+          isPairedSubtree: isPaired,
         ),
       ),
     );
@@ -463,9 +583,19 @@ class _PickerScreenState extends State<PickerScreen> {
           onLongPressEntry: _longPressEntry,
           onOpenMastered: _openMastered,
           onAddTutorial: _addTutorial,
-          onSyncEntry: syncController == null ? null : _syncEntry,
           syncStatus: syncController?.statusLine,
           onOpenSyncReport: syncController == null ? null : _openSyncReport,
+          pairedLabel: isPairedRootScreen ? _pairedLabel : null,
+          pairedEntries: isPairedRootScreen
+              ? _controller.pairedRootEntries
+              : const [],
+          onOpenPairedEntry: isPairedRootScreen ? _openPairedEntry : null,
+          onLongPressPairedEntry: isPairedRootScreen
+              ? _longPressPairedEntry
+              : null,
+          onSyncEntry: syncController != null && isPairedRootScreen
+              ? _syncEntry
+              : null,
           availableEntries: syncController != null && isPairedRootScreen
               ? syncController.availableEntries
               : const [],

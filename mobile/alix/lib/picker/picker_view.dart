@@ -18,9 +18,13 @@ class PickerView extends StatelessWidget {
     required this.onLongPressEntry,
     required this.onOpenMastered,
     required this.onAddTutorial,
-    this.onSyncEntry,
     this.syncStatus,
     this.onOpenSyncReport,
+    this.pairedLabel,
+    this.pairedEntries = const [],
+    this.onOpenPairedEntry,
+    this.onLongPressPairedEntry,
+    this.onSyncEntry,
     this.availableEntries = const [],
     this.onPullAvailable,
   });
@@ -36,18 +40,28 @@ class PickerView extends StatelessWidget {
   final ValueChanged<List<PickerEntry>> onOpenMastered;
   final VoidCallback onAddTutorial;
 
-  /// Non-null only while this screen shows a paired root's top-level
-  /// entries: adds "Sync" to each row's overflow menu.
-  final ValueChanged<PickerEntry>? onSyncEntry;
-
   /// One line shown above the list while a sync cycle runs or its report
   /// is unread; tapping it opens the report.
   final String? syncStatus;
   final VoidCallback? onOpenSyncReport;
 
-  /// Desktop entries this phone has never pulled, shown below the phone's
-  /// own entries regardless of whether the list above is empty. Non-empty
-  /// only on the paired root's own top-level screen.
+  /// The active paired desktop's label ("host:port"), shown as a subdued
+  /// group heading above [pairedEntries] and [availableEntries]. Null
+  /// unless a pairing is active and this is the root screen.
+  final String? pairedLabel;
+
+  /// The paired desktop's own pulled top-level entries, listed below
+  /// [entries] under [pairedLabel] rather than merged into them.
+  final List<PickerEntry> pairedEntries;
+  final ValueChanged<PickerEntry>? onOpenPairedEntry;
+  final ValueChanged<PickerEntry>? onLongPressPairedEntry;
+
+  /// Adds "Sync" to a paired entry row's overflow menu; never shown on a
+  /// phone-own row.
+  final ValueChanged<PickerEntry>? onSyncEntry;
+
+  /// Desktop entries this phone has never pulled, shown under
+  /// [pairedLabel] below [pairedEntries].
   final List<SyncEntry> availableEntries;
   final ValueChanged<String>? onPullAvailable;
 
@@ -61,6 +75,9 @@ class PickerView extends StatelessWidget {
     final mastered = splitMastered
         ? entries.where((entry) => entry.mastered).toList()
         : const <PickerEntry>[];
+    final showPairedSection =
+        pairedLabel != null &&
+        (pairedEntries.isNotEmpty || availableEntries.isNotEmpty);
     return Scaffold(
       appBar: alixAppBar(context, leading: leading),
       body: Column(
@@ -106,9 +123,6 @@ class PickerView extends StatelessWidget {
                               entry.isWorkspace
                           ? () => onLongPressEntry(entry)
                           : null,
-                      onSync: onSyncEntry == null
-                          ? null
-                          : () => onSyncEntry!(entry),
                     ),
                   if (mastered.isNotEmpty)
                     PickerMasteredAffordance(
@@ -116,11 +130,29 @@ class PickerView extends StatelessWidget {
                       onTap: () => onOpenMastered(mastered),
                     ),
                 ],
-                for (final entry in availableEntries)
-                  PickerAvailableEntryRow(
-                    entry: entry,
-                    onTap: () => onPullAvailable?.call(entry.name),
-                  ),
+                if (showPairedSection) ...[
+                  const SizedBox(height: 8),
+                  PickerLede(text: pairedLabel!, color: theme.alix.dim),
+                  for (final entry in pairedEntries)
+                    PickerDeckRow(
+                      entry: entry,
+                      onTap: () => onOpenPairedEntry?.call(entry),
+                      onLongPress:
+                          (!entry.isWorkspace && !entry.isTrace) ||
+                              (entry.tree.isNotEmpty && !entry.isTrace) ||
+                              entry.isWorkspace
+                          ? () => onLongPressPairedEntry?.call(entry)
+                          : null,
+                      onSync: onSyncEntry == null
+                          ? null
+                          : () => onSyncEntry!(entry),
+                    ),
+                  for (final entry in availableEntries)
+                    PickerAvailableEntryRow(
+                      entry: entry,
+                      onTap: () => onPullAvailable?.call(entry.name),
+                    ),
+                ],
               ],
             ),
           ),

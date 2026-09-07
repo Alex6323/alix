@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/bridge/sync_bridge.dart' as sync_bridge;
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 
@@ -227,4 +228,60 @@ void main() {
       expect(readActivePairing(support), config);
     });
   });
+
+  test(
+    'a pairing does not replace the app-private decks root: it stays the '
+    "phone's own, samples and all, even with a pairing active",
+    () async {
+      final support = temp('alix-support-');
+      await savePairing(
+        const ServerConfig(
+          host: '127.0.0.1',
+          port: 7777,
+          token: 'abc',
+          rootId: 'root-test',
+        ),
+        support: support,
+      );
+
+      final prepared = await prepareWithPairing(support: support, env: '');
+
+      expect(prepared.root, '${support.path}/decks');
+      expect(
+        File('${support.path}/decks/basics.md').existsSync(),
+        isTrue,
+        reason: 'pairing must never hide the bundled samples',
+      );
+    },
+  );
+
+  test(
+    'a paired recovery failure at open still returns a usable Prepared, '
+    "root untouched",
+    () async {
+      final support = temp('alix-support-');
+      await savePairing(
+        const ServerConfig(
+          host: '127.0.0.1',
+          port: 7777,
+          token: 'abc',
+          rootId: 'root-broken',
+        ),
+        support: support,
+      );
+      final pairedDir = sync_bridge.pairedRootDirFor(
+        support: support.path,
+        rootId: 'root-broken',
+      );
+      // A regular file sits where the paired root must be a directory:
+      // pairedRecoverFor's create_dir_all/rollback cannot succeed over it,
+      // reproducing a real recovery failure rather than a mocked one.
+      Directory(pairedDir).parent.createSync(recursive: true);
+      File(pairedDir).writeAsStringSync('not a directory');
+
+      final prepared = await prepareWithPairing(support: support, env: '');
+
+      expect(prepared.root, '${support.path}/decks');
+    },
+  );
 }

@@ -32,16 +32,32 @@ class PickerController extends ChangeNotifier {
   List<PickerEntry> _entries = const [];
   PickerDeadline? _deadline;
   bool _serverReachable = false;
+  String? _pairedRootDir;
+  List<PickerEntry> _pairedRootEntries = const [];
 
   List<PickerEntry> get entries => _entries;
   PickerDeadline? get deadline => _deadline;
   bool get serverReachable => _serverReachable;
   bool get isMasteredView => _masteredEntries != null;
 
+  /// The active paired desktop's own top-level entries, listed alongside
+  /// [entries] rather than instead of them: non-empty only once
+  /// [setPairedRoot] names a directory.
+  List<PickerEntry> get pairedRootEntries => _pairedRootEntries;
+
   void setServerReachable(bool reachable) {
     if (_serverReachable == reachable) return;
     _serverReachable = reachable;
     notifyListeners();
+  }
+
+  /// Names the paired desktop's own directory to list alongside [entries];
+  /// null clears it (no active pairing, or this is not the root screen). A
+  /// no-op dir is not re-listed.
+  void setPairedRoot(String? dir) {
+    if (_pairedRootDir == dir) return;
+    _pairedRootDir = dir;
+    reload();
   }
 
   void reload() {
@@ -73,6 +89,10 @@ class PickerController extends ChangeNotifier {
     final dir = _dir;
     if (dir == null) {
       _entries = List.unmodifiable(_port.listRoot(_root));
+      final pairedRootDir = _pairedRootDir;
+      _pairedRootEntries = pairedRootDir == null
+          ? const []
+          : List.unmodifiable(_port.listRoot(pairedRootDir));
       return;
     }
     _entries = List.unmodifiable(_port.listMembers(root: _root, dir: dir));

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bridge/seed_bridge.dart';
+import 'package:alix_mobile/bridge/sync_bridge.dart' as sync_bridge;
 import 'package:alix_mobile/server_client.dart';
 
 /// The bundled sample decks, copied into a fresh decks dir on first run.
@@ -52,6 +53,33 @@ Future<Prepared> prepare({Directory? support, String? env}) async {
     return Prepared(root: env, device: device, themeId: themeId);
   }
   return Prepared(root: await _appPrivate(support), device: device, themeId: themeId);
+}
+
+/// [prepare]'s result, plus a best-effort recovery of the active paired
+/// root, if any: rolls back an interrupted apply and creates the directory
+/// if missing, before the picker ever lists it. Never touches
+/// [Prepared.root] — the phone's own root and a paired root are two
+/// separate listings the picker shows side by side (`picker_screen.dart`),
+/// not a redirect. A failed recovery here is swallowed; `_loadPairing`'s
+/// own recovery attempt is what surfaces the error, in the first sync
+/// report.
+Future<Prepared> prepareWithPairing({Directory? support, String? env}) async {
+  final resolvedSupport = support ?? await getApplicationSupportDirectory();
+  final prepared = await prepare(support: resolvedSupport, env: env);
+  final resolvedEnv = env ?? Platform.environment['ALIX_DECKS_DIR'];
+  if (resolvedEnv != null && resolvedEnv.isNotEmpty) return prepared;
+  final pairing = readActivePairing(resolvedSupport);
+  if (pairing == null) return prepared;
+  final pairedDir = sync_bridge.pairedRootDirFor(
+    support: resolvedSupport.path,
+    rootId: pairing.rootId,
+  );
+  try {
+    sync_bridge.pairedRecoverFor(rootDir: pairedDir);
+  } on Object catch (error) {
+    debugPrint('paired recover at startup failed: $error');
+  }
+  return prepared;
 }
 
 /// The app-private decks dir, created and sample-seeded on first use.
