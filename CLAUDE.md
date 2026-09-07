@@ -214,7 +214,7 @@ to this codebase. When in doubt, mirror the surrounding code.
 - **Tests live inline; integration tests in `tests/`.** Unit tests go in a
   `#[cfg(test)] mod tests` at the bottom of the module they cover. `tests/` holds
   the end-to-end suites: `tests/cli.rs` drives the built binary as a subprocess
-  (deterministic — temp decks + `--store`, no real Claude — so it runs in CI),
+  (deterministic — temp decks in a temporary folder whose `.alix/` is their store, no real Claude — so it runs in CI),
   and `tests/calibrate.rs` is the `#[ignore]`d real-backend grader-calibration harness
   (`make calibrate`). Name tests as full snake_case sentences stating condition +
   expectation (`passing_the_exam_masters_an_undrilled_deck`). Anything that shells
