@@ -78,6 +78,7 @@ pub mod source;
 pub mod stamp;
 pub mod state;
 pub mod store;
+pub mod sync;
 pub mod time;
 pub mod title;
 pub mod token;
