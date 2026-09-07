@@ -30,11 +30,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `alix doctor` warns when a cloze card's front contains a blank's answer,
   the check that already covers a block note.
 
-- The mobile app gained a `dart:io`-only sync transport (`HttpSyncClient`)
-  for the paired desktop's `/api/sync/*` surface: listing served entries,
-  pulling one entry's zip to a file, and pushing one deck's progress
-  document with the conflict/root-mismatch/too-large outcomes it maps to.
-  Not yet wired into any screen.
+- The phone can now sync with a paired desktop: the picker's `⋮` menu on a
+  pulled entry runs a cycle (list, push every changed deck, pull, tidy
+  renamed entries), app open runs one in the background once the desktop
+  answers with the same root, and a review session's summary silently
+  pushes that deck's progress. A one-line status shows while a cycle runs
+  or its report is unread; tapping it opens the report (landed, kept,
+  phone-only, removed, renamed, left out, orphaned, refused), and a push or
+  pull conflict surfaces a choice naming what each side discards. Settings
+  gains a "Paired desktop" row to switch between saved pairings.
 
 ### Removed
 

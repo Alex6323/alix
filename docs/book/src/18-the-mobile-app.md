@@ -27,6 +27,35 @@ Settings → **About** shows two versions: the app's own and the embedded
 core's. The app has its own release stream; it does not track the CLI's
 version.
 
+## Syncing with the desktop
+
+Once paired (see [Pairing a device](19-pairing.md)), a pulled entry's row
+gains a **Sync** action in its `⋮` menu: it pushes every local deck whose
+progress changed, then pulls that entry fresh. The app also runs one cycle
+in the background each time it opens, for every entry already on the
+phone, once the paired desktop answers and still serves the same root. A
+review session's summary silently pushes that deck's progress too, with
+no visible step on a normal pass.
+
+A pull replaces the files the desktop owns for that entry (its decks,
+their augment and asset files) with the desktop's current copies; anything
+the phone added on its own inside the entry is left alone and reported as
+phone-only. A conflicting deck, one whose progress changed on both sides
+since the last sync, stops review of that deck and asks: keep the phone's
+progress or take the desktop's, naming what each choice discards. An entry
+the desktop no longer serves stays on the phone, reviewable, listed as
+orphaned, with a Remove action once you're done with it.
+
+Tapping the status line above the deck list (shown while a cycle runs, or
+its last report is unread) opens the full report: landed, kept,
+phone-only, removed, renamed, and refused categories, plus a **left out**
+list, entries the desktop serves that the phone has never pulled. This is
+early software: there is no way yet to pull one of those from the phone;
+only an entry already on the phone syncs.
+
+Settings gains a **Paired desktop** row once a pairing is saved, opening a
+sheet to switch which root's entries the picker shows.
+
 ## Workspace deadlines
 
 A workspace's personal "ready by" date shows on its row (date, days left,
