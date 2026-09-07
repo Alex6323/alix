@@ -23,6 +23,7 @@ const PUSHED_FILE: &str = "pushed.json";
 const CONFLICTS_FILE: &str = "conflicts.json";
 const PULLED_SUFFIX: &str = ".pulled";
 const OLD_SUFFIX: &str = ".old";
+const NEXT_SUFFIX: &str = ".next";
 const STATE_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -522,9 +523,10 @@ fn document_plan(
 pub fn plan_pushes(root: &PairedRoot) -> Result<Vec<PushItem>> {
     let pushed = read_pushed(root)?;
     let conflicts = conflicts(root)?;
+    let manifests = manifests(root)?;
     let mut seen = BTreeSet::new();
     let mut items = Vec::new();
-    for manifest in manifests(root)? {
+    for manifest in &manifests {
         for deck in &manifest.decks {
             if conflicts.contains_key(&deck.deck_id) || !seen.insert(deck.deck_id.clone()) {
                 continue;
@@ -539,6 +541,47 @@ pub fn plan_pushes(root: &PairedRoot) -> Result<Vec<PushItem>> {
             }
             items.push(PushItem {
                 deck_id: deck.deck_id.clone(),
+                entry: manifest.entry.clone(),
+                document,
+                base: state.and_then(|s| s.desktop),
+                phone_revision: head.revision,
+            });
+        }
+    }
+    let mut scanned = BTreeSet::new();
+    for manifest in &manifests {
+        let dir = root
+            .entry_root(&manifest.kind, &manifest.entry)
+            .join(".alix")
+            .join("progress");
+        if !scanned.insert(dir.clone()) {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut names: Vec<String> = entries
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        for name in names {
+            let Some(deck_id) = name.strip_suffix(".json") else {
+                continue;
+            };
+            if conflicts.contains_key(deck_id) || !seen.insert(deck_id.to_string()) {
+                continue;
+            }
+            let document = dir.join(&name);
+            let Ok(Some(head)) = document_head(&document, deck_id) else {
+                continue;
+            };
+            let state = pushed.get(deck_id);
+            if state.is_some_and(|s| s.phone == head.revision) {
+                continue;
+            }
+            items.push(PushItem {
+                deck_id: deck_id.to_string(),
                 entry: manifest.entry.clone(),
                 document,
                 base: state.and_then(|s| s.desktop),
@@ -727,6 +770,9 @@ pub fn apply_unpacked(
             }
         }
     }
+    let next_path = next_manifest_path(&previous_path);
+    hook("manifest-next")?;
+    write_json_atomic(&next_path, &manifest)?;
     if manifest.kind == KIND_WORKSPACE {
         if entry_root.is_dir() {
             for rel in walk_files(&entry_root)? {
@@ -798,7 +844,7 @@ pub fn apply_unpacked(
         std::fs::remove_dir_all(unpacked)?;
     }
     hook("manifest")?;
-    write_json_atomic(&previous_path, &manifest)?;
+    std::fs::rename(&next_path, &previous_path)?;
     hook("state")?;
     for (deck, plan) in &plans {
         let live = rel_path(&entry_root, &document_rel(&deck.deck_id));
@@ -872,8 +918,44 @@ fn landing_units(unpacked: &Path, deck_file: &str) -> Result<Vec<(String, bool)>
     Ok(units)
 }
 
+fn next_manifest_path(manifest_path: &Path) -> PathBuf {
+    let mut name = manifest_path.file_name().unwrap_or_default().to_os_string();
+    name.push(NEXT_SUFFIX);
+    manifest_path.with_file_name(name)
+}
+
+fn settle_next_manifest(
+    root: &PairedRoot,
+    entry: &str,
+    unpacked_present: bool,
+) -> Result<Option<String>> {
+    let manifest_path = root.manifest_path(entry);
+    let next = next_manifest_path(&manifest_path);
+    if !next.is_file() {
+        return Ok(None);
+    }
+    if unpacked_present {
+        std::fs::remove_file(&next)?;
+        return Ok(Some(format!("discarded the staged manifest for {entry}")));
+    }
+    std::fs::rename(&next, &manifest_path)?;
+    Ok(Some(format!("promoted the staged manifest for {entry}")))
+}
+
+fn staged_entries(root: &PairedRoot) -> BTreeSet<String> {
+    let Ok(entries) = std::fs::read_dir(root.staging()) else {
+        return BTreeSet::new();
+    };
+    entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().is_dir())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect()
+}
+
 pub fn recover(root: &PairedRoot) -> Result<Vec<String>> {
     let mut actions = Vec::new();
+    let unpacked = staged_entries(root);
     for dir in [root.dir.clone(), root.dir.join(crate::assets::ROOT)] {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
@@ -898,6 +980,21 @@ pub fn recover(root: &PairedRoot) -> Result<Vec<String>> {
             } else {
                 std::fs::rename(&path, &live)?;
                 actions.push(format!("restored {live_name}"));
+            }
+        }
+    }
+    if let Ok(entries) = std::fs::read_dir(root.private().join(PULL_DIR)) {
+        let mut names: Vec<String> = entries
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        for name in names {
+            let Some(entry) = name.strip_suffix(&format!(".json{NEXT_SUFFIX}")) else {
+                continue;
+            };
+            if let Some(action) = settle_next_manifest(root, entry, unpacked.contains(entry))? {
+                actions.push(action);
             }
         }
     }
@@ -1156,8 +1253,12 @@ pub fn apply_pull(
     }
     std::fs::create_dir_all(&dest)?;
     let result = unpack(zip_path, &dest).and_then(|()| apply_unpacked(root, &dest, hook));
-    if result.is_err() && dest.exists() {
-        std::fs::remove_dir_all(&dest)?;
+    if result.is_err() {
+        let unpacked_present = dest.exists();
+        if unpacked_present {
+            std::fs::remove_dir_all(&dest)?;
+        }
+        settle_next_manifest(root, entry, unpacked_present)?;
     }
     result
 }
@@ -1202,6 +1303,10 @@ mod tests {
 
     fn revision(path: &Path, deck_id: &str) -> Option<u64> {
         document_head(path, deck_id).unwrap().map(|h| h.revision)
+    }
+
+    fn manifest_json(root: &PairedRoot, entry: &str) -> String {
+        serde_json::to_string(&read_manifest(&root.manifest_path(entry)).unwrap()).unwrap()
     }
 
     struct Bundle<'a> {
@@ -1489,6 +1594,45 @@ mod tests {
                 .any(|p| p.starts_with("decks/cells")),
             "retained files are not phone-only rows: {:?}",
             report.phone_only
+        );
+    }
+
+    #[test]
+    fn a_pull_keeps_a_removed_member_with_unpushed_progress_reviewable() {
+        let (_tmp, root) = fresh_root();
+        apply(&root, &workspace_bundle());
+        let entry = root.entry_root(KIND_WORKSPACE, "Biology");
+        let member = entry.join("decks/cells.md");
+        let document = root.document_path(KIND_WORKSPACE, "Biology", DECK_A);
+        bump(&document, DECK_A);
+        let item = plan_pushes(&root).unwrap().remove(0);
+        record_push(&root, &item, PushOutcome::NotServed).unwrap();
+
+        let without_reviewed_member = Bundle::new("Biology", KIND_WORKSPACE)
+            .file("alix.toml", b"title = \"Biology\"\n")
+            .file("decks/organs.md", b"## q2\na2\n")
+            .deck("decks/organs.md", DECK_B, None);
+        let report = apply(&root, &without_reviewed_member);
+
+        assert!(
+            member.is_file(),
+            "the deleted desktop member must stay reviewable after its push was refused"
+        );
+        assert_eq!(
+            revision(&document, DECK_A),
+            Some(4),
+            "the unpushed phone document must survive the pull"
+        );
+        assert!(
+            report.kept.contains(&DECK_A.to_string()),
+            "the sync report must name the kept orphan"
+        );
+        assert!(
+            plan_pushes(&root)
+                .unwrap()
+                .iter()
+                .any(|item| item.deck_id == DECK_A),
+            "the kept orphan must remain pushable and reviewable"
         );
     }
 
@@ -1819,6 +1963,7 @@ mod tests {
             apply(&root, &first);
             let entry_root = root.entry_root(first.kind, first.entry);
             let old_tree = tree(&entry_root);
+            let old_manifest = manifest_json(&root, first.entry);
             let steps = {
                 let dir = second.unpack(&root);
                 let mut count = 0;
@@ -1830,6 +1975,12 @@ mod tests {
                 count
             };
             let new_tree = tree(&entry_root);
+            let new_manifest = manifest_json(&root, first.entry);
+            assert_ne!(
+                old_manifest, new_manifest,
+                "{}: manifests differ",
+                first.entry
+            );
             assert!(steps >= 3, "{}: {steps} steps", first.entry);
             assert_ne!(
                 old_tree, new_tree,
@@ -1852,12 +2003,29 @@ mod tests {
                 assert!(result.is_err(), "{}: step {fail_at} must fail", first.entry);
                 recover(&root).unwrap();
                 let live = tree(&entry_root);
+                assert!(
+                    !next_manifest_path(&root.manifest_path(first.entry)).exists(),
+                    "{}: step {fail_at}: no staged manifest survives recovery",
+                    first.entry
+                );
                 if first.kind == KIND_WORKSPACE {
                     assert!(
                         live == old_tree || live == new_tree,
                         "{}: step {fail_at} left a mixed tree: {:?}",
                         first.entry,
                         live.keys().collect::<Vec<_>>()
+                    );
+                    let manifest = manifest_json(&root, first.entry);
+                    assert_eq!(
+                        manifest == new_manifest,
+                        live == new_tree,
+                        "{}: step {fail_at}: the manifest must move with the tree",
+                        first.entry
+                    );
+                    assert!(
+                        manifest == old_manifest || manifest == new_manifest,
+                        "{}: step {fail_at}: the manifest is neither old nor new",
+                        first.entry
                     );
                 } else {
                     let deck_file = first.entry.to_string();
@@ -1892,6 +2060,38 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn workspace_recovery_keeps_the_tree_and_ownership_manifest_in_step() {
+        let (_tmp, root) = fresh_root();
+        apply(&root, &workspace_bundle());
+        let with_new_icon = Bundle::new("Biology", KIND_WORKSPACE)
+            .file("alix.toml", b"title = \"Biology 2\"\n")
+            .file("decks/cells.md", b"## q\nchanged\n")
+            .file("assets/new.svg", b"<svg>new</svg>\n")
+            .deck("decks/cells.md", DECK_A, Some(4));
+        let staged = with_new_icon.unpack(&root);
+        let error = apply_unpacked(&root, &staged, &mut |step| {
+            if step == "manifest" {
+                bail!("process killed before the manifest landed");
+            }
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("process killed"));
+        recover(&root).unwrap();
+
+        let without_new_icon = Bundle::new("Biology", KIND_WORKSPACE)
+            .file("alix.toml", b"title = \"Biology 3\"\n")
+            .file("decks/cells.md", b"## q\nchanged again\n")
+            .deck("decks/cells.md", DECK_A, Some(5));
+        apply(&root, &without_new_icon);
+
+        assert!(
+            !root.dir().join("Biology/assets/new.svg").exists(),
+            "a desktop-owned file added by the interrupted pull must not become phone-only"
+        );
     }
 
     #[test]
