@@ -51,7 +51,10 @@ void main() {
 
         await controller.cycle();
 
-        expect(controller.lastReport?.error, syncRootMismatchMessage);
+        expect(
+          controller.lastReport?.error,
+          syncRootMismatchMessage('root-b', 'root-a'),
+        );
         expect(port.pushCalls, isEmpty);
       },
     );
@@ -75,7 +78,10 @@ void main() {
 
       await controller.cycle();
 
-      expect(controller.lastReport?.error, syncRootMismatchMessage);
+      expect(
+        controller.lastReport?.error,
+        syncRootMismatchMessage('root-b', 'root-a'),
+      );
       expect(
         controller.availableEntries,
         isEmpty,
@@ -506,10 +512,13 @@ void main() {
       'cycle pushes it once, the summary push does not double it',
       () async {
         final gate = Completer<void>();
+        var alreadyPushed = false;
         final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
-        port.planPushesImpl = () => [item('deck-a')];
+        port.planPushesImpl = () =>
+            alreadyPushed ? const [] : [item('deck-a')];
         port.pushImpl = (deckId, _, _) async {
           await gate.future;
+          alreadyPushed = true;
           return SyncPushAccepted(deckId: deckId, revision: 1);
         };
         final controller = SyncController(port: port);
@@ -558,8 +567,9 @@ void main() {
       final cycle = controller.cycle();
       await pullStarted.future;
       changedAfterPlanning = true;
-      await controller.pushOne('deck-a');
+      final push = controller.pushOne('deck-a');
       finishPull.complete();
+      await push;
       await cycle;
 
       expect(

@@ -161,4 +161,9 @@ class FakeSyncPort implements SyncPort {
 
   @override
   String? deckTitle(String path) => deckTitleImpl?.call(path);
+
+  int closeCalls = 0;
+
+  @override
+  void close() => closeCalls++;
 }

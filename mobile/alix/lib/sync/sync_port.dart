@@ -72,6 +72,11 @@ abstract class SyncPort {
   /// The deck's own `title:` for the local copy at [path] (relative to
   /// [rootDir]); null when the phone holds no such file to read one from.
   String? deckTitle(String path);
+
+  /// Releases this port's transport (the bridge port's `HttpSyncClient`
+  /// connection pool); safe to call more than once. Called once, from
+  /// `SyncController.dispose`.
+  void close();
 }
 
 /// Thrown by `SyncPort.pull` when the entry would not fit; [needed] and

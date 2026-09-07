@@ -172,6 +172,12 @@ class SyncBridgePort implements SyncPort {
     }
     return null;
   }
+
+  @override
+  void close() {
+    final client = _client;
+    if (client is HttpSyncClient) client.close();
+  }
 }
 
 SyncEntryState _entryState(bridge.PairedEntryState entry) {

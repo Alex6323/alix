@@ -122,10 +122,14 @@ class _PickerScreenState extends State<PickerScreen> {
   /// heading; null alongside [_pairedDir].
   String? _pairedLabel;
 
-  /// The token [_syncController] was built with (root-screen-owned
-  /// instances only); a re-pair that lands a fresh token must rebuild the
-  /// port and controller, not keep dialing the expired one.
-  String? _syncControllerToken;
+  /// Every port-binding field of the pairing [_syncController] was built
+  /// for (root-screen-owned instances only): scheme, host, port, token,
+  /// and root id. Two served roots can deliberately share one configured
+  /// token, so the token alone is not enough identity; a re-pair that
+  /// changes any of these fields must rebuild the port and controller, not
+  /// keep dialing the stale endpoint or root.
+  ({String scheme, String host, int port, String token, String rootId})?
+  _syncControllerKey;
 
   @override
   void initState() {
@@ -165,6 +169,21 @@ class _PickerScreenState extends State<PickerScreen> {
     controller.addListener(_controller.reload);
   }
 
+  /// Detaches [_syncController] from `_controller.reload`, disposes it
+  /// (closing its port), and clears it and [_syncControllerKey]. Shared by
+  /// a re-pair (before attaching the freshly built replacement) and an
+  /// unpair (no replacement follows); both run only for the root screen
+  /// that owns this controller.
+  void _detachSyncController() {
+    final stale = _syncController;
+    if (stale != null) {
+      stale.removeListener(_controller.reload);
+      stale.dispose();
+    }
+    _syncController = null;
+    _syncControllerKey = null;
+  }
+
   Future<void> _loadPairing() async {
     final support = await _support();
     _hasPairings = readPairings(support).isNotEmpty;
@@ -176,6 +195,8 @@ class _PickerScreenState extends State<PickerScreen> {
         _pairedDir = null;
         _pairedLabel = null;
         _controller.setPairedRoot(null);
+        _detachSyncController();
+        if (mounted) _controller.reload();
       }
       if (mounted) _controller.setServerReachable(false);
       return;
@@ -197,20 +218,23 @@ class _PickerScreenState extends State<PickerScreen> {
       _controller.setPairedRoot(pairedDir);
     }
 
+    final syncControllerKey = (
+      scheme: config.scheme,
+      host: config.host,
+      port: config.port,
+      token: config.token,
+      rootId: config.rootId,
+    );
     final freshlyBuilt =
         isPairedRootScreen &&
-        (_syncController == null || _syncControllerToken != config.token);
+        (_syncController == null || _syncControllerKey != syncControllerKey);
     if (freshlyBuilt) {
-      final stale = _syncController;
-      if (stale != null) {
-        stale.removeListener(_controller.reload);
-        stale.dispose();
-      }
+      _detachSyncController();
       final buildPort =
           widget.buildSyncPort ??
           (config, rootDir) =>
               sync_bridge.SyncBridgePort(config: config, rootDir: rootDir);
-      _syncControllerToken = config.token;
+      _syncControllerKey = syncControllerKey;
       _attachSyncController(
         SyncController(
           port: buildPort(config, pairedDir),

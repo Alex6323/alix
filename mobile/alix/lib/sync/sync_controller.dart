@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -9,9 +10,12 @@ import 'package:alix_mobile/sync_client.dart';
 
 /// The desktop now serves a different root than this pairing was made
 /// against; per docs/API.md section 4.12 the client must stop and re-pair
-/// rather than write anything.
-const String syncRootMismatchMessage =
-    'the desktop now serves another folder; pair it as a new root';
+/// rather than write anything. Names [answeredRootId] (what the desktop
+/// just said) and [expectedRootId] (this pairing's own root).
+String syncRootMismatchMessage(String answeredRootId, String expectedRootId) {
+  return 'the desktop now serves another folder ($answeredRootId, not '
+      '$expectedRootId); pair it as a new root';
+}
 
 /// Reused everywhere a 401 ends a paired call (matches the wording already
 /// shown elsewhere in the app).
@@ -48,20 +52,15 @@ class SyncController extends ChangeNotifier {
   /// again, so switching roots clears this without any code here.
   SyncEntries? _lastListing;
 
-  /// Deck ids the running cycle's own push loop has already attempted
-  /// (any outcome), so the drain below skips one a concurrent [pushOne]
-  /// queued for the same deck rather than pushing it twice. Empty outside
-  /// a cycle.
-  final Set<String> _cycleAttemptedPushDeckIds = {};
-
-  /// Deck ids [pushOne] deferred because a cycle was running; drained
-  /// (each re-attempted, unless the cycle's own loop already attempted it)
-  /// once the cycle ends, so finishing a review mid-cycle is never dropped.
-  final Set<String> _pendingPushes = {};
+  /// Deck ids [pushOne] deferred because a cycle was running, each with
+  /// the completer(s) of every caller waiting on that deck's outcome;
+  /// drained by [_drainPendingPushes].
+  final Map<String, List<Completer<void>>> _pendingPushes = {};
 
   @override
   void dispose() {
     _disposed = true;
+    _port.close();
     super.dispose();
   }
 
@@ -183,16 +182,9 @@ class SyncController extends ChangeNotifier {
     } on Object catch (error) {
       report = SyncReport(error: 'sync failed: $error');
     } finally {
-      _running = false;
       _runningEntry = null;
-      final deferred = _pendingPushes.toList();
-      _pendingPushes.clear();
-      for (final deckId in deferred) {
-        if (!_cycleAttemptedPushDeckIds.contains(deckId)) {
-          await pushOne(deckId);
-        }
-      }
-      _cycleAttemptedPushDeckIds.clear();
+      await _drainPendingPushes();
+      _running = false;
     }
     _refreshPairedState();
     _lastReport = report;
@@ -233,13 +225,12 @@ class SyncController extends ChangeNotifier {
       );
     }
     if (desktop.rootId != _port.rootId) {
-      return aborted(syncRootMismatchMessage);
+      return aborted(syncRootMismatchMessage(desktop.rootId, _port.rootId));
     }
     _lastListing = desktop;
 
     final pushLabels = _deckLabels();
     for (final item in _port.planPushes()) {
-      _cycleAttemptedPushDeckIds.add(item.deckId);
       final label = pushLabels[item.deckId] ?? '${item.entry}/${item.deckId}';
       final SyncPushResult result;
       try {
@@ -255,8 +246,8 @@ class SyncController extends ChangeNotifier {
         case SyncPushConflict():
           conflicts.add(label);
           conflictDeckIds.add(item.deckId);
-        case SyncPushRootMismatch():
-          return aborted(syncRootMismatchMessage);
+        case SyncPushRootMismatch(:final rootId):
+          return aborted(syncRootMismatchMessage(rootId, _port.rootId));
         case SyncPushNotServed():
           break;
         case SyncPushTooLarge():
@@ -386,25 +377,47 @@ class SyncController extends ChangeNotifier {
   /// (`review_screen.dart`'s post-summary hook). Silent on failure or when
   /// nothing is planned for [deckId]; a conflict is recorded and then
   /// visible through [pendingConflicts], for the summary screen's choice.
-  /// A running cycle defers the push instead of dropping it: drained once
-  /// the cycle ends, unless its own push loop already attempted this deck,
-  /// so a review finished mid-cycle is never dropped nor pushed twice.
-  Future<void> pushOne(String deckId) async {
+  /// A running cycle defers the push behind a [Completer], resolved by
+  /// [_drainPendingPushes] once it has attempted this deck for real.
+  Future<void> pushOne(String deckId) {
     if (_running) {
-      _pendingPushes.add(deckId);
-      return;
+      final completer = Completer<void>();
+      (_pendingPushes[deckId] ??= []).add(completer);
+      return completer.future;
     }
+    return _pushOneNow(deckId);
+  }
+
+  Future<void> _pushOneNow(String deckId) async {
     final items = _port.planPushes().where((i) => i.deckId == deckId);
     if (items.isEmpty) return;
     try {
       await _attemptPush(items.first);
-    } on PairingExpired {
-      return;
-    } on SyncTransportFailure {
+    } on Object {
+      // Deliberately broad: also covers a closed port's connection
+      // tearing this attempt down mid-flight after dispose.
       return;
     }
     _refreshPairedState();
     _notify();
+  }
+
+  /// Re-plans and attempts every deck [pushOne] queued while a cycle ran,
+  /// one at a time, releasing each deck's completers only once its own
+  /// attempt (and the paired-state refresh) finished. Re-checks the map
+  /// each pass, so a push queued during the drain itself is also caught.
+  Future<void> _drainPendingPushes() async {
+    while (_pendingPushes.isNotEmpty) {
+      final deckId = _pendingPushes.keys.first;
+      final completers = _pendingPushes.remove(deckId)!;
+      try {
+        await _pushOneNow(deckId);
+      } finally {
+        for (final completer in completers) {
+          completer.complete();
+        }
+      }
+    }
   }
 
   /// Acts on a conflict choice: `Push` pushes now with the returned base;
@@ -420,10 +433,9 @@ class SyncController extends ChangeNotifier {
       case SyncResolutionPush(:final item):
         try {
           await _attemptPush(item);
-        } on PairingExpired {
-          // Silent, matching pushOne: the picker's next cycle re-surfaces it.
-        } on SyncTransportFailure {
-          // Silent, matching pushOne.
+        } on Object {
+          // Silent, matching pushOne: the picker's next cycle re-surfaces
+          // an unresolved conflict; also covers a closed port mid-attempt.
         }
       case SyncResolutionPull(:final entry):
         await _resolvePull(entry);
