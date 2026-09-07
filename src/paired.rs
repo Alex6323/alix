@@ -280,6 +280,38 @@ fn document_rel(deck_id: &str) -> String {
     format!(".alix/progress/{deck_id}.json")
 }
 
+fn member_files(manifest: &SyncPullManifest, deck: &SyncDeckDto) -> Vec<String> {
+    let sidecar = sidecar_rel(&deck.path);
+    let augment = format!("augment/{}.json", deck.deck_id);
+    let assets = format!("assets/{}/", deck.deck_id);
+    let document = document_rel(&deck.deck_id);
+    manifest
+        .files
+        .iter()
+        .map(|file| file.path.clone())
+        .filter(|path| {
+            manifest.kind == KIND_DECK
+                || *path == deck.path
+                || *path == sidecar
+                || *path == augment
+                || *path == document
+                || path.starts_with(&assets)
+        })
+        .collect()
+}
+
+fn sidecar_rel(rel: &str) -> String {
+    let (dir, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+    let twin = crate::personal::sidecar_path(Path::new(name))
+        .to_string_lossy()
+        .into_owned();
+    if dir.is_empty() {
+        twin
+    } else {
+        format!("{dir}/{twin}")
+    }
+}
+
 fn owned_path(manifest: &SyncPullManifest, path: &str) -> Result<Vec<String>> {
     let parts: Vec<String> = path.split('/').map(str::to_string).collect();
     let bad = parts.is_empty()
@@ -639,6 +671,31 @@ pub fn apply_unpacked(
         }
         plans.push((deck.clone(), plan));
     }
+    let new_deck_ids: BTreeSet<&str> = manifest
+        .decks
+        .iter()
+        .map(|deck| deck.deck_id.as_str())
+        .collect();
+    let mut retained: BTreeSet<String> = BTreeSet::new();
+    if let Some(previous) = &previous {
+        for deck in &previous.decks {
+            if new_deck_ids.contains(deck.deck_id.as_str()) {
+                continue;
+            }
+            let live = rel_path(&entry_root, &document_rel(&deck.deck_id));
+            let head = document_head(&live, &deck.deck_id)?;
+            let unpushed = head.as_ref().is_some_and(|h| {
+                pushed
+                    .get(&deck.deck_id)
+                    .is_none_or(|s| s.phone != h.revision)
+            });
+            if !unpushed && !marks.contains_key(&deck.deck_id) {
+                continue;
+            }
+            report.kept.push(deck.deck_id.clone());
+            retained.extend(member_files(previous, deck));
+        }
+    }
     std::fs::remove_file(unpacked.join(MANIFEST_IN_ZIP))?;
     for (deck, plan) in &plans {
         let rel = document_rel(&deck.deck_id);
@@ -669,7 +726,8 @@ pub fn apply_unpacked(
     if manifest.kind == KIND_WORKSPACE {
         if entry_root.is_dir() {
             for rel in walk_files(&entry_root)? {
-                if owned_before.contains(&rel) || rel == MANIFEST_IN_ZIP {
+                let carried = retained.contains(&rel);
+                if (owned_before.contains(&rel) && !carried) || rel == MANIFEST_IN_ZIP {
                     continue;
                 }
                 let dest = rel_path(unpacked, &rel);
@@ -678,12 +736,15 @@ pub fn apply_unpacked(
                 }
                 std::fs::create_dir_all(dest.parent().unwrap_or(unpacked))?;
                 std::fs::copy(rel_path(&entry_root, &rel), &dest)?;
-                report.phone_only.push(rel);
+                if !carried {
+                    report.phone_only.push(rel);
+                }
             }
         }
         for rel in &owned_before {
             if !new_files.contains(rel)
                 && !keep_docs.contains(rel)
+                && !retained.contains(rel)
                 && rel_path(&entry_root, rel).exists()
             {
                 report.removed.push(rel.clone());
@@ -702,7 +763,7 @@ pub fn apply_unpacked(
         }
     } else {
         for rel in &owned_before {
-            if new_files.contains(rel) || keep_docs.contains(rel) {
+            if new_files.contains(rel) || keep_docs.contains(rel) || retained.contains(rel) {
                 continue;
             }
             let live = rel_path(&root.dir, rel);
@@ -1368,6 +1429,54 @@ mod tests {
             report.kept,
             vec![DECK_B.to_string()],
             "a phone-born document the desktop still lacks"
+        );
+    }
+
+    #[test]
+    fn a_deleted_member_with_unpushed_progress_keeps_its_files_and_document() {
+        let (_tmp, root) = fresh_root();
+        apply(&root, &workspace_bundle());
+        let entry_root = root.entry_root(KIND_WORKSPACE, "Biology");
+        let cells_doc = entry_root.join(document_rel(DECK_A));
+        bump(&cells_doc, DECK_A);
+        let second = Bundle::new("Biology", KIND_WORKSPACE)
+            .file("alix.toml", b"title = \"Biology\"\n")
+            .file("decks/organs.md", b"## q2\na2\n")
+            .deck("decks/organs.md", DECK_B, None);
+        let report = apply(&root, &second);
+        for rel in [
+            "decks/cells.md".to_string(),
+            "decks/cells.local.md".to_string(),
+            format!("augment/{DECK_A}.json"),
+            document_rel(DECK_A),
+        ] {
+            assert!(
+                entry_root.join(&rel).is_file(),
+                "retained member file {rel}"
+            );
+        }
+        assert_eq!(
+            revision(&cells_doc, DECK_A),
+            Some(4),
+            "the unpushed document keeps its revision"
+        );
+        assert_eq!(
+            report.kept,
+            vec![DECK_A.to_string()],
+            "kept names the deleted member"
+        );
+        assert_eq!(
+            report.removed,
+            vec!["alix.local.toml".to_string(), "assets/icon.svg".to_string()],
+            "removed excludes the retained member"
+        );
+        assert!(
+            !report
+                .phone_only
+                .iter()
+                .any(|p| p.starts_with("decks/cells")),
+            "retained files are not phone-only rows: {:?}",
+            report.phone_only
         );
     }
 
