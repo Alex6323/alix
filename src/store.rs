@@ -221,9 +221,11 @@ struct DeckStoreFile {
     writer: Option<Writer>,
 }
 
+#[cfg(feature = "full")]
 #[derive(Clone)]
 pub(crate) struct ValidatedDeckDocument(DeckStoreFile);
 
+#[cfg(feature = "full")]
 impl ValidatedDeckDocument {
     pub(crate) fn parse(bytes: &[u8], expected_deck_id: &str) -> Result<Self, StoreError> {
         let path = PathBuf::from("sync push body");
@@ -237,6 +239,7 @@ impl ValidatedDeckDocument {
     }
 }
 
+#[cfg(feature = "full")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SyncPushOutcome {
     Accepted {
@@ -362,6 +365,7 @@ pub enum StoreError {
     MissingDeckId { subject: String },
 }
 
+#[cfg(feature = "full")]
 fn validate_deck_file(
     path: &Path,
     expected_deck_id: &str,
@@ -383,6 +387,7 @@ fn validate_deck_file(
     Ok(())
 }
 
+#[cfg(feature = "full")]
 pub(crate) fn sync_push_document(
     path: &Path,
     expected_deck_id: &str,
