@@ -417,7 +417,7 @@ push-decks:
 mobile-test:
 	cargo build --release --manifest-path mobile/alix/rust/Cargo.toml
 	cd mobile/alix && flutter test
-	cd mobile/alix && flutter test integration_test -d linux
+	cd mobile/alix && for f in integration_test/*_test.dart; do flutter test "$$f" -d linux || exit 1; done
 
 # The Dart unit/widget half of mobile-test alone: host dylib + `flutter test
 # test/`, no emulator and no integration window. Part of preflight, so a
