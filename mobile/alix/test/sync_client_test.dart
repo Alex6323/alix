@@ -169,12 +169,45 @@ void main() {
         );
 
         expect(progress, isNotEmpty);
+        expect(progress.first, (0, bytes.length));
         expect(progress.last, (bytes.length, bytes.length));
         for (final (received, total) in progress) {
           expect(total, bytes.length);
           expect(received, lessThanOrEqualTo(bytes.length));
         }
       });
+
+      test(
+        'calls onProgress with the length before writing any byte, so a '
+        'throw from it leaves no file behind',
+        () async {
+          final bytes = List<int>.filled(2000, 7);
+          final s = await startServer((request) async {
+            await request.drain<void>();
+            request.response.contentLength = bytes.length;
+            request.response.add(bytes);
+            await request.response.close();
+          });
+          final client = HttpSyncClient(
+            ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'),
+          );
+          addTearDown(client.close);
+          final target = targetFile();
+
+          await expectLater(
+            client.pull(
+              'Biology',
+              target,
+              onProgress: (received, total) {
+                if (received == 0) throw StateError('refuse: $total needed');
+              },
+            ),
+            throwsA(isA<StateError>()),
+          );
+
+          expect(target.existsSync(), isFalse);
+        },
+      );
 
       test('truncates an existing target file before writing', () async {
         final target = targetFile();

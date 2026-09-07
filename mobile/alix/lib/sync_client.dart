@@ -218,7 +218,11 @@ abstract class SyncClient {
   /// [target] (created or truncated). Reads `Content-Length` before the
   /// body and returns it; throws [SyncTransportFailure] when the body
   /// length differs from it, or on any non-200 status, leaving no partial
-  /// file behind. Throws [PairingExpired] on 401.
+  /// file behind. Throws [PairingExpired] on 401. [onProgress], when given,
+  /// fires once with `(0, total)` as soon as the length is known and before
+  /// any byte is written, then again after each chunk; a caller that throws
+  /// from that first call sees the exception unwrapped, with nothing
+  /// written to [target] yet (the free-space pre-check's hook).
   Future<int> pull(
     String entry,
     File target, {
@@ -305,6 +309,7 @@ class HttpSyncClient implements SyncClient {
       throw SyncTransportFailure(response.statusCode, body);
     }
     final total = response.contentLength;
+    onProgress?.call(0, total);
     var received = 0;
     final sink = target.openWrite();
     try {
