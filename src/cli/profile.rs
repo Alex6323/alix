@@ -776,6 +776,110 @@ mod tests {
     }
 
     #[test]
+    fn profile_sync_root_identity_is_one_doctor_law() {
+        struct Case {
+            name: &'static str,
+            roots: &'static [Option<&'static str>],
+            nested: bool,
+            expected: &'static [&'static str],
+        }
+
+        let id = "root-00000000000000000000000000";
+        for case in [
+            Case {
+                name: "one-profile-without-id",
+                roots: &[None],
+                nested: false,
+                expected: &[],
+            },
+            Case {
+                name: "one-profile-with-id",
+                roots: &[Some("root-00000000000000000000000000")],
+                nested: false,
+                expected: &[],
+            },
+            Case {
+                name: "malformed-id",
+                roots: &[Some("not-a-root")],
+                nested: false,
+                expected: &["profile `anna`", ".alix/sync.toml", "root_id"],
+            },
+            Case {
+                name: "duplicate-id",
+                roots: &[
+                    Some("root-00000000000000000000000000"),
+                    Some("root-00000000000000000000000000"),
+                ],
+                nested: false,
+                expected: &[
+                    "profiles `anna` and `bob`",
+                    "root-00000000000000000000000000",
+                ],
+            },
+            Case {
+                name: "nested-root",
+                roots: &[None],
+                nested: true,
+                expected: &["profile `anna`", "nested/.alix/sync.toml"],
+            },
+        ] {
+            let temp = TempDir::new().unwrap();
+            let profiles = temp.path().join("profiles");
+            fs::create_dir_all(&profiles).unwrap();
+            for (index, root_id) in case.roots.iter().enumerate() {
+                let profile = ["anna", "bob"][index];
+                let folder = temp.path().join(format!("decks-{profile}"));
+                fs::create_dir_all(&folder).unwrap();
+                fs::write(
+                    config_path_in(&profiles, profile),
+                    format!("decks_dir = {:?}\n", folder.to_str().unwrap()),
+                )
+                .unwrap();
+                if let Some(root_id) = root_id {
+                    fs::create_dir_all(folder.join(".alix")).unwrap();
+                    fs::write(
+                        folder.join(".alix/sync.toml"),
+                        format!("root_id = {root_id:?}\n"),
+                    )
+                    .unwrap();
+                }
+                if case.nested {
+                    fs::create_dir_all(folder.join("nested/.alix")).unwrap();
+                    fs::write(
+                        folder.join("nested/.alix/sync.toml"),
+                        format!("root_id = {id:?}\n"),
+                    )
+                    .unwrap();
+                }
+            }
+
+            let errors = crate::doctor::profile_folder_errors(&profiles).unwrap();
+            if case.expected.is_empty() {
+                assert!(
+                    errors.is_empty(),
+                    "{} must be clean: {errors:#?}",
+                    case.name
+                );
+            } else {
+                assert_eq!(
+                    1,
+                    errors.len(),
+                    "{} must report one row: {errors:#?}",
+                    case.name
+                );
+                for expected in case.expected {
+                    assert!(
+                        errors[0].contains(expected),
+                        "{} error must name {expected:?}: {}",
+                        case.name,
+                        errors[0]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn add_rejects_a_reserved_profile_name() {
         let temp = TempDir::new().unwrap();
         let config = Config {

@@ -1342,7 +1342,7 @@ fn repair_after_explicit_path(path: Option<&Path>) -> bool {
 
 pub(crate) fn profile_folder_errors(profiles_dir: &Path) -> Result<Vec<String>> {
     let profiles = crate::profile::profile_folders_in(profiles_dir)?;
-    Ok(alix::config::profile_folder_conflicts(&profiles)?
+    let mut errors: Vec<String> = alix::config::profile_folder_conflicts(&profiles)?
         .into_iter()
         .map(|conflict| {
             format!(
@@ -1353,7 +1353,79 @@ pub(crate) fn profile_folder_errors(profiles_dir: &Path) -> Result<Vec<String>> 
                 conflict.second.folder.display()
             )
         })
-        .collect())
+        .collect();
+
+    let mut roots: HashMap<String, Vec<&alix::config::ProfileFolder>> = HashMap::new();
+    for profile in &profiles {
+        match alix::sync::read_root_id(&profile.folder) {
+            Ok(Some(root_id)) => roots.entry(root_id).or_default().push(profile),
+            Ok(None) => {}
+            Err(error) => errors.push(format!(
+                "profile `{}` has an invalid sync root identity: {error:#}",
+                profile.name
+            )),
+        }
+        for path in nested_sync_root_files(&profile.folder)? {
+            let relative = path.strip_prefix(&profile.folder).unwrap_or(&path);
+            errors.push(format!(
+                "profile `{}` contains nested sync root identity `{}`",
+                profile.name,
+                relative.display()
+            ));
+        }
+    }
+    let mut roots: Vec<_> = roots.into_iter().collect();
+    roots.sort_by(|a, b| a.0.cmp(&b.0));
+    for (root_id, profiles) in roots {
+        for first in 0..profiles.len() {
+            for second in first + 1..profiles.len() {
+                errors.push(format!(
+                    "profiles `{}` and `{}` carry duplicate sync root id `{root_id}`",
+                    profiles[first].name, profiles[second].name
+                ));
+            }
+        }
+    }
+    Ok(errors)
+}
+
+fn nested_sync_root_files(root: &Path) -> Result<Vec<PathBuf>> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => {
+                return Err(error).with_context(|| format!("cannot read {}", dir.display()));
+            }
+        };
+        let mut entries: Vec<_> = entries.collect::<Result<_, _>>()?;
+        entries.sort_by_key(std::fs::DirEntry::file_name);
+        for entry in entries {
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            let path = entry.path();
+            if file_type.is_dir() {
+                walk(root, &path, out)?;
+            } else if file_type.is_file()
+                && path.file_name().is_some_and(|name| name == "sync.toml")
+                && path
+                    .parent()
+                    .and_then(Path::file_name)
+                    .is_some_and(|name| name == ".alix")
+                && path != root.join(".alix/sync.toml")
+            {
+                out.push(path);
+            }
+        }
+        Ok(())
+    }
+
+    let mut files = Vec::new();
+    walk(root, root, &mut files)?;
+    files.sort();
+    Ok(files)
 }
 
 // Exits non-zero only on a hard fail; a missing optional binary (a warn)
