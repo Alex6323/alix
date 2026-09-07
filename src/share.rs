@@ -1544,7 +1544,7 @@ mod tests {
 
     #[test]
     fn book_stignore_names_the_code_owned_private_set() {
-        let book = include_str!("../docs/book/src/16-configuration.md");
+        let book = include_str!("../docs/book/src/16-configuration.md").replace("\r\n", "\n");
         let (_, after_intro) = book
             .split_once("add this `.stignore`")
             .expect("chapter 16 must introduce the private-set .stignore block");

@@ -17,7 +17,7 @@ import 'package:alix_mobile/src/rust/frb_generated.dart';
 import '../test/support/deck_fixture.dart';
 
 String onlyProgressDocument(String stateRoot) {
-  final files = Directory('$stateRoot/progress')
+  final files = Directory('$stateRoot/.alix/progress')
       .listSync()
       .whereType<File>()
       .toList();
