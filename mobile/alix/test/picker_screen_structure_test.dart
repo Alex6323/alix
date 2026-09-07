@@ -282,9 +282,6 @@ void main() {
       onSetTheme: (_) async {},
       buildClient: (_) => client,
     );
-    final reopenSettings = tester
-        .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.menu))
-        .onPressed!;
     await openSettings(tester);
     expect(find.text('Connected devices'), findsOneWidget);
     expect(find.text('Generate deck'), findsNothing);
@@ -307,10 +304,9 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(find.byType(PickerScreen), findsOneWidget);
-    // Keep this characterization on the pairing liveness re-probe. The
-    // route's menu callback remains valid even if the outgoing Settings
-    // route caused the picker's app bar to build once with a back arrow.
-    reopenSettings();
+    expect(find.byIcon(Icons.menu), findsOneWidget);
+    expect(find.byType(BackButton), findsNothing);
+    await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
     expect(find.text('Generate deck'), findsOneWidget);
     await expectWidgetTree(

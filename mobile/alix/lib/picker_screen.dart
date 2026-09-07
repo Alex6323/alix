@@ -45,6 +45,7 @@ class PickerScreen extends StatefulWidget {
     this.syncController,
     this.buildSyncPort,
     this.isPairedSubtree = false,
+    this.isPushedRoute = false,
   }) : masteredEntries = null;
 
   const PickerScreen.mastered({
@@ -63,7 +64,8 @@ class PickerScreen extends StatefulWidget {
        buildClient = null,
        generatePollInterval = null,
        buildSyncPort = null,
-       isPairedSubtree = false;
+       isPairedSubtree = false,
+       isPushedRoute = true;
 
   final String root;
   final String? dir;
@@ -93,6 +95,14 @@ class PickerScreen extends StatefulWidget {
   /// whichever section its parent row came from. False for the root
   /// screen's own phone-own list and for the mastered view.
   final bool isPairedSubtree;
+
+  /// Whether this instance was reached via [Navigator.push] (a drill-in or
+  /// the mastered view), so its app bar owes a real back button. False only
+  /// for the one instance `main.dart` mounts as `home:`. `Navigator.of
+  /// (context).canPop()` is not a substitute: it answers for the whole
+  /// stack, not for this route, and reads true on the root screen too
+  /// while an unrelated route above it is still popping.
+  final bool isPushedRoute;
 
   @override
   State<PickerScreen> createState() => _PickerScreenState();
@@ -526,6 +536,7 @@ class _PickerScreenState extends State<PickerScreen> {
           device: widget.device,
           syncController: _syncController,
           isPairedSubtree: isPaired,
+          isPushedRoute: true,
         ),
       ),
     );
@@ -569,7 +580,7 @@ class _PickerScreenState extends State<PickerScreen> {
           deadline: _controller.deadline,
           isRoot: widget.dir == null,
           isMasteredView: _controller.isMasteredView,
-          leading: Navigator.of(context).canPop()
+          leading: widget.isPushedRoute
               ? const BackButton()
               : widget.dir == null && widget.onSetTheme != null
               ? IconButton(
