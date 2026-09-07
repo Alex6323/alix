@@ -232,7 +232,8 @@ mod tests {
 
     #[test]
     fn sanitize_svg_strips_scripts_handlers_and_links_but_keeps_shapes() {
-        let raw = r#"prose before
+        let raw = r#"<script>leading()</script>
+            prose before
             <svg viewBox="0 0 24 24" onload="steal()">
               <script>alert(1)</script>
               <a href="https://evil.example"><circle cx="12" cy="12" r="8"/></a>
@@ -262,7 +263,7 @@ mod tests {
         let cli_dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(
             cli_dir.path(),
-            "<svg viewBox=\"0 0 24 24\"><script>x()</script><circle r=\"8\"/></svg>",
+            "<script>leading()</script><svg viewBox=\"0 0 24 24\"><script>x()</script><circle r=\"8\"/></svg>",
         );
 
         let out = generate(ws.path(), None, &ask_config(&cli)).unwrap();
@@ -388,7 +389,7 @@ mod tests {
         let svg = src.path().join("mark.svg");
         std::fs::write(
             &svg,
-            "<svg viewBox=\"0 0 24 24\"><script>x</script><rect/></svg>",
+            "<script>leading()</script><svg viewBox=\"0 0 24 24\"><script>x</script><rect/></svg>",
         )
         .unwrap();
         let out = install(ws.path(), &svg).unwrap();
