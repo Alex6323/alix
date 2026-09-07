@@ -111,18 +111,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
   void _showConflictSheet(SyncPendingConflict conflict) {
     final syncController = widget.syncController;
     if (syncController == null || !mounted) return;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheet) => SyncReportSheet(
-        report: null,
-        conflicts: [conflict],
-        onResolve: (deckId, keepPhone) {
-          syncController.resolve(deckId, keepPhone: keepPhone);
-          Navigator.of(sheet).pop();
-        },
-        onRemoveOrphan: (_) {},
-      ),
+    showConflictChoiceSheet(
+      context,
+      conflict: conflict,
+      onResolve: (deckId, keepPhone) =>
+          syncController.resolve(deckId, keepPhone: keepPhone),
     );
   }
 

@@ -14,6 +14,7 @@ void main() {
     WidgetTester tester, {
     SyncReport? report,
     List<SyncPendingConflict> conflicts = const [],
+    Set<String> unpushedOrphans = const {},
     void Function(String deckId, bool keepPhone)? onResolve,
     ValueChanged<String>? onRemoveOrphan,
   }) async {
@@ -23,6 +24,7 @@ void main() {
           body: SyncReportSheet(
             report: report,
             conflicts: conflicts,
+            unpushedOrphans: unpushedOrphans,
             onResolve: onResolve ?? (_, _) {},
             onRemoveOrphan: onRemoveOrphan ?? (_) {},
           ),
@@ -48,7 +50,7 @@ void main() {
       expect(
         find.text(
           "Keep the phone's progress (discards the desktop's, "
-          'last written by desk-1 at 01:00)',
+          'last written by desk-1 at 1970-01-01 01:00)',
         ),
         findsOneWidget,
       );
@@ -56,6 +58,32 @@ void main() {
         find.text(
           "Take the desktop's (discards the phone's progress since the "
           'last sync)',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'the writer label carries the date, not only the time, since a stale '
+    'conflict can be days old',
+    (tester) async {
+      final twoDaysAgo = DateTime(2026, 9, 5, 9, 15)
+          .millisecondsSinceEpoch;
+      final conflict = SyncPendingConflict(
+        deckId: 'deck-1',
+        entry: 'German',
+        path: 'Verbs.md',
+        conflict: PairedConflictPush(
+          desktopWriter: SyncWriter(device: 'desk-1', atMs: twoDaysAgo),
+        ),
+      );
+      await pump(tester, conflicts: [conflict]);
+
+      expect(
+        find.text(
+          "Keep the phone's progress (discards the desktop's, "
+          'last written by desk-1 at 2026-09-05 09:15)',
         ),
         findsOneWidget,
       );
@@ -155,16 +183,94 @@ void main() {
     },
   );
 
-  testWidgets('an orphaned entry has its own Remove action, wired to '
-      'onRemoveOrphan with that entry', (tester) async {
-    const report = SyncReport(orphaned: ['Old Deck']);
-    String? removed;
-    await pump(tester, report: report, onRemoveOrphan: (e) => removed = e);
+  testWidgets(
+    'an orphaned entry asks for confirmation before Remove fires, naming '
+    'the entry',
+    (tester) async {
+      const report = SyncReport(orphaned: ['Old Deck']);
+      String? removed;
+      await pump(tester, report: report, onRemoveOrphan: (e) => removed = e);
 
-    expect(find.text('Old Deck'), findsOneWidget);
-    await tester.tap(find.text('Remove'));
-    expect(removed, 'Old Deck');
-  });
+      expect(find.text('Old Deck'), findsOneWidget);
+      await tester.tap(find.text('Remove'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Remove "Old Deck" from this phone?'), findsOneWidget);
+      expect(removed, isNull);
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Remove'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(removed, 'Old Deck');
+    },
+  );
+
+  testWidgets(
+    'canceling the confirmation leaves the entry and never fires '
+    'onRemoveOrphan',
+    (tester) async {
+      const report = SyncReport(orphaned: ['Old Deck']);
+      String? removed;
+      await pump(tester, report: report, onRemoveOrphan: (e) => removed = e);
+
+      await tester.tap(find.text('Remove'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(removed, isNull);
+      expect(find.text('Old Deck'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'unpushed progress on an orphan is named in the confirmation',
+    (tester) async {
+      const report = SyncReport(orphaned: ['Old Deck']);
+      await pump(
+        tester,
+        report: report,
+        unpushedOrphans: const {'Old Deck'},
+      );
+
+      await tester.tap(find.text('Remove'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Remove "Old Deck" from this phone? Its unpushed progress goes too.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'a resolved conflict leaves the sheet immediately, and a second tap '
+    'has nothing left to tap',
+    (tester) async {
+      const conflict = SyncPendingConflict(
+        deckId: 'deck-9',
+        entry: 'German',
+        path: 'Verbs.md',
+        conflict: PairedConflictPull(),
+      );
+      await pump(tester, conflicts: const [conflict]);
+
+      expect(find.byType(OutlinedButton), findsNWidgets(2));
+      await tester.tap(
+        find.text("Keep the phone's progress (discards the desktop's version)"),
+      );
+      await tester.pump();
+
+      expect(find.byType(OutlinedButton), findsNothing);
+    },
+  );
 
   testWidgets('a report error line shows in place of the sections', (
     tester,

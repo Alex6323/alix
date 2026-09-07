@@ -15,8 +15,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/bridge/sync_bridge.dart' as sync_bridge;
 import 'package:alix_mobile/picker_screen.dart';
+import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
+import 'package:alix_mobile/sync/sync_models.dart'
+    show PairedConflictPush, SyncDeckState, SyncEntryState, SyncRenamedEntry;
 import 'package:alix_mobile/sync/sync_port.dart';
 import 'package:alix_mobile/sync/sync_sheet.dart';
 import 'package:alix_mobile/sync_client.dart' show SyncEntries, SyncEntry;
@@ -53,17 +56,23 @@ void main() {
     return dir;
   }
 
+  // The paired desktop's directory (from pairedRoot) is a second, separate
+  // listing alongside the phone's own root, never a replacement for it, so
+  // every pumpPaired call also mounts the picker on its own fresh, empty
+  // phone-own root.
   Future<void> pumpPaired(
     WidgetTester tester, {
     required Directory root,
     required Directory support,
     required SyncPort port,
+    Directory? phoneRoot,
   }) async {
+    final ownRoot = phoneRoot ?? tempDir('alix-sync-status-phone-');
     await tester.pumpWidget(
       MaterialApp(
         home: PickerScreen(
           key: UniqueKey(),
-          root: root.path,
+          root: ownRoot.path,
           supportDir: support,
           currentThemeId: 'dark',
           onSetTheme: (_) async {},
@@ -82,6 +91,11 @@ void main() {
       final support = tempDir('alix-sync-status-support-');
       final root = await pairedRoot(support);
       final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      // A renamed pair makes the cycle non-empty (an empty cycle now leaves
+      // no status line at all) without changing the summary text: only
+      // landed/conflicts/refused/orphaned feed it.
+      port.tidyRenamedImpl = (listed) =>
+          const [SyncRenamedEntry(old: 'A', new_: 'B')];
 
       await pumpPaired(tester, root: root, support: support, port: port);
 
@@ -139,6 +153,18 @@ void main() {
         '---\ntitle: Deck\n---\n## q\na\n',
       );
       final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      port.entriesImpl = () async => const SyncEntries(
+        rootId: 'root-test',
+        entries: [
+          SyncEntry(
+            name: 'deck.md',
+            kind: 'deck',
+            members: 1,
+            unpackedBytes: 10,
+            leftOut: [],
+          ),
+        ],
+      );
 
       await pumpPaired(tester, root: root, support: support, port: port);
       expect(port.entriesCalls.length, 1);
@@ -146,10 +172,57 @@ void main() {
       await tester.tap(find.byIcon(Icons.more_vert));
       await tester.pumpAndSettle();
       expect(find.text('Sync'), findsOneWidget);
-      await tester.tap(find.text('Sync'));
-      await tester.pumpAndSettle();
+      // A real entries() match now runs a real pull attempt (staging dir,
+      // zip target), real dart:io the fake test zone never services on its
+      // own; same gotcha as the never-pulled-entry pull below.
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Sync'));
+        final deadline = DateTime.now().add(const Duration(seconds: 2));
+        while (port.pullCalls.isEmpty && DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        await tester.pumpAndSettle();
+      });
 
       expect(port.entriesCalls.length, 2);
+      // The manifest name (deck.md), never the display title (Deck): a
+      // titled deck's stem does not carry the .md the entry name needs.
+      expect(port.pullCalls, ['deck.md']);
+    },
+  );
+
+  testWidgets(
+    "the phone's own decks and the paired desktop's stay two lists: both "
+    'show, the desktop one under its host:port label, and only its rows '
+    'offer Sync',
+    (tester) async {
+      final support = tempDir('alix-sync-two-lists-support-');
+      final phoneRoot = tempDir('alix-sync-two-lists-phone-');
+      writeTestDeck(
+        '${phoneRoot.path}/local.md',
+        '---\ntitle: Local Deck\n---\n## q\na\n',
+      );
+      final root = await pairedRoot(support);
+      writeTestDeck(
+        '${root.path}/remote.md',
+        '---\ntitle: Remote Deck\n---\n## q\na\n',
+      );
+      final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+
+      await pumpPaired(
+        tester,
+        root: root,
+        support: support,
+        port: port,
+        phoneRoot: phoneRoot,
+      );
+
+      expect(find.text('Local Deck'), findsOneWidget);
+      expect(find.text('Remote Deck'), findsOneWidget);
+      expect(find.text('127.0.0.1:7777'), findsOneWidget);
+      // Only the paired desktop's own row carries the overflow menu; a
+      // phone-own row never does.
+      expect(find.byIcon(Icons.more_vert), findsOneWidget);
     },
   );
 
@@ -192,6 +265,120 @@ void main() {
       });
 
       expect(port.pullCalls, ['Biology']);
+    },
+  );
+
+  testWidgets(
+    'a conflicted paired deck opens the conflict choice, never a review '
+    'session',
+    (tester) async {
+      final support = tempDir('alix-sync-conflict-gate-support-');
+      final root = await pairedRoot(support);
+      writeTestDeck('${root.path}/deck.md', '---\ntitle: Deck\n---\n## q\na\n');
+      final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      port.pairedEntriesImpl = () => const [
+        SyncEntryState(
+          entry: 'deck.md',
+          kind: 'deck',
+          decks: [
+            SyncDeckState(
+              deckId: 'deck-1',
+              path: 'deck.md',
+              unpushed: false,
+              conflict: PairedConflictPush(desktopRevision: 2),
+            ),
+          ],
+        ),
+      ];
+
+      await pumpPaired(tester, root: root, support: support, port: port);
+
+      await tester.tap(find.text('Deck'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ReviewScreen), findsNothing);
+      expect(find.byType(SyncReportSheet), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a pairedEntries failure never crashes the report sheet: it opens with '
+    'the sync error and no conflicts',
+    (tester) async {
+      final support = tempDir('alix-sync-pairedentries-fail-support-');
+      final root = await pairedRoot(support);
+      final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      port.pairedEntriesImpl = () => throw Exception('state file corrupt');
+
+      await pumpPaired(tester, root: root, support: support, port: port);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const Key('sync-status')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SyncReportSheet), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(SyncReportSheet),
+          matching: find.textContaining('sync failed'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'a startup recovery failure on the paired folder never crashes the '
+    'picker: it shows as an unread report instead',
+    (tester) async {
+      final support = tempDir('alix-sync-recover-fail-support-');
+      const config = ServerConfig(
+        host: '127.0.0.1',
+        port: 7777,
+        token: 'abc',
+        rootId: 'root-broken',
+      );
+      await savePairing(config, support: support);
+      final pairedDir = sync_bridge.pairedRootDirFor(
+        support: support.path,
+        rootId: 'root-broken',
+      );
+      // A regular file sits where the paired root must be a directory:
+      // pairedRecoverFor's create_dir_all/rollback cannot succeed over it,
+      // reproducing a real recovery failure rather than a mocked one.
+      Directory(pairedDir).parent.createSync(recursive: true);
+      File(pairedDir).writeAsStringSync('not a directory');
+      final port = FakeSyncPort(rootId: 'root-broken', rootDir: pairedDir);
+
+      final phoneRoot = tempDir('alix-sync-recover-fail-phone-');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PickerScreen(
+            key: UniqueKey(),
+            root: phoneRoot.path,
+            supportDir: support,
+            currentThemeId: 'dark',
+            onSetTheme: (_) async {},
+            buildClient: (_) => FakeServerClient(),
+            buildSyncPort: (_, _) => port,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const Key('sync-status')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SyncReportSheet), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(SyncReportSheet),
+          matching: find.textContaining('could not prepare the paired folder'),
+        ),
+        findsOneWidget,
+      );
     },
   );
 }

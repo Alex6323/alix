@@ -41,10 +41,10 @@ void main() {
         'lib/picker/picker_controller.dart',
         'notifyListeners();',
       ),
-      [44, 49],
+      [51, 65],
       reason:
           'setServerReachable and reload own every picker listing mutation; '
-          'deadline and tutorial transitions reload',
+          'deadline, tutorial, and setPairedRoot transitions reload',
     );
     expect(
       _linesContaining(
@@ -71,8 +71,8 @@ void main() {
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
-        'lib/review_screen.dart:301',
-        'lib/picker_screen.dart:437',
+        'lib/review_screen.dart:294',
+        'lib/picker_screen.dart:557',
         'lib/picker/generate_sheet.dart:42',
         'lib/walk_screen.dart:192',
       ],
