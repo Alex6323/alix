@@ -638,9 +638,6 @@ pub fn restore_deck(deck_path: &Path, store_root: &Path) -> Result<RestoreReport
             .and_then(|n| n.to_str())
             .unwrap_or("deck.md")
     ));
-    if !bak_deck.exists() {
-        bail!("nothing to restore: {} does not exist", bak_deck.display());
-    }
     let dir = deck_path.parent().unwrap_or_else(|| Path::new("."));
     let workspace_root = workspace::root_for_member_dir(dir).unwrap_or_else(|| dir.to_path_buf());
     let workspace_files = WorkspaceFiles::new(workspace_root);
@@ -662,9 +659,18 @@ pub fn restore_deck(deck_path: &Path, store_root: &Path) -> Result<RestoreReport
         }
     }
 
-    swap_with_bak(deck_path)?;
+    let has_progress_backup = tokens
+        .iter()
+        .any(|token| progress_dir.join(format!("{token}.json.bak")).exists());
+    if !bak_deck.exists() && !has_progress_backup {
+        bail!(
+            "nothing to restore: {} and the deck progress backup do not exist",
+            bak_deck.display()
+        );
+    }
+
     let mut report = RestoreReport {
-        deck: true,
+        deck: bak_deck.exists() && swap_with_bak(deck_path)?,
         ..RestoreReport::default()
     };
     for token in &tokens {
@@ -1180,6 +1186,53 @@ mod tests {
             before,
             snapshot(dir.path()),
             "a double restore must reproduce every file byte for byte"
+        );
+    }
+
+    #[test]
+    fn restore_accepts_a_progress_only_backup_and_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.md", "da1", "c1");
+        let progress = dir.path().join(".alix/progress/deck-da1.json");
+        std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
+        std::fs::write(&progress, b"live progress").unwrap();
+        std::fs::write(progress.with_extension("json.bak"), b"backup progress").unwrap();
+        let before = [
+            std::fs::read(dir.path().join("a.md")).unwrap(),
+            std::fs::read(&progress).unwrap(),
+            std::fs::read(progress.with_extension("json.bak")).unwrap(),
+        ];
+
+        let report = restore_deck(&dir.path().join("a.md"), dir.path()).unwrap();
+
+        assert_eq!(
+            RestoreReport {
+                deck: false,
+                progress: true,
+                augment: false,
+            },
+            report,
+            "only the progress side reports a swap"
+        );
+        assert_eq!(
+            b"backup progress",
+            std::fs::read(&progress).unwrap().as_slice(),
+            "the progress backup becomes live"
+        );
+        assert_eq!(
+            b"live progress",
+            std::fs::read(progress.with_extension("json.bak"))
+                .unwrap()
+                .as_slice(),
+            "the previous live progress becomes the backup"
+        );
+
+        restore_deck(&dir.path().join("a.md"), dir.path()).unwrap();
+        assert_eq!(before[0], std::fs::read(dir.path().join("a.md")).unwrap());
+        assert_eq!(before[1], std::fs::read(&progress).unwrap());
+        assert_eq!(
+            before[2],
+            std::fs::read(progress.with_extension("json.bak")).unwrap()
         );
     }
 

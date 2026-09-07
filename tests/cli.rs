@@ -5753,6 +5753,11 @@ fn deck_restore_round_trips_a_forced_import() {
 
     let restored = alix(&["deck", "restore", deck.to_str().unwrap()]);
     assert!(restored.status.success(), "stderr: {}", stderr(&restored));
+    assert!(
+        stdout(&restored).contains("deck: swapped"),
+        "restore reports which file side moved: {}",
+        stdout(&restored)
+    );
     assert_eq!(
         original,
         std::fs::read_to_string(&deck).unwrap(),

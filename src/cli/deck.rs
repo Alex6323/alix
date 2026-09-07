@@ -78,8 +78,9 @@ pub(crate) fn restore_cmd(args: DeckRestoreArgs) -> Result<()> {
         }
     };
     println!(
-        "Restored {} (review history: {}; augmentations: {}).",
+        "Restored {} (deck: {}; review history: {}; augmentations: {}).",
         deck.display(),
+        describe(report.deck),
         describe(report.progress),
         describe(report.augment)
     );
