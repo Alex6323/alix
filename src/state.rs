@@ -57,7 +57,7 @@ impl UserFiles {
         self.root.join(crate::config::LOCAL_MANIFEST)
     }
 
-    fn private_root(&self) -> PathBuf {
+    pub fn private_root(&self) -> PathBuf {
         self.root
             .join(crate::workspace::PRIVATE_PATTERNS[0].trim_end_matches('/'))
     }

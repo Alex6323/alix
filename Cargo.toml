@@ -52,6 +52,7 @@ clap = { version = "4", features = ["derive"], optional = true }
 # flush unsaved review state and exit cleanly on Ctrl-C/SIGTERM
 ctrlc = { version = "3", features = ["termination"], optional = true }
 directories = "6"
+libc = { version = "0.2", optional = true } # statvfs for the phone's free-space check before a pull
 getrandom = "0.2" # portable OS CSPRNG: identity-token minting + the serve pairing token
 qrcodegen = { version = "1.8.0", optional = true } # zero-dep QR encoder for the terminal pairing QR (`--lan`)
 ratex-layout = "=0.1.13"
@@ -79,7 +80,9 @@ default = ["full"]
 # `full` is every non-core capability: the web server, the AI backend and all its
 # consumers, and sharing. `--no-default-features` builds the lean core the mobile
 # client cross-compiles. See CONTRIBUTING.md.
-full = ["dep:tiny_http", "dep:zip", "dep:qrcodegen", "dep:clap", "dep:ctrlc", "dep:resvg"]
+full = ["dep:tiny_http", "dep:zip", "dep:qrcodegen", "dep:clap", "dep:ctrlc", "dep:resvg", "sync-client"]
+# The phone side of sync: unpack a pulled entry and read the free space.
+sync-client = ["dep:zip", "dep:libc"]
 
 [dev-dependencies]
 # The cross-client parity fixture; the mobile bridge is a separate crate and

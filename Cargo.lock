@@ -45,6 +45,7 @@ dependencies = [
  "ctrlc",
  "directories",
  "getrandom 0.2.17",
+ "libc",
  "proptest",
  "qrcodegen",
  "ratex-layout",

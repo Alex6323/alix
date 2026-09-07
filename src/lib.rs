@@ -60,6 +60,7 @@ pub mod sidecar;
 pub use sidecar::{
     DeckCard, FileEntry, Finding, Orphan, Role, SessionCard, SidecarBlock, classify, merge,
 };
+pub mod paired;
 #[cfg(feature = "full")]
 pub mod picker;
 #[cfg(feature = "full")]
