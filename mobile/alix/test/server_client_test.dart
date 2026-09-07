@@ -502,4 +502,19 @@ void main() {
       await client.generateClose();
     });
   });
+
+  group('HttpServerClient.uriFor', () {
+    test('dials through the pairing\'s scheme, http and https alike', () {
+      for (final scheme in ['http', 'https']) {
+        final client = HttpServerClient(
+          ServerConfig(scheme: scheme, host: 'desk.local', port: 7777, token: 'x'),
+        );
+        final uri = client.uriFor('/api/version');
+        expect(uri.scheme, scheme, reason: '$scheme pairing');
+        expect(uri.host, 'desk.local');
+        expect(uri.port, 7777);
+        expect(uri.path, '/api/version');
+      }
+    });
+  });
 }

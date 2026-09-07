@@ -7,6 +7,7 @@ import 'api/generate.dart';
 import 'api/listing.dart';
 import 'api/review.dart';
 import 'api/simple.dart';
+import 'api/sync.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
@@ -126,6 +127,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MultiChoiceFeedback dco_decode_box_autoadd_multi_choice_feedback(dynamic raw);
 
   @protected
+  PairedConflict dco_decode_box_autoadd_paired_conflict(dynamic raw);
+
+  @protected
+  PairedWriter dco_decode_box_autoadd_paired_writer(dynamic raw);
+
+  @protected
+  PushOutcomeDto dco_decode_box_autoadd_push_outcome_dto(dynamic raw);
+
+  @protected
+  PushPlanItem dco_decode_box_autoadd_push_plan_item(dynamic raw);
+
+  @protected
   RecognizeGap dco_decode_box_autoadd_recognize_gap(dynamic raw);
 
   @protected
@@ -231,6 +244,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NoteView> dco_decode_list_note_view(dynamic raw);
 
   @protected
+  List<PairedDeckState> dco_decode_list_paired_deck_state(dynamic raw);
+
+  @protected
+  List<PairedEntryState> dco_decode_list_paired_entry_state(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_prim_u_32_loose(dynamic raw);
 
   @protected
@@ -243,7 +262,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint64List dco_decode_list_prim_usize_strict(dynamic raw);
 
   @protected
+  List<PushPlanItem> dco_decode_list_push_plan_item(dynamic raw);
+
+  @protected
   List<RegionView> dco_decode_list_region_view(dynamic raw);
+
+  @protected
+  List<RenamedEntry> dco_decode_list_renamed_entry(dynamic raw);
 
   @protected
   List<TypedResult> dco_decode_list_typed_result(dynamic raw);
@@ -302,6 +327,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PairedConflict? dco_decode_opt_box_autoadd_paired_conflict(dynamic raw);
+
+  @protected
+  PairedWriter? dco_decode_opt_box_autoadd_paired_writer(dynamic raw);
+
+  @protected
   RecognizeGap? dco_decode_opt_box_autoadd_recognize_gap(dynamic raw);
 
   @protected
@@ -329,6 +360,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<List<InlineRun>>? dco_decode_opt_list_list_inline_run(dynamic raw);
 
   @protected
+  PairedConflict dco_decode_paired_conflict(dynamic raw);
+
+  @protected
+  PairedDeckState dco_decode_paired_deck_state(dynamic raw);
+
+  @protected
+  PairedEntryState dco_decode_paired_entry_state(dynamic raw);
+
+  @protected
+  PairedWriter dco_decode_paired_writer(dynamic raw);
+
+  @protected
+  PullReportDto dco_decode_pull_report_dto(dynamic raw);
+
+  @protected
+  PushOutcomeDto dco_decode_push_outcome_dto(dynamic raw);
+
+  @protected
+  PushPlanItem dco_decode_push_plan_item(dynamic raw);
+
+  @protected
   RecognizeGap dco_decode_recognize_gap(dynamic raw);
 
   @protected
@@ -336,6 +388,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RegionView dco_decode_region_view(dynamic raw);
+
+  @protected
+  RenamedEntry dco_decode_renamed_entry(dynamic raw);
+
+  @protected
+  ResolutionDto dco_decode_resolution_dto(dynamic raw);
 
   @protected
   ReviewState dco_decode_review_state(dynamic raw);
@@ -482,6 +540,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PairedConflict sse_decode_box_autoadd_paired_conflict(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PairedWriter sse_decode_box_autoadd_paired_writer(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PushOutcomeDto sse_decode_box_autoadd_push_outcome_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PushPlanItem sse_decode_box_autoadd_push_plan_item(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RecognizeGap sse_decode_box_autoadd_recognize_gap(
     SseDeserializer deserializer,
   );
@@ -595,6 +673,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NoteView> sse_decode_list_note_view(SseDeserializer deserializer);
 
   @protected
+  List<PairedDeckState> sse_decode_list_paired_deck_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<PairedEntryState> sse_decode_list_paired_entry_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<int> sse_decode_list_prim_u_32_loose(SseDeserializer deserializer);
 
   @protected
@@ -607,7 +695,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint64List sse_decode_list_prim_usize_strict(SseDeserializer deserializer);
 
   @protected
+  List<PushPlanItem> sse_decode_list_push_plan_item(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<RegionView> sse_decode_list_region_view(SseDeserializer deserializer);
+
+  @protected
+  List<RenamedEntry> sse_decode_list_renamed_entry(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<TypedResult> sse_decode_list_typed_result(SseDeserializer deserializer);
@@ -674,6 +772,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PairedConflict? sse_decode_opt_box_autoadd_paired_conflict(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PairedWriter? sse_decode_opt_box_autoadd_paired_writer(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RecognizeGap? sse_decode_opt_box_autoadd_recognize_gap(
     SseDeserializer deserializer,
   );
@@ -713,6 +821,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PairedConflict sse_decode_paired_conflict(SseDeserializer deserializer);
+
+  @protected
+  PairedDeckState sse_decode_paired_deck_state(SseDeserializer deserializer);
+
+  @protected
+  PairedEntryState sse_decode_paired_entry_state(SseDeserializer deserializer);
+
+  @protected
+  PairedWriter sse_decode_paired_writer(SseDeserializer deserializer);
+
+  @protected
+  PullReportDto sse_decode_pull_report_dto(SseDeserializer deserializer);
+
+  @protected
+  PushOutcomeDto sse_decode_push_outcome_dto(SseDeserializer deserializer);
+
+  @protected
+  PushPlanItem sse_decode_push_plan_item(SseDeserializer deserializer);
+
+  @protected
   RecognizeGap sse_decode_recognize_gap(SseDeserializer deserializer);
 
   @protected
@@ -720,6 +849,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RegionView sse_decode_region_view(SseDeserializer deserializer);
+
+  @protected
+  RenamedEntry sse_decode_renamed_entry(SseDeserializer deserializer);
+
+  @protected
+  ResolutionDto sse_decode_resolution_dto(SseDeserializer deserializer);
 
   @protected
   ReviewState sse_decode_review_state(SseDeserializer deserializer);
@@ -892,6 +1027,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_paired_conflict(
+    PairedConflict self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_paired_writer(
+    PairedWriter self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_push_outcome_dto(
+    PushOutcomeDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_push_plan_item(
+    PushPlanItem self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_recognize_gap(
     RecognizeGap self,
     SseSerializer serializer,
@@ -1042,6 +1201,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_note_view(List<NoteView> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_paired_deck_state(
+    List<PairedDeckState> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_paired_entry_state(
+    List<PairedEntryState> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_32_loose(
     List<int> self,
     SseSerializer serializer,
@@ -1066,8 +1237,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_push_plan_item(
+    List<PushPlanItem> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_region_view(
     List<RegionView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_renamed_entry(
+    List<RenamedEntry> self,
     SseSerializer serializer,
   );
 
@@ -1156,6 +1339,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_paired_conflict(
+    PairedConflict? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_paired_writer(
+    PairedWriter? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_recognize_gap(
     RecognizeGap? self,
     SseSerializer serializer,
@@ -1204,6 +1399,39 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_paired_conflict(
+    PairedConflict self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_paired_deck_state(
+    PairedDeckState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_paired_entry_state(
+    PairedEntryState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_paired_writer(PairedWriter self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_pull_report_dto(PullReportDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_push_outcome_dto(
+    PushOutcomeDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_push_plan_item(PushPlanItem self, SseSerializer serializer);
+
+  @protected
   void sse_encode_recognize_gap(RecognizeGap self, SseSerializer serializer);
 
   @protected
@@ -1211,6 +1439,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_region_view(RegionView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_renamed_entry(RenamedEntry self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_resolution_dto(ResolutionDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_review_state(ReviewState self, SseSerializer serializer);

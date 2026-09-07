@@ -10,7 +10,7 @@ crate-type = ["cdylib", "staticlib"]
 flutter_rust_bridge = "=2.12.0"
 # The embedded alix core, lean (no AI backend, no web server). The phone runs
 # the actual parser/scheduler/store, not a reimplementation.
-alix = { path = "../../..", default-features = false }
+alix = { path = "../../..", default-features = false, features = ["sync-client"] }
 # Error handling at the bridge boundary (frb maps anyhow errors to Dart).
 anyhow = "1"
 

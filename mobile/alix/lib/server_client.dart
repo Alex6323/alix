@@ -21,9 +21,9 @@ class PairingExpired implements Exception {
 }
 
 /// A paired desktop: enough to reach it and prove who we are, and which
-/// served root it was paired against. `scheme` defaults to `http`
-/// ([HttpServerClient] still always dials http; only [HttpSyncClient] in
-/// `sync_client.dart` reaches through the scheme this carries). `rootId`
+/// served root it was paired against. `scheme` defaults to `http`; both
+/// [HttpServerClient] and `HttpSyncClient` dial through it, so a pairing
+/// behind an https reverse proxy works for every request. `rootId`
 /// defaults to the empty string for a config built before a probe has run
 /// (e.g. `parsePairingUrl`'s return); a persisted pairing always carries the
 /// real one, since `fromJson` rejects an empty one.
@@ -464,7 +464,8 @@ class HttpServerClient implements ServerClient {
 
   static const _requestTimeout = Duration(seconds: 10);
 
-  Uri _uri(String path) => Uri(scheme: 'http', host: config.host, port: config.port, path: path);
+  Uri uriFor(String path) =>
+      Uri(scheme: config.scheme, host: config.host, port: config.port, path: path);
 
   /// Runs one call and returns its decoded JSON body, implementing the
   /// LOCKED error surface: a 401 throws [PairingExpired]; every other
@@ -483,7 +484,7 @@ class HttpServerClient implements ServerClient {
   }
 
   Future<Map<String, dynamic>?> _attempt(String method, String path, Object? body) async {
-    final request = await (method == 'GET' ? _client.getUrl(_uri(path)) : _client.postUrl(_uri(path)));
+    final request = await (method == 'GET' ? _client.getUrl(uriFor(path)) : _client.postUrl(uriFor(path)));
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${config.token}');
     if (body != null) {
       final bytes = utf8.encode(jsonEncode(body));

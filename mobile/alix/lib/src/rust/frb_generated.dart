@@ -7,6 +7,7 @@ import 'api/generate.dart';
 import 'api/listing.dart';
 import 'api/review.dart';
 import 'api/simple.dart';
+import 'api/sync.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
@@ -69,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 2089406031;
+  int get rustContentHash => 1710344704;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -213,6 +214,52 @@ abstract class RustLibApi extends BaseApi {
   List<DeckEntry> crateApiListingListRoot({
     required String root,
     BigInt? nowMs,
+  });
+
+  Future<PullReportDto> crateApiSyncPairedApplyPull({
+    required String rootDir,
+    required String entry,
+    required String zipPath,
+  });
+
+  List<PairedEntryState> crateApiSyncPairedEntries({required String rootDir});
+
+  BigInt crateApiSyncPairedFreeSpace({required String path});
+
+  BigInt crateApiSyncPairedNeedsSpace({
+    required BigInt compressed,
+    required BigInt unpacked,
+  });
+
+  List<PushPlanItem> crateApiSyncPairedPlanPushes({required String rootDir});
+
+  void crateApiSyncPairedRecordPush({
+    required String rootDir,
+    required PushPlanItem item,
+    required PushOutcomeDto outcome,
+  });
+
+  List<String> crateApiSyncPairedRecover({required String rootDir});
+
+  void crateApiSyncPairedRemoveEntry({
+    required String rootDir,
+    required String entry,
+  });
+
+  ResolutionDto crateApiSyncPairedResolveConflict({
+    required String rootDir,
+    required String deckId,
+    required bool keepPhone,
+  });
+
+  String crateApiSyncPairedRootDir({
+    required String support,
+    required String rootId,
+  });
+
+  List<RenamedEntry> crateApiSyncPairedTidyRenamed({
+    required String rootDir,
+    required List<String> listed,
   });
 
   void crateApiReviewSeedChoiceDistractors({
@@ -1153,6 +1200,321 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "list_root", argNames: ["root", "nowMs"]);
 
   @override
+  Future<PullReportDto> crateApiSyncPairedApplyPull({
+    required String rootDir,
+    required String entry,
+    required String zipPath,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(rootDir, serializer);
+          sse_encode_String(entry, serializer);
+          sse_encode_String(zipPath, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 29,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_pull_report_dto,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSyncPairedApplyPullConstMeta,
+        argValues: [rootDir, entry, zipPath],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPairedApplyPullConstMeta =>
+      const TaskConstMeta(
+        debugName: "paired_apply_pull",
+        argNames: ["rootDir", "entry", "zipPath"],
+      );
+
+  @override
+  List<PairedEntryState> crateApiSyncPairedEntries({required String rootDir}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(rootDir, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 30)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_paired_entry_state,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSyncPairedEntriesConstMeta,
+        argValues: [rootDir],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPairedEntriesConstMeta =>
+      const TaskConstMeta(debugName: "paired_entries", argNames: ["rootDir"]);
+
+  @override
+  BigInt crateApiSyncPairedFreeSpace({required String path}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 31)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_64,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSyncPairedFreeSpaceConstMeta,
+        argValues: [path],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPairedFreeSpaceConstMeta =>
+      const TaskConstMeta(debugName: "paired_free_space", argNames: ["path"]);
+
+  @override
+  BigInt crateApiSyncPairedNeedsSpace({
+    required BigInt compressed,
+    required BigInt unpacked,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(compressed, serializer);
+          sse_encode_u_64(unpacked, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_64,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSyncPairedNeedsSpaceConstMeta,
+        argValues: [compressed, unpacked],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPairedNeedsSpaceConstMeta =>
+      const TaskConstMeta(
+        debugName: "paired_needs_space",
+        argNames: ["compressed", "unpacked"],
+      );
+
+  @override
+  List<PushPlanItem> crateApiSyncPairedPlanPushes({required String rootDir}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(rootDir, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 33)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_push_plan_item,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSyncPairedPlanPushesConstMeta,
+        argValues: [rootDir],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPairedPlanPushesConstMeta =>
+      const TaskConstMeta(
+        debugName: "paired_plan_pushes",
+        argNames: ["rootDir"],
+      );
+
+  @override
+  void crateApiSyncPairedRecordPush({
+    required String rootDir,
+    required PushPlanItem item,
+    required PushOutcomeDto outcome,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(rootDir, serializer);
+          sse_encode_box_autoadd_push_plan_item(item, serializer);
+          sse_encode_box_autoadd_push_outcome_dto(outcome, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 34)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSyncPairedRecordPushConstMeta,
+        argValues: [rootDir, item, outcome],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPairedRecordPushConstMeta =>
+      const TaskConstMeta(
+        debugName: "paired_record_push",
+        argNames: ["rootDir", "item", "outcome"],
+      );
+
+  @override
+  List<String> crateApiSyncPairedRecover({required String rootDir}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(rootDir, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 35)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSyncPairedRecoverConstMeta,
+        argValues: [rootDir],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPairedRecoverConstMeta =>
+      const TaskConstMeta(debugName: "paired_recover", argNames: ["rootDir"]);
+
+  @override
+  void crateApiSyncPairedRemoveEntry({
+    required String rootDir,
+    required String entry,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(rootDir, serializer);
+          sse_encode_String(entry, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 36)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSyncPairedRemoveEntryConstMeta,
+        argValues: [rootDir, entry],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPairedRemoveEntryConstMeta =>
+      const TaskConstMeta(
+        debugName: "paired_remove_entry",
+        argNames: ["rootDir", "entry"],
+      );
+
+  @override
+  ResolutionDto crateApiSyncPairedResolveConflict({
+    required String rootDir,
+    required String deckId,
+    required bool keepPhone,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(rootDir, serializer);
+          sse_encode_String(deckId, serializer);
+          sse_encode_bool(keepPhone, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 37)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_resolution_dto,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSyncPairedResolveConflictConstMeta,
+        argValues: [rootDir, deckId, keepPhone],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPairedResolveConflictConstMeta =>
+      const TaskConstMeta(
+        debugName: "paired_resolve_conflict",
+        argNames: ["rootDir", "deckId", "keepPhone"],
+      );
+
+  @override
+  String crateApiSyncPairedRootDir({
+    required String support,
+    required String rootId,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(support, serializer);
+          sse_encode_String(rootId, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 38)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSyncPairedRootDirConstMeta,
+        argValues: [support, rootId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPairedRootDirConstMeta => const TaskConstMeta(
+    debugName: "paired_root_dir",
+    argNames: ["support", "rootId"],
+  );
+
+  @override
+  List<RenamedEntry> crateApiSyncPairedTidyRenamed({
+    required String rootDir,
+    required List<String> listed,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(rootDir, serializer);
+          sse_encode_list_String(listed, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 39)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_renamed_entry,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiSyncPairedTidyRenamedConstMeta,
+        argValues: [rootDir, listed],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPairedTidyRenamedConstMeta =>
+      const TaskConstMeta(
+        debugName: "paired_tidy_renamed",
+        argNames: ["rootDir", "listed"],
+      );
+
+  @override
   void crateApiReviewSeedChoiceDistractors({
     required String deckPath,
     required String rootDir,
@@ -1163,7 +1525,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(deckPath, serializer);
           sse_encode_String(rootDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 29)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1193,7 +1555,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dir, serializer);
           sse_encode_opt_String(date, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 30)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 41)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1222,7 +1584,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 42,
             port: port_,
           );
         },
@@ -1253,7 +1615,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(root, serializer);
           sse_encode_String(dir, serializer);
           sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 43)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_deadline,
@@ -1476,6 +1838,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_multi_choice_feedback(raw);
+  }
+
+  @protected
+  PairedConflict dco_decode_box_autoadd_paired_conflict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_paired_conflict(raw);
+  }
+
+  @protected
+  PairedWriter dco_decode_box_autoadd_paired_writer(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_paired_writer(raw);
+  }
+
+  @protected
+  PushOutcomeDto dco_decode_box_autoadd_push_outcome_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_push_outcome_dto(raw);
+  }
+
+  @protected
+  PushPlanItem dco_decode_box_autoadd_push_plan_item(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_push_plan_item(raw);
   }
 
   @protected
@@ -1831,6 +2217,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PairedDeckState> dco_decode_list_paired_deck_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_paired_deck_state).toList();
+  }
+
+  @protected
+  List<PairedEntryState> dco_decode_list_paired_entry_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_paired_entry_state).toList();
+  }
+
+  @protected
   List<int> dco_decode_list_prim_u_32_loose(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as List<int>;
@@ -1855,9 +2253,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PushPlanItem> dco_decode_list_push_plan_item(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_push_plan_item).toList();
+  }
+
+  @protected
   List<RegionView> dco_decode_list_region_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_region_view).toList();
+  }
+
+  @protected
+  List<RenamedEntry> dco_decode_list_renamed_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_renamed_entry).toList();
   }
 
   @protected
@@ -1993,6 +2403,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PairedConflict? dco_decode_opt_box_autoadd_paired_conflict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_paired_conflict(raw);
+  }
+
+  @protected
+  PairedWriter? dco_decode_opt_box_autoadd_paired_writer(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_paired_writer(raw);
+  }
+
+  @protected
   RecognizeGap? dco_decode_opt_box_autoadd_recognize_gap(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_recognize_gap(raw);
@@ -2047,6 +2469,115 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PairedConflict dco_decode_paired_conflict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return PairedConflict_Push(
+          desktopRevision: dco_decode_opt_box_autoadd_u_64(raw[1]),
+          pulledRevision: dco_decode_opt_box_autoadd_u_64(raw[2]),
+          desktopWriter: dco_decode_opt_box_autoadd_paired_writer(raw[3]),
+        );
+      case 1:
+        return PairedConflict_Pull(
+          pulledRevision: dco_decode_opt_box_autoadd_u_64(raw[1]),
+          pulledWriter: dco_decode_opt_box_autoadd_paired_writer(raw[2]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  PairedDeckState dco_decode_paired_deck_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return PairedDeckState(
+      deckId: dco_decode_String(arr[0]),
+      path: dco_decode_String(arr[1]),
+      unpushed: dco_decode_bool(arr[2]),
+      conflict: dco_decode_opt_box_autoadd_paired_conflict(arr[3]),
+    );
+  }
+
+  @protected
+  PairedEntryState dco_decode_paired_entry_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return PairedEntryState(
+      entry: dco_decode_String(arr[0]),
+      kind: dco_decode_String(arr[1]),
+      decks: dco_decode_list_paired_deck_state(arr[2]),
+    );
+  }
+
+  @protected
+  PairedWriter dco_decode_paired_writer(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return PairedWriter(
+      device: dco_decode_String(arr[0]),
+      atMs: dco_decode_u_64(arr[1]),
+    );
+  }
+
+  @protected
+  PullReportDto dco_decode_pull_report_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return PullReportDto(
+      entry: dco_decode_String(arr[0]),
+      kind: dco_decode_String(arr[1]),
+      landed: dco_decode_list_String(arr[2]),
+      kept: dco_decode_list_String(arr[3]),
+      conflicts: dco_decode_list_String(arr[4]),
+      phoneOnly: dco_decode_list_String(arr[5]),
+      removed: dco_decode_list_String(arr[6]),
+    );
+  }
+
+  @protected
+  PushOutcomeDto dco_decode_push_outcome_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return PushOutcomeDto_Accepted(revision: dco_decode_u_64(raw[1]));
+      case 1:
+        return PushOutcomeDto_Conflict(
+          desktopRevision: dco_decode_opt_box_autoadd_u_64(raw[1]),
+          desktopWriter: dco_decode_opt_box_autoadd_paired_writer(raw[2]),
+        );
+      case 2:
+        return PushOutcomeDto_NotServed();
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  PushPlanItem dco_decode_push_plan_item(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return PushPlanItem(
+      deckId: dco_decode_String(arr[0]),
+      entry: dco_decode_String(arr[1]),
+      document: dco_decode_String(arr[2]),
+      base: dco_decode_opt_box_autoadd_u_64(arr[3]),
+      phoneRevision: dco_decode_u_64(arr[4]),
+    );
+  }
+
+  @protected
   RecognizeGap dco_decode_recognize_gap(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -2079,6 +2610,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       height: dco_decode_f_64(arr[5]),
       unit: dco_decode_String(arr[6]),
     );
+  }
+
+  @protected
+  RenamedEntry dco_decode_renamed_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return RenamedEntry(
+      old: dco_decode_String(arr[0]),
+      new_: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  ResolutionDto dco_decode_resolution_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return ResolutionDto_Done();
+      case 1:
+        return ResolutionDto_Push(
+          item: dco_decode_box_autoadd_push_plan_item(raw[1]),
+        );
+      case 2:
+        return ResolutionDto_Pull(entry: dco_decode_String(raw[1]));
+      default:
+        throw Exception("unreachable");
+    }
   }
 
   @protected
@@ -2485,6 +3045,38 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_multi_choice_feedback(deserializer));
+  }
+
+  @protected
+  PairedConflict sse_decode_box_autoadd_paired_conflict(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_paired_conflict(deserializer));
+  }
+
+  @protected
+  PairedWriter sse_decode_box_autoadd_paired_writer(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_paired_writer(deserializer));
+  }
+
+  @protected
+  PushOutcomeDto sse_decode_box_autoadd_push_outcome_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_push_outcome_dto(deserializer));
+  }
+
+  @protected
+  PushPlanItem sse_decode_box_autoadd_push_plan_item(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_push_plan_item(deserializer));
   }
 
   @protected
@@ -2969,6 +3561,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PairedDeckState> sse_decode_list_paired_deck_state(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <PairedDeckState>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_paired_deck_state(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<PairedEntryState> sse_decode_list_paired_entry_state(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <PairedEntryState>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_paired_entry_state(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<int> sse_decode_list_prim_u_32_loose(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -2997,6 +3617,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PushPlanItem> sse_decode_list_push_plan_item(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <PushPlanItem>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_push_plan_item(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<RegionView> sse_decode_list_region_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -3004,6 +3638,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <RegionView>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_region_view(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<RenamedEntry> sse_decode_list_renamed_entry(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RenamedEntry>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_renamed_entry(deserializer));
     }
     return ans_;
   }
@@ -3212,6 +3860,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PairedConflict? sse_decode_opt_box_autoadd_paired_conflict(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_paired_conflict(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  PairedWriter? sse_decode_opt_box_autoadd_paired_writer(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_paired_writer(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   RecognizeGap? sse_decode_opt_box_autoadd_recognize_gap(
     SseDeserializer deserializer,
   ) {
@@ -3325,6 +3999,132 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PairedConflict sse_decode_paired_conflict(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_desktopRevision = sse_decode_opt_box_autoadd_u_64(deserializer);
+        var var_pulledRevision = sse_decode_opt_box_autoadd_u_64(deserializer);
+        var var_desktopWriter = sse_decode_opt_box_autoadd_paired_writer(
+          deserializer,
+        );
+        return PairedConflict_Push(
+          desktopRevision: var_desktopRevision,
+          pulledRevision: var_pulledRevision,
+          desktopWriter: var_desktopWriter,
+        );
+      case 1:
+        var var_pulledRevision = sse_decode_opt_box_autoadd_u_64(deserializer);
+        var var_pulledWriter = sse_decode_opt_box_autoadd_paired_writer(
+          deserializer,
+        );
+        return PairedConflict_Pull(
+          pulledRevision: var_pulledRevision,
+          pulledWriter: var_pulledWriter,
+        );
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  PairedDeckState sse_decode_paired_deck_state(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_deckId = sse_decode_String(deserializer);
+    var var_path = sse_decode_String(deserializer);
+    var var_unpushed = sse_decode_bool(deserializer);
+    var var_conflict = sse_decode_opt_box_autoadd_paired_conflict(deserializer);
+    return PairedDeckState(
+      deckId: var_deckId,
+      path: var_path,
+      unpushed: var_unpushed,
+      conflict: var_conflict,
+    );
+  }
+
+  @protected
+  PairedEntryState sse_decode_paired_entry_state(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_entry = sse_decode_String(deserializer);
+    var var_kind = sse_decode_String(deserializer);
+    var var_decks = sse_decode_list_paired_deck_state(deserializer);
+    return PairedEntryState(entry: var_entry, kind: var_kind, decks: var_decks);
+  }
+
+  @protected
+  PairedWriter sse_decode_paired_writer(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_device = sse_decode_String(deserializer);
+    var var_atMs = sse_decode_u_64(deserializer);
+    return PairedWriter(device: var_device, atMs: var_atMs);
+  }
+
+  @protected
+  PullReportDto sse_decode_pull_report_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_entry = sse_decode_String(deserializer);
+    var var_kind = sse_decode_String(deserializer);
+    var var_landed = sse_decode_list_String(deserializer);
+    var var_kept = sse_decode_list_String(deserializer);
+    var var_conflicts = sse_decode_list_String(deserializer);
+    var var_phoneOnly = sse_decode_list_String(deserializer);
+    var var_removed = sse_decode_list_String(deserializer);
+    return PullReportDto(
+      entry: var_entry,
+      kind: var_kind,
+      landed: var_landed,
+      kept: var_kept,
+      conflicts: var_conflicts,
+      phoneOnly: var_phoneOnly,
+      removed: var_removed,
+    );
+  }
+
+  @protected
+  PushOutcomeDto sse_decode_push_outcome_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_revision = sse_decode_u_64(deserializer);
+        return PushOutcomeDto_Accepted(revision: var_revision);
+      case 1:
+        var var_desktopRevision = sse_decode_opt_box_autoadd_u_64(deserializer);
+        var var_desktopWriter = sse_decode_opt_box_autoadd_paired_writer(
+          deserializer,
+        );
+        return PushOutcomeDto_Conflict(
+          desktopRevision: var_desktopRevision,
+          desktopWriter: var_desktopWriter,
+        );
+      case 2:
+        return PushOutcomeDto_NotServed();
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  PushPlanItem sse_decode_push_plan_item(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_deckId = sse_decode_String(deserializer);
+    var var_entry = sse_decode_String(deserializer);
+    var var_document = sse_decode_String(deserializer);
+    var var_base = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_phoneRevision = sse_decode_u_64(deserializer);
+    return PushPlanItem(
+      deckId: var_deckId,
+      entry: var_entry,
+      document: var_document,
+      base: var_base,
+      phoneRevision: var_phoneRevision,
+    );
+  }
+
+  @protected
   RecognizeGap sse_decode_recognize_gap(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_recall = sse_decode_u_32(deserializer);
@@ -3358,6 +4158,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       height: var_height,
       unit: var_unit,
     );
+  }
+
+  @protected
+  RenamedEntry sse_decode_renamed_entry(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_old = sse_decode_String(deserializer);
+    var var_new_ = sse_decode_String(deserializer);
+    return RenamedEntry(old: var_old, new_: var_new_);
+  }
+
+  @protected
+  ResolutionDto sse_decode_resolution_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        return ResolutionDto_Done();
+      case 1:
+        var var_item = sse_decode_box_autoadd_push_plan_item(deserializer);
+        return ResolutionDto_Push(item: var_item);
+      case 2:
+        var var_entry = sse_decode_String(deserializer);
+        return ResolutionDto_Pull(entry: var_entry);
+      default:
+        throw UnimplementedError('');
+    }
   }
 
   @protected
@@ -3834,6 +4661,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_paired_conflict(
+    PairedConflict self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_paired_conflict(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_paired_writer(
+    PairedWriter self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_paired_writer(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_push_outcome_dto(
+    PushOutcomeDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_push_outcome_dto(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_push_plan_item(
+    PushPlanItem self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_push_plan_item(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_recognize_gap(
     RecognizeGap self,
     SseSerializer serializer,
@@ -4225,6 +5088,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_paired_deck_state(
+    List<PairedDeckState> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_paired_deck_state(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_paired_entry_state(
+    List<PairedEntryState> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_paired_entry_state(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_u_32_loose(
     List<int> self,
     SseSerializer serializer,
@@ -4267,6 +5154,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_push_plan_item(
+    List<PushPlanItem> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_push_plan_item(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_region_view(
     List<RegionView> self,
     SseSerializer serializer,
@@ -4275,6 +5174,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_region_view(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_renamed_entry(
+    List<RenamedEntry> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_renamed_entry(item, serializer);
     }
   }
 
@@ -4479,6 +5390,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_paired_conflict(
+    PairedConflict? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_paired_conflict(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_paired_writer(
+    PairedWriter? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_paired_writer(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_recognize_gap(
     RecognizeGap? self,
     SseSerializer serializer,
@@ -4593,6 +5530,109 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_paired_conflict(
+    PairedConflict self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case PairedConflict_Push(
+        desktopRevision: final desktopRevision,
+        pulledRevision: final pulledRevision,
+        desktopWriter: final desktopWriter,
+      ):
+        sse_encode_i_32(0, serializer);
+        sse_encode_opt_box_autoadd_u_64(desktopRevision, serializer);
+        sse_encode_opt_box_autoadd_u_64(pulledRevision, serializer);
+        sse_encode_opt_box_autoadd_paired_writer(desktopWriter, serializer);
+      case PairedConflict_Pull(
+        pulledRevision: final pulledRevision,
+        pulledWriter: final pulledWriter,
+      ):
+        sse_encode_i_32(1, serializer);
+        sse_encode_opt_box_autoadd_u_64(pulledRevision, serializer);
+        sse_encode_opt_box_autoadd_paired_writer(pulledWriter, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_paired_deck_state(
+    PairedDeckState self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.deckId, serializer);
+    sse_encode_String(self.path, serializer);
+    sse_encode_bool(self.unpushed, serializer);
+    sse_encode_opt_box_autoadd_paired_conflict(self.conflict, serializer);
+  }
+
+  @protected
+  void sse_encode_paired_entry_state(
+    PairedEntryState self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.entry, serializer);
+    sse_encode_String(self.kind, serializer);
+    sse_encode_list_paired_deck_state(self.decks, serializer);
+  }
+
+  @protected
+  void sse_encode_paired_writer(PairedWriter self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.device, serializer);
+    sse_encode_u_64(self.atMs, serializer);
+  }
+
+  @protected
+  void sse_encode_pull_report_dto(
+    PullReportDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.entry, serializer);
+    sse_encode_String(self.kind, serializer);
+    sse_encode_list_String(self.landed, serializer);
+    sse_encode_list_String(self.kept, serializer);
+    sse_encode_list_String(self.conflicts, serializer);
+    sse_encode_list_String(self.phoneOnly, serializer);
+    sse_encode_list_String(self.removed, serializer);
+  }
+
+  @protected
+  void sse_encode_push_outcome_dto(
+    PushOutcomeDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case PushOutcomeDto_Accepted(revision: final revision):
+        sse_encode_i_32(0, serializer);
+        sse_encode_u_64(revision, serializer);
+      case PushOutcomeDto_Conflict(
+        desktopRevision: final desktopRevision,
+        desktopWriter: final desktopWriter,
+      ):
+        sse_encode_i_32(1, serializer);
+        sse_encode_opt_box_autoadd_u_64(desktopRevision, serializer);
+        sse_encode_opt_box_autoadd_paired_writer(desktopWriter, serializer);
+      case PushOutcomeDto_NotServed():
+        sse_encode_i_32(2, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_push_plan_item(PushPlanItem self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.deckId, serializer);
+    sse_encode_String(self.entry, serializer);
+    sse_encode_String(self.document, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.base, serializer);
+    sse_encode_u_64(self.phoneRevision, serializer);
+  }
+
+  @protected
   void sse_encode_recognize_gap(RecognizeGap self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.recall, serializer);
@@ -4615,6 +5655,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.width, serializer);
     sse_encode_f_64(self.height, serializer);
     sse_encode_String(self.unit, serializer);
+  }
+
+  @protected
+  void sse_encode_renamed_entry(RenamedEntry self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.old, serializer);
+    sse_encode_String(self.new_, serializer);
+  }
+
+  @protected
+  void sse_encode_resolution_dto(ResolutionDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case ResolutionDto_Done():
+        sse_encode_i_32(0, serializer);
+      case ResolutionDto_Push(item: final item):
+        sse_encode_i_32(1, serializer);
+        sse_encode_box_autoadd_push_plan_item(item, serializer);
+      case ResolutionDto_Pull(entry: final entry):
+        sse_encode_i_32(2, serializer);
+        sse_encode_String(entry, serializer);
+    }
   }
 
   @protected
