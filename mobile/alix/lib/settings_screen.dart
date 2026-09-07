@@ -13,6 +13,7 @@ class SettingsScreen extends StatelessWidget {
     required this.onTheme,
     required this.onAbout,
     this.onGenerate,
+    this.onPairedDesktop,
   });
 
   final VoidCallback onSupport;
@@ -23,6 +24,10 @@ class SettingsScreen extends StatelessWidget {
   /// Non-null only when a paired desktop is reachable (generate needs it); the
   /// row is omitted otherwise.
   final VoidCallback? onGenerate;
+
+  /// Non-null only when at least one pairing is saved; the row is omitted
+  /// otherwise (nothing to switch between).
+  final VoidCallback? onPairedDesktop;
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +69,12 @@ class SettingsScreen extends StatelessWidget {
                 leading: const Icon(Icons.auto_awesome_outlined),
                 title: const Text('Generate deck'),
                 onTap: () => popThen(onGenerate!),
+              ),
+            if (onPairedDesktop != null)
+              ListTile(
+                leading: const Icon(Icons.sync),
+                title: const Text('Paired desktop'),
+                onTap: () => popThen(onPairedDesktop!),
               ),
             ListTile(
               leading: const Icon(Icons.palette_outlined),

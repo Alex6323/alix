@@ -64,11 +64,17 @@ class PickerDeckRow extends StatelessWidget {
     required this.entry,
     required this.onTap,
     this.onLongPress,
+    this.onSync,
   });
 
   final PickerEntry entry;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+
+  /// Non-null only while the picker shows a paired root's top-level
+  /// entries; adds a "Sync" action to the row's overflow menu. Member rows
+  /// (`_PickerMemberRow`, a workspace's own decks) never show it.
+  final VoidCallback? onSync;
 
   @override
   Widget build(BuildContext context) {
@@ -131,6 +137,19 @@ class PickerDeckRow extends StatelessWidget {
                     ),
                   ),
                   ...pickerTrailingMarker(theme, entry),
+                  if (onSync != null) ...[
+                    const SizedBox(width: 4),
+                    PopupMenuButton<void>(
+                      tooltip: 'More',
+                      icon: Icon(Icons.more_vert, size: 20, color: tokens.dim),
+                      itemBuilder: (context) => [
+                        PopupMenuItem<void>(
+                          onTap: onSync,
+                          child: const Text('Sync'),
+                        ),
+                      ],
+                    ),
+                  ],
                   if (entry.isWorkspace) ...[
                     const SizedBox(width: 8),
                     Icon(Icons.chevron_right, size: 22, color: tokens.dim),

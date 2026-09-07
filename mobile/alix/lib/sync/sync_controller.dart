@@ -34,10 +34,31 @@ class SyncController extends ChangeNotifier {
   String? _runningEntry;
   SyncReport? _lastReport;
   bool _reportUnread = false;
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  /// Notifies listeners unless this controller was disposed while an
+  /// awaited call (a push, a pull) was still in flight; a screen can pop
+  /// mid-cycle, and the cycle keeps running to completion regardless.
+  void _notify() {
+    if (_disposed) return;
+    notifyListeners();
+  }
 
   bool get running => _running;
   SyncReport? get lastReport => _lastReport;
   bool get reportUnread => _reportUnread;
+
+  /// Every entry the phone has pulled, read fresh from the port on each
+  /// call. Lets a caller (the review summary's push hook) resolve a
+  /// document path to a deck id via `deckIdForPath` without reaching the
+  /// port directly.
+  List<SyncEntryState> get pairedEntries => _port.pairedEntries();
 
   /// One line for the picker's status readout while a cycle runs or its
   /// last report is unread; null the rest of the time.
@@ -55,7 +76,7 @@ class SyncController extends ChangeNotifier {
   void markReportRead() {
     if (!_reportUnread) return;
     _reportUnread = false;
-    notifyListeners();
+    _notify();
   }
 
   /// Every deck that currently needs a conflict choice, read live from the
@@ -81,13 +102,13 @@ class SyncController extends ChangeNotifier {
     if (_running) return;
     _running = true;
     _runningEntry = entry;
-    notifyListeners();
+    _notify();
     final report = await _runCycle(entry);
     _running = false;
     _runningEntry = null;
     _lastReport = report;
     _reportUnread = true;
-    notifyListeners();
+    _notify();
   }
 
   Future<SyncReport> _runCycle(String? onlyEntry) async {
@@ -268,7 +289,7 @@ class SyncController extends ChangeNotifier {
     } on SyncTransportFailure {
       return;
     }
-    notifyListeners();
+    _notify();
   }
 
   /// Acts on a conflict choice: `Push` pushes now with the returned base;
@@ -278,7 +299,7 @@ class SyncController extends ChangeNotifier {
     final resolution = _port.resolveConflict(deckId, keepPhone: keepPhone);
     switch (resolution) {
       case SyncResolutionDone():
-        notifyListeners();
+        _notify();
       case SyncResolutionPush(:final item):
         try {
           await _attemptPush(item);
@@ -287,10 +308,10 @@ class SyncController extends ChangeNotifier {
         } on SyncTransportFailure {
           // Silent, matching pushOne.
         }
-        notifyListeners();
+        _notify();
       case SyncResolutionPull(:final entry):
         await _resolvePull(entry);
-        notifyListeners();
+        _notify();
     }
   }
 
@@ -342,7 +363,7 @@ class SyncController extends ChangeNotifier {
   /// action); leaving it alone (Keep) needs no call at all.
   Future<void> removeOrphan(String entry) async {
     _port.removeEntry(entry);
-    notifyListeners();
+    _notify();
   }
 
   Map<String, String> _deckLabels() {

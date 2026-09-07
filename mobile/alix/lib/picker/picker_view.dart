@@ -17,6 +17,9 @@ class PickerView extends StatelessWidget {
     required this.onLongPressEntry,
     required this.onOpenMastered,
     required this.onAddTutorial,
+    this.onSyncEntry,
+    this.syncStatus,
+    this.onOpenSyncReport,
   });
 
   final List<PickerEntry> entries;
@@ -30,8 +33,18 @@ class PickerView extends StatelessWidget {
   final ValueChanged<List<PickerEntry>> onOpenMastered;
   final VoidCallback onAddTutorial;
 
+  /// Non-null only while this screen shows a paired root's top-level
+  /// entries: adds "Sync" to each row's overflow menu.
+  final ValueChanged<PickerEntry>? onSyncEntry;
+
+  /// One line shown above the list while a sync cycle runs or its report
+  /// is unread; tapping it opens the report.
+  final String? syncStatus;
+  final VoidCallback? onOpenSyncReport;
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final splitMastered = isRoot && !isMasteredView;
     final active = splitMastered
         ? entries.where((entry) => !entry.mastered).toList()
@@ -43,6 +56,20 @@ class PickerView extends StatelessWidget {
       appBar: alixAppBar(context, leading: leading),
       body: Column(
         children: [
+          if (syncStatus case final status?)
+            InkWell(
+              key: const Key('sync-status'),
+              onTap: onOpenSyncReport,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text(
+                  status,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: theme.alix.dim),
+                ),
+              ),
+            ),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -70,6 +97,9 @@ class PickerView extends StatelessWidget {
                               entry.isWorkspace
                           ? () => onLongPressEntry(entry)
                           : null,
+                      onSync: onSyncEntry == null
+                          ? null
+                          : () => onSyncEntry!(entry),
                     ),
                   if (mastered.isNotEmpty)
                     PickerMasteredAffordance(
