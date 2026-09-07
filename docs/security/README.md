@@ -111,14 +111,25 @@ in constant time (`src/cli/launch.rs`, `src/serve/respond.rs`).
 The server uses plain HTTP. The HTML/application shell and `/img/<key>` are
 intentionally unauthenticated so a browser can bootstrap; the token protects
 only `/api/*`. A token placed in a URL can appear in browser history, logs,
-screenshots, or copied links. Every JSON request body reads through one
+screenshots, or copied links. Ordinary JSON request bodies read through one
 central 256 KiB cap (`json_body`), remote AI request bodies use their own
-256 KiB cap, and ZIP uploads a 50 MiB cap (`src/serve/mod.rs`). Both cap
+256 KiB cap, paired progress pushes use a 64 MiB cap, and ZIP uploads use a
+50 MiB cap (`src/serve/mod.rs`). These cap
 directions are pinned by `tests/api.rs`: oversized bodies are refused, and a
 kilobytes-scale body must reach its handler rather than die at the cap
 (2026-08-02: `/api/choose` briefly read its body uncapped straight off the
 socket; fixed by routing it through `json_body`, regression in the same
 test).
+
+The pairing token also authorizes paired sync. A holder can export one complete
+picker entry, including that person's progress documents, `*.local.*`
+sidecars, and `alix.local.toml`, and can replace one progress document only
+when its asserted revision still matches. Pulls exclude recent state, root
+identity files, backups, temporary files, and conflict copies. Every push must
+also echo the stable served-root identity in `X-Alix-Root`; a missing, wrong,
+or changed root is refused before the request body or current document is
+read. This is a wrong-library guard, not a second credential: anyone holding
+the pairing token and current root id has the full sync capability.
 
 Remote tutor inputs are supplied by the client, remote exams resolve a selected
 desktop deck, and remote generation accepts web URLs rather than a
@@ -312,6 +323,7 @@ safe or accurate.
 | --- | --- | --- |
 | Another LAN device discovers Alix | Loopback default; LAN is explicit; `/api/*` needs a random token. | Use only a trusted LAN or put Alix behind a VPN/TLS reverse proxy. Replace a disclosed configured token and restart. |
 | Pairing token leaks through a URL | API accepts a bearer header after bootstrap. | Treat the URL as a credential; do not publish screenshots, history, logs, or bookmarks containing it. |
+| A paired sync client targets the wrong library or stale progress | The root header is checked before body and document reads; the per-deck revision is compared on the Study owner thread; conflicts write nothing and return the current revision. | A valid token still authorizes bulk entry export and progress replacement for its root. Review the explicit conflict choice and keep independent backups. |
 | A paired client removes the wrong library row | Removal resolves only catalog-owned names, refuses active sessions, previews the exact Alix-owned set, and reports partial failures without disclosing host paths. | The token authorizes irreversible deletion. Verify the typed name and preview, keep independent backups, and run `alix doctor` after a partial failure. |
 | A deck or page attempts prompt injection | Headless AI runs use explicit tool grants; source reads require a declared `source`. | Provider enforcement varies. Review sources and do not enable source access for untrusted workspaces. |
 | A broad `source` exposes unrelated files | No root is inferred; the grant must be explicit. | Keep `source` as narrow as practical and inspect inherited workspace defaults. |
@@ -405,6 +417,11 @@ The most relevant deterministic checks currently live beside their controls:
 - `src/library.rs`, `src/serve/study.rs`, and `tests/api.rs`: catalog-resolved
   irreversible removal, owner-serialized progress invalidation, display-safe
   failures, and retained-snapshot regression coverage;
+- `src/sync/server.rs`, `src/store.rs`, `src/serve/study.rs`, `src/share.rs`,
+  and `tests/api.rs`: paired-sync root and private-projection laws, strict
+  revision conflicts, owner-thread commits, exact pre-push backups, bounded
+  ZIP copying, streamed archive cleanup, body caps, and root-before-load
+  refusal;
 - `src/deck.rs`: explicit-source precedence and no origin-root inference;
 - `src/parser/mod.rs`, `src/stamp.rs`, and `src/workspace.rs`: explicit deck
   identity, byte-preserving refusal, and initialized-only discovery;

@@ -155,9 +155,11 @@ The rest of the AI-and-deck surface:
   stakes (cards with progress, reviewed-since date, the exact file list).
   A deck that others `require:` warns and names them; they unlock rather
   than break.
-- `alix deck restore <deck>`: swap a deck with its `.bak` backups (file,
-  `.alix/progress` history, augmentations), undoing the last overwrite (a
-  forced import, a trace or workspace regeneration). Nothing is destroyed:
+- `alix deck restore <deck>`: swap every available `.bak` side for that deck
+  (deck file, `.alix/progress` history, augmentations). This undoes a forced
+  import, a trace or workspace regeneration, and also the progress backup an
+  accepted paired-phone push leaves when the deck text itself has no backup.
+  The command reports which of the three sides swapped. Nothing is destroyed:
   the swapped-away state becomes the new backup, so running it again swaps
   back. There is nothing to restore after `deck remove`, which deletes the
   backups too.
@@ -270,6 +272,11 @@ notes it.
   should-pass probe only means the grader is harsher than intended. It's a
   spot check, not a certification. Without an explicit repair flag, doctor is
   report-only and fixes nothing.
+  With no argument it also checks every launch profile's root identity. Two
+  profiles carrying the same `.alix/sync.toml` `root_id` are an error naming
+  both profiles. A malformed root id names its profile and file, and a nested
+  `.alix/sync.toml` below a profile folder names the profile and relative path.
+  A missing file or key is clean and doctor never mints one.
 - `alix doctor [dir-or-deck] --normalize`: rewrite each checked deck into its
   canonical bytes, dropping a leading byte-order mark, turning CRLF endings
   into LF, and removing trailing spaces and tabs. A hard line break (two or

@@ -77,9 +77,10 @@ so is every client.
 - **No CORS headers.** A browser-based client must be served by alix itself
   (same origin). Native clients are unaffected.
 - **Errors are bare status codes with empty bodies unless an endpoint names a
-  structured exception.** Library removal is the first exception: a partial
-  destructive result returns `RemovalFailureDto`, so a client can say what
-  completed and where recovery must begin without exposing a host path.
+  structured exception.** Library removal returns `RemovalFailureDto` after a
+  partial destructive result. Paired sync returns `SyncRootDto` for a root
+  mismatch and `SyncConflictDto` for a revision conflict. These bodies let a
+  client explain the refusal without exposing a host path.
   `400` is overloaded (malformed body, unknown deck name, store failure —
   per-endpoint meaning in §5). `409` = "no active session/exam/walk of the
   kind this endpoint needs". `401` = bad/missing token. `403` = an adult-only
@@ -422,6 +423,67 @@ to reach it as a conversation grows. Errors are bare status codes here too
 (§3), and the pairing token (§2) applies exactly as it does to the rest of
 `/api/*`.
 
+### 4.12 Sync (paired phone)
+
+Paired sync moves one picker entry at a time while keeping progress writes
+revision-checked per deck. A client first reads `GET /api/sync/entries`, then
+pulls a selected entry with `GET /api/sync/pull?entry=<name>`. The pull is a
+rootless ZIP whose `.alix/pull.json` manifest identifies every payload file
+and every initialized member deck. The ZIP includes the same authored and
+generated material as share, plus that person's progress document, the
+member's `*.local.*` sidecar, and the entry's `alix.local.toml`. It never
+includes recent state, `.alix/sync.toml`, backups, temporary files, or conflict
+copies.
+
+Before pulling a newer entry, the client pushes each locally changed progress
+document with `POST /api/sync/push?deck=<deck-id>`. It sends the root identity
+from the last pull in `X-Alix-Root` and the revision it pulled in
+`X-Alix-Pulled-Revision`. The latter is `none`, `0`, or a canonical positive
+decimal without a sign or leading zero; `u64::MAX` is refused because it cannot
+advance. The document body keeps the client's writer label, but its revision
+field is ignored. An accepted push advances the pulled revision and preserves
+the previous desktop document as one `.json.bak` generation.
+
+A `409 SyncConflictDto` means the desktop revision moved. The client must offer
+an explicit choice: keep the desktop document and pull it, or keep the phone
+document and retry against the conflict body's `desktop_revision` (`none` when
+that value is null). A `412 SyncRootDto` means the served library changed; the
+client must stop and re-pair or explicitly adopt the returned root. Neither
+case writes anything.
+
+`GET /api/sync/entries`:
+
+| Status | Meaning |
+|---|---|
+| 200 | `SyncEntriesDto`; `unpacked_bytes` is the sum of the pull manifest's file byte counts. |
+| 401 | Missing or wrong pairing token. |
+| 500 | The root identity or catalog cannot be read. |
+| 503 | The catalog owner is unavailable. |
+
+`GET /api/sync/pull?entry=<name>`:
+
+| Status | Meaning |
+|---|---|
+| 200 | Streamed ZIP with `Content-Length`, `Cache-Control: no-store`, and `.alix/pull.json`. |
+| 400 | Missing, unknown, or ambiguous entry name. |
+| 401 | Missing or wrong pairing token. |
+| 500 | Root, catalog, staging, or archive failure. |
+| 503 | The catalog owner is unavailable. |
+
+`POST /api/sync/push?deck=<deck-id>`:
+
+| Status | Meaning |
+|---|---|
+| 200 | `SyncPushDto`; the document committed on the study owner thread. |
+| 400 | Missing or malformed revision header, query deck id, or document; or an ambiguous served deck id. |
+| 401 | Missing or wrong pairing token. |
+| 404 | No served entry owns that deck id. |
+| 409 | `SyncConflictDto`; the disk revision differs from the pulled revision. |
+| 412 | `SyncRootDto`; `X-Alix-Root` is missing, wrong, or changed while the request was read. |
+| 413 | The document exceeds the 64 MiB sync-push cap. |
+| 500 | Catalog, current-document, backup, or atomic-write failure. |
+| 503 | The catalog or study owner is unavailable. |
+
 ## 5. Endpoint reference
 
 Statuses: all endpoints can additionally return 401 (token) — omitted below.
@@ -440,6 +502,9 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | GET | `/api/keys` | – | web-private (§7) | – |
 | GET | `/api/picker-keys` | – | web-private (§7) | – |
 | GET | `/api/browse-keys` | – | web-private (§7) | – |
+
+`GET /api/version` returns both the build `version` and the served folder's
+stable `root_id`; paired clients compare the latter before any progress write.
 
 ### Review session
 
@@ -503,6 +568,16 @@ returns, refreshed, so the picker re-renders the `deadline` readout (§6
 | GET | `/api/share` | – | `ShareDto` (poll) | 409 no share |
 | POST | `/api/share/close` | – | 200 | – |
 | GET | `/api/share/zip` | – (`?deck=` query, optional) | zip bytes (§8) | 400 unknown `deck` / staging or zip failure |
+
+### Sync (paired phone)
+
+See §4.12 for ordering, header grammar, and the route-specific status tables.
+
+| Method | Path | Body | Response | Errors |
+|---|---|---|---|---|
+| GET | `/api/sync/entries` | - | `SyncEntriesDto` | 500 root or catalog failure |
+| GET | `/api/sync/pull?entry=<name>` | - | streamed rootless ZIP containing `SyncPullManifest` | 400 missing, unknown, or ambiguous entry; 500 staging or archive failure |
+| POST | `/api/sync/push?deck=<deck-id>` | version-1 per-deck progress document; `X-Alix-Root` and `X-Alix-Pulled-Revision` required | `SyncPushDto` | 400 malformed or ambiguous; 404 deck not served; 409 `SyncConflictDto`; 412 `SyncRootDto`; 413 over 64 MiB; 500 read or write failure |
 
 ### Receive
 
@@ -977,7 +1052,65 @@ Clients must treat an id as an opaque string and never parse it as a number.
 
 ### VersionDto
 
-`version: string` (the crate version).
+| Key | Type | Meaning |
+|---|---|---|
+| `version` | string | The crate version. |
+| `root_id` | string | Stable identity of the served folder, `root-` plus 26 canonical Crockford base32 characters. |
+
+### SyncEntriesDto / SyncEntryDto
+
+`SyncEntriesDto`: `root_id: string`, `entries: [SyncEntryDto]`.
+
+| `SyncEntryDto` key | Type | Meaning |
+|---|---|---|
+| `name` | string | Exact top-level picker name accepted by `entry=`. |
+| `kind` | string | Exactly `workspace` or `deck`. |
+| `members` | integer | Initialized member count; 1 for a loose deck. |
+| `unpacked_bytes` | integer | Sum of `bytes` in this entry's pull manifest. |
+
+Example: `{"root_id":"root-00000000000000000000000000","entries":[{"name":"Biology","kind":"workspace","members":2,"unpacked_bytes":4096}]}`.
+
+### SyncPullManifest / SyncFileDto / SyncDeckDto
+
+The version-1 `.alix/pull.json` document inside a sync ZIP:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `version` | integer | Exactly 1. |
+| `root_id` | string | Identity of the served root that produced the pull. |
+| `entry` | string | Exact picker entry name. |
+| `kind` | string | Exactly `workspace` or `deck`. |
+| `files` | `[SyncFileDto]` | Every ZIP path except `.alix/pull.json` itself. |
+| `decks` | `[SyncDeckDto]` | One row per initialized member. |
+
+`SyncFileDto` has `path: string`, `bytes: integer`, and `digest: string`.
+Paths are root-relative slash-separated ZIP names with no empty, `.`, `..`,
+root, or prefix component. Digests are `xxh64-` plus 16 lowercase hex digits.
+
+`SyncDeckDto` has `path: string`, `deck_id: string`, and `revision: integer?`.
+The revision is null when no progress document existed in the pull.
+
+Example: `{"version":1,"root_id":"root-00000000000000000000000000","entry":"Biology","kind":"workspace","files":[{"path":"decks/cells.md","bytes":4,"digest":"xxh64-0123456789abcdef"}],"decks":[{"path":"decks/cells.md","deck_id":"deck-cells","revision":null}]}`.
+
+### SyncPushDto / SyncConflictDto / SyncRootDto
+
+An accepted push returns `SyncPushDto { deck_id: string, revision: integer }`.
+Example: `{"deck_id":"deck-cells","revision":8}`.
+
+A revision conflict returns all keys in `SyncConflictDto`:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `deck_id` | string | Deck whose write was refused. |
+| `desktop_revision` | integer? | Current disk revision, null when no document exists. |
+| `pulled_revision` | integer? | Revision asserted by the client, null for a `none` header. |
+| `desktop_writer` | `Writer?` | Current disk writer `{device, at_ms}`, or null with no document. |
+
+Example: `{"deck_id":"deck-cells","desktop_revision":9,"pulled_revision":7,"desktop_writer":{"device":"desktop","at_ms":42}}`.
+
+A root mismatch returns `SyncRootDto { root_id: string }`, naming the root the
+server currently exposes. Example:
+`{"root_id":"root-00000000000000000000000000"}`.
 
 ### DoctorDto / DoctorRowDto
 

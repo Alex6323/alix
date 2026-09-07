@@ -209,7 +209,8 @@ per initialized deck:
 ├── augment/deck-<token>.json
 └── .alix/
     ├── progress/deck-<token>.json
-    └── recent.json
+    ├── recent.json
+    └── sync.toml
 ```
 
 `.alix/progress/` is private, indispensable learning state: schedules, review
@@ -219,6 +220,14 @@ variants, and topologies. It stays beside the deck so sharing the deck can
 carry its generated study material without carrying personal history. The
 stable deck id (`deck-<token>`), not the Markdown filename, selects both
 documents, so renaming a deck keeps their ownership stable.
+
+`.alix/sync.toml` holds the served folder's paired-sync identity. Alix mints
+its `root_id` the first time that folder is served and preserves it on later
+starts and moves. Copying the whole folder deliberately copies that identity.
+If the copy is meant to become an independent library, delete only the copy's
+`.alix/sync.toml` before serving it; the first serve then mints a new identity.
+Do not delete the file from an existing paired library merely to fix a phone:
+the root check exists to stop progress from landing in a different library.
 
 `decks_dir` chooses what bare `alix` serves; it does not relocate state for a
 deck named elsewhere. Every deck uses its content root: the workspace root for

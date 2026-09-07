@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Paired phones can list and pull complete picker entries, including their
+  private progress and local sidecars, then push revision-checked progress by
+  deck id. Each served folder gets a stable `.alix/sync.toml` root identity;
+  pulls are streamed from bounded temporary archives and pushes have a 64 MiB
+  cap.
+- `alix deck restore` can swap the progress-only backup left by an accepted
+  paired-phone push. Bare `alix doctor` reports malformed or duplicate profile
+  root identities and nested `.alix/sync.toml` files.
 - `alix profile add` refuses a decks folder that equals, contains, or sits
   inside another profile's folder; bare `alix doctor` reports every existing
   overlap without rewriting profiles.
