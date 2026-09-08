@@ -170,41 +170,29 @@ fn remove_blocks(s: &str, tag: &str) -> String {
 }
 
 fn strip_attrs(s: &str) -> String {
-    let lower = s.to_ascii_lowercase();
-    let bytes = s.as_bytes();
     let mut out = String::new();
-    let mut i = 0;
-    while i < s.len() {
-        if matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
-            let rest = &lower[i + 1..];
-            let drop = rest.starts_with("on")
-                || rest.starts_with("href")
-                || rest.starts_with("xlink:href");
-            if drop && let Some(eq) = lower[i..].find('=') {
-                let mut j = i + eq + 1;
-                while j < s.len() && bytes[j] == b' ' {
-                    j += 1;
-                }
-                if j < s.len() && (bytes[j] == b'"' || bytes[j] == b'\'') {
-                    let q = bytes[j];
-                    j += 1;
-                    while j < s.len() && bytes[j] != q {
-                        j += 1;
-                    }
-                    if j < s.len() {
-                        j += 1;
-                    }
-                }
-                i = j;
+    let mut rest = s;
+    while let Some(ch) = rest.chars().next() {
+        let after_ch = &rest[ch.len_utf8()..];
+        if matches!(ch, ' ' | '\t' | '\n' | '\r') {
+            let drop = ["on", "href", "xlink:href"].iter().any(|name| {
+                after_ch
+                    .get(..name.len())
+                    .is_some_and(|head| head.eq_ignore_ascii_case(name))
+            });
+            if drop && let Some((_, after_eq)) = rest.split_once('=') {
+                let value = after_eq.trim_start_matches(' ');
+                rest = match value.chars().next() {
+                    Some(quote @ ('"' | '\'')) => value[quote.len_utf8()..]
+                        .split_once(quote)
+                        .map_or("", |(_, after)| after),
+                    _ => value,
+                };
                 continue;
             }
         }
-        let ch = match s[i..].chars().next() {
-            Some(c) => c,
-            None => break,
-        };
         out.push(ch);
-        i += ch.len_utf8();
+        rest = after_ch;
     }
     out
 }
