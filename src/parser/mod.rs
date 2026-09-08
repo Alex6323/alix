@@ -7207,6 +7207,35 @@ a
     }
 
     #[test]
+    fn footnote_label_limit_counts_the_escape_and_escaped_point_separately() {
+        for (label, expected, why) in [
+            (
+                format!("\\]{}", "a".repeat(997)),
+                true,
+                "an escape pair first at 999 points",
+            ),
+            (
+                format!("\\]{}", "a".repeat(998)),
+                false,
+                "an escape pair first at 1000 points",
+            ),
+            (
+                format!("{}\\]", "a".repeat(997)),
+                true,
+                "an escape pair last at 999 points",
+            ),
+            (
+                format!("{}\\]", "a".repeat(998)),
+                false,
+                "an escape pair last at 1000 points",
+            ),
+        ] {
+            let line = format!("[^{label}]: body");
+            assert_eq!(expected, footnote_definition(&line), "{why}: {line}");
+        }
+    }
+
+    #[test]
     fn a_footnote_definition_line_is_a_hard_error_at_any_legal_indent() {
         for (text, why) in [
             ("## q\n---\n[^1]: never supported\n", "column 0"),
