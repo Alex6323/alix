@@ -257,6 +257,7 @@ pub(super) fn respond_download(
         Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
     let disposition = format!("attachment; filename=\"{}\"", download_filename(filename));
     let response = Response::from_data(bytes)
+        .with_chunked_threshold(usize::MAX)
         .with_header(content_type_header)
         .with_header(cache_header(b"no-store"));
     let _ = match Header::from_bytes(&b"Content-Disposition"[..], disposition.as_bytes()) {
@@ -274,7 +275,10 @@ pub(super) fn respond_download_file(
     let content_type_header =
         Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
     let disposition = format!("attachment; filename=\"{}\"", download_filename(filename));
+    // tiny_http chunks any body above 32 KiB by default; a download always
+    // states its length, which the phone's sync client requires up front.
     let response = Response::from_file(file)
+        .with_chunked_threshold(usize::MAX)
         .with_header(content_type_header)
         .with_header(cache_header(b"no-store"));
     let _ = match Header::from_bytes(&b"Content-Disposition"[..], disposition.as_bytes()) {

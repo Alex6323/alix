@@ -8017,3 +8017,59 @@ fn percent_encoded_space_and_unicode_names_resolve_for_pull_and_share() {
         assert_eq!(200, share.status, "share resolves {name}");
     }
 }
+
+/// A deck whose pull ZIP exceeds tiny_http's 32768-byte chunked threshold:
+/// forty answers of xorshift-generated hex, incompressible enough that the
+/// deflated archive stays far above the threshold.
+fn large_fixture_deck() -> String {
+    let mut deck = String::from("---\nformat-version: 1\nid: \"deck-large\"\n---\n");
+    let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+    for card in 1..=40 {
+        let mut answer = String::with_capacity(4096);
+        while answer.len() < 4096 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            answer.push_str(&format!("{state:016x}"));
+        }
+        deck.push_str(&format!(
+            "## card {card}\n{answer}\n<!-- id: card-l{card} -->\n\n"
+        ));
+    }
+    deck
+}
+
+#[test]
+fn every_pull_carries_its_content_length_whatever_its_size() {
+    let (base, guard) = spawn_test_server_fixture(None, |dir| {
+        std::fs::write(dir.join("large.md"), large_fixture_deck()).unwrap();
+    });
+    for (entry, above_threshold) in [("sample.md", false), ("large.md", true)] {
+        let pull = http(
+            &base,
+            "GET",
+            &format!("/api/sync/pull?entry={entry}"),
+            &[],
+            &[],
+        );
+        assert_eq!(200, pull.status, "{entry}: pull status");
+        assert_eq!(
+            above_threshold,
+            pull.body.len() > 32_768,
+            "{entry}: {} bytes must sit on the intended side of tiny_http's chunked threshold",
+            pull.body.len()
+        );
+        assert_eq!(
+            None,
+            pull.header("Transfer-Encoding"),
+            "{entry}: a pull is never chunked; the phone's client needs the length up front"
+        );
+        let content_length = pull.body.len().to_string();
+        assert_eq!(
+            Some(content_length.as_str()),
+            pull.header("Content-Length"),
+            "{entry}: Content-Length names the whole ZIP"
+        );
+    }
+    drop(guard);
+}

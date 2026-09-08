@@ -70,6 +70,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A paired pull larger than 32 KiB no longer arrives chunked without a
+  `Content-Length`; the phone's sync client refused every real-sized entry
+  with an absurd free-space figure while tiny fixtures passed. Downloads now
+  always state their length.
 - Paired sync reports a member it cannot canonicalize or fully parse through
   the entry's `left_out` paths instead of disabling every sync route. Pulls
   omit that member and its owned bundle files, percent-encoded entry names
