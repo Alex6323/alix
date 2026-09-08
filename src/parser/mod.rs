@@ -3291,6 +3291,58 @@ mod tests {
     }
 
     #[test]
+    fn a_section_probe_advances_past_short_editorial_comments() {
+        for body in ["", "x", "xy"] {
+            let tail = format!("Topic <!--{body}--><!-- reveal: line -->");
+            assert!(
+                section_carries_directive(&tail, 1),
+                "the probe must reach the recognized directive after {body:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn four_column_reserved_shapes_after_prose_stay_literal_content() {
+        for (line, literal, name) in [
+            ("    ===", "===", "setext-shaped content"),
+            ("    ---", "---", "thematic-break-shaped content"),
+        ] {
+            let deck = parse(&format!("## q\nprose\n{line}\n"));
+            assert_eq!(
+                vec!["prose", literal],
+                deck.cards[0].back,
+                "{name} at exactly four columns"
+            );
+        }
+    }
+
+    #[test]
+    fn orphan_directives_keep_their_key_classes() {
+        for (directive, name) in [
+            ("reveal: line", "known card key"),
+            ("diagram: x", "document-level diagram key"),
+        ] {
+            let deck = parse(&format!("<!-- {directive} -->\n## q\nanswer\n"));
+            assert!(
+                deck.lints.is_empty(),
+                "{name} must remain tolerated before a card: {:?}",
+                deck.lints
+            );
+        }
+
+        let deck = parse("<!-- flavor: cherry -->\n## q\nanswer\n");
+        assert_eq!(vec![unknown(1, "flavor")], deck.lints);
+
+        for key in ["blank", "cover", "crop"] {
+            let result = super::parse("deck.md", &format!("<!-- {key}: x -->\n## q\nanswer\n"));
+            assert!(
+                matches!(result, Err(ParseError::InvalidRegion { line: 1, .. })),
+                "orphan {key}: must fail as an invalid region, got {result:?}"
+            );
+        }
+    }
+
+    #[test]
     fn a_span_on_a_display_table_blanks_the_cell_into_a_sub_card() {
         let deck = parse(
             "## Capitals\n| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Italy | Rome |\n<!-- blank: span hidden=\"Paris\" b:a1b2c3 -->\n",

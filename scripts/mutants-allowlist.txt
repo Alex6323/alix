@@ -103,6 +103,14 @@ src/cli/launch.rs: replace local_lan_ip -> Option<std::net::IpAddr> with None
 # scan holds other arithmetic.
 src/parser/sidecar.rs:39: replace + with * in without_notes
 
+# UNOBSERVABLE. `RawTable` is created only when `invocation_below` finds a
+# Cards invocation in its contiguous trailing zone. Every row overwrites
+# `end_line` at 1771, and every trailing machinery comment overwrites it at
+# 1796 before either escape at 977 or 1480; errors return no table first.
+# Line-pinned because `scan` holds other arithmetic.
+src/parser/mod.rs:1133: replace + with - in scan
+src/parser/mod.rs:1133: replace + with * in scan
+
 # EQUIVALENT. key_rank's only consumer is a sort_by_key; only pairwise
 # order is observable. Ranks are canonical 0..=17, unknown 18, `for` 19,
 # `id` 20; under `* 2` id becomes 36, and no key can rank inside (20, 36),
