@@ -389,7 +389,7 @@ mod tests {
         let svg = src.path().join("mark.svg");
         std::fs::write(
             &svg,
-            "<script>leading()</script><svg viewBox=\"0 0 24 24\"><script>x</script><rect/></svg>",
+            "<script>leading()</script><svg viewBox=\"0 0 24 24\"><script></script><rect/></svg>",
         )
         .unwrap();
         let out = install(ws.path(), &svg).unwrap();
