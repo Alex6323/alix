@@ -1,0 +1,3 @@
+# cargo-mutants skips literal `#[cfg(test)]` modules only; the ones gated
+# `#[cfg(all(test, unix))]` would otherwise have their fixture helpers mutated.
+exclude_re = ["tests::"]
