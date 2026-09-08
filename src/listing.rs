@@ -1448,6 +1448,51 @@ mod tests {
     }
 
     #[test]
+    fn dependency_forest_keeps_parent_validity_and_root_layout_independent() {
+        let cases = [
+            (
+                "parent below child",
+                vec![None, Some(0)],
+                vec!["root", "child"],
+                vec![(0, ""), (1, "└─ ")],
+            ),
+            (
+                "parent equal to child",
+                vec![None, Some(1)],
+                vec!["z-root", "a-self"],
+                vec![(1, ""), (0, "")],
+            ),
+            (
+                "parent above child",
+                vec![Some(1), None],
+                vec!["child", "parent"],
+                vec![(1, ""), (0, "└─ ")],
+            ),
+            (
+                "parent at upper bound",
+                vec![Some(2), None],
+                vec!["a-invalid", "z-root"],
+                vec![(0, ""), (1, "")],
+            ),
+            (
+                "several roots and their final children",
+                vec![None, None, Some(1), Some(0)],
+                vec!["beta-root", "alpha-root", "alpha-child", "beta-child"],
+                vec![(1, ""), (2, "└─ "), (0, ""), (3, "└─ ")],
+            ),
+        ];
+
+        for (label, parent, key, expected) in cases {
+            let forest = dependency_forest(&parent, &key);
+            let actual = forest
+                .iter()
+                .map(|(index, prefix)| (*index, prefix.as_str()))
+                .collect::<Vec<_>>();
+            assert_eq!(expected, actual, "{label}: exact forest order and layout");
+        }
+    }
+
+    #[test]
     fn listing_status_fields_match_deck_status_for_the_same_deck_and_store() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();

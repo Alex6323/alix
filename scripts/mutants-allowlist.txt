@@ -68,6 +68,14 @@
 # legitimate law kills its mutant; the "matched nothing" note on a
 # whole-tree sweep of its shard is the removal reminder.
 
+# EQUIVALENT. dependency_forest_by passes this value to visit_node with
+# `is_root` true. Both reads of `is_last` first branch on `is_root`, fixing the
+# connector to empty and the child ancestor to empty; descendants calculate
+# their own lastness. No output can observe either mutation for any input.
+# Line-pinned.
+src/listing.rs:641: replace == with != in dependency_forest_by
+src/listing.rs:641: replace + with * in dependency_forest_by
+
 # EQUIVALENT, provably. Both sites mask the target bit to zero before
 # setting it: `(b[6] & 0x0f) | 0x40` and `(b[8] & 0x3f) | 0x80`. After the
 # mask the bit is 0 for EVERY input, so OR and XOR give the same result
