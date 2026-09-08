@@ -1060,6 +1060,149 @@ mod tests {
         );
     }
 
+    /// Each status signal owns a distinct boundary: the mastered badge counts
+    /// only unretired cards, reviewability is the union of independent ways to
+    /// start, and damaged progress suppresses even an otherwise available exam.
+    #[test]
+    fn deck_status_keeps_badge_and_reviewability_boundaries_independent() {
+        let dir = tempfile::tempdir().unwrap();
+        let review = ReviewConfig::default();
+        let now = session::now_ms();
+        let cap = review
+            .retire_after_days
+            .expect("the default retirement cap");
+
+        let badge_path = dir.path().join("badge.md");
+        write(
+            &badge_path,
+            "## one\na\n<!-- id: card-one -->\n## two\nb\n<!-- id: card-two -->\n",
+        );
+        let badge_deck = Deck::load(&badge_path).unwrap();
+        let mut badge_store = Store::open(dir.path().join("badge.json")).unwrap();
+        badge_store.set_deck_mastered(badge_deck.deck_token.as_deref().unwrap(), now);
+        badge_store.get_or_insert("card-one").recall = Some(crate::store::FsrsState {
+            state: 2,
+            scheduled_days: cap,
+            due_ms: now,
+            ..Default::default()
+        });
+
+        let status = deck_status(
+            &badge_deck,
+            &badge_store,
+            &no_augment(),
+            None,
+            false,
+            review,
+        );
+        assert!(status.mastered);
+        assert!(
+            status.badge.ends_with(" · 1 to drill"),
+            "one of two cards remains below the retirement cap: {}",
+            status.badge
+        );
+
+        badge_store.get_or_insert("card-two").recall = Some(crate::store::FsrsState {
+            state: 2,
+            scheduled_days: cap,
+            due_ms: now,
+            ..Default::default()
+        });
+        let status = deck_status(
+            &badge_deck,
+            &badge_store,
+            &no_augment(),
+            None,
+            false,
+            review,
+        );
+        assert!(
+            !status.badge.contains("to drill"),
+            "a fully retired deck has no residual drill count: {}",
+            status.badge
+        );
+
+        let trace_path = dir.path().join("trace.md");
+        write(
+            &trace_path,
+            "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: Trace only\n---\n",
+        );
+        let trace = Deck::load(&trace_path).unwrap();
+        let trace_store = Store::open(dir.path().join("trace.json")).unwrap();
+
+        let source_path = dir.path().join("source.md");
+        write(
+            &source_path,
+            "---\nformat-version: 1\nid: \"deck-source\"\nsource: https://example.com\n---\n",
+        );
+        let source = Deck::load(&source_path).unwrap();
+        let source_store = Store::open(dir.path().join("source.json")).unwrap();
+
+        let exam_path = dir.path().join("exam.md");
+        write(
+            &exam_path,
+            "---\nformat-version: 1\nid: \"deck-exam\"\nsource: https://example.com\n---\n## q\na\n<!-- id: card-exam -->\n",
+        );
+        let exam = Deck::load(&exam_path).unwrap();
+        let mut exam_store = Store::open(dir.path().join("exam.json")).unwrap();
+        exam_store.get_or_insert("card-exam").recall = Some(crate::store::FsrsState {
+            state: 2,
+            scheduled_days: cap,
+            due_ms: now,
+            ..Default::default()
+        });
+
+        for (label, status, expected) in [
+            (
+                "trace",
+                deck_status(&trace, &trace_store, &no_augment(), None, false, review),
+                true,
+            ),
+            (
+                "exam capability alone",
+                deck_status(&source, &source_store, &no_augment(), None, false, review),
+                false,
+            ),
+            (
+                "exam due",
+                deck_status(&exam, &exam_store, &no_augment(), None, false, review),
+                true,
+            ),
+        ] {
+            assert_eq!(expected, status.reviewable, "{label}");
+        }
+
+        let error_root = dir.path().join("error");
+        std::fs::create_dir(&error_root).unwrap();
+        let error_path = error_root.join("error.md");
+        write(
+            &error_path,
+            "---\nformat-version: 1\nid: \"deck-error\"\nsource: https://example.com\n---\n## q\na\n<!-- id: card-error -->\n",
+        );
+        let progress = error_root.join(".alix/progress");
+        std::fs::create_dir_all(&progress).unwrap();
+        std::fs::write(progress.join("deck-error.json"), "{ not json").unwrap();
+        let error_store = crate::state::open_aggregate_store_tolerant(&error_root).unwrap();
+        let error_deck = Deck::load(&error_path).unwrap();
+        let status = deck_status(
+            &error_deck,
+            &error_store,
+            &no_augment(),
+            None,
+            false,
+            review,
+        );
+        assert!(status.has_exam, "precondition: an exam would be available");
+        assert!(
+            status.progress_error,
+            "precondition: progress is unreadable"
+        );
+        assert!(
+            !status.examable,
+            "damaged progress suppresses an otherwise available exam"
+        );
+    }
+
     #[test]
     fn an_existing_non_directory_progress_root_reds_every_member() {
         let dir = tempfile::tempdir().unwrap();
