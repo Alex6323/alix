@@ -561,6 +561,21 @@ mod tests {
     }
 
     #[test]
+    fn installed_panic_hook_records_panics_without_the_payload() {
+        let lines = capture(|| {
+            install_panic_hook();
+            assert!(std::panic::catch_unwind(|| panic!("private payload")).is_err());
+        });
+
+        assert_eq!(1, lines.len());
+        assert!(lines[0].starts_with(&format!("target=error kind=panic file={} line=", file!())));
+        assert!(lines[0].contains(
+            " thread=log::tests::installed_panic_hook_records_panics_without_the_payload\n"
+        ));
+        assert!(!lines[0].contains("private payload"));
+    }
+
+    #[test]
     fn log_path_prefers_state_and_falls_back_to_data() {
         let state = log_path_in(Some(Path::new("/state")), Path::new("/data"), "profile-a");
         let data = log_path_in(None, Path::new("/data"), "profile-a");
@@ -584,6 +599,20 @@ mod tests {
                 dir.path().join("alix-timmy-b.log")
             ],
             log_paths_in(dir.path()).unwrap()
+        );
+    }
+
+    #[test]
+    fn log_listing_treats_only_a_missing_directory_as_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing");
+        assert_eq!(Vec::<PathBuf>::new(), log_paths_in(&missing).unwrap());
+
+        let file = dir.path().join("regular-file");
+        std::fs::write(&file, "not a directory").unwrap();
+        assert_ne!(
+            io::ErrorKind::NotFound,
+            log_paths_in(&file).unwrap_err().kind()
         );
     }
 
@@ -626,6 +655,12 @@ mod tests {
         assert_eq!(
             thirty_one_then_separator,
             readable_instance_label(&format!("{} b", "a".repeat(31)))
+        );
+
+        let thirty_two_then_separator = format!("{thirty_two} b");
+        assert_eq!(
+            thirty_two,
+            readable_instance_label(&thirty_two_then_separator)
         );
     }
 
