@@ -1572,35 +1572,33 @@ fn link_definition(lines: &[&str], at: usize) -> Option<(String, usize)> {
     Some((label, consumed))
 }
 
-/// Chars the escape at `at` covers: two when the backslash escapes ASCII
-/// punctuation (the CommonMark rule), else one, leaving a literal
-/// backslash's neighbour its own structural meaning.
-fn escape_len(chars: &[char], at: usize) -> usize {
-    match chars[at] {
-        '\\' if chars
-            .get(at + 1)
-            .is_some_and(|ch| ch.is_ascii_punctuation()) =>
-        {
-            2
+fn unescaped_chars(chars: &[char], from: usize) -> impl Iterator<Item = (usize, char)> + '_ {
+    let mut chars = chars.iter().copied().enumerate().skip(from).peekable();
+    std::iter::from_fn(move || {
+        loop {
+            let (at, ch) = chars.next()?;
+            if ch == '\\'
+                && chars
+                    .peek()
+                    .is_some_and(|(_, next)| next.is_ascii_punctuation())
+            {
+                chars.next();
+                continue;
+            }
+            return Some((at, ch));
         }
-        _ => 1,
-    }
+    })
 }
 
 /// Index of the label's unescaped closing `]`; None when it never closes
 /// or an unescaped `[` nests inside it.
 fn label_end(chars: &[char], from: usize) -> Option<usize> {
-    let mut at = from;
-    while at < chars.len() {
-        let step = escape_len(chars, at);
-        if step == 1 {
-            match chars[at] {
-                '[' => return None,
-                ']' => return Some(at),
-                _ => {}
-            }
+    for (at, ch) in unescaped_chars(chars, from) {
+        match ch {
+            '[' => return None,
+            ']' => return Some(at),
+            _ => {}
         }
-        at += step;
     }
     None
 }
@@ -1608,57 +1606,46 @@ fn label_end(chars: &[char], from: usize) -> Option<usize> {
 /// Whitespace between a definition's parts may cross at most one line
 /// ending; None when it crosses more.
 fn skip_space_across_one_newline(chars: &[char], from: usize) -> Option<usize> {
-    let mut at = from;
-    let mut endings = 0usize;
-    while chars.get(at).is_some_and(|ch| WHITESPACE.contains(ch)) {
-        if chars[at] == '\n' {
-            endings += 1;
-            if endings > 1 {
-                return None;
-            }
+    let mut seen_newline = false;
+    for (at, ch) in chars.iter().enumerate().skip(from) {
+        if !WHITESPACE.contains(ch) {
+            return Some(at);
         }
-        at += 1;
+        if *ch == '\n' && std::mem::replace(&mut seen_newline, true) {
+            return None;
+        }
     }
-    Some(at)
+    Some(chars.len())
 }
 
 /// Index one past a valid GFM destination: an `<angle>` form, or a bare
 /// run with no unescaped whitespace or controls and balanced parentheses.
 fn destination_end(chars: &[char], from: usize) -> Option<usize> {
     if chars.get(from) == Some(&'<') {
-        let mut at = from + 1;
-        while at < chars.len() {
-            let step = escape_len(chars, at);
-            if step == 1 {
-                match chars[at] {
-                    '<' | '\n' => return None,
-                    '>' => return Some(at + 1),
-                    _ => {}
-                }
+        let mut scan = unescaped_chars(chars, from);
+        let _ = scan.next()?;
+        for (at, ch) in scan {
+            match ch {
+                '<' | '\n' => return None,
+                '>' => return Some(at + 1),
+                _ => {}
             }
-            at += step;
         }
         return None;
     }
     let mut depth = 0usize;
-    let mut at = from;
-    while at < chars.len() {
-        let step = escape_len(chars, at);
-        if step == 1 {
-            let ch = chars[at];
-            if WHITESPACE.contains(&ch) {
-                break;
-            }
-            match ch {
-                '(' => depth += 1,
-                ')' => depth = depth.checked_sub(1)?,
-                _ if ch.is_ascii_control() => return None,
-                _ => {}
-            }
+    for (at, ch) in unescaped_chars(chars, from) {
+        if WHITESPACE.contains(&ch) {
+            return (depth == 0 && at > from).then_some(at);
         }
-        at += step;
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.checked_sub(1)?,
+            _ if ch.is_ascii_control() => return None,
+            _ => {}
+        }
     }
-    (depth == 0 && at > from).then_some(at)
+    (depth == 0 && chars.len() > from).then_some(chars.len())
 }
 
 /// Index one past a title following the destination, which must be
@@ -1678,17 +1665,14 @@ fn title_end(chars: &[char], from: usize) -> Option<usize> {
         '(' => ')',
         _ => return None,
     };
-    let mut at = from + 1;
-    while at < chars.len() {
-        let step = escape_len(chars, at);
-        if step == 1 {
-            match chars[at] {
-                ch if ch == closer => return Some(at + 1),
-                '(' if open == '(' => return None,
-                _ => {}
-            }
+    let mut scan = unescaped_chars(chars, from);
+    scan.next();
+    for (at, ch) in scan {
+        match ch {
+            ch if ch == closer => return Some(at + 1),
+            '(' if open == '(' => return None,
+            _ => {}
         }
-        at += step;
     }
     None
 }
@@ -1866,13 +1850,14 @@ fn machinery_rank(content: &str) -> Option<usize> {
 /// from the line after the block: recognized machinery is transparent, and
 /// anything else ends the run with the block unbound.
 fn invocation_below(lines: &[&str], from: usize) -> Option<(usize, Mapping)> {
-    let mut at = from;
-    while machinery_rank(lines.get(at)?).is_some() {
-        let body = lines[at].trim().strip_prefix("<!--")?.strip_suffix("-->")?;
+    for (at, line) in lines.iter().enumerate().skip(from) {
+        if machinery_rank(line).is_none() {
+            break;
+        }
+        let body = line.trim().strip_prefix("<!--")?.strip_suffix("-->")?;
         if let Some(mapping) = Mapping::parse(trim_ws(body)) {
             return Some((at + 1, mapping));
         }
-        at += 1;
     }
     None
 }
@@ -1882,25 +1867,26 @@ fn invocation_below(lines: &[&str], from: usize) -> Option<(usize, Mapping)> {
 /// lines (the everything-trails position). None means the zone declares
 /// nothing and the deck default decides.
 fn trailing_table_mapping(lines: &[&str], header_idx: usize) -> Option<(usize, Mapping)> {
-    let row = |at: usize| {
-        lines
-            .get(at)
-            .is_some_and(|line| line.trim_end().starts_with('|'))
-    };
-    let mut idx = header_idx;
-    while row(idx) {
+    let mut rows = lines.iter().enumerate().skip(header_idx);
+    let after_rows = loop {
+        let Some((idx, line)) = rows.next() else {
+            break lines.len();
+        };
+        if !line.trim_end().starts_with('|') {
+            break idx;
+        }
         // A row followed by a delimiter opens the NEXT table: this block's
         // rows end above it, so its trailing zone is not ours to read.
         if idx > header_idx
-            && lines
-                .get(idx + 1)
-                .is_some_and(|next| is_delimiter_row(next))
+            && rows
+                .clone()
+                .next()
+                .is_some_and(|(_, next)| is_delimiter_row(next))
         {
             return None;
         }
-        idx += 1;
-    }
-    invocation_below(lines, idx)
+    };
+    invocation_below(lines, after_rows)
 }
 
 /// The opt-in doctor repair's half of spec choice 2 (liberal read,
@@ -3558,6 +3544,145 @@ mod tests {
                 )),
                 "a bare destination made only of break markers: {spelling}"
             );
+        }
+    }
+
+    #[test]
+    fn link_definition_escapes_skip_only_ascii_punctuation_pairs() {
+        for (text, from, expected, why) in [
+            (r"\]", 0, vec![], "an escaped close is structurally inert"),
+            (
+                r"x\]y",
+                1,
+                vec![(3, 'y')],
+                "scanning may start at a nonzero escape",
+            ),
+            (
+                r"x\ay",
+                1,
+                vec![(1, '\\'), (2, 'a'), (3, 'y')],
+                "an ASCII letter is not escaped punctuation",
+            ),
+            (
+                r"\§]",
+                0,
+                vec![(0, '\\'), (1, '§'), (2, ']')],
+                "non-ASCII punctuation is not an escapable pair",
+            ),
+            (
+                "\\",
+                0,
+                vec![(0, '\\')],
+                "a trailing backslash remains structural",
+            ),
+        ] {
+            let chars: Vec<char> = text.chars().collect();
+            assert_eq!(
+                expected,
+                unescaped_chars(&chars, from).collect::<Vec<_>>(),
+                "{why}: {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn link_definition_labels_close_only_at_an_unescaped_non_nested_bracket() {
+        for (text, from, expected, why) in [
+            ("a]", 0, Some(1), "the first unescaped close ends the label"),
+            (
+                r"a\]b]",
+                0,
+                Some(4),
+                "an escaped close remains label content",
+            ),
+            (
+                r"a\[b]",
+                0,
+                Some(4),
+                "an escaped open remains label content",
+            ),
+            ("a[b]", 0, None, "an unescaped nested label is invalid"),
+            ("abc", 0, None, "an unclosed label is invalid"),
+            ("abc", 3, None, "the exhausted boundary is not a close"),
+        ] {
+            let chars: Vec<char> = text.chars().collect();
+            assert_eq!(expected, label_end(&chars, from), "{why}: {text:?}");
+        }
+    }
+
+    #[test]
+    fn link_definition_spacing_crosses_at_most_one_newline() {
+        for (text, from, expected, why) in [
+            (" \t/x", 0, Some(2), "same-line whitespace is skipped"),
+            (
+                " \n /x",
+                0,
+                Some(3),
+                "one newline and surrounding spaces are skipped",
+            ),
+            (" \n \n/x", 0, None, "a second newline is rejected"),
+            ("/x", 0, Some(0), "a non-space stops at its own index"),
+            (" \t", 0, Some(2), "whitespace may end with the input"),
+        ] {
+            let chars: Vec<char> = text.chars().collect();
+            assert_eq!(
+                expected,
+                skip_space_across_one_newline(&chars, from),
+                "{why}: {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn link_definition_destinations_follow_the_angle_and_bare_rules() {
+        for (text, expected, why) in [
+            ("<a b>", Some(5), "an angle destination may contain spaces"),
+            (
+                r"<a\>b>",
+                Some(6),
+                "an escaped angle does not close the destination",
+            ),
+            ("<a<b>", None, "an unescaped nested angle is invalid"),
+            ("<a\nb>", None, "an angle destination may not cross a line"),
+            ("/a(b)c", Some(6), "a bare destination balances parentheses"),
+            (r"/a\(b", Some(5), "an escaped open does not add depth"),
+            ("/a(b", None, "an unbalanced bare destination is invalid"),
+            ("/a\u{7}b", None, "an ASCII control is invalid"),
+            ("/a b", Some(2), "whitespace ends a bare destination"),
+        ] {
+            let chars: Vec<char> = text.chars().collect();
+            assert_eq!(expected, destination_end(&chars, 0), "{why}: {text:?}");
+        }
+    }
+
+    #[test]
+    fn link_definition_titles_follow_each_delimiter_rule() {
+        for (text, expected, why) in [
+            ("\"a\"", Some(3), "a double-quoted title closes in kind"),
+            ("'a'", Some(3), "a single-quoted title closes in kind"),
+            ("(a)", Some(3), "a parenthesized title closes with a paren"),
+            (
+                "\"a(b)\"",
+                Some(6),
+                "parentheses may nest inside a quoted title",
+            ),
+            ("(a(b))", None, "a parenthesized title may not nest"),
+            (
+                r"(a\(b)",
+                Some(6),
+                "an escaped open does not nest a parenthesized title",
+            ),
+            (
+                r#""a\"b""#,
+                Some(6),
+                "an escaped quote does not close a quoted title",
+            ),
+            ("\\\"\"a\"", None, "an escaped quote is not a title opener"),
+            ("plain", None, "a title needs an opening delimiter"),
+            ("(a", None, "an unclosed title is invalid"),
+        ] {
+            let chars: Vec<char> = text.chars().collect();
+            assert_eq!(expected, title_end(&chars, 0), "{why}: {text:?}");
         }
     }
 
