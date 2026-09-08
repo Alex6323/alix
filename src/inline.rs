@@ -269,7 +269,7 @@ fn classify_line(
                 break;
             };
             let opener_index = open[open_pos];
-            let strike_pair = delimiter.marker == '~';
+            let strike_pair = matches!(delimiter.marker, '~');
             while remaining[opener_index] >= 2 && remaining[delimiter_index] >= 2 {
                 consume_delimiters(
                     &delimiters,
