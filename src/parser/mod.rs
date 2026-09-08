@@ -3562,6 +3562,38 @@ mod tests {
     }
 
     #[test]
+    fn definition_continuations_stop_only_at_the_closed_interrupt_shapes() {
+        for (text, interrupts, why) in [
+            ("---", true, "thematic break"),
+            ("# heading", true, "heading"),
+            ("> quote", true, "block quote"),
+            ("| front | back |", true, "table row"),
+            ("<!-- cards -->", true, "comment"),
+            ("```rust", true, "backtick fence"),
+            ("~~~", true, "tilde fence"),
+            ("- item", true, "dash list item"),
+            ("* item", true, "asterisk list item"),
+            ("+ item", true, "plus list item"),
+            ("$$", true, "display math fence"),
+            ("/target", false, "ordinary destination"),
+            ("text # fragment", false, "inline hash"),
+            ("<!-", false, "incomplete comment opener"),
+            ("``", false, "two backticks"),
+            ("~~", false, "two tildes"),
+            ("-", false, "dash without a following space"),
+            ("*emphasis*", false, "asterisk without a following space"),
+            ("+", false, "plus without a following space"),
+            (
+                "$$ trailing",
+                false,
+                "display math marker followed by prose",
+            ),
+        ] {
+            assert_eq!(interrupts, interrupts_definition(text), "{why}: {text:?}");
+        }
+    }
+
+    #[test]
     fn link_definition_grammar_accepts_a_label_split_across_lines() {
         let deck = parse("# Section\n[\nr\n]: /target\n## Q\n[reference][r]\n");
 
