@@ -5448,6 +5448,11 @@ a
             err(&format!("{table}\nprose\n\n## q\na\n")),
             "ordinary trailing prose after a table is still refused"
         );
+        assert_eq!(
+            ParseError::TableTrailing(8),
+            err(&format!("{table}\n    ---\n\n## q\na\n")),
+            "a break-shaped continuation at exactly four columns remains trailing table content"
+        );
     }
 
     #[test]
