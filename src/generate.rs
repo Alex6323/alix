@@ -536,16 +536,15 @@ fn clean_output(raw: &str) -> String {
     }) else {
         return raw.trim().to_string();
     };
-    let mut end = lines.len();
-    while end > start + 1 {
-        let t = lines[end - 1].trim();
-        if t.is_empty() || t.starts_with("```") {
-            end -= 1;
-        } else {
-            break;
-        }
-    }
-    space_cards(&lines[start..end])
+    let body = &lines[start..];
+    let last_kept = body
+        .iter()
+        .rposition(|line| {
+            let t = line.trim();
+            !(t.is_empty() || t.starts_with("```"))
+        })
+        .unwrap_or(0);
+    space_cards(&body[..=last_kept])
 }
 
 fn space_cards(lines: &[&str]) -> String {

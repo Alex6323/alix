@@ -122,14 +122,6 @@ src/diagram.rs:222: replace > with >= in ground
 # anywhere else in the function must be argued on its own.
 src/diagram.rs:247: replace > with >= in contrast
 
-# EQUIVALENT. The quote scan reaches this guard with either a closing quote at
-# `j < s.len()` or an unterminated value at `j == s.len()`; it cannot overshoot.
-# The operators agree in the first case. In the second, the mutant increments
-# `j` from len to len + 1 before assigning it to `i`, but the outer
-# `i < s.len()` loop exits for both values and neither index is observed again.
-# Line-pinned because the preceding three bounds in this function are distinct.
-src/icon.rs:199: replace < with <= in strip_attrs
-
 # EQUIVALENT. `link.open * 1` adds only the already-dropped opening bracket
 # to the label range, so its new label bit is never observed and every kept
 # glyph is unchanged. Line-pinned.
@@ -158,27 +150,6 @@ src/inline.rs:668: replace < with <= in link_tail_end
 # slice at line 1120 reads `chars[start + 1..close]` and the mutant does
 # not touch it. Line-pinned: the argument is about this one range start.
 src/inline.rs:1119: replace + with * in autolink_end
-
-# EQUIVALENT. `start` is the index of the first line accepted as a
-# frontmatter fence, a `# ` heading, or a `## ` heading, so `lines[start]`
-# trims to something non-empty that never opens with three backticks
-# (`is_frontmatter_fence` matches `---` plus whitespace only). Both mutants
-# admit exactly one extra state, `end == start + 1`, where the loop inspects
-# that recognized start line, takes the same `else { break }`, and hands
-# `space_cards` the identical slice. Nothing can drive `end` below
-# `start + 1`, since `end` begins at `lines.len()` and `start` indexes into
-# it. Line-pinned: the argument is about this one loop bound.
-# Classified by Codex from rotation shard 12; the proof re-read and both
-# mutants re-run before landing.
-src/generate.rs:540: replace > with >= in clean_output
-src/generate.rs:540: replace + with * in clean_output
-
-# NON-TERMINATING. `end /= 1` leaves `end` unchanged, and this statement is
-# the branch's only advance: the loop condition and the line it inspects are
-# then invariant, so every budget produces a hang. Not executed here on
-# purpose, since running it wedges the suite; the proof is the site, not the
-# operator. Line-pinned. Classified by Codex from rotation shard 12.
-src/generate.rs:543: replace -= with /= in clean_output
 
 # EQUIVALENT. `content_start` is set on the first source byte by every
 # preceding non-whitespace arm, including the opening parenthesis that raises
