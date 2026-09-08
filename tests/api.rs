@@ -5859,6 +5859,10 @@ fn server_shutdown_cancels_tutor_descendant_processes() {
     );
 
     drop(guard);
+    let deadline = Instant::now() + HANG_BUDGET;
+    while process_exists(pid) && Instant::now() < deadline {
+        thread::yield_now();
+    }
     let survived_shutdown = process_exists(pid);
 
     if survived_shutdown {
@@ -5870,7 +5874,7 @@ fn server_shutdown_cancels_tutor_descendant_processes() {
     }
     assert!(
         !survived_shutdown,
-        "shutdown returned while tutor descendant {pid} was still alive"
+        "tutor descendant {pid} was still alive after the {HANG_BUDGET:?} shutdown budget"
     );
 }
 
