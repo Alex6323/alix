@@ -261,7 +261,7 @@ fn classify_line(
     let mut open: Vec<usize> = Vec::new();
 
     for (delimiter_index, delimiter) in delimiters.iter().enumerate() {
-        while delimiter.can_close && remaining[delimiter_index] > 0 {
+        while delimiter.can_close && remaining[delimiter_index] != 0 {
             let Some(open_pos) = open.iter().rposition(|candidate| {
                 let opener = delimiters[*candidate];
                 opener.marker == delimiter.marker && remaining[*candidate] > 0
