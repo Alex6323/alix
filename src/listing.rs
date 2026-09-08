@@ -2159,6 +2159,58 @@ mod tests {
     }
 
     #[test]
+    fn workspace_readiness_keeps_finished_polarity_independent_of_mastery_and_exam() {
+        let status = |state, mastered, has_exam| DeckStatus {
+            state,
+            badge: String::new(),
+            locked: false,
+            reviewable: false,
+            reviewable_recognize: false,
+            can_recognize: false,
+            reviewable_recall: false,
+            reviewable_reconstruct: false,
+            mastered,
+            is_trace: false,
+            examable: false,
+            has_exam,
+            badge_depth: None,
+            badge_dotted: false,
+            new_cards: false,
+            crammable: false,
+            progress_error: false,
+        };
+        let cases = [
+            ("not started", DeckState::NotStarted, false, false, false),
+            ("started", DeckState::Started, false, false, false),
+            ("exam due", DeckState::ExamDue, false, true, false),
+            (
+                "finished without exam",
+                DeckState::Finished,
+                false,
+                false,
+                true,
+            ),
+            (
+                "finished with exam",
+                DeckState::Finished,
+                false,
+                true,
+                false,
+            ),
+            ("mastered with exam", DeckState::Finished, true, true, true),
+        ];
+
+        for (label, state, mastered, has_exam, expected) in cases {
+            let readiness = workspace_readiness(&[status(state, mastered, has_exam)]);
+            assert_eq!(
+                (usize::from(expected), 1),
+                (readiness.ready, readiness.total),
+                "{label}: ready count and denominator"
+            );
+        }
+    }
+
+    #[test]
     fn deck_summary_can_recognize_tracks_augmentation() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("d.md");
@@ -2220,6 +2272,38 @@ mod tests {
             deck_due(&deck, &store, &augment, &ReviewConfig::default(), now),
             "an augmented unrecognized card is due at Recognize"
         );
+    }
+
+    #[test]
+    fn deck_due_keeps_recall_and_reconstruct_as_independent_due_paths() {
+        let cases = [
+            ("neither due", true, true, false),
+            ("recall only", false, true, true),
+            ("reconstruct only", true, false, true),
+            ("both due", false, false, true),
+        ];
+
+        for (label, settle_recall, settle_reconstruct, expected) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let deck_path = dir.path().join("rust.md");
+            std::fs::write(&deck_path, "## q1\na1\n<!-- id: card-q1 -->\n").unwrap();
+            let deck = Deck::load(&deck_path).unwrap();
+            let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
+            let now = T0;
+            let entry = store.get_or_insert(&deck.cards[0].id().unwrap());
+            if settle_recall {
+                entry.recall = Some(graduated_not_due(now));
+            }
+            if settle_reconstruct {
+                entry.reconstruct = Some(graduated_not_due(now));
+            }
+
+            assert_eq!(
+                expected,
+                deck_due(&deck, &store, &no_augment(), &ReviewConfig::default(), now),
+                "{label}: each depth is an independent due path"
+            );
+        }
     }
 
     /// A personal file's own cards are the reader's, and a deck whose authored
