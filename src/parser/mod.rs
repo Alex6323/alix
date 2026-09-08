@@ -541,41 +541,33 @@ pub fn image_references(text: &str) -> Vec<ImageReference> {
 }
 
 fn image_references_in_line(line: &str, offset: usize, out: &mut Vec<ImageReference>) {
-    let mut cursor = 0;
-    while let Some(relative) = line[cursor..].find("![") {
-        let marker = cursor + relative;
+    let mut rest = line;
+    while let Some((_, after_marker)) = rest.split_once("![") {
+        let marker = line.len() - after_marker.len() - 2;
+        rest = after_marker;
         if escaped_marker(line, marker) {
-            cursor = marker + 2;
             continue;
         }
-        let alt_start = marker + 2;
-        let Some(alt_end_relative) = line[alt_start..].find(']') else {
+        let Some((_, after_alt)) = rest.split_once(']') else {
             break;
         };
-        let alt_end = alt_start + alt_end_relative;
-        let Some(paren) = line
-            .get(alt_end + 1..)
-            .and_then(|tail| tail.strip_prefix('('))
-        else {
-            cursor = alt_end.saturating_add(1);
+        rest = after_alt;
+        let Some(paren) = after_alt.strip_prefix('(') else {
             continue;
         };
         let Some((source, span, after)) = cloze::scan_src(paren) else {
-            cursor = alt_end.saturating_add(1);
             continue;
         };
-        let consumed = paren.len() - after.len();
-        let paren_start = alt_end + 2;
+        let paren_start = line.len() - paren.len();
         let destination = paren_start + span.start..paren_start + span.end;
+        rest = after;
         if line.get(destination.clone()).is_none() {
-            cursor = paren_start + consumed;
             continue;
         }
         out.push(ImageReference {
             source,
             destination: offset + destination.start..offset + destination.end,
         });
-        cursor = paren_start + consumed;
     }
 }
 
