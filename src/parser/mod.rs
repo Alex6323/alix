@@ -3267,6 +3267,38 @@ mod tests {
     use crate::session::Order;
 
     #[test]
+    fn indentation_width_advances_tabs_to_four_column_stops() {
+        for (name, line, expected) in [
+            ("empty", "", 0),
+            ("three spaces", "   ", 3),
+            ("one tab", "\t", 4),
+            ("one space then tab", " \t", 4),
+            ("two spaces then tab", "  \t", 4),
+            ("three spaces then tab", "   \t", 4),
+            ("two tabs", "\t\t", 8),
+            ("tab then space", "\t ", 5),
+            ("non-whitespace stops counting", " \tx\t", 4),
+        ] {
+            assert_eq!(expected, indent_width(line), "{name}: {line:?}");
+        }
+    }
+
+    #[test]
+    fn thematic_breaks_require_less_than_four_columns_of_indentation() {
+        for (name, line, expected) in [
+            ("no indentation", "***", true),
+            ("three spaces", "   ***", true),
+            ("four spaces", "    ***", false),
+            ("one tab", "\t***", false),
+            ("three spaces then tab", "   \t***", false),
+            ("tab-separated markers", " *\t*\t*", true),
+            ("too few markers", "  **", false),
+        ] {
+            assert_eq!(expected, is_thematic_break(line), "{name}: {line:?}");
+        }
+    }
+
+    #[test]
     fn a_span_on_a_display_table_blanks_the_cell_into_a_sub_card() {
         let deck = parse(
             "## Capitals\n| Country | Capital |\n| --- | --- |\n| France | Paris |\n| Italy | Rome |\n<!-- blank: span hidden=\"Paris\" b:a1b2c3 -->\n",
