@@ -337,7 +337,7 @@ pub fn backup_files(root: &Path) -> Vec<PathBuf> {
             let name = entry.file_name();
             let name = name.to_string_lossy();
             if path.is_dir() {
-                if !name.starts_with('.') || workspace::is_private_name(&name) {
+                if !name.starts_with('.') || workspace::is_private_dir_name(&name) {
                     stack.push(path);
                 }
             } else if workspace::is_backup_name(&name) && collected.first_visit(&path) {
@@ -453,17 +453,23 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("progress")).unwrap();
         std::fs::create_dir_all(dir.path().join(".alix/progress")).unwrap();
         std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".other.local.cache")).unwrap();
         std::fs::write(dir.path().join("a.md"), "live").unwrap();
         std::fs::write(dir.path().join("a.md.bak"), "bak").unwrap();
         std::fs::write(dir.path().join("progress/d.json.bak"), "bak").unwrap();
         std::fs::write(dir.path().join(".alix/progress/p.json.bak"), "bak").unwrap();
         std::fs::write(dir.path().join(".git/ref.bak"), "hidden").unwrap();
+        std::fs::write(
+            dir.path().join(".other.local.cache/unrelated.bak"),
+            "hidden",
+        )
+        .unwrap();
 
         let files = backup_files(dir.path());
         assert_eq!(
             3,
             files.len(),
-            "alix's own private directory is walked, other dot-dirs are skipped: {files:?}"
+            "exactly `.alix` is walked; `.git` and a hidden `*.local.*` directory are skipped: {files:?}"
         );
 
         let finding = check_backups(dir.path()).unwrap();

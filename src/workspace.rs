@@ -213,8 +213,12 @@ pub fn is_sidecar_name(name: &str) -> bool {
 }
 
 pub fn is_private_name(name: &str) -> bool {
+    is_private_dir_name(name) || name.contains(PRIVATE_PATTERNS[1].trim_matches('*'))
+}
+
+/// The `.alix` state directory itself, never a `*.local.*` sidecar.
+pub fn is_private_dir_name(name: &str) -> bool {
     name == PRIVATE_PATTERNS[0].trim_end_matches('/')
-        || name.contains(PRIVATE_PATTERNS[1].trim_matches('*'))
 }
 
 /// A closed list of sync/backup name patterns. Dropbox's "conflicted copy"
