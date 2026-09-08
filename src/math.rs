@@ -472,6 +472,66 @@ mod tests {
     }
 
     #[test]
+    fn verbatim_validation_limits_percent_comments_to_their_line() {
+        let cases = [
+            (
+                "same-line command is commented",
+                r"% ignored \verbfoo",
+                None,
+            ),
+            (
+                "next-line command remains visible",
+                "% ignored\n\\verbfoo",
+                Some(r"malformed verbatim command `\verbfoo`"),
+            ),
+            (
+                "empty comment ends at newline",
+                "%\n\\verbfoo",
+                Some(r"malformed verbatim command `\verbfoo`"),
+            ),
+        ];
+
+        for (name, source, expected_error) in cases {
+            let observed = validate_verbatim_delimiters(source).err();
+            assert_eq!(
+                observed.as_deref(),
+                expected_error,
+                "{name}: source={source:?}, observed={observed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn verbatim_validation_advances_by_one_complete_control_sequence() {
+        let cases = [
+            (
+                "escaped percent does not start a comment",
+                r"\% \verbfoo",
+                Some(r"malformed verbatim command `\verbfoo`"),
+            ),
+            (
+                "escaped backslash does not start a word",
+                r"\\verbfoo",
+                None,
+            ),
+            (
+                "control word leaves the next sequence visible",
+                r"\alpha\verbfoo",
+                Some(r"malformed verbatim command `\verbfoo`"),
+            ),
+        ];
+
+        for (name, source, expected_error) in cases {
+            let observed = validate_verbatim_delimiters(source).err();
+            assert_eq!(
+                observed.as_deref(),
+                expected_error,
+                "{name}: source={source:?}, observed={observed:?}"
+            );
+        }
+    }
+
+    #[test]
     fn unsafe_svg_features_are_rejected() {
         let unsafe_fragments = [
             r#"<div xmlns="http://www.w3.org/2000/svg"><path/></div>"#,
