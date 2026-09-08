@@ -153,24 +153,19 @@ fn remove_blocks(s: &str, tag: &str) -> String {
     let open = format!("<{tag}");
     let close = format!("</{tag}>");
     let mut out = String::new();
-    let mut i = 0;
-    loop {
-        if lower[i..].starts_with(&open) {
-            match lower[i..].find(&close) {
-                Some(rel) => {
-                    i += rel + close.len();
-                    continue;
-                }
-                None => break, // unterminated block: drop the remainder
-            }
-        }
-        let ch = match s[i..].chars().next() {
-            Some(c) => c,
-            None => break,
+    let mut rest = s;
+    let mut lower_rest = lower.as_str();
+    while let Some(start) = lower_rest.find(&open) {
+        out.push_str(&rest[..start]);
+        rest = &rest[start..];
+        lower_rest = &lower_rest[start..];
+        let Some(rel) = lower_rest.find(&close) else {
+            return out; // unterminated block: drop the remainder
         };
-        out.push(ch);
-        i += ch.len_utf8();
+        rest = &rest[rel..][close.len()..];
+        lower_rest = &lower_rest[rel..][close.len()..];
     }
+    out.push_str(rest);
     out
 }
 
@@ -253,6 +248,14 @@ mod tests {
     #[test]
     fn sanitize_svg_rejects_non_svg() {
         assert_eq!(sanitize_svg("just text, no markup"), None);
+    }
+
+    #[test]
+    fn block_removal_preserves_text_and_drops_an_unterminated_tail() {
+        assert_eq!(
+            "αβ",
+            remove_blocks("α<SCRIPT>x</sCrIpT>β<script>tail", "script")
+        );
     }
 
     #[test]
