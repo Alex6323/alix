@@ -3505,12 +3505,17 @@ printf ']}}'
             ".alix/progress/deck-deck1.sync-conflict-20260725-phone.json",
             "{}",
         );
+        w(dir.path(), ".alix/progress/deck-deck1.json.bak", "{}");
 
         let report = workspace_findings(dir.path());
         let warnings = report.warnings.join("\n");
 
         assert!(warnings.contains("orphaned augmentation document"));
         assert!(warnings.contains(&conflict.display().to_string()));
+        assert!(
+            !warnings.contains("json.bak"),
+            "a push backup is never reported as a conflict: {warnings}"
+        );
     }
 
     #[test]

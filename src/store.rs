@@ -1638,6 +1638,7 @@ fn conflict_documents(dir: &Path) -> Vec<PathBuf> {
                     .is_some_and(|name| {
                         !crate::workspace::is_private_name(name)
                             && crate::workspace::is_conflict_name(name)
+                            && !crate::workspace::is_backup_name(name)
                     })
         })
         .collect();
@@ -1957,8 +1958,13 @@ mod tests {
             .path()
             .join(".alix/progress/deck1.sync-conflict-20260714-phone.json");
         std::fs::write(&progress, "{}").unwrap();
+        std::fs::write(dir.path().join(".alix/progress/deck1.json.bak"), "{}").unwrap();
 
-        assert_eq!(sync_conflicts(dir.path()), vec![progress]);
+        assert_eq!(
+            sync_conflicts(dir.path()),
+            vec![progress],
+            "the backup an accepted push leaves is not a conflict copy"
+        );
     }
 
     #[test]

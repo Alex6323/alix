@@ -315,7 +315,9 @@ notes it.
   any order parses, an editorial comment or content bounds what may move,
   and IDs are preserved.
 - Folder and workspace runs also count accumulated `.bak` backup files
-  (overwrite leftovers) with their total size, naming both remedies:
+  (overwrite leftovers, including the progress backup an accepted
+  paired-phone push leaves under `.alix/progress`) with their total size,
+  naming both remedies:
   `alix deck restore <deck>` swaps one back,
   `alix doctor <dir> --remove-backup-files` lists and deletes them all after
   one confirmation (`--yes` skips it). Backups warn, they never fail the

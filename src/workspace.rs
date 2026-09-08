@@ -223,9 +223,15 @@ pub fn is_conflict_name(name: &str) -> bool {
     name.contains(".sync-conflict-")
         || name.contains("conflicted copy")
         || name.contains(" (Conflict")
-        || name.ends_with(".bak")
+        || is_backup_name(name)
         || name.ends_with(".orig")
         || name.ends_with('~')
+}
+
+/// alix's own overwrite backup (`alix deck restore` swaps it in), never a
+/// sync tool's conflict copy.
+pub fn is_backup_name(name: &str) -> bool {
+    name.ends_with(".bak")
 }
 
 pub fn deck_files(dir: &Path) -> Vec<PathBuf> {

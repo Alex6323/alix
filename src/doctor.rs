@@ -318,8 +318,8 @@ pub fn check_binary(name: &'static str, cmd: &str, purpose: &str, remedy: &str) 
 }
 
 /// Every `*.bak` under `root`, recursively: the backups `alix deck restore`
-/// swaps in, left behind by overwrites (`deck import --force`, deck
-/// regeneration). Dot-directories are skipped.
+/// swaps in. alix's private directory is walked; other dot-directories are
+/// skipped.
 pub fn backup_files(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let mut walked = workspace::SeenPaths::default();
@@ -337,10 +337,10 @@ pub fn backup_files(root: &Path) -> Vec<PathBuf> {
             let name = entry.file_name();
             let name = name.to_string_lossy();
             if path.is_dir() {
-                if !name.starts_with('.') {
+                if !name.starts_with('.') || workspace::is_private_name(&name) {
                     stack.push(path);
                 }
-            } else if name.ends_with(".bak") && collected.first_visit(&path) {
+            } else if workspace::is_backup_name(&name) && collected.first_visit(&path) {
                 found.push(path);
             }
         }
@@ -451,19 +451,25 @@ mod tests {
         );
 
         std::fs::create_dir_all(dir.path().join("progress")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".alix/progress")).unwrap();
         std::fs::create_dir_all(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join("a.md"), "live").unwrap();
         std::fs::write(dir.path().join("a.md.bak"), "bak").unwrap();
         std::fs::write(dir.path().join("progress/d.json.bak"), "bak").unwrap();
+        std::fs::write(dir.path().join(".alix/progress/p.json.bak"), "bak").unwrap();
         std::fs::write(dir.path().join(".git/ref.bak"), "hidden").unwrap();
 
         let files = backup_files(dir.path());
-        assert_eq!(2, files.len(), "dot-dirs are skipped: {files:?}");
+        assert_eq!(
+            3,
+            files.len(),
+            "alix's own private directory is walked, other dot-dirs are skipped: {files:?}"
+        );
 
         let finding = check_backups(dir.path()).unwrap();
         assert_eq!(Status::Warn, finding.status, "advice, never a failure");
         assert!(
-            finding.detail.contains("2 backup file(s)"),
+            finding.detail.contains("3 backup file(s)"),
             "{}",
             finding.detail
         );

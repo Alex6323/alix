@@ -1130,7 +1130,10 @@ pub fn sync_conflicts(workspace_root: &Path) -> Vec<PathBuf> {
                     && path
                         .file_name()
                         .and_then(|name| name.to_str())
-                        .is_some_and(crate::workspace::is_conflict_name)
+                        .is_some_and(|name| {
+                            crate::workspace::is_conflict_name(name)
+                                && !crate::workspace::is_backup_name(name)
+                        })
             })
             .collect();
     conflicts.sort();
@@ -1187,9 +1190,14 @@ mod tests {
             .join("augment/deck2.sync-conflict-20260714-laptop.json");
         std::fs::write(&conflict, "{}").unwrap();
         std::fs::write(dir.path().join("augment/ordinary.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("augment/ordinary.json.bak"), "{}").unwrap();
         std::fs::create_dir(dir.path().join("augment/folder.sync-conflict-x.json")).unwrap();
 
-        assert_eq!(sync_conflicts(dir.path()), vec![conflict]);
+        assert_eq!(
+            sync_conflicts(dir.path()),
+            vec![conflict],
+            "an overwrite backup is not a conflict copy"
+        );
     }
 
     #[test]

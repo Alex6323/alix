@@ -70,6 +70,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix doctor` no longer reports alix's own `.bak` backups under a
+  workspace's private state (the progress document an accepted paired-phone
+  push or a deck overwrite preserves) as synchronization conflicts needing
+  deliberate recovery. They count as backups instead: the folder run's backup
+  total includes them and `--remove-backup-files` deletes them.
+
 - A paired pull larger than 32 KiB no longer arrives chunked without a
   `Content-Length`; the phone's sync client refused every real-sized entry
   with an absurd free-space figure while tiny fixtures passed. Downloads now
