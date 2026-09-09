@@ -44,6 +44,7 @@ pub fn canonical_content(front: &str, back: &[String]) -> String {
 }
 
 pub fn content_fingerprint(front: &str, back: &[String]) -> u64 {
+    crate::profile::hit(crate::profile::Counter::FingerprintHashes);
     let mut hasher = XxHash64::default();
     hasher.write(canonical_content(front, back).as_bytes());
     hasher.finish()

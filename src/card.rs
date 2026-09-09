@@ -263,10 +263,28 @@ impl Card {
         notes: Vec<Note>,
         line: usize,
     ) -> Self {
-        // The parser overrides this for cloze sub-cards with a shared block-level fingerprint; this
-        // default fits every other card.
         let content_fingerprint = crate::parser::content_fingerprint(&front, &back);
         let block_fingerprint = content_fingerprint;
+        Self::plain_with_fingerprints(
+            subject,
+            front,
+            back,
+            notes,
+            line,
+            content_fingerprint,
+            block_fingerprint,
+        )
+    }
+
+    pub(crate) fn plain_with_fingerprints(
+        subject: Arc<str>,
+        front: String,
+        back: Vec<String>,
+        notes: Vec<Note>,
+        line: usize,
+        content_fingerprint: u64,
+        block_fingerprint: u64,
+    ) -> Self {
         Self {
             subject,
             deck_id: Arc::from(""),

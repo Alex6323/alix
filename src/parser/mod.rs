@@ -3055,28 +3055,6 @@ fn build_card_inner(
         .map(|region| region.line)
         .min();
 
-    // The block-level dedup key: front + cover-masked RAW answer lines
-    // (cover cuts make a moved cover change the key). Every card of the
-    // block carries it, while content_fingerprint stays the card's own
-    // effective question.
-    let masked_answer: Vec<String> = answer
-        .iter()
-        .enumerate()
-        .map(|(index, (_, text))| {
-            let mut cuts: Vec<&SpanSplice> = splices
-                .iter()
-                .filter(|splice| splice.cover && splice.answer_index == index)
-                .collect();
-            cuts.sort_by_key(|splice| std::cmp::Reverse(splice.range.0));
-            let mut line = text.clone();
-            for cut in cuts {
-                line.replace_range(cut.range.0..cut.range.1, cloze::HIDDEN);
-            }
-            line
-        })
-        .collect();
-    let block_key = content_fingerprint(&front, &masked_answer);
-
     let mut task_lines = Vec::new();
     let mut has_other = false;
     let mut fence = None;
@@ -3204,6 +3182,28 @@ fn build_card_inner(
         return Ok(None);
     }
 
+    // The block-level dedup key: front + cover-masked RAW answer lines
+    // (cover cuts make a moved cover change the key). Every card of the
+    // block carries it, while content_fingerprint stays the card's own
+    // effective question.
+    let masked_answer: Vec<String> = answer
+        .iter()
+        .enumerate()
+        .map(|(index, (_, text))| {
+            let mut cuts: Vec<&SpanSplice> = splices
+                .iter()
+                .filter(|splice| splice.cover && splice.answer_index == index)
+                .collect();
+            cuts.sort_by_key(|splice| std::cmp::Reverse(splice.range.0));
+            let mut line = text.clone();
+            for cut in cuts {
+                line.replace_range(cut.range.0..cut.range.1, cloze::HIDDEN);
+            }
+            line
+        })
+        .collect();
+    let block_key = content_fingerprint(&front, &masked_answer);
+
     let answer_fences = capture_answer_fences(&answer, &splices);
 
     let back_lines: Vec<String> = parsed
@@ -3211,7 +3211,22 @@ fn build_card_inner(
         .filter(|segments| !image_only(segments))
         .map(|segments| seg_display(segments))
         .collect();
-    let mut card = Card::plain(Arc::clone(subject), front, back_lines, notes, line);
+    let same_fingerprint_input = splices.iter().all(|splice| !splice.cover)
+        && back_lines.iter().eq(answer.iter().map(|(_, text)| text));
+    let content_key = if first_blank_line.is_some() || same_fingerprint_input {
+        block_key
+    } else {
+        content_fingerprint(&front, &back_lines)
+    };
+    let mut card = Card::plain_with_fingerprints(
+        Arc::clone(subject),
+        front,
+        back_lines,
+        notes,
+        line,
+        content_key,
+        block_key,
+    );
     card.deck_id = Arc::clone(deck_id);
     card.token = directives.token.as_deref().map(Arc::from);
     card.ignored = directives.ignore;
@@ -3226,7 +3241,6 @@ fn build_card_inner(
     card.citations = directives.citations;
     card.diagrams = directives.diagrams;
     card.givens = directives.givens;
-    card.block_fingerprint = block_key;
     cards.push(card);
     let prose = first_blank_line.is_some().then(|| BlockProse {
         lines: answer
@@ -9980,6 +9994,74 @@ the answer
                 card.back
             );
         }
+    }
+
+    #[test]
+    fn every_card_shape_preserves_the_parent_recorded_fingerprints() {
+        let one = |text| parse(text).cards.into_iter().next().unwrap();
+        let plain = one("## plain\nalpha answer\n");
+        let cards = [
+            (
+                "plain",
+                plain.clone(),
+                (0xd8a2a3b34346d17a, 0xd8a2a3b34346d17a),
+            ),
+            (
+                "cover",
+                one("## cover\nalpha beta\n<!-- cover: span hidden=\"alpha\" -->\n"),
+                (0xed8e61f49e913209, 0x8e0f8e8098431862),
+            ),
+            (
+                "single region",
+                one(
+                    "## single\n---\nalpha then beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n",
+                ),
+                (0x7295c529301f959f, 0x63853a6ecb244205),
+            ),
+            (
+                "group region",
+                one(
+                    "## group\n---\nalpha then beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [pair] hidden=\"beta\" b:d4e5f6 -->\n",
+                ),
+                (0x4c937710eca65745, 0x2177997d7c587c5d),
+            ),
+            (
+                "choice",
+                one("## choice\n- [x] alpha\n- [ ] beta\n<!-- choices: single -->\n"),
+                (0xbf965f094a0871c8, 0xbf965f094a0871c8),
+            ),
+            (
+                "reversed",
+                plain.reversed(),
+                (0xd8a2a3b34346d17a, 0xd8a2a3b34346d17a),
+            ),
+            (
+                "escaped image marker",
+                one("## escaped\n---\n\\![diagram](\\<x.png>)\n"),
+                (0x017a84119800b4e1, 0x46f230036d4820ee),
+            ),
+        ];
+
+        for (shape, card, expected) in cards {
+            assert_eq!(
+                expected,
+                (card.content_fingerprint, card.block_fingerprint),
+                "{shape} fingerprint pair"
+            );
+        }
+    }
+
+    #[test]
+    fn a_plain_n_card_deck_hashes_each_card_once() {
+        let (deck, counts) =
+            crate::profile::collect(|| parse("## one\na\n## two\nb\n## three\nc\n## four\nd\n"));
+
+        assert_eq!(4, deck.cards.len(), "fixture card count");
+        assert_eq!(
+            deck.cards.len() as u64,
+            counts.fingerprint_hashes,
+            "one fingerprint hash per plain card"
+        );
     }
 
     #[test]

@@ -11,6 +11,7 @@ pub struct Counts {
     pub store_documents_read: u64,
     pub augment_documents_read: u64,
     pub canonicalize_calls: u64,
+    pub fingerprint_hashes: u64,
     pub sidecar_reads: u64,
 }
 
@@ -25,6 +26,7 @@ pub enum Counter {
     StoreDocumentsRead,
     AugmentDocumentsRead,
     CanonicalizeCalls,
+    FingerprintHashes,
     SidecarReads,
 }
 
@@ -40,6 +42,7 @@ impl Counts {
             Counter::StoreDocumentsRead => &mut self.store_documents_read,
             Counter::AugmentDocumentsRead => &mut self.augment_documents_read,
             Counter::CanonicalizeCalls => &mut self.canonicalize_calls,
+            Counter::FingerprintHashes => &mut self.fingerprint_hashes,
             Counter::SidecarReads => &mut self.sidecar_reads,
         };
         *slot += 1;
@@ -56,12 +59,13 @@ impl Counts {
             Counter::StoreDocumentsRead => self.store_documents_read,
             Counter::AugmentDocumentsRead => self.augment_documents_read,
             Counter::CanonicalizeCalls => self.canonicalize_calls,
+            Counter::FingerprintHashes => self.fingerprint_hashes,
             Counter::SidecarReads => self.sidecar_reads,
         }
     }
 }
 
-pub const ALL_COUNTERS: [Counter; 10] = [
+pub const ALL_COUNTERS: [Counter; 11] = [
     Counter::CandidatesClassified,
     Counter::ManifestReads,
     Counter::DecksLoaded,
@@ -71,6 +75,7 @@ pub const ALL_COUNTERS: [Counter; 10] = [
     Counter::StoreDocumentsRead,
     Counter::AugmentDocumentsRead,
     Counter::CanonicalizeCalls,
+    Counter::FingerprintHashes,
     Counter::SidecarReads,
 ];
 
