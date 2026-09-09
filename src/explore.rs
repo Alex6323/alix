@@ -1422,6 +1422,7 @@ back a
             fs::read_to_string(dest.join("notes/built.txt")).unwrap(),
             "the built directory takes the name the link held"
         );
+        let _ = fs::remove_dir_all(staging.parent().unwrap());
     }
 
     #[test]
