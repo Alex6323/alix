@@ -2796,7 +2796,7 @@ fn get_root_returns_the_html_shell_with_revalidation_metadata() {
 }
 
 #[test]
-fn adult_assets_are_public_no_cache_and_allowlisted() {
+fn adult_and_shared_assets_are_public_no_cache_and_allowlisted() {
     let (base, _guard) = spawn_test_server_with(Some("secret"));
 
     for (path, content_type, marker) in [
@@ -2823,6 +2823,38 @@ fn adult_assets_are_public_no_cache_and_allowlisted() {
             String::from_utf8_lossy(&resp.body).contains(marker),
             "path: {path}"
         );
+    }
+
+    for (path, content_type, body) in [
+        (
+            "/theme.css",
+            "text/css; charset=utf-8",
+            include_str!("../web/shared/theme.css"),
+        ),
+        (
+            "/theme.js",
+            "application/javascript; charset=utf-8",
+            include_str!("../web/shared/theme.js"),
+        ),
+        (
+            "/alix-logo.js",
+            "application/javascript; charset=utf-8",
+            include_str!("../web/shared/alix-logo.js"),
+        ),
+    ] {
+        let resp = http(&base, "GET", path, &[], &[]);
+        assert_eq!(200, resp.status, "path: {path}");
+        assert_eq!(
+            Some(content_type),
+            resp.header("Content-Type"),
+            "path: {path}"
+        );
+        assert_eq!(
+            Some("no-cache"),
+            resp.header("Cache-Control"),
+            "path: {path}"
+        );
+        assert_eq!(body.as_bytes(), resp.body, "path: {path}");
     }
 
     let resp = http(&base, "GET", "/review/nope.js", &[], &[]);
