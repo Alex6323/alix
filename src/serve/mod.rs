@@ -50,6 +50,14 @@ const MAX_REMOTE_BODY: usize = 256 * 1024;
 const MAX_JSON_BODY: usize = 256 * 1024;
 pub const SYNC_PUSH_BODY_CAP: usize = 64 * 1024 * 1024;
 
+fn loopback_pump_target(addr: tiny_http::ListenAddr) -> Option<SocketAddr> {
+    let port = addr.to_ip().map(|addr| addr.port()).unwrap_or(0);
+    if port == 0 {
+        return None;
+    }
+    Some(SocketAddr::from(([127, 0, 0, 1], port)))
+}
+
 fn json_body<T: serde::de::DeserializeOwned>(request: &mut Request) -> Option<T> {
     let bytes = read_capped(request.as_reader(), MAX_JSON_BODY)?;
     serde_json::from_slice(&bytes).ok()
@@ -315,11 +323,9 @@ pub fn run_review(
     {
         let addr = server.server_addr();
         thread::spawn(move || {
-            let port = addr.to_ip().map(|a| a.port()).unwrap_or(0);
-            if port == 0 {
+            let Some(target) = loopback_pump_target(addr) else {
                 return;
-            }
-            let target = SocketAddr::from(([127, 0, 0, 1], port));
+            };
             loop {
                 thread::sleep(Duration::from_millis(1000));
                 match std::net::TcpStream::connect_timeout(&target, Duration::from_millis(500)) {

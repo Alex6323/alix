@@ -86,6 +86,36 @@ fn http(base: &str, method: &str, path: &str, headers: &[(&str, &str)], body: &[
     parse_response(&raw)
 }
 
+/// Sends a short body while declaring a caller-selected length, then closes the
+/// request half of the connection. This makes header-only rejection observable:
+/// a handler that accepts the declared length proceeds with the bytes it got,
+/// while an over-cap declaration is refused before body parsing.
+fn http_with_declared_length(
+    base: &str,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    declared_length: usize,
+    body: &[u8],
+) -> HttpResp {
+    let host = base
+        .strip_prefix("http://")
+        .expect("spawn_test_server's base is always an http:// URL");
+    let mut stream = TcpStream::connect(host).expect("connect to the test server");
+    let mut head = format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n");
+    for (name, value) in headers {
+        head.push_str(&format!("{name}: {value}\r\n"));
+    }
+    head.push_str(&format!("Content-Length: {declared_length}\r\n\r\n"));
+    stream.write_all(head.as_bytes()).unwrap();
+    stream.write_all(body).unwrap();
+    stream.shutdown(std::net::Shutdown::Write).unwrap();
+
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).unwrap();
+    parse_response(&raw)
+}
+
 /// Splits a raw response on the first blank line and parses the status line
 /// and headers preceding it.
 fn parse_response(raw: &[u8]) -> HttpResp {
@@ -574,6 +604,24 @@ fn fake_reply(dir: &Path, reply: &str) -> PathBuf {
     path
 }
 
+fn fake_reply_capturing_prompt(dir: &Path, reply: &str) -> (PathBuf, PathBuf) {
+    let out = dir.join("fake-reply");
+    let prompt = dir.join("prompt.log");
+    std::fs::write(&out, reply).unwrap();
+    let path = dir.join("fake-claude");
+    std::fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat > {prompt}\ncat {out}\n",
+            prompt = prompt.display(),
+            out = out.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    (path, prompt)
+}
+
 /// Polls `GET path` (bounded: up to 5s, 20ms apart) until `done` accepts the
 /// parsed body, returning it — for the handful of endpoints that kick a
 /// background job (`thinking`/a phase change) rather than answering inline.
@@ -987,17 +1035,44 @@ fn sync_root_refusal_precedes_loading_an_unreadable_desktop_document() {
 }
 
 #[test]
-fn sync_push_body_cap_refuses_before_any_progress_write() {
+fn law_review_server_sync_push_cap_accepts_its_boundary_and_refuses_one_more() {
     let (base, guard) = spawn_test_server();
     let root_id = sync_root_id(&base);
-    let body = vec![b'x'; serve::SYNC_PUSH_BODY_CAP + 1];
+    let body = sync_document("deck-sample", "phone");
+    let headers = [
+        ("X-Alix-Root", root_id.as_str()),
+        ("X-Alix-Pulled-Revision", "none"),
+    ];
 
-    let response = sync_push(&base, "deck-sample", &root_id, "none", &body);
-
-    assert_eq!(413, response.status);
+    let over = http_with_declared_length(
+        &base,
+        "POST",
+        "/api/sync/push?deck=deck-sample",
+        &headers,
+        serve::SYNC_PUSH_BODY_CAP + 1,
+        &body,
+    );
+    assert_eq!(
+        413, over.status,
+        "one byte over the cap is refused by its header"
+    );
     let progress = progress_root(guard.dir()).join("deck-sample.json");
     assert!(!progress.exists());
     assert!(!progress.with_extension("json.bak").exists());
+
+    let boundary = http_with_declared_length(
+        &base,
+        "POST",
+        "/api/sync/push?deck=deck-sample",
+        &headers,
+        serve::SYNC_PUSH_BODY_CAP,
+        &body,
+    );
+    assert_eq!(200, boundary.status, "the exact cap remains admissible");
+    assert!(
+        progress.exists(),
+        "the accepted boundary request is committed"
+    );
 }
 
 #[test]
@@ -5219,6 +5294,104 @@ fn generate_lands_the_deck_then_close_frees_the_slot() {
     assert_eq!(200, resp.status);
     let resp = http(&base, "GET", "/api/generate", &[], &[]);
     assert_eq!(409, resp.status, "the closed slot polls as 409");
+}
+
+#[test]
+fn law_review_server_generate_routes_preserve_nonempty_guidance() {
+    let _lock = exec_lock();
+    let reply = "---\nsource: https://example.org\n---\n## Q\nA\n";
+    let guidance = "  focus on boundary identity  ";
+    let expected = "Additional instructions:\nfocus on boundary identity";
+
+    {
+        let scripts = TempDir::new().unwrap();
+        let (fake, prompt) = fake_reply_capturing_prompt(scripts.path(), reply);
+        let (base, _guard) = spawn_full_server(Some(&fake));
+        let response = post_json(
+            &base,
+            "/api/generate",
+            &format!(
+                r#"{{"url":"https://example.org/local","guidance":{guidance}}}"#,
+                guidance = serde_json::to_string(guidance).unwrap()
+            ),
+        );
+        assert_eq!(200, response.status);
+        let body = poll_until(&base, "/api/generate", |body| body["phase"] != "generating");
+        assert_eq!("done", body["phase"], "body: {body}");
+        let captured = std::fs::read_to_string(prompt).unwrap();
+        assert!(
+            captured.contains(expected),
+            "local generation must preserve its nonempty guidance: {captured}"
+        );
+    }
+
+    {
+        let scripts = TempDir::new().unwrap();
+        let (fake, prompt) = fake_reply_capturing_prompt(scripts.path(), reply);
+        let (base, _guard) = spawn_full_server(Some(&fake));
+        let response = post_json(
+            &base,
+            "/api/remote/generate",
+            &format!(
+                r#"{{"url":"https://example.org/remote","guidance":{guidance}}}"#,
+                guidance = serde_json::to_string(guidance).unwrap()
+            ),
+        );
+        assert_eq!(200, response.status);
+        let body = poll_until(&base, "/api/remote/generate", |body| {
+            body["phase"] != "generating"
+        });
+        assert_eq!("done", body["phase"], "body: {body}");
+        let captured = std::fs::read_to_string(prompt).unwrap();
+        assert!(
+            captured.contains(expected),
+            "remote generation must preserve its nonempty guidance: {captured}"
+        );
+    }
+}
+
+fn exact_length_zip(target: usize) -> Vec<u8> {
+    fn build(content_len: usize, capacity: usize) -> Vec<u8> {
+        let cursor = Cursor::new(Vec::with_capacity(capacity));
+        let mut writer = zip::ZipWriter::new(cursor);
+        let options = zip::write::FileOptions::<()>::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        writer.start_file("payload.bin", options).unwrap();
+        std::io::copy(
+            &mut std::io::repeat(0).take(content_len as u64),
+            &mut writer,
+        )
+        .unwrap();
+        writer.finish().unwrap().into_inner()
+    }
+
+    let overhead = build(0, 0).len();
+    assert!(target >= overhead);
+    let bytes = build(target - overhead, target);
+    assert_eq!(target, bytes.len(), "the ZIP fixture must hit the boundary");
+    bytes
+}
+
+#[test]
+fn law_review_server_receive_zip_accepts_the_exact_fifty_mebibyte_boundary() {
+    const RECEIVE_ZIP_BODY_CAP: usize = 50 * 1024 * 1024;
+
+    let (base, guard) = spawn_test_server();
+    let archive = exact_length_zip(RECEIVE_ZIP_BODY_CAP);
+
+    let response = http(
+        &base,
+        "POST",
+        "/api/receive/zip",
+        &[("Content-Type", "application/zip")],
+        &archive,
+    );
+
+    assert_eq!(200, response.status, "the exact cap remains admissible");
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!("done", body["phase"], "body: {body}");
+    assert_eq!(RECEIVE_ZIP_BODY_CAP, archive.len());
+    assert!(guard.dir().join("payload.bin").is_file());
 }
 
 /// share/zip produces a real zip of the staged decks, and receive/zip lands

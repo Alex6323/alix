@@ -233,7 +233,7 @@ fn a_panicked_owner_trips_the_failure_and_unblocks_an_idle_server() {
 }
 
 #[test]
-fn run_review_remains_alive_until_the_server_is_unblocked() {
+fn law_review_server_lives_until_it_is_unblocked() {
     let dir = tempfile::tempdir().unwrap();
     let store_path = dir.path().join("progress.json");
     let store = Store::open(&store_path).unwrap();
@@ -293,6 +293,19 @@ fn run_review_remains_alive_until_the_server_is_unblocked() {
         .expect("run_review must finish after the server is unblocked")
         .expect("run_review shutdown must succeed");
     handle.join().expect("run_review thread must not panic");
+}
+
+#[test]
+fn law_review_server_pump_targets_only_nonzero_ip_ports() {
+    let zero = SocketAddr::from(([127, 0, 0, 1], 0));
+    let live = SocketAddr::from(([192, 0, 2, 1], 4321));
+
+    assert_eq!(None, loopback_pump_target(zero.into()));
+    assert_eq!(
+        Some(SocketAddr::from(([127, 0, 0, 1], 4321))),
+        loopback_pump_target(live.into()),
+        "the pump preserves the bound port but always dials loopback"
+    );
 }
 
 fn write_initialized(path: &Path, text: &str) {
