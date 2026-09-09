@@ -1090,6 +1090,7 @@ mod tests {
             title: None,
             description: None,
             trace: None,
+            workspace_has_sources: Default::default(),
             load_warnings: Vec::new(),
         }
     }
@@ -1961,6 +1962,7 @@ mod tests {
             title: None,
             description: None,
             trace: None,
+            workspace_has_sources: Default::default(),
             load_warnings: Vec::new(),
         };
         let section = source_section(&deck.source_layers(), deck.path.parent()).unwrap();

@@ -140,9 +140,10 @@ fn no_folder_listing_offers_one_physical_workspace_twice() {
         alix::listing::list_members(root.path(), &nested, &ReviewConfig::default(), 0);
     assert_eq!(
         1,
-        listed_members.len(),
+        listed_members.rows.len(),
         "listing::list_members offered the same deck file under both names: {:?}",
         listed_members
+            .rows
             .iter()
             .map(|deck| deck.title.clone())
             .collect::<Vec<_>>()

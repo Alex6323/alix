@@ -179,7 +179,7 @@ pub(crate) fn freeze_member_with(
 ) -> Result<FreezeReport, AssetError> {
     let workspace_root = crate::workspace::root_for_deck(path)
         .ok_or_else(|| AssetError::NotWorkspaceMember(path.to_path_buf()))?;
-    let (_, _, defaults, _) =
+    let (_, _, defaults, _, _) =
         crate::workspace::read_manifest(&workspace_root.join(crate::workspace::MANIFEST));
     let deck = Deck::load_with_defaults(path, &defaults).map_err(|source| AssetError::Deck {
         path: path.to_path_buf(),

@@ -115,8 +115,7 @@ impl Workspace {
             }
             Err(error) => return Err(error),
         };
-        let (title, description, settings, icon_key) = read_manifest(&path.join(MANIFEST));
-        let source = manifest_source(&path);
+        let (title, description, settings, icon_key, source) = read_manifest(&path.join(MANIFEST));
         let icon = resolve_icon(&path, icon_key.as_deref());
         Ok(Workspace {
             path,
@@ -163,13 +162,19 @@ pub fn manifest_parse_error(dir: &Path) -> Option<toml::de::Error> {
 /// settings, never an error.
 pub(crate) fn read_manifest(
     path: &Path,
-) -> (Option<String>, Option<String>, DeckSettings, Option<String>) {
+) -> (
+    Option<String>,
+    Option<String>,
+    DeckSettings,
+    Option<String>,
+    Vec<String>,
+) {
     profile::hit(Counter::ManifestReads);
     let Ok(text) = std::fs::read_to_string(path) else {
-        return (None, None, DeckSettings::default(), None);
+        return (None, None, DeckSettings::default(), None, Vec::new());
     };
     let Ok(manifest) = toml::from_str::<Manifest>(&text) else {
-        return (None, None, DeckSettings::default(), None);
+        return (None, None, DeckSettings::default(), None, Vec::new());
     };
     let directives: Vec<(String, String)> = manifest
         .defaults
@@ -181,6 +186,10 @@ pub(crate) fn read_manifest(
         manifest.description,
         DeckSettings::from_directives(&directives),
         manifest.icon,
+        manifest
+            .source
+            .map(ManifestSource::into_values)
+            .unwrap_or_default(),
     )
 }
 

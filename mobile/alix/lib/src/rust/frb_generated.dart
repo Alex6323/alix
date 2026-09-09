@@ -2388,8 +2388,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   OpenProfile dco_decode_open_profile(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 10)
-      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return OpenProfile(
       libMs: dco_decode_u_64(arr[0]),
       candidatesClassified: dco_decode_u_64(arr[1]),
@@ -2401,6 +2401,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       storeDocumentsRead: dco_decode_u_64(arr[7]),
       augmentDocumentsRead: dco_decode_u_64(arr[8]),
       canonicalizeCalls: dco_decode_u_64(arr[9]),
+      sidecarReads: dco_decode_u_64(arr[10]),
     );
   }
 
@@ -3851,6 +3852,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_storeDocumentsRead = sse_decode_u_64(deserializer);
     var var_augmentDocumentsRead = sse_decode_u_64(deserializer);
     var var_canonicalizeCalls = sse_decode_u_64(deserializer);
+    var var_sidecarReads = sse_decode_u_64(deserializer);
     return OpenProfile(
       libMs: var_libMs,
       candidatesClassified: var_candidatesClassified,
@@ -3862,6 +3864,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       storeDocumentsRead: var_storeDocumentsRead,
       augmentDocumentsRead: var_augmentDocumentsRead,
       canonicalizeCalls: var_canonicalizeCalls,
+      sidecarReads: var_sidecarReads,
     );
   }
 
@@ -5446,6 +5449,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.storeDocumentsRead, serializer);
     sse_encode_u_64(self.augmentDocumentsRead, serializer);
     sse_encode_u_64(self.canonicalizeCalls, serializer);
+    sse_encode_u_64(self.sidecarReads, serializer);
   }
 
   @protected

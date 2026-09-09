@@ -1,4 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use crate::{
     augment::AugmentCache,
@@ -81,15 +85,19 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
             && workspace::file_is_deck(&path)
             && offered.first_visit(&path)
         {
+            profile::hit(Counter::DecksLoaded);
+            let deck = Deck::load(&path).ok();
             out.push(
                 deck_summary(
                     &path,
+                    deck.as_ref(),
                     root_store.as_ref(),
                     &health,
                     augment.as_ref(),
                     root,
                     review,
                     now_ms,
+                    &mut deck::LoadedDecks::default(),
                 )
                 .0,
             );
@@ -98,14 +106,22 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
     out
 }
 
-pub fn list_members(
-    root: &Path,
-    dir: &Path,
-    review: &ReviewConfig,
-    now_ms: u64,
-) -> Vec<DeckSummary> {
-    let (paths, rows) = member_rows(root, dir, review, now_ms);
-    let parent = member_parents(&paths, root);
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MemberListing {
+    pub rows: Vec<DeckSummary>,
+    pub deadline: Option<DeckDeadline>,
+}
+
+pub fn list_members(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -> MemberListing {
+    let Ok(ws) = workspace::Workspace::load(dir) else {
+        return MemberListing {
+            rows: Vec::new(),
+            deadline: deadline_for(dir, &[], review, now_ms),
+        };
+    };
+    let (members, rows) = member_rows(root, &ws, review, now_ms);
+    let deadline = deadline_for(dir, &rows, review, now_ms);
+    let parent = member_parents(&members, root);
     let key: Vec<(bool, String)> = rows
         .iter()
         .map(|(row, loaded)| {
@@ -120,7 +136,7 @@ pub fn list_members(
             .cmp(&right.0)
             .then_with(|| title::natural_cmp(&left.1, &right.1))
     });
-    order
+    let rows = order
         .into_iter()
         .map(|(i, prefix)| {
             let mut row = rows[i].0.clone();
@@ -128,46 +144,55 @@ pub fn list_members(
             row.tree = prefix;
             row
         })
-        .collect()
+        .collect();
+    MemberListing { rows, deadline }
 }
+
+type LoadedMembers = Vec<(PathBuf, Option<Arc<Deck>>)>;
 
 fn member_rows(
     root: &Path,
-    dir: &Path,
+    ws: &workspace::Workspace,
     review: &ReviewConfig,
     now_ms: u64,
-) -> (Vec<PathBuf>, Vec<(DeckSummary, bool)>) {
+) -> (LoadedMembers, Vec<(DeckSummary, bool)>) {
+    let dir = ws.path.as_path();
     let (store, health) = member_store(root, dir);
     let augment = AugmentCache::open_for_workspace(dir).ok();
-    let paths: Vec<PathBuf> = match workspace::Workspace::load(dir) {
-        Ok(ws) => ws.members,
-        Err(_) => return (Vec::new(), Vec::new()),
-    };
-    let rows: Vec<(DeckSummary, bool)> = paths
+    let mut table = deck::LoadedDecks::for_member_dir(workspace::member_dir(dir));
+    let known_sources = workspace::has_manifest(dir).then_some(!ws.source.is_empty());
+    let members: LoadedMembers = ws
+        .members
         .iter()
         .map(|m| {
+            profile::hit(Counter::DecksLoaded);
+            let deck = match known_sources {
+                Some(known) => Deck::load_in_workspace(m, known),
+                None => Deck::load(m),
+            }
+            .ok()
+            .map(Arc::new);
+            table.insert_member(m, deck.clone());
+            (m.clone(), deck)
+        })
+        .collect();
+    let rows: Vec<(DeckSummary, bool)> = members
+        .iter()
+        .map(|(m, deck)| {
             deck_summary(
                 m,
+                deck.as_deref(),
                 store.as_ref(),
                 &health,
                 augment.as_ref(),
                 root,
                 review,
                 now_ms,
+                &mut table,
             )
         })
         .collect();
-    (paths, rows)
-}
-
-pub fn workspace_deadline(
-    root: &Path,
-    dir: &Path,
-    review: &ReviewConfig,
-    now_ms: u64,
-) -> Option<DeckDeadline> {
-    let rows = member_rows(root, dir, review, now_ms).1;
-    deadline_for(dir, &rows, review, now_ms)
+    (members, rows)
 }
 
 fn deadline_for(
@@ -259,8 +284,11 @@ fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default()
     });
+    let rows = ws
+        .as_ref()
+        .map(|ws| member_rows(root, ws, review, now_ms).1)
+        .unwrap_or_default();
     let icon = ws.and_then(|ws| ws.icon);
-    let rows = member_rows(root, dir, review, now_ms).1;
     let due = rows.iter().any(|(m, _)| m.due);
     let can_recognize = rows.iter().any(|(m, _)| m.can_recognize);
     let deadline = deadline_for(dir, &rows, review, now_ms);
@@ -285,36 +313,40 @@ fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one row from every listing input; a struct would be built for each member"
+)]
 fn deck_summary(
     path: &Path,
+    deck: Option<&Deck>,
     store: Option<&Store>,
     health: &ProgressHealth,
     augment: Option<&AugmentCache>,
     decks_dir: &Path,
     review: &ReviewConfig,
     now_ms: u64,
+    table: &mut deck::LoadedDecks,
 ) -> (DeckSummary, bool) {
     let stem = path
         .file_stem()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    profile::hit(Counter::DecksLoaded);
-    let deck = Deck::load(path).ok();
     let loaded = deck.is_some();
-    let title = deck.as_ref().map(|d| d.display_name()).unwrap_or_default();
-    let is_trace = deck.as_ref().is_some_and(|d| d.is_trace());
-    let has_exam = deck.as_ref().is_some_and(|d| d.has_exam());
+    let title = deck.map(|d| d.display_name()).unwrap_or_default();
+    let is_trace = deck.is_some_and(|d| d.is_trace());
+    let has_exam = deck.is_some_and(|d| d.has_exam());
     // `augment` is `Some` exactly when `store` is, so gating on all three
     // preserves that invariant for `deck_due`.
-    let due = match (&deck, store, augment) {
+    let due = match (deck, store, augment) {
         (Some(d), Some(s), Some(a)) => deck_due(d, s, a, review, now_ms),
         _ => false,
     };
-    let can_recognize = match (&deck, augment) {
+    let can_recognize = match (deck, augment) {
         (Some(d), Some(a)) => depth::deck_recognizable(&d.cards, a),
         _ => false,
     };
-    let (mastered, exam_due, ready, locked) = match (&deck, store) {
+    let (mastered, exam_due, ready, locked) = match (deck, store) {
         (Some(d), Some(s)) => {
             let mastered = s.deck_mastered(d.deck_token.as_deref().unwrap_or_default());
             let state = d.state(s);
@@ -322,18 +354,18 @@ fn deck_summary(
                 mastered,
                 state == DeckState::ExamDue,
                 deadline_ready(mastered, state == DeckState::Finished, has_exam),
-                deck::is_locked(d, Some(decks_dir), s),
+                deck::is_locked_with(d, Some(decks_dir), s, table),
             )
         }
         _ => (false, false, false, false),
     };
-    let last_depth = match (&deck, store, augment) {
+    let last_depth = match (deck, store, augment) {
         (Some(d), Some(s), Some(a)) => s
             .last_depth(d.deck_token.as_deref().unwrap_or_default())
             .unwrap_or_else(|| depth::default_depth(&d.cards, a)),
         _ => Depth::default(),
     };
-    let progress_error = health.error_for(deck.as_ref());
+    let progress_error = health.error_for(deck);
     // An error row makes NO progress-derived claims: even "due" would be a
     // fabrication (an empty view of an unreadable document reads as fresh).
     let row = DeckSummary {
@@ -592,21 +624,28 @@ pub fn deck_status(
     }
 }
 
-pub fn member_parents(members: &[PathBuf], decks_dir: &Path) -> Vec<Option<usize>> {
+pub fn member_parents(
+    members: &[(PathBuf, Option<Arc<Deck>>)],
+    decks_dir: &Path,
+) -> Vec<Option<usize>> {
     let canon = |p: &Path| {
         profile::hit(Counter::CanonicalizeCalls);
         std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
     };
-    let canonical: Vec<PathBuf> = members.iter().map(|m| canon(m)).collect();
+    let canonical: Vec<PathBuf> = members.iter().map(|(m, _)| canon(m)).collect();
+    let position: HashMap<&Path, usize> = canonical
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (c.as_path(), i))
+        .collect();
     members
         .iter()
         .enumerate()
-        .map(|(i, m)| {
-            profile::hit(Counter::DecksLoaded);
-            let deck = Deck::load(m).ok()?;
+        .map(|(i, (m, deck))| {
+            let deck = deck.as_ref()?;
             deck.requires.iter().find_map(|req| {
                 let dep = canon(&deck::resolve_dep(req, Some(decks_dir), m.parent())?);
-                canonical.iter().position(|c| *c == dep).filter(|&j| j != i)
+                position.get(dep.as_path()).copied().filter(|&j| j != i)
             })
         })
         .collect()
@@ -873,7 +912,7 @@ mod tests {
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::write(progress.join("deck-b.json"), "{ not json").unwrap();
 
-        let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0).rows;
         let a = rows.iter().find(|r| r.title == "a").unwrap();
         let b = rows.iter().find(|r| r.title == "b").unwrap();
         assert!(
@@ -908,7 +947,7 @@ mod tests {
         .unwrap();
         std::fs::write(progress.join("deck-b.json"), "{ not json").unwrap();
 
-        let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0).rows;
         let a = rows.iter().find(|r| r.title == "a").unwrap();
         let b = rows.iter().find(|r| r.title == "b").unwrap();
         assert!(!a.progress_error);
@@ -1223,7 +1262,7 @@ mod tests {
         std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
         std::fs::write(progress, "not a directory").unwrap();
 
-        let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0).rows;
         assert_eq!(2, rows.len());
         assert!(
             rows.iter().all(|row| row.progress_error),
@@ -1243,7 +1282,7 @@ mod tests {
         assert_eq!(rows[0].title, "The Root");
         assert!(rows[0].is_workspace);
         assert!(rows[0].due, "a fresh deck has new cards");
-        let members = list_members(root, root, &ReviewConfig::default(), T0);
+        let members = list_members(root, root, &ReviewConfig::default(), T0).rows;
         assert_eq!(members.len(), 1);
     }
 
@@ -1259,7 +1298,11 @@ mod tests {
         assert_eq!(rows[0].title, "The Root");
         assert!(rows[0].is_workspace);
         assert!(!rows[0].due);
-        assert!(list_members(root, root, &ReviewConfig::default(), T0).is_empty());
+        assert!(
+            list_members(root, root, &ReviewConfig::default(), T0)
+                .rows
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1384,7 +1427,7 @@ mod tests {
         std::os::unix::fs::symlink(&member, root.join("decks/facts-alias.md")).unwrap();
 
         let review = ReviewConfig::default();
-        let rows = list_members(root, root, &review, T0);
+        let rows = list_members(root, root, &review, T0).rows;
 
         assert_eq!(
             1,
@@ -1393,7 +1436,9 @@ mod tests {
             rows.iter().map(|row| &row.title).collect::<Vec<_>>()
         );
 
-        let deadline = workspace_deadline(root, root, &review, T0).expect("a set deadline lists");
+        let deadline = list_members(root, root, &review, T0)
+            .deadline
+            .expect("a set deadline lists");
         assert_eq!(
             (0, 1),
             (deadline.ready, deadline.total),
@@ -1551,7 +1596,7 @@ mod tests {
             }
         };
 
-        let rows = list_members(root, &ws, &review, T0 + 1_000);
+        let rows = list_members(root, &ws, &review, T0 + 1_000).rows;
         let store = crate::state::open_stores(&paths, &store_path).unwrap();
         assert_parity(&rows, &store);
         let base = rows.iter().find(|r| r.title == "base").unwrap();
@@ -1568,7 +1613,7 @@ mod tests {
         store.set_deck_mastered(base_deck.deck_token.as_deref().unwrap(), T0 + 1_000);
         store.save().unwrap();
 
-        let rows = list_members(root, &ws, &review, T0 + 1_000);
+        let rows = list_members(root, &ws, &review, T0 + 1_000).rows;
         let store = crate::state::open_stores(&paths, &store_path).unwrap();
         assert_parity(&rows, &store);
         let base = rows.iter().find(|r| r.title == "base").unwrap();
@@ -1598,6 +1643,259 @@ mod tests {
         assert_eq!(Depth::Reconstruct, row.last_depth);
     }
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Edges {
+        None,
+        FilenameChain,
+        IdChain,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct Shape {
+        members: usize,
+        edges: Edges,
+        external: usize,
+        id_external: usize,
+    }
+
+    struct LawWorkspace {
+        _root: tempfile::TempDir,
+        root: PathBuf,
+        ws: PathBuf,
+        candidates: u64,
+        members: u64,
+    }
+
+    fn stamped(path: &Path, text: &str) -> String {
+        std::fs::write(path, text).unwrap();
+        crate::stamp::stamp_deck(path).unwrap();
+        Deck::load(path).unwrap().deck_token.unwrap()
+    }
+
+    fn requires_block(values: &[String]) -> String {
+        if values.is_empty() {
+            return String::new();
+        }
+        let mut out = String::from("---\nrequires:\n");
+        for value in values {
+            out.push_str(&format!("  - {value}\n"));
+        }
+        out.push_str("---\n");
+        out
+    }
+
+    fn law_workspace(shape: Shape) -> LawWorkspace {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let ws = root.join("ws");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"Law\"\n").unwrap();
+
+        let mut externals: Vec<String> = Vec::new();
+        for n in 0..shape.external {
+            let name = format!("alix-law-external-{n}.md");
+            stamped(&root.join(&name), "## q\na\n");
+            externals.push(name);
+        }
+        for n in 0..shape.id_external {
+            let id = stamped(
+                &root.join(format!("alix-law-id-external-{n}.md")),
+                "## q\na\n",
+            );
+            assert_eq!(
+                deck::RequiresMode::DeckId,
+                deck::classify_require(&id),
+                "{id}: a minted deck id classifies as a deck-id requires"
+            );
+            externals.push(id);
+        }
+
+        let mut previous: Option<(String, String)> = None;
+        for i in 0..shape.members {
+            let name = format!("m{i:03}.md");
+            let mut requires = if i == 0 {
+                externals.clone()
+            } else {
+                Vec::new()
+            };
+            if let Some((prev_name, prev_id)) = &previous {
+                match shape.edges {
+                    Edges::None => {}
+                    Edges::FilenameChain => requires.push(prev_name.clone()),
+                    Edges::IdChain => {
+                        assert_eq!(
+                            deck::RequiresMode::DeckId,
+                            deck::classify_require(prev_id),
+                            "{prev_id}: the chain edge classifies as a deck-id requires"
+                        );
+                        requires.push(prev_id.clone());
+                    }
+                }
+            }
+            let path = ws.join("decks").join(&name);
+            let id = stamped(&path, &format!("{}## q{i}\na\n", requires_block(&requires)));
+            let deck = Deck::load(&path).unwrap();
+            let mut store = crate::state::open_store(&path, &ws).unwrap();
+            let state = store.get_or_insert(&deck.cards[0].id().unwrap());
+            Fsrs::default().apply(state, Depth::Recognize, Grade::Pass, T0, false);
+            store.save().unwrap();
+            previous = Some((name, id));
+        }
+        std::fs::write(ws.join("decks/alix-law-draft.md"), "## q\na\n").unwrap();
+
+        let documents = std::fs::read_dir(ws.join(".alix/progress"))
+            .map(|entries| entries.flatten().count())
+            .unwrap_or(0);
+        assert_eq!(
+            shape.members, documents,
+            "{shape:?}: one progress document per member"
+        );
+        LawWorkspace {
+            _root: dir,
+            root,
+            ws,
+            candidates: shape.members as u64 + 1,
+            members: shape.members as u64,
+        }
+    }
+
+    fn counts_for(shape: Shape) -> (LawWorkspace, crate::profile::Counts) {
+        let law = law_workspace(shape);
+        let (rows, counts) = crate::profile::collect(|| {
+            list_members(&law.root, &law.ws, &ReviewConfig::default(), T0).rows
+        });
+        assert_eq!(
+            rows.len(),
+            shape.members,
+            "{shape:?}: every member is listed"
+        );
+        (law, counts)
+    }
+
+    fn l1_shapes() -> Vec<Shape> {
+        let mut shapes = Vec::new();
+        for members in [1, 8, 64] {
+            for edges in [Edges::None, Edges::FilenameChain, Edges::IdChain] {
+                for external in [0, 1] {
+                    for id_external in [0, 1] {
+                        shapes.push(Shape {
+                            members,
+                            edges,
+                            external,
+                            id_external,
+                        });
+                    }
+                }
+            }
+        }
+        shapes
+    }
+
+    #[test]
+    fn two_members_entering_one_cycle_at_different_nodes_are_both_locked() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        write(&ws.join("alix.toml"), "");
+        write(
+            &ws.join("decks/w.md"),
+            "---\nsource: https://x\n---\n## w\n1\n<!-- id: card-qw -->\n",
+        );
+        write(
+            &ws.join("decks/x.md"),
+            "---\nrequires:\n  - y\n  - w\n---\n## x\n1\n<!-- id: card-qx -->\n",
+        );
+        write(
+            &ws.join("decks/y.md"),
+            "---\nrequires: x\n---\n## y\n1\n<!-- id: card-qy -->\n",
+        );
+        write(
+            &ws.join("decks/a.md"),
+            "---\nrequires: x\n---\n## a\n1\n<!-- id: card-qa -->\n",
+        );
+        write(
+            &ws.join("decks/b.md"),
+            "---\nrequires: y\n---\n## b\n1\n<!-- id: card-qb -->\n",
+        );
+
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0).rows;
+        let locked: Vec<(&str, bool)> = rows.iter().map(|r| (r.title.as_str(), r.locked)).collect();
+        for (title, want) in [
+            ("a", true),
+            ("b", true),
+            ("x", true),
+            ("y", true),
+            ("w", false),
+        ] {
+            let got = locked.iter().find(|(t, _)| *t == title).map(|(_, l)| *l);
+            assert_eq!(
+                Some(want),
+                got,
+                "{title}: w's unfinished exam reaches every member through the x <-> y cycle, whichever member enters it first ({locked:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn law_a_member_listing_reads_every_file_once() {
+        for shape in l1_shapes() {
+            let (law, counts) = counts_for(shape);
+            let externals = (shape.external + shape.id_external) as u64;
+            let expected = [
+                ("candidates_classified", law.candidates),
+                ("decks_loaded", law.members),
+                ("prerequisite_loads", externals),
+                ("manifest_reads", 1 + externals),
+                ("id_scans", shape.id_external as u64),
+                ("store_documents_read", law.members),
+                ("augment_documents_read", 0),
+            ];
+            for (name, want) in expected {
+                let got = match name {
+                    "candidates_classified" => counts.candidates_classified,
+                    "decks_loaded" => counts.decks_loaded,
+                    "prerequisite_loads" => counts.prerequisite_loads,
+                    "manifest_reads" => counts.manifest_reads,
+                    "id_scans" => counts.id_scans,
+                    "store_documents_read" => counts.store_documents_read,
+                    "augment_documents_read" => counts.augment_documents_read,
+                    _ => unreachable!(),
+                };
+                assert_eq!(want, got, "{shape:?}: {name} (want {want}, got {got})");
+            }
+            assert!(
+                counts.sidecar_reads <= law.members,
+                "{shape:?}: sidecar_reads {} exceeds the member count",
+                counts.sidecar_reads
+            );
+        }
+    }
+
+    #[test]
+    fn law_a_member_listing_has_no_superlinear_term() {
+        for edges in [Edges::FilenameChain, Edges::IdChain] {
+            let at = |members: usize| {
+                counts_for(Shape {
+                    members,
+                    edges,
+                    external: 0,
+                    id_external: 0,
+                })
+                .1
+            };
+            let (small, double, large) = (at(8), at(16), at(80));
+            for counter in crate::profile::ALL_COUNTERS {
+                let (s, d, l) = (small.get(counter), double.get(counter), large.get(counter));
+                assert_eq!(
+                    l as i128 - s as i128,
+                    9 * (d as i128 - s as i128),
+                    "{edges:?}: {counter:?} at 8, 16, 80 members reads {s}, {d}, {l}; affine means (80) - (8) == 9 x ((16) - (8))"
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_collector_sees_every_read_of_a_member_listing() {
         let dir = tempfile::tempdir().unwrap();
@@ -1618,7 +1916,7 @@ mod tests {
         std::fs::write(ws.join("decks/draft.md"), "## q\na\n").unwrap();
 
         let (rows, counts) =
-            crate::profile::collect(|| list_members(root, &ws, &ReviewConfig::default(), T0));
+            crate::profile::collect(|| list_members(root, &ws, &ReviewConfig::default(), T0).rows);
         assert_eq!(rows.len(), 4, "the draft is a candidate, not a member");
         let observed = [
             ("candidates_classified", counts.candidates_classified),
@@ -1630,17 +1928,19 @@ mod tests {
             ("store_documents_read", counts.store_documents_read),
             ("augment_documents_read", counts.augment_documents_read),
             ("canonicalize_calls", counts.canonicalize_calls),
+            ("sidecar_reads", counts.sidecar_reads),
         ];
         let expected = [
             ("candidates_classified", 5),
-            ("manifest_reads", 9),
-            ("decks_loaded", 8),
-            ("prerequisite_loads", 3),
+            ("manifest_reads", 1),
+            ("decks_loaded", 4),
+            ("prerequisite_loads", 0),
             ("id_scans", 0),
             ("diagram_geometry_reads", 0),
             ("store_documents_read", 0),
             ("augment_documents_read", 0),
-            ("canonicalize_calls", 14),
+            ("canonicalize_calls", 15),
+            ("sidecar_reads", 0),
         ];
         assert_eq!(
             observed, expected,
@@ -1672,7 +1972,7 @@ mod tests {
             "## q\na\n<!-- id: card-qother -->\n",
         );
 
-        let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0).rows;
         let shape: Vec<(&str, usize, &str)> = rows
             .iter()
             .map(|r| (r.title.as_str(), r.indent, r.tree.as_str()))
@@ -1720,7 +2020,7 @@ mod tests {
         entry.reconstruct = Some(graduated_not_due(T0));
         store.save().unwrap();
 
-        let rows = list_members(root, &ws, &ReviewConfig::default(), T0 + 1_000);
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0 + 1_000).rows;
         assert_eq!(2, rows.len());
         let examdue = rows.iter().find(|r| r.title == "zzz-examdue").unwrap();
         assert!(examdue.exam_due, "should have graduated into ExamDue");
@@ -1754,7 +2054,7 @@ mod tests {
             "---\nrequires: gate\n---\n## q2\nb\n<!-- id: card-qlocked -->\n",
         );
 
-        let rows = list_members(root, &ws, &ReviewConfig::default(), T0);
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0).rows;
         assert_eq!(2, rows.len());
         let locked = rows.iter().find(|r| r.title == "aaa-locked").unwrap();
         assert!(locked.locked, "gated by the unmastered gate.md");
@@ -2196,7 +2496,9 @@ mod tests {
         assert_eq!(5, deadline.days_left);
         assert_eq!((1, 2), (deadline.ready, deadline.total));
 
-        let fetched = workspace_deadline(root, &ws, &review, T0).expect("fetchable");
+        let fetched = list_members(root, &ws, &review, T0)
+            .deadline
+            .expect("fetchable");
         assert_eq!(Some(fetched), ws_row.deadline);
 
         let plain = root.join("plain");
@@ -2279,12 +2581,14 @@ mod tests {
         let healthy = ProgressHealth::PerDeck(std::collections::HashSet::new());
         let (bare, _) = deck_summary(
             &deck_path,
+            Deck::load(&deck_path).ok().as_ref(),
             Some(&store),
             &healthy,
             Some(&no_augment()),
             dir.path(),
             &review,
             now,
+            &mut deck::LoadedDecks::default(),
         );
         assert!(!bare.can_recognize, "un-augmented deck is not recognizable");
 
@@ -2292,12 +2596,14 @@ mod tests {
         arm(&mut augment, &deck.cards);
         let (armed, _) = deck_summary(
             &deck_path,
+            Deck::load(&deck_path).ok().as_ref(),
             Some(&store),
             &healthy,
             Some(&augment),
             dir.path(),
             &review,
             now,
+            &mut deck::LoadedDecks::default(),
         );
         assert!(
             armed.can_recognize,

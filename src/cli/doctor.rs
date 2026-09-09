@@ -2355,7 +2355,9 @@ mod tests {
             assert_eq!(expected_title, listing[0].title, "{name}: listing title");
             assert_eq!(
                 1,
-                alix::listing::list_members(root.path(), &dir, &review, 1_000_000).len(),
+                alix::listing::list_members(root.path(), &dir, &review, 1_000_000)
+                    .rows
+                    .len(),
                 "{name}: listing must retain the workspace member"
             );
 

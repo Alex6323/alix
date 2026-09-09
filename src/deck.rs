@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     ops::Range,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use thiserror::Error;
@@ -91,6 +92,7 @@ pub struct Deck {
     pub title: Option<String>,
     pub description: Option<String>,
     pub trace: Option<String>,
+    pub workspace_has_sources: std::sync::OnceLock<bool>,
     /// Generic load diagnostics (a stamped diagram that did not resolve):
     /// the session surfaces these so a silent fallback cannot be mistaken
     /// for a successful freeze.
@@ -124,7 +126,26 @@ impl Deck {
         path: impl AsRef<Path>,
         defaults: &DeckSettings,
     ) -> Result<Self, DeckError> {
-        let path = path.as_ref().to_path_buf();
+        Self::load_inner(path.as_ref(), defaults, None)
+    }
+
+    pub fn load_in_workspace(
+        path: impl AsRef<Path>,
+        workspace_has_sources: bool,
+    ) -> Result<Self, DeckError> {
+        Self::load_inner(
+            path.as_ref(),
+            &DeckSettings::default(),
+            Some(workspace_has_sources),
+        )
+    }
+
+    fn load_inner(
+        path: &Path,
+        defaults: &DeckSettings,
+        workspace_has_sources: Option<bool>,
+    ) -> Result<Self, DeckError> {
+        let path = path.to_path_buf();
         let subject = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -203,6 +224,11 @@ impl Deck {
             }
         }
         let cards = expanded;
+        let known_workspace_sources = workspace_has_sources;
+        let workspace_has_sources = std::sync::OnceLock::new();
+        if let Some(known) = known_workspace_sources {
+            let _ = workspace_has_sources.set(known);
+        }
         Ok(Self {
             path,
             subject,
@@ -217,6 +243,7 @@ impl Deck {
             title,
             description,
             trace,
+            workspace_has_sources,
             load_warnings,
         })
     }
@@ -226,7 +253,11 @@ impl Deck {
     }
 
     pub fn has_exam(&self) -> bool {
-        self.is_trace() || !self.sources.is_empty() || !self.workspace_sources().is_empty()
+        self.is_trace()
+            || !self.sources.is_empty()
+            || *self
+                .workspace_has_sources
+                .get_or_init(|| !self.workspace_sources().is_empty())
     }
 
     /// `title:` else the condensed `trace:` else the filename stem (D10).
@@ -473,36 +504,152 @@ fn resolve_require(
     }
 }
 
-pub fn is_locked(deck: &Deck, decks_dir: Option<&Path>, store: &Store) -> bool {
-    fn prereqs_finished(
-        deck: &Deck,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Satisfied {
+    Pending,
+    Yes,
+    No,
+}
+
+#[derive(Default)]
+pub struct LoadedDecks {
+    member_dir: Option<PathBuf>,
+    canonical: HashMap<PathBuf, PathBuf>,
+    by_path: HashMap<PathBuf, Option<Arc<Deck>>>,
+    by_id: HashMap<String, PathBuf>,
+    resolved: HashMap<(PathBuf, String), Option<PathBuf>>,
+    satisfied: HashMap<PathBuf, Satisfied>,
+}
+
+impl LoadedDecks {
+    pub fn for_member_dir(member_dir: PathBuf) -> Self {
+        LoadedDecks {
+            member_dir: Some(member_dir),
+            ..Default::default()
+        }
+    }
+
+    pub fn insert_member(&mut self, path: &Path, deck: Option<Arc<Deck>>) {
+        let key = self.canonical(path);
+        if let Some(id) = deck.as_ref().and_then(|deck| deck.deck_token.clone()) {
+            self.by_id.entry(id).or_insert_with(|| path.to_path_buf());
+        }
+        self.by_path.insert(key, deck);
+    }
+
+    fn canonical(&mut self, path: &Path) -> PathBuf {
+        if let Some(key) = self.canonical.get(path) {
+            return key.clone();
+        }
+        profile::hit(Counter::CanonicalizeCalls);
+        let key = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        self.canonical.insert(path.to_path_buf(), key.clone());
+        key
+    }
+
+    fn get_or_load(&mut self, path: &Path) -> (PathBuf, Option<Arc<Deck>>) {
+        let key = self.canonical(path);
+        if let Some(deck) = self.by_path.get(&key) {
+            return (key, deck.clone());
+        }
+        profile::hit(Counter::PrerequisiteLoads);
+        let deck = Deck::load(path).ok().map(Arc::new);
+        self.by_path.insert(key.clone(), deck.clone());
+        (key, deck)
+    }
+
+    fn resolve(
+        &mut self,
+        req: &str,
         decks_dir: Option<&Path>,
+        requiring_dir: Option<&Path>,
+    ) -> Option<PathBuf> {
+        let memo_key = (
+            requiring_dir.map(Path::to_path_buf).unwrap_or_default(),
+            req.to_string(),
+        );
+        if let Some(resolved) = self.resolved.get(&memo_key) {
+            return resolved.clone();
+        }
+        let resolved = if classify_require(req) == RequiresMode::DeckId
+            && requiring_dir.is_some()
+            && requiring_dir == self.member_dir.as_deref()
+            && self.by_id.contains_key(req)
+        {
+            self.by_id.get(req).cloned()
+        } else {
+            resolve_require(req, decks_dir, requiring_dir)
+        };
+        self.resolved.insert(memo_key, resolved.clone());
+        resolved
+    }
+
+    // Returns (satisfied, provisional): a `Yes` reached through a `Pending`
+    // node holds only for the walk that assumed it, so it is never cached.
+    fn edge_satisfied(
+        &mut self,
+        req: &str,
+        decks_dir: Option<&Path>,
+        requiring_dir: Option<&Path>,
         store: &Store,
-        visited: &mut HashSet<PathBuf>,
-    ) -> bool {
-        for req in &deck.requires {
-            let Some(path) = resolve_require(req, decks_dir, deck.path.parent()) else {
-                continue; // missing prerequisite: don't lock on it
-            };
-            profile::hit(Counter::CanonicalizeCalls);
-            let key = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-            if !visited.insert(key) {
-                continue; // already checked, or a cycle: stop recursing
-            }
-            profile::hit(Counter::PrerequisiteLoads);
-            let Ok(prereq) = Deck::load(&path) else {
-                continue; // unreadable prerequisite: don't lock on it
-            };
-            if prereq.has_exam() && prereq.state(store) != DeckState::Finished {
-                return false;
-            }
-            if !prereqs_finished(&prereq, decks_dir, store, visited) {
-                return false;
+    ) -> (bool, bool) {
+        let Some(path) = self.resolve(req, decks_dir, requiring_dir) else {
+            return (true, false);
+        };
+        let (key, deck) = self.get_or_load(&path);
+        let Some(deck) = deck else {
+            return (true, false);
+        };
+        match self.satisfied.get(&key) {
+            Some(Satisfied::Yes) => return (true, false),
+            Some(Satisfied::No) => return (false, false),
+            Some(Satisfied::Pending) => return (true, true),
+            None => {}
+        }
+        self.satisfied.insert(key.clone(), Satisfied::Pending);
+        let mut satisfied = true;
+        let mut provisional = false;
+        if deck.has_exam() && deck.state(store) != DeckState::Finished {
+            satisfied = false;
+        } else {
+            for req in &deck.requires {
+                let (ok, assumed) = self.edge_satisfied(req, decks_dir, deck.path.parent(), store);
+                provisional |= assumed;
+                if !ok {
+                    satisfied = false;
+                    break;
+                }
             }
         }
-        true
+        if satisfied && provisional {
+            self.satisfied.remove(&key);
+        } else {
+            let outcome = if satisfied {
+                Satisfied::Yes
+            } else {
+                Satisfied::No
+            };
+            self.satisfied.insert(key, outcome);
+        }
+        (satisfied, satisfied && provisional)
     }
-    !prereqs_finished(deck, decks_dir, store, &mut HashSet::new())
+}
+
+pub fn is_locked(deck: &Deck, decks_dir: Option<&Path>, store: &Store) -> bool {
+    is_locked_with(deck, decks_dir, store, &mut LoadedDecks::default())
+}
+
+pub fn is_locked_with(
+    deck: &Deck,
+    decks_dir: Option<&Path>,
+    store: &Store,
+    table: &mut LoadedDecks,
+) -> bool {
+    !deck.requires.iter().all(|req| {
+        table
+            .edge_satisfied(req, decks_dir, deck.path.parent(), store)
+            .0
+    })
 }
 
 pub fn nongating_prerequisites(deck: &Deck) -> Vec<String> {
@@ -1576,6 +1723,65 @@ mod tests {
         let (store, _s) = empty_store();
 
         assert!(is_locked(&advanced, Some(dir.path()), &store));
+    }
+
+    #[test]
+    fn a_chains_middle_member_with_an_unfinished_exam_locks_the_top_but_not_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "a.md", "## a\n1\n");
+        write_deck(
+            dir.path(),
+            "b.md",
+            "---\nsource: https://x\nrequires: a\n---\n## b\n1\n",
+        );
+        write_deck(dir.path(), "c.md", "---\nrequires: b\n---\n## c\n1\n");
+        let b = Deck::load(dir.path().join("b.md")).unwrap();
+        let c = Deck::load(dir.path().join("c.md")).unwrap();
+        let (store, _s) = empty_store();
+        assert!(
+            !is_locked(&b, Some(dir.path()), &store),
+            "b's only prerequisite has no exam, so b's own unfinished exam does not lock b"
+        );
+        assert!(
+            is_locked(&c, Some(dir.path()), &store),
+            "c is locked by b's unfinished exam, not by whether b itself is locked"
+        );
+    }
+
+    #[test]
+    fn a_cycle_through_the_root_lets_the_roots_own_exam_lock_it() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(
+            dir.path(),
+            "a.md",
+            "---\nsource: https://x\nrequires: b\n---\n## a\n1\n",
+        );
+        write_deck(dir.path(), "b.md", "---\nrequires: a\n---\n## b\n2\n");
+        let a = Deck::load(dir.path().join("a.md")).unwrap();
+        let b = Deck::load(dir.path().join("b.md")).unwrap();
+        let (store, _s) = empty_store();
+        assert!(
+            is_locked(&a, Some(dir.path()), &store),
+            "a reaches itself through b and its own unfinished exam blocks it"
+        );
+        assert!(
+            is_locked(&b, Some(dir.path()), &store),
+            "b is locked by a's unfinished exam"
+        );
+    }
+
+    #[test]
+    fn an_unparseable_prerequisite_never_locks_the_deck_that_requires_it() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("broken.md"), "## a front with no answer\n").unwrap();
+        assert!(Deck::load(dir.path().join("broken.md")).is_err());
+        let b = write_deck(dir.path(), "b.md", "---\nrequires: broken\n---\n## b\n1\n");
+        let b = Deck::load(&b).unwrap();
+        let (store, _s) = empty_store();
+        assert!(
+            !is_locked(&b, Some(dir.path()), &store),
+            "a prerequisite that fails to parse is skipped, never a lock"
+        );
     }
 
     #[test]

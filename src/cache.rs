@@ -140,11 +140,7 @@ impl DeckCache {
 }
 
 fn read_manifest_meta(path: &Path) -> ManifestMeta {
-    let (title, description, settings, icon) = workspace::read_manifest(path);
-    let source = path
-        .parent()
-        .map(workspace::manifest_source)
-        .unwrap_or_default();
+    let (title, description, settings, icon, source) = workspace::read_manifest(path);
     ManifestMeta {
         title,
         description,

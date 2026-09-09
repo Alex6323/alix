@@ -175,6 +175,7 @@ class OpenProfile {
   final BigInt storeDocumentsRead;
   final BigInt augmentDocumentsRead;
   final BigInt canonicalizeCalls;
+  final BigInt sidecarReads;
 
   const OpenProfile({
     required this.libMs,
@@ -187,6 +188,7 @@ class OpenProfile {
     required this.storeDocumentsRead,
     required this.augmentDocumentsRead,
     required this.canonicalizeCalls,
+    required this.sidecarReads,
   });
 
   @override
@@ -200,7 +202,8 @@ class OpenProfile {
       diagramGeometryReads.hashCode ^
       storeDocumentsRead.hashCode ^
       augmentDocumentsRead.hashCode ^
-      canonicalizeCalls.hashCode;
+      canonicalizeCalls.hashCode ^
+      sidecarReads.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -216,7 +219,8 @@ class OpenProfile {
           diagramGeometryReads == other.diagramGeometryReads &&
           storeDocumentsRead == other.storeDocumentsRead &&
           augmentDocumentsRead == other.augmentDocumentsRead &&
-          canonicalizeCalls == other.canonicalizeCalls;
+          canonicalizeCalls == other.canonicalizeCalls &&
+          sidecarReads == other.sidecarReads;
 }
 
 class RootScreen {

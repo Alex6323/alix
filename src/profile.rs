@@ -11,6 +11,7 @@ pub struct Counts {
     pub store_documents_read: u64,
     pub augment_documents_read: u64,
     pub canonicalize_calls: u64,
+    pub sidecar_reads: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,6 +25,7 @@ pub enum Counter {
     StoreDocumentsRead,
     AugmentDocumentsRead,
     CanonicalizeCalls,
+    SidecarReads,
 }
 
 impl Counts {
@@ -38,6 +40,7 @@ impl Counts {
             Counter::StoreDocumentsRead => &mut self.store_documents_read,
             Counter::AugmentDocumentsRead => &mut self.augment_documents_read,
             Counter::CanonicalizeCalls => &mut self.canonicalize_calls,
+            Counter::SidecarReads => &mut self.sidecar_reads,
         };
         *slot += 1;
     }
@@ -53,11 +56,12 @@ impl Counts {
             Counter::StoreDocumentsRead => self.store_documents_read,
             Counter::AugmentDocumentsRead => self.augment_documents_read,
             Counter::CanonicalizeCalls => self.canonicalize_calls,
+            Counter::SidecarReads => self.sidecar_reads,
         }
     }
 }
 
-pub const ALL_COUNTERS: [Counter; 9] = [
+pub const ALL_COUNTERS: [Counter; 10] = [
     Counter::CandidatesClassified,
     Counter::ManifestReads,
     Counter::DecksLoaded,
@@ -67,6 +71,7 @@ pub const ALL_COUNTERS: [Counter; 9] = [
     Counter::StoreDocumentsRead,
     Counter::AugmentDocumentsRead,
     Counter::CanonicalizeCalls,
+    Counter::SidecarReads,
 ];
 
 thread_local! {

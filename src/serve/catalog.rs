@@ -429,7 +429,13 @@ pub(super) fn workspace_members(
     let augment = AugmentCache::open_for_workspace(&e.path).ok();
     // Load each member deck once, deriving its status, whether it has a
     // topology, and its last-used session depth from the same parse.
-    let loaded: Vec<(Option<picker::DeckStatus>, bool, &'static str)> = paths
+    type LoadedMember = (
+        Option<picker::DeckStatus>,
+        bool,
+        &'static str,
+        Option<Arc<crate::deck::Deck>>,
+    );
+    let loaded: Vec<LoadedMember> = paths
         .iter()
         .map(|p| {
             let deck = cache.load(p).ok();
@@ -457,17 +463,22 @@ pub(super) fn workspace_members(
                     .unwrap_or_else(|| crate::depth::default_depth(&d.cards, ag)),
                 _ => Depth::default(),
             };
-            (status, has_topology, depth_name(last_depth))
+            (status, has_topology, depth_name(last_depth), deck)
         })
         .collect();
     // A member whose deck failed to load counts toward neither `ready` nor
     // `total` (the rule itself lives in `picker::workspace_readiness`).
     let member_statuses: Vec<picker::DeckStatus> = loaded
         .iter()
-        .filter_map(|(status, _, _)| status.clone())
+        .filter_map(|(status, _, _, _)| status.clone())
         .collect();
     let readiness = picker::workspace_readiness(&member_statuses);
-    let parent = picker::member_parents(&paths, decks_dir);
+    let members_loaded: Vec<(PathBuf, Option<Arc<crate::deck::Deck>>)> = paths
+        .iter()
+        .cloned()
+        .zip(loaded.iter().map(|(_, _, _, deck)| deck.clone()))
+        .collect();
+    let parent = picker::member_parents(&members_loaded, decks_dir);
     let key: Vec<(bool, String)> = e
         .members
         .iter()

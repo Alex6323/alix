@@ -2953,6 +2953,7 @@ impl SseDecode for crate::api::listing::OpenProfile {
         let mut var_storeDocumentsRead = <u64>::sse_decode(deserializer);
         let mut var_augmentDocumentsRead = <u64>::sse_decode(deserializer);
         let mut var_canonicalizeCalls = <u64>::sse_decode(deserializer);
+        let mut var_sidecarReads = <u64>::sse_decode(deserializer);
         return crate::api::listing::OpenProfile {
             lib_ms: var_libMs,
             candidates_classified: var_candidatesClassified,
@@ -2964,6 +2965,7 @@ impl SseDecode for crate::api::listing::OpenProfile {
             store_documents_read: var_storeDocumentsRead,
             augment_documents_read: var_augmentDocumentsRead,
             canonicalize_calls: var_canonicalizeCalls,
+            sidecar_reads: var_sidecarReads,
         };
     }
 }
@@ -4470,6 +4472,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::listing::OpenProfile {
             self.store_documents_read.into_into_dart().into_dart(),
             self.augment_documents_read.into_into_dart().into_dart(),
             self.canonicalize_calls.into_into_dart().into_dart(),
+            self.sidecar_reads.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -5724,6 +5727,7 @@ impl SseEncode for crate::api::listing::OpenProfile {
         <u64>::sse_encode(self.store_documents_read, serializer);
         <u64>::sse_encode(self.augment_documents_read, serializer);
         <u64>::sse_encode(self.canonicalize_calls, serializer);
+        <u64>::sse_encode(self.sidecar_reads, serializer);
     }
 }
 

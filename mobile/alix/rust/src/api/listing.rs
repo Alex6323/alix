@@ -73,6 +73,7 @@ pub struct OpenProfile {
     pub store_documents_read: u64,
     pub augment_documents_read: u64,
     pub canonicalize_calls: u64,
+    pub sidecar_reads: u64,
 }
 
 impl OpenProfile {
@@ -88,6 +89,7 @@ impl OpenProfile {
             store_documents_read: counts.store_documents_read,
             augment_documents_read: counts.augment_documents_read,
             canonicalize_calls: counts.canonicalize_calls,
+            sidecar_reads: counts.sidecar_reads,
         }
     }
 }
@@ -144,15 +146,10 @@ pub fn list_members(
     let now = now_ms.unwrap_or_else(alix::time::now_ms);
     let review = alix::config::ReviewConfig::default();
     let ((entries, deadline), profile) = profiled(profile, || {
-        let entries: Vec<DeckEntry> =
-            alix::listing::list_members(Path::new(&root), Path::new(&dir), &review, now)
-                .into_iter()
-                .map(DeckEntry::from)
-                .collect();
-        let deadline =
-            alix::listing::workspace_deadline(Path::new(&root), Path::new(&dir), &review, now)
-                .map(Deadline::from);
-        (entries, deadline)
+        let listing =
+            alix::listing::list_members(Path::new(&root), Path::new(&dir), &review, now);
+        let entries: Vec<DeckEntry> = listing.rows.into_iter().map(DeckEntry::from).collect();
+        (entries, listing.deadline.map(Deadline::from))
     });
     MembersScreen {
         entries,
@@ -192,6 +189,55 @@ mod tests {
     }
 
     const T0: u64 = 1_000_000;
+
+    #[test]
+    fn law_one_open_is_one_pass_over_the_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        write(&ws.join("alix.toml"), "title = \"Ws\"\n");
+        let members = 6u64;
+        for i in 0..members {
+            let requires = if i == 0 {
+                String::new()
+            } else {
+                format!("---\nrequires: m{}.md\n---\n", i - 1)
+            };
+            write_deck(ws.join(format!("decks/m{i}.md")), &format!("{requires}## q{i}\na\n"));
+        }
+        std::fs::write(ws.join("decks/draft.md"), "## q\na\n").unwrap();
+        let candidates = members + 1;
+        let root_s = root.to_string_lossy().into_owned();
+        let ws_s = ws.to_string_lossy().into_owned();
+
+        let screen = list_members(root_s.clone(), ws_s, Some(T0), true);
+        let profile = screen.profile.expect("profiled");
+        assert_eq!(members as usize, screen.entries.len(), "every member listed");
+        assert_eq!(
+            (members, 1, candidates, 0),
+            (
+                profile.decks_loaded,
+                profile.manifest_reads,
+                profile.candidates_classified,
+                profile.prerequisite_loads,
+            ),
+            "drill-in: (decks_loaded, manifest_reads, candidates_classified, prerequisite_loads)"
+        );
+
+        let screen = list_root(root_s, Some(T0), true);
+        let profile = screen.profile.expect("profiled");
+        assert_eq!(1, screen.entries.len(), "the root holds one workspace row");
+        assert_eq!(
+            (members, 1, candidates),
+            (
+                profile.decks_loaded,
+                profile.manifest_reads,
+                profile.candidates_classified,
+            ),
+            "root screen: (decks_loaded, manifest_reads, candidates_classified)"
+        );
+    }
 
     fn write(path: &Path, text: &str) {
         std::fs::write(path, text).unwrap();

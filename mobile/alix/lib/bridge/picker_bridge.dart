@@ -51,6 +51,7 @@ class PickerBridge implements PickerPort {
         ('store_documents_read', profile.storeDocumentsRead.toInt()),
         ('augment_documents_read', profile.augmentDocumentsRead.toInt()),
         ('canonicalize_calls', profile.canonicalizeCalls.toInt()),
+        ('sidecar_reads', profile.sidecarReads.toInt()),
       ],
     );
   }

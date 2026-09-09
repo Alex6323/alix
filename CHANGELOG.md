@@ -70,6 +70,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opening a workspace on the phone, and listing one anywhere, parses each
+  member deck once instead of two or three times, classifies the folder once,
+  and no longer re-parses a prerequisite chain for every member that depends
+  on it; `has_exam` reads the workspace manifest at most once per loaded deck
+  instead of on every call. The picker's drill-in is one bridge call.
+
 - `alix doctor` no longer reports alix's own `.bak` backups under a
   workspace's private state (the progress document an accepted paired-phone
   push or a deck overwrite preserves) as synchronization conflicts needing
@@ -80,6 +86,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Content-Length`; the phone's sync client refused every real-sized entry
   with an absurd free-space figure while tiny fixtures passed. Downloads now
   always state their length.
+
 - Paired sync reports a member it cannot canonicalize or fully parse through
   the entry's `left_out` paths instead of disabling every sync route. Pulls
   omit that member and its owned bundle files, percent-encoded entry names

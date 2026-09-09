@@ -37,6 +37,7 @@ impl Personal {
 /// An unstamped card is dropped: nothing can schedule it or address a note to
 /// it, so `cards` is exactly the addressable set.
 pub fn read(deck_path: &Path, subject: &str) -> Personal {
+    crate::profile::hit(crate::profile::Counter::SidecarReads);
     let Ok(text) = std::fs::read_to_string(sidecar_path(deck_path)) else {
         return Personal::default();
     };
