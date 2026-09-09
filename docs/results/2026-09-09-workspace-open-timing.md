@@ -46,7 +46,7 @@ bridge call (`bridge_ms`), a Rust-side timer around the library call
   symlinks and relative parts to one absolute form;
 - sidecar reads: per-deck files holding the user's personal notes. The
   after build counts them and reported 0 on every row; the before build
-  predates the counter. The tables below omit the column.
+  predates the counter, so its rows show "not counted".
 
 Setup:
 
