@@ -26,8 +26,27 @@ struct Entry {
     size: u64,
     is_deck: Option<bool>,
     label: Option<Option<String>>,
-    deck: Option<Result<Arc<Deck>, Arc<DeckError>>>,
+    deck: Option<CachedDeck>,
     manifest: Option<ManifestMeta>,
+}
+
+/// A member's exam state depends on its workspace manifest, a second file
+/// the deck's own (mtime, size) cannot see.
+#[derive(Clone)]
+struct CachedDeck {
+    workspace_has_sources: bool,
+    deck: Result<Arc<Deck>, Arc<DeckError>>,
+}
+
+impl CachedDeck {
+    fn load(path: &Path, workspace_has_sources: bool) -> Self {
+        CachedDeck {
+            workspace_has_sources,
+            deck: Deck::load_in_workspace(path, workspace_has_sources)
+                .map(Arc::new)
+                .map_err(Arc::new),
+        }
+    }
 }
 
 impl Entry {
@@ -90,12 +109,35 @@ impl DeckCache {
     }
 
     pub fn load(&mut self, path: &Path) -> Result<Arc<Deck>, Arc<DeckError>> {
+        let workspace_has_sources = self.workspace_has_sources(path);
         match self.slot(path) {
-            Some(entry) => entry
-                .deck
-                .get_or_insert_with(|| Deck::load(path).map(Arc::new).map_err(Arc::new))
-                .clone(),
-            None => Deck::load(path).map(Arc::new).map_err(Arc::new),
+            Some(entry) => {
+                if entry
+                    .deck
+                    .as_ref()
+                    .is_some_and(|cached| cached.workspace_has_sources != workspace_has_sources)
+                {
+                    entry.deck = None;
+                }
+                entry
+                    .deck
+                    .get_or_insert_with(|| CachedDeck::load(path, workspace_has_sources))
+                    .deck
+                    .clone()
+            }
+            None => CachedDeck::load(path, workspace_has_sources).deck,
+        }
+    }
+
+    fn workspace_has_sources(&mut self, deck: &Path) -> bool {
+        let manifest = workspace::content_root(deck).join(workspace::MANIFEST);
+        match self.slot(&manifest) {
+            Some(entry) => !entry
+                .manifest
+                .get_or_insert_with(|| read_manifest_meta(&manifest))
+                .source
+                .is_empty(),
+            None => false,
         }
     }
 
@@ -286,5 +328,88 @@ mod tests {
         assert!(!cache.has_decks(&file));
         assert!(!cache.has_decks(&empty));
         assert!(cache.has_decks(&populated));
+    }
+
+    #[test]
+    fn a_manifest_source_edit_refreshes_a_cached_decks_exam_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let decks = workspace.join("decks");
+        std::fs::create_dir_all(&decks).unwrap();
+        write(&workspace.join("alix.toml"), "");
+        let path = decks.join("d.md");
+        write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-d\"\n---\n## q\na\n",
+        );
+        let mut cache = DeckCache::default();
+        let first = cache.load(&path).unwrap();
+        assert!(!first.has_exam(), "an unsourced workspace has no exam");
+
+        write(&workspace.join("alix.toml"), "source = \"notes.md\"\n");
+        assert_eq!(
+            vec!["notes.md".to_string()],
+            cache.workspace(&workspace).source,
+            "the same server cache sees the edited manifest"
+        );
+        assert!(
+            cache.load(&path).unwrap().has_exam(),
+            "adding a workspace source must make its cached member exam-capable"
+        );
+    }
+
+    #[test]
+    fn removing_the_workspace_source_takes_the_exam_from_its_cached_member() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let decks = workspace.join("decks");
+        std::fs::create_dir_all(&decks).unwrap();
+        write(&workspace.join("alix.toml"), "source = \"notes.md\"\n");
+        let path = decks.join("d.md");
+        write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-d\"\n---\n## q\na\n",
+        );
+        let mut cache = DeckCache::default();
+        assert!(cache.load(&path).unwrap().has_exam(), "sourced: exam");
+
+        write(&workspace.join("alix.toml"), "");
+
+        assert!(
+            !cache.load(&path).unwrap().has_exam(),
+            "removing the workspace source must take the exam from its cached member"
+        );
+    }
+
+    #[test]
+    fn a_manifest_edit_that_keeps_the_source_leaves_the_member_cached() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let decks = workspace.join("decks");
+        std::fs::create_dir_all(&decks).unwrap();
+        write(&workspace.join("alix.toml"), "source = \"notes.md\"\n");
+        let path = decks.join("d.md");
+        write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-d\"\n---\n## q\na\n",
+        );
+        let mut cache = DeckCache::default();
+        let first = cache.load(&path).unwrap();
+
+        write(
+            &workspace.join("alix.toml"),
+            "title = \"Renamed\"\nsource = \"notes.md\"\n",
+        );
+        assert_eq!(
+            Some("Renamed".to_string()),
+            cache.workspace(&workspace).title,
+            "the same server cache sees the edited manifest"
+        );
+        let second = cache.load(&path).unwrap();
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "a manifest edit that keeps the source must not re-parse the member"
+        );
+        assert!(second.has_exam(), "the source is still there");
     }
 }
