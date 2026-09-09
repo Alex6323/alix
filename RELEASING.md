@@ -225,10 +225,14 @@ To cut one:
    as the desktop release: investigate any failure rather than rerunning until
    chance produces green.
 4. **Workspace-open timing:** re-run the device session recorded in
-   `docs/results/2026-09-09-workspace-open-timing.md` (a `make apk PROFILE=1`
-   build on a real phone, the `members` rows on a big workspace) and compare
-   with the last note. A slower row at equal counters is a slowdown the
-   counter laws cannot see; investigate it before tagging.
+   `docs/results/2026-09-09-workspace-open-timing.md`: `make apk PROFILE=1`,
+   install that build on a real phone
+   (`adb install -r mobile/alix/build/app/outputs/flutter-apk/app-release.apk`,
+   which keeps the phone's decks and progress), collect the `members` rows
+   on a big workspace from `adb logcat -s flutter`, then reinstall the
+   step-1 APK so the phone is back on the candidate. Compare the rows with
+   the last note. A slower row at equal counters is a slowdown the counter
+   laws cannot see; investigate it before tagging.
 5. **Semantic documentation audit:** run `make docs-audit` on this exact mobile
    release candidate and resolve every finding until it reports `PASS`.
 6. **Old-format recognition audit:** run `make old-format-audit`, same

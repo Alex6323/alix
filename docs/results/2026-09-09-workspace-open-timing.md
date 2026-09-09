@@ -24,8 +24,10 @@ prints one line per listing call with a Dart-side stopwatch around the
 bridge call (`bridge_ms`), a Rust-side timer around the library call
 (`lib_ms`), and the library's file-work counters for that call:
 
-- candidates classified: directory entries the folder classifier
-  examined to decide whether each is a deck, a workspace, or neither
+- candidates classified: Markdown files (`.md`) in the listed folder
+  that the member classifier read to decide whether each is an
+  initialized deck; the classifier filters to `.md` files before
+  counting, so directories and other entries never reach the counter
   (loose decks at a root are examined by a different path that is not
   counted, which is why a `root` row can show fewer candidates than
   parses);
@@ -66,35 +68,35 @@ Setup:
 
 `members`: one tap on the workspace row, back to the picker, tap again.
 
-| Build | bridge_ms | lib_ms | candidates | manifest reads | deck parses | progress docs | augment docs | canonicalize |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| before | 2078 | 2077 | 436 | 6 | 654 | 36 | 62 | 654 |
-| before | 2106 | 2105 | 436 | 6 | 654 | 36 | 62 | 654 |
-| before | 2078 | 2077 | 436 | 6 | 654 | 36 | 62 | 654 |
-| before | 2091 | 2090 | 436 | 6 | 654 | 36 | 62 | 654 |
-| before | 2096 | 2095 | 436 | 6 | 654 | 36 | 62 | 654 |
-| after | 745 | 744 | 218 | 1 | 218 | 18 | 31 | 654 |
-| after | 744 | 743 | 218 | 1 | 218 | 18 | 31 | 654 |
-| after | 757 | 756 | 218 | 1 | 218 | 18 | 31 | 654 |
+| Build | bridge_ms | lib_ms | candidates | manifest reads | deck parses | prerequisite parses | id scans | geometry reads | progress docs | augment docs | canonicalize | sidecar reads |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| before | 2078 | 2077 | 436 | 6 | 654 | 0 | 0 | 0 | 36 | 62 | 654 | not counted |
+| before | 2106 | 2105 | 436 | 6 | 654 | 0 | 0 | 0 | 36 | 62 | 654 | not counted |
+| before | 2078 | 2077 | 436 | 6 | 654 | 0 | 0 | 0 | 36 | 62 | 654 | not counted |
+| before | 2091 | 2090 | 436 | 6 | 654 | 0 | 0 | 0 | 36 | 62 | 654 | not counted |
+| before | 2096 | 2095 | 436 | 6 | 654 | 0 | 0 | 0 | 36 | 62 | 654 | not counted |
+| after | 745 | 744 | 218 | 1 | 218 | 0 | 0 | 0 | 18 | 31 | 654 | 0 |
+| after | 744 | 743 | 218 | 1 | 218 | 0 | 0 | 0 | 18 | 31 | 654 | 0 |
+| after | 757 | 756 | 218 | 1 | 218 | 0 | 0 | 0 | 18 | 31 | 654 | 0 |
 
 Launch rows: every listing line printed in the ten seconds after the app
 was started fresh (the install had stopped it), in order, with the
 timestamp's seconds.
 
-| Build | at | listing | bridge_ms | lib_ms | candidates | manifest reads | deck parses | progress docs | augment docs | canonicalize |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| before | 14.421 | root | 5 | 5 | 4 | 8 | 4 | 0 | 0 | 7 |
-| before | 14.426 | root | 3 | 3 | 4 | 8 | 4 | 0 | 0 | 7 |
-| before | 15.297 | paired-root | 870 | 870 | 430 | 5 | 215 | 18 | 31 | 431 |
-| before | 15.314 | root | 3 | 3 | 4 | 8 | 4 | 0 | 0 | 7 |
-| before | 16.093 | paired-root | 779 | 779 | 430 | 5 | 215 | 18 | 31 | 431 |
-| after | 19.871 | root | 4 | 4 | 2 | 3 | 4 | 0 | 0 | 7 |
-| after | 19.877 | root | 3 | 3 | 2 | 3 | 4 | 0 | 0 | 7 |
-| after | 20.700 | paired-root | 823 | 823 | 218 | 1 | 218 | 18 | 31 | 437 |
-| after | 20.713 | root | 3 | 3 | 2 | 3 | 4 | 0 | 0 | 7 |
-| after | 21.578 | paired-root | 864 | 864 | 218 | 1 | 218 | 18 | 31 | 437 |
-| after | 21.676 | root | 6 | 6 | 2 | 3 | 4 | 0 | 0 | 7 |
-| after | 22.493 | paired-root | 817 | 817 | 218 | 1 | 218 | 18 | 31 | 437 |
+| Build | at | listing | bridge_ms | lib_ms | candidates | manifest reads | deck parses | prerequisite parses | id scans | geometry reads | progress docs | augment docs | canonicalize | sidecar reads |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| before | 14.421 | root | 5 | 5 | 4 | 8 | 4 | 0 | 0 | 0 | 0 | 0 | 7 | not counted |
+| before | 14.426 | root | 3 | 3 | 4 | 8 | 4 | 0 | 0 | 0 | 0 | 0 | 7 | not counted |
+| before | 15.297 | paired-root | 870 | 870 | 430 | 5 | 215 | 0 | 0 | 0 | 18 | 31 | 431 | not counted |
+| before | 15.314 | root | 3 | 3 | 4 | 8 | 4 | 0 | 0 | 0 | 0 | 0 | 7 | not counted |
+| before | 16.093 | paired-root | 779 | 779 | 430 | 5 | 215 | 0 | 0 | 0 | 18 | 31 | 431 | not counted |
+| after | 19.871 | root | 4 | 4 | 2 | 3 | 4 | 0 | 0 | 0 | 0 | 0 | 7 | 0 |
+| after | 19.877 | root | 3 | 3 | 2 | 3 | 4 | 0 | 0 | 0 | 0 | 0 | 7 | 0 |
+| after | 20.700 | paired-root | 823 | 823 | 218 | 1 | 218 | 0 | 0 | 0 | 18 | 31 | 437 | 0 |
+| after | 20.713 | root | 3 | 3 | 2 | 3 | 4 | 0 | 0 | 0 | 0 | 0 | 7 | 0 |
+| after | 21.578 | paired-root | 864 | 864 | 218 | 1 | 218 | 0 | 0 | 0 | 18 | 31 | 437 | 0 |
+| after | 21.676 | root | 6 | 6 | 2 | 3 | 4 | 0 | 0 | 0 | 0 | 0 | 7 | 0 |
+| after | 22.493 | paired-root | 817 | 817 | 218 | 1 | 218 | 0 | 0 | 0 | 18 | 31 | 437 | 0 |
 
 ## Reading
 
@@ -127,11 +129,12 @@ timestamp's seconds.
   parses); the after build reports 218 members on both. The three-member
   difference in the before build's root pass is not explained by this
   note.
-- The launch rows show the app listing `root` three times and
-  `paired-root` two or three times within about two seconds of a fresh
-  start, so a launch spends about 2.5 s in listings on the after build,
-  of which the repeats are work just done. That is a picker-side
-  behaviour, separate from the parse-once change.
+- The launch rows show the before build listing `root` three times and
+  `paired-root` twice within 1.7 s of a fresh start, and the after build
+  listing `root` four times and `paired-root` three times within 2.6 s
+  (first row 19.871, last row 22.493). The after build's listings sum to
+  about 2.5 s of bridge time, of which the repeats are work just done.
+  That is a picker-side behaviour, separate from the parse-once change.
 - `canonicalize` calls did not drop on the drill-in (654 on both
   builds). The reason is read from the code, not from the rows: the
   dependency-tree pass canonicalizes each member and each requirement
@@ -162,6 +165,24 @@ and augment documents and the rest are at most the remaining 40 ms. The
 phone's 745 ms is the same work about three times slower, and its parse
 share is not measured separately.
 
+A second run later the same day split the parse itself (same workspace,
+same method; the full parse measured 217 ms in that run):
+
+| Phase over all 218 decks | Total | Per deck |
+| --- | --- | --- |
+| read plus the parser's block stage alone (line preparation, frontmatter, headings, directives, notes; the private `parse_document`, exported for the run and not kept) | 31 ms | 0.14 ms |
+| `parser::parse` (the block stage plus card building) | 217 ms | 1.0 ms |
+| `parser::content_fingerprint` once over the 2216 cards those decks hold | 62 ms | 0.28 ms |
+
+So card building is about 86 percent of the parse. Inside it, the content
+fingerprint (the hash the tutor and the augment cache key on, computed by
+stripping inline markup from every card's text) is computed twice per
+card at parse time: a scratch call counter saw 4432 calls in one full
+parse of the 2216 cards, once in `Card::plain` and once as the parser's
+block-level key over the same lines for a plain card. At the single-pass
+cost above that is about 124 ms of the 217 ms parse, an estimate from the
+one-pass timing rather than a direct measurement of the parse's share.
+
 ## Not measured
 
 - Rows after a device reboot (files cold). Wireless adb does not survive
@@ -170,7 +191,7 @@ share is not measured separately.
   own rebuild time.
 - Other devices, other workspaces, a workspace with prerequisite chains
   or rendered diagrams.
-- The phase split on the phone itself (the host split above is the
+- The phase split on the phone itself (the host splits above are the
   desktop's).
 
 ## What follows
