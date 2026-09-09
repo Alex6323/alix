@@ -1579,7 +1579,7 @@ mod tests {
     }
 
     #[test]
-    fn staged_size_matches_the_bytes_stage_path_copies_without_copying_first() {
+    fn staged_size_matches_the_bytes_stage_path_produces_for_every_shape() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("ws");
         std::fs::create_dir_all(src.join("decks")).unwrap();
@@ -1605,6 +1605,61 @@ mod tests {
             !staged.join(".alix").exists(),
             "private state stays excluded"
         );
+
+        let write_deck = |root: &Path, name: &str| {
+            std::fs::create_dir_all(root).unwrap();
+            let path = root.join(name);
+            std::fs::write(
+                &path,
+                "---\nformat-version: 1\nid: deck-deck1\n---\n## q\na\n<!-- id: card-card1 -->\n",
+            )
+            .unwrap();
+            path
+        };
+        let bare = write_deck(&dir.path().join("bare"), "bare.md");
+        let sidecar = write_deck(&dir.path().join("sidecar"), "sidecar.md");
+        let mut augmentation = crate::augment::AugmentCache::open_for_deck(
+            &crate::deck::Deck::load(&sidecar).unwrap(),
+        )
+        .unwrap();
+        augmentation.set_note("card-card1", "note".to_string(), 7);
+        augmentation.save().unwrap();
+        let assets = write_deck(&dir.path().join("assets"), "assets.md");
+        crate::assets::write_object(
+            assets.parent().unwrap(),
+            "deck-deck1",
+            b"asset bytes\n",
+            "txt",
+        )
+        .unwrap();
+
+        for (shape, deck, expect_bundle) in [
+            ("bare deck file", bare, false),
+            ("deck with augmentation", sidecar, true),
+            ("deck with assets", assets, true),
+        ] {
+            let before = staged_size(&deck).unwrap();
+            let stage = dir.path().join(format!("stage-{shape}"));
+            let (staged, _) = stage_path(&deck, &stage).unwrap();
+
+            assert_eq!(
+                before,
+                byte_size(&staged),
+                "{shape}: metadata projection and staged bytes diverged"
+            );
+            assert_eq!(
+                expect_bundle,
+                is_deck_bundle(&staged),
+                "{shape}: stage_path chose the wrong projection"
+            );
+            if expect_bundle {
+                assert_eq!(
+                    deck_bundle_marker(&deck).unwrap(),
+                    std::fs::read_to_string(staged.join(DECK_BUNDLE_MARKER)).unwrap(),
+                    "{shape}: metadata projection and staged marker diverged"
+                );
+            }
+        }
     }
 
     fn byte_size(path: &Path) -> u64 {
