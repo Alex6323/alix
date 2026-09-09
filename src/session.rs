@@ -1267,6 +1267,241 @@ mod tests {
         Box::new(crate::scheduler::Fsrs::default())
     }
 
+    #[test]
+    fn law_next_servable_uses_now_only_for_cram() {
+        let now = 10 * 86_400_000;
+        let future = 80 * 86_400_000;
+        for cram in [false, true] {
+            let (mut store, _dir) = empty_store();
+            let all = cards(1);
+            let id = all[0].id().unwrap();
+            store.get_or_insert(&id).recall = Some(mature_fsrs(now));
+            let session = Session::new(
+                all,
+                &mut store,
+                sched(),
+                SessionOptions {
+                    cram,
+                    ..Default::default()
+                },
+                now,
+            );
+            store.get_or_insert(&id).recall.as_mut().unwrap().due_ms = future;
+
+            assert_eq!(
+                Some(if cram { now } else { future }),
+                session.next_servable_at(&store, now),
+                "cram={cram}: the next servable time follows the sitting mode"
+            );
+        }
+    }
+
+    #[test]
+    fn law_each_serving_action_changes_the_session_in_one_step() {
+        for action in ["grade", "introduce"] {
+            let (mut store, _dir) = empty_store();
+            let mut session = Session::new(
+                cards(2),
+                &mut store,
+                sched(),
+                SessionOptions::default(),
+                1_000,
+            );
+            let before = session.current_id();
+
+            match action {
+                "grade" => session.grade(&mut store, Grade::Pass, 1_000),
+                "introduce" => session.introduce_current(&mut store, 1_000),
+                _ => unreachable!(),
+            }
+
+            assert_ne!(
+                before,
+                session.current_id(),
+                "{action}: one action must change the current card or finish"
+            );
+        }
+    }
+
+    #[test]
+    fn law_an_early_cram_pass_leaves_shallower_schedules_untouched() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id().unwrap();
+        let now = 10 * 86_400_000;
+        let future = 80 * 86_400_000;
+        let state = store.get_or_insert(&id);
+        state.recognize = Some(mature_fsrs(future));
+        state.recall = Some(mature_fsrs(future));
+        state.reconstruct = Some(mature_fsrs(future));
+        let before = (state.recognize, state.recall);
+        let mut session = Session::new(
+            all,
+            &mut store,
+            sched(),
+            SessionOptions {
+                cram: true,
+                depth: Depth::Reconstruct,
+                ..Default::default()
+            },
+            now,
+        );
+
+        session.grade(&mut store, Grade::Pass, now);
+
+        let after = store.get(&id).unwrap();
+        assert_eq!(
+            before,
+            (after.recognize, after.recall),
+            "an early cram pass reanchors only the presented depth"
+        );
+    }
+
+    #[test]
+    fn law_region_removal_returns_only_matching_depth_exclusions() {
+        let (mut store, _dir) = empty_store();
+        let removed_region = span_sibling(card("deck.md", 1), "removed");
+        let removed_id = removed_region.id().unwrap();
+        let retained_region = span_sibling(card("deck.md", 2), "retained");
+        let retained_id = retained_region.id().unwrap();
+        let mut session = Session::new(
+            vec![removed_region.clone()],
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            1_000,
+        );
+        session.set_depth_excluded(vec![removed_region, retained_region]);
+
+        let removed = session.remove_current(&mut store, 1_000);
+
+        assert_eq!(
+            vec![removed_id.clone(), removed_id],
+            removed.iter().filter_map(Card::id).collect::<Vec<_>>(),
+            "the served region and its matching exclusion leave together"
+        );
+        assert_eq!(
+            vec![retained_id],
+            session
+                .depth_excluded
+                .iter()
+                .filter_map(Card::id)
+                .collect::<Vec<_>>(),
+            "an unrelated depth exclusion remains available"
+        );
+    }
+
+    #[test]
+    fn law_block_removal_compacts_every_parallel_index_once() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(4);
+        let expected_ids: Vec<String> = all[1..].iter().filter_map(Card::id).collect();
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), 1_000);
+
+        let removed = session.remove_current(&mut store, 1_000);
+
+        assert_eq!(1, removed.len());
+        assert_eq!(
+            expected_ids,
+            session
+                .cards
+                .iter()
+                .filter_map(Card::id)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            (0..session.cards.len()).collect::<Vec<_>>(),
+            session.roster.to_vec(),
+            "each retained roster index is compacted exactly once"
+        );
+        assert_eq!(
+            session.cards.len(),
+            session.appearances.len(),
+            "cards and their appearance counters stay parallel"
+        );
+    }
+
+    #[test]
+    fn law_floors_live_until_but_not_through_the_cooldown_boundary() {
+        let cooldown = DEFAULT_INTRODUCTION_COOLDOWN_MS;
+        for (elapsed, retained) in [
+            (cooldown - 1, true),
+            (cooldown, false),
+            (cooldown + 1, false),
+        ] {
+            let (mut store, _dir) = empty_store();
+            let mut session = Session::new(
+                cards(1),
+                &mut store,
+                sched(),
+                SessionOptions::default(),
+                10_000,
+            );
+            session.floors.insert("prior".to_string(), 10_000);
+            let now = 10_000 + elapsed;
+
+            session.floor("current", now);
+
+            assert_eq!(
+                retained,
+                session.floors.contains_key("prior"),
+                "elapsed={elapsed}: retention changes exactly at the cooldown boundary"
+            );
+            assert_eq!(Some(&now), session.floors.get("current"));
+        }
+    }
+
+    #[test]
+    fn law_slot_backfill_obeys_capacity_and_pool_limits() {
+        for (due, new, cap, percent, expected) in [
+            (20, 1, 10, 30, (9, 1)),
+            (1, 20, 10, 30, (1, 9)),
+            (20, 20, 10, 30, (7, 3)),
+            (0, 20, 10, 30, (0, 10)),
+            (20, 0, 10, 30, (10, 0)),
+            (20, 20, 0, 30, (0, 0)),
+        ] {
+            let actual = split_slots(due, new, cap, percent);
+            assert_eq!(
+                expected, actual,
+                "due={due}, new={new}, cap={cap}, percent={percent}"
+            );
+            assert!(actual.0 <= due && actual.1 <= new);
+            assert!(actual.0 + actual.1 <= cap);
+        }
+    }
+
+    #[test]
+    fn law_card_tier_boundaries_are_strict() {
+        let (mut store, _dir) = empty_store();
+        let zero = "zero-stability";
+        store.get_or_insert(zero).recall = Some(FsrsState {
+            stability: 0.0,
+            state: 2,
+            ..Default::default()
+        });
+        assert_eq!(CardTier::Seen, card_tier(&store, zero, 0, None));
+
+        let threshold = "weak-threshold";
+        let now = 3_833_710_245;
+        store.get_or_insert(threshold).recall = Some(FsrsState {
+            stability: 10.0,
+            state: 2,
+            ..Default::default()
+        });
+        let retrievability =
+            Parameters::forgetting_curve(now as f64 / 86_400_000.0, 10.0).clamp(0.0, 1.0) as f32;
+        assert_eq!(
+            LEARNED_WEAK_BELOW, retrievability,
+            "the fixture sits on the boundary"
+        );
+        assert_eq!(
+            CardTier::LearnedFading,
+            card_tier(&store, threshold, now, None),
+            "the weak boundary belongs to the fading band"
+        );
+    }
+
     fn personal_card(store: &mut Store, deck_id: &str, back: &str, created_ms: u64) -> Card {
         let slug: String = back
             .chars()
