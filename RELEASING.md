@@ -224,13 +224,18 @@ To cut one:
 3. **Live grader calibration:** run `make calibrate` under the same failure rule
    as the desktop release: investigate any failure rather than rerunning until
    chance produces green.
-4. **Semantic documentation audit:** run `make docs-audit` on this exact mobile
+4. **Workspace-open timing:** re-run the device session recorded in
+   `docs/results/2026-09-09-workspace-open-timing.md` (a `make apk PROFILE=1`
+   build on a real phone, the `members` rows on a big workspace) and compare
+   with the last note. A slower row at equal counters is a slowdown the
+   counter laws cannot see; investigate it before tagging.
+5. **Semantic documentation audit:** run `make docs-audit` on this exact mobile
    release candidate and resolve every finding until it reports `PASS`.
-5. **Old-format recognition audit:** run `make old-format-audit`, same
+6. **Old-format recognition audit:** run `make old-format-audit`, same
    resolve-and-rerun rule as the desktop gate.
-6. **Commit** as `Release mobile-vX.Y.Z`, then
+7. **Commit** as `Release mobile-vX.Y.Z`, then
    `git tag mobile-vX.Y.Z && git push origin main --tags`.
-7. The workflow **fails loud** on: tag/pubspec mismatch, a debug-signed APK
+8. The workflow **fails loud** on: tag/pubspec mismatch, a debug-signed APK
    (missing secrets), non-16KB-aligned native libs, or a missing changelog
    section.
 
