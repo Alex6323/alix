@@ -1,13 +1,12 @@
 import 'package:alix_mobile/picker/picker_models.dart';
 
 abstract interface class PickerPort {
-  List<PickerEntry> listRoot(String root);
+  PickerListing listRoot(String root, {required bool profile});
 
-  List<PickerEntry> listMembers({required String root, required String dir});
-
-  PickerDeadline? workspaceDeadline({
+  PickerListing listMembers({
     required String root,
     required String dir,
+    required bool profile,
   });
 
   void setWorkspaceDeadline({required String dir, required String? date});

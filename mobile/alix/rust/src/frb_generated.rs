@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -227097323;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 324052215;
 
 // Section: executor
 
@@ -1306,10 +1306,14 @@ fn wire__crate__api__listing__list_members_impl(
             let api_root = <String>::sse_decode(&mut deserializer);
             let api_dir = <String>::sse_decode(&mut deserializer);
             let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
+            let api_profile = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, ()>((move || {
                 let output_ok = Result::<_, ()>::Ok(crate::api::listing::list_members(
-                    api_root, api_dir, api_now_ms,
+                    api_root,
+                    api_dir,
+                    api_now_ms,
+                    api_profile,
                 ))?;
                 Ok(output_ok)
             })())
@@ -1339,10 +1343,14 @@ fn wire__crate__api__listing__list_root_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_root = <String>::sse_decode(&mut deserializer);
             let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
+            let api_profile = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, ()>((move || {
-                let output_ok =
-                    Result::<_, ()>::Ok(crate::api::listing::list_root(api_root, api_now_ms))?;
+                let output_ok = Result::<_, ()>::Ok(crate::api::listing::list_root(
+                    api_root,
+                    api_now_ms,
+                    api_profile,
+                ))?;
                 Ok(output_ok)
             })())
         },
@@ -1891,40 +1899,6 @@ fn wire__crate__api__simple__stamp_deck_impl(
                     })(),
                 )
             }
-        },
-    )
-}
-fn wire__crate__api__listing__workspace_deadline_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "workspace_deadline",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_root = <String>::sse_decode(&mut deserializer);
-            let api_dir = <String>::sse_decode(&mut deserializer);
-            let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let output_ok = Result::<_, ()>::Ok(crate::api::listing::workspace_deadline(
-                    api_root, api_dir, api_now_ms,
-                ))?;
-                Ok(output_ok)
-            })())
         },
     )
 }
@@ -2910,6 +2884,20 @@ impl SseDecode for crate::api::review::MathView {
     }
 }
 
+impl SseDecode for crate::api::listing::MembersScreen {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_entries = <Vec<crate::api::listing::DeckEntry>>::sse_decode(deserializer);
+        let mut var_deadline = <Option<crate::api::listing::Deadline>>::sse_decode(deserializer);
+        let mut var_profile = <Option<crate::api::listing::OpenProfile>>::sse_decode(deserializer);
+        return crate::api::listing::MembersScreen {
+            entries: var_entries,
+            deadline: var_deadline,
+            profile: var_profile,
+        };
+    }
+}
+
 impl SseDecode for crate::api::review::Mode {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2948,6 +2936,34 @@ impl SseDecode for crate::api::review::NoteView {
         return crate::api::review::NoteView {
             badge: var_badge,
             units: var_units,
+        };
+    }
+}
+
+impl SseDecode for crate::api::listing::OpenProfile {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_libMs = <u64>::sse_decode(deserializer);
+        let mut var_candidatesClassified = <u64>::sse_decode(deserializer);
+        let mut var_manifestReads = <u64>::sse_decode(deserializer);
+        let mut var_decksLoaded = <u64>::sse_decode(deserializer);
+        let mut var_prerequisiteLoads = <u64>::sse_decode(deserializer);
+        let mut var_idScans = <u64>::sse_decode(deserializer);
+        let mut var_diagramGeometryReads = <u64>::sse_decode(deserializer);
+        let mut var_storeDocumentsRead = <u64>::sse_decode(deserializer);
+        let mut var_augmentDocumentsRead = <u64>::sse_decode(deserializer);
+        let mut var_canonicalizeCalls = <u64>::sse_decode(deserializer);
+        return crate::api::listing::OpenProfile {
+            lib_ms: var_libMs,
+            candidates_classified: var_candidatesClassified,
+            manifest_reads: var_manifestReads,
+            decks_loaded: var_decksLoaded,
+            prerequisite_loads: var_prerequisiteLoads,
+            id_scans: var_idScans,
+            diagram_geometry_reads: var_diagramGeometryReads,
+            store_documents_read: var_storeDocumentsRead,
+            augment_documents_read: var_augmentDocumentsRead,
+            canonicalize_calls: var_canonicalizeCalls,
         };
     }
 }
@@ -3084,6 +3100,17 @@ impl SseDecode for Option<crate::api::review::MultiChoiceFeedback> {
             return Some(<crate::api::review::MultiChoiceFeedback>::sse_decode(
                 deserializer,
             ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::listing::OpenProfile> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::listing::OpenProfile>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -3512,6 +3539,18 @@ impl SseDecode for crate::api::review::ReviewState {
     }
 }
 
+impl SseDecode for crate::api::listing::RootScreen {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_entries = <Vec<crate::api::listing::DeckEntry>>::sse_decode(deserializer);
+        let mut var_profile = <Option<crate::api::listing::OpenProfile>>::sse_decode(deserializer);
+        return crate::api::listing::RootScreen {
+            entries: var_entries,
+            profile: var_profile,
+        };
+    }
+}
+
 impl SseDecode for crate::api::review::TutorCard {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3793,7 +3832,6 @@ fn pde_ffi_dispatcher_sync_impl(
         41 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
         42 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
         43 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__listing__workspace_deadline_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4329,6 +4367,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::MathView>>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::listing::MembersScreen {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.entries.into_into_dart().into_dart(),
+            self.deadline.into_into_dart().into_dart(),
+            self.profile.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::listing::MembersScreen
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::listing::MembersScreen>
+    for crate::api::listing::MembersScreen
+{
+    fn into_into_dart(self) -> crate::api::listing::MembersScreen {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::Mode> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
@@ -4394,6 +4454,35 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::NoteView>>
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::review::NoteView> {
         self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::listing::OpenProfile {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.lib_ms.into_into_dart().into_dart(),
+            self.candidates_classified.into_into_dart().into_dart(),
+            self.manifest_reads.into_into_dart().into_dart(),
+            self.decks_loaded.into_into_dart().into_dart(),
+            self.prerequisite_loads.into_into_dart().into_dart(),
+            self.id_scans.into_into_dart().into_dart(),
+            self.diagram_geometry_reads.into_into_dart().into_dart(),
+            self.store_documents_read.into_into_dart().into_dart(),
+            self.augment_documents_read.into_into_dart().into_dart(),
+            self.canonicalize_calls.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::listing::OpenProfile
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::listing::OpenProfile>
+    for crate::api::listing::OpenProfile
+{
+    fn into_into_dart(self) -> crate::api::listing::OpenProfile {
+        self
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -4751,6 +4840,27 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::ReviewStat
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::review::ReviewState> {
         self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::listing::RootScreen {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.entries.into_into_dart().into_dart(),
+            self.profile.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::listing::RootScreen
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::listing::RootScreen>
+    for crate::api::listing::RootScreen
+{
+    fn into_into_dart(self) -> crate::api::listing::RootScreen {
+        self
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -5555,6 +5665,15 @@ impl SseEncode for crate::api::review::MathView {
     }
 }
 
+impl SseEncode for crate::api::listing::MembersScreen {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::api::listing::DeckEntry>>::sse_encode(self.entries, serializer);
+        <Option<crate::api::listing::Deadline>>::sse_encode(self.deadline, serializer);
+        <Option<crate::api::listing::OpenProfile>>::sse_encode(self.profile, serializer);
+    }
+}
+
 impl SseEncode for crate::api::review::Mode {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -5589,6 +5708,22 @@ impl SseEncode for crate::api::review::NoteView {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Option<crate::api::review::Badge>>::sse_encode(self.badge, serializer);
         <Vec<crate::api::review::ContentUnit>>::sse_encode(self.units, serializer);
+    }
+}
+
+impl SseEncode for crate::api::listing::OpenProfile {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.lib_ms, serializer);
+        <u64>::sse_encode(self.candidates_classified, serializer);
+        <u64>::sse_encode(self.manifest_reads, serializer);
+        <u64>::sse_encode(self.decks_loaded, serializer);
+        <u64>::sse_encode(self.prerequisite_loads, serializer);
+        <u64>::sse_encode(self.id_scans, serializer);
+        <u64>::sse_encode(self.diagram_geometry_reads, serializer);
+        <u64>::sse_encode(self.store_documents_read, serializer);
+        <u64>::sse_encode(self.augment_documents_read, serializer);
+        <u64>::sse_encode(self.canonicalize_calls, serializer);
     }
 }
 
@@ -5708,6 +5843,16 @@ impl SseEncode for Option<crate::api::review::MultiChoiceFeedback> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::review::MultiChoiceFeedback>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::listing::OpenProfile> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::listing::OpenProfile>::sse_encode(value, serializer);
         }
     }
 }
@@ -6031,6 +6176,14 @@ impl SseEncode for crate::api::review::ReviewState {
         <Option<crate::api::review::RecognizeGap>>::sse_encode(self.recognize_gap, serializer);
         <Option<String>>::sse_encode(self.save_error, serializer);
         <Vec<String>>::sse_encode(self.load_warnings, serializer);
+    }
+}
+
+impl SseEncode for crate::api::listing::RootScreen {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::api::listing::DeckEntry>>::sse_encode(self.entries, serializer);
+        <Option<crate::api::listing::OpenProfile>>::sse_encode(self.profile, serializer);
     }
 }
 

@@ -6,7 +6,10 @@ use std::{
 
 use serde::Deserialize;
 
-use crate::deck::DeckSettings;
+use crate::{
+    deck::DeckSettings,
+    profile::{self, Counter},
+};
 
 pub const MANIFEST: &str = "alix.toml";
 pub const DECKS: &str = "decks";
@@ -137,6 +140,7 @@ impl Workspace {
 }
 
 pub fn manifest_source(dir: &Path) -> Vec<String> {
+    profile::hit(Counter::ManifestReads);
     let Ok(text) = std::fs::read_to_string(dir.join(MANIFEST)) else {
         return Vec::new();
     };
@@ -150,6 +154,7 @@ pub fn manifest_source(dir: &Path) -> Vec<String> {
 }
 
 pub fn manifest_parse_error(dir: &Path) -> Option<toml::de::Error> {
+    profile::hit(Counter::ManifestReads);
     let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
     toml::from_str::<Manifest>(&text).err()
 }
@@ -159,6 +164,7 @@ pub fn manifest_parse_error(dir: &Path) -> Option<toml::de::Error> {
 pub(crate) fn read_manifest(
     path: &Path,
 ) -> (Option<String>, Option<String>, DeckSettings, Option<String>) {
+    profile::hit(Counter::ManifestReads);
     let Ok(text) = std::fs::read_to_string(path) else {
         return (None, None, DeckSettings::default(), None);
     };
@@ -331,6 +337,7 @@ pub struct SeenPaths {
 
 impl SeenPaths {
     pub fn first_visit(&mut self, path: &Path) -> bool {
+        profile::hit(Counter::CanonicalizeCalls);
         self.seen
             .insert(path.canonicalize().unwrap_or_else(|_| path.to_path_buf()))
     }
@@ -388,6 +395,7 @@ pub fn classify_deck_files(dir: &Path) -> io::Result<ClassifiedDecks> {
     let candidates = members_where(dir, |_| true)?;
     let mut found = ClassifiedDecks::default();
     for path in candidates {
+        profile::hit(Counter::CandidatesClassified);
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
             Err(source) => {
@@ -471,11 +479,13 @@ pub fn root_store_path(dir: &Path) -> PathBuf {
 }
 
 pub fn manifest_source_access(dir: &Path) -> Option<bool> {
+    profile::hit(Counter::ManifestReads);
     let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
     toml::from_str::<Manifest>(&text).ok()?.source_access
 }
 
 pub fn manifest_icon(dir: &Path) -> Option<String> {
+    profile::hit(Counter::ManifestReads);
     let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
     toml::from_str::<Manifest>(&text).ok()?.icon
 }

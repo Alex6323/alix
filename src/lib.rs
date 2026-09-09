@@ -56,6 +56,7 @@ pub mod log;
 pub mod math;
 pub mod parser;
 pub mod personal;
+pub mod profile;
 pub mod sidecar;
 pub use sidecar::{
     DeckCard, FileEntry, Finding, Orphan, Role, SessionCard, SidecarBlock, classify, merge,

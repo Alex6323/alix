@@ -127,6 +127,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MultiChoiceFeedback dco_decode_box_autoadd_multi_choice_feedback(dynamic raw);
 
   @protected
+  OpenProfile dco_decode_box_autoadd_open_profile(dynamic raw);
+
+  @protected
   PairedConflict dco_decode_box_autoadd_paired_conflict(dynamic raw);
 
   @protected
@@ -280,6 +283,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MathView dco_decode_math_view(dynamic raw);
 
   @protected
+  MembersScreen dco_decode_members_screen(dynamic raw);
+
+  @protected
   Mode dco_decode_mode(dynamic raw);
 
   @protected
@@ -287,6 +293,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NoteView dco_decode_note_view(dynamic raw);
+
+  @protected
+  OpenProfile dco_decode_open_profile(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -325,6 +334,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MultiChoiceFeedback? dco_decode_opt_box_autoadd_multi_choice_feedback(
     dynamic raw,
   );
+
+  @protected
+  OpenProfile? dco_decode_opt_box_autoadd_open_profile(dynamic raw);
 
   @protected
   PairedConflict? dco_decode_opt_box_autoadd_paired_conflict(dynamic raw);
@@ -397,6 +409,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReviewState dco_decode_review_state(dynamic raw);
+
+  @protected
+  RootScreen dco_decode_root_screen(dynamic raw);
 
   @protected
   TutorCard dco_decode_tutor_card(dynamic raw);
@@ -538,6 +553,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MultiChoiceFeedback sse_decode_box_autoadd_multi_choice_feedback(
     SseDeserializer deserializer,
   );
+
+  @protected
+  OpenProfile sse_decode_box_autoadd_open_profile(SseDeserializer deserializer);
 
   @protected
   PairedConflict sse_decode_box_autoadd_paired_conflict(
@@ -717,6 +735,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MathView sse_decode_math_view(SseDeserializer deserializer);
 
   @protected
+  MembersScreen sse_decode_members_screen(SseDeserializer deserializer);
+
+  @protected
   Mode sse_decode_mode(SseDeserializer deserializer);
 
   @protected
@@ -726,6 +747,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NoteView sse_decode_note_view(SseDeserializer deserializer);
+
+  @protected
+  OpenProfile sse_decode_open_profile(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -768,6 +792,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MultiChoiceFeedback? sse_decode_opt_box_autoadd_multi_choice_feedback(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  OpenProfile? sse_decode_opt_box_autoadd_open_profile(
     SseDeserializer deserializer,
   );
 
@@ -858,6 +887,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReviewState sse_decode_review_state(SseDeserializer deserializer);
+
+  @protected
+  RootScreen sse_decode_root_screen(SseDeserializer deserializer);
 
   @protected
   TutorCard sse_decode_tutor_card(SseDeserializer deserializer);
@@ -1023,6 +1055,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_multi_choice_feedback(
     MultiChoiceFeedback self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_open_profile(
+    OpenProfile self,
     SseSerializer serializer,
   );
 
@@ -1267,6 +1305,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_math_view(MathView self, SseSerializer serializer);
 
   @protected
+  void sse_encode_members_screen(MembersScreen self, SseSerializer serializer);
+
+  @protected
   void sse_encode_mode(Mode self, SseSerializer serializer);
 
   @protected
@@ -1277,6 +1318,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_note_view(NoteView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_open_profile(OpenProfile self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
@@ -1335,6 +1379,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_multi_choice_feedback(
     MultiChoiceFeedback? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_open_profile(
+    OpenProfile? self,
     SseSerializer serializer,
   );
 
@@ -1448,6 +1498,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_review_state(ReviewState self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_root_screen(RootScreen self, SseSerializer serializer);
 
   @protected
   void sse_encode_tutor_card(TutorCard self, SseSerializer serializer);

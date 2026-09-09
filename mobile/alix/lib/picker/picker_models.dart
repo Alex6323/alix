@@ -14,6 +14,21 @@ class PickerDeadline {
   final int total;
 }
 
+class PickerProfile {
+  const PickerProfile({required this.libMs, required this.counters});
+
+  final int libMs;
+  final List<(String, int)> counters;
+}
+
+class PickerListing {
+  const PickerListing({required this.entries, this.deadline, this.profile});
+
+  final List<PickerEntry> entries;
+  final PickerDeadline? deadline;
+  final PickerProfile? profile;
+}
+
 class PickerEntry {
   const PickerEntry({
     required this.title,

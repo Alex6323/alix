@@ -6,6 +6,7 @@ use crate::{
     config::ReviewConfig,
     deck::{self, Deck, DeckState},
     depth::{self, Depth},
+    profile::{self, Counter},
     scheduler::Fsrs,
     session,
     store::{self, Store},
@@ -297,6 +298,7 @@ fn deck_summary(
         .file_stem()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
+    profile::hit(Counter::DecksLoaded);
     let deck = Deck::load(path).ok();
     let loaded = deck.is_some();
     let title = deck.as_ref().map(|d| d.display_name()).unwrap_or_default();
@@ -591,12 +593,16 @@ pub fn deck_status(
 }
 
 pub fn member_parents(members: &[PathBuf], decks_dir: &Path) -> Vec<Option<usize>> {
-    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let canon = |p: &Path| {
+        profile::hit(Counter::CanonicalizeCalls);
+        std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+    };
     let canonical: Vec<PathBuf> = members.iter().map(|m| canon(m)).collect();
     members
         .iter()
         .enumerate()
         .map(|(i, m)| {
+            profile::hit(Counter::DecksLoaded);
             let deck = Deck::load(m).ok()?;
             deck.requires.iter().find_map(|req| {
                 let dep = canon(&deck::resolve_dep(req, Some(decks_dir), m.parent())?);
@@ -1590,6 +1596,56 @@ mod tests {
         let rows = list_root(root, &ReviewConfig::default(), T0);
         let row = rows.iter().find(|r| r.title == "d").expect("listed");
         assert_eq!(Depth::Reconstruct, row.last_depth);
+    }
+
+    #[test]
+    fn the_collector_sees_every_read_of_a_member_listing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        write(&ws.join("alix.toml"), "");
+        write(&ws.join("decks/base.md"), "## q\na\n");
+        write(
+            &ws.join("decks/mid.md"),
+            "---\nrequires: base\n---\n## q\na\n",
+        );
+        write(
+            &ws.join("decks/tip.md"),
+            "---\nrequires: mid\n---\n## q\na\n",
+        );
+        write(&ws.join("decks/other.md"), "## q\na\n");
+        std::fs::write(ws.join("decks/draft.md"), "## q\na\n").unwrap();
+
+        let (rows, counts) =
+            crate::profile::collect(|| list_members(root, &ws, &ReviewConfig::default(), T0));
+        assert_eq!(rows.len(), 4, "the draft is a candidate, not a member");
+        let observed = [
+            ("candidates_classified", counts.candidates_classified),
+            ("manifest_reads", counts.manifest_reads),
+            ("decks_loaded", counts.decks_loaded),
+            ("prerequisite_loads", counts.prerequisite_loads),
+            ("id_scans", counts.id_scans),
+            ("diagram_geometry_reads", counts.diagram_geometry_reads),
+            ("store_documents_read", counts.store_documents_read),
+            ("augment_documents_read", counts.augment_documents_read),
+            ("canonicalize_calls", counts.canonicalize_calls),
+        ];
+        let expected = [
+            ("candidates_classified", 5),
+            ("manifest_reads", 9),
+            ("decks_loaded", 8),
+            ("prerequisite_loads", 3),
+            ("id_scans", 0),
+            ("diagram_geometry_reads", 0),
+            ("store_documents_read", 0),
+            ("augment_documents_read", 0),
+            ("canonicalize_calls", 14),
+        ];
+        assert_eq!(
+            observed, expected,
+            "one list_members over a four-member chain workspace"
+        );
     }
 
     #[test]

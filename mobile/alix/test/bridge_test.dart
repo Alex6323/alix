@@ -28,6 +28,7 @@ class FakeAccess implements PlatformAccess {
   @override
   Future<String?> appVersion() async => '9.9.9+9';
 }
+
 /// Introduced at T0, quizzed once the cooldown has elapsed. 301000 = the
 /// core's DEFAULT_INTRODUCTION_COOLDOWN_MS (5 min, src/scheduler.rs) + 1s; keep
 /// them in step.
@@ -97,7 +98,7 @@ void main() {
   test('listing sees the workspace and the loose deck', () {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    final rows = listRoot(root: root.path, nowMs: t0);
+    final rows = listRoot(root: root.path, nowMs: t0, profile: false).entries;
     expect(rows.map((r) => (r.title, r.isWorkspace, r.due)).toList(), [
       ('Loose', false, true),
       ('Ws', true, true),
@@ -106,7 +107,8 @@ void main() {
       root: root.path,
       dir: '${root.path}/ws',
       nowMs: t0,
-    );
+      profile: false,
+    ).entries;
     expect(members.single.title, 'm');
   });
 
@@ -949,8 +951,8 @@ void main() {
     writeTestDeck(
       deck,
       '---\ntitle: Ordered\n---\n## the two steps?\n'
-          'first step\nsecond step\n'
-          '<!-- reveal: line -->\n<!-- id: card-ordered -->\n',
+      'first step\nsecond step\n'
+      '<!-- reveal: line -->\n<!-- id: card-ordered -->\n',
     );
     final session = ReviewSession.open(
       deckPath: deck,

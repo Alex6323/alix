@@ -45,11 +45,7 @@ class SyncBridgePort implements SyncPort {
   Future<SyncEntries> entries() => _client.entries();
 
   @override
-  Future<int> pull(
-    String entry,
-    File target, {
-    required int unpackedBytes,
-  }) {
+  Future<int> pull(String entry, File target, {required int unpackedBytes}) {
     var checked = false;
     return _client.pull(
       entry,
@@ -63,7 +59,10 @@ class SyncBridgePort implements SyncPort {
         );
         final free = bridge.pairedFreeSpace(path: rootDir);
         if (needed > free) {
-          throw SyncFreeSpaceRefusal(needed: needed.toInt(), free: free.toInt());
+          throw SyncFreeSpaceRefusal(
+            needed: needed.toInt(),
+            free: free.toInt(),
+          );
         }
       },
     );
@@ -88,12 +87,14 @@ class SyncBridgePort implements SyncPort {
 
   @override
   List<SyncEntryState> pairedEntries() => [
-    for (final entry in bridge.pairedEntries(rootDir: rootDir)) _entryState(entry),
+    for (final entry in bridge.pairedEntries(rootDir: rootDir))
+      _entryState(entry),
   ];
 
   @override
   List<SyncPushPlanItem> planPushes() => [
-    for (final item in bridge.pairedPlanPushes(rootDir: rootDir)) _planItem(item),
+    for (final item in bridge.pairedPlanPushes(rootDir: rootDir))
+      _planItem(item),
   ];
 
   @override
@@ -167,7 +168,8 @@ class SyncBridgePort implements SyncPort {
     // `PairedRoot::entry_root` resolves a loose deck's root as `rootDir`
     // itself.
     final absolute = '$rootDir/$path';
-    for (final entry in listing_bridge.listRoot(root: rootDir)) {
+    final screen = listing_bridge.listRoot(root: rootDir, profile: false);
+    for (final entry in screen.entries) {
       if (entry.path == absolute) return entry.title;
     }
     return null;
@@ -201,11 +203,12 @@ SyncDeckState _deckState(bridge.PairedDeckState deck) {
 
 PairedConflict _conflict(bridge.PairedConflict conflict) {
   return conflict.when(
-    push: (desktopRevision, pulledRevision, desktopWriter) => PairedConflictPush(
-      desktopRevision: desktopRevision?.toInt(),
-      pulledRevision: pulledRevision?.toInt(),
-      desktopWriter: desktopWriter == null ? null : _writer(desktopWriter),
-    ),
+    push: (desktopRevision, pulledRevision, desktopWriter) =>
+        PairedConflictPush(
+          desktopRevision: desktopRevision?.toInt(),
+          pulledRevision: pulledRevision?.toInt(),
+          desktopWriter: desktopWriter == null ? null : _writer(desktopWriter),
+        ),
     pull: (pulledRevision, pulledWriter) => PairedConflictPull(
       pulledRevision: pulledRevision?.toInt(),
       pulledWriter: pulledWriter == null ? null : _writer(pulledWriter),

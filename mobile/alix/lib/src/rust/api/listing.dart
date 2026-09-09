@@ -7,34 +7,34 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'review.dart';
 
+// These functions are ignored because they are not marked as `pub`: `new`, `profiled`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`
-
-Deadline? workspaceDeadline({
-  required String root,
-  required String dir,
-  BigInt? nowMs,
-}) => RustLib.instance.api.crateApiListingWorkspaceDeadline(
-  root: root,
-  dir: dir,
-  nowMs: nowMs,
-);
 
 void setWorkspaceDeadline({required String dir, String? date}) => RustLib
     .instance
     .api
     .crateApiListingSetWorkspaceDeadline(dir: dir, date: date);
 
-List<DeckEntry> listRoot({required String root, BigInt? nowMs}) =>
-    RustLib.instance.api.crateApiListingListRoot(root: root, nowMs: nowMs);
+RootScreen listRoot({
+  required String root,
+  BigInt? nowMs,
+  required bool profile,
+}) => RustLib.instance.api.crateApiListingListRoot(
+  root: root,
+  nowMs: nowMs,
+  profile: profile,
+);
 
-List<DeckEntry> listMembers({
+MembersScreen listMembers({
   required String root,
   required String dir,
   BigInt? nowMs,
+  required bool profile,
 }) => RustLib.instance.api.crateApiListingListMembers(
   root: root,
   dir: dir,
   nowMs: nowMs,
+  profile: profile,
 );
 
 class Deadline {
@@ -142,4 +142,97 @@ class DeckEntry {
           indent == other.indent &&
           tree == other.tree &&
           deadline == other.deadline;
+}
+
+class MembersScreen {
+  final List<DeckEntry> entries;
+  final Deadline? deadline;
+  final OpenProfile? profile;
+
+  const MembersScreen({required this.entries, this.deadline, this.profile});
+
+  @override
+  int get hashCode => entries.hashCode ^ deadline.hashCode ^ profile.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MembersScreen &&
+          runtimeType == other.runtimeType &&
+          entries == other.entries &&
+          deadline == other.deadline &&
+          profile == other.profile;
+}
+
+class OpenProfile {
+  final BigInt libMs;
+  final BigInt candidatesClassified;
+  final BigInt manifestReads;
+  final BigInt decksLoaded;
+  final BigInt prerequisiteLoads;
+  final BigInt idScans;
+  final BigInt diagramGeometryReads;
+  final BigInt storeDocumentsRead;
+  final BigInt augmentDocumentsRead;
+  final BigInt canonicalizeCalls;
+
+  const OpenProfile({
+    required this.libMs,
+    required this.candidatesClassified,
+    required this.manifestReads,
+    required this.decksLoaded,
+    required this.prerequisiteLoads,
+    required this.idScans,
+    required this.diagramGeometryReads,
+    required this.storeDocumentsRead,
+    required this.augmentDocumentsRead,
+    required this.canonicalizeCalls,
+  });
+
+  @override
+  int get hashCode =>
+      libMs.hashCode ^
+      candidatesClassified.hashCode ^
+      manifestReads.hashCode ^
+      decksLoaded.hashCode ^
+      prerequisiteLoads.hashCode ^
+      idScans.hashCode ^
+      diagramGeometryReads.hashCode ^
+      storeDocumentsRead.hashCode ^
+      augmentDocumentsRead.hashCode ^
+      canonicalizeCalls.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OpenProfile &&
+          runtimeType == other.runtimeType &&
+          libMs == other.libMs &&
+          candidatesClassified == other.candidatesClassified &&
+          manifestReads == other.manifestReads &&
+          decksLoaded == other.decksLoaded &&
+          prerequisiteLoads == other.prerequisiteLoads &&
+          idScans == other.idScans &&
+          diagramGeometryReads == other.diagramGeometryReads &&
+          storeDocumentsRead == other.storeDocumentsRead &&
+          augmentDocumentsRead == other.augmentDocumentsRead &&
+          canonicalizeCalls == other.canonicalizeCalls;
+}
+
+class RootScreen {
+  final List<DeckEntry> entries;
+  final OpenProfile? profile;
+
+  const RootScreen({required this.entries, this.profile});
+
+  @override
+  int get hashCode => entries.hashCode ^ profile.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RootScreen &&
+          runtimeType == other.runtimeType &&
+          entries == other.entries &&
+          profile == other.profile;
 }

@@ -62,16 +62,55 @@ impl From<alix::listing::DeckSummary> for DeckEntry {
     }
 }
 
-#[flutter_rust_bridge::frb(sync)]
-pub fn workspace_deadline(root: String, dir: String, now_ms: Option<u64>) -> Option<Deadline> {
-    let now = now_ms.unwrap_or_else(alix::time::now_ms);
-    alix::listing::workspace_deadline(
-        Path::new(&root),
-        Path::new(&dir),
-        &alix::config::ReviewConfig::default(),
-        now,
-    )
-    .map(Deadline::from)
+pub struct OpenProfile {
+    pub lib_ms: u64,
+    pub candidates_classified: u64,
+    pub manifest_reads: u64,
+    pub decks_loaded: u64,
+    pub prerequisite_loads: u64,
+    pub id_scans: u64,
+    pub diagram_geometry_reads: u64,
+    pub store_documents_read: u64,
+    pub augment_documents_read: u64,
+    pub canonicalize_calls: u64,
+}
+
+impl OpenProfile {
+    fn new(lib_ms: u64, counts: alix::profile::Counts) -> Self {
+        OpenProfile {
+            lib_ms,
+            candidates_classified: counts.candidates_classified,
+            manifest_reads: counts.manifest_reads,
+            decks_loaded: counts.decks_loaded,
+            prerequisite_loads: counts.prerequisite_loads,
+            id_scans: counts.id_scans,
+            diagram_geometry_reads: counts.diagram_geometry_reads,
+            store_documents_read: counts.store_documents_read,
+            augment_documents_read: counts.augment_documents_read,
+            canonicalize_calls: counts.canonicalize_calls,
+        }
+    }
+}
+
+pub struct RootScreen {
+    pub entries: Vec<DeckEntry>,
+    pub profile: Option<OpenProfile>,
+}
+
+pub struct MembersScreen {
+    pub entries: Vec<DeckEntry>,
+    pub deadline: Option<Deadline>,
+    pub profile: Option<OpenProfile>,
+}
+
+fn profiled<T>(profile: bool, f: impl FnOnce() -> T) -> (T, Option<OpenProfile>) {
+    if !profile {
+        return (f(), None);
+    }
+    let started = std::time::Instant::now();
+    let (value, counts) = alix::profile::collect(f);
+    let lib_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    (value, Some(OpenProfile::new(lib_ms, counts)))
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -80,30 +119,46 @@ pub fn set_workspace_deadline(dir: String, date: Option<String>) -> Result<()> {
 }
 
 #[flutter_rust_bridge::frb(sync)]
-pub fn list_root(root: String, now_ms: Option<u64>) -> Vec<DeckEntry> {
+pub fn list_root(root: String, now_ms: Option<u64>, profile: bool) -> RootScreen {
     let now = now_ms.unwrap_or_else(alix::time::now_ms);
-    alix::listing::list_root(
-        Path::new(&root),
-        &alix::config::ReviewConfig::default(),
-        now,
-    )
-    .into_iter()
-    .map(DeckEntry::from)
-    .collect()
+    let (entries, profile) = profiled(profile, || {
+        alix::listing::list_root(
+            Path::new(&root),
+            &alix::config::ReviewConfig::default(),
+            now,
+        )
+        .into_iter()
+        .map(DeckEntry::from)
+        .collect()
+    });
+    RootScreen { entries, profile }
 }
 
 #[flutter_rust_bridge::frb(sync)]
-pub fn list_members(root: String, dir: String, now_ms: Option<u64>) -> Vec<DeckEntry> {
+pub fn list_members(
+    root: String,
+    dir: String,
+    now_ms: Option<u64>,
+    profile: bool,
+) -> MembersScreen {
     let now = now_ms.unwrap_or_else(alix::time::now_ms);
-    alix::listing::list_members(
-        Path::new(&root),
-        Path::new(&dir),
-        &alix::config::ReviewConfig::default(),
-        now,
-    )
-    .into_iter()
-    .map(DeckEntry::from)
-    .collect()
+    let review = alix::config::ReviewConfig::default();
+    let ((entries, deadline), profile) = profiled(profile, || {
+        let entries: Vec<DeckEntry> =
+            alix::listing::list_members(Path::new(&root), Path::new(&dir), &review, now)
+                .into_iter()
+                .map(DeckEntry::from)
+                .collect();
+        let deadline =
+            alix::listing::workspace_deadline(Path::new(&root), Path::new(&dir), &review, now)
+                .map(Deadline::from);
+        (entries, deadline)
+    });
+    MembersScreen {
+        entries,
+        deadline,
+        profile,
+    }
 }
 
 #[cfg(test)]
@@ -122,18 +177,16 @@ mod tests {
         std::fs::write(root.join("ws/alix.toml"), "title = \"Ws\"\n").unwrap();
         write_deck(root.join("ws/decks/m.md"), "## q\na\n<!-- id: card-q1 -->\n");
 
-        let rows = list_root(root.to_string_lossy().into_owned(), Some(1_000_000));
+        let rows = list_root(root.to_string_lossy().into_owned(), Some(1_000_000), false).entries;
         let titles: Vec<(&str, bool, bool)> = rows
             .iter()
             .map(|r| (r.title.as_str(), r.is_workspace, r.due))
             .collect();
         assert_eq!(titles, [("Loose", false, true), ("Ws", true, true)]);
 
-        let members = list_members(
-            root.to_string_lossy().into_owned(),
+        let members = list_members(root.to_string_lossy().into_owned(),
             root.join("ws").to_string_lossy().into_owned(),
-            Some(1_000_000),
-        );
+            Some(1_000_000), false).entries;
         assert_eq!(members.len(), 1);
         assert!(!members[0].is_workspace);
     }
@@ -181,7 +234,7 @@ mod tests {
         store.get_or_insert(&base_id).recall = Some(graduated_not_due(T0));
         store.save().unwrap();
 
-        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0 + 1_000));
+        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0 + 1_000), false).entries;
         let base = rows.iter().find(|r| r.title == "base").unwrap();
         assert!(base.exam_due, "graduated but not yet mastered");
         assert!(base.has_exam, "sourced deck has an AI exam");
@@ -193,7 +246,7 @@ mod tests {
         let mut store = alix::state::open_store(&root.join("base.md"), &store_path).unwrap();
         store.set_deck_mastered(&base_deck_id, T0 + 1_000);
         store.save().unwrap();
-        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0 + 1_000));
+        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0 + 1_000), false).entries;
         let base = rows.iter().find(|r| r.title == "base").unwrap();
         assert!(base.mastered, "mastered once the exam is recorded passed");
         assert!(!base.exam_due, "no longer awaiting the exam");
@@ -217,11 +270,9 @@ mod tests {
         );
         write_deck(members.join("other.md"), "## q\na\n");
 
-        let rows = list_members(
-            root.to_string_lossy().into_owned(),
+        let rows = list_members(root.to_string_lossy().into_owned(),
             ws.to_string_lossy().into_owned(),
-            Some(T0),
-        );
+            Some(T0), false).entries;
         let child = rows.iter().find(|r| r.title == "child").unwrap();
         assert!(child.locked, "gated by the unmastered gate.md");
         let other = rows.iter().find(|r| r.title == "other").unwrap();
@@ -239,7 +290,7 @@ mod tests {
         write_deck(root.join("ws/decks/m.md"), "## q\na\n");
         write_deck(root.join("loose.md"), "## q\na\n");
 
-        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0));
+        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0), false).entries;
         let ws_row = rows.iter().find(|r| r.is_workspace).expect("listed");
         assert_eq!(
             Some(
@@ -269,11 +320,9 @@ mod tests {
         write_deck(members.join("tip.md"), "---\nrequires: mid\n---\n## q\na\n");
         write_deck(members.join("other.md"), "## q\na\n");
 
-        let rows = list_members(
-            root.to_string_lossy().into_owned(),
+        let rows = list_members(root.to_string_lossy().into_owned(),
             ws.to_string_lossy().into_owned(),
-            Some(T0),
-        );
+            Some(T0), false).entries;
         let shape: Vec<(&str, u32, &str)> = rows
             .iter()
             .map(|r| (r.title.as_str(), r.indent, r.tree.as_str()))
@@ -300,14 +349,14 @@ mod tests {
         let ws_s = ws.to_string_lossy().into_owned();
         let root_s = root.to_string_lossy().into_owned();
 
-        assert!(workspace_deadline(root_s.clone(), ws_s.clone(), Some(T0)).is_none());
+        assert!(list_members(root_s.clone(), ws_s.clone(), Some(T0), false).deadline.is_none());
 
         let date = alix::time::local_date(T0) + chrono::Days::new(5);
         let date_s = date.format("%Y-%m-%d").to_string();
         set_workspace_deadline(ws_s.clone(), Some(date_s.clone())).unwrap();
         let text = std::fs::read_to_string(ws.join("alix.local.toml")).unwrap();
         assert!(text.contains(&format!("deadline = \"{date_s}\"")));
-        let fetched = workspace_deadline(root_s.clone(), ws_s.clone(), Some(T0)).unwrap();
+        let fetched = list_members(root_s.clone(), ws_s.clone(), Some(T0), false).deadline.unwrap();
         assert_eq!(
             (date_s.as_str(), 5, 0, 1),
             (
@@ -317,7 +366,7 @@ mod tests {
                 fetched.total,
             )
         );
-        let rows = list_root(root_s.clone(), Some(T0));
+        let rows = list_root(root_s.clone(), Some(T0), false).entries;
         let row = rows.iter().find(|r| r.is_workspace).unwrap();
         assert_eq!(
             Some(date_s.as_str()),
@@ -329,8 +378,8 @@ mod tests {
         set_workspace_deadline(ws_s.clone(), None).unwrap();
         let text = std::fs::read_to_string(ws.join("alix.local.toml")).unwrap();
         assert!(!text.contains("deadline"));
-        assert!(workspace_deadline(root_s.clone(), ws_s, Some(T0)).is_none());
-        let rows = list_root(root_s, Some(T0));
+        assert!(list_members(root_s.clone(), ws_s, Some(T0), false).deadline.is_none());
+        let rows = list_root(root_s, Some(T0), false).entries;
         assert!(
             rows.iter()
                 .find(|r| r.is_workspace)
@@ -346,7 +395,7 @@ mod tests {
         let root = dir.path();
         write_deck(root.join("d.md"), "## q\na\n");
 
-        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0));
+        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0), false).entries;
         let row = rows.iter().find(|r| r.title == "d").expect("listed");
         assert_eq!(alix::depth::Depth::default(), row.last_depth);
 
@@ -359,7 +408,7 @@ mod tests {
         store.set_last_depth(&deck_id, alix::depth::Depth::Reconstruct);
         store.save().unwrap();
 
-        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0));
+        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0), false).entries;
         let row = rows.iter().find(|r| r.title == "d").expect("listed");
         assert_eq!(alix::depth::Depth::Reconstruct, row.last_depth);
     }

@@ -10,27 +10,49 @@ class PickerBridge implements PickerPort {
   const PickerBridge();
 
   @override
-  List<PickerEntry> listRoot(String root) {
-    return [
-      for (final entry in listing_bridge.listRoot(root: root)) _entry(entry),
-    ];
+  PickerListing listRoot(String root, {required bool profile}) {
+    final screen = listing_bridge.listRoot(root: root, profile: profile);
+    return PickerListing(
+      entries: [for (final entry in screen.entries) _entry(entry)],
+      profile: _profile(screen.profile),
+    );
   }
 
   @override
-  List<PickerEntry> listMembers({required String root, required String dir}) {
-    return [
-      for (final entry in listing_bridge.listMembers(root: root, dir: dir))
-        _entry(entry),
-    ];
-  }
-
-  @override
-  PickerDeadline? workspaceDeadline({
+  PickerListing listMembers({
     required String root,
     required String dir,
+    required bool profile,
   }) {
-    final deadline = listing_bridge.workspaceDeadline(root: root, dir: dir);
-    return deadline == null ? null : _deadline(deadline);
+    final screen = listing_bridge.listMembers(
+      root: root,
+      dir: dir,
+      profile: profile,
+    );
+    final deadline = screen.deadline;
+    return PickerListing(
+      entries: [for (final entry in screen.entries) _entry(entry)],
+      deadline: deadline == null ? null : _deadline(deadline),
+      profile: _profile(screen.profile),
+    );
+  }
+
+  PickerProfile? _profile(listing_bridge.OpenProfile? profile) {
+    if (profile == null) return null;
+    return PickerProfile(
+      libMs: profile.libMs.toInt(),
+      counters: [
+        ('candidates_classified', profile.candidatesClassified.toInt()),
+        ('manifest_reads', profile.manifestReads.toInt()),
+        ('decks_loaded', profile.decksLoaded.toInt()),
+        ('prerequisite_loads', profile.prerequisiteLoads.toInt()),
+        ('id_scans', profile.idScans.toInt()),
+        ('diagram_geometry_reads', profile.diagramGeometryReads.toInt()),
+        ('store_documents_read', profile.storeDocumentsRead.toInt()),
+        ('augment_documents_read', profile.augmentDocumentsRead.toInt()),
+        ('canonicalize_calls', profile.canonicalizeCalls.toInt()),
+      ],
+    );
   }
 
   @override

@@ -403,12 +403,15 @@ web-debug:
 # desktop window (fastest loop: hot reload, no emulator). flutter compiles the
 # embedded Rust core through cargokit either way. Needs the frb toolchain and,
 # for the emulators, ANDROID_HOME (see docs/dev/frb-bridge-setup.md).
+# PROFILE=1 adds --dart-define=ALIX_PROFILE=true: the picker prints one
+# `alix-profile` line per listing call (docs/results/*workspace-open-timing*).
+FLUTTER_DEFINES := $(if $(PROFILE),--dart-define=ALIX_PROFILE=true,)
 phone:
-	@sh scripts/mobile-run.sh alix_phone
+	@ALIX_FLUTTER_ARGS="$(FLUTTER_DEFINES)" sh scripts/mobile-run.sh alix_phone
 tablet:
-	@sh scripts/mobile-run.sh alix_tablet
+	@ALIX_FLUTTER_ARGS="$(FLUTTER_DEFINES)" sh scripts/mobile-run.sh alix_tablet
 desktop:
-	cd mobile/alix && flutter run -d linux
+	cd mobile/alix && flutter run -d linux $(FLUTTER_DEFINES)
 
 # Assert the frb toolchain-alignment invariants (codegen/Dart/Rust version
 # pins, the two template patches, the NDK the build uses) and fail on drift.
@@ -454,7 +457,7 @@ mobile-test-one:
 # debug-signed unless android/key.properties exists. Smoke-install this on a
 # real phone before tagging mobile-vX.Y.Z (see RELEASING.md).
 apk:
-	cd mobile/alix && flutter build apk --release --target-platform android-arm64
+	cd mobile/alix && flutter build apk --release --target-platform android-arm64 $(FLUTTER_DEFINES)
 	@echo "APK: mobile/alix/build/app/outputs/flutter-apk/app-release.apk"
 
 # The arm64 Android App Bundle for Google Play. Play generates device-specific

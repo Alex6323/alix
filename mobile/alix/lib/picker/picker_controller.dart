@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/picker_port.dart';
 
+const bool kAlixProfile = bool.fromEnvironment('ALIX_PROFILE');
+
 class PickerController extends ChangeNotifier {
   factory PickerController({
     required PickerPort port,
@@ -88,14 +90,44 @@ class PickerController extends ChangeNotifier {
     }
     final dir = _dir;
     if (dir == null) {
-      _entries = List.unmodifiable(_port.listRoot(_root));
+      _entries = List.unmodifiable(
+        _timed(
+          'root',
+          () => _port.listRoot(_root, profile: kAlixProfile),
+        ).entries,
+      );
       final pairedRootDir = _pairedRootDir;
       _pairedRootEntries = pairedRootDir == null
           ? const []
-          : List.unmodifiable(_port.listRoot(pairedRootDir));
+          : List.unmodifiable(
+              _timed(
+                'paired-root',
+                () => _port.listRoot(pairedRootDir, profile: kAlixProfile),
+              ).entries,
+            );
       return;
     }
-    _entries = List.unmodifiable(_port.listMembers(root: _root, dir: dir));
-    _deadline = _port.workspaceDeadline(root: _root, dir: dir);
+    final listing = _timed(
+      'members',
+      () => _port.listMembers(root: _root, dir: dir, profile: kAlixProfile),
+    );
+    _entries = List.unmodifiable(listing.entries);
+    _deadline = listing.deadline;
+  }
+
+  PickerListing _timed(String row, PickerListing Function() call) {
+    if (!kAlixProfile) return call();
+    final stopwatch = Stopwatch()..start();
+    final listing = call();
+    stopwatch.stop();
+    final profile = listing.profile;
+    final counters = profile == null
+        ? ''
+        : profile.counters.map((c) => ' ${c.$1}=${c.$2}').join();
+    debugPrint(
+      'alix-profile $row bridge_ms=${stopwatch.elapsedMilliseconds} '
+      'lib_ms=${profile?.libMs ?? -1}$counters',
+    );
+    return listing;
   }
 }

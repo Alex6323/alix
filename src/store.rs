@@ -11,7 +11,13 @@ use anyhow::{Result as AnyResult, bail};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{card::Card, deck::Deck, depth::Depth, scheduler::Grade};
+use crate::{
+    card::Card,
+    deck::Deck,
+    depth::Depth,
+    profile::{self, Counter},
+    scheduler::Grade,
+};
 
 const HISTORY_CAP: usize = 50;
 
@@ -850,6 +856,7 @@ impl Store {
                 continue;
             };
             let current_subject = expected.get(&deck_id).map(String::as_str);
+            profile::hit(Counter::StoreDocumentsRead);
             let (revision, subject, data) =
                 match read_deck_data(&document_path, &deck_id, current_subject) {
                     Ok(read) => read,

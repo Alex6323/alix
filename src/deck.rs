@@ -12,6 +12,7 @@ use crate::{
     config::Strictness,
     depth::Reveal,
     parser::{self, ParseError},
+    profile::{self, Counter},
     session::{self, Order},
     store::Store,
 };
@@ -432,6 +433,7 @@ pub fn resolve_dep_by_id(
     decks_dir: Option<&Path>,
     requiring_dir: Option<&Path>,
 ) -> Option<PathBuf> {
+    profile::hit(Counter::IdScans);
     let mut seen = HashSet::new();
     for dir in [requiring_dir, decks_dir].into_iter().flatten() {
         if !seen.insert(dir.to_path_buf()) {
@@ -482,10 +484,12 @@ pub fn is_locked(deck: &Deck, decks_dir: Option<&Path>, store: &Store) -> bool {
             let Some(path) = resolve_require(req, decks_dir, deck.path.parent()) else {
                 continue; // missing prerequisite: don't lock on it
             };
+            profile::hit(Counter::CanonicalizeCalls);
             let key = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
             if !visited.insert(key) {
                 continue; // already checked, or a cycle: stop recursing
             }
+            profile::hit(Counter::PrerequisiteLoads);
             let Ok(prereq) = Deck::load(&path) else {
                 continue; // unreadable prerequisite: don't lock on it
             };

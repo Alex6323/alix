@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::{
     deck::{AtRewrite, Deck, DeckError},
+    profile::{self, Counter},
     source::{CitationIntegrity, Excerpt, SourceBase},
 };
 
@@ -1001,6 +1002,7 @@ pub fn resolve_diagrams(
                 unresolved.insert(stamp.fingerprint.clone());
                 continue;
             }
+            profile::hit(Counter::DiagramGeometryReads);
             let Ok(bytes) = std::fs::read(owned.join(&stamp.geometry)) else {
                 unresolved.insert(stamp.fingerprint.clone());
                 continue;

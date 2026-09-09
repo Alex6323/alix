@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/picker/picker_controller.dart';
@@ -5,6 +6,46 @@ import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/picker_port.dart';
 
 void main() {
+  test(
+    'with ALIX_PROFILE the controller prints one alix-profile line per listing',
+    () {
+      const profile = PickerProfile(
+        libMs: 7,
+        counters: [('decks_loaded', 3), ('manifest_reads', 1)],
+      );
+      final lines = <String>[];
+      final previous = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        lines.add(message ?? '');
+      };
+      addTearDown(() => debugPrint = previous);
+
+      PickerController(
+        port: _FakePickerPort(rootEntries: [_entry('a')], profile: profile),
+        root: '/decks',
+      );
+      PickerController(
+        port: _FakePickerPort(memberEntries: [_entry('m')], profile: profile),
+        root: '/decks',
+        dir: '/decks/ws',
+      );
+
+      expect(lines, [
+        matches(
+          RegExp(
+            r'^alix-profile root bridge_ms=\d+ lib_ms=7 decks_loaded=3 manifest_reads=1$',
+          ),
+        ),
+        matches(
+          RegExp(
+            r'^alix-profile members bridge_ms=\d+ lib_ms=7 decks_loaded=3 manifest_reads=1$',
+          ),
+        ),
+      ]);
+    },
+    skip: kAlixProfile ? false : 'needs --dart-define=ALIX_PROFILE=true',
+  );
+
   test('root loading and named mutations publish one coherent state', () {
     final port = _FakePickerPort(rootEntries: [_entry('active')]);
     final controller = PickerController(port: port, root: '/decks');
@@ -109,32 +150,34 @@ class _FakePickerPort implements PickerPort {
     this.rootEntries = const [],
     this.memberEntries = const [],
     this.deadline,
+    this.profile,
   });
 
   List<PickerEntry> rootEntries;
   List<PickerEntry> memberEntries;
   PickerDeadline? deadline;
+  PickerProfile? profile;
   int listRootCalls = 0;
   final List<(String, String?)> deadlineWrites = [];
   final List<String> tutorialRoots = [];
 
   @override
-  List<PickerEntry> listRoot(String root) {
+  PickerListing listRoot(String root, {required bool profile}) {
     listRootCalls++;
-    return rootEntries;
+    return PickerListing(entries: rootEntries, profile: this.profile);
   }
 
   @override
-  List<PickerEntry> listMembers({required String root, required String dir}) {
-    return memberEntries;
-  }
-
-  @override
-  PickerDeadline? workspaceDeadline({
+  PickerListing listMembers({
     required String root,
     required String dir,
+    required bool profile,
   }) {
-    return deadline;
+    return PickerListing(
+      entries: memberEntries,
+      deadline: deadline,
+      profile: this.profile,
+    );
   }
 
   @override

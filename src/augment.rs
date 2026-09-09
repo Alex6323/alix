@@ -10,7 +10,13 @@ use std::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{answer::Mode, card::Card, deck::Deck, depth::Reveal};
+use crate::{
+    answer::Mode,
+    card::Card,
+    deck::Deck,
+    depth::Reveal,
+    profile::{self, Counter},
+};
 
 const DECK_DOCUMENT_VERSION: u32 = 1;
 
@@ -482,6 +488,7 @@ impl AugmentCache {
             else {
                 continue;
             };
+            profile::hit(Counter::AugmentDocumentsRead);
             let (revision, data) = read_deck_data(&document_path, &deck_id)?;
             for (key, value) in &data.cards {
                 if cards.insert(key.clone(), value.clone()).is_some()

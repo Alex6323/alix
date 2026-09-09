@@ -45,4 +45,5 @@ if ! serial=$(serial_for_avd); then
 fi
 
 echo "running on $avd ($serial)"
-cd "$(dirname "$0")/../mobile/alix" && exec flutter run -d "$serial"
+# shellcheck disable=SC2086 # ALIX_FLUTTER_ARGS is a word list (make PROFILE=1)
+cd "$(dirname "$0")/../mobile/alix" && exec flutter run -d "$serial" ${ALIX_FLUTTER_ARGS:-}
