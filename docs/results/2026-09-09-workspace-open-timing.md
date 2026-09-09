@@ -177,11 +177,18 @@ same method; the full parse measured 217 ms in that run):
 So card building is about 86 percent of the parse. Inside it, the content
 fingerprint (the hash the tutor and the augment cache key on, computed by
 stripping inline markup from every card's text) is computed twice per
-card at parse time: a scratch call counter saw 4432 calls in one full
-parse of the 2216 cards, once in `Card::plain` and once as the parser's
-block-level key over the same lines for a plain card. At the single-pass
-cost above that is about 124 ms of the 217 ms parse, an estimate from the
-one-pass timing rather than a direct measurement of the parse's share.
+authored block at parse time: a scratch call counter saw 4432 calls in
+one full parse that returned 2216 cards. Codex's independent cross-check
+(direct in-function timing in an isolated clone, 21 warm release runs,
+same workspace) confirmed the count and split it: 2210 calls in
+`Card::plain` over the built card's front and back (65 ms), 2210 calls
+for the parser's block-level key over the front plus the cover-masked
+raw answer lines (84 ms), and 12 recomputations for region cards
+(0.2 ms); the 4432 equals two per returned card only in aggregate, since
+six blank-bearing templates are replaced by the twelve region cards. The
+hash is 149 ms of the 221 ms `Deck::load` there, 67.5 percent, and the
+block-key pass costs more than the constructor's pass because it hashes
+the raw lines rather than the derived display lines.
 
 ## Not measured
 
