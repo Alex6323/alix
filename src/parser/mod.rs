@@ -3648,6 +3648,16 @@ mod tests {
             (r"/a\(b", Some(5), "an escaped open does not add depth"),
             ("/a(b", None, "an unbalanced bare destination is invalid"),
             ("/a\u{7}b", None, "an ASCII control is invalid"),
+            (
+                " dest",
+                None,
+                "an empty bare destination is not a destination",
+            ),
+            (
+                "(a b)",
+                None,
+                "whitespace inside open parentheses ends no destination",
+            ),
             ("/a b", Some(2), "whitespace ends a bare destination"),
         ] {
             let chars: Vec<char> = text.chars().collect();
