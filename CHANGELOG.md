@@ -70,6 +70,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A workspace deck's drawer counts the cards a session actually drills. It
+  loaded the member deck without the workspace manifest's `[defaults]`, so
+  under `direction = both` it described half the deck: the card total, the
+  seen/learned/retired funnel, and every heatmap cell.
+
 - Listing a folder of table decks no longer takes time quadratic in the rows.
   Deciding whether a table card can be shown as a multiple-choice question
   rebuilt that card's distractor pool by scanning every card in the deck, once

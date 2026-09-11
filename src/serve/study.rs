@@ -1441,8 +1441,10 @@ impl StudyState {
     }
 
     fn deck_drawer(&mut self, path: PathBuf) -> DeckDrawerDto {
+        let root = workspace::content_root(&path);
+        let (_, _, defaults, _, _) = workspace::read_manifest(&root.join(workspace::MANIFEST));
         match (
-            Deck::load(&path),
+            Deck::load_with_defaults(&path, &defaults),
             assemble::store_for(
                 std::slice::from_ref(&path),
                 self.config.cfg.instance_store.as_deref(),
@@ -1452,7 +1454,6 @@ impl StudyState {
                 let Ok(augment) = AugmentCache::open_for_deck(&deck) else {
                     return DeckDrawerDto::default();
                 };
-                let root = workspace::content_root(&path);
                 let retire_after_days = self
                     .config
                     .review_cfg

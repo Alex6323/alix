@@ -3208,6 +3208,46 @@ fn post_api_deck_drawer_with_an_unknown_deck_still_returns_the_empty_default_dto
     assert!(body["description"].is_null(), "body: {body}");
 }
 
+/// The drawer loads the member deck itself, so a workspace manifest's
+/// `[defaults]` must reach that load: without them the deck carries half the
+/// cards a session drills, and every funnel count and heatmap cell describes a
+/// deck the learner never sees.
+#[test]
+fn post_api_deck_drawer_applies_a_workspace_manifests_defaults() {
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| {
+        let members = dir.join("reversible").join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(
+            dir.join("reversible").join("alix.toml"),
+            "title = \"Reversible\"\n\n[defaults]\ndirection = \"both\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            members.join("vocab.md"),
+            "---\nformat-version: 1\nid: \"deck-reversible\"\n---\n## hund\ndog\n<!-- id: card-rvhund -->\n",
+        )
+        .unwrap();
+    });
+
+    let resp = post_json(
+        &base,
+        "/api/deck-drawer",
+        r#"{"deck":"reversible/vocab.md"}"#,
+    );
+
+    assert_eq!(200, resp.status);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        2, body["total"],
+        "one authored card under `direction = both` is two cards: {body}"
+    );
+    assert_eq!(
+        2,
+        body["heatmap"].as_array().unwrap().len(),
+        "one heatmap cell per direction: {body}"
+    );
+}
+
 // ── Reset ───────────────────────────────────────────────────────────────
 
 #[test]
