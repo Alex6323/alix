@@ -950,24 +950,12 @@ fn flush_prose(
 }
 
 pub fn split_sentences(text: &str) -> Vec<String> {
-    let chars: Vec<char> = text.chars().collect();
-    let mut sentences = Vec::new();
-    let mut start = 0;
-    for i in 0..chars.len() {
-        let ends_sentence = chars[i] == '.' && chars.get(i + 1).is_none_or(|c| c.is_whitespace());
-        if ends_sentence {
-            let sentence: String = chars[start..=i].iter().collect();
-            if !sentence.trim().is_empty() {
-                sentences.push(sentence.trim().to_string());
-            }
-            start = i + 1;
-        }
-    }
-    let tail: String = chars[start..].iter().collect();
-    if !tail.trim().is_empty() {
-        sentences.push(tail.trim().to_string());
-    }
-    sentences
+    use unicode_segmentation::UnicodeSegmentation;
+    text.unicode_sentences()
+        .map(str::trim)
+        .filter(|sentence| !sentence.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1036,6 +1024,34 @@ mod tests {
         ContentUnit::Sentence {
             text: text.into(),
             runs: crate::inline::parse_inline(text),
+        }
+    }
+
+    /// A note body is split into one paragraph per sentence by every client, so
+    /// a break in the wrong place is visible as a paragraph gap mid-sentence.
+    #[test]
+    fn law_a_note_body_breaks_only_where_a_sentence_really_ends() {
+        let cases = [
+            (
+                "lighter inclusion structure (e.g. a Merkle path) was considered.",
+                1,
+            ),
+            ("The first value, i.e. m[\"k\"][0].", 1),
+            ("See Fig. 4 for the layout.", 1),
+            ("Version 1.2.3 is pinned.", 1),
+            ("The file src/deck.rs holds it.", 1),
+            ("One sentence with no terminator", 1),
+            ("First one. Second one.", 2),
+            ("Is it due? Then it shows. Otherwise not!", 3),
+        ];
+        for (body, expected) in cases {
+            let units = note_units(&card_with_note(body));
+            assert_eq!(
+                expected,
+                units.len(),
+                "note {body:?} produced {} units: {units:?}",
+                units.len()
+            );
         }
     }
 

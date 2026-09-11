@@ -70,6 +70,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A note no longer breaks into two paragraphs in the middle of a sentence. Note
+  bodies are split one paragraph per sentence, and the splitter ended a sentence
+  at any full stop followed by a space, so "structure (e.g. a Merkle path) was
+  considered" rendered as two paragraphs; it also never broke on `?` or `!`.
+  Sentence bounds now come from Unicode UAX#29, which keeps abbreviations and
+  decimals whole and does break on question and exclamation marks.
+
 - A workspace deck's drawer counts the cards a session actually drills. It
   loaded the member deck without the workspace manifest's `[defaults]`, so
   under `direction = both` it described half the deck: the card total, the
