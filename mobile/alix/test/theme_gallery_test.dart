@@ -146,6 +146,20 @@ void main() {
     expect(failures, isEmpty, reason: 'a note wash may not swallow its text');
   });
 
+  // Same 4.0 floor and the same reason as the note-wash law above: AA would
+  // mean retuning a shipped palette. Inline code is the case that needs it,
+  // because in the answer region its colour is the only signal it has.
+  test('code ink stays off the card surface in every theme', () {
+    final failures = <String, double>{};
+    for (final theme in alixThemes) {
+      final tokens = theme.data.extension<AlixTokens>()!;
+      final ratio = _contrast(tokens.code, theme.data.colorScheme.surface);
+      if (ratio < 4.0) failures[theme.id] = ratio;
+    }
+
+    expect(failures, isEmpty, reason: 'code ink may not sink into the card');
+  });
+
   for (final theme in alixThemes) {
     group('${theme.id}: registry matches web/shared/theme.css', () {
       final raw = cssBlocks[theme.id];
@@ -183,6 +197,7 @@ void main() {
         expect(tokens.text, extra('text'), reason: '--text');
         expect(tokens.noteBorder, core('note-border'), reason: '--note-border');
         expect(tokens.noteInk, core('note-ink'), reason: '--note-ink');
+        expect(tokens.code, core('code'), reason: '--code');
 
         expect(scheme.surface, core('void'), reason: '--void');
         expect(scheme.onSurface, core('ink'), reason: '--ink');

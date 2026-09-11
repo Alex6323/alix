@@ -72,6 +72,7 @@ void main() {
     again: Color(0xFFFF0000),
     noteBorder: Color(0xFF123456),
     noteInk: Color(0xFF654321),
+    code: Color(0xFF0088FF),
     // text / faint / accentInk intentionally omitted.
   );
 
@@ -100,6 +101,7 @@ void main() {
       again: probe.again,
       noteBorder: probe.noteBorder,
       noteInk: probe.noteInk,
+      code: probe.code,
       text: const Color(0xFFEEDDCC),
       faint: const Color(0xFFBBAA99),
       accentInk: const Color(0xFF998877),

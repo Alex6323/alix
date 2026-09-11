@@ -90,6 +90,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   dropped the card out of Recognize entirely; candidates are now compared
   before the pick, so a colliding one is passed over instead.
 
+- Inline code on the phone is painted in the theme's code colour, so a code
+  span is distinguishable where the surrounding text is already monospace (the
+  answer and every progressive reveal step); it was distinguished by font
+  family alone, which those regions had already spent.
+
 - Opening a workspace on the phone, and listing one anywhere, parses each
   member deck once instead of two or three times, classifies the folder once,
   and no longer re-parses a prerequisite chain for every member that depends

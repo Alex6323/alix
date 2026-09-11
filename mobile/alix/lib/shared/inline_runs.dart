@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:alix_mobile/shared/inline_models.dart';
+import 'package:alix_mobile/theme.dart';
 
 const _mono = 'IBM Plex Mono';
 
@@ -25,12 +26,13 @@ class InlineRuns extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final codeColor = Theme.of(context).alix.code;
     final blocks = <Widget>[];
     var inline = <InlineRunModel>[];
 
     void flushInline() {
       if (inline.isEmpty) return;
-      blocks.add(_inlineText(inline));
+      blocks.add(_inlineText(inline, codeColor));
       inline = <InlineRunModel>[];
     }
 
@@ -58,14 +60,18 @@ class InlineRuns extends StatelessWidget {
     );
   }
 
-  Widget _inlineText(List<InlineRunModel> inline) {
+  Widget _inlineText(List<InlineRunModel> inline, Color codeColor) {
     final standaloneMath = inline.length == 1 && inline.single.math != null;
     return Text.rich(
       TextSpan(
         style: style,
         children: [
           for (final run in inline)
-            ..._inlineSpans(run, standaloneMath: standaloneMath),
+            ..._inlineSpans(
+              run,
+              standaloneMath: standaloneMath,
+              codeColor: codeColor,
+            ),
         ],
       ),
       textAlign: textAlign,
@@ -76,6 +82,7 @@ class InlineRuns extends StatelessWidget {
   List<InlineSpan> _inlineSpans(
     InlineRunModel run, {
     required bool standaloneMath,
+    required Color codeColor,
   }) {
     final math = run.math;
     if (math != null) {
@@ -106,18 +113,21 @@ class InlineRuns extends StatelessWidget {
       return _mathErrorSpans(run);
     }
     if (run.sub || run.sup) {
-      return [_scriptSpan(run)];
+      return [_scriptSpan(run, codeColor)];
     }
     if (!contextHoles) {
-      return [TextSpan(text: run.text, style: _runStyle(run))];
+      return [TextSpan(text: run.text, style: _runStyle(run, codeColor))];
     }
-    return _contextSpans(run);
+    return _contextSpans(run, codeColor);
   }
 
-  InlineSpan _scriptSpan(InlineRunModel run) {
+  InlineSpan _scriptSpan(InlineRunModel run, Color codeColor) {
     final Widget text = contextHoles && _holeMarker.hasMatch(run.text)
-        ? Text.rich(TextSpan(children: _contextSpans(run)), softWrap: false)
-        : Text(run.text, style: _runStyle(run), softWrap: false);
+        ? Text.rich(
+            TextSpan(children: _contextSpans(run, codeColor)),
+            softWrap: false,
+          )
+        : Text(run.text, style: _runStyle(run, codeColor), softWrap: false);
     if (run.sup) {
       return WidgetSpan(
         alignment: PlaceholderAlignment.aboveBaseline,
@@ -137,7 +147,7 @@ class InlineRuns extends StatelessWidget {
 
   static final _holeMarker = RegExp('⍰|⬚');
 
-  List<InlineSpan> _contextSpans(InlineRunModel run) {
+  List<InlineSpan> _contextSpans(InlineRunModel run, Color codeColor) {
     final spans = <InlineSpan>[];
     final marker = _holeMarker;
     var start = 0;
@@ -146,7 +156,7 @@ class InlineRuns extends StatelessWidget {
         spans.add(
           TextSpan(
             text: run.text.substring(start, match.start),
-            style: _runStyle(run),
+            style: _runStyle(run, codeColor),
           ),
         );
       }
@@ -154,11 +164,11 @@ class InlineRuns extends StatelessWidget {
       spans.add(
         TextSpan(
           text: text,
-          style: _runStyle(run).copyWith(
+          style: _runStyle(run, codeColor).copyWith(
             color: text == '⍰' ? holeColor : mutedHoleColor,
             fontWeight: text == '⍰'
                 ? FontWeight.w700
-                : _runStyle(run).fontWeight,
+                : _runStyle(run, codeColor).fontWeight,
           ),
         ),
       );
@@ -166,7 +176,10 @@ class InlineRuns extends StatelessWidget {
     }
     if (start < run.text.length) {
       spans.add(
-        TextSpan(text: run.text.substring(start), style: _runStyle(run)),
+        TextSpan(
+          text: run.text.substring(start),
+          style: _runStyle(run, codeColor),
+        ),
       );
     }
     return spans;
@@ -223,7 +236,7 @@ class InlineRuns extends StatelessWidget {
     );
   }
 
-  TextStyle _runStyle(InlineRunModel run) {
+  TextStyle _runStyle(InlineRunModel run, Color codeColor) {
     final decorations = [
       if (run.strike) TextDecoration.lineThrough,
       if (run.link || run.ins) TextDecoration.underline,
@@ -232,6 +245,7 @@ class InlineRuns extends StatelessWidget {
         ? (style.fontSize ?? 14) * 0.75
         : style.fontSize;
     return style.copyWith(
+      color: run.code ? codeColor : style.color,
       fontFamily: run.code ? _mono : style.fontFamily,
       fontWeight: run.bold ? FontWeight.w700 : style.fontWeight,
       fontStyle: run.italic ? FontStyle.italic : style.fontStyle,

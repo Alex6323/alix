@@ -22,6 +22,7 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
     required this.text,
     required this.noteBorder,
     required this.noteInk,
+    required this.code,
   });
 
   /// The grade trio (--good / --warn / --again): pass green, partial
@@ -46,6 +47,10 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
   final Color noteBorder;
   final Color noteInk;
 
+  /// Inline code's ink (--code). The answer region is already monospace, so
+  /// colour is the only signal a code span has left there.
+  final Color code;
+
   @override
   AlixTokens copyWith({
     Color? good,
@@ -59,6 +64,7 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
     Color? text,
     Color? noteBorder,
     Color? noteInk,
+    Color? code,
   }) {
     return AlixTokens(
       good: good ?? this.good,
@@ -72,6 +78,7 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
       text: text ?? this.text,
       noteBorder: noteBorder ?? this.noteBorder,
       noteInk: noteInk ?? this.noteInk,
+      code: code ?? this.code,
     );
   }
 
@@ -93,6 +100,7 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
       text: mix(text, other.text),
       noteBorder: mix(noteBorder, other.noteBorder),
       noteInk: mix(noteInk, other.noteInk),
+      code: mix(code, other.code),
     );
   }
 }
@@ -199,6 +207,7 @@ class ThemeVars {
     required this.again, // --again
     required this.noteBorder, // --note-border
     required this.noteInk, // --note-ink
+    required this.code, // --code
     this.text, // --text, omitted falls back to dark's explicit --text
     this.faint, // --faint, omitted falls back to dark's explicit --faint
     this.accentInk, // --accent-ink, omitted falls back to dark's --accent-ink
@@ -215,6 +224,7 @@ class ThemeVars {
   final Color again;
   final Color noteBorder;
   final Color noteInk;
+  final Color code;
   final Color? text;
   final Color? faint;
   final Color? accentInk;
@@ -233,6 +243,7 @@ const _darkVars = ThemeVars(
   again: Color(0xFFE88F8F),
   noteBorder: Color(0xFFE6B45C),
   noteInk: Color(0xFFF0DCAE),
+  code: Color(0xFF78B9D6),
   text: Color(0xFFC9CDD8),
   faint: Color(0xFF6B7085),
   accentInk: Color(0xFF08131A),
@@ -251,6 +262,7 @@ const _lightVars = ThemeVars(
   again: Color(0xFFD23B34),
   noteBorder: Color(0xFFC98A12),
   noteInk: Color(0xFF6A5117),
+  code: Color(0xFF176B8A),
   text: Color(0xFF3B3B48),
   faint: Color(0xFF9696A5),
   accentInk: Color(0xFFFFFFFF),
@@ -269,6 +281,7 @@ const _nordVars = ThemeVars(
   again: Color(0xFFBF616A),
   noteBorder: Color(0xFFEBCB8B),
   noteInk: Color(0xFFECEFF4),
+  code: Color(0xFF88C0D0),
   text: Color(0xFFD8DEE9),
   faint: Color(0xFF7B869C),
   accentInk: Color(0xFF10202A),
@@ -287,6 +300,7 @@ const _solarizedLightVars = ThemeVars(
   again: Color(0xFFDC322F),
   noteBorder: Color(0xFFB58900),
   noteInk: Color(0xFF073642),
+  code: Color(0xFF176F9C),
   text: Color(0xFF586E75),
   faint: Color(0xFF93A1A1),
   accentInk: Color(0xFFFFFFFF),
@@ -305,6 +319,7 @@ const _githubDarkVars = ThemeVars(
   again: Color(0xFFF85149),
   noteBorder: Color(0xFFD29922),
   noteInk: Color(0xFFE6EDF3),
+  code: Color(0xFF58A6FF),
 );
 
 /// GitHub Light, theme.css `[data-theme="github-light"]`.
@@ -320,6 +335,7 @@ const _githubLightVars = ThemeVars(
   again: Color(0xFFD1242F),
   noteBorder: Color(0xFF9A6700),
   noteInk: Color(0xFF1F2328),
+  code: Color(0xFF0969DA),
   text: Color(0xFF3D444D),
   faint: Color(0xFF8C959F),
   accentInk: Color(0xFFFFFFFF),
@@ -338,6 +354,7 @@ const _oneDarkVars = ThemeVars(
   again: Color(0xFFE06C75),
   noteBorder: Color(0xFFE5C07B),
   noteInk: Color(0xFFDCDFE4),
+  code: Color(0xFF61AFEF),
   text: Color(0xFFC8CCD4),
   faint: Color(0xFF6B727D),
   accentInk: Color(0xFF081A2A),
@@ -356,6 +373,7 @@ const _draculaVars = ThemeVars(
   again: Color(0xFFFF5555),
   noteBorder: Color(0xFFF1FA8C),
   noteInk: Color(0xFFF8F8F2),
+  code: Color(0xFF8BE9FD),
   text: Color(0xFFD4D4E0),
   faint: Color(0xFF6D6D8A),
   accentInk: Color(0xFF1C142B),
@@ -374,6 +392,7 @@ const _monokaiVars = ThemeVars(
   again: Color(0xFFF92672),
   noteBorder: Color(0xFFE6DB74),
   noteInk: Color(0xFFF8F8F2),
+  code: Color(0xFF66D9EF),
 );
 
 /// Catppuccin Mocha, theme.css `[data-theme="catppuccin-mocha"]`.
@@ -389,6 +408,7 @@ const _catppuccinMochaVars = ThemeVars(
   again: Color(0xFFF38BA8),
   noteBorder: Color(0xFFF9E2AF),
   noteInk: Color(0xFFCDD6F4),
+  code: Color(0xFF89B4FA),
 );
 
 /// Catppuccin Latte, theme.css `[data-theme="catppuccin-latte"]`.
@@ -404,6 +424,7 @@ const _catppuccinLatteVars = ThemeVars(
   again: Color(0xFFD20F39),
   noteBorder: Color(0xFFDF8E1D),
   noteInk: Color(0xFF4C4F69),
+  code: Color(0xFF1E66F5),
   text: Color(0xFF5C5F77),
   faint: Color(0xFF8C8FA1),
   accentInk: Color(0xFFFFFFFF),
@@ -422,6 +443,7 @@ const _tokyoNightVars = ThemeVars(
   again: Color(0xFFF7768E),
   noteBorder: Color(0xFFE0AF68),
   noteInk: Color(0xFFC0CAF5),
+  code: Color(0xFF7AA2F7),
 );
 
 /// Solarized Dark, theme.css `[data-theme="solarized-dark"]`.
@@ -437,6 +459,7 @@ const _solarizedDarkVars = ThemeVars(
   again: Color(0xFFDC322F),
   noteBorder: Color(0xFFB58900),
   noteInk: Color(0xFF839496),
+  code: Color(0xFF268BD2),
 );
 
 /// Gruvbox Dark, theme.css `[data-theme="gruvbox-dark"]`.
@@ -452,6 +475,7 @@ const _gruvboxDarkVars = ThemeVars(
   again: Color(0xFFFB4934),
   noteBorder: Color(0xFFFABD2F),
   noteInk: Color(0xFFFBF1C7),
+  code: Color(0xFF83A598),
   text: Color(0xFFEBDBB2),
   faint: Color(0xFF7C6F64),
   accentInk: Color(0xFF2A2000),
@@ -470,6 +494,7 @@ const _gruvboxLightVars = ThemeVars(
   again: Color(0xFFCC241D),
   noteBorder: Color(0xFFD79921),
   noteInk: Color(0xFF3C3836),
+  code: Color(0xFF076678),
   text: Color(0xFF504945),
   faint: Color(0xFF7C6F64),
   accentInk: Color(0xFFFFFFFF),
@@ -488,6 +513,7 @@ const _ayuDarkVars = ThemeVars(
   again: Color(0xFFF07178),
   noteBorder: Color(0xFFFFB454),
   noteInk: Color(0xFFBFBDB6),
+  code: Color(0xFF59C2FF),
 );
 
 /// Rosé Pine, theme.css `[data-theme="rose-pine"]`.
@@ -503,6 +529,7 @@ const _rosePineVars = ThemeVars(
   again: Color(0xFFEB6F92),
   noteBorder: Color(0xFFF6C177),
   noteInk: Color(0xFFE0DEF4),
+  code: Color(0xFF9CCFD8),
 );
 
 /// Everforest Dark, theme.css `[data-theme="everforest-dark"]`.
@@ -518,6 +545,7 @@ const _everforestDarkVars = ThemeVars(
   again: Color(0xFFE67E80),
   noteBorder: Color(0xFFDBBC7F),
   noteInk: Color(0xFFD3C6AA),
+  code: Color(0xFF7FBBB3),
 );
 
 /// A registered theme: id + display name mirror theme.js's THEMES tuple
@@ -681,6 +709,7 @@ AlixTokens _tokensFromVars(ThemeVars v) => AlixTokens(
   text: v.text ?? _darkVars.text!,
   noteBorder: v.noteBorder,
   noteInk: v.noteInk,
+  code: v.code,
 );
 
 /// Builds a full ThemeData from a var map: AlixTokens plus a ColorScheme

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/shared/inline_runs.dart';
+import 'package:alix_mobile/theme.dart';
 
 const _svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="12" '
@@ -291,5 +292,67 @@ void main() {
     expect(active.style!.fontWeight, FontWeight.w700);
     expect(hidden.style!.color, const Color(0xFF777777));
     expect(find.byType(SvgPicture), findsOneWidget);
+  });
+
+  testWidgets('a code run takes the theme code ink under a mono base style', (
+    tester,
+  ) async {
+    const base = Color(0xFFEEEEEE);
+    for (final theme in alixThemes) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme.data,
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 320,
+                child: InlineRuns(
+                  runs: [
+                    textRun('it trusts '),
+                    textRun('block_fingerprint', code: true),
+                  ],
+                  style: const TextStyle(
+                    fontFamily: 'IBM Plex Mono',
+                    fontSize: 18,
+                    color: base,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final spans = tester
+          .widgetList<RichText>(
+            find.descendant(
+              of: find.byType(InlineRuns),
+              matching: find.byType(RichText),
+            ),
+          )
+          .expand((rich) => textSpans(rich.text))
+          .toList();
+      final code = spans.singleWhere(
+        (span) => span.text == 'block_fingerprint',
+      );
+      final prose = spans.singleWhere((span) => span.text == 'it trusts ');
+
+      expect(
+        code.style?.color,
+        theme.data.alix.code,
+        reason: '${theme.id}: a code run takes --code',
+      );
+      expect(
+        prose.style?.color,
+        base,
+        reason: '${theme.id}: prose keeps the caller\'s ink',
+      );
+      expect(
+        code.style?.color,
+        isNot(prose.style?.color),
+        reason: '${theme.id}: a code run may not vanish into mono prose',
+      );
+    }
   });
 }
