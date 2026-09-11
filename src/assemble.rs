@@ -11,6 +11,7 @@ use crate::augment;
 use crate::{
     augment::{AugmentCache, Topology, TopologyOrder},
     card::Card,
+    choice::ColumnPools,
     config::{AskConfig, ReviewConfig},
     deck::{Deck, DeckSettings, SourceLayers},
     depth::{Depth, default_depth},
@@ -482,7 +483,7 @@ pub fn select(
 
     let depth = depth_sel
         .or_else(|| store.last_depth(deck_id.as_ref()))
-        .unwrap_or_else(|| default_depth(&cards, &augment));
+        .unwrap_or_else(|| default_depth(&cards, &augment, &ColumnPools::new(&cards)));
     let options = SessionOptions {
         max_session: opts.session.unwrap_or(cfg.pacing.max_session),
         new_cards_percent: cfg.pacing.new_cards_percent,
@@ -510,9 +511,10 @@ pub fn select(
     let cards = if depth == Depth::Recognize {
         // The predicate needs the whole deck (a table card's pool is its
         // sibling rows), so decide before partition consumes the vec.
+        let pools = crate::choice::ColumnPools::new(&cards);
         let recognizable: Vec<bool> = cards
             .iter()
-            .map(|c| crate::depth::card_recognizable(c, &augment, &cards))
+            .map(|c| crate::depth::card_recognizable(c, &augment, &pools))
             .collect();
         let mut kept = Vec::new();
         for (card, keep) in cards.into_iter().zip(recognizable) {

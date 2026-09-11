@@ -1,8 +1,9 @@
 pub mod sample;
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     hash::{Hash, Hasher},
+    sync::Arc,
 };
 
 use crate::card::Card;
@@ -109,12 +110,11 @@ fn distinct_distractors(card: &Card, ai_distractors: &[String]) -> Vec<String> {
     chosen
 }
 
-pub fn build(card: &Card, seed: u64, ai_distractors: &[String]) -> Option<ChoiceQuestion> {
-    let mut options = distinct_distractors(card, ai_distractors);
-    if options.len() < NUM_OPTIONS - 1 {
-        return None;
-    }
-    let correct_text = answer_text(card);
+fn single_answer_question(
+    correct_text: String,
+    mut options: Vec<String>,
+    seed: u64,
+) -> Option<ChoiceQuestion> {
     options.push(correct_text.clone());
     let mut rng = Rng::new(seed);
     shuffle(&mut options, &mut rng);
@@ -125,6 +125,14 @@ pub fn build(card: &Card, seed: u64, ai_distractors: &[String]) -> Option<Choice
         multiple: false,
         correct_set: vec![correct],
     })
+}
+
+pub fn build(card: &Card, seed: u64, ai_distractors: &[String]) -> Option<ChoiceQuestion> {
+    let options = distinct_distractors(card, ai_distractors);
+    if options.len() < NUM_OPTIONS - 1 {
+        return None;
+    }
+    single_answer_question(answer_text(card), options, seed)
 }
 
 pub fn build_authored(
@@ -146,16 +154,7 @@ pub fn build_authored(
     if options.is_empty() {
         return None;
     }
-    options.push(correct_text.clone());
-    let mut rng = Rng::new(seed);
-    shuffle(&mut options, &mut rng);
-    let correct = options.iter().position(|option| *option == correct_text)?;
-    Some(ChoiceQuestion {
-        options,
-        correct,
-        multiple: false,
-        correct_set: vec![correct],
-    })
+    single_answer_question(correct_text, options, seed)
 }
 
 pub fn build_authored_multi(
@@ -210,38 +209,121 @@ pub fn can_build(card: &Card, ai_distractors: &[String]) -> bool {
     distinct_distractors(card, ai_distractors).len() == NUM_OPTIONS - 1
 }
 
-/// A table row card's distractor pool: its own column, i.e. sibling rows of
-/// the same container in the same direction (a reversed sibling's answer IS
-/// the front column).
-pub fn column_pool(card: &Card, deck_cards: &[Card]) -> Vec<String> {
+/// A table row card's distractor pool: sibling rows of the same container in
+/// the same direction (a reversed sibling's answer is its front column).
+fn eligible_pool(card: &Card, deck_cards: &[Card]) -> Vec<String> {
     let (Some(token), Some(row)) = (card.token.as_deref(), card.row.as_deref()) else {
         return Vec::new();
     };
-    deck_cards
-        .iter()
-        .filter(|sibling| {
-            sibling.token.as_deref() == Some(token)
-                && sibling.reversed == card.reversed
-                && sibling.row.as_deref().is_some_and(|r| r != row)
-        })
-        .map(answer_text)
-        .collect()
+    let mut seen: HashSet<String> = HashSet::from([content(&answer_text(card), card)]);
+    let mut pool = Vec::new();
+    for sibling in deck_cards {
+        crate::profile::hit(crate::profile::Counter::DistractorCandidatesScanned);
+        let is_sibling = sibling.token.as_deref() == Some(token)
+            && sibling.reversed == card.reversed
+            && sibling.row.as_deref().is_some_and(|r| r != row);
+        if !is_sibling {
+            continue;
+        }
+        let text = answer_text(sibling);
+        let key = content(&text, sibling);
+        if key.is_empty() || !seen.insert(key) {
+            continue;
+        }
+        pool.push(text.trim().to_string());
+    }
+    pool
+}
+
+/// Every candidate a deck's table rows offer, indexed once for the whole deck.
+#[derive(Debug, Default)]
+pub struct ColumnPools {
+    forward: HashMap<Arc<str>, ColumnGroup>,
+    reversed: HashMap<Arc<str>, ColumnGroup>,
+}
+
+#[derive(Debug, Default)]
+struct ColumnGroup {
+    occurrences: HashMap<String, usize>,
+    rows: HashMap<Arc<str>, Vec<String>>,
+}
+
+impl ColumnPools {
+    pub fn new(deck_cards: &[Card]) -> Self {
+        let mut pools = Self::default();
+        for card in deck_cards {
+            let (Some(token), Some(row)) = (card.token.clone(), card.row.clone()) else {
+                continue;
+            };
+            crate::profile::hit(crate::profile::Counter::DistractorCandidatesScanned);
+            let text = content(&answer_text(card), card);
+            if text.is_empty() {
+                continue;
+            }
+            let direction = if card.reversed {
+                &mut pools.reversed
+            } else {
+                &mut pools.forward
+            };
+            let group = direction.entry(token).or_default();
+            *group.occurrences.entry(text.clone()).or_default() += 1;
+            group.rows.entry(row).or_default().push(text);
+        }
+        pools
+    }
+
+    pub fn can_sample(&self, card: &Card) -> bool {
+        if card.sampling == Some(false) {
+            return false;
+        }
+        if card.region.is_some() && !card.is_text_blank_card() {
+            return false;
+        }
+        self.candidate_count(card) >= NUM_OPTIONS - 1
+    }
+
+    // The length `eligible_pool` would return: the group's distinct answers,
+    // less the card's own, less every answer no row but the card's carries.
+    fn candidate_count(&self, card: &Card) -> usize {
+        let (Some(token), Some(row)) = (card.token.as_deref(), card.row.as_deref()) else {
+            return 0;
+        };
+        let direction = if card.reversed {
+            &self.reversed
+        } else {
+            &self.forward
+        };
+        let Some(group) = direction.get(token) else {
+            return 0;
+        };
+        let answer = content(&answer_text(card), card);
+        let mut count = group.occurrences.len();
+        if group.occurrences.contains_key(&answer) {
+            count -= 1;
+        }
+        let Some(own_row) = group.rows.get(row) else {
+            return count;
+        };
+        let mut own: HashMap<&str, usize> = HashMap::new();
+        for text in own_row {
+            *own.entry(text.as_str()).or_default() += 1;
+        }
+        for (text, in_own_row) in own {
+            if text != answer && group.occurrences.get(text) == Some(&in_own_row) {
+                count -= 1;
+            }
+        }
+        count
+    }
 }
 
 pub fn build_sampled(card: &Card, seed: u64, deck_cards: &[Card]) -> Option<ChoiceQuestion> {
     if card.sampling == Some(false) {
         return None;
     }
-    let pool = column_pool(card, deck_cards);
+    let pool = eligible_pool(card, deck_cards);
     let sampled = sample::sample_distractors(&answer_text(card), &pool, seed, NUM_OPTIONS - 1)?;
-    build(card, seed, &sampled)
-}
-
-pub fn can_sample(card: &Card, deck_cards: &[Card]) -> bool {
-    if card.region.is_some() && !card.is_text_blank_card() {
-        return false;
-    }
-    build_sampled(card, 0, deck_cards).is_some()
+    single_answer_question(answer_text(card), sampled, seed)
 }
 
 pub fn recognition_question(
@@ -419,7 +501,7 @@ mod tests {
     }
 
     #[test]
-    fn the_column_pool_is_same_direction_sibling_rows_of_one_container() {
+    fn the_eligible_pool_is_same_direction_sibling_rows_of_one_container() {
         let deck = vec![
             table_card("card-t0", "aaaaaa", "alpha", false),
             table_card("card-t0", "bbbbbb", "beta", false),
@@ -431,21 +513,21 @@ mod tests {
         ];
         assert_eq!(
             vec!["beta", "gamma"],
-            column_pool(&deck[0], &deck),
+            eligible_pool(&deck[0], &deck),
             "same container, same direction, other rows only"
         );
         assert_eq!(
             vec!["front-b"],
-            column_pool(&deck[3], &deck),
+            eligible_pool(&deck[3], &deck),
             "the reversed pool is the front column"
         );
         assert!(
-            column_pool(&deck[6], &deck).is_empty(),
+            eligible_pool(&deck[6], &deck).is_empty(),
             "a rowless card never samples"
         );
         assert_eq!(
             vec!["other-table"],
-            column_pool(&table_card("card-t1", "eeeeee", "x", false), &deck),
+            eligible_pool(&table_card("card-t1", "eeeeee", "x", false), &deck),
             "pools never cross containers"
         );
     }
@@ -459,14 +541,14 @@ mod tests {
             table_card("card-t0", "dddddd", "gamma", false),
         ];
         assert!(
-            !can_sample(&deck[0], &deck),
+            !ColumnPools::new(&deck).can_sample(&deck[0]),
             "beta twice leaves a two-value pool"
         );
         assert!(build_sampled(&deck[0], 7, &deck).is_none());
 
         let mut deck = deck;
         deck.push(table_card("card-t0", "eeeeee", "delta", false));
-        assert!(can_sample(&deck[0], &deck));
+        assert!(ColumnPools::new(&deck).can_sample(&deck[0]));
         let question = build_sampled(&deck[0], 7, &deck).expect("a full pick");
         assert_eq!(NUM_OPTIONS, question.options.len());
         assert_eq!("alpha", question.options[question.correct]);
@@ -685,7 +767,7 @@ mod tests {
             !can_build(region, &ai(&["p", "q", "r"])),
             "cached distractors never build an image-region choice"
         );
-        assert!(!can_sample(region, &cards));
+        assert!(!ColumnPools::new(&cards).can_sample(region));
     }
 
     #[test]
@@ -707,5 +789,98 @@ mod tests {
         assert!(!note_names_position("Option 0 is impossible."));
         assert!(!note_names_position("The 0th option is impossible."));
         assert!(note_names_position("The 1st option is too broad."));
+    }
+
+    fn column(values: &[&str]) -> Vec<Card> {
+        values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| table_card("card-t0", &format!("{index:06}"), value, false))
+            .collect()
+    }
+
+    fn sampling_cases() -> Vec<(&'static str, Vec<Card>)> {
+        let mut two_per_row = column(&["beta", "gamma", "delta"]);
+        two_per_row.insert(0, table_card("card-t0", "999999", "alpha", false));
+        two_per_row.insert(1, table_card("card-t0", "999999", "alpha extra", false));
+
+        let mut both_directions = column(&["alpha", "beta", "gamma", "delta"]);
+        both_directions.extend(
+            ["a", "b", "c"]
+                .iter()
+                .enumerate()
+                .map(|(index, front)| table_card("card-t0", &format!("{index:06}"), front, true)),
+        );
+
+        let mut two_containers = column(&["alpha", "beta", "gamma", "delta"]);
+        two_containers.push(table_card("card-t1", "000000", "solo", false));
+        two_containers.push(card(9, "rowless"));
+
+        let mut switched_off = column(&["alpha", "beta", "gamma", "delta"]);
+        switched_off[0].sampling = Some(false);
+
+        vec![
+            ("an empty column", Vec::new()),
+            ("one row", column(&["alpha"])),
+            ("three rows", column(&["alpha", "beta", "gamma"])),
+            ("four rows", column(&["alpha", "beta", "gamma", "delta"])),
+            (
+                "a value repeated across rows",
+                column(&["alpha", "beta", "beta", "gamma"]),
+            ),
+            (
+                "a repeat with a row to spare",
+                column(&["alpha", "beta", "beta", "gamma", "delta"]),
+            ),
+            (
+                "an answer that strips to nothing",
+                column(&["alpha", "", "beta", "gamma", "delta"]),
+            ),
+            (
+                "markup that strips to a sibling's text",
+                column(&["alpha", "beta", "**beta**", "gamma", "delta"]),
+            ),
+            ("two cards sharing one row", two_per_row),
+            ("a reversed column beside its own", both_directions),
+            ("a second container and a rowless card", two_containers),
+            ("sampling switched off on one row", switched_off),
+            (
+                "forty rows",
+                column(
+                    &(0..40)
+                        .map(|row| format!("value{row}"))
+                        .collect::<Vec<_>>()
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        ]
+    }
+
+    /// Region cards are excluded by the gate alone and carry no table row, so
+    /// none appears here.
+    #[test]
+    fn law_the_sampling_gate_agrees_with_the_pick_it_gates() {
+        for (name, deck) in sampling_cases() {
+            let pools = ColumnPools::new(&deck);
+            for card in &deck {
+                let scanned = eligible_pool(card, &deck);
+                assert_eq!(
+                    scanned.len(),
+                    pools.candidate_count(card),
+                    "{name}: the index and the scan disagree about {:?} (scan found {scanned:?})",
+                    card.back
+                );
+                for seed in 0..8 {
+                    assert_eq!(
+                        pools.can_sample(card),
+                        build_sampled(card, seed, &deck).is_some(),
+                        "{name}: the gate and the pick disagree about {:?} at seed {seed}",
+                        card.back
+                    );
+                }
+            }
+        }
     }
 }

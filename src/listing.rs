@@ -342,8 +342,9 @@ fn deck_summary(
         (Some(d), Some(s), Some(a)) => deck_due(d, s, a, review, now_ms),
         _ => false,
     };
-    let can_recognize = match (deck, augment) {
-        (Some(d), Some(a)) => depth::deck_recognizable(&d.cards, a),
+    let pools = deck.map(|d| crate::choice::ColumnPools::new(&d.cards));
+    let can_recognize = match (deck, augment, &pools) {
+        (Some(d), Some(a), Some(p)) => depth::deck_recognizable(&d.cards, a, p),
         _ => false,
     };
     let (mastered, exam_due, ready, locked) = match (deck, store) {
@@ -359,10 +360,10 @@ fn deck_summary(
         }
         _ => (false, false, false, false),
     };
-    let last_depth = match (deck, store, augment) {
-        (Some(d), Some(s), Some(a)) => s
+    let last_depth = match (deck, store, augment, &pools) {
+        (Some(d), Some(s), Some(a), Some(p)) => s
             .last_depth(d.deck_token.as_deref().unwrap_or_default())
-            .unwrap_or_else(|| depth::default_depth(&d.cards, a)),
+            .unwrap_or_else(|| depth::default_depth(&d.cards, a, p)),
         _ => Depth::default(),
     };
     let progress_error = health.error_for(deck);
@@ -402,6 +403,7 @@ fn deck_due(
     // Recognize needs both due AND recognizable, or an un-augmented deck
     // over-reports as due.
     let locks = session::LockGraph::build(&deck.cards).evaluate(store);
+    let pools = crate::choice::ColumnPools::new(&deck.cards);
     let recognize_due = deck.cards.iter().any(|c| {
         session::eligible_for_session(
             c,
@@ -411,7 +413,7 @@ fn deck_due(
             now_ms,
             retire,
             &locks,
-        ) && depth::card_recognizable(c, augment, &deck.cards)
+        ) && depth::card_recognizable(c, augment, &pools)
     });
     recognize_due
         || session::has_eligible(
@@ -546,6 +548,7 @@ pub fn deck_status(
     // A card counts only if it's both unrecognized AND recognizable; an
     // un-augmented card must never count as due.
     let locks = session::LockGraph::build(&deck.cards).evaluate(store);
+    let pools = crate::choice::ColumnPools::new(&deck.cards);
     let reviewable_recognize = deck.cards.iter().any(|card| {
         session::eligible_for_session(
             card,
@@ -555,9 +558,9 @@ pub fn deck_status(
             now,
             review.retire_after_days,
             &locks,
-        ) && depth::card_recognizable(card, augment, &deck.cards)
+        ) && depth::card_recognizable(card, augment, &pools)
     });
-    let can_recognize = depth::deck_recognizable(&deck.cards, augment);
+    let can_recognize = depth::deck_recognizable(&deck.cards, augment, &pools);
     let reviewable_recall = session::has_eligible(
         &deck.cards,
         store,

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{answer::Mode, augment::AugmentCache, card::Card};
+use crate::{answer::Mode, augment::AugmentCache, card::Card, choice::ColumnPools};
 
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
@@ -95,7 +95,7 @@ pub fn check_for(reveal: Reveal, depth: Depth, card: &Card) -> Mode {
     }
 }
 
-pub fn card_recognizable(card: &Card, cache: &AugmentCache, deck_cards: &[Card]) -> bool {
+pub fn card_recognizable(card: &Card, cache: &AugmentCache, pools: &ColumnPools) -> bool {
     // Image-region cards are deliberately excluded, even when distractors
     // are cached or authored; text spans recognize like the cloze they
     // replaced.
@@ -117,15 +117,15 @@ pub fn card_recognizable(card: &Card, cache: &AugmentCache, deck_cards: &[Card])
     {
         return true;
     }
-    crate::choice::can_sample(card, deck_cards)
+    pools.can_sample(card)
 }
 
-pub fn deck_recognizable(cards: &[Card], cache: &AugmentCache) -> bool {
-    !cards.is_empty() && cards.iter().all(|c| card_recognizable(c, cache, cards))
+pub fn deck_recognizable(cards: &[Card], cache: &AugmentCache, pools: &ColumnPools) -> bool {
+    !cards.is_empty() && cards.iter().all(|c| card_recognizable(c, cache, pools))
 }
 
-pub fn default_depth(cards: &[Card], cache: &AugmentCache) -> Depth {
-    if deck_recognizable(cards, cache) {
+pub fn default_depth(cards: &[Card], cache: &AugmentCache, pools: &ColumnPools) -> Depth {
+    if deck_recognizable(cards, cache, pools) {
         Depth::Recognize
     } else {
         Depth::default()
@@ -163,10 +163,13 @@ mod tests {
             region_card.content_fingerprint,
         );
         assert!(
-            !card_recognizable(region_card, &cache, &cards),
+            !card_recognizable(region_card, &cache, &ColumnPools::new(&cards)),
             "the choice gate holds even against cached distractors"
         );
-        assert_eq!(Depth::Recall, default_depth(&cards, &cache));
+        assert_eq!(
+            Depth::Recall,
+            default_depth(&cards, &cache, &ColumnPools::new(&cards))
+        );
     }
 
     #[test]
@@ -180,7 +183,7 @@ mod tests {
             .find(|card| card.region.is_some())
             .expect("the span produced a blank card");
         assert!(
-            !card_recognizable(span_card, &cache, &cards),
+            !card_recognizable(span_card, &cache, &ColumnPools::new(&cards)),
             "no distractors yet, nothing to build choices from"
         );
         cache.set_distractors(
@@ -189,10 +192,13 @@ mod tests {
             span_card.content_fingerprint,
         );
         assert!(
-            card_recognizable(span_card, &cache, &cards),
+            card_recognizable(span_card, &cache, &ColumnPools::new(&cards)),
             "a text span recognizes like the cloze it replaced"
         );
-        assert_eq!(Depth::Recognize, default_depth(&cards, &cache));
+        assert_eq!(
+            Depth::Recognize,
+            default_depth(&cards, &cache, &ColumnPools::new(&cards))
+        );
     }
 
     #[test]
@@ -246,9 +252,10 @@ mod tests {
                     covered.content_fingerprint,
                 );
             }
+            let pools = ColumnPools::new(&cards);
             let actual_recognizable = cards
                 .iter()
-                .filter(|card| card_recognizable(card, &cache, &cards))
+                .filter(|card| card_recognizable(card, &cache, &pools))
                 .count();
 
             assert_eq!(
@@ -258,7 +265,7 @@ mod tests {
             );
             assert_eq!(
                 case.expected,
-                default_depth(&cards, &cache),
+                default_depth(&cards, &cache, &ColumnPools::new(&cards)),
                 "{} default: {} recognizable and {} unrecognizable cards",
                 case.name,
                 case.recognizable,
@@ -278,7 +285,10 @@ mod tests {
             covered.content_fingerprint,
         );
         let cards = vec![covered];
-        assert_eq!(Depth::Recall, default_depth(&cards, &cache));
+        assert_eq!(
+            Depth::Recall,
+            default_depth(&cards, &cache, &ColumnPools::new(&cards))
+        );
     }
 
     #[test]
@@ -286,7 +296,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = AugmentCache::open(dir.path().join("deck1.json"));
         let cards = vec![card("a"), card("b")];
-        assert_eq!(Depth::Recall, default_depth(&cards, &cache));
+        assert_eq!(
+            Depth::Recall,
+            default_depth(&cards, &cache, &ColumnPools::new(&cards))
+        );
     }
 
     #[test]
@@ -295,7 +308,11 @@ mod tests {
         let cache = AugmentCache::open(dir.path().join("deck1.json"));
         let mut authored = card("a");
         authored.authored_distractors = vec!["b".into()];
-        assert_eq!(Depth::Recognize, default_depth(&[authored], &cache));
+        let cards = [authored];
+        assert_eq!(
+            Depth::Recognize,
+            default_depth(&cards, &cache, &ColumnPools::new(&cards))
+        );
     }
 
     #[test]
@@ -304,13 +321,14 @@ mod tests {
         let cache = AugmentCache::open(dir.path().join("deck1.json"));
         let text = "| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n| d | delta | <!-- r:dddddd -->\n<!-- cards -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
         let cards = parser::parse_str("t.md", text).unwrap();
+        let pools = ColumnPools::new(&cards);
         assert!(
             cards
                 .iter()
-                .all(|card| card_recognizable(card, &cache, &cards)),
+                .all(|card| card_recognizable(card, &cache, &pools)),
             "four rows give every card a three-value pool"
         );
-        assert_eq!(Depth::Recognize, default_depth(&cards, &cache));
+        assert_eq!(Depth::Recognize, default_depth(&cards, &cache, &pools));
     }
 
     #[test]
@@ -319,13 +337,14 @@ mod tests {
         let cache = AugmentCache::open(dir.path().join("deck1.json"));
         let text = "| w | m |\n|---|---|\n| a | alpha | <!-- r:aaaaaa -->\n| b | beta | <!-- r:bbbbbb -->\n| c | gamma | <!-- r:cccccc -->\n<!-- cards -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n";
         let cards = parser::parse_str("t.md", text).unwrap();
+        let pools = ColumnPools::new(&cards);
         assert!(
             cards
                 .iter()
-                .all(|card| !card_recognizable(card, &cache, &cards)),
+                .all(|card| !card_recognizable(card, &cache, &pools)),
             "two sibling values cannot fill three distractor slots"
         );
-        assert_eq!(Depth::Recall, default_depth(&cards, &cache));
+        assert_eq!(Depth::Recall, default_depth(&cards, &cache, &pools));
     }
 
     #[test]
@@ -347,11 +366,12 @@ mod tests {
             let path = dir.path().join("t.md");
             std::fs::write(&path, &text).unwrap();
             let cards = crate::deck::Deck::load(&path).unwrap().cards;
+            let pools = ColumnPools::new(&cards);
             assert_eq!(
                 expected,
                 cards
                     .iter()
-                    .all(|card| card_recognizable(card, &cache, &cards)),
+                    .all(|card| card_recognizable(card, &cache, &pools)),
                 "deck {deck_key:?} table {table_directive:?}"
             );
         }
@@ -489,11 +509,49 @@ mod tests {
         );
         let deck = vec![multi.clone(), card("other")];
         assert!(
-            !card_recognizable(&multi, &cache, &deck),
+            !card_recognizable(&multi, &cache, &ColumnPools::new(&deck)),
             "cached AI distractors must not admit a select-all card"
         );
         multi.authored_distractors = vec!["x".into()];
-        assert!(card_recognizable(&multi, &cache, &deck));
+        assert!(card_recognizable(&multi, &cache, &ColumnPools::new(&deck)));
+    }
+
+    fn table_deck(rows: usize) -> Vec<crate::card::Card> {
+        let mut text = String::from("| w | m |\n|---|---|\n");
+        for row in 0..rows {
+            text.push_str(&format!("| w{row} | m{row} | <!-- r:{row:06} -->\n"));
+        }
+        text.push_str("<!-- cards -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n");
+        let cards = parser::parse_str("t.md", &text).unwrap();
+        assert_eq!(
+            rows,
+            cards.len(),
+            "{rows} table rows parse to one card each"
+        );
+        cards
+    }
+
+    #[test]
+    fn law_a_recognizability_scan_has_no_superlinear_term_in_table_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = AugmentCache::open(dir.path().join("deck1.json"));
+        let at = |rows: usize| {
+            let cards = table_deck(rows);
+            let (recognizable, counts) = crate::profile::collect(|| {
+                deck_recognizable(&cards, &cache, &ColumnPools::new(&cards))
+            });
+            assert!(
+                recognizable,
+                "{rows} rows: every row stays recognizable, or the scan short-circuits and measures nothing"
+            );
+            counts.distractor_candidates_scanned as i128
+        };
+        let (small, double, large) = (at(8), at(16), at(80));
+        assert_eq!(
+            large - small,
+            9 * (double - small),
+            "a table scan at 8, 16, 80 rows examined {small}, {double}, {large} candidates; affine means (80) - (8) == 9 x ((16) - (8))"
+        );
     }
 }
 

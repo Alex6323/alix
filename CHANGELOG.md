@@ -70,6 +70,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Listing a folder of table decks no longer takes time quadratic in the rows.
+  Deciding whether a table card can be shown as a multiple-choice question
+  rebuilt that card's distractor pool by scanning every card in the deck, once
+  per card, and ranked the whole pool to pick three; the deck's columns are now
+  indexed once and each card answers from that index. A folder holding one
+  800-row table deck served a warm listing in 4.667 s and now serves it in
+  0.016 s; a 1600-row deck's recognizability scan alone fell from 9.19 s to
+  0.012 s.
+
+- A table row whose column holds answers that differ only in inline markup is
+  offered as a multiple-choice question again. Such a pair collided when the
+  question was assembled, after the three distractors had been picked, which
+  dropped the card out of Recognize entirely; candidates are now compared
+  before the pick, so a colliding one is passed over instead.
+
 - Opening a workspace on the phone, and listing one anywhere, parses each
   member deck once instead of two or three times, classifies the folder once,
   and no longer re-parses a prerequisite chain for every member that depends

@@ -1240,7 +1240,11 @@ mod tests {
                 card.content_fingerprint,
             );
         }
-        assert!(crate::depth::deck_recognizable(&cards, &augment));
+        assert!(crate::depth::deck_recognizable(
+            &cards,
+            &augment,
+            &crate::choice::ColumnPools::new(&cards),
+        ));
         let session = session_at(cards, &mut store, Depth::Recognize, NOW);
 
         let question = current_question(&session, &store, &augment)

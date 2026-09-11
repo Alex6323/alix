@@ -279,7 +279,13 @@ pub(super) fn deck_item_dto(
             let last_depth = depth_name(
                 store
                     .last_depth(deck.deck_token.as_deref().unwrap_or_default())
-                    .unwrap_or_else(|| crate::depth::default_depth(&deck.cards, augment)),
+                    .unwrap_or_else(|| {
+                        crate::depth::default_depth(
+                            &deck.cards,
+                            augment,
+                            &crate::choice::ColumnPools::new(&deck.cards),
+                        )
+                    }),
             );
             DeckItemDto {
                 name: e.name.clone(),
@@ -460,7 +466,13 @@ pub(super) fn workspace_members(
             let last_depth = match (store, augment.as_ref(), deck.as_ref()) {
                 (Some(st), Some(ag), Some(d)) => st
                     .last_depth(d.deck_token.as_deref().unwrap_or_default())
-                    .unwrap_or_else(|| crate::depth::default_depth(&d.cards, ag)),
+                    .unwrap_or_else(|| {
+                        crate::depth::default_depth(
+                            &d.cards,
+                            ag,
+                            &crate::choice::ColumnPools::new(&d.cards),
+                        )
+                    }),
                 _ => Depth::default(),
             };
             (status, has_topology, depth_name(last_depth), deck)
