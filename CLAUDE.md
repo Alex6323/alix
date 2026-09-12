@@ -320,9 +320,14 @@ to this codebase. When in doubt, mirror the surrounding code.
   the patch. When the implementation is best understood as a multi-step control
   flow, data flow, lifecycle, or failure path, add a trace deck whose checkpoints
   walk that path through the actual code. Do not force every card into choice
-  format. **Every deck carries section context** (user rule, 2026-08-28): its
-  cards sit under `#` headings, never in a flat list, so a learner meeting a
-  card cold is told what it is about. A section title is a short orienting
+  format. **Every deck carries section context** (user rule, 2026-08-28; sharpened by
+  Alex 2026-09-03): its cards sit under `#` headings, never in a flat list.
+  A section is a heading PLUS prose, and the prose is the point: it assumes
+  no prior knowledge and leads the reader toward the questions below it, the
+  way a textbook paragraph precedes its exercises (what the thing is, why it
+  exists, the words the cards will use, what problem the cards resolve). A
+  bare heading is not context, and a list of the topics the cards touch is
+  not context either; both are rejected. A section title is a short orienting
   phrase naming what its cards cover, not the deck's own name and not a
   restatement of one card's question; a deck of a few cards takes one section,
   a long deck takes one per group of related cards, and a trace deck takes a
@@ -343,11 +348,20 @@ to this codebase. When in doubt, mirror the surrounding code.
   (`src/augment_ai.rs::distractors_prompt`): tempting to someone who half-knows
   the material, matched to the correct answer's form and length, clearly
   incorrect, and distinct. Reject giveaway options: conspicuous absolutes such
-  as "Only...", "always", or "never", absurd claims, mismatched specificity,
-  and simple negations of the answer all test option-reading rather than
-  understanding. Every authored choice card also includes a short post-answer
-  note naming the mistaken premise behind each distractor; do not merely label
-  an option wrong or repeat the correct answer. Numeric locators can still
+  as "Only...", "always", or "never", hedges and minimizers such as
+  "cosmetic", "sufficient", "merely", "just", absurd claims, mismatched
+  specificity, and simple negations of the answer all test option-reading
+  rather than understanding. Every authored choice card also includes a short
+  post-answer note naming the mistaken premise behind each distractor; do not
+  merely label an option wrong or repeat the correct answer. **Every authored
+  deck gets a devil's-advocate pass before `alix deck init`** (Alex,
+  2026-09-03, after reading decks whose sections were bare headings and whose
+  distractors gave themselves away): a fresh agent reads the deck ALONE and,
+  for every choice card, picks the answer without the source and names what
+  gave the wrong options away; for every section, lists what a reader with
+  no prior knowledge needs before the first question that the prose does not
+  say. Fix every finding before init. A mechanical scan of `- [ ]` lines for
+  the giveaway vocabulary runs first and is a floor, not the bar. Numeric locators can still
   resolve after line insertions while pointing at unrelated code: whenever a
   source file changes, search the whole shared workspace for every `at:` naming
   that file and semantically review all matches, including decks from earlier
@@ -520,7 +534,7 @@ to this codebase. When in doubt, mirror the surrounding code.
   term or claim you cannot resolve from this document alone"; fix what it lists. The target
   is session-born shorthand (codenames, `{#anchors}`, arc names) that reads as the thing's
   real name from inside the session, so the writer cannot self-detect it; only a reader who
-  lacks the context can. Applies to `docs/bugs/`, `docs/product/`, `docs/results/`, the
+  lacks the context can. Applies to `docs/bugs/`, `docs/product/`, `docs/release-records/`, the
   book, README; a codename grep is the cheap first pass, the fresh read is the gate.
 - **An assumption is verified only when a command failed to refute it.** In specs/plans
   write `Assumption — falsification command · expected output · fallback`; never a bare
