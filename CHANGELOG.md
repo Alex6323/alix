@@ -1911,13 +1911,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sample for this release. Fifteen rounds ran on the candidate; every round
   reported findings, every finding was verified against the code and fixed,
   and the round count was capped at fifteen instead of rerunning to PASS.
-  Grader calibration (its matrix is stored under `docs/results/`), the
+  Grader calibration (its matrix is stored under `docs/release-records/`), the
   card-shape evaluation, and the old-format audit ran to PASS on the
   release candidate's production code. Every text surface edited after
   the last audit round went out unaudited: this changelog's rollover, the
   entries moved into the mobile changelog, the version pins in the README,
   `docs/API.md`, and the book's getting-started page, `RELEASING.md`, the
-  calibration record under `docs/results/`, and the web-app chapter's
+  calibration record under `docs/release-records/`, and the web-app chapter's
   Doctor row list from the last round's own finding.
 
 ## [0.7.0] - 2026-08-02

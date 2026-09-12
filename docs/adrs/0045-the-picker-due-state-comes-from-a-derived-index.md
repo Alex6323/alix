@@ -75,11 +75,11 @@ apply the admission rule without parsing.
 not a count: no part of the listing, the wire contract, or any client counts
 cards.
 
-**One ruling this record depends on is NOT MADE, and it must not move to
-Accepted before it is.** Whether picker rows keep their per-depth launch
-controls decides how many verdicts the rule computes per row and how many fields
-the row DTO carries; the spec tracks it as D16 and as its open question 1. This
-record is written on the branch where they stay. That branch also decides
+**One ruling this record depended on was never made before the rejection.**
+Whether picker rows keep their per-depth launch controls would have decided how
+many verdicts the rule computes per row and how many fields the row DTO
+carries; the spec tracked it as D16 and as its open question 1. This record
+was written on the branch where they stay. That branch also decides
 whether `can_recognize` stays in the listing at all, and with it whether the
 listing keeps `depth::deck_recognizable`, measured at 4.082 ms of the study
 workspace's 19.663 ms `deck_status`.
@@ -332,9 +332,8 @@ classifier, which never parses cards (`picker::DeckEntry`, `src/picker.rs` lines
   one until a deck is opened, and the bulk action that would have filled them is
   deferred.
 
-  **This is Alex's to rule and it is open.** It is on DESK. No part of this
-  record should be built before it is answered, because the answer may be that
-  none of it should be.
+  **This was the open question, and its answer was the rejection above**: no
+  per-deck due signal for now, so none of this record is built.
 - **Keep parsing, lazily.** Rejected: lazy parsing still pays the parse on the
   screen where it hurts, which is the phone's first screen.
 - **Keep the count.** Rejected by ruling, on product grounds rather than
@@ -488,8 +487,8 @@ examples, each able to fail:
   path. An unchanged deck whose local index still matches every pin keeps that
   index across the swap.
 
-When the implementation lands, this record moves to Accepted and names the
-marker that proves it is in force, per the folder's README.
+This record never reached Accepted: the rejection above closed it before any
+of the implementation landed, and no marker proves it in force.
 
 ## Reversal
 

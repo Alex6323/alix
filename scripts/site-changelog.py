@@ -592,7 +592,9 @@ def render_timeline_html(layout: dict, up_next: list[str]) -> str:
             f' aria-label="Up next: {esc(truncate(strip_inline(text), 80))}">'
             f'<span class="d"></span></button>'
         )
-        pops.append(f'<div data-for="{pid}"><h4>Up next</h4><p>{esc(text)}</p></div>')
+        pops.append(
+            f'<div data-for="{pid}"><h4>Up next</h4><p>{render_inline(text)}</p></div>'
+        )
 
     up_label = ""
     if layout["up_xs"]:
