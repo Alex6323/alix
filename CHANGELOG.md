@@ -70,6 +70,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A picker row now reads its workspace manifest's `[defaults]`. A member of a
+  `direction: both` workspace greyed out its Recall launcher and dropped its
+  "new" badge while an ungraded card waited, because the picker's loader
+  applied the built-in defaults instead of the workspace's. Editing a
+  manifest's defaults also refreshes an already-listed member.
+
 - A note no longer breaks into two paragraphs in the middle of a sentence. Note
   bodies are split one paragraph per sentence, and the splitter ended a sentence
   at any full stop followed by a space, so "structure (e.g. a Merkle path) was

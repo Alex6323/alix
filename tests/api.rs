@@ -3248,6 +3248,54 @@ fn post_api_deck_drawer_applies_a_workspace_manifests_defaults() {
     );
 }
 
+#[test]
+fn a_picker_row_applies_its_workspace_manifests_defaults() {
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| {
+        let members = dir.join("reversible").join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(
+            dir.join("reversible").join("alix.toml"),
+            "title = \"Reversible\"\n\n[defaults]\ndirection = \"both\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            members.join("vocab.md"),
+            "---\nformat-version: 1\nid: \"deck-reversible\"\n---\n## hund\ndog\n<!-- id: card-rvhund -->\n",
+        )
+        .unwrap();
+    });
+
+    let selected = post_json(&base, "/api/select", r#"{"deck":"reversible/vocab.md"}"#);
+    assert_eq!(200, selected.status);
+    let session: serde_json::Value = serde_json::from_slice(&selected.body).unwrap();
+    assert_eq!(
+        2, session["initial"],
+        "one authored card under `direction = both` is a two-card sitting: {session}"
+    );
+    assert_eq!(
+        200,
+        post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#).status
+    );
+
+    let decks: serde_json::Value =
+        serde_json::from_slice(&http(&base, "GET", "/api/decks", &[], &[]).body).unwrap();
+    let row = decks["workspaces"]
+        .as_array()
+        .expect("workspaces is an array")
+        .iter()
+        .find(|w| w["name"] == "reversible")
+        .unwrap_or_else(|| panic!("no `reversible` workspace row: {decks}"))["members"][0]
+        .clone();
+    assert_eq!(
+        true, row["reviewable_recall"],
+        "the untouched half of the pair is due at Recall: {row}"
+    );
+    assert_eq!(
+        true, row["new_cards"],
+        "the untouched half of the pair has no progress: {row}"
+    );
+}
+
 // ── Reset ───────────────────────────────────────────────────────────────
 
 #[test]

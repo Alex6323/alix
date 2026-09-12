@@ -18,7 +18,7 @@ use crate::{
     store::Store,
 };
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct DeckSettings {
     pub reveal: Option<Reveal>,
     pub input: Option<Input>,
@@ -131,13 +131,10 @@ impl Deck {
 
     pub fn load_in_workspace(
         path: impl AsRef<Path>,
+        defaults: &DeckSettings,
         workspace_has_sources: bool,
     ) -> Result<Self, DeckError> {
-        Self::load_inner(
-            path.as_ref(),
-            &DeckSettings::default(),
-            Some(workspace_has_sources),
-        )
+        Self::load_inner(path.as_ref(), defaults, Some(workspace_has_sources))
     }
 
     fn load_inner(

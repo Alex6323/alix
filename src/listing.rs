@@ -167,7 +167,7 @@ fn member_rows(
         .map(|m| {
             profile::hit(Counter::DecksLoaded);
             let deck = match known_sources {
-                Some(known) => Deck::load_in_workspace(m, known),
+                Some(known) => Deck::load_in_workspace(m, &ws.settings, known),
                 None => Deck::load(m),
             }
             .ok()

@@ -30,21 +30,24 @@ struct Entry {
     manifest: Option<ManifestMeta>,
 }
 
-/// A member's exam state depends on its workspace manifest, a second file
-/// the deck's own (mtime, size) cannot see.
+/// A member's exam state and its card list both depend on its workspace
+/// manifest, a second file the deck's own (mtime, size) cannot see.
 #[derive(Clone)]
 struct CachedDeck {
     workspace_has_sources: bool,
+    settings: DeckSettings,
     deck: Result<Arc<Deck>, Arc<DeckError>>,
 }
 
 impl CachedDeck {
-    fn load(path: &Path, workspace_has_sources: bool) -> Self {
+    fn load(path: &Path, settings: DeckSettings, workspace_has_sources: bool) -> Self {
+        let deck = Deck::load_in_workspace(path, &settings, workspace_has_sources)
+            .map(Arc::new)
+            .map_err(Arc::new);
         CachedDeck {
             workspace_has_sources,
-            deck: Deck::load_in_workspace(path, workspace_has_sources)
-                .map(Arc::new)
-                .map_err(Arc::new),
+            settings,
+            deck,
         }
     }
 }
@@ -110,22 +113,34 @@ impl DeckCache {
 
     pub fn load(&mut self, path: &Path) -> Result<Arc<Deck>, Arc<DeckError>> {
         let workspace_has_sources = self.workspace_has_sources(path);
+        let settings = self.workspace_settings(path);
         match self.slot(path) {
             Some(entry) => {
-                if entry
-                    .deck
-                    .as_ref()
-                    .is_some_and(|cached| cached.workspace_has_sources != workspace_has_sources)
-                {
+                if entry.deck.as_ref().is_some_and(|cached| {
+                    cached.workspace_has_sources != workspace_has_sources
+                        || cached.settings != settings
+                }) {
                     entry.deck = None;
                 }
                 entry
                     .deck
-                    .get_or_insert_with(|| CachedDeck::load(path, workspace_has_sources))
+                    .get_or_insert_with(|| CachedDeck::load(path, settings, workspace_has_sources))
                     .deck
                     .clone()
             }
-            None => CachedDeck::load(path, workspace_has_sources).deck,
+            None => CachedDeck::load(path, settings, workspace_has_sources).deck,
+        }
+    }
+
+    fn workspace_settings(&mut self, deck: &Path) -> DeckSettings {
+        let manifest = workspace::content_root(deck).join(workspace::MANIFEST);
+        match self.slot(&manifest) {
+            Some(entry) => entry
+                .manifest
+                .get_or_insert_with(|| read_manifest_meta(&manifest))
+                .settings
+                .clone(),
+            None => DeckSettings::default(),
         }
     }
 
@@ -411,5 +426,36 @@ mod tests {
             "a manifest edit that keeps the source must not re-parse the member"
         );
         assert!(second.has_exam(), "the source is still there");
+    }
+
+    #[test]
+    fn a_manifest_defaults_edit_refreshes_a_cached_decks_card_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let decks = workspace.join("decks");
+        std::fs::create_dir_all(&decks).unwrap();
+        write(&workspace.join("alix.toml"), "");
+        let path = decks.join("d.md");
+        write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-d\"\n---\n## q\na\n",
+        );
+        let mut cache = DeckCache::default();
+        assert_eq!(
+            1,
+            cache.load(&path).unwrap().cards.len(),
+            "one authored card, no workspace default"
+        );
+
+        write(
+            &workspace.join("alix.toml"),
+            "[defaults]\ndirection = \"both\"\n",
+        );
+
+        assert_eq!(
+            2,
+            cache.load(&path).unwrap().cards.len(),
+            "a workspace `direction: both` must mint the reversed twin of a cached member"
+        );
     }
 }
