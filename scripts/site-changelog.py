@@ -9,8 +9,8 @@ hand-maintained "news" page would.
 
 The page leads with an interactive timeline strip: release dots (from git
 tags), small entry dots for each commit that landed changelog bullets (with
-a hover/focus popover listing what landed), and three pulsing "up next" dots
-at the open right end. Per-entry timestamps come from `git log -p` over
+a hover/focus popover listing what landed), and up to three pulsing "up next"
+dots at the open right end (from site/up-next.md). Per-entry timestamps come from `git log -p` over
 CHANGELOG.md: each current bullet is attributed to the commit that first
 added its line. Below the strip the text stays the honest record: the
 "Up next" and "In the works" lists, then each release collapsed into a
@@ -66,17 +66,28 @@ from datetime import date as date_type
 from datetime import datetime
 from pathlib import Path
 
-# Hand-curated and deliberately capped at three: a longer "coming soon" list
-# just rots as items ship and nobody prunes it, which reads as abandonment.
-# Update this list by hand as real progress happens; nothing derives it.
-# Shown twice, deliberately: as the pulsing dots at the timeline's open right
-# end, and as the plain-text "Up next" list below (the no-JS record).
-UP_NEXT = [
-    "The mobile app. The big one in progress: alix on your phone, built on "
-    "the same core.",
-    "Receiving a shared box inside the kids app.",
-    "Smarter re-sharing: send an updated box without losing anyone's progress.",
-]
+# The "Up next" list is hand-curated in site/up-next.md (a tracked file, so
+# the release docs audit reads it) and deliberately capped at three: a longer
+# "coming soon" list just rots as items ship and nobody prunes it, which reads
+# as abandonment. Shown twice, deliberately: as the pulsing dots at the
+# timeline's open right end, and as the plain-text "Up next" list below (the
+# no-JS record).
+UP_NEXT_FILE = Path("site") / "up-next.md"
+UP_NEXT_CAP = 3
+
+
+def read_up_next(path: Path) -> list[str]:
+    """The `- ` bullets of the up-next file, in order, an indented
+    continuation line joined onto its bullet; anything else is ignored."""
+    items: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("- "):
+            items.append(line[2:].strip())
+        elif items and line[:1].isspace() and line.strip():
+            items[-1] += " " + line.strip()
+    if len(items) > UP_NEXT_CAP:
+        raise SystemExit(f"error: {path} lists {len(items)} items; the cap is {UP_NEXT_CAP}")
+    return items
 
 TEASER_START = "<!-- whatsnew-teaser:start -->"
 TEASER_END = "<!-- whatsnew-teaser:end -->"
@@ -499,7 +510,9 @@ def month_ticks(nodes: list[dict]) -> list[dict]:
     return ticks
 
 
-def layout_timeline(entry_events: list[dict], tags: list[tuple[str, str]]) -> dict | None:
+def layout_timeline(
+    entry_events: list[dict], tags: list[tuple[str, str]], up_next: list[str]
+) -> dict | None:
     """Position every dot on the strip. Returns {nodes, ticks, up_xs, width}
     or None when there's nothing to draw."""
     nodes: list[dict] = []
@@ -526,12 +539,12 @@ def layout_timeline(entry_events: list[dict], tags: list[tuple[str, str]]) -> di
         prev_ts = n["ts"]
 
     up_start = nodes[-1]["x"] + UP_GAP
-    up_xs = [up_start + i * UP_SPACING for i in range(len(UP_NEXT))]
+    up_xs = [up_start + i * UP_SPACING for i in range(len(up_next))]
     width = (up_xs[-1] if up_xs else nodes[-1]["x"]) + PAD_X
     return {"nodes": nodes, "ticks": month_ticks(nodes), "up_xs": up_xs, "width": width}
 
 
-def render_timeline_html(layout: dict) -> str:
+def render_timeline_html(layout: dict, up_next: list[str]) -> str:
     """The strip: an axis with month ticks, entry/release/upcoming dots, the
     hidden per-dot popover sources, and the shared popover element. All text
     the popovers show also lives in the sections below (they enhance, never
@@ -571,7 +584,7 @@ def render_timeline_html(layout: dict) -> str:
                 f"<ul>{items}</ul></div>"
             )
 
-    for i, (x, text) in enumerate(zip(layout["up_xs"], UP_NEXT)):
+    for i, (x, text) in enumerate(zip(layout["up_xs"], up_next)):
         pid = f"tlu{i}"
         dots.append(
             f'<button type="button" class="tl-dot upcoming" style="left:{x}px"'
@@ -708,8 +721,8 @@ def render_unreleased_html(unreleased: dict | None) -> str:
     return "\n".join(parts)
 
 
-def render_up_next_html() -> str:
-    items = "\n".join(f"    <li>{render_inline(line)}</li>" for line in UP_NEXT)
+def render_up_next_html(up_next: list[str]) -> str:
+    items = "\n".join(f"    <li>{render_inline(line)}</li>" for line in up_next)
     return f'  <ul class="upnext-list">\n{items}\n  </ul>'
 
 
@@ -830,6 +843,7 @@ def render_whatsnew_page(
     released: list[dict],
     cadence: str | None,
     timeline_html: str,
+    up_next: list[str],
 ) -> str:
     cadence_html = f'  <p class="cadence">{esc(cadence)}</p>' if cadence else ""
     releases_html = (
@@ -865,7 +879,7 @@ def render_whatsnew_page(
 {timeline_block}
   <section class="upnext">
     <h2>Up next</h2>
-{render_up_next_html()}
+{render_up_next_html(up_next)}
   </section>
 
   <section class="inwork">
@@ -960,22 +974,27 @@ def main(argv: list[str] | None = None) -> int:
     if not site_dir.is_dir():
         print(f"error: site dir not found: {site_dir}", file=sys.stderr)
         return 1
+    up_next_path = root / UP_NEXT_FILE
+    if not up_next_path.exists():
+        print(f"error: up-next list not found at {up_next_path}", file=sys.stderr)
+        return 1
 
     text = changelog_path.read_text(encoding="utf-8")
     unreleased, released = parse_changelog(text)
     cadence = compute_cadence(root)
+    up_next = read_up_next(up_next_path)
 
     entry_events = attribute_bullets(unreleased, released, root)
-    layout = layout_timeline(entry_events, get_tag_dates(root))
+    layout = layout_timeline(entry_events, get_tag_dates(root), up_next)
     if layout is None:
         notice("no git history available, rendering without the timeline strip")
         timeline_html = ""
     else:
-        timeline_html = render_timeline_html(layout)
+        timeline_html = render_timeline_html(layout, up_next)
 
     write_atomic(
         site_dir / "whatsnew.html",
-        render_whatsnew_page(unreleased, released, cadence, timeline_html),
+        render_whatsnew_page(unreleased, released, cadence, timeline_html, up_next),
     )
 
     index_path = site_dir / "index.html"

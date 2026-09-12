@@ -39,6 +39,7 @@ Inspect every listed item. This explicitly includes:
 - every committed example under `docs/examples/`, including workspace
   manifests and deck files;
 - the landing site, installer, legal pages, and `site/slides.html`;
+- the "What's new" page's hand-curated "Up next" list, `site/up-next.md`;
 - the desktop and mobile tutorial decks;
 - every image, screenshot, and SVG published by the site, book, slides, or
   README.
@@ -53,6 +54,9 @@ Compare the manifests against current implementation and report:
 - claims that shipped clients, commands, flags, configuration keys, deck
   syntax, API shapes, file extensions, defaults, workflows, or platform support
   are absent, future, or different when they are already present or changed;
+- an "Up next" item in `site/up-next.md`, the arc of the release after the
+  newest tag, that a release section of `CHANGELOG.md` or a git tag shows
+  already shipped, or that contradicts what `[Unreleased]` shows landing;
 - features documented as available that no longer exist or no longer work as
   described;
 - contradictory current-state claims across public surfaces;
