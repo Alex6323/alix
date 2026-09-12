@@ -363,8 +363,21 @@ impl Deck {
         crate::card::dormant_base_ids(&self.cards)
     }
 
+    /// Every identity an ignored block can reappear as once `<!-- ignore -->`
+    /// is removed: its own id, the reverse half its effective direction would
+    /// expand, and a blank template's base id.
     pub fn ignored_ids(&self) -> impl Iterator<Item = String> + '_ {
-        self.ignored.iter().filter_map(Card::id)
+        let deck_direction = self.settings.direction;
+        self.ignored
+            .iter()
+            .flat_map(move |card| {
+                let direction = card.direction.or(deck_direction).unwrap_or_default();
+                let reversed = (!card.is_blank_card() && direction != Direction::Forward)
+                    .then(|| card.reversed().id())
+                    .flatten();
+                card.id().into_iter().chain(reversed)
+            })
+            .chain(crate::card::dormant_base_ids(&self.ignored))
     }
 }
 
@@ -2718,8 +2731,9 @@ mod tests {
         assert_eq!(1, deck.ignored.len(), "{:?}", deck.ignored);
         assert_eq!("draft", deck.ignored[0].front);
         assert_eq!(
-            vec!["card-q2".to_string()],
-            deck.ignored_ids().collect::<Vec<_>>()
+            vec!["card-q2".to_string(), "card-q2-r".to_string()],
+            deck.ignored_ids().collect::<Vec<_>>(),
+            "the draft reserves the reverse half the deck default would expand"
         );
         let (mut store, _s) = empty_store();
         for card in &deck.cards {
@@ -2730,5 +2744,52 @@ mod tests {
             deck.state(&store),
             "an ignored card has no say in graduation"
         );
+    }
+
+    #[test]
+    fn an_ignored_card_reserves_every_identity_an_un_ignore_would_restore() {
+        let dir = tempfile::tempdir().unwrap();
+        let rows = [
+            (
+                "forward.md",
+                "",
+                "## q\na\n<!-- ignore -->\n<!-- id: card-f1 -->\n",
+                vec!["card-f1"],
+            ),
+            (
+                "deck-both.md",
+                "---\ndirection: both\n---\n",
+                "## q\na\n<!-- ignore -->\n<!-- id: card-b1 -->\n",
+                vec!["card-b1", "card-b1-r"],
+            ),
+            (
+                "card-reverse.md",
+                "",
+                "## q\na\n<!-- direction: reverse -->\n<!-- ignore -->\n<!-- id: card-r1 -->\n",
+                vec!["card-r1", "card-r1-r"],
+            ),
+            (
+                "card-forward-in-both.md",
+                "---\ndirection: both\n---\n",
+                "## q\na\n<!-- direction: forward -->\n<!-- ignore -->\n<!-- id: card-o1 -->\n",
+                vec!["card-o1"],
+            ),
+            (
+                "template.md",
+                "---\ndirection: both\n---\n",
+                "## q\nthe lunate is carpal\n<!-- ignore -->\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-t1 -->\n",
+                vec!["card-t1-ba1b2c3", "card-t1"],
+            ),
+        ];
+        for (name, frontmatter, body, expected) in rows {
+            let path = write_deck(dir.path(), name, &format!("{frontmatter}{body}"));
+            let deck = Deck::load(&path).unwrap();
+            assert!(
+                deck.cards.is_empty(),
+                "{name}: nothing live, {:?}",
+                deck.cards
+            );
+            assert_eq!(expected, deck.ignored_ids().collect::<Vec<_>>(), "{name}");
+        }
     }
 }

@@ -1674,6 +1674,31 @@ fn a_dormant_template_base_id_survives_reset_orphans() {
 }
 
 #[test]
+fn ignored_cards_keep_every_preexisting_family_history_key_out_of_the_orphan_sweep() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(
+        dir.path(),
+        "ignored.md",
+        "---\nformat-version: 1\nid: \"deck-ignoreddoc\"\ndirection: both\n---\n## retired\nanswer\n<!-- ignore -->\n<!-- id: card-twoway1 -->\n## cloze\nthe lunate is carpal\n<!-- ignore -->\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-template1 -->\n",
+    );
+    let mut store = deck_store(&deck);
+    store.get_or_insert("card-twoway1-r");
+    store.get_or_insert("card-template1");
+    store.save().unwrap();
+
+    let out = alix(&["reset", "--orphans", dir.path().to_str().unwrap(), "--yes"]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let after = std::fs::read_to_string(store.path()).unwrap();
+    assert!(
+        after.contains("card-twoway1-r") && after.contains("card-template1"),
+        "ignored family history was pruned: stdout={} store={after}",
+        stdout(&out)
+    );
+    assert!(stdout(&out).contains("No orphaned progress to reset."));
+}
+
+#[test]
 fn a_full_deck_reset_clears_dormant_template_base_history() {
     let dir = TempDir::new().unwrap();
     let deck = write(
