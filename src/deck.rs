@@ -519,9 +519,10 @@ pub struct LoadedDecks {
 }
 
 impl LoadedDecks {
-    pub fn for_member_dir(member_dir: PathBuf) -> Self {
+    pub fn for_workspace(ws: &crate::workspace::Workspace) -> Self {
         LoadedDecks {
-            member_dir: Some(member_dir),
+            member_dir: Some(crate::workspace::member_dir(&ws.path)),
+            canonical: ws.identities.clone(),
             ..Default::default()
         }
     }
@@ -534,7 +535,7 @@ impl LoadedDecks {
         self.by_path.insert(key, deck);
     }
 
-    fn canonical(&mut self, path: &Path) -> PathBuf {
+    pub(crate) fn canonical(&mut self, path: &Path) -> PathBuf {
         if let Some(key) = self.canonical.get(path) {
             return key.clone();
         }

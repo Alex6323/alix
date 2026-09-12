@@ -146,9 +146,9 @@ pub fn list_members_with(
             deadline: deadline_for(dir, &[], review, now_ms),
         };
     };
-    let (members, rows) = member_rows(root, &ws, review, now_ms, cache);
+    let (members, rows, mut table) = member_rows(root, &ws, review, now_ms, cache);
     let deadline = deadline_for(dir, &rows, review, now_ms);
-    let parent = member_parents(&members, root);
+    let parent = member_parents_with(&members, root, &mut table);
     let key: Vec<(bool, String)> = rows
         .iter()
         .map(|(row, loaded)| {
@@ -183,11 +183,11 @@ fn member_rows(
     review: &ReviewConfig,
     now_ms: u64,
     cache: &mut DeckCache,
-) -> (LoadedMembers, Vec<(DeckSummary, bool)>) {
+) -> (LoadedMembers, Vec<(DeckSummary, bool)>, deck::LoadedDecks) {
     let dir = ws.path.as_path();
     let (store, health) = member_store(root, dir);
     let augment = AugmentCache::open_for_workspace(dir).ok();
-    let mut table = deck::LoadedDecks::for_member_dir(workspace::member_dir(dir));
+    let mut table = deck::LoadedDecks::for_workspace(ws);
     let known_sources = workspace::has_manifest(dir).then_some(!ws.source.is_empty());
     let members: LoadedMembers = ws
         .members
@@ -220,7 +220,7 @@ fn member_rows(
             )
         })
         .collect();
-    (members, rows)
+    (members, rows, table)
 }
 
 fn deadline_for(
@@ -665,11 +665,15 @@ pub fn member_parents(
     members: &[(PathBuf, Option<Arc<Deck>>)],
     decks_dir: &Path,
 ) -> Vec<Option<usize>> {
-    let canon = |p: &Path| {
-        profile::hit(Counter::CanonicalizeCalls);
-        std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
-    };
-    let canonical: Vec<PathBuf> = members.iter().map(|(m, _)| canon(m)).collect();
+    member_parents_with(members, decks_dir, &mut deck::LoadedDecks::default())
+}
+
+fn member_parents_with(
+    members: &[(PathBuf, Option<Arc<Deck>>)],
+    decks_dir: &Path,
+    table: &mut deck::LoadedDecks,
+) -> Vec<Option<usize>> {
+    let canonical: Vec<PathBuf> = members.iter().map(|(m, _)| table.canonical(m)).collect();
     let position: HashMap<&Path, usize> = canonical
         .iter()
         .enumerate()
@@ -681,7 +685,7 @@ pub fn member_parents(
         .map(|(i, (m, deck))| {
             let deck = deck.as_ref()?;
             deck.requires.iter().find_map(|req| {
-                let dep = canon(&deck::resolve_dep(req, Some(decks_dir), m.parent())?);
+                let dep = table.canonical(&deck::resolve_dep(req, Some(decks_dir), m.parent())?);
                 position.get(dep.as_path()).copied().filter(|&j| j != i)
             })
         })
@@ -2012,12 +2016,16 @@ mod tests {
             ("diagram_geometry_reads", 0),
             ("store_documents_read", 0),
             ("augment_documents_read", 0),
-            ("canonicalize_calls", 15),
+            ("canonicalize_calls", 5),
             ("sidecar_reads", 0),
         ];
         assert_eq!(
             observed, expected,
             "one list_members over a four-member chain workspace"
+        );
+        assert_eq!(
+            counts.canonicalize_calls, counts.candidates_classified,
+            "a listing resolves each candidate's physical path once, when the workspace lists it"
         );
     }
 

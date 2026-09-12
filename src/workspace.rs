@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     io,
     path::{Path, PathBuf},
 };
@@ -102,16 +102,18 @@ pub struct Workspace {
     pub settings: DeckSettings,
     pub source: Vec<String>,
     pub members: Vec<PathBuf>,
+    /// Each member's physical path, keyed by its spelling in `members`.
+    pub identities: HashMap<PathBuf, PathBuf>,
     pub icon: Option<PathBuf>,
 }
 
 impl Workspace {
     pub fn load(dir: impl AsRef<Path>) -> io::Result<Workspace> {
         let path = dir.as_ref().to_path_buf();
-        let members = match members(&path) {
+        let (members, identities) = match members_with_identity(&path) {
             Ok(members) => members,
             Err(error) if error.kind() == io::ErrorKind::NotFound && has_manifest(&path) => {
-                Vec::new()
+                (Vec::new(), HashMap::new())
             }
             Err(error) => return Err(error),
         };
@@ -124,6 +126,7 @@ impl Workspace {
             settings,
             source,
             members,
+            identities,
             icon,
         })
     }
@@ -346,9 +349,14 @@ pub struct SeenPaths {
 
 impl SeenPaths {
     pub fn first_visit(&mut self, path: &Path) -> bool {
+        self.visit(path).is_some()
+    }
+
+    /// The physical path, on the first visit only.
+    pub fn visit(&mut self, path: &Path) -> Option<PathBuf> {
         profile::hit(Counter::CanonicalizeCalls);
-        self.seen
-            .insert(path.canonicalize().unwrap_or_else(|_| path.to_path_buf()))
+        let identity = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        self.seen.insert(identity.clone()).then_some(identity)
     }
 }
 
@@ -369,6 +377,10 @@ fn members(dir: &Path) -> io::Result<Vec<PathBuf>> {
     classify_deck_files(dir).map(|found| found.initialized)
 }
 
+fn members_with_identity(dir: &Path) -> io::Result<(Vec<PathBuf>, HashMap<PathBuf, PathBuf>)> {
+    classify_deck_files(dir).map(|found| (found.initialized, found.identities))
+}
+
 pub fn uninitialized_deck_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
     classify_deck_files(dir).map(|found| found.uninitialized)
 }
@@ -380,6 +392,7 @@ pub fn misplaced_deck_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
     members_where_in(dir, |_| true).map(|paths| {
         paths
             .into_iter()
+            .map(|(path, _)| path)
             .filter(|path| {
                 std::fs::read_to_string(path).ok().is_some_and(|text| {
                     crate::parser::deck_identity(&text).ok().flatten().is_some()
@@ -393,6 +406,8 @@ pub fn misplaced_deck_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
 #[derive(Debug, Default)]
 pub struct ClassifiedDecks {
     pub initialized: Vec<PathBuf>,
+    /// The physical path of each initialized member, keyed by its spelling.
+    pub identities: HashMap<PathBuf, PathBuf>,
     pub uninitialized: Vec<PathBuf>,
     /// Candidates whose bytes could not be read. A readable folder holding one
     /// unreadable file is the common permission boundary, and dropping it would
@@ -401,9 +416,9 @@ pub struct ClassifiedDecks {
 }
 
 pub fn classify_deck_files(dir: &Path) -> io::Result<ClassifiedDecks> {
-    let candidates = members_where(dir, |_| true)?;
+    let candidates = members_where_in(&member_dir(dir), |_| true)?;
     let mut found = ClassifiedDecks::default();
-    for path in candidates {
+    for (path, identity) in candidates {
         profile::hit(Counter::CandidatesClassified);
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
@@ -413,6 +428,7 @@ pub fn classify_deck_files(dir: &Path) -> io::Result<ClassifiedDecks> {
             }
         };
         if crate::parser::deck_identity(&text).ok().flatten().is_some() {
+            found.identities.insert(path.clone(), identity);
             found.initialized.push(path);
         } else if crate::parser::is_deck_content(&text) {
             found.uninitialized.push(path);
@@ -441,13 +457,21 @@ pub(crate) fn members_where(
     dir: &Path,
     is_deck: impl FnMut(&Path) -> bool,
 ) -> io::Result<Vec<PathBuf>> {
+    members_where_with_identity(dir, is_deck)
+        .map(|members| members.into_iter().map(|(path, _)| path).collect())
+}
+
+pub(crate) fn members_where_with_identity(
+    dir: &Path,
+    is_deck: impl FnMut(&Path) -> bool,
+) -> io::Result<Vec<(PathBuf, PathBuf)>> {
     members_where_in(&member_dir(dir), is_deck)
 }
 
 fn members_where_in(
     dir: &Path,
     mut is_deck: impl FnMut(&Path) -> bool,
-) -> io::Result<Vec<PathBuf>> {
+) -> io::Result<Vec<(PathBuf, PathBuf)>> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)?
         .filter_map(|r| r.ok().map(|e| e.path()))
         .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "md"))
@@ -460,8 +484,10 @@ fn members_where_in(
         .collect();
     paths.sort();
     let mut offered = SeenPaths::default();
-    paths.retain(|path| offered.first_visit(path));
-    Ok(paths)
+    Ok(paths
+        .into_iter()
+        .filter_map(|path| offered.visit(&path).map(|identity| (path, identity)))
+        .collect())
 }
 
 pub fn is_workspace(path: &Path) -> bool {

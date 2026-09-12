@@ -192,7 +192,12 @@ impl DeckCache {
     }
 
     pub fn workspace(&mut self, dir: &Path) -> Workspace {
-        let members = self.members(dir);
+        let (members, identities): (Vec<PathBuf>, HashMap<PathBuf, PathBuf>) =
+            workspace::members_where_with_identity(dir, |p| self.is_deck(p))
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(path, identity)| (path.clone(), (path, identity)))
+                .unzip();
         let meta = self.manifest_meta(&dir.join(workspace::MANIFEST));
         let icon = workspace::resolve_icon(dir, meta.icon.as_deref());
         Workspace {
@@ -202,6 +207,7 @@ impl DeckCache {
             settings: meta.settings,
             source: meta.source,
             members,
+            identities,
             icon,
         }
     }

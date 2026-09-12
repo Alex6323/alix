@@ -51,6 +51,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A workspace listing resolves each member's physical path once, when the
+  workspace lists its members, instead of three times per listing (the
+  member dedup, the prerequisite table, and the dependency forest each
+  resolved every member again).
+
 - The phone keeps parsed decks in memory across picker listings. Every
   listing used to parse every deck again; a repeat listing over unchanged
   decks now parses none, so returning from a review to the picker costs the

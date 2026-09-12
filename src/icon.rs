@@ -309,6 +309,7 @@ mod tests {
             settings: Default::default(),
             source: Vec::new(),
             members: vec![traced, plain],
+            identities: Default::default(),
             icon: None,
         };
 
