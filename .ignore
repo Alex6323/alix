@@ -7,7 +7,9 @@
 !/docs/bugs/
 !/docs/research/
 !/docs/dev/
+!/docs/performance/
 !/PLAN.md
 !/ROADMAP.md
+!/DESK.md
 # bug-report screenshots dropped at the repo root (dated, issue-named)
 !/*.png

@@ -128,7 +128,7 @@ at. **crates.io is not automated.**
    Treat a failure as evidence to investigate and resolve before tagging. A
    diagnostic rerun is fine, but do not discard a failure and release merely
    because a later run got lucky. Keep the run's log and store its matrix as
-   `docs/results/<date>-calibrate-<version>.md` via
+   `docs/release-records/<date>-calibrate-<version>.md` via
    `python3 scripts/calibrate_matrix.py <log> --tree <candidate> --run <when>`,
    so the per-backend verdicts stay comparable release over release.
 4b. **Card-shape evaluation.** Run `make shape-eval` when the deck generator,
@@ -225,7 +225,7 @@ To cut one:
    as the desktop release: investigate any failure rather than rerunning until
    chance produces green.
 4. **Workspace-open timing:** re-run the device session recorded in
-   `docs/results/2026-09-09-workspace-open-timing.md`: `make apk PROFILE=1`,
+   `docs/release-records/2026-09-09-workspace-open-timing.md`: `make apk PROFILE=1`,
    install that build on a real phone
    (`adb install -r mobile/alix/build/app/outputs/flutter-apk/app-release.apk`,
    which keeps the phone's decks and progress), collect the `members` rows

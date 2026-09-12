@@ -3,12 +3,11 @@
 alix is a spaced-repetition trainer for Markdown flashcard decks; its
 Android app embeds the Rust library through a Dart-to-Rust bridge and
 can be paired with a desktop over the local network, pulling a copy of
-the desktop's decks. Measured 2026-09-09 on the phone of the maintainer
-(Alex), who also did the tapping. Raw rows, no averaging. The occasion: on 2026-09-08 he
-reported the Android app as slow when opening a big workspace, and the
-listing code was changed to parse each deck once per listing (commit
-e78cf0d4). This note records what the phone measured before and after
-that change.
+the desktop's decks. Measured 2026-09-09 on a phone. Raw rows, no
+averaging. The occasion: opening a large workspace on Android was
+reported as slow, and the listing code was changed to parse each deck
+once per listing (commit e78cf0d4). This note records what the phone
+measured before and after that change.
 
 ## What was measured
 
@@ -50,7 +49,7 @@ bridge call (`bridge_ms`), a Rust-side timer around the library call
 
 Setup:
 
-- Device: Samsung Galaxy S10e (SM-G970F), Android 12, reached over
+- Device: a 2019 octa-core Android phone with 6 GB RAM, Android 12, reached over
   wireless adb (Android Debug Bridge).
   Screen on, app in the foreground, nothing else started by hand.
 - Before build: commit bcd3adaa, which adds the counters and the profile
@@ -100,7 +99,7 @@ timestamp's seconds.
 
 ## Reading
 
-- The drill-in, the thing Alex reported as slow, dropped from about
+- The drill-in, the operation reported as slow, dropped from about
   2.1 s to about 0.75 s per open. The before build parsed every member
   three times (654 = 3 x 218) and classified every candidate twice
   (436 = 2 x 218); the after build parses and classifies each member
@@ -143,7 +142,7 @@ timestamp's seconds.
 
 ## Host split, same workspace
 
-Run on the maintainer's desktop against the same 218-member workspace
+Run on a desktop against the same 218-member workspace
 (the counters of one `list_members` call there equal the phone's after
 rows exactly: 218 candidates, 218 parses, 18 progress documents, 31
 augment documents, 654 canonicalize calls). A scratch program linked
@@ -203,7 +202,7 @@ the raw lines rather than the derived display lines.
 
 ## What follows
 
-Recorded on the maintainer's local roadmap (a file outside the
+Recorded on the local roadmap (a file outside the
 repository) under its workspace-listing item: the root screen's
 per-workspace member pass, the repeated listings on launch, a shared
 canonical-path map for the dependency-tree pass, and a listing cache for

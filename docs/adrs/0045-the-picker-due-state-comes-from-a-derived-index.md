@@ -26,10 +26,10 @@ The served desktop softens this with a process-lifetime, (mtime, size) validated
 parse cache, so a warm re-list of unchanged decks parses nothing. The softening
 is partial by construction: the cache dies with the process, only the server
 builds one, and any deck whose file changed falls out of it. The phone holds no
-cache at all. Measured on 2026-09-11 (`docs/results/2026-09-11-picker-due-snapshot-phase-0-baselines.md`):
-a 220-member workspace lists in about 32 ms warm on the desktop and 525 ms on an
-SM_G970F, and the phone's profile counters report `decks_loaded=220` on every
-single listing, so the phone has no warm case at all.
+cache at all. Measured on 2026-09-11 (a local measurement note, not tracked):
+a 220-member workspace lists in about 32 ms warm on the desktop and 525 ms on a
+2019 Android phone, and the phone's profile counters report `decks_loaded=220`
+on every single listing, so the phone has no warm case at all.
 
 This record originally proposed that the index carry a due COUNT, and that the
 row show it. That is no longer the design. Alex ruled on 2026-09-11 that a

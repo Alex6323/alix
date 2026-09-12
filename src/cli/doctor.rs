@@ -1751,9 +1751,7 @@ mod tests {
         assert!(repair_after_explicit_path(None));
     }
 
-    /// Ruled D13(ii): a filename-named deck is sanctioned, so doctor must
-    /// stay silent about a missing `title:`. A finding here would nag on
-    /// 444 of the 621 initialized decks in the maintainer's own library.
+    /// A filename-named deck is sanctioned; the silence is deliberate.
     #[test]
     fn an_untitled_deck_draws_no_missing_title_finding() {
         let dir = tempfile::tempdir().unwrap();

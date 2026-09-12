@@ -404,7 +404,7 @@ web-debug:
 # embedded Rust core through cargokit either way. Needs the frb toolchain and,
 # for the emulators, ANDROID_HOME (see docs/dev/frb-bridge-setup.md).
 # PROFILE=1 adds --dart-define=ALIX_PROFILE=true: the picker prints one
-# `alix-profile` line per listing call (docs/results/*workspace-open-timing*).
+# `alix-profile` line per listing call (docs/release-records/*workspace-open-timing*).
 FLUTTER_DEFINES := $(if $(PROFILE),--dart-define=ALIX_PROFILE=true,)
 phone:
 	@ALIX_FLUTTER_ARGS="$(FLUTTER_DEFINES)" sh scripts/mobile-run.sh alix_phone

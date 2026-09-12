@@ -22,7 +22,7 @@ private to each device, makes the same person review the same cards on
 each device. The use a maintainer could imagine, several people sharing
 one content folder with private progress each, cannot be expressed by a
 path in a manifest they all share: every member resolves the same store.
-No workspace in the maintainer's own libraries uses the key. The paired
+No workspace known to use the key exists. The paired
 device sync (ADR 0042) would have had to promise, test, and document an
 entry whose progress lives outside the entry.
 
