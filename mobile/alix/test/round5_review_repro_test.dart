@@ -49,7 +49,7 @@ void main() {
     host: '127.0.0.1',
     port: 7777,
     token: 'abc',
-    rootId: 'root-test',
+    rootId: 'root-test0000000000000000000000',
   );
 
   Future<Directory> pairedRoot(Directory support) async {
@@ -306,13 +306,13 @@ void main() {
         host: '127.0.0.1',
         port: 7777,
         token: 'fixed-token',
-        rootId: 'root-test',
+        rootId: 'root-test0000000000000000000000',
       );
       await savePairing(oldConfig, support: support);
       final pairedDir = Directory(
         sync_bridge.pairedRootDirFor(
           support: support.path,
-          rootId: 'root-test',
+          rootId: 'root-test0000000000000000000000',
         ),
       )..createSync(recursive: true);
       final builtEndpoints = <String>[];
@@ -326,11 +326,11 @@ void main() {
             onSetTheme: (_) async {},
             buildClient: (_) => FakeServerClient(
               versionReply: minServerVersion,
-              rootIdReply: 'root-test',
+              rootIdReply: 'root-test0000000000000000000000',
             ),
             buildSyncPort: (pairing, _) {
               builtEndpoints.add('${pairing.host}:${pairing.port}');
-              return FakeSyncPort(rootId: 'root-test', rootDir: pairedDir.path);
+              return FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: pairedDir.path);
             },
           ),
         ),
@@ -367,7 +367,7 @@ void main() {
       final support = tempDir('alix-round5-unpair-controller-support-');
       final phoneRoot = tempDir('alix-round5-unpair-controller-phone-');
       final pairedDir = await pairedRoot(support);
-      final port = FakeSyncPort(rootId: 'root-test', rootDir: pairedDir.path);
+      final port = FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: pairedDir.path);
       port.tidyRenamedImpl = (_) => const [
         SyncRenamedEntry(old: 'A', new_: 'B'),
       ];
@@ -381,7 +381,7 @@ void main() {
             onSetTheme: (_) async {},
             buildClient: (_) => FakeServerClient(
               versionReply: minServerVersion,
-              rootIdReply: 'root-test',
+              rootIdReply: 'root-test0000000000000000000000',
             ),
             buildSyncPort: (_, _) => port,
           ),

@@ -103,7 +103,7 @@ ServerConfig? parsePairingUrl(String input) {
   if (uri.host.isEmpty) return null;
   final token = uri.queryParameters['token'];
   if (token == null || token.isEmpty) return null;
-  final port = uri.hasPort ? uri.port : 80;
+  final port = uri.port;
   return ServerConfig(scheme: uri.scheme, host: uri.host, port: port, token: token);
 }
 

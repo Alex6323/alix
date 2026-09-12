@@ -137,7 +137,7 @@ void main() {
     final live = traceRoot('alix-walk-structure-done-live-', hops: 1);
     final liveSupport = tempDir('alix-walk-structure-live-support-');
     await savePairing(
-      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc', rootId: 'root-test'),
+      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc', rootId: 'root-test0000000000000000000000'),
       support: liveSupport,
     );
     await pumpWalk(
@@ -156,7 +156,7 @@ void main() {
     final cooldown = traceRoot('alix-walk-structure-cooldown-', hops: 1);
     final cooldownSupport = tempDir('alix-walk-structure-cooldown-support-');
     await savePairing(
-      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc', rootId: 'root-test'),
+      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc', rootId: 'root-test0000000000000000000000'),
       support: cooldownSupport,
     );
     WalkSession.open(

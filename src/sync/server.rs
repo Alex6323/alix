@@ -7,13 +7,11 @@ use std::{
 use anyhow::{Context, Result, bail};
 
 use super::{
-    SYNC_PULL_MANIFEST_VERSION, SyncDeckDto, SyncFileDto, SyncPullManifest, digest_reader,
-    entry_digest,
+    ROOT_ID_PREFIX, SYNC_PULL_MANIFEST_VERSION, SyncDeckDto, SyncFileDto, SyncPullManifest,
+    digest_reader, entry_digest, is_root_id,
 };
 #[cfg(feature = "full")]
 use crate::share::StagedFile;
-
-pub const ROOT_ID_PREFIX: &str = "root-";
 
 fn root_id_path(served_dir: &Path) -> std::path::PathBuf {
     served_dir.join(".alix/sync.toml")
@@ -23,10 +21,7 @@ fn checked_root_id(path: &Path, value: &toml::Value) -> Result<String> {
     let Some(id) = value.as_str() else {
         bail!("{}: root_id must be a string", path.display());
     };
-    if !id
-        .strip_prefix(ROOT_ID_PREFIX)
-        .is_some_and(crate::token::is_canonical)
-    {
+    if !is_root_id(id) {
         bail!(
             "{}: root_id must be `root-` plus 26 lowercase Crockford base32 characters",
             path.display()

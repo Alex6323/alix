@@ -144,6 +144,9 @@ also echo the stable served-root identity in `X-Alix-Root`; a missing, wrong,
 or changed root is refused before the request body or current document is
 read. This is a wrong-library guard, not a second credential: anyone holding
 the pairing token and current root id has the full sync capability.
+The phone checks the served root id's grammar before deriving its paired
+directory from it, at pairing and at every open, so a malformed or
+path-shaped id from a desktop cannot place the paired tree outside `paired/`.
 
 Remote tutor inputs are supplied by the client, remote exams resolve a selected
 desktop deck, and remote generation accepts web URLs rather than a
@@ -436,6 +439,8 @@ The most relevant deterministic checks currently live beside their controls:
   revision conflicts, owner-thread commits, exact pre-push backups, bounded
   ZIP copying, streamed archive cleanup, body caps, and root-before-load
   refusal;
+- `src/paired.rs` and `mobile/alix/rust/src/api/sync.rs`: the phone's paired
+  directory is derived only from a canonical root id;
 - `src/deck.rs`: explicit-source precedence and no origin-root inference;
 - `src/parser/mod.rs`, `src/stamp.rs`, and `src/workspace.rs`: explicit deck
   identity, byte-preserving refusal, and initialized-only discovery;

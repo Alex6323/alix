@@ -2,14 +2,15 @@
 // review, tutor) can reopen it directly from a "Re-pair" SnackBarAction after
 // a 401, without pulling in picker_screen.dart's own imports (notably
 // src/rust/api/*: exam_screen.dart and tutor_sheet.dart deliberately never
-// import the generated bridge, so their tests run without a Rust dylib; this
-// file only reaches bootstrap.dart and server_client.dart, keeping that seam
-// intact).
+// call the generated bridge, so their tests run without a Rust dylib; this
+// file calls it only when a pairing is saved, which only its own tests
+// drive, keeping that seam intact).
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/bridge/sync_bridge.dart' as sync_bridge;
 import 'package:alix_mobile/server_client.dart';
 
 /// Opens the pairing sheet: paste the URL `alix --lan` prints, probe it, and
@@ -116,6 +117,15 @@ class _PairSheetState extends State<_PairSheet> {
       setState(() {
         _busy = false;
         _status = "this desktop's alix is older than this app's sync";
+      });
+      return;
+    }
+    try {
+      sync_bridge.pairedRootDirFor(support: widget.support.path, rootId: rootId);
+    } on Object {
+      setState(() {
+        _busy = false;
+        _status = "this desktop's root id is malformed";
       });
       return;
     }

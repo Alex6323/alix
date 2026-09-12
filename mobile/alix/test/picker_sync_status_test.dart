@@ -46,13 +46,13 @@ void main() {
     host: '127.0.0.1',
     port: 7777,
     token: 'abc',
-    rootId: 'root-test',
+    rootId: 'root-test0000000000000000000000',
   );
 
   Future<Directory> pairedRoot(Directory support) async {
     await savePairing(config, support: support);
     final dir = Directory(
-      sync_bridge.pairedRootDirFor(support: support.path, rootId: 'root-test'),
+      sync_bridge.pairedRootDirFor(support: support.path, rootId: 'root-test0000000000000000000000'),
     );
     dir.createSync(recursive: true);
     return dir;
@@ -93,7 +93,7 @@ void main() {
     (tester) async {
       final support = tempDir('alix-sync-status-support-');
       final root = await pairedRoot(support);
-      final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      final port = FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: root.path);
       // A renamed pair makes the cycle non-empty (an empty cycle now leaves
       // no status line at all) without changing the summary text: only
       // landed/conflicts/refused/orphaned feed it.
@@ -152,9 +152,9 @@ void main() {
       final support = tempDir('alix-sync-status-row-support-');
       final root = await pairedRoot(support);
       writeTestDeck('${root.path}/deck.md', '---\ntitle: Deck\n---\n## q\na\n');
-      final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      final port = FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: root.path);
       port.entriesImpl = () async => const SyncEntries(
-        rootId: 'root-test',
+        rootId: 'root-test0000000000000000000000',
         entries: [
           SyncEntry(
             name: 'deck.md',
@@ -214,7 +214,7 @@ void main() {
         '${root.path}/remote.md',
         '---\ntitle: Remote Deck\n---\n## q\na\n',
       );
-      final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      final port = FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: root.path);
 
       await pumpPaired(
         tester,
@@ -240,9 +240,9 @@ void main() {
     (tester) async {
       final support = tempDir('alix-sync-available-support-');
       final root = await pairedRoot(support);
-      final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      final port = FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: root.path);
       port.entriesImpl = () async => const SyncEntries(
-        rootId: 'root-test',
+        rootId: 'root-test0000000000000000000000',
         entries: [
           SyncEntry(
             name: 'Biology',
@@ -284,7 +284,7 @@ void main() {
       final support = tempDir('alix-sync-conflict-gate-support-');
       final root = await pairedRoot(support);
       writeTestDeck('${root.path}/deck.md', '---\ntitle: Deck\n---\n## q\na\n');
-      final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      final port = FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: root.path);
       port.pairedEntriesImpl = () => const [
         SyncEntryState(
           entry: 'deck.md',
@@ -323,7 +323,7 @@ void main() {
     (tester) async {
       final support = tempDir('alix-sync-pairedentries-fail-support-');
       final root = await pairedRoot(support);
-      final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      final port = FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: root.path);
       port.pairedEntriesImpl = () => throw Exception('state file corrupt');
 
       await pumpPaired(tester, root: root, support: support, port: port);
@@ -353,19 +353,19 @@ void main() {
         host: '127.0.0.1',
         port: 7777,
         token: 'abc',
-        rootId: 'root-broken',
+        rootId: 'root-brken000000000000000000000',
       );
       await savePairing(config, support: support);
       final pairedDir = sync_bridge.pairedRootDirFor(
         support: support.path,
-        rootId: 'root-broken',
+        rootId: 'root-brken000000000000000000000',
       );
       // A regular file sits where the paired root must be a directory:
       // pairedRecoverFor's create_dir_all/rollback cannot succeed over it,
       // reproducing a real recovery failure rather than a mocked one.
       Directory(pairedDir).parent.createSync(recursive: true);
       File(pairedDir).writeAsStringSync('not a directory');
-      final port = FakeSyncPort(rootId: 'root-broken', rootDir: pairedDir);
+      final port = FakeSyncPort(rootId: 'root-brken000000000000000000000', rootDir: pairedDir);
 
       final phoneRoot = tempDir('alix-sync-recover-fail-phone-');
       await tester.pumpWidget(
@@ -408,13 +408,13 @@ void main() {
         host: '127.0.0.1',
         port: 7777,
         token: 'old-token',
-        rootId: 'root-test',
+        rootId: 'root-test0000000000000000000000',
       );
       await savePairing(oldConfig, support: support);
       final pairedDir = Directory(
         sync_bridge.pairedRootDirFor(
           support: support.path,
-          rootId: 'root-test',
+          rootId: 'root-test0000000000000000000000',
         ),
       )..createSync(recursive: true);
       writeTestDeck(
@@ -422,11 +422,11 @@ void main() {
         '---\ntitle: Deck\n---\n## q\na\n',
       );
       final oldPort = FakeSyncPort(
-        rootId: 'root-test',
+        rootId: 'root-test0000000000000000000000',
         rootDir: pairedDir.path,
       );
       final freshPort = FakeSyncPort(
-        rootId: 'root-test',
+        rootId: 'root-test0000000000000000000000',
         rootDir: pairedDir.path,
       );
       final builtTokens = <String>[];
@@ -440,7 +440,7 @@ void main() {
             onSetTheme: (_) async {},
             buildClient: (_) => FakeServerClient(
               versionReply: minServerVersion,
-              rootIdReply: 'root-test',
+              rootIdReply: 'root-test0000000000000000000000',
             ),
             buildSyncPort: (config, _) {
               builtTokens.add(config.token);
@@ -479,7 +479,7 @@ void main() {
       final support = tempDir('alix-sync-open-state-fail-support-');
       final root = await pairedRoot(support);
       writeTestDeck('${root.path}/deck.md', '---\ntitle: Deck\n---\n## q\na\n');
-      final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+      final port = FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: root.path);
       port.pairedEntriesImpl = () => throw Exception('state file corrupt');
 
       await pumpPaired(

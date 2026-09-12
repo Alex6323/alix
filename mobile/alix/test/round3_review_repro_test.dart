@@ -70,7 +70,7 @@ void main() {
         host: '127.0.0.1',
         port: 7777,
         token: 'test',
-        rootId: 'root-test',
+        rootId: 'root-test0000000000000000000000',
       ),
       rootDir: scratch.path,
       client: _UnusedSyncClient(),
@@ -84,7 +84,7 @@ void main() {
     'conflict in the report and status',
     () async {
       var firstPending = true;
-      final port = FakeSyncPort(rootId: 'root-test', rootDir: scratch.path);
+      final port = FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: scratch.path);
       port.pairedEntriesImpl = () => [
         SyncEntryState(
           entry: 'greek-a.md',
@@ -159,7 +159,7 @@ void main() {
           ],
         ),
       ];
-      final port = FakeSyncPort(rootId: 'root-test', rootDir: scratch.path);
+      final port = FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: scratch.path);
       port.pairedEntriesImpl = pending;
       port.planPushesImpl = () => [item('deck-a', entry: 'Biology')];
       port.pushImpl = (deckId, _, _) async =>

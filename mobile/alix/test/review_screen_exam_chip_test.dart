@@ -79,7 +79,7 @@ void main() {
     (tester) async {
       final support = tempSupport();
       await savePairing(
-        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
+        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test0000000000000000000000'),
         support: support,
       );
 
@@ -101,7 +101,7 @@ void main() {
     (tester) async {
       final support = tempSupport();
       await savePairing(
-        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
+        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test0000000000000000000000'),
         support: support,
       );
 
@@ -151,7 +151,7 @@ void main() {
 
       final support = tempSupport();
       await savePairing(
-        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
+        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test0000000000000000000000'),
         support: support,
       );
 

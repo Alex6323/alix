@@ -59,6 +59,18 @@ void main() {
       );
     });
 
+    test('an https URL without a port defaults to 443', () {
+      expect(
+        parsePairingUrl('https://alix.local/?token=abc123'),
+        const ServerConfig(
+          scheme: 'https',
+          host: 'alix.local',
+          port: 443,
+          token: 'abc123',
+        ),
+      );
+    });
+
     test('a bracketed IPv6 host survives', () {
       expect(
         parsePairingUrl('http://[::1]:7777/?token=abc123'),

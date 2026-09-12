@@ -201,10 +201,23 @@ class _PickerScreenState extends State<PickerScreen> {
       if (mounted) _controller.setServerReachable(false);
       return;
     }
-    final pairedDir = sync_bridge.pairedRootDirFor(
-      support: support.path,
-      rootId: config.rootId,
-    );
+    final String pairedDir;
+    try {
+      pairedDir = sync_bridge.pairedRootDirFor(
+        support: support.path,
+        rootId: config.rootId,
+      );
+    } on Object {
+      if (isPairedRootScreen) {
+        _pairedDir = null;
+        _pairedLabel = null;
+        _controller.setPairedRoot(null);
+        _detachSyncController();
+        if (mounted) _controller.reload();
+      }
+      if (mounted) _controller.setServerReachable(false);
+      return;
+    }
 
     String? recoveryError;
     if (isPairedRootScreen) {

@@ -4,6 +4,12 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 pub const SYNC_PULL_MANIFEST_VERSION: u32 = 1;
+pub const ROOT_ID_PREFIX: &str = "root-";
+
+pub fn is_root_id(id: &str) -> bool {
+    id.strip_prefix(ROOT_ID_PREFIX)
+        .is_some_and(crate::token::is_canonical)
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]

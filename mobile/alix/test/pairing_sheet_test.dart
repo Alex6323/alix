@@ -137,7 +137,7 @@ void main() {
     await openPairSheet(
       tester,
       support: support,
-      buildClient: (_) => FakeServerClient(versionReply: '0.6.0', rootIdReply: 'root-abc'),
+      buildClient: (_) => FakeServerClient(versionReply: '0.6.0', rootIdReply: 'root-abc00000000000000000000000'),
     );
 
     await tester.enterText(
@@ -156,9 +156,29 @@ void main() {
         host: 'desktop.local',
         port: 7777,
         token: 'abc123',
-        rootId: 'root-abc',
+        rootId: 'root-abc00000000000000000000000',
       ),
     );
+  });
+
+  testWidgets('a server whose root_id is not root- plus 26 Crockford characters is refused',
+      (tester) async {
+    final support = temp('alix-support-');
+    await openPairSheet(
+      tester,
+      support: support,
+      buildClient: (_) => FakeServerClient(versionReply: '0.6.0', rootIdReply: 'root-abc'),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pairing-url-field')),
+      'http://desktop.local:7777/?token=abc123',
+    );
+    await tester.tap(find.text('Pair'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining("this desktop's root id is malformed"), findsOneWidget);
+    expect(readActivePairing(support), isNull);
   });
 
   testWidgets('a server whose /api/version carries no root_id is refused', (tester) async {
@@ -185,7 +205,7 @@ void main() {
 
   testWidgets('Unpair removes the setting and shows a SnackBar', (tester) async {
     final support = temp('alix-support-');
-    const config = ServerConfig(host: 'desktop.local', port: 7777, token: 'abc123', rootId: 'root-abc');
+    const config = ServerConfig(host: 'desktop.local', port: 7777, token: 'abc123', rootId: 'root-abc00000000000000000000000');
     await savePairing(config, support: support);
 
     await openPairSheet(

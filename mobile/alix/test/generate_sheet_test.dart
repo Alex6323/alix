@@ -32,7 +32,7 @@ void main() {
   }
 
   Future<void> pair(Directory support) => savePairing(
-        const ServerConfig(host: 'desktop.local', port: 7777, token: 'abc123', rootId: 'root-test'),
+        const ServerConfig(host: 'desktop.local', port: 7777, token: 'abc123', rootId: 'root-test0000000000000000000000'),
         support: support,
       );
 

@@ -42,7 +42,7 @@ void main() {
     writeTestDeck('${root.path}/facts.md', '## q?\na\n');
     final progressDoc = File('${tmp.path}/progress.json')
       ..writeAsStringSync('{}');
-    final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
+    final port = FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: root.path);
     port.pairedEntriesImpl = () => [
       SyncEntryState(
         entry: 'facts',

@@ -15,7 +15,7 @@ import 'package:alix_mobile/server_client.dart';
 class FakeServerClient implements ServerClient {
   FakeServerClient({
     this.versionReply,
-    this.rootIdReply = 'root-test',
+    this.rootIdReply = 'root-test0000000000000000000000',
     this.expireOnVersion = false,
     this.versionGate,
     this.backendReply = 'Claude',

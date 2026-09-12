@@ -160,12 +160,10 @@ fn root(dir: &str) -> PairedRoot {
 }
 
 #[flutter_rust_bridge::frb(sync)]
-pub fn paired_root_dir(support: String, root_id: String) -> String {
-    Path::new(&support)
-        .join(paired::PAIRED_DIR)
-        .join(root_id)
+pub fn paired_root_dir(support: String, root_id: String) -> Result<String> {
+    Ok(paired::root_dir(Path::new(&support), &root_id)?
         .to_string_lossy()
-        .into_owned()
+        .into_owned())
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -285,4 +283,29 @@ pub fn paired_free_space(path: String) -> Result<u64> {
 #[flutter_rust_bridge::frb(sync)]
 pub fn paired_needs_space(compressed: u64, unpacked: u64) -> u64 {
     paired::needs_space(compressed, unpacked)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_server_root_id_cannot_escape_the_paired_subtree() {
+        let support = Path::new("/phone-support");
+        let paired = support.join(paired::PAIRED_DIR);
+
+        for root_id in ["../../decks", "/outside", "root-abc"] {
+            assert!(
+                paired_root_dir(support.to_string_lossy().into_owned(), root_id.to_string())
+                    .is_err(),
+                "server root id {root_id:?} must be refused"
+            );
+        }
+        let ok = paired_root_dir(
+            support.to_string_lossy().into_owned(),
+            "root-9w2c7x4k1m8q3z5t0v6b2n4d8f".to_string(),
+        )
+        .unwrap();
+        assert_eq!(PathBuf::from(ok).parent(), Some(paired.as_path()));
+    }
 }

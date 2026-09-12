@@ -12,7 +12,7 @@ import 'package:alix_mobile/sync/sync_port.dart';
 import 'package:alix_mobile/sync_client.dart';
 
 class FakeSyncPort implements SyncPort {
-  FakeSyncPort({this.rootId = 'root-test', required this.rootDir});
+  FakeSyncPort({this.rootId = 'root-test0000000000000000000000', required this.rootDir});
 
   @override
   final String rootId;

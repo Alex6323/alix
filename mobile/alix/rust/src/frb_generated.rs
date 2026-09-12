@@ -1760,13 +1760,12 @@ fn wire__crate__api__sync__paired_root_dir_impl(
             let api_support = <String>::sse_decode(&mut deserializer);
             let api_root_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let output_ok = Result::<_, ()>::Ok(crate::api::sync::paired_root_dir(
-                    api_support,
-                    api_root_id,
-                ))?;
-                Ok(output_ok)
-            })())
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::sync::paired_root_dir(api_support, api_root_id)?;
+                    Ok(output_ok)
+                })(),
+            )
         },
     )
 }

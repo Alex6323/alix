@@ -324,7 +324,7 @@ void main() {
       final root = tempDir('alix-picker-structure-generate-');
       final support = tempDir('alix-picker-structure-generate-support-');
       await savePairing(
-        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc', rootId: 'root-test'),
+        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc', rootId: 'root-test0000000000000000000000'),
         support: support,
       );
       final busyClient = FakeServerClient(
@@ -352,7 +352,7 @@ void main() {
         // keeps it off the real network and, listing nothing, leaves no
         // status line for this test's tree to capture.
         buildSyncPort: (_, _) =>
-            FakeSyncPort(rootId: 'root-test', rootDir: root.path),
+            FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: root.path),
       );
       await openSettings(tester);
       await tester.tap(find.text('Generate deck'));

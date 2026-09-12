@@ -70,11 +70,11 @@ Future<Prepared> prepareWithPairing({Directory? support, String? env}) async {
   if (resolvedEnv != null && resolvedEnv.isNotEmpty) return prepared;
   final pairing = readActivePairing(resolvedSupport);
   if (pairing == null) return prepared;
-  final pairedDir = sync_bridge.pairedRootDirFor(
-    support: resolvedSupport.path,
-    rootId: pairing.rootId,
-  );
   try {
+    final pairedDir = sync_bridge.pairedRootDirFor(
+      support: resolvedSupport.path,
+      rootId: pairing.rootId,
+    );
     sync_bridge.pairedRecoverFor(rootDir: pairedDir);
   } on Object catch (error) {
     debugPrint('paired recover at startup failed: $error');

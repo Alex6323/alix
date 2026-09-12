@@ -199,6 +199,13 @@ struct DocumentHead {
     writer: Option<Writer>,
 }
 
+pub fn root_dir(support: &Path, root_id: &str) -> Result<PathBuf> {
+    if !crate::sync::is_root_id(root_id) {
+        bail!("`{root_id}` is not a root id");
+    }
+    Ok(support.join(PAIRED_DIR).join(root_id))
+}
+
 pub fn manifests(root: &PairedRoot) -> Result<Vec<SyncPullManifest>> {
     let dir = root.private().join(PULL_DIR);
     let mut out = Vec::new();
@@ -1321,6 +1328,30 @@ mod tests {
     const DECK_A: &str = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f";
     const DECK_B: &str = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8g";
     const DECK_C: &str = "deck-9w2c7x4k1m8q3z5t0v6b2n4d8h";
+
+    #[test]
+    fn a_root_dir_is_derived_only_from_a_canonical_root_id() {
+        let support = Path::new("/phone-support");
+        assert_eq!(
+            root_dir(support, ROOT_ID).unwrap(),
+            support.join(PAIRED_DIR).join(ROOT_ID)
+        );
+        for bad in [
+            "../../decks",
+            "/outside",
+            "root-abc",
+            "root-",
+            "",
+            "root-9W2C7X4K1M8Q3Z5T0V6B2N4D8F",
+            "root-9w2c7x4k1m8q3z5t0v6b2n4d8f/x",
+            "9w2c7x4k1m8q3z5t0v6b2n4d8f",
+        ] {
+            assert!(
+                root_dir(support, bad).is_err(),
+                "{bad:?} must not derive a root dir"
+            );
+        }
+    }
 
     fn fresh_root() -> (tempfile::TempDir, PairedRoot) {
         let tmp = tempfile::tempdir().unwrap();

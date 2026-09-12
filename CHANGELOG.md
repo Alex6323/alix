@@ -89,6 +89,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The phone refuses to pair with a desktop whose root id is not `root-`
+  plus 26 lowercase Crockford base32 characters, and it never joins an
+  unchecked root id into its paired directory path, so a malformed or
+  path-shaped id cannot place the paired tree outside `paired/`.
+
+- An `https` pairing URL without a port now dials 443; it dialed 80.
+
 - Listing the picker no longer freezes the phone. The bridge ran the listing
   on the UI thread, so a large workspace held the app for the whole parse;
   it now runs on a worker while the screen stays responsive, the local

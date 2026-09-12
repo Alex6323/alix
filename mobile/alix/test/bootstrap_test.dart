@@ -239,7 +239,7 @@ void main() {
           host: '127.0.0.1',
           port: 7777,
           token: 'abc',
-          rootId: 'root-test',
+          rootId: 'root-test0000000000000000000000',
         ),
         support: support,
       );
@@ -265,13 +265,13 @@ void main() {
           host: '127.0.0.1',
           port: 7777,
           token: 'abc',
-          rootId: 'root-broken',
+          rootId: 'root-brken000000000000000000000',
         ),
         support: support,
       );
       final pairedDir = sync_bridge.pairedRootDirFor(
         support: support.path,
-        rootId: 'root-broken',
+        rootId: 'root-brken000000000000000000000',
       );
       // A regular file sits where the paired root must be a directory:
       // pairedRecoverFor's create_dir_all/rollback cannot succeed over it,

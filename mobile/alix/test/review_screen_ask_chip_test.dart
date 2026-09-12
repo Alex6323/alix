@@ -78,7 +78,7 @@ void main() {
   testWidgets('a paired, current-enough desktop: the Ask chip appears after an attempt', (tester) async {
     final support = tempSupport();
     await savePairing(
-      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
+      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test0000000000000000000000'),
       support: support,
     );
 
@@ -97,7 +97,7 @@ void main() {
   testWidgets('a dead paired server: the Ask chip does not exist', (tester) async {
     final support = tempSupport();
     await savePairing(
-      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
+      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test0000000000000000000000'),
       support: support,
     );
 
@@ -114,7 +114,7 @@ void main() {
   testWidgets('an older paired server: the Ask chip does not exist', (tester) async {
     final support = tempSupport();
     await savePairing(
-      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test'),
+      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test0000000000000000000000'),
       support: support,
     );
 
@@ -134,7 +134,7 @@ void main() {
     final support = tempSupport();
     final versionGate = Completer<void>();
     await savePairing(
-      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'stale', rootId: 'root-test'),
+      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'stale', rootId: 'root-test0000000000000000000000'),
       support: support,
     );
 
