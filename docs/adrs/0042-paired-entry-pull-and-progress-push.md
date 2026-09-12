@@ -9,8 +9,8 @@
 - Evidence: a_crash_at_any_step_leaves_the_old_or_the_new_entry in src/paired.rs
 - Evidence: a_deleted_member_with_unpushed_progress_keeps_its_files_and_document in src/paired.rs
 - Evidence: pulled_entries_count_the_phone_saves_since_the_last_push_and_their_time in src/paired.rs
-- Evidence: SyncController in mobile/alix/test/sync_controller_test.dart
-- Evidence: testWidgets in mobile/alix/integration_test/sync_e2e_test.dart
+- Evidence: pushes every planned item in order, recording each result in mobile/alix/test/sync_controller_test.dart
+- Evidence: a paired phone pulls a desktop entry, pushes its review back in mobile/alix/integration_test/sync_e2e_test.dart
 - Recorded: 2026-09-03; revised 2026-09-05 (identity per served folder);
   accepted 2026-09-07 with the implementation
 - Retrospective: No
@@ -65,8 +65,9 @@ mirror; Android only. The spec is
    folder move, and a repointed profile never orphan progress, and a
    second served folder never shares a progress directory with the first.
    The id is per folder, not per profile: a profile is a launch recipe and
-   is never served. The id's grammar and config key are freeze-forever
-   choices recorded in the spec's decision list for Alex, not chosen here.
+   is never served. The id is `root-` followed by 26 lowercase Crockford
+   base32 characters, stored under the `root_id` key of the folder's
+   `.alix/sync.toml`; both are permanent choices.
 5. The existing bearer token authorizes the family. Rationale: it already
    authorizes reading every deck and grading against the desktop store
    through the study endpoints; a revision-checked single-document push
@@ -92,8 +93,8 @@ mirror; Android only. The spec is
   foreign-writer notice goes with its only user. Desktop-to-desktop folder
   sync is untouched. The bet is that pull and push cover the need; user
   requests reopen it.
-- The phone stores and dials the scheme its pairing URL carried (spec
-  decision 17, ruled 2026-09-06); alix itself does not terminate TLS in
+- The phone stores and dials the scheme its pairing URL carried, `http` or
+  `https` (ruled 2026-09-06); alix itself does not terminate TLS in
   this phase. A reverse proxy with a CA certificate or a VPN mesh is the
   operator's route; alix-terminated TLS is a separate roadmap item.
 - The phone gains a per-root directory and a sync report; no background
@@ -112,9 +113,8 @@ mirror; Android only. The spec is
 - Per-card merge instead of single-writer refusal: deferred as a named
   roadmap item; the scheduler's per-deck state has no ground truth to merge
   against.
-- A separate sync credential: recorded by Alex as not chosen (spec
-  decision 3); the bearer token already grants strictly more through the
-  study endpoints.
+- A separate sync credential: not chosen (ruled 2026-09-04); the bearer
+  token already grants strictly more through the study endpoints.
 
 ## Compatibility
 
@@ -128,8 +128,12 @@ folder without one mints it at the next serve.
 
 - Trust boundary: the paired token already reaches every deck and the study
   endpoints' store writes; the family adds a bulk export and a single
-  revision-checked document write. The byte policy is the spec's decision 14 (streamed pull, announced
-  sizes, a push body cap); cardinality alone bounds nothing. The trust
+  revision-checked document write. The byte policy (ruled 2026-09-05): a
+  pull is streamed on both sides and its size is announced in the listing
+  (`unpacked_bytes`, the manifest's byte sum), so the phone refuses a pull
+  that free space cannot hold before any byte moves; a push body over
+  64 MiB (`SYNC_PUSH_BODY_CAP`) is refused with 413 and nothing written.
+  Cardinality alone bounds nothing. The trust
   boundary is ADR 0010's: a trusted network or an operator-managed proxy,
   never internet-grade identity.
 - The push validates the document like a local load (version, deck id,

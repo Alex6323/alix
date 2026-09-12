@@ -64,6 +64,30 @@ class AdrCheckTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn("every named marker is present", result.stdout)
 
+    def test_accepted_sync_adr_names_mobile_laws_not_generic_tokens(self):
+        adr = (
+            ROOT / "docs" / "adrs" / "0042-paired-entry-pull-and-progress-push.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "- Evidence: SyncController in mobile/alix/test/sync_controller_test.dart",
+            adr,
+        )
+        self.assertNotIn(
+            "- Evidence: testWidgets in mobile/alix/integration_test/sync_e2e_test.dart",
+            adr,
+        )
+
+    def test_accepted_sync_adr_contains_the_decisions_from_its_local_spec(self):
+        adr = (
+            ROOT / "docs" / "adrs" / "0042-paired-entry-pull-and-progress-push.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("freeze-forever", adr)
+        self.assertNotIn("spec decision 17", adr)
+        self.assertNotIn("spec decision 3", adr)
+        self.assertNotIn("spec's decision 14", adr)
+
 
 if __name__ == "__main__":
     unittest.main()
