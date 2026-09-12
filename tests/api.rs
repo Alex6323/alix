@@ -8199,6 +8199,28 @@ fn a_tutor_note_leaves_the_authored_deck_untouched_and_writes_the_sidecar() {
 }
 
 #[test]
+fn a_sync_listing_failure_answers_with_its_message() {
+    let (base, guard) = spawn_test_server_booted(|_| {});
+    let version = http(&base, "GET", "/api/version", &[], &[]);
+    assert_eq!(
+        200, version.status,
+        "the server is up before the root id is corrupted"
+    );
+    let sync_toml = guard.dir().join(".alix/sync.toml");
+    std::fs::write(&sync_toml, "root_id = 5\n").unwrap();
+
+    let entries = http(&base, "GET", "/api/sync/entries", &[], &[]);
+
+    assert_eq!(500, entries.status);
+    let body = String::from_utf8_lossy(&entries.body);
+    assert!(
+        body.contains("root_id must be a string"),
+        "the failure names itself instead of an empty body: {body:?}"
+    );
+    drop(guard);
+}
+
+#[test]
 fn one_unparseable_deck_is_left_out_without_disabling_healthy_sync_routes() {
     let (base, guard) = spawn_test_server_booted(|dir| {
         std::fs::write(

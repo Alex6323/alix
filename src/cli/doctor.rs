@@ -901,6 +901,22 @@ fn findings_in(dir: &Path) -> Report {
             known_deck_ids.insert(deck_id);
         }
     }
+    if alix::workspace::is_workspace(dir) {
+        for entry in std::fs::read_dir(dir.join(alix::assets::ROOT))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if entry.path().is_dir() && !known_deck_ids.contains(&name) {
+                report.warn(format!(
+                    "{}/{name} belongs to no deck in {}; share and sync leave it out",
+                    alix::assets::ROOT,
+                    dir.display()
+                ));
+            }
+        }
+    }
     match alix::state::open_aggregate_store(&store_path) {
         Ok(store) => {
             let mut known_cards: HashSet<String> = HashSet::new();
@@ -2223,6 +2239,33 @@ mod tests {
         assert!(
             !findings.contains("unrecognized progress document"),
             "{findings}"
+        );
+    }
+
+    #[test]
+    fn an_asset_directory_no_deck_owns_is_a_workspace_warning() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "alix.toml", "title = \"W\"\n");
+        std::fs::create_dir(dir.path().join("decks")).unwrap();
+        w(
+            &dir.path().join("decks"),
+            "m.md",
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\na\n<!-- id: card-m1c1 -->\n",
+        );
+        alix::assets::write_object(dir.path(), "deck-m1", b"excerpt\n", "md").unwrap();
+        std::fs::create_dir_all(dir.path().join("assets/deck-zz")).unwrap();
+
+        let report = workspace_findings(dir.path());
+
+        let orphan: Vec<&String> = report
+            .warnings
+            .iter()
+            .filter(|warning| warning.contains("belongs to no deck"))
+            .collect();
+        assert_eq!(1, orphan.len(), "{:#?}", report.warnings);
+        assert!(
+            orphan[0].contains("assets/deck-zz") && !orphan[0].contains("deck-m1"),
+            "{orphan:?}"
         );
     }
 

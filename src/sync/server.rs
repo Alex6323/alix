@@ -677,6 +677,40 @@ mod tests {
     }
 
     #[test]
+    fn an_asset_directory_no_deck_owns_is_left_out_of_a_workspace_entry() {
+        let served = tempfile::tempdir().unwrap();
+        let workspace = served.path().join("ws");
+        std::fs::create_dir_all(workspace.join("decks")).unwrap();
+        std::fs::write(workspace.join("alix.toml"), "title = \"W\"\n").unwrap();
+        write_deck(&workspace.join("decks/m.md"), "deck-m1", "card-m1c1");
+        crate::assets::write_object(&workspace, "deck-m1", b"excerpt\n", "md").unwrap();
+        let recent = crate::recent::RecentDecks::load(served.path().join("recent.json"));
+        let load = || {
+            SyncCatalog::load(
+                served.path(),
+                &recent,
+                &mut crate::cache::DeckCache::default(),
+            )
+            .unwrap()
+        };
+        let before = load();
+        let stray = workspace.join(crate::assets::ROOT).join("deck-zz");
+        std::fs::create_dir_all(&stray).unwrap();
+        std::fs::write(stray.join("blob.bin"), vec![b'x'; 4096]).unwrap();
+
+        let after = load();
+
+        assert_eq!(1, after.entries().len(), "{:?}", after.entries());
+        assert_eq!(1, after.entries()[0].members, "the member is still served");
+        assert_eq!(
+            before.entries()[0].unpacked_bytes,
+            after.entries()[0].unpacked_bytes,
+            "the stray directory's bytes are not priced into the pull"
+        );
+        assert_eq!(before.entries()[0].digest, after.entries()[0].digest);
+    }
+
+    #[test]
     fn catalog_excludes_external_recent_rows_and_indexes_contained_decks() {
         let served = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();

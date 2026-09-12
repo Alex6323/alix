@@ -262,7 +262,14 @@ fn visit_staged_dir_excluding(
                 }
             }
         } else if name == crate::assets::ROOT && path.is_dir() {
-            visit_staged_assets(&path, &target, excluded_decks, excluded_deck_ids, visit)?;
+            visit_staged_assets(
+                &path,
+                &target,
+                &deck_ids,
+                excluded_decks,
+                excluded_deck_ids,
+                visit,
+            )?;
         } else if path.is_dir() {
             visit_staged_dir_excluding(&path, &target, excluded_decks, excluded_deck_ids, visit)?;
         } else {
@@ -275,6 +282,7 @@ fn visit_staged_dir_excluding(
 fn visit_staged_assets(
     dir: &Path,
     relative: &Path,
+    deck_ids: &HashSet<String>,
     excluded_decks: &HashSet<PathBuf>,
     excluded_deck_ids: &HashSet<String>,
     visit: Visit,
@@ -286,6 +294,9 @@ fn visit_staged_assets(
             continue;
         }
         let kind = entry.file_type()?;
+        if kind.is_dir() && !deck_ids.contains(&name) {
+            continue;
+        }
         refuse_link(&entry.path())?;
         let target = relative.join(&name);
         if kind.is_dir() {
@@ -510,7 +521,7 @@ fn stage_dir_excluding(
         if name == "augment" && from.is_dir() {
             staged += stage_augmentation(&from, &to, &deck_ids)?;
         } else if name == crate::assets::ROOT && from.is_dir() {
-            staged += stage_assets(&from, &to, excluded_decks, excluded_deck_ids)?;
+            staged += stage_assets(&from, &to, &deck_ids, excluded_decks, excluded_deck_ids)?;
         } else if from.is_dir() {
             staged += stage_dir_excluding(&from, &to, excluded_decks, excluded_deck_ids)?;
         } else {
@@ -524,6 +535,7 @@ fn stage_dir_excluding(
 fn stage_assets(
     dir: &Path,
     stage: &Path,
+    deck_ids: &HashSet<String>,
     excluded_decks: &HashSet<PathBuf>,
     excluded_deck_ids: &HashSet<String>,
 ) -> Result<usize> {
@@ -538,6 +550,9 @@ fn stage_assets(
         refuse_link(&from)?;
         let to = stage.join(entry.file_name());
         if from.is_dir() {
+            if !deck_ids.contains(&name) {
+                continue;
+            }
             staged += stage_dir_excluding(&from, &to, excluded_decks, excluded_deck_ids)?;
         } else {
             std::fs::create_dir_all(stage)
@@ -581,10 +596,7 @@ fn validate_workspace_material_excluding(
             continue;
         }
         if !deck_ids.contains(&name) {
-            bail!(
-                "{} is not owned by a deck in this workspace",
-                path.display()
-            );
+            continue;
         }
         crate::assets::validate_owned_dir(root, &name)?;
     }
@@ -2149,7 +2161,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_material_refuses_an_unresolvable_image_and_a_stray_asset_directory() {
+    fn workspace_material_refuses_an_unresolvable_image_and_leaves_a_stray_asset_directory_out() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::write(root.join("alix.toml"), "title = \"W\"\n").unwrap();
@@ -2172,11 +2184,36 @@ mod tests {
         )
         .unwrap();
         validate_workspace_material(root).unwrap();
-        std::fs::create_dir_all(root.join(crate::assets::ROOT).join("deck-zz")).unwrap();
-        let error = validate_workspace_material(root).unwrap_err();
+        crate::assets::write_object(root, "deck-m1", b"excerpt\n", "md").unwrap();
+        let stray = root.join(crate::assets::ROOT).join("deck-zz");
+        std::fs::create_dir_all(&stray).unwrap();
+        std::fs::write(stray.join("blob.bin"), b"orphaned bytes\n").unwrap();
+        validate_workspace_material(root).unwrap();
+        let staged: Vec<PathBuf> =
+            staged_workspace_files_excluding(root, &HashSet::new(), &HashSet::new())
+                .unwrap()
+                .into_iter()
+                .map(|file| file.relative)
+                .collect();
         assert!(
-            format!("{error:#}").contains("is not owned by a deck"),
-            "an asset directory no deck owns fails the workspace: {error:#}"
+            staged.iter().any(|path| path.starts_with("assets/deck-m1")),
+            "the owned asset directory is staged: {staged:?}"
+        );
+        assert!(
+            staged
+                .iter()
+                .all(|path| !path.starts_with("assets/deck-zz")),
+            "an asset directory no deck owns is left out of the listing: {staged:?}"
+        );
+        let stage = tempfile::tempdir().unwrap();
+        let (copied, _) = stage_path(root, stage.path()).unwrap();
+        assert!(
+            copied.join("assets/deck-m1").is_dir(),
+            "owned assets are copied"
+        );
+        assert!(
+            !copied.join("assets/deck-zz").exists(),
+            "an asset directory no deck owns is left out of the copy"
         );
     }
 

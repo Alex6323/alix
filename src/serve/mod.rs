@@ -444,7 +444,10 @@ pub fn run_review(
                                     root_id: root.root_id,
                                 },
                             ),
-                            Some(Err(_)) => respond_status(request, 500),
+                            Some(Err(error)) => {
+                                log_error_only(&request, 500, &error);
+                                respond_status(request, 500);
+                            }
                             None => respond_status(request, 503),
                         }
                         continue;
@@ -483,7 +486,7 @@ pub fn run_review(
                                 "application/zip",
                                 &filename,
                             ),
-                            Err(_) => respond_status(request, 500),
+                            Err(error) => respond_error(request, 500, &error),
                         }
                         continue;
                     }
@@ -558,7 +561,7 @@ pub fn run_review(
                 match (&method, path.as_str()) {
             (Method::Get, "/api/sync/entries") => match catalog.sync_snapshot() {
                 None => respond_status(request, 503),
-                Some(Err(_)) => respond_status(request, 500),
+                Some(Err(error)) => respond_error(request, 500, &error),
                 Some(Ok(snapshot)) => {
                     let entries = snapshot
                         .catalog
@@ -593,8 +596,8 @@ pub fn run_review(
                         respond_status(request, 503);
                         continue;
                     }
-                    Some(Err(_)) => {
-                        respond_status(request, 500);
+                    Some(Err(error)) => {
+                        respond_error(request, 500, &error);
                         continue;
                     }
                     Some(Ok(snapshot)) => snapshot,
@@ -605,8 +608,8 @@ pub fn run_review(
                 }
                 let archive = match build_sync_pull_archive(&snapshot, &name) {
                     Ok(archive) => archive,
-                    Err(_) => {
-                        respond_status(request, 500);
+                    Err(error) => {
+                        respond_error(request, 500, &error);
                         continue;
                     }
                 };
@@ -628,8 +631,8 @@ pub fn run_review(
                         respond_status(request, 503);
                         continue;
                     }
-                    Some(Err(_)) => {
-                        respond_status(request, 500);
+                    Some(Err(error)) => {
+                        respond_error(request, 500, &error);
                         continue;
                     }
                     Some(Ok(root)) => root,
@@ -679,8 +682,8 @@ pub fn run_review(
                         respond_status(request, 503);
                         continue;
                     }
-                    Some(Err(_)) => {
-                        respond_status(request, 500);
+                    Some(Err(error)) => {
+                        respond_error(request, 500, &error);
                         continue;
                     }
                     Some(Ok(SyncSnapshotFor::RootChanged(current))) => {
@@ -718,10 +721,7 @@ pub fn run_review(
                     ),
                     Some(SyncPushReply::Missing) => respond_status(request, 404),
                     Some(SyncPushReply::Ambiguous) => respond_status(request, 400),
-                    Some(SyncPushReply::Failed(error)) => {
-                        eprintln!("sync push failed: {error}");
-                        respond_status(request, 500);
-                    }
+                    Some(SyncPushReply::Failed(error)) => respond_error(request, 500, &error),
                 }
             }
             (Method::Get, "/api/decks") => {

@@ -51,6 +51,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- An `assets/` directory that no deck in the workspace owns is left out of
+  `alix share` and of a paired phone's pull instead of failing the whole
+  workspace; `alix doctor` warns about it.
+
 - The phone's sync report labels a loose deck by reading that one deck
   file instead of listing the whole paired root first.
 
@@ -91,6 +95,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Pre-1.0: re-pair once after upgrading.
 
 ### Fixed
+
+- A sync route that fails answers with the failure's message and writes it
+  to the log; `GET /api/sync/entries` sent an empty 500 with no log line.
 
 - The phone refuses to pair with a desktop whose root id is not `root-`
   plus 26 lowercase Crockford base32 characters, and it never joins an
