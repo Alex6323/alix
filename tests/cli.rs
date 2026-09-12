@@ -7448,6 +7448,31 @@ fn a_short_pairing_token_is_refused_before_the_lan_server_binds() {
 }
 
 #[test]
+fn weak_token_validation_precedes_any_socket_bind_attempt() {
+    let occupied = std::net::TcpListener::bind(("0.0.0.0", 0)).unwrap();
+    let port = occupied.local_addr().unwrap().port().to_string();
+    let dir = TempDir::new().unwrap();
+    let decks = dir.path().join("decks");
+    std::fs::create_dir(&decks).unwrap();
+
+    let out = alix(&[
+        decks.to_str().unwrap(),
+        "--lan",
+        "--token",
+        "abc",
+        "--port",
+        &port,
+    ]);
+
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    assert!(
+        stderr(&out).contains("needs at least 16"),
+        "weak-token validation must win before a bind is attempted; stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
 fn a_sync_identity_write_failure_precedes_the_success_banner() {
     let dir = TempDir::new().unwrap();
     let decks = dir.path().join("decks");

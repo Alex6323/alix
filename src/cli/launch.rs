@@ -85,6 +85,7 @@ pub(crate) fn launch(args: LaunchArgs, instance: &str) -> Result<()> {
     let recent = RecentDecks::load(UserFiles::new(&user_root).recent());
     let instance_store = Some(user_root);
     let store = assemble::open_store_tolerant(instance_store.clone())?;
+    let token = resolve_serve_token(args.token.clone(), args.lan, &config)?;
     let addr = serve_addr(args.port, args.lan, &config);
     // Bind before announcing: a taken port errors here rather than after printing a success URL.
     // `Arc`-shared so `run_review` can be stopped from outside its own thread.
@@ -108,7 +109,6 @@ pub(crate) fn launch(args: LaunchArgs, instance: &str) -> Result<()> {
             .unwrap_or(alix::session::DEFAULT_NEW_CARDS_PERCENT),
     };
 
-    let token = resolve_serve_token(args.token.clone(), args.lan, &config)?;
     alix::sync::root_id(&decks_dir).with_context(|| {
         format!(
             "cannot record the served folder's sync identity in {}: the folder must be writable",
