@@ -15,6 +15,7 @@ pub struct PairedDeckState {
 pub struct PairedEntryState {
     pub entry: String,
     pub kind: String,
+    pub digest: String,
     pub decks: Vec<PairedDeckState>,
 }
 
@@ -180,6 +181,7 @@ pub fn paired_entries(root_dir: String) -> Result<Vec<PairedEntryState>> {
         .map(|entry| PairedEntryState {
             entry: entry.entry,
             kind: entry.kind,
+            digest: entry.digest,
             decks: entry
                 .decks
                 .into_iter()

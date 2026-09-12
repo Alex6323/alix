@@ -1,6 +1,7 @@
 {
   "entries": [
     {
+      "digest": "xxh64-9f2c0b1a3e4d5c6b",
       "kind": "workspace",
       "left_out": [
         "decks/draft.md"

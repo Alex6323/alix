@@ -41,9 +41,11 @@ read every deck again; a deck whose file changed on disk is read fresh.
 
 Once paired (see [Pairing a device](19-pairing.md)), a pulled entry's row
 gains a **Sync** action in its `⋮` menu: it pushes every local deck whose
-progress changed, then pulls that entry fresh. The app also runs one cycle
-in the background each time it opens, for every entry already on the
-phone, once the paired desktop answers and still serves the same root. A
+progress changed, then pulls that entry when the desktop's copy differs
+from the phone's. The app also runs one cycle in the background each time
+it opens, for every entry already on the phone, once the paired desktop
+answers and still serves the same root; an entry whose files did not
+change on the desktop is left as it is. A
 review session's summary silently pushes that deck's progress too, with
 no visible step on a normal pass.
 

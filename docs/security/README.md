@@ -105,6 +105,12 @@ pull (`docs/book/src/18-the-mobile-app.md`,
 `paired/<root-id>/` app storage and reads or writes only the paired
 desktop's `/api/sync/*` surface, authenticated with the same pairing token
 as the rest of the remote surface (`docs/book/src/18-the-mobile-app.md`).
+The entries listing carries a per-entry digest of the files a pull would
+ship (`SyncEntryDto.digest`), so a phone skips an entry whose digest equals
+the manifest it holds; the digest is computed by the same walk that sizes
+the projection, never over a private file the sanitizer excludes, and the
+`sync::server` tests pin it against a real staging of a workspace with an
+excluded deck, a personal sidecar, assets, and augmentation files.
 
 ### Browser and LAN client
 

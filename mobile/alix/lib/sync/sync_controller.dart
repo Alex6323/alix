@@ -7,6 +7,7 @@ import 'package:alix_mobile/server_client.dart' show PairingExpired;
 import 'package:alix_mobile/sync/sync_models.dart';
 import 'package:alix_mobile/sync/sync_port.dart';
 import 'package:alix_mobile/sync_client.dart';
+import 'package:alix_mobile/profile.dart';
 
 /// The desktop now serves a different root than this pairing was made
 /// against; per docs/API.md section 4.12 the client must stop and re-pair
@@ -209,6 +210,7 @@ class SyncController extends ChangeNotifier {
     final removed = <String>[];
     final refused = <String>[];
     final pushed = <String>[];
+    final pushedEntries = <String>{};
 
     SyncReport aborted(String error) => SyncReport(
       landed: landed,
@@ -251,6 +253,7 @@ class SyncController extends ChangeNotifier {
       switch (result) {
         case SyncPushAccepted():
           pushed.add(label);
+          pushedEntries.add(item.entry);
         case SyncPushConflict():
           conflicts.add(label);
           conflictDeckIds.add(item.deckId);
@@ -265,12 +268,27 @@ class SyncController extends ChangeNotifier {
       }
     }
 
-    final toPull = onlyEntry != null
-        ? [onlyEntry]
-        : [for (final entry in _port.pairedEntries()) entry.entry];
+    final onPhone = {
+      for (final entry in _port.pairedEntries()) entry.entry: entry,
+    };
+    final toPull = onlyEntry != null ? [onlyEntry] : [...onPhone.keys];
     for (final name in toPull) {
       final desktopEntry = desktop.entries.where((e) => e.name == name);
       if (desktopEntry.isEmpty) continue;
+      if (kAlixProfile) {
+        final phone = onPhone[name];
+        final conflicted =
+            phone?.decks.where((deck) => deck.conflict != null).length;
+        debugPrint(
+          'alix-sync $name phone=${phone?.digest} '
+          'desktop=${desktopEntry.first.digest} '
+          'conflicted=$conflicted pushed=${pushedEntries.contains(name)}',
+        );
+      }
+      if (_unchangedSincePull(onPhone[name], desktopEntry.first) &&
+          !pushedEntries.contains(name)) {
+        continue;
+      }
       final SyncPullReport pullReport;
       try {
         pullReport = await _pullEntry(name, desktopEntry.first.unpackedBytes);
@@ -336,6 +354,12 @@ class SyncController extends ChangeNotifier {
       pushed: pushed,
     );
   }
+
+  /// A pull would land byte-identical files: the desktop's entry digest is
+  /// the one the phone's last pull recorded. A conflicted or unpushed deck
+  /// keeps its phone copy through a pull anyway, so it forces none.
+  static bool _unchangedSincePull(SyncEntryState? onPhone, SyncEntry desktop) =>
+      onPhone != null && onPhone.digest == desktop.digest;
 
   Future<SyncPullReport> _pullEntry(String entry, int unpackedBytes) async {
     final zipPath = _port.pairedStagingZip(entry);

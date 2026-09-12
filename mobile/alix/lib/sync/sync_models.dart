@@ -78,6 +78,7 @@ class SyncEntryState {
   const SyncEntryState({
     required this.entry,
     required this.kind,
+    required this.digest,
     required this.decks,
   });
 
@@ -85,6 +86,9 @@ class SyncEntryState {
 
   /// Exactly `workspace` or `deck`.
   final String kind;
+
+  /// The entry digest of the manifest the last pull landed.
+  final String digest;
   final List<SyncDeckState> decks;
 }
 

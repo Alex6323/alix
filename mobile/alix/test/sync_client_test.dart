@@ -57,6 +57,7 @@ void main() {
                 'kind': 'workspace',
                 'members': 2,
                 'unpacked_bytes': 4096,
+                'digest': 'xxh64-9f2c0b1a3e4d5c6b',
                 'left_out': <String>[],
               },
             ],
@@ -76,6 +77,7 @@ void main() {
               kind: 'workspace',
               members: 2,
               unpackedBytes: 4096,
+              digest: 'xxh64-9f2c0b1a3e4d5c6b',
               leftOut: [],
             ),
           ],
@@ -107,6 +109,7 @@ void main() {
                 'kind': 'workspace',
                 'members': 2,
                 'unpacked_bytes': 4096,
+                'digest': 'xxh64-9f2c0b1a3e4d5c6b',
                 'left_out': <String>[],
               },
               {'name': 'missing kind field'},
@@ -127,6 +130,7 @@ void main() {
               kind: 'workspace',
               members: 2,
               unpackedBytes: 4096,
+              digest: 'xxh64-9f2c0b1a3e4d5c6b',
               leftOut: [],
             ),
           ],
@@ -144,6 +148,7 @@ void main() {
                 'kind': 'workspace',
                 'members': 2,
                 'unpacked_bytes': 4096,
+                'digest': 'xxh64-9f2c0b1a3e4d5c6b',
                 'left_out': ['decks/broken.md'],
               },
             ],
@@ -164,7 +169,37 @@ void main() {
           await respondJson(request, 200, {
             'root_id': 'root-a',
             'entries': [
-              {'name': 'Biology', 'kind': 'workspace', 'members': 2, 'unpacked_bytes': 4096},
+              {
+                'name': 'Biology',
+                'kind': 'workspace',
+                'members': 2,
+                'unpacked_bytes': 4096,
+                'digest': 'xxh64-9f2c0b1a3e4d5c6b',
+              },
+            ],
+          });
+        });
+        final client = HttpSyncClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+        addTearDown(client.close);
+
+        final result = await client.entries();
+
+        expect(result.entries, isEmpty);
+      });
+
+      test('an entry missing digest is rejected the same way', () async {
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondJson(request, 200, {
+            'root_id': 'root-a',
+            'entries': [
+              {
+                'name': 'Biology',
+                'kind': 'workspace',
+                'members': 2,
+                'unpacked_bytes': 4096,
+                'left_out': [],
+              },
             ],
           });
         });
@@ -187,6 +222,7 @@ void main() {
                 'kind': 'workspace',
                 'members': 2,
                 'unpacked_bytes': 4096,
+                'digest': 'xxh64-9f2c0b1a3e4d5c6b',
                 'left_out': 'decks/broken.md',
               },
             ],

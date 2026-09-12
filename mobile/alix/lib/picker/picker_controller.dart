@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart';
 
 import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/picker_port.dart';
+import 'package:alix_mobile/profile.dart';
 
-const bool kAlixProfile = bool.fromEnvironment('ALIX_PROFILE');
 
 class PickerController extends ChangeNotifier {
   factory PickerController({

@@ -47,6 +47,7 @@ void main() {
       SyncEntryState(
         entry: 'facts',
         kind: 'deck',
+        digest: 'xxh64-0000000000000001',
         decks: [
           SyncDeckState(deckId: 'deck-1', path: 'facts.md', unpushed: true),
         ],
@@ -169,6 +170,7 @@ void main() {
         SyncEntryState(
           entry: 'facts',
           kind: 'deck',
+          digest: 'xxh64-0000000000000001',
           decks: [
             SyncDeckState(
               deckId: 'deck-1',

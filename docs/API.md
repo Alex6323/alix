@@ -1074,9 +1074,10 @@ Clients must treat an id as an opaque string and never parse it as a number.
 | `kind` | string | Exactly `workspace` or `deck`. |
 | `members` | integer | Successfully loaded initialized member count; 1 for a loadable loose deck. |
 | `unpacked_bytes` | integer | Sum of `bytes` in this entry's pull manifest. |
+| `digest` | string | `xxh64-<16 lowercase hex>` over this entry's pull-manifest file rows in byte-wise `path` order, each `path`, NUL, `bytes` in decimal, NUL, `digest`, LF. Equal digests mean the pull would land identical files; a phone skips such an entry. |
 | `left_out` | `[string]` | Entry-relative paths that could not be loaded and are omitted from the pull and push index. |
 
-Example: `{"root_id":"root-00000000000000000000000000","entries":[{"name":"Biology","kind":"workspace","members":2,"unpacked_bytes":4096,"left_out":["decks/draft.md"]}]}`.
+Example: `{"root_id":"root-00000000000000000000000000","entries":[{"name":"Biology","kind":"workspace","members":2,"unpacked_bytes":4096,"digest":"xxh64-9f2c0b1a3e4d5c6b","left_out":["decks/draft.md"]}]}`.
 
 ### SyncPullManifest / SyncFileDto / SyncDeckDto
 

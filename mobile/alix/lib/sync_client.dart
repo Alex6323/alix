@@ -51,6 +51,7 @@ class SyncEntry {
     required this.kind,
     required this.members,
     required this.unpackedBytes,
+    required this.digest,
     required this.leftOut,
   });
 
@@ -60,6 +61,9 @@ class SyncEntry {
   final String kind;
   final int members;
   final int unpackedBytes;
+
+  /// `SyncEntryDto.digest`, compared for equality only.
+  final String digest;
 
   /// Entry-relative member paths the desktop could not load into this
   /// listing (`SyncEntryDto.left_out`). Always present on the wire, so
@@ -73,11 +77,13 @@ class SyncEntry {
     final kind = _asString(json['kind']);
     final members = _asInt(json['members']);
     final unpackedBytes = _asInt(json['unpacked_bytes']);
+    final digest = _asString(json['digest']);
     final leftOut = _asStringList(json['left_out']);
     if (name == null ||
         kind == null ||
         members == null ||
         unpackedBytes == null ||
+        digest == null ||
         leftOut == null) {
       return null;
     }
@@ -86,6 +92,7 @@ class SyncEntry {
       kind: kind,
       members: members,
       unpackedBytes: unpackedBytes,
+      digest: digest,
       leftOut: leftOut,
     );
   }
@@ -97,11 +104,18 @@ class SyncEntry {
       other.kind == kind &&
       other.members == members &&
       other.unpackedBytes == unpackedBytes &&
+      other.digest == digest &&
       _stringListEquals(other.leftOut, leftOut);
 
   @override
-  int get hashCode =>
-      Object.hash(name, kind, members, unpackedBytes, Object.hashAll(leftOut));
+  int get hashCode => Object.hash(
+    name,
+    kind,
+    members,
+    unpackedBytes,
+    digest,
+    Object.hashAll(leftOut),
+  );
 }
 
 /// The reply to `GET /api/sync/entries`. Mirrors `SyncEntriesDto`.

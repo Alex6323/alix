@@ -2637,12 +2637,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PairedEntryState dco_decode_paired_entry_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return PairedEntryState(
       entry: dco_decode_String(arr[0]),
       kind: dco_decode_String(arr[1]),
-      decks: dco_decode_list_paired_deck_state(arr[2]),
+      digest: dco_decode_String(arr[2]),
+      decks: dco_decode_list_paired_deck_state(arr[3]),
     );
   }
 
@@ -4259,8 +4260,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_entry = sse_decode_String(deserializer);
     var var_kind = sse_decode_String(deserializer);
+    var var_digest = sse_decode_String(deserializer);
     var var_decks = sse_decode_list_paired_deck_state(deserializer);
-    return PairedEntryState(entry: var_entry, kind: var_kind, decks: var_decks);
+    return PairedEntryState(
+      entry: var_entry,
+      kind: var_kind,
+      digest: var_digest,
+      decks: var_decks,
+    );
   }
 
   @protected
@@ -5841,6 +5848,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.entry, serializer);
     sse_encode_String(self.kind, serializer);
+    sse_encode_String(self.digest, serializer);
     sse_encode_list_paired_deck_state(self.decks, serializer);
   }
 

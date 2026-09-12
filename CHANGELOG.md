@@ -51,6 +51,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A paired phone's sync cycle pulls only the entries whose files changed
+  since its last pull: `GET /api/sync/entries` carries a per-entry `digest`
+  over the pull manifest's file rows, and the phone compares it with the
+  manifest it holds. A pull that lands keeps the modification time of every
+  file whose bytes did not change, so the picker re-parses only what the
+  pull changed.
+
 - A workspace listing resolves each member's physical path once, when the
   workspace lists its members, instead of three times per listing (the
   member dedup, the prerequisite table, and the dependency forest each

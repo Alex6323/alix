@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     path::{Component, Path, PathBuf},
 };
@@ -8,7 +8,10 @@ use anyhow::{Context, Result, bail};
 
 use super::{
     SYNC_PULL_MANIFEST_VERSION, SyncDeckDto, SyncFileDto, SyncPullManifest, digest_reader,
+    entry_digest,
 };
+#[cfg(feature = "full")]
+use crate::share::StagedFile;
 
 pub const ROOT_ID_PREFIX: &str = "root-";
 
@@ -82,6 +85,7 @@ pub struct SyncEntry {
     pub kind: String,
     pub members: u64,
     pub unpacked_bytes: u64,
+    pub digest: String,
     pub left_out: Vec<String>,
     path: PathBuf,
     store_root: PathBuf,
@@ -259,25 +263,31 @@ impl SyncCatalog {
             } else {
                 "deck"
             };
-            let public_bytes = if row.is_workspace {
-                crate::share::staged_workspace_size_excluding(
+            let mut staged = if row.is_workspace {
+                crate::share::staged_workspace_files_excluding(
                     &path,
                     &excluded_decks,
                     &excluded_deck_ids,
                 )?
             } else if entry_decks.is_empty() {
-                0
+                Vec::new()
             } else {
-                crate::share::staged_deck_contents_size(&path)?
+                crate::share::staged_deck_contents_files(&path)?
             };
-            let private_bytes = private_bytes(&store_root, &entry_decks)?;
+            staged.extend(private_files(&store_root, &entry_decks)?);
+            let files = manifest_rows(&staged)?;
+            let unpacked_bytes = files
+                .iter()
+                .try_fold(0u64, |total, file| total.checked_add(file.bytes))
+                .ok_or_else(|| {
+                    anyhow::anyhow!("sync entry {} is too large to count", path.display())
+                })?;
             entries.push(SyncEntry {
                 name: row.name,
                 kind: kind.to_string(),
                 members: entry_decks.len() as u64,
-                unpacked_bytes: public_bytes.checked_add(private_bytes).ok_or_else(|| {
-                    anyhow::anyhow!("sync entry {} is too large to count", path.display())
-                })?,
+                unpacked_bytes,
+                digest: entry_digest(&files),
                 left_out,
                 path,
                 store_root,
@@ -334,28 +344,63 @@ fn lightweight_deck_id(path: &Path) -> Option<String> {
     crate::parser::deck_identity(&text).ok().flatten()
 }
 
+/// The private files `stage_entry` copies beside the public projection, at
+/// the staged-relative paths it gives them.
 #[cfg(feature = "full")]
-fn private_bytes(store_root: &Path, decks: &[EntryDeck]) -> Result<u64> {
+fn private_files(store_root: &Path, decks: &[EntryDeck]) -> Result<Vec<StagedFile>> {
     let files = crate::state::UserFiles::new(store_root);
-    let mut total = regular_file_size(&files.local_manifest())?;
+    let mut out = Vec::new();
+    let mut push = |relative: PathBuf, source: PathBuf| -> Result<()> {
+        if is_regular_file(&source)? {
+            out.push(StagedFile { relative, source });
+        }
+        Ok(())
+    };
+    push(
+        PathBuf::from(crate::config::LOCAL_MANIFEST),
+        files.local_manifest(),
+    )?;
     for deck in decks {
-        total = total
-            .checked_add(regular_file_size(&files.progress_for(&deck.deck_id))?)
-            .ok_or_else(|| anyhow::anyhow!("private sync files are too large to count"))?;
-        total = total
-            .checked_add(regular_file_size(&crate::personal::sidecar_path(
-                &deck.path,
-            ))?)
-            .ok_or_else(|| anyhow::anyhow!("private sync files are too large to count"))?;
+        push(
+            Path::new(".alix/progress").join(format!("{}.json", deck.deck_id)),
+            files.progress_for(&deck.deck_id),
+        )?;
+        push(
+            crate::personal::sidecar_path(&deck.relative_path),
+            crate::personal::sidecar_path(&deck.path),
+        )?;
     }
-    Ok(total)
+    Ok(out)
 }
 
 #[cfg(feature = "full")]
-fn regular_file_size(path: &Path) -> Result<u64> {
+fn manifest_rows(staged: &[StagedFile]) -> Result<Vec<SyncFileDto>> {
+    let mut files: BTreeMap<String, SyncFileDto> = BTreeMap::new();
+    for file in staged {
+        let path = wire_path(&file.relative)?;
+        if files.contains_key(&path) {
+            continue;
+        }
+        let mut source = std::fs::File::open(&file.source)
+            .with_context(|| format!("cannot open {}", file.source.display()))?;
+        let (bytes, digest) = digest_reader(&mut source)?;
+        files.insert(
+            path.clone(),
+            SyncFileDto {
+                path,
+                bytes,
+                digest,
+            },
+        );
+    }
+    Ok(files.into_values().collect())
+}
+
+#[cfg(feature = "full")]
+fn is_regular_file(path: &Path) -> Result<bool> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => {
             return Err(error).with_context(|| format!("cannot read {}", path.display()));
         }
@@ -366,11 +411,10 @@ fn regular_file_size(path: &Path) -> Result<u64> {
             path.display()
         );
     }
-    if metadata.is_file() {
-        Ok(metadata.len())
-    } else {
+    if !metadata.is_file() {
         bail!("{} is not a regular file", path.display());
     }
+    Ok(true)
 }
 
 #[cfg(feature = "full")]
@@ -714,6 +758,46 @@ mod tests {
             catalog.entries()[0].unpacked_bytes,
             pull.manifest.files.iter().map(|f| f.bytes).sum::<u64>()
         );
+        assert_eq!(
+            catalog.entries()[0].digest,
+            entry_digest(&pull.manifest.files),
+            "the listing's entry digest is the pull manifest's, computed without staging"
+        );
+    }
+
+    #[test]
+    fn listing_digest_matches_pull_when_workspace_members_share_a_deck_id() {
+        let served = tempfile::tempdir().unwrap();
+        let workspace = served.path().join("course");
+        std::fs::create_dir_all(workspace.join("decks")).unwrap();
+        std::fs::write(workspace.join("alix.toml"), "title = \"Course\"\n").unwrap();
+        write_deck(&workspace.join("decks/a.md"), "deck-shared", "card-a");
+        write_deck(&workspace.join("decks/b.md"), "deck-shared", "card-b");
+        write_progress(
+            &crate::state::UserFiles::new(&workspace).progress_for("deck-shared"),
+            "deck-shared",
+            7,
+        );
+        let root = root_id(served.path()).unwrap();
+        let catalog = SyncCatalog::load(
+            served.path(),
+            &crate::recent::RecentDecks::load(served.path().join(".alix/recent.json")),
+            &mut crate::cache::DeckCache::default(),
+        )
+        .unwrap();
+        let entry = catalog
+            .entries()
+            .iter()
+            .find(|entry| entry.name == "course")
+            .unwrap();
+        let stage = tempfile::tempdir().unwrap();
+        let pull = catalog.stage_pull("course", &root, stage.path()).unwrap();
+
+        assert_eq!(
+            entry.digest,
+            entry_digest(&pull.manifest.files),
+            "the listing digest must describe the pull even when duplicate ids make the push target ambiguous"
+        );
     }
 
     #[test]
@@ -900,6 +984,11 @@ mod tests {
                 .map(|file| file.bytes)
                 .sum::<u64>(),
             "entries size equals the manifest payload sum"
+        );
+        assert_eq!(
+            entry.digest,
+            entry_digest(&pull.manifest.files),
+            "the listing's entry digest is the pull manifest's, computed without staging"
         );
     }
 

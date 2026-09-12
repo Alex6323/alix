@@ -93,12 +93,18 @@ void main() {
           kind: 'workspace',
           members: 1,
           unpackedBytes: 10,
+          digest: 'xxh64-0000000000000002',
           leftOut: [],
         ),
       ],
     );
     port.pairedEntriesImpl = () => const [
-      SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+      SyncEntryState(
+        entry: 'Biology',
+        kind: 'workspace',
+        digest: 'xxh64-0000000000000001',
+        decks: [],
+      ),
     ];
     port.planPushesImpl = () => [
       SyncPushPlanItem(
@@ -151,6 +157,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
@@ -160,6 +167,7 @@ void main() {
               SyncEntryState(
                 entry: 'Biology',
                 kind: 'workspace',
+                digest: 'xxh64-0000000000000001',
                 decks: [
                   SyncDeckState(
                     deckId: 'deck-a',
@@ -171,7 +179,12 @@ void main() {
               ),
             ]
           : const [
-              SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+              SyncEntryState(
+                entry: 'Biology',
+                kind: 'workspace',
+                digest: 'xxh64-0000000000000001',
+                decks: [],
+              ),
             ];
       port.planPushesImpl = () =>
           changedAfterPlanning ? [item(scratch, 'deck-a')] : const [];
@@ -230,12 +243,18 @@ void main() {
           kind: 'workspace',
           members: 1,
           unpackedBytes: 10,
+          digest: 'xxh64-0000000000000002',
           leftOut: [],
         ),
       ],
     );
     port.pairedEntriesImpl = () => const [
-      SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+      SyncEntryState(
+        entry: 'Biology',
+        kind: 'workspace',
+        digest: 'xxh64-0000000000000001',
+        decks: [],
+      ),
     ];
     port.planPushesImpl = () =>
         changedAfterPlanning ? [item(scratch, 'deck-a')] : const [];

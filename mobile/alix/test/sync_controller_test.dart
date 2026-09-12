@@ -70,6 +70,7 @@ void main() {
             kind: 'deck',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
@@ -155,12 +156,18 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 500,
+              digest: 'xxh64-0000000000000002',
               leftOut: [],
             ),
           ],
         );
         port.pairedEntriesImpl = () => const [
-          SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+          SyncEntryState(
+            entry: 'Biology',
+            kind: 'workspace',
+            digest: 'xxh64-0000000000000001',
+            decks: [],
+          ),
         ];
         port.pullImpl = (entry, target, unpackedBytes) async {
           throw const SyncFreeSpaceRefusal(needed: 2000, free: 100);
@@ -186,12 +193,18 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
       );
       port.pairedEntriesImpl = () => const [
-        SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+        SyncEntryState(
+          entry: 'Biology',
+          kind: 'workspace',
+          digest: 'xxh64-0000000000000001',
+          decks: [],
+        ),
       ];
       port.pullImpl = (entry, target, unpackedBytes) async {
         throw const SyncTransportFailure(500, 'boom');
@@ -214,6 +227,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
           SyncEntry(
@@ -221,19 +235,129 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
       );
       port.pairedEntriesImpl = () => const [
-        SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
-        SyncEntryState(entry: 'Chemistry', kind: 'workspace', decks: []),
+        SyncEntryState(
+          entry: 'Biology',
+          kind: 'workspace',
+          digest: 'xxh64-0000000000000001',
+          decks: [],
+        ),
+        SyncEntryState(
+          entry: 'Chemistry',
+          kind: 'workspace',
+          digest: 'xxh64-0000000000000001',
+          decks: [],
+        ),
       ];
 
       final controller = SyncController(port: port);
       await controller.cycle(entry: 'Biology');
 
       expect(port.pullCalls, ['Biology']);
+    });
+
+    group('an entry whose digest is the one the phone last pulled', () {
+      const unchanged = 'xxh64-00000000000000aa';
+      const moved = 'xxh64-00000000000000bb';
+      const desktop = SyncEntries(
+        rootId: 'root-a',
+        entries: [
+          SyncEntry(
+            name: 'Biology',
+            kind: 'workspace',
+            members: 1,
+            unpackedBytes: 10,
+            digest: unchanged,
+            leftOut: [],
+          ),
+          SyncEntry(
+            name: 'Chemistry',
+            kind: 'workspace',
+            members: 1,
+            unpackedBytes: 10,
+            digest: moved,
+            leftOut: [],
+          ),
+        ],
+      );
+      const onPhone = [
+        SyncEntryState(
+          entry: 'Biology',
+          kind: 'workspace',
+          digest: unchanged,
+          decks: [],
+        ),
+        SyncEntryState(
+          entry: 'Chemistry',
+          kind: 'workspace',
+          digest: 'xxh64-0000000000000001',
+          decks: [],
+        ),
+      ];
+
+      test(
+        'is skipped: the cycle pulls only the entry whose digest moved',
+        () async {
+          final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+          port.entriesImpl = () async => desktop;
+          port.pairedEntriesImpl = () => onPhone;
+
+          await SyncController(port: port).cycle();
+
+          expect(port.pullCalls, ['Chemistry']);
+        },
+      );
+
+      test('is skipped when tapped, too', () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.entriesImpl = () async => desktop;
+        port.pairedEntriesImpl = () => onPhone;
+
+        await SyncController(port: port).cycle(entry: 'Biology');
+
+        expect(port.pullCalls, isEmpty);
+      });
+
+      test('is skipped while one of its decks waits in conflict', () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.entriesImpl = () async => desktop;
+        port.pairedEntriesImpl = () => const [
+          SyncEntryState(
+            entry: 'Biology',
+            kind: 'workspace',
+            digest: unchanged,
+            decks: [
+              SyncDeckState(
+                deckId: 'deck-cells',
+                path: 'decks/cells.md',
+                unpushed: true,
+                conflict: PairedConflictPush(desktopRevision: 4),
+              ),
+            ],
+          ),
+        ];
+
+        await SyncController(port: port).cycle();
+
+        expect(port.pullCalls, isEmpty);
+      });
+
+      test('is pulled when a push landed in it this cycle', () async {
+        final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+        port.entriesImpl = () async => desktop;
+        port.pairedEntriesImpl = () => onPhone;
+        port.planPushesImpl = () => [item('deck-cells')];
+
+        await SyncController(port: port).cycle();
+
+        expect(port.pushCalls, ['deck-cells']);
+        expect(port.pullCalls, ['Biology', 'Chemistry']);
+      });
     });
 
     test('a pull stages its zip at the path the lib names, not one the '
@@ -247,6 +371,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
@@ -293,7 +418,12 @@ void main() {
         port.entriesImpl = () async =>
             const SyncEntries(rootId: 'root-a', entries: []);
         port.pairedEntriesImpl = () => const [
-          SyncEntryState(entry: 'Gone', kind: 'workspace', decks: []),
+          SyncEntryState(
+            entry: 'Gone',
+            kind: 'workspace',
+            digest: 'xxh64-0000000000000001',
+            decks: [],
+          ),
         ];
         final controller = SyncController(port: port);
 
@@ -315,6 +445,7 @@ void main() {
               kind: 'deck',
               members: 1,
               unpackedBytes: 10,
+              digest: 'xxh64-0000000000000002',
               leftOut: [],
             ),
           ],
@@ -340,6 +471,7 @@ void main() {
             kind: 'workspace',
             members: 2,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: ['decks/broken.md'],
           ),
           SyncEntry(
@@ -347,12 +479,18 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
       );
       port.pairedEntriesImpl = () => const [
-        SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+        SyncEntryState(
+          entry: 'Biology',
+          kind: 'workspace',
+          digest: 'xxh64-0000000000000001',
+          decks: [],
+        ),
       ];
       final controller = SyncController(port: port);
 
@@ -405,12 +543,18 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 10,
+              digest: 'xxh64-0000000000000002',
               leftOut: [],
             ),
           ],
         );
         port.pairedEntriesImpl = () => const [
-          SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+          SyncEntryState(
+            entry: 'Biology',
+            kind: 'workspace',
+            digest: 'xxh64-0000000000000001',
+            decks: [],
+          ),
         ];
         port.applyPullImpl = (entry, zipPath) async => throw Exception('boom');
 
@@ -432,12 +576,18 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
       );
       port.pairedEntriesImpl = () => const [
-        SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+        SyncEntryState(
+          entry: 'Biology',
+          kind: 'workspace',
+          digest: 'xxh64-0000000000000001',
+          decks: [],
+        ),
       ];
       final zip = File('${scratch.path}/staging/Biology.zip');
       port.pairedStagingZipImpl = (_) => zip.path;
@@ -482,6 +632,7 @@ void main() {
               kind: 'deck',
               members: 1,
               unpackedBytes: 10,
+              digest: 'xxh64-0000000000000002',
               leftOut: [],
             ),
           ],
@@ -547,12 +698,18 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
       );
       port.pairedEntriesImpl = () => const [
-        SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+        SyncEntryState(
+          entry: 'Biology',
+          kind: 'workspace',
+          digest: 'xxh64-0000000000000001',
+          decks: [],
+        ),
       ];
       port.planPushesImpl = () =>
           changedAfterPlanning ? [item('deck-a')] : const [];
@@ -617,6 +774,7 @@ void main() {
         SyncEntryState(
           entry: 'Biology',
           kind: 'workspace',
+          digest: 'xxh64-0000000000000001',
           decks: [
             SyncDeckState(
               deckId: 'deck-a',
@@ -641,6 +799,7 @@ void main() {
       SyncEntryState(
         entry: 'greek.md',
         kind: 'deck',
+        digest: 'xxh64-0000000000000001',
         decks: [
           SyncDeckState(
             deckId: 'deck-1',
@@ -686,6 +845,7 @@ void main() {
           SyncEntryState(
             entry: 'Biology',
             kind: 'workspace',
+            digest: 'xxh64-0000000000000001',
             decks: [
               SyncDeckState(
                 deckId: 'deck-1',
@@ -709,6 +869,7 @@ void main() {
       SyncEntryState(
         entry: 'Biology',
         kind: 'workspace',
+        digest: 'xxh64-0000000000000001',
         decks: [
           SyncDeckState(
             deckId: deckId,
@@ -766,6 +927,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
@@ -791,6 +953,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
@@ -824,6 +987,7 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 10,
+              digest: 'xxh64-0000000000000002',
               leftOut: [],
             ),
           ],
@@ -931,7 +1095,12 @@ void main() {
         final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
         port.pairedEntriesImpl = () => conflictConsumed
             ? const [
-                SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+                SyncEntryState(
+                  entry: 'Biology',
+                  kind: 'workspace',
+                  digest: 'xxh64-0000000000000001',
+                  decks: [],
+                ),
               ]
             : pendingConflictFor('deck-a');
         port.resolveConflictImpl = (_, _) {
@@ -946,6 +1115,7 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 10,
+              digest: 'xxh64-0000000000000002',
               leftOut: [],
             ),
           ],
@@ -973,6 +1143,7 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 10,
+              digest: 'xxh64-0000000000000002',
               leftOut: [],
             ),
           ],
@@ -1015,7 +1186,12 @@ void main() {
       port.entriesImpl = () async =>
           const SyncEntries(rootId: 'root-a', entries: []);
       port.pairedEntriesImpl = () => const [
-        SyncEntryState(entry: 'Old Deck', kind: 'workspace', decks: []),
+        SyncEntryState(
+          entry: 'Old Deck',
+          kind: 'workspace',
+          digest: 'xxh64-0000000000000001',
+          decks: [],
+        ),
       ];
       final controller = SyncController(port: port);
       await controller.cycle();
@@ -1045,6 +1221,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
@@ -1068,6 +1245,7 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 10,
+              digest: 'xxh64-0000000000000002',
               leftOut: [],
             ),
           ],
@@ -1075,7 +1253,12 @@ void main() {
         var pulled = false;
         port.pairedEntriesImpl = () => pulled
             ? const [
-                SyncEntryState(entry: 'Biology', kind: 'workspace', decks: []),
+                SyncEntryState(
+                  entry: 'Biology',
+                  kind: 'workspace',
+                  digest: 'xxh64-0000000000000001',
+                  decks: [],
+                ),
               ]
             : const [];
         port.applyPullImpl = (entry, zipPath) async {

@@ -161,6 +161,7 @@ void main() {
             kind: 'deck',
             members: 1,
             unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
@@ -248,6 +249,7 @@ void main() {
             kind: 'workspace',
             members: 3,
             unpackedBytes: 2048,
+            digest: 'xxh64-0000000000000002',
             leftOut: [],
           ),
         ],
@@ -287,6 +289,7 @@ void main() {
         SyncEntryState(
           entry: 'deck.md',
           kind: 'deck',
+          digest: 'xxh64-0000000000000001',
           decks: [
             SyncDeckState(
               deckId: 'deck-1',

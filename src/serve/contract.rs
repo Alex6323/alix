@@ -1934,6 +1934,7 @@ fn sync_wire_shapes() {
                 kind: "workspace".to_string(),
                 members: 2,
                 unpacked_bytes: 4096,
+                digest: "xxh64-9f2c0b1a3e4d5c6b".to_string(),
                 left_out: vec!["decks/draft.md".to_string()],
             }],
         },
@@ -1944,6 +1945,7 @@ fn sync_wire_shapes() {
                 "kind": "workspace",
                 "members": 2,
                 "unpacked_bytes": 4096,
+                "digest": "xxh64-9f2c0b1a3e4d5c6b",
                 "left_out": ["decks/draft.md"]
             }]
         }),

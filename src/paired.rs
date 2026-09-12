@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     state::UserFiles,
     store::{self, Writer},
-    sync::{SYNC_PULL_MANIFEST_VERSION, SyncDeckDto, SyncPullManifest, digest},
+    sync::{
+        SYNC_PULL_MANIFEST_VERSION, SyncDeckDto, SyncFileDto, SyncPullManifest, digest,
+        digest_reader,
+    },
     token,
 };
 
@@ -180,6 +183,7 @@ pub struct DeckState {
 pub struct PulledEntry {
     pub entry: String,
     pub kind: String,
+    pub digest: String,
     pub decks: Vec<DeckState>,
 }
 
@@ -655,9 +659,11 @@ pub fn pulled_entries(root: &PairedRoot) -> Result<Vec<PulledEntry>> {
                 conflict: marks.get(&deck.deck_id).cloned(),
             });
         }
+        let digest = crate::sync::entry_digest(&manifest.files);
         out.push(PulledEntry {
             entry: manifest.entry,
             kind: manifest.kind,
+            digest,
             decks,
         });
     }
@@ -782,6 +788,7 @@ pub fn apply_unpacked(
     let next_path = next_manifest_path(&previous_path);
     hook("manifest-next")?;
     write_json_atomic(&next_path, &manifest)?;
+    keep_unchanged_modified_times(&entry_root, unpacked, &manifest.files)?;
     if manifest.kind == KIND_WORKSPACE {
         if entry_root.is_dir() {
             for rel in walk_files(&entry_root)? {
@@ -1234,6 +1241,36 @@ pub fn free_space(path: &Path) -> Result<u64> {
             .with_context(|| format!("cannot stat the filesystem of {}", path.display()));
     }
     Ok((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64))
+}
+
+fn keep_unchanged_modified_times(
+    entry_root: &Path,
+    unpacked: &Path,
+    files: &[SyncFileDto],
+) -> Result<()> {
+    for file in files {
+        let live = rel_path(entry_root, &file.path);
+        let meta = match std::fs::metadata(&live) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(error).with_context(|| format!("cannot stat {}", live.display()));
+            }
+        };
+        let staged = rel_path(unpacked, &file.path);
+        if !meta.is_file() || meta.len() != file.bytes || !staged.is_file() {
+            continue;
+        }
+        let (_, live_digest) = digest_reader(std::fs::File::open(&live)?)?;
+        if live_digest != file.digest {
+            continue;
+        }
+        std::fs::File::options()
+            .write(true)
+            .open(&staged)?
+            .set_modified(meta.modified()?)?;
+    }
+    Ok(())
 }
 
 #[cfg(feature = "sync-client")]
@@ -2502,5 +2539,83 @@ mod tests {
             b"## q\na\n"
         );
         assert!(!root.staging().join("physics.md").exists());
+    }
+
+    fn modified_times(dir: &Path) -> BTreeMap<String, std::time::SystemTime> {
+        walk_files(dir)
+            .unwrap()
+            .into_iter()
+            .map(|rel| {
+                let at = std::fs::metadata(rel_path(dir, &rel))
+                    .unwrap()
+                    .modified()
+                    .unwrap();
+                (rel, at)
+            })
+            .collect()
+    }
+
+    /// Stamps every file with one old time, so a re-landed file that keeps
+    /// its time is distinguishable from one that was written just now.
+    fn age_every_file(dir: &Path) -> std::time::SystemTime {
+        let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_600_000_000);
+        for rel in walk_files(dir).unwrap() {
+            std::fs::File::options()
+                .write(true)
+                .open(rel_path(dir, &rel))
+                .unwrap()
+                .set_modified(old)
+                .unwrap();
+        }
+        old
+    }
+
+    #[test]
+    fn a_pull_whose_files_did_not_change_keeps_every_files_modification_time() {
+        for bundle in [workspace_bundle(), deck_bundle()] {
+            let (_tmp, root) = fresh_root();
+            apply(&root, &bundle);
+            let live = root.entry_root(bundle.kind, bundle.entry);
+            let old = age_every_file(&live);
+
+            apply(&root, &bundle);
+
+            let after = modified_times(&live);
+            for (rel, _) in &bundle.files {
+                assert_eq!(
+                    after.get(rel),
+                    Some(&old),
+                    "{}: {rel} landed byte-identical, its modification time must stay",
+                    bundle.entry
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_pull_that_changes_one_file_moves_only_that_files_modification_time() {
+        let (_tmp, root) = fresh_root();
+        apply(&root, &workspace_bundle());
+        let live = root.entry_root(KIND_WORKSPACE, "Biology");
+        let old = age_every_file(&live);
+        let mut changed = workspace_bundle();
+        for (rel, bytes) in &mut changed.files {
+            if rel == "decks/organs.md" {
+                *bytes = b"## q2\na2 edited\n".to_vec();
+            }
+        }
+
+        apply(&root, &changed);
+
+        for (rel, at) in &modified_times(&live) {
+            if rel == "decks/organs.md" {
+                assert_ne!(*at, old, "{rel} changed, its modification time must move");
+            } else {
+                assert_eq!(
+                    *at, old,
+                    "{rel} did not change, its modification time must stay"
+                );
+            }
+        }
     }
 }

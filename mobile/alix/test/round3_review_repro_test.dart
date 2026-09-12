@@ -89,6 +89,7 @@ void main() {
         SyncEntryState(
           entry: 'greek-a.md',
           kind: 'deck',
+          digest: 'xxh64-0000000000000001',
           decks: [
             SyncDeckState(
               deckId: 'deck-a',
@@ -103,6 +104,7 @@ void main() {
         const SyncEntryState(
           entry: 'greek-b.md',
           kind: 'deck',
+          digest: 'xxh64-0000000000000001',
           decks: [
             SyncDeckState(
               deckId: 'deck-b',
@@ -146,6 +148,7 @@ void main() {
         SyncEntryState(
           entry: 'Biology',
           kind: 'workspace',
+          digest: 'xxh64-0000000000000001',
           decks: [
             SyncDeckState(
               deckId: 'deck-a',

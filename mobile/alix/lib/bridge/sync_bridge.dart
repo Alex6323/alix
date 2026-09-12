@@ -182,6 +182,7 @@ SyncEntryState _entryState(bridge.PairedEntryState entry) {
   return SyncEntryState(
     entry: entry.entry,
     kind: entry.kind,
+    digest: entry.digest,
     decks: [for (final deck in entry.decks) _deckState(deck)],
   );
 }

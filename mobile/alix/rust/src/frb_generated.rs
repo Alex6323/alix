@@ -3341,10 +3341,12 @@ impl SseDecode for crate::api::sync::PairedEntryState {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_entry = <String>::sse_decode(deserializer);
         let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_digest = <String>::sse_decode(deserializer);
         let mut var_decks = <Vec<crate::api::sync::PairedDeckState>>::sse_decode(deserializer);
         return crate::api::sync::PairedEntryState {
             entry: var_entry,
             kind: var_kind,
+            digest: var_digest,
             decks: var_decks,
         };
     }
@@ -4599,6 +4601,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::PairedEntryState {
         [
             self.entry.into_into_dart().into_dart(),
             self.kind.into_into_dart().into_dart(),
+            self.digest.into_into_dart().into_dart(),
             self.decks.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -6056,6 +6059,7 @@ impl SseEncode for crate::api::sync::PairedEntryState {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.entry, serializer);
         <String>::sse_encode(self.kind, serializer);
+        <String>::sse_encode(self.digest, serializer);
         <Vec<crate::api::sync::PairedDeckState>>::sse_encode(self.decks, serializer);
     }
 }

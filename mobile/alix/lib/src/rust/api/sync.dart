@@ -154,16 +154,19 @@ class PairedDeckState {
 class PairedEntryState {
   final String entry;
   final String kind;
+  final String digest;
   final List<PairedDeckState> decks;
 
   const PairedEntryState({
     required this.entry,
     required this.kind,
+    required this.digest,
     required this.decks,
   });
 
   @override
-  int get hashCode => entry.hashCode ^ kind.hashCode ^ decks.hashCode;
+  int get hashCode =>
+      entry.hashCode ^ kind.hashCode ^ digest.hashCode ^ decks.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -172,6 +175,7 @@ class PairedEntryState {
           runtimeType == other.runtimeType &&
           entry == other.entry &&
           kind == other.kind &&
+          digest == other.digest &&
           decks == other.decks;
 }
 

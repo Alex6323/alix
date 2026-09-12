@@ -132,25 +132,100 @@ fn tree_size(dir: &Path) -> Result<u64> {
 }
 
 fn staged_dir_size(dir: &Path) -> Result<u64> {
-    staged_dir_size_excluding(dir, &HashSet::new(), &HashSet::new())
+    let mut bytes = 0;
+    visit_staged_dir_excluding(
+        dir,
+        Path::new(""),
+        &HashSet::new(),
+        &HashSet::new(),
+        &mut |_, source| {
+            bytes += std::fs::metadata(source)?.len();
+            Ok(())
+        },
+    )?;
+    Ok(bytes)
 }
 
-pub(crate) fn staged_workspace_size_excluding(
+/// A file a staging copy would place at `relative` under the staged root.
+pub(crate) struct StagedFile {
+    pub(crate) relative: PathBuf,
+    pub(crate) source: PathBuf,
+}
+
+pub(crate) fn staged_workspace_files_excluding(
     dir: &Path,
     excluded_decks: &HashSet<PathBuf>,
     excluded_deck_ids: &HashSet<String>,
-) -> Result<u64> {
+) -> Result<Vec<StagedFile>> {
     if !dir.is_dir() {
         bail!("`{}` is not a folder", dir.display());
     }
-    staged_dir_size_excluding(dir, excluded_decks, excluded_deck_ids)
+    let mut out = Vec::new();
+    visit_staged_dir_excluding(
+        dir,
+        Path::new(""),
+        excluded_decks,
+        excluded_deck_ids,
+        &mut |relative, source| {
+            out.push(StagedFile {
+                relative: relative.to_path_buf(),
+                source: source.to_path_buf(),
+            });
+            Ok(())
+        },
+    )?;
+    Ok(out)
 }
 
-fn staged_dir_size_excluding(
+/// The deck-bundle projection without the share-only marker.
+pub(crate) fn staged_deck_contents_files(path: &Path) -> Result<Vec<StagedFile>> {
+    if !path.is_file() {
+        bail!("`{}` is not a deck file", path.display());
+    }
+    let parts = deck_bundle_parts(path)?
+        .ok_or_else(|| anyhow::anyhow!("{} is not initialized", path.display()))?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("deck.md");
+    let mut out = vec![StagedFile {
+        relative: PathBuf::from(file_name),
+        source: path.to_path_buf(),
+    }];
+    if parts.augmentation.is_file() {
+        out.push(StagedFile {
+            relative: Path::new("augment").join(format!("{}.json", parts.deck_id)),
+            source: parts.augmentation.clone(),
+        });
+    }
+    if parts.has_assets {
+        visit_tree(
+            &parts.owned_assets,
+            &Path::new("assets").join(&parts.deck_id),
+            &mut |relative, source| {
+                out.push(StagedFile {
+                    relative: relative.to_path_buf(),
+                    source: source.to_path_buf(),
+                });
+                Ok(())
+            },
+        )?;
+    }
+    Ok(out)
+}
+
+type Visit<'a> = &'a mut dyn FnMut(&Path, &Path) -> Result<()>;
+
+/// Walks what `stage_dir_excluding` would copy, calling `visit` with each
+/// file's staged-relative path and its source; the two must agree, and the
+/// sync tests pin them against a real staging.
+fn visit_staged_dir_excluding(
     dir: &Path,
+    relative: &Path,
     excluded_decks: &HashSet<PathBuf>,
     excluded_deck_ids: &HashSet<String>,
-) -> Result<u64> {
+    visit: Visit,
+) -> Result<()> {
     if crate::workspace::is_workspace(dir) {
         validate_workspace_material_excluding(dir, excluded_decks, excluded_deck_ids)?;
     }
@@ -159,7 +234,6 @@ fn staged_dir_size_excluding(
         .filter(|path| !excluded_decks.contains(path))
         .filter_map(|path| crate::deck::Deck::load(path).ok()?.deck_token)
         .collect();
-    let mut bytes = 0;
     for entry in std::fs::read_dir(dir).with_context(|| format!("cannot read {}", dir.display()))? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -168,6 +242,7 @@ fn staged_dir_size_excluding(
             continue;
         }
         refuse_link(&path)?;
+        let target = relative.join(&name);
         if name == "augment" && path.is_dir() {
             for augmentation in std::fs::read_dir(&path)? {
                 let augmentation = augmentation?;
@@ -183,26 +258,27 @@ fn staged_dir_size_excluding(
                         .and_then(|name| name.to_str())
                         .is_some_and(crate::workspace::is_conflict_name)
                 {
-                    bytes += augmentation.metadata()?.len();
+                    visit(&target.join(augmentation.file_name()), &from)?;
                 }
             }
         } else if name == crate::assets::ROOT && path.is_dir() {
-            bytes += staged_assets_size(&path, excluded_decks, excluded_deck_ids)?;
+            visit_staged_assets(&path, &target, excluded_decks, excluded_deck_ids, visit)?;
         } else if path.is_dir() {
-            bytes += staged_dir_size_excluding(&path, excluded_decks, excluded_deck_ids)?;
+            visit_staged_dir_excluding(&path, &target, excluded_decks, excluded_deck_ids, visit)?;
         } else {
-            bytes += entry.metadata()?.len();
+            visit(&target, &path)?;
         }
     }
-    Ok(bytes)
+    Ok(())
 }
 
-fn staged_assets_size(
+fn visit_staged_assets(
     dir: &Path,
+    relative: &Path,
     excluded_decks: &HashSet<PathBuf>,
     excluded_deck_ids: &HashSet<String>,
-) -> Result<u64> {
-    let mut bytes = 0;
+    visit: Visit,
+) -> Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -211,13 +287,35 @@ fn staged_assets_size(
         }
         let kind = entry.file_type()?;
         refuse_link(&entry.path())?;
-        bytes += if kind.is_dir() {
-            staged_dir_size_excluding(&entry.path(), excluded_decks, excluded_deck_ids)?
+        let target = relative.join(&name);
+        if kind.is_dir() {
+            visit_staged_dir_excluding(
+                &entry.path(),
+                &target,
+                excluded_decks,
+                excluded_deck_ids,
+                visit,
+            )?;
         } else {
-            entry.metadata()?.len()
-        };
+            visit(&target, &entry.path())?;
+        }
     }
-    Ok(bytes)
+    Ok(())
+}
+
+/// Walks what `copy_tree` would copy.
+fn visit_tree(from: &Path, relative: &Path, visit: Visit) -> Result<()> {
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        refuse_link(&entry.path())?;
+        let target = relative.join(entry.file_name());
+        if entry.path().is_dir() {
+            visit_tree(&entry.path(), &target, visit)?;
+        } else {
+            visit(&target, &entry.path())?;
+        }
+    }
+    Ok(())
 }
 
 pub fn stage_deck_bundle(path: &Path, stage_root: &Path) -> Result<(PathBuf, usize)> {
