@@ -178,8 +178,9 @@ pub fn list_members(
     let now = now_ms.unwrap_or_else(alix::time::now_ms);
     let review = alix::config::ReviewConfig::default();
     let ((entries, deadline), profile) = profiled(profile, || {
-        let listing =
-            alix::listing::list_members(Path::new(&root), Path::new(&dir), &review, now);
+        let listing = with_listing_cache(|cache| {
+            alix::listing::list_members_with(Path::new(&root), Path::new(&dir), &review, now, cache)
+        });
         let entries: Vec<DeckEntry> = listing.rows.into_iter().map(DeckEntry::from).collect();
         (entries, listing.deadline.map(Deadline::from))
     });
@@ -261,13 +262,39 @@ mod tests {
         let profile = screen.profile.expect("profiled");
         assert_eq!(1, screen.entries.len(), "the root holds one workspace row");
         assert_eq!(
-            (members, 1, candidates),
+            (0, 1, candidates),
             (
                 profile.decks_loaded,
                 profile.manifest_reads,
                 profile.candidates_classified,
             ),
-            "root screen: (decks_loaded, manifest_reads, candidates_classified)"
+            "root screen after the drill-in: the process cache serves every member, \
+             (decks_loaded, manifest_reads, candidates_classified)"
+        );
+    }
+
+    #[test]
+    fn a_repeat_member_listing_uses_the_process_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        write(&ws.join("alix.toml"), "title = \"Ws\"\n");
+        write_deck(ws.join("decks/member.md"), "## q\na\n");
+        let root = root.to_string_lossy().into_owned();
+        let ws = ws.to_string_lossy().into_owned();
+
+        let first = list_members(root.clone(), ws.clone(), Some(T0), true)
+            .profile
+            .expect("profiled");
+        let second = list_members(root, ws, Some(T0), true)
+            .profile
+            .expect("profiled");
+
+        assert_eq!(1, first.decks_loaded, "the first listing parses the member");
+        assert_eq!(
+            0, second.decks_loaded,
+            "a repeat member listing must reuse the bridge's process cache"
         );
     }
 
