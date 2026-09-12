@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -541560336;
+  int get rustContentHash => 1331836520;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -201,10 +201,7 @@ abstract class RustLibApi extends BaseApi {
 
   String crateApiSimpleCoreVersion();
 
-  String? crateApiListingDeckTitleAt({
-    required String root,
-    required String path,
-  });
+  String? crateApiListingDeckTitle({required String path});
 
   Future<void> crateApiSimpleInitApp();
 
@@ -1096,15 +1093,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "core_version", argNames: []);
 
   @override
-  String? crateApiListingDeckTitleAt({
-    required String root,
-    required String path,
-  }) {
+  String? crateApiListingDeckTitle({required String path}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(root, serializer);
           sse_encode_String(path, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 25)!;
         },
@@ -1112,17 +1105,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_opt_String,
           decodeErrorData: null,
         ),
-        constMeta: kCrateApiListingDeckTitleAtConstMeta,
-        argValues: [root, path],
+        constMeta: kCrateApiListingDeckTitleConstMeta,
+        argValues: [path],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiListingDeckTitleAtConstMeta => const TaskConstMeta(
-    debugName: "deck_title_at",
-    argNames: ["root", "path"],
-  );
+  TaskConstMeta get kCrateApiListingDeckTitleConstMeta =>
+      const TaskConstMeta(debugName: "deck_title", argNames: ["path"]);
 
   @override
   Future<void> crateApiSimpleInitApp() {

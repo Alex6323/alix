@@ -160,16 +160,8 @@ class SyncBridgePort implements SyncPort {
       bridge.pairedStagingZip(rootDir: rootDir, entry: entry);
 
   @override
-  String? deckTitle(String path) {
-    // [path] is root-relative, the same "loose deck IS its entry" shape
-    // `SyncController._deckLabel` only calls this for; `listRoot`'s own
-    // `DeckSummary.path` is the absolute filesystem path (`src/listing.rs`),
-    // so this compares absolute to absolute the way the lib's own
-    // `PairedRoot::entry_root` resolves a loose deck's root as `rootDir`
-    // itself.
-    final absolute = '$rootDir/$path';
-    return listing_bridge.deckTitleAt(root: rootDir, path: absolute);
-  }
+  String? deckTitle(String path) =>
+      listing_bridge.deckTitle(path: '$rootDir/$path');
 
   @override
   void close() {

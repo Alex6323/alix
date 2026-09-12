@@ -25,8 +25,8 @@ Future<RootScreen> listRoot({
   profile: profile,
 );
 
-String? deckTitleAt({required String root, required String path}) =>
-    RustLib.instance.api.crateApiListingDeckTitleAt(root: root, path: path);
+String? deckTitle({required String path}) =>
+    RustLib.instance.api.crateApiListingDeckTitle(path: path);
 
 Future<MembersScreen> listMembers({
   required String root,

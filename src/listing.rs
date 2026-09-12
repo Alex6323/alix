@@ -51,10 +51,28 @@ pub struct DeckDeadline {
 }
 
 pub fn deck_label(path: &Path) -> Option<String> {
+    parsed_label(&parse_file(path)?)
+}
+
+pub fn deck_title(path: &Path) -> Option<String> {
+    let deck = parse_file(path)?;
+    let stem = path.file_stem()?.to_string_lossy().into_owned();
+    Some(
+        parsed_label(&deck)
+            .filter(|label| !label.is_empty())
+            .unwrap_or(stem),
+    )
+}
+
+fn parse_file(path: &Path) -> Option<crate::parser::ParsedDeck> {
     let text = std::fs::read_to_string(path).ok()?;
-    let deck = crate::parser::parse("deck.md", &text).ok()?;
+    crate::parser::parse("deck.md", &text).ok()
+}
+
+fn parsed_label(deck: &crate::parser::ParsedDeck) -> Option<String> {
     deck.title
-        .or_else(|| deck.frontmatter.trace.map(|t| title::condense(&t)))
+        .clone()
+        .or_else(|| deck.frontmatter.trace.as_deref().map(title::condense))
 }
 
 pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSummary> {
@@ -2926,5 +2944,34 @@ mod tests {
         let summaries = list_root(dir.path(), &ReviewConfig::default(), T0);
         assert!(summaries.is_empty());
         assert_eq!(body, std::fs::read_to_string(&notes).unwrap());
+    }
+
+    #[test]
+    fn a_deck_title_is_its_title_then_its_condensed_trace_then_its_file_stem() {
+        let dir = tempfile::tempdir().unwrap();
+        let rows = [
+            (
+                "titled.md",
+                "---\ntitle: Loose Deck\n---\n## q\na\n",
+                Some("Loose Deck"),
+            ),
+            (
+                "traced.md",
+                "---\ntrace: How does the login flow work?\n---\n## q\na\n",
+                Some("How Does the Login Flow Work?"),
+            ),
+            ("plain-name.md", "## q\na\n", Some("plain-name")),
+            ("garbage.md", "---\ntitle: [unterminated\n---\n", None),
+        ];
+        for (name, text, expected) in rows {
+            let path = dir.path().join(name);
+            std::fs::write(&path, text).unwrap();
+            assert_eq!(deck_title(&path).as_deref(), expected, "{name}");
+        }
+        assert_eq!(
+            deck_title(&dir.path().join("missing.md")),
+            None,
+            "missing file"
+        );
     }
 }

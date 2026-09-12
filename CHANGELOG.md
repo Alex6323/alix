@@ -51,6 +51,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The phone's sync report labels a loose deck by reading that one deck
+  file instead of listing the whole paired root first.
+
 - A paired phone's sync cycle pulls only the entries whose files changed
   since its last pull: `GET /api/sync/entries` carries a per-entry `digest`
   over the pull manifest's file rows, and the phone compares it with the

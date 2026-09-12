@@ -158,15 +158,8 @@ pub fn list_root(root: String, now_ms: Option<u64>, profile: bool) -> RootScreen
 }
 
 #[flutter_rust_bridge::frb(sync)]
-pub fn deck_title_at(root: String, path: String) -> Option<String> {
-    alix::listing::list_root(
-        Path::new(&root),
-        &alix::config::ReviewConfig::default(),
-        alix::time::now_ms(),
-    )
-    .into_iter()
-    .find(|summary| summary.path == Path::new(&path))
-    .map(|summary| summary.title)
+pub fn deck_title(path: String) -> Option<String> {
+    alix::listing::deck_title(Path::new(&path))
 }
 
 pub fn list_members(
@@ -296,6 +289,21 @@ mod tests {
             0, second.decks_loaded,
             "a repeat member listing must reuse the bridge's process cache"
         );
+    }
+
+    #[test]
+    fn a_deck_title_reads_that_one_file_wherever_it_lies() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("not-a-listed-root").join("deep");
+        std::fs::create_dir_all(&nested).unwrap();
+        let titled = nested.join("titled.md");
+        write_deck(&titled, "---\ntitle: Loose Deck\n---\n## q\na\n");
+        let plain = nested.join("plain-name.md");
+        write_deck(&plain, "## q\na\n");
+        let title = |path: &Path| deck_title(path.to_string_lossy().into_owned());
+        assert_eq!(title(&titled).as_deref(), Some("Loose Deck"));
+        assert_eq!(title(&plain).as_deref(), Some("plain-name"));
+        assert_eq!(title(&nested.join("missing.md")), None);
     }
 
     fn write(path: &Path, text: &str) {
