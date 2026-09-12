@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 324052215;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -541560336;
 
 // Section: executor
 
@@ -1214,6 +1214,38 @@ fn wire__crate__api__simple__core_version_impl(
         },
     )
 }
+fn wire__crate__api__listing__deck_title_at_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "deck_title_at",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_root = <String>::sse_decode(&mut deserializer);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok =
+                    Result::<_, ()>::Ok(crate::api::listing::deck_title_at(api_root, api_path))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__simple__init_app_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1283,15 +1315,16 @@ fn wire__crate__api__review__keypoint_grade_impl(
     )
 }
 fn wire__crate__api__listing__list_members_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "list_members",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -1308,28 +1341,31 @@ fn wire__crate__api__listing__list_members_impl(
             let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
             let api_profile = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let output_ok = Result::<_, ()>::Ok(crate::api::listing::list_members(
-                    api_root,
-                    api_dir,
-                    api_now_ms,
-                    api_profile,
-                ))?;
-                Ok(output_ok)
-            })())
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok(crate::api::listing::list_members(
+                        api_root,
+                        api_dir,
+                        api_now_ms,
+                        api_profile,
+                    ))?;
+                    Ok(output_ok)
+                })())
+            }
         },
     )
 }
 fn wire__crate__api__listing__list_root_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "list_root",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
         move || {
             let message = unsafe {
@@ -1345,14 +1381,16 @@ fn wire__crate__api__listing__list_root_impl(
             let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
             let api_profile = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let output_ok = Result::<_, ()>::Ok(crate::api::listing::list_root(
-                    api_root,
-                    api_now_ms,
-                    api_profile,
-                ))?;
-                Ok(output_ok)
-            })())
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok(crate::api::listing::list_root(
+                        api_root,
+                        api_now_ms,
+                        api_profile,
+                    ))?;
+                    Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -3750,9 +3788,11 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        25 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__sync__paired_apply_pull_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__simple__stamp_deck_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__listing__list_members_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__listing__list_root_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__sync__paired_apply_pull_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__simple__stamp_deck_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3817,23 +3857,22 @@ fn pde_ffi_dispatcher_sync_impl(
         22 => wire__crate__api__review__WalkSession_state_impl(ptr, rust_vec_len, data_len),
         23 => wire__crate__api__generate__apply_generated_deck_impl(ptr, rust_vec_len, data_len),
         24 => wire__crate__api__simple__core_version_impl(ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__listing__list_members_impl(ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__listing__list_root_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__sync__paired_entries_impl(ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__sync__paired_free_space_impl(ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__sync__paired_needs_space_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__sync__paired_orphans_impl(ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__sync__paired_plan_pushes_impl(ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__sync__paired_record_push_impl(ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__sync__paired_recover_impl(ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__sync__paired_remove_entry_impl(ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__sync__paired_resolve_conflict_impl(ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__sync__paired_root_dir_impl(ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__sync__paired_staging_zip_impl(ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__listing__deck_title_at_impl(ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__sync__paired_entries_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__sync__paired_free_space_impl(ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__sync__paired_needs_space_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__sync__paired_orphans_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__sync__paired_plan_pushes_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__sync__paired_record_push_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__sync__paired_recover_impl(ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__sync__paired_remove_entry_impl(ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__sync__paired_resolve_conflict_impl(ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__sync__paired_root_dir_impl(ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__sync__paired_staging_zip_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

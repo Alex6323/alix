@@ -19,8 +19,10 @@ import 'support/deck_fixture.dart';
 import 'support/fake_server_client.dart';
 import 'support/fake_sync_port.dart';
 import 'support/widget_tree_dump.dart';
+import 'support/picker_listing.dart';
 
 void main() {
+  setUp(answerPathProvider);
   setUpAll(() async => RustLib.init());
 
   Directory tempDir(String prefix) {
@@ -61,7 +63,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await settlePicker(tester);
   }
 
   Future<void> openSettings(WidgetTester tester) async {

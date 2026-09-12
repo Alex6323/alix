@@ -27,6 +27,16 @@ Settings → **About** shows two versions: the app's own and the embedded
 core's. The app has its own release stream; it does not track the CLI's
 version.
 
+## The deck list
+
+The first screen lists the phone's own decks and, once paired, the pulled
+copy of the desktop's below them. The two are listed separately and the
+phone's own appear first; the screen stays responsive while a large
+workspace is still being read, and shows nothing in place of the list until
+the first answer arrives. A deck read once stays parsed in memory for as
+long as the app runs, so coming back to the list after a review does not
+read every deck again; a deck whose file changed on disk is read fresh.
+
 ## Syncing with the desktop
 
 Once paired (see [Pairing a device](19-pairing.md)), a pulled entry's row

@@ -23,7 +23,7 @@ class PickerController extends ChangeNotifier {
   ) : _masteredEntries = masteredEntries == null
           ? null
           : List.unmodifiable(masteredEntries) {
-    _load();
+    reload();
   }
 
   final PickerPort _port;
@@ -36,8 +36,16 @@ class PickerController extends ChangeNotifier {
   bool _serverReachable = false;
   String? _pairedRootDir;
   List<PickerEntry> _pairedRootEntries = const [];
+  bool _disposed = false;
+  bool _listedOnce = false;
+  Future<void>? _inFlight;
+  bool _reloadWanted = false;
 
   List<PickerEntry> get entries => _entries;
+
+  /// True until the first listing has answered; the view shows nothing in
+  /// place of the list rather than the empty hint.
+  bool get isLoading => !_listedOnce;
   PickerDeadline? get deadline => _deadline;
   bool get serverReachable => _serverReachable;
   bool get isMasteredView => _masteredEntries != null;
@@ -63,8 +71,17 @@ class PickerController extends ChangeNotifier {
   }
 
   void reload() {
-    _load();
-    notifyListeners();
+    if (_inFlight != null) {
+      _reloadWanted = true;
+      return;
+    }
+    _inFlight = _load().whenComplete(() {
+      _listedOnce = true;
+      _inFlight = null;
+      if (!_reloadWanted) return;
+      _reloadWanted = false;
+      reload();
+    });
   }
 
   void clearDeadline(String dir) {
@@ -82,43 +99,63 @@ class PickerController extends ChangeNotifier {
     reload();
   }
 
-  void _load() {
+  Future<void> _load() async {
     final fixed = _masteredEntries;
     if (fixed != null) {
       _entries = fixed;
+      _notify();
       return;
     }
     final dir = _dir;
     if (dir == null) {
       _entries = List.unmodifiable(
-        _timed(
+        (await _timed(
           'root',
           () => _port.listRoot(_root, profile: kAlixProfile),
-        ).entries,
+        )).entries,
       );
+      _notify();
       final pairedRootDir = _pairedRootDir;
-      _pairedRootEntries = pairedRootDir == null
-          ? const []
-          : List.unmodifiable(
-              _timed(
-                'paired-root',
-                () => _port.listRoot(pairedRootDir, profile: kAlixProfile),
-              ).entries,
-            );
+      if (pairedRootDir == null) {
+        _pairedRootEntries = const [];
+        return;
+      }
+      _pairedRootEntries = List.unmodifiable(
+        (await _timed(
+          'paired-root',
+          () => _port.listRoot(pairedRootDir, profile: kAlixProfile),
+        )).entries,
+      );
+      _notify();
       return;
     }
-    final listing = _timed(
+    final listing = await _timed(
       'members',
       () => _port.listMembers(root: _root, dir: dir, profile: kAlixProfile),
     );
     _entries = List.unmodifiable(listing.entries);
     _deadline = listing.deadline;
+    _notify();
   }
 
-  PickerListing _timed(String row, PickerListing Function() call) {
+  void _notify() {
+    _listedOnce = true;
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  Future<PickerListing> _timed(
+    String row,
+    Future<PickerListing> Function() call,
+  ) async {
     if (!kAlixProfile) return call();
     final stopwatch = Stopwatch()..start();
-    final listing = call();
+    final listing = await call();
     stopwatch.stop();
     final profile = listing.profile;
     final counters = profile == null

@@ -120,15 +120,36 @@ pub fn set_workspace_deadline(dir: String, date: Option<String>) -> Result<()> {
     alix::workspace::set_deadline_str(Path::new(&dir), date.as_deref())
 }
 
-#[flutter_rust_bridge::frb(sync)]
+static LISTING_CACHE: std::sync::Mutex<Option<alix::cache::DeckCache>> =
+    std::sync::Mutex::new(None);
+
+// Above this many cached paths a listing clears the cache after it runs, so
+// a corpus past the bound costs what it cost before the cache, never more.
+const LISTING_CACHE_BOUND: usize = 1024;
+
+fn with_listing_cache<T>(f: impl FnOnce(&mut alix::cache::DeckCache) -> T) -> T {
+    let mut guard = LISTING_CACHE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let cache = guard.get_or_insert_with(alix::cache::DeckCache::default);
+    let out = f(cache);
+    if cache.len() > LISTING_CACHE_BOUND {
+        *guard = None;
+    }
+    out
+}
+
 pub fn list_root(root: String, now_ms: Option<u64>, profile: bool) -> RootScreen {
     let now = now_ms.unwrap_or_else(alix::time::now_ms);
     let (entries, profile) = profiled(profile, || {
-        alix::listing::list_root(
-            Path::new(&root),
-            &alix::config::ReviewConfig::default(),
-            now,
-        )
+        with_listing_cache(|cache| {
+            alix::listing::list_root_with(
+                Path::new(&root),
+                &alix::config::ReviewConfig::default(),
+                now,
+                cache,
+            )
+        })
         .into_iter()
         .map(DeckEntry::from)
         .collect()
@@ -137,6 +158,17 @@ pub fn list_root(root: String, now_ms: Option<u64>, profile: bool) -> RootScreen
 }
 
 #[flutter_rust_bridge::frb(sync)]
+pub fn deck_title_at(root: String, path: String) -> Option<String> {
+    alix::listing::list_root(
+        Path::new(&root),
+        &alix::config::ReviewConfig::default(),
+        alix::time::now_ms(),
+    )
+    .into_iter()
+    .find(|summary| summary.path == Path::new(&path))
+    .map(|summary| summary.title)
+}
+
 pub fn list_members(
     root: String,
     dir: String,

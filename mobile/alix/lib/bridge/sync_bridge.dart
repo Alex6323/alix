@@ -168,11 +168,7 @@ class SyncBridgePort implements SyncPort {
     // `PairedRoot::entry_root` resolves a loose deck's root as `rootDir`
     // itself.
     final absolute = '$rootDir/$path';
-    final screen = listing_bridge.listRoot(root: rootDir, profile: false);
-    for (final entry in screen.entries) {
-      if (entry.path == absolute) return entry.title;
-    }
-    return null;
+    return listing_bridge.deckTitleAt(root: rootDir, path: absolute);
   }
 
   @override

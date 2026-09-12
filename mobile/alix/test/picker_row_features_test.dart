@@ -18,6 +18,7 @@ import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 
 import 'support/deck_fixture.dart';
+import 'support/picker_listing.dart';
 
 /// The real alix wordmark emblem (assets/alix.svg), reused verbatim so the
 /// fixture is a known-good SVG rather than a hand-invented one.
@@ -38,6 +39,7 @@ final _pngIcon = base64Decode(
 );
 
 void main() {
+  setUp(answerPathProvider);
   setUpAll(() async => RustLib.init());
 
   Directory tempRoot(String prefix) {
@@ -71,7 +73,7 @@ void main() {
         theme: alixDark(),
         home: PickerScreen(root: root.path),
       ));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       await tester.tap(find.text('D'));
       await tester.pumpAndSettle();
@@ -96,7 +98,7 @@ void main() {
         theme: alixDark(),
         home: PickerScreen(root: root.path),
       ));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       await tester.longPress(find.text('D'));
       await tester.pumpAndSettle();
@@ -160,7 +162,7 @@ void main() {
       final root = iconRoot();
       await tester
           .pumpWidget(MaterialApp(home: PickerScreen(root: root.path)));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       expect(
           find.descendant(
@@ -172,7 +174,7 @@ void main() {
       final root = iconRoot();
       await tester
           .pumpWidget(MaterialApp(home: PickerScreen(root: root.path)));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       expect(
           find.descendant(of: rowOf('WsPng'), matching: find.byType(Image)),
@@ -183,7 +185,7 @@ void main() {
       final root = iconRoot();
       await tester
           .pumpWidget(MaterialApp(home: PickerScreen(root: root.path)));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       final row = rowOf('WsNone');
       expect(find.descendant(of: row, matching: find.byType(SvgPicture)),
@@ -196,7 +198,7 @@ void main() {
       final root = iconRoot();
       await tester
           .pumpWidget(MaterialApp(home: PickerScreen(root: root.path)));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       final row = rowOf('Loose');
       expect(find.descendant(of: row, matching: find.byType(SvgPicture)),
@@ -243,7 +245,7 @@ void main() {
         theme: alixDark(),
         home: PickerScreen(root: root.path),
       ));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       final row =
           find.ancestor(of: find.text('Base'), matching: find.byType(InkWell));
@@ -267,7 +269,7 @@ void main() {
         theme: alixDark(),
         home: PickerScreen(root: root.path),
       ));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       final row = find.ancestor(
           of: find.text('Plain'), matching: find.byType(InkWell));
@@ -322,7 +324,7 @@ void main() {
         theme: alixDark(),
         home: PickerScreen(root: root.path),
       ));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       expect(find.text('Active A'), findsOneWidget);
       expect(find.text('Active B'), findsOneWidget);
@@ -351,7 +353,7 @@ void main() {
         theme: alixDark(),
         home: PickerScreen(root: root.path),
       ));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       expect(find.text('A'), findsOneWidget);
       expect(find.textContaining('Mastered'), findsNothing);
@@ -394,7 +396,7 @@ void main() {
         theme: alixDark(),
         home: PickerScreen(root: root.path, dir: '${root.path}/ws'),
       ));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       expect(find.text('Base'), findsOneWidget);
       expect(find.text('Mid'), findsOneWidget);
@@ -455,7 +457,7 @@ void main() {
         theme: alixDark(),
         home: PickerScreen(root: root.path),
       ));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       expect(find.text('ws'), findsOneWidget);
       expect(find.byType(TreeGuides), findsNothing);
@@ -486,7 +488,7 @@ void main() {
         theme: alixDark(),
         home: PickerScreen(root: root.path, dir: ws.path),
       ));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       // No RenderFlex overflow at the deepest indent (two levels).
       expect(tester.takeException(), isNull);
@@ -516,7 +518,7 @@ void main() {
       theme: alixDark(),
       home: PickerScreen(root: root.path),
     ));
-    await tester.pumpAndSettle();
+    await settlePicker(tester);
 
     expect(find.text('error'), findsOneWidget);
     await tester.tap(find.text('Damaged'));

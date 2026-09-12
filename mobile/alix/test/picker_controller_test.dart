@@ -8,7 +8,7 @@ import 'package:alix_mobile/picker/picker_port.dart';
 void main() {
   test(
     'with ALIX_PROFILE the controller prints one alix-profile line per listing',
-    () {
+    () async {
       const profile = PickerProfile(
         libMs: 7,
         counters: [('decks_loaded', 3), ('manifest_reads', 1)],
@@ -29,6 +29,7 @@ void main() {
         root: '/decks',
         dir: '/decks/ws',
       );
+      await pumpEventQueue();
 
       expect(lines, [
         matches(
@@ -46,9 +47,22 @@ void main() {
     skip: kAlixProfile ? false : 'needs --dart-define=ALIX_PROFILE=true',
   );
 
-  test('root loading and named mutations publish one coherent state', () {
+  test('the list is loading until the first listing answers', () async {
     final port = _FakePickerPort(rootEntries: [_entry('active')]);
     final controller = PickerController(port: port, root: '/decks');
+    expect(controller.isLoading, isTrue, reason: 'nothing has answered yet');
+    expect(controller.entries, isEmpty, reason: 'no rows before the answer');
+
+    await pumpEventQueue();
+
+    expect(controller.isLoading, isFalse, reason: 'the first listing answered');
+    expect(controller.entries.single.title, 'active');
+  });
+
+  test('root loading and named mutations publish one coherent state', () async {
+    final port = _FakePickerPort(rootEntries: [_entry('active')]);
+    final controller = PickerController(port: port, root: '/decks');
+    await pumpEventQueue();
     var notifications = 0;
     controller.addListener(() => notifications++);
 
@@ -58,13 +72,14 @@ void main() {
     controller.setServerReachable(true);
     port.rootEntries = [_entry('refreshed')];
     controller.reload();
+    await pumpEventQueue();
 
     expect(controller.serverReachable, isTrue);
     expect(controller.entries.single.title, 'refreshed');
     expect(notifications, 2);
   });
 
-  test('member loading and deadline writes refresh through the port', () {
+  test('member loading and deadline writes refresh through the port', () async {
     final port = _FakePickerPort(
       memberEntries: [_entry('member')],
       deadline: const PickerDeadline(
@@ -79,6 +94,7 @@ void main() {
       root: '/decks',
       dir: '/decks/workspace',
     );
+    await pumpEventQueue();
     var notifications = 0;
     controller.addListener(() => notifications++);
 
@@ -92,11 +108,13 @@ void main() {
       total: 3,
     );
     controller.setDeadline(dir: '/decks/workspace', date: '2026-08-20');
+    await pumpEventQueue();
     expect(port.deadlineWrites, [('/decks/workspace', '2026-08-20')]);
     expect(controller.deadline?.date, '2026-08-20');
 
     port.deadline = null;
     controller.clearDeadline('/decks/workspace');
+    await pumpEventQueue();
     expect(port.deadlineWrites.last, ('/decks/workspace', null));
     expect(controller.deadline, isNull);
     expect(notifications, 2);
@@ -111,6 +129,7 @@ void main() {
         root: '/decks',
         masteredEntries: [_entry('mastered', mastered: true)],
       );
+      await pumpEventQueue();
       var notifications = 0;
       controller.addListener(() => notifications++);
 
@@ -118,6 +137,7 @@ void main() {
       expect(port.listRootCalls, 0);
 
       await controller.addTutorial();
+      await pumpEventQueue();
       expect(port.tutorialRoots, ['/decks']);
       expect(controller.entries.single.title, 'mastered');
       expect(port.listRootCalls, 0);
@@ -162,17 +182,17 @@ class _FakePickerPort implements PickerPort {
   final List<String> tutorialRoots = [];
 
   @override
-  PickerListing listRoot(String root, {required bool profile}) {
+  Future<PickerListing> listRoot(String root, {required bool profile}) async {
     listRootCalls++;
     return PickerListing(entries: rootEntries, profile: this.profile);
   }
 
   @override
-  PickerListing listMembers({
+  Future<PickerListing> listMembers({
     required String root,
     required String dir,
     required bool profile,
-  }) {
+  }) async {
     return PickerListing(
       entries: memberEntries,
       deadline: deadline,

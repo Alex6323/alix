@@ -614,6 +614,7 @@ class _PickerScreenState extends State<PickerScreen> {
             widget.dir == null && widget.masteredEntries == null;
         return PickerView(
           entries: _controller.entries,
+          isLoading: _controller.isLoading,
           deadline: _controller.deadline,
           isRoot: widget.dir == null,
           isMasteredView: _controller.isMasteredView,

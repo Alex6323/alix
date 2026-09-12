@@ -22,6 +22,7 @@ import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 
 import 'support/deck_fixture.dart';
+import 'support/picker_listing.dart';
 
 /// The platform seam's test double: no channels exist under `flutter test`.
 class FakeAccess implements PlatformAccess {
@@ -93,22 +94,27 @@ InlineRun expectMathRun(
 }
 
 void main() {
+  setUp(answerPathProvider);
   setUpAll(() async => RustLib.init());
 
-  test('listing sees the workspace and the loose deck', () {
+  test('listing sees the workspace and the loose deck', () async {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
-    final rows = listRoot(root: root.path, nowMs: t0, profile: false).entries;
+    final rows = (await listRoot(
+      root: root.path,
+      nowMs: t0,
+      profile: false,
+    )).entries;
     expect(rows.map((r) => (r.title, r.isWorkspace, r.due)).toList(), [
       ('Loose', false, true),
       ('Ws', true, true),
     ]);
-    final members = listMembers(
+    final members = (await listMembers(
       root: root.path,
       dir: '${root.path}/ws',
       nowMs: t0,
       profile: false,
-    ).entries;
+    )).entries;
     expect(members.single.title, 'm');
   });
 
@@ -432,9 +438,10 @@ void main() {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));
     await tester.pumpWidget(MaterialApp(home: PickerScreen(root: root.path)));
+    await settlePicker(tester);
     expect(find.text('Loose'), findsOneWidget);
     await tester.tap(find.text('Ws'));
-    await tester.pumpAndSettle();
+    await settlePicker(tester);
     expect(find.text('m'), findsOneWidget);
   });
 
@@ -462,6 +469,7 @@ void main() {
           home: PickerScreen(root: root.path),
         ),
       );
+      await settlePicker(tester);
       expect(
         find.textContaining('🎯 $date'),
         findsOneWidget,
@@ -469,7 +477,7 @@ void main() {
       );
 
       await tester.tap(find.text('Ws'));
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
       expect(
         find.textContaining('mastered'),
         findsOneWidget,
@@ -490,6 +498,7 @@ void main() {
           home: PickerScreen(root: root.path),
         ),
       );
+      await settlePicker(tester);
       expect(find.textContaining('🎯'), findsNothing);
 
       // Set: long-press the workspace row, "Ready by…", accept the date
@@ -499,7 +508,10 @@ void main() {
       await tester.tap(find.text('Ready by…'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('OK'));
-      await tester.pumpAndSettle();
+      await settlePicker(
+        tester,
+        until: () => find.textContaining('🎯').evaluate().isNotEmpty,
+      );
       final today = ymd(DateTime.now());
       expect(manifest.readAsStringSync(), contains('deadline = "$today"'));
       expect(
@@ -513,7 +525,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('currently $today'), findsOneWidget);
       await tester.tap(find.text('Clear deadline'));
-      await tester.pumpAndSettle();
+      await settlePicker(
+        tester,
+        until: () => find.textContaining('🎯').evaluate().isEmpty,
+      );
       expect(manifest.readAsStringSync(), isNot(contains('deadline')));
       expect(find.textContaining('🎯'), findsNothing);
     });

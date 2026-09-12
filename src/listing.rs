@@ -6,6 +6,7 @@ use std::{
 
 use crate::{
     augment::AugmentCache,
+    cache::DeckCache,
     card::Card,
     config::ReviewConfig,
     deck::{self, Deck, DeckState},
@@ -49,9 +50,25 @@ pub struct DeckDeadline {
     pub total: usize,
 }
 
+pub fn deck_label(path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let deck = crate::parser::parse("deck.md", &text).ok()?;
+    deck.title
+        .or_else(|| deck.frontmatter.trace.map(|t| title::condense(&t)))
+}
+
 pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSummary> {
+    list_root_with(root, review, now_ms, &mut DeckCache::default())
+}
+
+pub fn list_root_with(
+    root: &Path,
+    review: &ReviewConfig,
+    now_ms: u64,
+    cache: &mut DeckCache,
+) -> Vec<DeckSummary> {
     if workspace::is_workspace(root) {
-        return vec![folder_summary(root, root, review, now_ms)];
+        return vec![folder_summary(root, root, review, now_ms, cache)];
     }
     let (root_store, health) = open_listing_store(&workspace::root_store_path(root));
     let augment = AugmentCache::open_for_workspace(root).ok();
@@ -76,7 +93,7 @@ pub fn list_root(root: &Path, review: &ReviewConfig, now_ms: u64) -> Vec<DeckSum
             && (workspace::is_workspace(&path) || workspace::has_decks(&path))
             && offered.first_visit(&path)
         {
-            out.push(folder_summary(root, &path, review, now_ms));
+            out.push(folder_summary(root, &path, review, now_ms, cache));
         } else if path.is_file()
             && path.extension().is_some_and(|e| e == "md")
             && !workspace::is_conventional_non_deck(name)
@@ -113,13 +130,23 @@ pub struct MemberListing {
 }
 
 pub fn list_members(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -> MemberListing {
+    list_members_with(root, dir, review, now_ms, &mut DeckCache::default())
+}
+
+pub fn list_members_with(
+    root: &Path,
+    dir: &Path,
+    review: &ReviewConfig,
+    now_ms: u64,
+    cache: &mut DeckCache,
+) -> MemberListing {
     let Ok(ws) = workspace::Workspace::load(dir) else {
         return MemberListing {
             rows: Vec::new(),
             deadline: deadline_for(dir, &[], review, now_ms),
         };
     };
-    let (members, rows) = member_rows(root, &ws, review, now_ms);
+    let (members, rows) = member_rows(root, &ws, review, now_ms, cache);
     let deadline = deadline_for(dir, &rows, review, now_ms);
     let parent = member_parents(&members, root);
     let key: Vec<(bool, String)> = rows
@@ -155,6 +182,7 @@ fn member_rows(
     ws: &workspace::Workspace,
     review: &ReviewConfig,
     now_ms: u64,
+    cache: &mut DeckCache,
 ) -> (LoadedMembers, Vec<(DeckSummary, bool)>) {
     let dir = ws.path.as_path();
     let (store, health) = member_store(root, dir);
@@ -165,13 +193,13 @@ fn member_rows(
         .members
         .iter()
         .map(|m| {
-            profile::hit(Counter::DecksLoaded);
             let deck = match known_sources {
-                Some(known) => Deck::load_in_workspace(m, &ws.settings, known),
-                None => Deck::load(m),
-            }
-            .ok()
-            .map(Arc::new);
+                Some(known) => cache.load_with(m, &ws.settings, known).ok(),
+                None => {
+                    profile::hit(Counter::DecksLoaded);
+                    Deck::load(m).ok().map(Arc::new)
+                }
+            };
             table.insert_member(m, deck.clone());
             (m.clone(), deck)
         })
@@ -277,7 +305,13 @@ fn member_store(root: &Path, dir: &Path) -> (Option<Store>, ProgressHealth) {
     open_listing_store(&path)
 }
 
-fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -> DeckSummary {
+fn folder_summary(
+    root: &Path,
+    dir: &Path,
+    review: &ReviewConfig,
+    now_ms: u64,
+    cache: &mut DeckCache,
+) -> DeckSummary {
     let ws = workspace::Workspace::load(dir).ok();
     let title = ws.as_ref().map(|ws| ws.display_name()).unwrap_or_else(|| {
         dir.file_name()
@@ -286,7 +320,7 @@ fn folder_summary(root: &Path, dir: &Path, review: &ReviewConfig, now_ms: u64) -
     });
     let rows = ws
         .as_ref()
-        .map(|ws| member_rows(root, ws, review, now_ms).1)
+        .map(|ws| member_rows(root, ws, review, now_ms, cache).1)
         .unwrap_or_default();
     let icon = ws.and_then(|ws| ws.icon);
     let due = rows.iter().any(|(m, _)| m.due);
@@ -1872,6 +1906,42 @@ mod tests {
                 "{shape:?}: sidecar_reads {} exceeds the member count",
                 counts.sidecar_reads
             );
+        }
+    }
+
+    #[test]
+    fn law_a_cache_serves_a_repeat_listing_without_a_parse() {
+        for shape in l1_shapes() {
+            let law = law_workspace(shape);
+            let mut cache = DeckCache::default();
+            let review = ReviewConfig::default();
+            let mut listing = || {
+                crate::profile::collect(|| {
+                    list_members_with(&law.root, &law.ws, &review, T0, &mut cache).rows
+                })
+            };
+            let (first_rows, first) = listing();
+            let (second_rows, second) = listing();
+            assert_eq!(
+                first_rows, second_rows,
+                "{shape:?}: a cached listing is the same listing"
+            );
+            assert_eq!(
+                first.decks_loaded, law.members,
+                "{shape:?}: the first listing parses every member"
+            );
+            assert_eq!(
+                second.decks_loaded, 0,
+                "{shape:?}: a repeat listing over unchanged members parses none"
+            );
+            let externals = (shape.external + shape.id_external) as u64;
+            for (which, counts) in [("first", &first), ("second", &second)] {
+                assert_eq!(
+                    counts.manifest_reads,
+                    1 + externals,
+                    "{shape:?}: the {which} listing reads the manifest once, plus once per external prerequisite"
+                );
+            }
         }
     }
 

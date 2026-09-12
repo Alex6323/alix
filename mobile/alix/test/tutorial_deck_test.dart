@@ -12,7 +12,10 @@ import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 
+import 'support/picker_listing.dart';
+
 void main() {
+  setUp(answerPathProvider);
   setUpAll(() async => RustLib.init());
 
   Directory temp(String prefix) {
@@ -60,7 +63,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await settlePicker(tester);
 
     expect(find.text('Add the tutorial deck'), findsOneWidget);
   });
@@ -82,7 +85,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await settlePicker(tester);
 
     expect(find.text('Add the tutorial deck'), findsNothing);
   });

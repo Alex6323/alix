@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'review.dart';
 
-// These functions are ignored because they are not marked as `pub`: `new`, `profiled`
+// These functions are ignored because they are not marked as `pub`: `new`, `profiled`, `with_listing_cache`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`
 
 void setWorkspaceDeadline({required String dir, String? date}) => RustLib
@@ -15,7 +15,7 @@ void setWorkspaceDeadline({required String dir, String? date}) => RustLib
     .api
     .crateApiListingSetWorkspaceDeadline(dir: dir, date: date);
 
-RootScreen listRoot({
+Future<RootScreen> listRoot({
   required String root,
   BigInt? nowMs,
   required bool profile,
@@ -25,7 +25,10 @@ RootScreen listRoot({
   profile: profile,
 );
 
-MembersScreen listMembers({
+String? deckTitleAt({required String root, required String path}) =>
+    RustLib.instance.api.crateApiListingDeckTitleAt(root: root, path: path);
+
+Future<MembersScreen> listMembers({
   required String root,
   required String dir,
   BigInt? nowMs,

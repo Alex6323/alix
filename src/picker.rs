@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 #[cfg(test)]
 use crate::deck::DeckState;
-pub use crate::listing::{DeckStatus, deck_status, dependency_forest, member_parents};
+pub use crate::listing::{DeckStatus, deck_label, deck_status, dependency_forest, member_parents};
 use crate::{cache::DeckCache, recent::RecentDecks, title, workspace};
 
 struct Candidate {
@@ -202,13 +202,6 @@ pub fn catalog(
             }
         })
         .collect())
-}
-
-pub(crate) fn deck_label(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let deck = crate::parser::parse("deck.md", &text).ok()?;
-    deck.title
-        .or_else(|| deck.frontmatter.trace.map(|t| title::condense(&t)))
 }
 
 #[cfg(test)]

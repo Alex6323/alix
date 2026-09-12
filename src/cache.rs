@@ -11,7 +11,8 @@ use std::{
 
 use crate::{
     deck::{Deck, DeckError, DeckSettings},
-    picker,
+    listing,
+    profile::{self, Counter},
     workspace::{self, Workspace},
 };
 
@@ -41,6 +42,7 @@ struct CachedDeck {
 
 impl CachedDeck {
     fn load(path: &Path, settings: DeckSettings, workspace_has_sources: bool) -> Self {
+        profile::hit(Counter::DecksLoaded);
         let deck = Deck::load_in_workspace(path, &settings, workspace_has_sources)
             .map(Arc::new)
             .map_err(Arc::new);
@@ -105,31 +107,50 @@ impl DeckCache {
         match self.slot(path) {
             Some(entry) => entry
                 .label
-                .get_or_insert_with(|| picker::deck_label(path))
+                .get_or_insert_with(|| listing::deck_label(path))
                 .clone(),
-            None => picker::deck_label(path),
+            None => listing::deck_label(path),
         }
     }
 
     pub fn load(&mut self, path: &Path) -> Result<Arc<Deck>, Arc<DeckError>> {
         let workspace_has_sources = self.workspace_has_sources(path);
         let settings = self.workspace_settings(path);
+        self.load_with(path, &settings, workspace_has_sources)
+    }
+
+    pub fn load_with(
+        &mut self,
+        path: &Path,
+        settings: &DeckSettings,
+        workspace_has_sources: bool,
+    ) -> Result<Arc<Deck>, Arc<DeckError>> {
         match self.slot(path) {
             Some(entry) => {
                 if entry.deck.as_ref().is_some_and(|cached| {
                     cached.workspace_has_sources != workspace_has_sources
-                        || cached.settings != settings
+                        || cached.settings != *settings
                 }) {
                     entry.deck = None;
                 }
                 entry
                     .deck
-                    .get_or_insert_with(|| CachedDeck::load(path, settings, workspace_has_sources))
+                    .get_or_insert_with(|| {
+                        CachedDeck::load(path, settings.clone(), workspace_has_sources)
+                    })
                     .deck
                     .clone()
             }
-            None => CachedDeck::load(path, settings, workspace_has_sources).deck,
+            None => CachedDeck::load(path, settings.clone(), workspace_has_sources).deck,
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     fn workspace_settings(&mut self, deck: &Path) -> DeckSettings {

@@ -14,8 +14,10 @@ import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 
 import 'support/fake_server_client.dart';
+import 'support/picker_listing.dart';
 
 void main() {
+  setUp(answerPathProvider);
   setUpAll(() async => RustLib.init());
 
   Directory temp(String prefix) {
@@ -45,7 +47,7 @@ void main() {
         buildClient: buildClient,
       ),
     ));
-    await tester.pumpAndSettle();
+    await settlePicker(tester);
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Connected devices'));

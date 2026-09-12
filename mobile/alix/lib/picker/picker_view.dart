@@ -9,6 +9,7 @@ class PickerView extends StatelessWidget {
   const PickerView({
     super.key,
     required this.entries,
+    this.isLoading = false,
     required this.deadline,
     required this.isRoot,
     required this.isMasteredView,
@@ -30,6 +31,7 @@ class PickerView extends StatelessWidget {
   });
 
   final List<PickerEntry> entries;
+  final bool isLoading;
   final PickerDeadline? deadline;
   final bool isRoot;
   final bool isMasteredView;
@@ -107,7 +109,9 @@ class PickerView extends StatelessWidget {
                   if (deadline case final value?)
                     PickerDeadlineLede(deadline: value),
                 ],
-                if (entries.isEmpty)
+                if (isLoading)
+                  const SizedBox.shrink()
+                else if (entries.isEmpty)
                   PickerEmptyHint(
                     atRoot: isRoot && !isMasteredView,
                     onAddTutorial: onAddTutorial,

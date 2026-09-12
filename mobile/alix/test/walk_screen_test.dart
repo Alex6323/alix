@@ -22,8 +22,10 @@ import 'package:alix_mobile/walk_screen.dart';
 
 import 'support/deck_fixture.dart';
 import 'support/fake_server_client.dart';
+import 'support/picker_listing.dart';
 
 void main() {
+  setUp(answerPathProvider);
   setUpAll(() async => RustLib.init());
 
   Directory tempRoot(String prefix) {
@@ -500,7 +502,7 @@ void main() {
             home: PickerScreen(root: root.path, supportDir: tempSupport()),
           ),
         );
-        await tester.pumpAndSettle();
+        await settlePicker(tester);
 
         await tester.tap(find.text('T'));
         await tester.pumpAndSettle();

@@ -51,6 +51,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The phone keeps parsed decks in memory across picker listings. Every
+  listing used to parse every deck again; a repeat listing over unchanged
+  decks now parses none, so returning from a review to the picker costs the
+  row derivation only. Entries are validated by the file's modification time
+  and size, as the web server's cache already did, and the cache drops whole
+  once it holds more than 1024 paths.
+
 - Machine-managed progress and recent history now live under `.alix/` beside
   every deck: at the workspace root for members and in the containing folder
   for loose decks. CLI and server resolution are identical, workspace
@@ -69,6 +76,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Pre-1.0: re-pair once after upgrading.
 
 ### Fixed
+
+- Listing the picker no longer freezes the phone. The bridge ran the listing
+  on the UI thread, so a large workspace held the app for the whole parse;
+  it now runs on a worker while the screen stays responsive, the local
+  decks appear as soon as they are listed, and the paired desktop's follow.
+  Until the first listing answers the screen shows nothing in place of the
+  list rather than the empty-folder hint.
 
 - A picker row now reads its workspace manifest's `[defaults]`. A member of a
   `direction: both` workspace greyed out its Recall launcher and dropped its

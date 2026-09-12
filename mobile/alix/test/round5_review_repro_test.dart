@@ -15,8 +15,10 @@ import 'package:alix_mobile/sync_client.dart';
 
 import 'support/fake_server_client.dart';
 import 'support/fake_sync_port.dart';
+import 'support/picker_listing.dart';
 
 void main() {
+  setUp(answerPathProvider);
   setUpAll(() async => RustLib.init());
 
   Directory tempDir(String prefix) {
@@ -314,7 +316,7 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
       expect(builtEndpoints, ['127.0.0.1:7777']);
 
       await tester.tap(find.byIcon(Icons.menu));
@@ -366,7 +368,7 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
       expect(find.byKey(const Key('sync-status')), findsOneWidget);
 
       await tester.tap(find.byIcon(Icons.menu));

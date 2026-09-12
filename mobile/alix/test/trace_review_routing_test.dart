@@ -12,6 +12,7 @@ import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/walk_screen.dart';
 
 import 'support/deck_fixture.dart';
+import 'support/picker_listing.dart';
 
 const traceDeck = '''
 ---
@@ -38,6 +39,7 @@ Directory traceRoot() {
 }
 
 void main() {
+  setUp(answerPathProvider);
   setUpAll(() async => RustLib.init());
 
   testWidgets(
@@ -56,7 +58,7 @@ void main() {
           home: PickerScreen(root: root.path, supportDir: support),
         ),
       );
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
 
       expect(find.text('Parser Walk'), findsOneWidget);
       expect(find.text('trace'), findsOneWidget, reason: 'the row is marked');

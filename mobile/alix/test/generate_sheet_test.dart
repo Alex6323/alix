@@ -18,6 +18,7 @@ import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 
 import 'support/fake_server_client.dart';
+import 'support/picker_listing.dart';
 
 void main() {
   setUpAll(() async => RustLib.init());
@@ -66,7 +67,7 @@ void main() {
         generatePollInterval: const Duration(milliseconds: 10),
       ),
     ));
-    await tester.pumpAndSettle();
+    await settlePicker(tester);
   }
 
   Future<void> openMenu(WidgetTester tester) async {
@@ -168,6 +169,10 @@ void main() {
 
     // The picker refreshed: the newly placed deck's row is now visible
     // (its title defaults to the file stem, no `# ` H1 in the fixture).
+    await settlePicker(
+      tester,
+      until: () => find.text('generated').evaluate().isNotEmpty,
+    );
     expect(find.text('generated'), findsOneWidget);
   });
 

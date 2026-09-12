@@ -10,8 +10,8 @@ class PickerBridge implements PickerPort {
   const PickerBridge();
 
   @override
-  PickerListing listRoot(String root, {required bool profile}) {
-    final screen = listing_bridge.listRoot(root: root, profile: profile);
+  Future<PickerListing> listRoot(String root, {required bool profile}) async {
+    final screen = await listing_bridge.listRoot(root: root, profile: profile);
     return PickerListing(
       entries: [for (final entry in screen.entries) _entry(entry)],
       profile: _profile(screen.profile),
@@ -19,12 +19,12 @@ class PickerBridge implements PickerPort {
   }
 
   @override
-  PickerListing listMembers({
+  Future<PickerListing> listMembers({
     required String root,
     required String dir,
     required bool profile,
-  }) {
-    final screen = listing_bridge.listMembers(
+  }) async {
+    final screen = await listing_bridge.listMembers(
       root: root,
       dir: dir,
       profile: profile,

@@ -28,8 +28,10 @@ import 'support/deck_fixture.dart';
 import 'support/fake_server_client.dart';
 import 'support/fake_sync_port.dart';
 import 'support/widget_tree_dump.dart';
+import 'support/picker_listing.dart';
 
 void main() {
+  setUp(answerPathProvider);
   setUpAll(() async => RustLib.init());
 
   Directory tempDir(String prefix) {
@@ -66,6 +68,7 @@ void main() {
     required Directory support,
     required SyncPort port,
     Directory? phoneRoot,
+    bool Function()? until,
   }) async {
     final ownRoot = phoneRoot ?? tempDir('alix-sync-status-phone-');
     await tester.pumpWidget(
@@ -81,7 +84,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await settlePicker(tester, until: until);
   }
 
   testWidgets(
@@ -137,7 +140,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await settlePicker(tester);
 
     expect(find.byKey(const Key('sync-status')), findsNothing);
   });
@@ -163,7 +166,13 @@ void main() {
         ],
       );
 
-      await pumpPaired(tester, root: root, support: support, port: port);
+      await pumpPaired(
+        tester,
+        root: root,
+        support: support,
+        port: port,
+        until: () => find.byIcon(Icons.more_vert).evaluate().isNotEmpty,
+      );
       expect(port.entriesCalls.length, 1);
 
       await tester.tap(find.byIcon(Icons.more_vert));
@@ -212,6 +221,7 @@ void main() {
         support: support,
         port: port,
         phoneRoot: phoneRoot,
+        until: () => find.text('Remote Deck').evaluate().isNotEmpty,
       );
 
       expect(find.text('Local Deck'), findsOneWidget);
@@ -288,7 +298,13 @@ void main() {
         ),
       ];
 
-      await pumpPaired(tester, root: root, support: support, port: port);
+      await pumpPaired(
+        tester,
+        root: root,
+        support: support,
+        port: port,
+        until: () => find.text('Deck').evaluate().isNotEmpty,
+      );
 
       await tester.tap(find.text('Deck'));
       await tester.pumpAndSettle();
@@ -362,7 +378,7 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.byKey(const Key('sync-status')));
@@ -430,7 +446,7 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await settlePicker(tester);
       expect(builtTokens, ['old-token']);
 
       await tester.tap(find.byIcon(Icons.menu));
@@ -463,7 +479,13 @@ void main() {
       final port = FakeSyncPort(rootId: 'root-test', rootDir: root.path);
       port.pairedEntriesImpl = () => throw Exception('state file corrupt');
 
-      await pumpPaired(tester, root: root, support: support, port: port);
+      await pumpPaired(
+        tester,
+        root: root,
+        support: support,
+        port: port,
+        until: () => find.text('Deck').evaluate().isNotEmpty,
+      );
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.text('Deck'));

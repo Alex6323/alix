@@ -41,7 +41,7 @@ void main() {
         'lib/picker/picker_controller.dart',
         'notifyListeners();',
       ),
-      [53, 67],
+      [61, 143],
       reason:
           'setServerReachable and reload own every picker listing mutation; '
           'deadline, tutorial, and setPairedRoot transitions reload',
