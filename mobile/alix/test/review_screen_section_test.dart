@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:alix_mobile/review/review_card.dart' show SectionSheet;
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
@@ -178,6 +179,46 @@ void main() {
         find.text(_prose),
         findsNothing,
         reason: 'card 2 shows the section only on demand',
+      );
+    },
+  );
+
+  testWidgets(
+    'section prose joins hard-wrapped lines into one paragraph and breaks at a blank line',
+    (tester) async {
+      final card = ReviewCardModel(
+        front: 'q?',
+        frontRuns: const [],
+        context: const [],
+        contextLeads: false,
+        contextRuns: const [],
+        contextUnits: const [],
+        back: const ['a'],
+        backRuns: const [],
+        backUnits: const [],
+        answerSteps: const [],
+        reshaped: false,
+        note: const [],
+        images: const [],
+        imagesBack: const [],
+        section: const [_heading, 'Line one', 'line two.', '', 'Line three.'],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: alixDark(),
+          home: SectionSheet(card: card),
+        ),
+      );
+
+      expect(
+        find.text('Line one line two.'),
+        findsOneWidget,
+        reason: 'a hard wrap is a space inside one paragraph',
+      );
+      expect(
+        find.text('Line three.'),
+        findsOneWidget,
+        reason: 'a blank line starts a new paragraph',
       );
     },
   );

@@ -1929,8 +1929,9 @@ TextStyle _sectionProseStyle(ThemeData theme, AlixTokens tokens) {
       TextStyle(color: tokens.text, height: 1.45);
 }
 
-/// The section's prose after its heading (line 0): a plain line is a
-/// paragraph, a closed fence a code block, a closed `$$` block its diagram,
+/// The section's prose after its heading (line 0): consecutive plain lines
+/// are one paragraph (a hard wrap is a space, as in Markdown), a blank line
+/// ends it, a closed fence is a code block, a closed `$$` block its diagram,
 /// the labelling context's walk.
 List<Widget> _sectionProse(
   ReviewCardModel card,
@@ -1943,10 +1944,23 @@ List<Widget> _sectionProse(
     children.add(widget);
   }
 
+  final textParts = <String>[];
+  final runParts = <List<InlineRunModel>?>[];
+  void flush() {
+    if (textParts.isEmpty) return;
+    final runs = runParts.contains(null)
+        ? null
+        : _joinRunLines(runParts.cast<List<InlineRunModel>>());
+    add(_runsOrText(runs, textParts.join(' '), style: style));
+    textParts.clear();
+    runParts.clear();
+  }
+
   _walkContextBlocks(
     card.section,
     card.sectionUnits,
     onBlock: (source, unit, closed) {
+      flush();
       if (closed && unit is ReviewDiagramModel) {
         add(_diagram(unit, answered: true));
       } else if (closed && unit is ReviewSentenceModel) {
@@ -1956,17 +1970,35 @@ List<Widget> _sectionProse(
       }
     },
     onLine: (index) {
-      if (index == 0 || card.section[index].trim().isEmpty) return;
-      add(
-        _runsOrText(
-          index < card.sectionRuns.length ? card.sectionRuns[index] : null,
-          card.section[index],
-          style: style,
-        ),
+      if (index == 0) return;
+      final line = card.section[index];
+      if (line.trim().isEmpty) {
+        flush();
+        return;
+      }
+      textParts.add(line);
+      runParts.add(
+        index < card.sectionRuns.length ? card.sectionRuns[index] : null,
       );
     },
   );
+  flush();
   return children;
+}
+
+List<InlineRunModel> _joinRunLines(List<List<InlineRunModel>> lines) {
+  const space = InlineRunModel(
+    text: ' ',
+    bold: false,
+    italic: false,
+    code: false,
+  );
+  return [
+    for (final (index, runs) in lines.indexed) ...[
+      if (index > 0) space,
+      ...runs,
+    ],
+  ];
 }
 
 /// The card's section on demand: a modal bottom sheet with the heading as
