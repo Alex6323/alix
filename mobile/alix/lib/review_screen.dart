@@ -8,6 +8,7 @@ import 'package:alix_mobile/bridge/review_bridge.dart';
 import 'package:alix_mobile/exam_screen.dart';
 import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
+import 'package:alix_mobile/review/review_card.dart' show SectionSheet;
 import 'package:alix_mobile/review/review_controller.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/review_view.dart';
@@ -211,6 +212,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
     );
   }
 
+  void _openSection(ReviewCardModel card) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SectionSheet(card: card),
+    );
+  }
+
   String _deckName() {
     var relative = widget.deckPath;
     if (relative.startsWith(widget.rootDir)) {
@@ -350,6 +359,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           onIntroduce: _introduce,
           onGrade: _grade,
           onOpenTutor: _openTutor,
+          onOpenSection: _openSection,
           onRestart: _restart,
           onOpenExam: _openExam,
         );

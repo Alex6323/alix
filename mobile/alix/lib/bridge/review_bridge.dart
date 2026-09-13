@@ -220,6 +220,13 @@ ReviewCardModel _cardFromBridge(bridge.CardView card) {
     ],
     images: [for (final image in card.images) _imageFromBridge(image)],
     imagesBack: [for (final image in card.imagesBack) _imageFromBridge(image)],
+    section: card.sectionContext,
+    sectionRuns: [
+      for (final runs in card.sectionContextRuns) inlineRunsFromBridge(runs),
+    ],
+    sectionUnits: [
+      for (final unit in card.sectionContextUnits) _noteFromBridge(unit),
+    ],
   );
 }
 

@@ -114,6 +114,7 @@ Widget _app(ReviewMode mode, {required bool reshaped}) {
         onIntroduce: () {},
         onGrade: (_) {},
         onOpenTutor: (_) {},
+        onOpenSection: (_) {},
       ),
     ),
   );

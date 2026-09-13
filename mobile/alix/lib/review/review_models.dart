@@ -219,11 +219,17 @@ class ReviewCardModel {
     required Iterable<ReviewNoteModel> note,
     required Iterable<ReviewImageModel> images,
     required Iterable<ReviewImageModel> imagesBack,
+    Iterable<String> section = const [],
+    Iterable<Iterable<InlineRunModel>> sectionRuns = const [],
+    Iterable<ReviewContentUnitModel> sectionUnits = const [],
   }) : frontRuns = List.unmodifiable(frontRuns),
        frontUnits = frontUnits == null ? null : List.unmodifiable(frontUnits),
        context = List.unmodifiable(context),
        contextRuns = _freezeRunLines(contextRuns),
        contextUnits = List.unmodifiable(contextUnits),
+       section = List.unmodifiable(section),
+       sectionRuns = _freezeRunLines(sectionRuns),
+       sectionUnits = List.unmodifiable(sectionUnits),
        back = List.unmodifiable(back),
        backRuns = _freezeRunLines(backRuns),
        backUnits = List.unmodifiable(backUnits),
@@ -258,6 +264,14 @@ class ReviewCardModel {
   final List<ReviewNoteModel> note;
   final List<ReviewImageModel> images;
   final List<ReviewImageModel> imagesBack;
+
+  /// The card's section as served: the heading text first, then its prose.
+  /// Empty when the card has no section.
+  final List<String> section;
+  final List<List<InlineRunModel>> sectionRuns;
+  final List<ReviewContentUnitModel> sectionUnits;
+  bool get hasSection => section.isNotEmpty;
+  String get sectionTitle => section.isEmpty ? '' : section.first;
 }
 
 class ReviewChoiceFeedbackModel {
@@ -354,6 +368,7 @@ class ReviewStateModel {
     required this.depth,
     this.input = ReviewInput.type,
     required this.introducing,
+    this.sectionFirst = false,
     Iterable<String>? choices,
     Iterable<Iterable<InlineRunModel>>? choiceRuns,
     this.choicesMultiple,
@@ -385,6 +400,10 @@ class ReviewStateModel {
   final ReviewDepth depth;
   final ReviewInput input;
   final bool introducing;
+
+  /// The current card is the sitting's first introduction from its section,
+  /// so the section shows inline; the lib decides, never the client.
+  final bool sectionFirst;
   final List<String>? choices;
   final List<List<InlineRunModel>>? choiceRuns;
   final bool? choicesMultiple;

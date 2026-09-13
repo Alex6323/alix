@@ -101,6 +101,7 @@ Future<List<String>> _pumpAndSubmit(
           onIntroduce: () {},
           onGrade: (_) {},
           onOpenTutor: (_) {},
+          onOpenSection: (_) {},
         ),
       ),
     ),

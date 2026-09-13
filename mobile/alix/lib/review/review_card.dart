@@ -50,6 +50,7 @@ class ReviewCardView extends StatelessWidget {
     required this.onIntroduce,
     required this.onGrade,
     required this.onOpenTutor,
+    required this.onOpenSection,
   });
 
   final ReviewStateModel state;
@@ -87,6 +88,7 @@ class ReviewCardView extends StatelessWidget {
   final VoidCallback onIntroduce;
   final ValueChanged<ReviewGrade> onGrade;
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
+  final ValueChanged<ReviewCardModel> onOpenSection;
 
   bool get _hasChoices => state.choices?.isNotEmpty ?? false;
   bool get _isMulti => state.choicesMultiple == true;
@@ -152,6 +154,13 @@ class ReviewCardView extends StatelessWidget {
         const SizedBox(height: 8),
         _modeTag(_modeLabel(), tokens),
         const SizedBox(height: 12),
+        if (card.hasSection) ...[
+          if (state.sectionFirst)
+            _sectionInline(card, theme, tokens)
+          else
+            _sectionTitle(card, theme, tokens),
+          const SizedBox(height: 12),
+        ],
         // A labelling context (a card table's title) sits above the prompt in
         // a quieter style; a leading one (a cloze sentence) is the question
         // itself and follows the front.
@@ -199,6 +208,39 @@ class ReviewCardView extends StatelessWidget {
         ],
         if (answered && card.note.isNotEmpty)
           _note(context, card, tokens),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(
+    ReviewCardModel card,
+    ThemeData theme,
+    AlixTokens tokens,
+  ) {
+    return Text(
+      card.sectionTitle,
+      key: const ValueKey('section-title'),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: theme.textTheme.labelMedium?.copyWith(color: tokens.dim),
+    );
+  }
+
+  Widget _sectionInline(
+    ReviewCardModel card,
+    ThemeData theme,
+    AlixTokens tokens,
+  ) {
+    return Column(
+      key: const ValueKey('section-inline'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          card.sectionTitle,
+          style: theme.textTheme.titleMedium?.copyWith(color: tokens.text),
+        ),
+        ..._sectionProse(card, tokens, _sectionProseStyle(theme, tokens)),
       ],
     );
   }
@@ -251,28 +293,6 @@ class ReviewCardView extends StatelessWidget {
           _unit(unit, tokens, style, TextAlign.center),
         ],
       ],
-    );
-  }
-
-  Widget _runsOrText(
-    List<InlineRunModel>? runs,
-    String text, {
-    required TextStyle? style,
-    TextAlign textAlign = TextAlign.start,
-    bool contextHoles = false,
-    AlixTokens? tokens,
-  }) {
-    final effectiveStyle = style ?? const TextStyle();
-    if (runs == null) {
-      return Text(text, textAlign: textAlign, style: effectiveStyle);
-    }
-    return InlineRuns(
-      runs: runs,
-      style: effectiveStyle,
-      textAlign: textAlign,
-      contextHoles: contextHoles,
-      holeColor: tokens?.boltHi,
-      mutedHoleColor: tokens?.dim,
     );
   }
 
@@ -361,71 +381,6 @@ class ReviewCardView extends StatelessWidget {
               ],
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _diagram(ReviewDiagramModel unit, {required bool answered}) {
-    final alt = answered && unit.revealedAlt != null
-        ? unit.revealedAlt!
-        : unit.alt;
-    if (unit.regions.isEmpty) {
-      return Semantics(
-        label: alt,
-        image: true,
-        child: Image.file(
-          File(unit.src),
-          width: unit.width.toDouble(),
-          fit: BoxFit.scaleDown,
-          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-        ),
-      );
-    }
-    // A masked diagram is the shipped occlusion surface over the frozen
-    // raster: regions are raster-pixel boxes, exactly what MaskedCardImage
-    // places against the decoded source size.
-    return Semantics(
-      label: alt,
-      image: true,
-      child: Builder(
-        builder: (context) => MaskedCardImage(
-          provider: FileImage(File(unit.src)),
-          image: ReviewImageModel(
-            src: unit.src,
-            alt: alt,
-            regions: unit.regions,
-            crop: null,
-          ),
-          answered: answered,
-          height: unit.height.toDouble(),
-          onAskedGone: () => ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'this card asks about a region outside its diagram',
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _codeBlock(List<String> lines, Color foreground) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.32),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        lines.join('\n'),
-        style: TextStyle(
-          fontFamily: _mono,
-          fontSize: 13,
-          height: 1.45,
-          color: foreground,
-        ),
       ),
     );
   }
@@ -781,58 +736,6 @@ class ReviewCardView extends StatelessWidget {
       },
     );
     return children;
-  }
-
-  void _walkContextBlocks(
-    List<String> lines,
-    List<ReviewContentUnitModel> units, {
-    required void Function(
-      List<String> source,
-      ReviewContentUnitModel? unit,
-      bool closed,
-    )
-    onBlock,
-    required void Function(int index) onLine,
-  }) {
-    var unitIndex = 0;
-    var index = 0;
-    while (index < lines.length) {
-      if (lines[index].trim() == r'$$') {
-        var close = index + 1;
-        while (close < lines.length && lines[close].trim() != r'$$') {
-          close++;
-        }
-        if (close < lines.length) {
-          final source = lines.sublist(index + 1, close);
-          if (source.any((line) => line.trim().isNotEmpty)) {
-            final unit = unitIndex < units.length ? units[unitIndex] : null;
-            unitIndex++;
-            onBlock(source, unit, true);
-          }
-          index = close + 1;
-          continue;
-        }
-      }
-
-      final opener = _fenceOpener(lines[index]);
-      if (opener != null) {
-        final source = <String>[];
-        index++;
-        while (index < lines.length && !_closesFence(lines[index], opener)) {
-          source.add(lines[index]);
-          index++;
-        }
-        final closed = index < lines.length;
-        if (closed) index++;
-        final unit = unitIndex < units.length ? units[unitIndex] : null;
-        unitIndex++;
-        onBlock(source, unit, closed);
-        continue;
-      }
-
-      onLine(index);
-      index++;
-    }
   }
 
   // The ONE fence walk (the same alignment law as the web clients):
@@ -1462,6 +1365,15 @@ class ReviewCardView extends StatelessWidget {
 
   List<Widget> _legendChips(ReviewCardModel card) {
     final chips = [..._modeChips(card)];
+    if (card.hasSection) {
+      chips.add(
+        ReviewChip(
+          label: 'Context',
+          kind: ReviewChipKind.quiet,
+          onTap: () => onOpenSection(card),
+        ),
+      );
+    }
     final tutor = tutorCard;
     if (serverLive && tutor != null && _attempted(card)) {
       chips.add(
@@ -1867,6 +1779,232 @@ class _ScrollWithMoreHintState extends State<ScrollWithMoreHint> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+Widget _runsOrText(
+  List<InlineRunModel>? runs,
+  String text, {
+  required TextStyle? style,
+  TextAlign textAlign = TextAlign.start,
+  bool contextHoles = false,
+  AlixTokens? tokens,
+}) {
+  final effectiveStyle = style ?? const TextStyle();
+  if (runs == null) {
+    return Text(text, textAlign: textAlign, style: effectiveStyle);
+  }
+  return InlineRuns(
+    runs: runs,
+    style: effectiveStyle,
+    textAlign: textAlign,
+    contextHoles: contextHoles,
+    holeColor: tokens?.boltHi,
+    mutedHoleColor: tokens?.dim,
+  );
+}
+
+Widget _diagram(ReviewDiagramModel unit, {required bool answered}) {
+  final alt = answered && unit.revealedAlt != null
+      ? unit.revealedAlt!
+      : unit.alt;
+  if (unit.regions.isEmpty) {
+    return Semantics(
+      label: alt,
+      image: true,
+      child: Image.file(
+        File(unit.src),
+        width: unit.width.toDouble(),
+        fit: BoxFit.scaleDown,
+        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      ),
+    );
+  }
+  // A masked diagram is the shipped occlusion surface over the frozen
+  // raster: regions are raster-pixel boxes, exactly what MaskedCardImage
+  // places against the decoded source size.
+  return Semantics(
+    label: alt,
+    image: true,
+    child: Builder(
+      builder: (context) => MaskedCardImage(
+        provider: FileImage(File(unit.src)),
+        image: ReviewImageModel(
+          src: unit.src,
+          alt: alt,
+          regions: unit.regions,
+          crop: null,
+        ),
+        answered: answered,
+        height: unit.height.toDouble(),
+        onAskedGone: () => ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'this card asks about a region outside its diagram',
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _codeBlock(List<String> lines, Color foreground) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    decoration: BoxDecoration(
+      color: Colors.black.withValues(alpha: 0.32),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(
+      lines.join('\n'),
+      style: TextStyle(
+        fontFamily: _mono,
+        fontSize: 13,
+        height: 1.45,
+        color: foreground,
+      ),
+    ),
+  );
+}
+
+void _walkContextBlocks(
+  List<String> lines,
+  List<ReviewContentUnitModel> units, {
+  required void Function(
+    List<String> source,
+    ReviewContentUnitModel? unit,
+    bool closed,
+  )
+  onBlock,
+  required void Function(int index) onLine,
+}) {
+  var unitIndex = 0;
+  var index = 0;
+  while (index < lines.length) {
+    if (lines[index].trim() == r'$$') {
+      var close = index + 1;
+      while (close < lines.length && lines[close].trim() != r'$$') {
+        close++;
+      }
+      if (close < lines.length) {
+        final source = lines.sublist(index + 1, close);
+        if (source.any((line) => line.trim().isNotEmpty)) {
+          final unit = unitIndex < units.length ? units[unitIndex] : null;
+          unitIndex++;
+          onBlock(source, unit, true);
+        }
+        index = close + 1;
+        continue;
+      }
+    }
+
+    final opener = _fenceOpener(lines[index]);
+    if (opener != null) {
+      final source = <String>[];
+      index++;
+      while (index < lines.length && !_closesFence(lines[index], opener)) {
+        source.add(lines[index]);
+        index++;
+      }
+      final closed = index < lines.length;
+      if (closed) index++;
+      final unit = unitIndex < units.length ? units[unitIndex] : null;
+      unitIndex++;
+      onBlock(source, unit, closed);
+      continue;
+    }
+
+    onLine(index);
+    index++;
+  }
+}
+
+TextStyle _sectionProseStyle(ThemeData theme, AlixTokens tokens) {
+  return theme.textTheme.bodyMedium?.copyWith(color: tokens.text, height: 1.45) ??
+      TextStyle(color: tokens.text, height: 1.45);
+}
+
+/// The section's prose after its heading (line 0): a plain line is a
+/// paragraph, a closed fence a code block, a closed `$$` block its diagram,
+/// the labelling context's walk.
+List<Widget> _sectionProse(
+  ReviewCardModel card,
+  AlixTokens tokens,
+  TextStyle style,
+) {
+  final children = <Widget>[];
+  void add(Widget widget) {
+    children.add(const SizedBox(height: 8));
+    children.add(widget);
+  }
+
+  _walkContextBlocks(
+    card.section,
+    card.sectionUnits,
+    onBlock: (source, unit, closed) {
+      if (closed && unit is ReviewDiagramModel) {
+        add(_diagram(unit, answered: true));
+      } else if (closed && unit is ReviewSentenceModel) {
+        add(_runsOrText(unit.runs, unit.text, style: style));
+      } else {
+        add(_codeBlock(source, style.color ?? tokens.text));
+      }
+    },
+    onLine: (index) {
+      if (index == 0 || card.section[index].trim().isEmpty) return;
+      add(
+        _runsOrText(
+          index < card.sectionRuns.length ? card.sectionRuns[index] : null,
+          card.section[index],
+          style: style,
+        ),
+      );
+    },
+  );
+  return children;
+}
+
+/// The card's section on demand: a modal bottom sheet with the heading as
+/// its title and the prose below, the tutor sheet's shape.
+class SectionSheet extends StatelessWidget {
+  const SectionSheet({super.key, required this.card});
+
+  final ReviewCardModel card;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = theme.alix;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              card.sectionTitle,
+              key: const ValueKey('section-sheet-title'),
+              style: theme.textTheme.titleMedium,
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: _sectionProse(
+                    card,
+                    tokens,
+                    _sectionProseStyle(theme, tokens),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

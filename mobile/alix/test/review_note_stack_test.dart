@@ -89,6 +89,7 @@ Widget _card(List<ReviewNoteModel> notes, TextEditingController attempt) {
         onIntroduce: () {},
         onGrade: (_) {},
         onOpenTutor: (_) {},
+        onOpenSection: (_) {},
       ),
     ),
   );
