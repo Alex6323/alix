@@ -51,6 +51,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Review state now marks the first card introduced from a section in each
+  sitting, so clients can show its section inline once and offer it on demand
+  thereafter.
+
 - An `assets/` directory that no deck in the workspace owns is left out of
   `alix share` and of a paired phone's pull instead of failing the whole
   workspace; `alix doctor` warns about it, and reports a link or an
