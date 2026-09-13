@@ -825,6 +825,14 @@ fn orphan_note_findings(sidecar: &Path, report: &mut Report) {
 
 fn audit_asset_root(dir: &Path, known_deck_ids: &HashSet<String>, report: &mut Report) {
     let assets = dir.join(alix::assets::ROOT);
+    if std::fs::symlink_metadata(&assets).is_ok_and(|metadata| metadata.is_symlink()) {
+        report.error(format!(
+            "{} is a link; share and sync refuse it: replace it with what it points to, or \
+             remove it",
+            assets.display()
+        ));
+        return;
+    }
     let entries = match std::fs::read_dir(&assets) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
@@ -2330,6 +2338,42 @@ mod tests {
         assert!(
             !findings.contains("share and sync leave it out"),
             "doctor must not claim that a link the staging boundary rejects is left out: {findings}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_assets_root_is_reported_as_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "alix.toml", "title = \"W\"\n");
+        std::fs::create_dir(dir.path().join("decks")).unwrap();
+        w(
+            &dir.path().join("decks"),
+            "m.md",
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\na\n<!-- id: card-m1c1 -->\n",
+        );
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("assets")).unwrap();
+
+        let stage = tempfile::tempdir().unwrap();
+        let share_error = alix::share::stage_path(dir.path(), stage.path()).unwrap_err();
+        assert!(
+            format!("{share_error:#}").contains("is a link"),
+            "the linked assets root blocks sharing: {share_error:#}"
+        );
+
+        let report = workspace_findings(dir.path());
+        let findings = report
+            .warnings
+            .iter()
+            .chain(&report.errors)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            findings.contains("assets") && findings.contains("link"),
+            "doctor must name the linked assets root that blocks share and sync: {findings}"
         );
     }
 
