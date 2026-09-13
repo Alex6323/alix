@@ -1446,7 +1446,7 @@ test("grading fires POST /api/grade and advances the session", async ({ page, re
   await expect(page.locator(".front-text")).not.toHaveText(firstFront ?? "");
 });
 
-test("the first introduced card of a section shows context inline and the second does not", async ({ page, request }) => {
+test("the first section introduction auto-opens without inline and the next section card stays closed", async ({ page, request }) => {
   const reset = await request.post("/api/reset", { data: { deck: "animals/sectioned.md" } });
   expect(reset.ok(), `reset fresh sectioned deck: status=${reset.status()}`).toBeTruthy();
   await openApp(page);
@@ -1458,24 +1458,27 @@ test("the first introduced card of a section shows context inline and the second
     page.getByRole("button", { name: "Learn" }).click(),
   ]);
 
-  const inline = page.locator(".section-inline");
-  await expect(inline, "first section card: inline context is visible").toBeVisible();
+  const drawer = page.locator(".section-drawer");
+  await expect(drawer, "first section card: drawer opens by itself").toBeVisible();
   await expect(
-    inline.getByRole("heading", { name: "Ocean depths" }),
+    drawer.getByRole("heading", { name: "Ocean depths" }),
     "first section card: line zero is a heading",
   ).toBeVisible();
   await expect(
-    inline.getByText("Sunlight reaches only the top layer.", { exact: true }),
+    drawer.getByText("Sunlight reaches only the top layer.", { exact: true }),
     "first section card: prose follows the heading",
   ).toBeVisible();
-  await expect(page.locator(".section-title"), "first section card: title is not duplicated").toHaveCount(0);
+  await expect(page.locator(".section-inline"), "first section card: inline context is absent").toHaveCount(0);
+  await expect(page.locator(".section-title"), "first section card: title stays available").toHaveText("Ocean depths");
+  if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
+    await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-drawer-auto-open.png` });
+  }
   const firstFront = await page.locator(".front-text").textContent();
 
+  await page.keyboard.press("Escape");
+  await expect(drawer, "first section card: Escape closes the automatic drawer").toHaveCount(0);
   await page.getByRole("button", { name: "Reveal" }).click();
-  await expect(inline, "first section card after reveal: inline context persists").toBeVisible();
-  if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
-    await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-inline.png` });
-  }
+  await expect(drawer, "first section card after reveal: drawer stays closed").toHaveCount(0);
   await Promise.all([
     page.waitForResponse((response) => response.url().includes("/api/introduce")),
     page.getByRole("button", { name: "Seen" }).click(),
@@ -1486,7 +1489,56 @@ test("the first introduced card of a section shows context inline and the second
     `second section card: front advances from ${JSON.stringify(firstFront)}`,
   ).not.toHaveText(firstFront ?? "");
   await expect(page.locator(".section-inline"), "second section card: inline context is absent").toHaveCount(0);
+  await expect(drawer, "second section card: drawer does not auto-open").toHaveCount(0);
   await expect(page.locator(".section-title"), "second section card: title remains available").toHaveText("Ocean depths");
+});
+
+test("same-heading same-prompt sections each auto-open once by exact section identity", async ({ page }) => {
+  const first = {
+    ...longContentState({
+      answerLines: ["Answer one"],
+      front: "same?",
+      sectionFirst: true,
+      sectionLines: ["Shared", "First section prose."],
+      studyRevision: 71,
+    }),
+    introducing: true,
+  };
+  const second = {
+    ...longContentState({
+      answerLines: ["Answer two"],
+      front: "same?",
+      sectionFirst: true,
+      sectionLines: ["Shared", "Second section prose."],
+      studyRevision: 72,
+    }),
+    introducing: true,
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: first }));
+  await page.route("**/api/introduce", (route) => route.fulfill({ json: second }));
+  await openApp(page);
+
+  const drawer = page.locator(".section-drawer");
+  await expect(drawer, "first Shared section: drawer opens by itself").toBeVisible();
+  await expect(drawer.getByText("First section prose.", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(drawer, "first Shared section: drawer closes").toHaveCount(0);
+
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await expect(drawer, "first Shared section after reveal: drawer stays closed").toHaveCount(0);
+  await page.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("menuitem", { name: /^Draw answers/ }).click();
+  await expect(drawer, "first Shared section after same-card rerender: drawer stays closed").toHaveCount(0);
+
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/introduce")),
+    page.getByRole("button", { name: "Seen" }).click(),
+  ]);
+  await expect(page.locator(".front-text"), "second Shared section: the prompt is deliberately identical").toHaveText("same?");
+  await expect(drawer, "second Shared section: distinct prose opens a fresh drawer").toBeVisible();
+  await expect(drawer.getByRole("heading", { name: "Shared" })).toBeVisible();
+  await expect(drawer.getByText("Second section prose.", { exact: true })).toBeVisible();
+  await expect(page.locator(".section-inline"), "both Shared sections: inline context stays absent").toHaveCount(0);
 });
 
 test("an open section drawer swallows every review key", async ({ page }) => {
@@ -1577,6 +1629,7 @@ test("the section title and review menu both open the drawer", async ({ page }) 
   }));
   await openApp(page);
 
+  await expect(page.locator(".section-drawer"), "non-first section: drawer starts closed").toHaveCount(0);
   await page.locator(".section-title").click();
   const drawer = page.locator(".section-drawer");
   await expect(drawer, "title route: drawer opens").toBeVisible();
@@ -1649,24 +1702,20 @@ test("section prose joins hard wraps and preserves paragraph breaks", async ({ p
   await page.route("**/api/state", (route) => route.fulfill({ json: state }));
   await openApp(page);
 
-  const inlineParagraphs = page.locator(".section-inline .section-prose");
-  await expect(inlineParagraphs, "inline paragraphs: blank line creates two blocks").toHaveCount(2);
-  await expect(inlineParagraphs.first(), "inline paragraph one: hard wrap joins with a space").toHaveText(
+  await expect(page.locator(".section-inline"), "section prose: inline rendering is absent").toHaveCount(0);
+  const drawerParagraphs = page.locator(".section-drawer .section-prose");
+  await expect(drawerParagraphs, "automatic drawer paragraphs: blank line creates two blocks").toHaveCount(2);
+  await expect(drawerParagraphs.first(), "automatic drawer paragraph one: hard wrap joins with a space").toHaveText(
     "A hard-wrapped first paragraph joins here.",
   );
-  await expect(inlineParagraphs.last(), "inline paragraph two: remains separate").toHaveText(
+  await expect(drawerParagraphs.last(), "automatic drawer paragraph two: remains separate").toHaveText(
     "A second paragraph stays separate.",
   );
 
   await page.keyboard.press("c");
-  const drawerParagraphs = page.locator(".section-drawer .section-prose");
-  await expect(drawerParagraphs, "drawer paragraphs: blank line creates two blocks").toHaveCount(2);
-  await expect(drawerParagraphs.first(), "drawer paragraph one: hard wrap joins with a space").toHaveText(
-    "A hard-wrapped first paragraph joins here.",
-  );
-  await expect(drawerParagraphs.last(), "drawer paragraph two: remains separate").toHaveText(
-    "A second paragraph stays separate.",
-  );
+  await expect(page.locator(".section-drawer"), "context key: automatic drawer closes").toHaveCount(0);
+  await page.keyboard.press("c");
+  await expect(drawerParagraphs, "context key: drawer reopens on demand").toHaveCount(2);
 });
 
 test("a gated sub-card's cell is outlined, not filled, and its parent's is not", async ({ page }) => {

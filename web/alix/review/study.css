@@ -148,7 +148,6 @@
   }
   .section-title:hover { color: var(--ink); }
   .section-title:focus-visible { outline: 1px solid var(--bolt); outline-offset: 4px; border-radius: 2px; }
-  .section-inline { align-self: center; width: min(100%, 64ch); margin: 0 auto 12px; text-align: left; }
   .section-drawer { position: absolute; left: 4px; right: 4px; z-index: 12; overflow: hidden; }
   .section-drawer-scrim { position: absolute; inset: 0; background: rgba(0,0,0,0.52); cursor: pointer; }
   .section-drawer-panel {

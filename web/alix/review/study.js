@@ -72,6 +72,7 @@ export function createStudy({
   let revealed = clientModel.revealed;
   let citationView = clientModel.citationView;
   let sectionView = clientModel.sectionView;
+  let autoOpenedSection = null;
   let answerConcealed = clientModel.answerConcealed;
   let feedback = clientModel.feedback;
   let selectedChoices = new Set();
@@ -164,7 +165,7 @@ export function createStudy({
     api("/api/deselect", post({})).then(apply);
   }
   function browseGo(delta) { if (!browsing) return; const n = browsing.i + delta; if (n >= 0 && n < browsing.cards.length) { browsing.i = n; rerender(); } }
-  function deselect() { confirmingLeave = false; closeMenu(); api("/api/deselect", post({})).then(apply); }
+  function deselect() { confirmingLeave = false; autoOpenedSection = null; closeMenu(); api("/api/deselect", post({})).then(apply); }
 
   // Returning to the picker mid-session abandons the cards still queued, so warn
   // first; a finished session (or the select phase) leaves straight away.
@@ -407,24 +408,12 @@ export function createStudy({
       crumbStrip.appendChild(bc);
     }
     if (hasSection()) {
-      if (state.section_first) {
-        const inline = el("section", "section-inline");
-        appendSectionContext(
-          inline,
-          c.section_context,
-          c.section_context_runs,
-          c.section_context_units,
-          contextDiagram,
-        );
-        q.appendChild(inline);
-      } else {
-        const title = el("button", "context label section-title", c.section_context[0]);
-        title.type = "button";
-        title.title = c.section_context[0];
-        title.setAttribute("aria-label", `Open section context: ${c.section_context[0]}`);
-        title.addEventListener("click", openSection);
-        card.insertBefore(title, q);
-      }
+      const title = el("button", "context label section-title", c.section_context[0]);
+      title.type = "button";
+      title.title = c.section_context[0];
+      title.setAttribute("aria-label", `Open section context: ${c.section_context[0]}`);
+      title.addEventListener("click", openSection);
+      card.insertBefore(title, q);
     }
     const frontNode = frontEl(c.front, c.front_runs, c.front_units);
     // Where context is the question (a cloze sentence) it leads and the front
@@ -670,6 +659,14 @@ export function createStudy({
         { duration: 170, easing: "cubic-bezier(0.4, 0, 0.2, 1)" },
       );
     }
+  }
+
+  function autoOpenSection() {
+    if (!hasSection() || !state.section_first) return;
+    const key = state.card.section_context.join("\n");
+    if (autoOpenedSection === key) return;
+    autoOpenedSection = key;
+    openSection();
   }
 
   function closeSection() {
@@ -1790,6 +1787,7 @@ export function createStudy({
       startDuePoll();
     } else {
       renderCard();
+      autoOpenSection();
     }
   }
 

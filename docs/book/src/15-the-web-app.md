@@ -149,12 +149,13 @@ revealed note uses the same content-column width and text size as the answer
 or choices above it. Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server).
 A card under a section keeps its section heading above the question as a dim,
-one-line title. The first new card introduced from that section in a sitting
-shows the full section inline above the question through its reveal or choice
-feedback; later cards keep only the title. Select that title, press `c`, or use
-**Context** beside **Ask Tutor** in the review menu to open the full section in
-a card-bounded drawer. While the drawer is open, the card and its review keys
-are inert; `c`, Escape, or the drawer scrim closes it.
+one-line title. On the first new card introduced from that section in a
+sitting, the card-bounded section drawer opens by itself once. Dismiss it and
+it stays closed through reveal or answer input; later cards from the same
+section do not open it automatically. The full section never appears inline.
+Select the title, press `c`, or use **Context** beside **Ask Tutor** in the
+review menu to open the drawer on demand. While the drawer is open, the card
+and its review keys are inert; `c`, Escape, or the drawer scrim closes it.
 A dim **"N left"** count in the header shows how many cards the session still
 holds; it can tick up when a card you missed cools back in for its retry. The
 **☰ menu** is context-aware: during review it holds **Ask Tutor** and,
