@@ -111,6 +111,12 @@ test("sheets own visibility and cancel live work when closed", () => {
   assert.equal(run.sheets.isOpen(), true);
   assert.equal(run.sheet.hidden, false);
   assert.match(run.panel.innerHTML, /Picker shortcuts/);
+  assert.match(run.panel.innerHTML, /Review shortcuts/, "shortcuts sheet names the review section");
+  assert.match(
+    run.panel.innerHTML,
+    /open the card's section drawer/,
+    "shortcuts sheet explains the review context key",
+  );
 
   run.sheet.dataset.shareLive = "1";
   run.sheets.close();

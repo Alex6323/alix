@@ -39,6 +39,7 @@ export function createStudy({
     appendKeypointList,
     appendReveal,
     appendRuns,
+    appendSectionContext,
     appendTable,
     chip,
     diagramImage,
@@ -206,6 +207,7 @@ export function createStudy({
     revealed = clientModel.revealed;
     citationView = clientModel.citationView;
     sectionView = clientModel.sectionView;
+    if (legend && legend.parentElement) legend.parentElement.inert = false;
     answerConcealed = clientModel.answerConcealed;
     feedback = clientModel.feedback;
     selectedChoices = new Set();
@@ -404,6 +406,26 @@ export function createStudy({
       }
       crumbStrip.appendChild(bc);
     }
+    if (hasSection()) {
+      if (state.section_first) {
+        const inline = el("section", "section-inline");
+        appendSectionContext(
+          inline,
+          c.section_context,
+          c.section_context_runs,
+          c.section_context_units,
+          contextDiagram,
+        );
+        q.appendChild(inline);
+      } else {
+        const title = el("button", "context label section-title", c.section_context[0]);
+        title.type = "button";
+        title.title = c.section_context[0];
+        title.setAttribute("aria-label", `Open section context: ${c.section_context[0]}`);
+        title.addEventListener("click", openSection);
+        card.insertBefore(title, q);
+      }
+    }
     const frontNode = frontEl(c.front, c.front_runs, c.front_units);
     // Where context is the question (a cloze sentence) it leads and the front
     // steps back to a topic; where it only labels the front (a table title) the
@@ -513,18 +535,7 @@ export function createStudy({
     a.innerHTML = "";
     const citations = state.card.citations || [];
     const citable = citations.length > 0 && isAnswered();
-    const showingSection = hasSection() && sectionView;
-    if (showingSection) {
-      appendContext(
-        a,
-        state.card.section_context,
-        state.card.section_context_runs,
-        state.card.section_context_units,
-        "context section",
-        contextDiagram,
-      );
-      setNote(noteVisibleForCurrentCard());
-    } else if (citable && citationView) {
+    if (citable && citationView) {
       // Source view: all cited excerpts take the answer's place in authored order.
       renderSourceCitations(a, citations);
       setNote(true);
@@ -565,20 +576,9 @@ export function createStudy({
       syncDiagramAnswerState(cardEl);
     }
     const toggles = el("div", "region-toggles");
-    const citationActive = citable && !showingSection;
+    const citationActive = citable;
     a.classList.toggle("citable", citationActive);
-    a.classList.toggle("sectioned", showingSection);
-    a.onclick = showingSection ? onSectionClick : citationActive ? onCiteClick : null;
-    if (hasSection()) {
-      appendRegionToggle(
-        toggles,
-        "section-toggle",
-        showingSection ? "hide section context" : "show section context",
-        "§",
-        "c",
-        toggleSection,
-      );
-    }
+    a.onclick = citationActive ? onCiteClick : null;
     if (citationActive) {
       const title = citationView
         ? "show answer"
@@ -591,7 +591,7 @@ export function createStudy({
     // un-hiding the revealed answer in place so you can self-test the encoding. `h` (or
     // a tap on the region) flips it both ways. Shown only once the answer is revealed
     // (nothing to hide before then), and never on a cited card — citation owns the corner.
-    const hidable = !showingSection && isIntroducing() && !effectiveDraw() && !isIntroChoice()
+    const hidable = isIntroducing() && !effectiveDraw() && !isIntroChoice()
       && citations.length === 0 && revealed > 0;
     a.classList.toggle("hidable", hidable);
     a.classList.toggle("concealed", hidable && answerConcealed);
@@ -626,7 +626,7 @@ export function createStudy({
     // and stays top-aligned and scrollable. The pre-reveal badge/hint alone isn't
     // body to center.
     a.classList.toggle("has-body", !!a.querySelector(
-      ".reveal, .options, .inputs, .source-excerpt, .context.section, .kp-list, .explain-answer, img.card-img, .cite-err"));
+      ".reveal, .options, .inputs, .source-excerpt, .kp-list, .explain-answer, img.card-img, .cite-err"));
     updateFade(a);
   }
 
@@ -634,15 +634,63 @@ export function createStudy({
     return !!(state && state.card && (state.card.section_context || []).length);
   }
 
-  function toggleSection() {
-    if (!hasSection()) return;
-    sectionView = !sectionView;
-    fillBottom();
+  function openSection() {
+    if (!hasSection() || sectionView) return;
+    const card = doc.getElementById("card");
+    if (!card) return;
+    sectionView = true;
+    const drawer = el("div", "section-drawer");
+    drawer.setAttribute("role", "dialog");
+    drawer.setAttribute("aria-modal", "true");
+    drawer.setAttribute("aria-label", `Section context: ${state.card.section_context[0]}`);
+    const scrim = el("div", "section-drawer-scrim");
+    scrim.addEventListener("click", closeSection);
+    drawer.appendChild(scrim);
+    const panel = el("section", "section-drawer-panel");
+    panel.tabIndex = -1;
+    appendSectionContext(
+      panel,
+      state.card.section_context,
+      state.card.section_context_runs,
+      state.card.section_context_units,
+      contextDiagram,
+    );
+    drawer.appendChild(panel);
+    card.appendChild(drawer);
+    if (legend && legend.parentElement) legend.parentElement.inert = true;
+    const title = card.querySelector(".section-title");
+    const top = title ? title.offsetTop + title.offsetHeight : card.querySelector(".region.q").offsetTop;
+    const height = Math.max(0, card.clientHeight - top);
+    drawer.style.top = `${top}px`;
+    drawer.style.height = `${height}px`;
+    panel.focus({ preventScroll: true });
+    if (height && drawer.animate) {
+      drawer.animate(
+        [{ height: "0px" }, { height: `${height}px` }],
+        { duration: 170, easing: "cubic-bezier(0.4, 0, 0.2, 1)" },
+      );
+    }
   }
 
-  function onSectionClick() {
-    if (win.getSelection && String(win.getSelection())) return;
-    toggleSection();
+  function closeSection() {
+    if (!sectionView) return;
+    const drawer = doc.querySelector(".section-drawer");
+    const title = doc.querySelector(".section-title");
+    const done = () => {
+      if (drawer) drawer.remove();
+      sectionView = false;
+      if (legend && legend.parentElement) legend.parentElement.inert = false;
+      if (title && title.isConnected) title.focus();
+    };
+    if (drawer && drawer.offsetHeight && drawer.animate) {
+      const animation = drawer.animate(
+        [{ height: `${drawer.offsetHeight}px` }, { height: "0px" }],
+        { duration: 170, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" },
+      );
+      animation.onfinish = done;
+    } else {
+      done();
+    }
   }
 
   // Swap the answer region between the worded answer and the cited source excerpt.
@@ -1757,6 +1805,11 @@ export function createStudy({
         if (e.key === "G" || e.key === "End") { e.preventDefault(); browsing.i = browsing.cards.length - 1; rerender(); return; }
         return;
       }
+      if (sectionView) {
+        e.preventDefault();
+        if (e.key === "Escape" || hit(e, keys.context)) closeSection();
+        return;
+      }
       // While the leave prompt is up: Enter confirms leaving, Esc stays; other keys
       // are inert (so a stray Esc can never blow through the guard).
       if (confirmingLeave) {
@@ -1780,8 +1833,7 @@ export function createStudy({
         }
         return;
       }
-      // `c` swaps the answer content for the card's section and back locally.
-      if (hasSection() && hit(e, keys.context)) { e.preventDefault(); toggleSection(); return; }
+      if (hasSection() && hit(e, keys.context)) { e.preventDefault(); openSection(); return; }
       // `s` swaps a cited card between its answer and its source, once answered.
       if ((state.card.citations || []).length && isAnswered() && !e.ctrlKey && e.key.toLowerCase() === "s") {
         e.preventDefault(); toggleCitation(); return;
@@ -1951,10 +2003,12 @@ export function createStudy({
     apply,
     buildCardShell,
     handleKey,
+    hasSection,
     isAnswered,
     isBrowsing,
     keys: () => keys,
     load,
+    openSection,
     openBrowse,
     prepareRender,
     prepareSurface,
@@ -1963,6 +2017,7 @@ export function createStudy({
     renderSourceExcerpt,
     replaceState,
     screen,
+    sectionOpen: () => sectionView,
     setBrowseKeys,
     setKeys,
     sourceTerms,

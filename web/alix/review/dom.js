@@ -426,23 +426,101 @@ function appendContextText(parent, run) {
   }
 }
 
-export function contextLine(text, runs, cls) {
-  const line = el("div", cls || "context");
+function appendContextLineText(parent, text, runs) {
   if (!runs) {
-    appendContextText(line, { text: text || "" });
-    return line;
+    appendContextText(parent, { text: text || "" });
+    return;
   }
   const standaloneMath = isStandaloneInlineMath(runs);
   for (const run of runs) {
     if (run.math) {
       const node = mathRunNode(run);
       if (standaloneMath) node.classList.add("math-standalone");
-      line.appendChild(node);
+      parent.appendChild(node);
     } else {
-      appendContextText(line, run);
+      appendContextText(parent, run);
     }
   }
+}
+
+export function contextLine(text, runs, cls, tag = "div") {
+  const line = el(tag, cls || "context");
+  appendContextLineText(line, text, runs);
   return line;
+}
+
+export function appendSectionContext(parent, lines, runs, units, makeDiagram) {
+  lines = lines || [];
+  if (!lines.length) return;
+  parent.appendChild(contextLine(lines[0], runs && runs[0], "section-heading", "h2"));
+
+  const blockUnits = units || [];
+  let unitIndex = 0;
+  let paragraph = null;
+  const flushParagraph = () => {
+    if (!paragraph) return;
+    parent.appendChild(paragraph);
+    paragraph = null;
+  };
+  const appendPlain = (index) => {
+    if (!lines[index]) {
+      flushParagraph();
+      return;
+    }
+    if (!paragraph) paragraph = el("p", "section-prose");
+    else paragraph.appendChild(document.createTextNode(" "));
+    appendContextLineText(paragraph, lines[index], runs && runs[index]);
+  };
+  const appendBlock = (unit, source) => {
+    flushParagraph();
+    if (unit && unit.kind === "sentence") {
+      parent.appendChild(contextLine(unit.text, unit.runs, "section-prose", "p"));
+    } else if (unit && unit.kind === "diagram") {
+      parent.appendChild(makeDiagram ? makeDiagram(unit) : diagramImage(unit));
+    } else {
+      const pre = el("pre", "code-block");
+      pre.textContent = source.join("\n");
+      parent.appendChild(pre);
+    }
+  };
+
+  let index = 1;
+  while (index < lines.length) {
+    if (lines[index].trim() === "$$") {
+      let close = index + 1;
+      while (close < lines.length && lines[close].trim() !== "$$") close++;
+      if (close < lines.length) {
+        const source = lines.slice(index + 1, close);
+        if (source.some((line) => line.trim())) {
+          appendBlock(blockUnits[unitIndex], source);
+          unitIndex++;
+        }
+        index = close + 1;
+        continue;
+      }
+    }
+
+    const fence = lines[index].trim().match(/^(`{3,}|~{3,})/);
+    if (fence) {
+      const marker = fence[1];
+      const source = [];
+      index++;
+      while (index < lines.length && !closesFence(lines[index], marker)) {
+        source.push(lines[index]);
+        index++;
+      }
+      const closed = index < lines.length;
+      if (closed) index++;
+      const unit = blockUnits[unitIndex];
+      unitIndex++;
+      appendBlock(closed ? unit : null, source);
+      continue;
+    }
+
+    appendPlain(index);
+    index++;
+  }
+  flushParagraph();
 }
 
 // Each NoteDto is its own `.note` block, so several notes stack as siblings

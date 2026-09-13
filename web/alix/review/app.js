@@ -91,6 +91,7 @@ study = createStudy({
     appendKeypointList,
     appendReveal,
     appendRuns,
+    appendSectionContext,
     appendTable,
     chip,
     clearLegendSides,
@@ -410,15 +411,20 @@ menu.addEventListener("mousedown", (e) => e.preventDefault());
 menu.addEventListener("click", (e) => e.stopPropagation());
 document.getElementById("mAsk").addEventListener("click", () => {
   menu.classList.remove("open");
+  if (study.sectionOpen()) return;
   // Mirrors the footer/keyboard availability: a walk offers the tutor only once
   // a checkpoint is revealed (nothing to ask about while still predicting).
   if (walk.isOpen()) { if (walk.data().phase === "reveal") tutor.show(); }
   else if (study.isAnswered()) tutor.show();
 });
-document.getElementById("mRemove").addEventListener("click", () => { menu.classList.remove("open"); study.remove(); });
+document.getElementById("mContext").addEventListener("click", () => { menu.classList.remove("open"); study.openSection(); });
+document.getElementById("mRemove").addEventListener("click", () => {
+  menu.classList.remove("open");
+  if (!study.sectionOpen()) study.remove();
+});
 const mDraw = document.getElementById("mDraw");
 study.syncDrawMenu();
-mDraw.addEventListener("click", study.toggleDraw);
+mDraw.addEventListener("click", () => { if (!study.sectionOpen()) study.toggleDraw(); });
 document.addEventListener("click", () => menu.classList.remove("open"));
 
 
@@ -429,6 +435,7 @@ function setMenuContext(ctx) {
   // rest (Remove card, Promote) are per-deck-card actions a trace checkpoint
   // doesn't have, so they get their own narrower checks below.
   document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = (ctx === "review" || ctx === "walk") ? "" : "none"; });
+  document.getElementById("mContext").style.display = ctx === "review" && study && study.hasSection() ? "" : "none";
   document.getElementById("mRemove").style.display = ctx === "review" ? "" : "none";
   // (a remediation card) — narrower than the other .m-review items, so it
   // gets its own check on top of the context toggle.
@@ -470,6 +477,7 @@ function boot() {
     picker.setKeys(pk);
     document.querySelector("#mRemove .mk").textContent = label(k.remove);
     document.getElementById("mAskKey").textContent = label(k.ask);
+    document.getElementById("mContextKey").textContent = label(k.context);
     return study.load();
   }).catch(() => setTimeout(boot, 500));
 }

@@ -72,7 +72,7 @@
     margin-top: auto;
     background: linear-gradient(90deg, transparent, var(--note-line) 18%, var(--note-line) 82%, transparent);
   }
-  .region.a.citable, .region.a.hidable, .region.a.sectioned { cursor: pointer; }
+  .region.a.citable, .region.a.hidable { cursor: pointer; }
   .region-toggles { position: absolute; top: 6px; right: 10px; z-index: 2;
                     display: flex; align-items: center; gap: 10px;
                     max-width: calc(100% - 20px); overflow: hidden; white-space: nowrap; }
@@ -140,6 +140,24 @@
     border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  .section-title.context.label {
+    appearance: none; display: block; flex: none; align-self: center;
+    width: min(100%, 64ch); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    border: 0; background: none; padding: 0; margin: 0 0 8px; text-align: center; cursor: pointer;
+    font-family: var(--mono);
+  }
+  .section-title:hover { color: var(--ink); }
+  .section-title:focus-visible { outline: 1px solid var(--bolt); outline-offset: 4px; border-radius: 2px; }
+  .section-inline { align-self: center; width: min(100%, 64ch); margin: 0 auto 12px; text-align: left; }
+  .section-drawer { position: absolute; left: 4px; right: 4px; z-index: 12; overflow: hidden; }
+  .section-drawer-scrim { position: absolute; inset: 0; background: rgba(0,0,0,0.52); cursor: pointer; }
+  .section-drawer-panel {
+    position: absolute; inset: 8px; overflow: auto; user-select: text;
+    padding: 22px 24px; text-align: left; color: var(--ink);
+    background: var(--menu-bg); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 12px 34px -12px rgba(0,0,0,0.8);
+  }
+  .section-drawer-panel:focus { outline: none; }
 
   /* ── summary ──────────────────────────────────────────────────────── */
   .summary { width: var(--card-w); text-align: left; animation: deal 0.3s both; }

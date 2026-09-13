@@ -75,6 +75,8 @@ function longContentState({
   note = [],
   citations = [],
   front = "What should remain visible when an authored answer is long?",
+  sectionLines = [],
+  sectionFirst = false,
   studyRevision = 1,
 }: {
   answerLines: string[];
@@ -88,6 +90,8 @@ function longContentState({
     error: null;
   }>;
   front?: string;
+  sectionLines?: string[];
+  sectionFirst?: boolean;
   studyRevision?: number;
 }) {
   return {
@@ -100,6 +104,9 @@ function longContentState({
       front_units: null,
       context: [],
       context_runs: [],
+      section_context: sectionLines,
+      section_context_runs: sectionLines.map((text) => [{ text }]),
+      section_context_units: sectionLines.map((text) => ({ kind: "sentence", text })),
       back: answerLines,
       back_runs: answerLines.map((text) => [{ text }]),
       back_units: answerLines.map((text) => ({ kind: "sentence", text })),
@@ -117,6 +124,7 @@ function longContentState({
     },
     choices,
     choice_runs: choices?.map((text) => [{ text }]) ?? null,
+    section_first: sectionFirst,
     keypoints: null,
     keypoint_runs: null,
     introducing: false,
@@ -1438,67 +1446,227 @@ test("grading fires POST /api/grade and advances the session", async ({ page, re
   await expect(page.locator(".front-text")).not.toHaveText(firstFront ?? "");
 });
 
-test("`c` keeps the question in place and swaps section context into the answer region", async ({ page }) => {
+test("the first introduced card of a section shows context inline and the second does not", async ({ page, request }) => {
+  const reset = await request.post("/api/reset", { data: { deck: "animals/sectioned.md" } });
+  expect(reset.ok(), `reset fresh sectioned deck: status=${reset.status()}`).toBeTruthy();
+  await openApp(page);
+
   await adultDeckRow(page, "Animals").click();
-  await adultDeckRow(page, "Section context, a demonstration").click();
-  await page.getByTitle("choose a depth").click();
+  await adultDeckRow(page, "Sectioned").click();
   await Promise.all([
-    page.waitForResponse((res) => res.url().includes("/api/select")),
-    page.getByRole("button", { name: /^Recognize/ }).click(),
+    page.waitForResponse((response) => response.url().includes("/api/select")),
+    page.getByRole("button", { name: "Learn" }).click(),
   ]);
 
-  const card = page.locator("#card");
-  const question = card.locator(".region.q");
-  const answer = card.locator("#ansRegion");
-  const sectionToggle = answer.locator(".section-toggle");
-  await expect(question).toContainText("Which German verb means");
-  await expect(answer.locator(".options")).toBeVisible();
-  await expect(page.locator(".context.section")).toHaveCount(0);
-  await expect(sectionToggle).toBeVisible();
-  await expect(sectionToggle).toHaveAttribute("title", "show section context");
+  const inline = page.locator(".section-inline");
+  await expect(inline, "first section card: inline context is visible").toBeVisible();
+  await expect(
+    inline.getByRole("heading", { name: "Ocean depths" }),
+    "first section card: line zero is a heading",
+  ).toBeVisible();
+  await expect(
+    inline.getByText("Sunlight reaches only the top layer.", { exact: true }),
+    "first section card: prose follows the heading",
+  ).toBeVisible();
+  await expect(page.locator(".section-title"), "first section card: title is not duplicated").toHaveCount(0);
+  const firstFront = await page.locator(".front-text").textContent();
 
-  const dividerBox = await card.locator(":scope > .divider").boundingBox();
-  const toggleBox = await sectionToggle.boundingBox();
-  expect(dividerBox).not.toBeNull();
-  expect(toggleBox).not.toBeNull();
-  expect(toggleBox?.y ?? 0).toBeGreaterThan(dividerBox?.y ?? Number.MAX_SAFE_INTEGER);
-
-  const calls: string[] = [];
-  page.on("request", (req) => { if (req.url().includes("/api/")) calls.push(req.url()); });
-
-  await sectionToggle.click();
-  await expect(question).toContainText("Which German verb means");
-  await expect(question.locator(".front-text")).toHaveCount(1);
-  await expect(answer.locator(".options")).toHaveCount(0);
-  await expect(answer).toContainText("Verbs of arguing");
-  await expect(answer).toContainText("must not displace the question");
-  await expect(question.locator(".context.section")).toHaveCount(0);
-  await expect(sectionToggle).toHaveAttribute("title", "hide section context");
-
-  await page.keyboard.press("c");
-  await expect(page.locator(".context.section")).toHaveCount(0);
-  await expect(question.locator(".front-text")).toHaveCount(1);
-  await expect(answer.locator(".options")).toBeVisible();
-  expect(calls).toEqual([]);
-
-  const front = await question.textContent();
-  const correct = front?.includes("advocate") ? "befürworten" : "einräumen";
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await expect(inline, "first section card after reveal: inline context persists").toBeVisible();
+  if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
+    await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-inline.png` });
+  }
   await Promise.all([
-    page.waitForResponse((res) => res.url().includes("/api/choose")),
-    page.getByRole("button", { name: new RegExp(correct) }).click(),
-  ]);
-  const note = card.locator("#noteRegion");
-  await expect(note).toBeVisible();
-  await page.keyboard.press("c");
-  await expect(answer.locator(".context.section").first()).toBeVisible();
-  await expect(note).toBeVisible();
-  await expect(note.locator(".context.section")).toHaveCount(0);
-  await Promise.all([
-    page.waitForResponse((res) => res.url().includes("/api/introduce")),
+    page.waitForResponse((response) => response.url().includes("/api/introduce")),
     page.getByRole("button", { name: "Seen" }).click(),
   ]);
-  await expect(question).not.toContainText(front ?? "");
-  await expect(page.locator(".context.section")).toHaveCount(0);
+
+  await expect(
+    page.locator(".front-text"),
+    `second section card: front advances from ${JSON.stringify(firstFront)}`,
+  ).not.toHaveText(firstFront ?? "");
+  await expect(page.locator(".section-inline"), "second section card: inline context is absent").toHaveCount(0);
+  await expect(page.locator(".section-title"), "second section card: title remains available").toHaveText("Ocean depths");
+});
+
+test("an open section drawer swallows every review key", async ({ page }) => {
+  const state = longContentState({
+    answerLines: ["The answer must remain concealed."],
+    citations: [{
+      locator: "source.md:1",
+      excerpt: { path: "source.md", lines: [{ n: 1, text: "source evidence" }], truncated: false },
+      error: null,
+    }],
+    sectionLines: ["Key isolation", "The card stays inert while this drawer is open."],
+    studyRevision: 41,
+  });
+  const mutations: string[] = [];
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await page.route(/\/api\/(skip|grade|choose|introduce|remove|ask|restart)$/, (route) => {
+    mutations.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+    return route.fulfill({ json: state });
+  });
+  await openApp(page);
+
+  await page.locator(".section-title").click();
+  await expect(page.locator(".section-drawer"), "key sweep start: drawer is open").toBeVisible();
+  const before = await page.evaluate(() => fetch("/api/state").then((response) => response.json()));
+  for (const key of ["Space", "Control+s", "1", "2", "3", "?", "Control+x", "r", "s", "h"]) {
+    await page.keyboard.press(key);
+    await expect(page.locator(".section-drawer"), `key sweep ${key}: drawer stays open`).toBeVisible();
+  }
+  const after = await page.evaluate(() => fetch("/api/state").then((response) => response.json()));
+
+  expect(
+    after.study_revision,
+    `key sweep revision: before=${before.study_revision} after=${after.study_revision}`,
+  ).toBe(before.study_revision);
+  expect(mutations, `key sweep mutations: ${JSON.stringify(mutations)}`).toEqual([]);
+  await expect(page.locator("#ansRegion .reveal"), "key sweep reveal: answer stays concealed").toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".section-drawer"), "key sweep Escape: drawer closes").toHaveCount(0);
+});
+
+test("the section title truncates a long heading to one line", async ({ page }) => {
+  const heading = "A deliberately long section heading that cannot fit within a narrow review card without truncation";
+  await page.setViewportSize({ width: 420, height: 760 });
+  await page.route("**/api/state", (route) => route.fulfill({
+    json: longContentState({
+      answerLines: ["Answer"],
+      sectionLines: [heading, "Supporting prose."],
+    }),
+  }));
+  await openApp(page);
+
+  const title = page.locator(".section-title");
+  await expect(title, `long title text: ${heading}`).toHaveText(heading);
+  const metrics = await title.evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    return {
+      clientWidth: element.clientWidth,
+      overflow: style.overflow,
+      scrollWidth: element.scrollWidth,
+      textOverflow: style.textOverflow,
+      whiteSpace: style.whiteSpace,
+    };
+  });
+  expect(metrics.whiteSpace, `long title white-space: ${JSON.stringify(metrics)}`).toBe("nowrap");
+  expect(metrics.overflow, `long title overflow: ${JSON.stringify(metrics)}`).toBe("hidden");
+  expect(metrics.textOverflow, `long title ellipsis: ${JSON.stringify(metrics)}`).toBe("ellipsis");
+  expect(metrics.scrollWidth, `long title width: ${JSON.stringify(metrics)}`).toBeGreaterThan(metrics.clientWidth);
+  if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
+    await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-title-mobile.png` });
+  }
+});
+
+test("a sectionless card shows no section title", async ({ page }) => {
+  await page.route("**/api/state", (route) => route.fulfill({
+    json: longContentState({ answerLines: ["Answer"] }),
+  }));
+  await openApp(page);
+
+  await expect(page.locator(".section-title"), "sectionless card: title is absent").toHaveCount(0);
+});
+
+test("the section title and review menu both open the drawer", async ({ page }) => {
+  await page.route("**/api/state", (route) => route.fulfill({
+    json: longContentState({
+      answerLines: ["Answer"],
+      sectionLines: ["Drawer routes", "Selectable drawer prose."],
+    }),
+  }));
+  await openApp(page);
+
+  await page.locator(".section-title").click();
+  const drawer = page.locator(".section-drawer");
+  await expect(drawer, "title route: drawer opens").toBeVisible();
+  const panel = drawer.locator(".section-drawer-panel");
+  await expect(panel, "title route: focus enters the drawer").toBeFocused();
+  await expect(panel.getByRole("heading", { name: "Drawer routes" }), "title route: heading renders").toBeVisible();
+  await drawer.evaluate(async (element) => {
+    await Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished));
+  });
+  const bounds = await page.evaluate(() => {
+    const rect = (selector: string) => {
+      const value = document.querySelector(selector)?.getBoundingClientRect();
+      return value ? { bottom: value.bottom, top: value.top } : null;
+    };
+    return {
+      card: rect("#card"),
+      drawer: rect(".section-drawer"),
+      footer: rect("body > .legend"),
+      title: rect(".section-title"),
+    };
+  });
+  expect(
+    bounds.drawer?.top,
+    `drawer top starts under title: ${JSON.stringify(bounds)}`,
+  ).toBeGreaterThanOrEqual((bounds.title?.bottom ?? Number.MAX_SAFE_INTEGER) - 1);
+  expect(
+    bounds.drawer?.bottom,
+    `drawer bottom stays inside card: ${JSON.stringify(bounds)}`,
+  ).toBeLessThanOrEqual((bounds.card?.bottom ?? 0) + 1);
+  expect(
+    bounds.drawer?.bottom,
+    `drawer scrim stops before footer: ${JSON.stringify(bounds)}`,
+  ).toBeLessThanOrEqual(bounds.footer?.top ?? 0);
+  if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
+    await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-drawer.png` });
+  }
+  const selection = await drawer.locator(".section-prose").evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const selected = window.getSelection();
+    selected?.removeAllRanges();
+    selected?.addRange(range);
+    return String(selected);
+  });
+  expect(selection, `drawer selection: ${JSON.stringify(selection)}`).toContain("Selectable drawer prose.");
+
+  await page.keyboard.press("c");
+  await expect(drawer, "context key route: drawer closes").toHaveCount(0);
+  await expect(page.locator(".section-title"), "context key route: focus returns to title").toBeFocused();
+  await page.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("menuitem", { name: /^Context/ }).click();
+  await expect(drawer, "menu route: drawer opens").toBeVisible();
+  await page.locator(".section-drawer-scrim").click({ position: { x: 4, y: 4 } });
+  await expect(drawer, "scrim route: drawer closes").toHaveCount(0);
+});
+
+test("section prose joins hard wraps and preserves paragraph breaks", async ({ page }) => {
+  const original = longContentState({
+    answerLines: ["Answer"],
+    sectionFirst: true,
+    sectionLines: [
+      "Paragraph structure",
+      "A hard-wrapped first",
+      "paragraph joins here.",
+      "",
+      "A second paragraph stays separate.",
+    ],
+  });
+  const state = { ...original, introducing: true };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await openApp(page);
+
+  const inlineParagraphs = page.locator(".section-inline .section-prose");
+  await expect(inlineParagraphs, "inline paragraphs: blank line creates two blocks").toHaveCount(2);
+  await expect(inlineParagraphs.first(), "inline paragraph one: hard wrap joins with a space").toHaveText(
+    "A hard-wrapped first paragraph joins here.",
+  );
+  await expect(inlineParagraphs.last(), "inline paragraph two: remains separate").toHaveText(
+    "A second paragraph stays separate.",
+  );
+
+  await page.keyboard.press("c");
+  const drawerParagraphs = page.locator(".section-drawer .section-prose");
+  await expect(drawerParagraphs, "drawer paragraphs: blank line creates two blocks").toHaveCount(2);
+  await expect(drawerParagraphs.first(), "drawer paragraph one: hard wrap joins with a space").toHaveText(
+    "A hard-wrapped first paragraph joins here.",
+  );
+  await expect(drawerParagraphs.last(), "drawer paragraph two: remains separate").toHaveText(
+    "A second paragraph stays separate.",
+  );
 });
 
 test("a gated sub-card's cell is outlined, not filled, and its parent's is not", async ({ page }) => {

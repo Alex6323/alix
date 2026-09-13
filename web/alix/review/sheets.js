@@ -422,6 +422,8 @@ export function createSheets({
       '<kbd>← →</kbd><span>step regions (in the focus drawer)</span>' +
       '<kbd>r</kbd><span>refresh the deck list</span>' +
       '<kbd>esc / ⌫</kbd><span>back</span>' +
+      '</div><h2>Review shortcuts</h2><div class="sheet-keys">' +
+      '<kbd>c</kbd><span>open the card\'s section drawer</span>' +
       '</div>'
     );
   }
