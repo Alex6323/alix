@@ -2768,36 +2768,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReviewState dco_decode_review_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 27)
-      throw Exception('unexpected arr length: expect 27 but see ${arr.length}');
+    if (arr.length != 28)
+      throw Exception('unexpected arr length: expect 28 but see ${arr.length}');
     return ReviewState(
       card: dco_decode_opt_box_autoadd_card_view(arr[0]),
       mode: dco_decode_mode(arr[1]),
       depth: dco_decode_depth(arr[2]),
       introducing: dco_decode_bool(arr[3]),
-      choices: dco_decode_opt_list_String(arr[4]),
-      choicesMultiple: dco_decode_opt_box_autoadd_bool(arr[5]),
-      choiceRuns: dco_decode_opt_list_list_inline_run(arr[6]),
-      keypoints: dco_decode_opt_list_String(arr[7]),
-      keypointRuns: dco_decode_opt_list_list_inline_run(arr[8]),
-      input: dco_decode_input(arr[9]),
-      finished: dco_decode_bool(arr[10]),
-      remaining: dco_decode_u_32(arr[11]),
-      initial: dco_decode_u_32(arr[12]),
-      reviews: dco_decode_u_32(arr[13]),
-      passed: dco_decode_u_32(arr[14]),
-      failed: dco_decode_u_32(arr[15]),
-      introduced: dco_decode_u_32(arr[16]),
-      partial: dco_decode_u_32(arr[17]),
-      canRestart: dco_decode_bool(arr[18]),
-      nextDueMs: dco_decode_opt_box_autoadd_u_64(arr[19]),
-      dueLeft: dco_decode_u_32(arr[20]),
-      newLeft: dco_decode_u_32(arr[21]),
-      metTotal: dco_decode_u_32(arr[22]),
-      deckTotal: dco_decode_u_32(arr[23]),
-      recognizeGap: dco_decode_opt_box_autoadd_recognize_gap(arr[24]),
-      saveError: dco_decode_opt_String(arr[25]),
-      loadWarnings: dco_decode_list_String(arr[26]),
+      sectionFirst: dco_decode_bool(arr[4]),
+      choices: dco_decode_opt_list_String(arr[5]),
+      choicesMultiple: dco_decode_opt_box_autoadd_bool(arr[6]),
+      choiceRuns: dco_decode_opt_list_list_inline_run(arr[7]),
+      keypoints: dco_decode_opt_list_String(arr[8]),
+      keypointRuns: dco_decode_opt_list_list_inline_run(arr[9]),
+      input: dco_decode_input(arr[10]),
+      finished: dco_decode_bool(arr[11]),
+      remaining: dco_decode_u_32(arr[12]),
+      initial: dco_decode_u_32(arr[13]),
+      reviews: dco_decode_u_32(arr[14]),
+      passed: dco_decode_u_32(arr[15]),
+      failed: dco_decode_u_32(arr[16]),
+      introduced: dco_decode_u_32(arr[17]),
+      partial: dco_decode_u_32(arr[18]),
+      canRestart: dco_decode_bool(arr[19]),
+      nextDueMs: dco_decode_opt_box_autoadd_u_64(arr[20]),
+      dueLeft: dco_decode_u_32(arr[21]),
+      newLeft: dco_decode_u_32(arr[22]),
+      metTotal: dco_decode_u_32(arr[23]),
+      deckTotal: dco_decode_u_32(arr[24]),
+      recognizeGap: dco_decode_opt_box_autoadd_recognize_gap(arr[25]),
+      saveError: dco_decode_opt_String(arr[26]),
+      loadWarnings: dco_decode_list_String(arr[27]),
     );
   }
 
@@ -4402,6 +4403,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_mode = sse_decode_mode(deserializer);
     var var_depth = sse_decode_depth(deserializer);
     var var_introducing = sse_decode_bool(deserializer);
+    var var_sectionFirst = sse_decode_bool(deserializer);
     var var_choices = sse_decode_opt_list_String(deserializer);
     var var_choicesMultiple = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_choiceRuns = sse_decode_opt_list_list_inline_run(deserializer);
@@ -4432,6 +4434,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       mode: var_mode,
       depth: var_depth,
       introducing: var_introducing,
+      sectionFirst: var_sectionFirst,
       choices: var_choices,
       choicesMultiple: var_choicesMultiple,
       choiceRuns: var_choiceRuns,
@@ -5951,6 +5954,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_mode(self.mode, serializer);
     sse_encode_depth(self.depth, serializer);
     sse_encode_bool(self.introducing, serializer);
+    sse_encode_bool(self.sectionFirst, serializer);
     sse_encode_opt_list_String(self.choices, serializer);
     sse_encode_opt_box_autoadd_bool(self.choicesMultiple, serializer);
     sse_encode_opt_list_list_inline_run(self.choiceRuns, serializer);

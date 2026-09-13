@@ -193,6 +193,7 @@ pub struct _ReviewState {
     pub mode: Mode,
     pub depth: Depth,
     pub introducing: bool,
+    pub section_first: bool,
     pub choices: Option<Vec<String>>,
     pub choices_multiple: Option<bool>,
     pub choice_runs: Option<Vec<Vec<InlineRun>>>,

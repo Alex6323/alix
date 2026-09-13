@@ -2110,6 +2110,7 @@ const _: fn() = || {
         let _: crate::api::review::Mode = ReviewState.mode;
         let _: crate::api::review::Depth = ReviewState.depth;
         let _: bool = ReviewState.introducing;
+        let _: bool = ReviewState.section_first;
         let _: Option<Vec<String>> = ReviewState.choices;
         let _: Option<bool> = ReviewState.choices_multiple;
         let _: Option<Vec<Vec<crate::api::review::InlineRun>>> = ReviewState.choice_runs;
@@ -3520,6 +3521,7 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_mode = <crate::api::review::Mode>::sse_decode(deserializer);
         let mut var_depth = <crate::api::review::Depth>::sse_decode(deserializer);
         let mut var_introducing = <bool>::sse_decode(deserializer);
+        let mut var_sectionFirst = <bool>::sse_decode(deserializer);
         let mut var_choices = <Option<Vec<String>>>::sse_decode(deserializer);
         let mut var_choicesMultiple = <Option<bool>>::sse_decode(deserializer);
         let mut var_choiceRuns =
@@ -3551,6 +3553,7 @@ impl SseDecode for crate::api::review::ReviewState {
             mode: var_mode,
             depth: var_depth,
             introducing: var_introducing,
+            section_first: var_sectionFirst,
             choices: var_choices,
             choices_multiple: var_choicesMultiple,
             choice_runs: var_choiceRuns,
@@ -4846,6 +4849,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.mode.into_into_dart().into_dart(),
             self.0.depth.into_into_dart().into_dart(),
             self.0.introducing.into_into_dart().into_dart(),
+            self.0.section_first.into_into_dart().into_dart(),
             self.0.choices.into_into_dart().into_dart(),
             self.0.choices_multiple.into_into_dart().into_dart(),
             self.0.choice_runs.into_into_dart().into_dart(),
@@ -6194,6 +6198,7 @@ impl SseEncode for crate::api::review::ReviewState {
         <crate::api::review::Mode>::sse_encode(self.mode, serializer);
         <crate::api::review::Depth>::sse_encode(self.depth, serializer);
         <bool>::sse_encode(self.introducing, serializer);
+        <bool>::sse_encode(self.section_first, serializer);
         <Option<Vec<String>>>::sse_encode(self.choices, serializer);
         <Option<bool>>::sse_encode(self.choices_multiple, serializer);
         <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_encode(self.choice_runs, serializer);

@@ -590,6 +590,7 @@ class ReviewState {
   final Mode mode;
   final Depth depth;
   final bool introducing;
+  final bool sectionFirst;
   final List<String>? choices;
   final bool? choicesMultiple;
   final List<List<InlineRun>>? choiceRuns;
@@ -619,6 +620,7 @@ class ReviewState {
     required this.mode,
     required this.depth,
     required this.introducing,
+    required this.sectionFirst,
     this.choices,
     this.choicesMultiple,
     this.choiceRuns,
@@ -650,6 +652,7 @@ class ReviewState {
       mode.hashCode ^
       depth.hashCode ^
       introducing.hashCode ^
+      sectionFirst.hashCode ^
       choices.hashCode ^
       choicesMultiple.hashCode ^
       choiceRuns.hashCode ^
@@ -683,6 +686,7 @@ class ReviewState {
           mode == other.mode &&
           depth == other.depth &&
           introducing == other.introducing &&
+          sectionFirst == other.sectionFirst &&
           choices == other.choices &&
           choicesMultiple == other.choicesMultiple &&
           choiceRuns == other.choiceRuns &&
