@@ -137,4 +137,48 @@ void main() {
     expect(title.maxLines, 1, reason: 'one line');
     expect(title.overflow, TextOverflow.ellipsis, reason: 'ellipsis, no wrap');
   });
+
+  testWidgets(
+    'the first introduction from a section arrives with the section inline; the second card shows the title line only',
+    (tester) async {
+      await pumpReview(tester, sectioned());
+
+      expect(
+        find.byKey(const ValueKey('section-inline')),
+        findsOneWidget,
+        reason: "card 1 is the sitting's first introduction from the section",
+      );
+      expect(
+        find.text(_prose),
+        findsOneWidget,
+        reason: 'the prose is on the card',
+      );
+      expect(
+        find.byKey(const ValueKey('section-title')),
+        findsNothing,
+        reason: 'the inline heading stands in for the title line',
+      );
+      expect(
+        find.text('Context'),
+        findsOneWidget,
+        reason: 'the chip is still offered',
+      );
+
+      await tapChip(tester, 'Reveal');
+      expect(
+        find.text(_prose),
+        findsOneWidget,
+        reason: 'the section stays through reveal',
+      );
+      await tapChip(tester, 'Seen');
+
+      expect(find.byKey(const ValueKey('section-inline')), findsNothing);
+      expect(find.byKey(const ValueKey('section-title')), findsOneWidget);
+      expect(
+        find.text(_prose),
+        findsNothing,
+        reason: 'card 2 shows the section only on demand',
+      );
+    },
+  );
 }

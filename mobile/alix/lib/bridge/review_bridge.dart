@@ -168,6 +168,7 @@ ReviewStateModel _stateFromBridge(bridge.ReviewState state) {
     depth: _depthFromBridge(state.depth),
     input: _inputFromBridge(state.input),
     introducing: state.introducing,
+    sectionFirst: state.sectionFirst,
     choices: state.choices,
     choiceRuns: state.choiceRuns == null
         ? null
