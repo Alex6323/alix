@@ -222,4 +222,18 @@ void main() {
       );
     },
   );
+
+  testWidgets('a fence-shaped section heading never opens a prose code block', (
+    tester,
+  ) async {
+    await pumpReview(tester, sectioned(heading: '```text'));
+
+    final prose = tester.widget<Text>(find.text(_prose));
+    expect(
+      prose.style?.fontFamily,
+      isNot('IBM Plex Mono'),
+      reason:
+          'heading/prose boundary: expected ordinary section prose, actual font family ${prose.style?.fontFamily}',
+    );
+  });
 }

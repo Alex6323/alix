@@ -1956,8 +1956,9 @@ List<Widget> _sectionProse(
     runParts.clear();
   }
 
+  final body = card.section.isEmpty ? const <String>[] : card.section.sublist(1);
   _walkContextBlocks(
-    card.section,
+    body,
     card.sectionUnits,
     onBlock: (source, unit, closed) {
       flush();
@@ -1970,15 +1971,15 @@ List<Widget> _sectionProse(
       }
     },
     onLine: (index) {
-      if (index == 0) return;
-      final line = card.section[index];
+      final at = index + 1;
+      final line = card.section[at];
       if (line.trim().isEmpty) {
         flush();
         return;
       }
       textParts.add(line);
       runParts.add(
-        index < card.sectionRuns.length ? card.sectionRuns[index] : null,
+        at < card.sectionRuns.length ? card.sectionRuns[at] : null,
       );
     },
   );
