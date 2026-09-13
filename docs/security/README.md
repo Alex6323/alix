@@ -312,7 +312,11 @@ no deck in the workspace owns is left out of staging and of a paired pull
 rather than failing them, and `alix doctor` warns about it
 (`workspace_material_refuses_an_unresolvable_image_and_leaves_a_stray_asset_directory_out`,
 `src/share.rs`; `an_asset_directory_no_deck_owns_is_left_out_of_a_workspace_entry`,
-`src/sync/server.rs`).
+`src/sync/server.rs`). A link directly under `assets/` and an unreadable
+`assets/` root are refused by staging, and doctor reports each as an error
+rather than as left out
+(`a_linked_orphan_asset_directory_is_reported_as_a_link`,
+`an_unreadable_assets_root_is_a_workspace_error`, `src/cli/doctor.rs`).
 
 Local `alix deck copy` and `alix deck move` call the same single-deck bundle
 builder, sanitizer, validator, and installer as wormhole sharing. Copy cannot

@@ -823,6 +823,42 @@ fn orphan_note_findings(sidecar: &Path, report: &mut Report) {
     }
 }
 
+fn audit_asset_root(dir: &Path, known_deck_ids: &HashSet<String>, report: &mut Report) {
+    let assets = dir.join(alix::assets::ROOT);
+    let entries = match std::fs::read_dir(&assets) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(error) => {
+            report.error(format!("cannot read {}: {error}", assets.display()));
+            return;
+        }
+    };
+    for entry in entries {
+        let (name, kind) = match entry.and_then(|entry| Ok((entry.file_name(), entry.file_type()?)))
+        {
+            Ok(found) => found,
+            Err(error) => {
+                report.error(format!("cannot read {}: {error}", assets.display()));
+                continue;
+            }
+        };
+        let name = name.to_string_lossy().into_owned();
+        if kind.is_symlink() {
+            report.error(format!(
+                "{}/{name} is a link; share and sync refuse it: replace it with what it points \
+                 to, or remove it",
+                alix::assets::ROOT
+            ));
+        } else if kind.is_dir() && !known_deck_ids.contains(&name) {
+            report.warn(format!(
+                "{}/{name} belongs to no deck in {}; share and sync leave it out",
+                alix::assets::ROOT,
+                dir.display()
+            ));
+        }
+    }
+}
+
 fn workspace_findings(dir: &Path) -> Report {
     let mut report = Report::default();
     for root in alix::workspace::roots_under(dir) {
@@ -902,20 +938,7 @@ fn findings_in(dir: &Path) -> Report {
         }
     }
     if alix::workspace::is_workspace(dir) {
-        for entry in std::fs::read_dir(dir.join(alix::assets::ROOT))
-            .into_iter()
-            .flatten()
-            .flatten()
-        {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if entry.path().is_dir() && !known_deck_ids.contains(&name) {
-                report.warn(format!(
-                    "{}/{name} belongs to no deck in {}; share and sync leave it out",
-                    alix::assets::ROOT,
-                    dir.display()
-                ));
-            }
-        }
+        audit_asset_root(dir, &known_deck_ids, &mut report);
     }
     match alix::state::open_aggregate_store(&store_path) {
         Ok(store) => {
@@ -2266,6 +2289,85 @@ mod tests {
         assert!(
             orphan[0].contains("assets/deck-zz") && !orphan[0].contains("deck-m1"),
             "{orphan:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_orphan_asset_directory_is_reported_as_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "alix.toml", "title = \"W\"\n");
+        std::fs::create_dir(dir.path().join("decks")).unwrap();
+        w(
+            &dir.path().join("decks"),
+            "m.md",
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\na\n<!-- id: card-m1c1 -->\n",
+        );
+        std::fs::create_dir(dir.path().join("assets")).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("assets/deck-zz")).unwrap();
+
+        let stage = tempfile::tempdir().unwrap();
+        let share_error = alix::share::stage_path(dir.path(), stage.path()).unwrap_err();
+        assert!(
+            format!("{share_error:#}").contains("is a link"),
+            "the linked orphan blocks sharing: {share_error:#}"
+        );
+
+        let report = workspace_findings(dir.path());
+        let findings = report
+            .warnings
+            .iter()
+            .chain(&report.errors)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            findings.contains("assets/deck-zz") && findings.contains("link"),
+            "doctor must name the link that blocks share and sync: {findings}"
+        );
+        assert!(
+            !findings.contains("share and sync leave it out"),
+            "doctor must not claim that a link the staging boundary rejects is left out: {findings}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_assets_root_is_a_workspace_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "alix.toml", "title = \"W\"\n");
+        std::fs::create_dir(dir.path().join("decks")).unwrap();
+        w(
+            &dir.path().join("decks"),
+            "m.md",
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\na\n<!-- id: card-m1c1 -->\n",
+        );
+        let assets = dir.path().join("assets");
+        std::fs::create_dir_all(assets.join("deck-zz")).unwrap();
+        let original = std::fs::metadata(&assets).unwrap().permissions();
+        std::fs::set_permissions(&assets, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let report = workspace_findings(dir.path());
+        let stage = tempfile::tempdir().unwrap();
+        let share = alix::share::stage_path(dir.path(), stage.path());
+
+        std::fs::set_permissions(&assets, original).unwrap();
+        let share_error = share.unwrap_err();
+        assert!(
+            format!("{share_error:#}").contains("Permission denied"),
+            "the unreadable assets root blocks sharing: {share_error:#}"
+        );
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| { error.contains("assets") && error.contains("Permission denied") }),
+            "doctor must report why share and sync cannot read assets: {:#?}",
+            report.errors
         );
     }
 

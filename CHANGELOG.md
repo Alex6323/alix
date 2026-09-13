@@ -53,7 +53,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - An `assets/` directory that no deck in the workspace owns is left out of
   `alix share` and of a paired phone's pull instead of failing the whole
-  workspace; `alix doctor` warns about it.
+  workspace; `alix doctor` warns about it, and reports a link or an
+  unreadable `assets/` root, which share and sync refuse, as an error.
 
 - The phone's sync report labels a loose deck by reading that one deck
   file instead of listing the whole paired root first.
