@@ -884,6 +884,7 @@ fn section_line(
     seen_heading: bool,
     lineno: usize,
     line: String,
+    separated: bool,
 ) -> Result<(), ParseError> {
     // A sidecar has no sections at all (D16), so it has no body-opens-with-a-
     // heading rule either: its lines are notes and personal cards.
@@ -892,6 +893,9 @@ fn section_line(
     }
     if !seen_heading {
         return Err(ParseError::ProseBeforeFirstHeading(lineno));
+    }
+    if separated && section.len() > 1 && section.last().is_some_and(|line| !line.is_empty()) {
+        section.push(String::new());
     }
     section.push(line);
     Ok(())
@@ -993,7 +997,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 fence = None;
             }
             if current.is_none() {
-                section_line(&mut section, seen_heading, lineno, raw.to_string())?;
+                section_line(
+                    &mut section,
+                    seen_heading,
+                    lineno,
+                    raw.to_string(),
+                    prev_blank,
+                )?;
                 prev_blank = false;
                 prev_heading = false;
                 continue;
@@ -1047,7 +1057,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         if let Some((ch, open)) = fence_opener(raw) {
             fence = Some((ch, open, lineno));
             if current.is_none() {
-                section_line(&mut section, seen_heading, lineno, raw.to_string())?;
+                section_line(
+                    &mut section,
+                    seen_heading,
+                    lineno,
+                    raw.to_string(),
+                    prev_blank,
+                )?;
                 prev_blank = false;
                 prev_heading = false;
                 continue;
@@ -1234,7 +1250,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             && (thematic_break(rest) || ESCAPABLE.iter().any(|marker| rest.starts_with(marker)))
         {
             if current.is_none() {
-                section_line(&mut section, seen_heading, lineno, rest.to_string())?;
+                section_line(
+                    &mut section,
+                    seen_heading,
+                    lineno,
+                    rest.to_string(),
+                    prev_blank,
+                )?;
                 prev_blank = false;
                 prev_heading = false;
                 prev_prose = true;
@@ -1252,7 +1274,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 invocation_below(lines, idx + 1).is_some_and(|(_, m)| m == Mapping::Plain);
             if plain_trails {
                 if current.is_none() {
-                    section_line(&mut section, seen_heading, lineno, t.to_string())?;
+                    section_line(
+                        &mut section,
+                        seen_heading,
+                        lineno,
+                        t.to_string(),
+                        prev_blank,
+                    )?;
                 } else {
                     push_content(&mut current, lineno, t.to_string())?;
                 }
@@ -1340,7 +1368,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 }
                 // A section has no card to own a note, so the line is
                 // ordinary section prose either way.
-                None => section_line(&mut section, seen_heading, lineno, t.to_string())?,
+                None => section_line(
+                    &mut section,
+                    seen_heading,
+                    lineno,
+                    t.to_string(),
+                    prev_blank,
+                )?,
             }
             prev_blank = false;
             prev_heading = false;
@@ -1453,7 +1487,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         // has no sections at all (D16), so nothing accumulates there and a
         // personal card stays context-free.
         if current.is_none() {
-            section_line(&mut section, seen_heading, lineno, t.to_string())?;
+            section_line(
+                &mut section,
+                seen_heading,
+                lineno,
+                t.to_string(),
+                prev_blank,
+            )?;
             prev_blank = false;
             prev_heading = false;
             prev_prose = true;
@@ -4206,6 +4246,25 @@ mod tests {
                 "code",
                 "```"
             ],
+            deck.cards[0].section_context
+        );
+    }
+
+    #[test]
+    fn section_context_preserves_normalized_paragraph_breaks() {
+        let deck = parse("# S\nLine one\nline two.\n\nLine three.\n\n## q\na\n");
+        assert_eq!(
+            vec!["S", "Line one", "line two.", "", "Line three."],
+            deck.cards[0].section_context,
+            "paragraph scan: one interior blank rides as an empty line and the trailing blank is dropped; context={:?}",
+            deck.cards[0].section_context
+        );
+
+        let deck = parse("# S\n\n\nLine one\nline two.\n\n\nLine three.\n\n\n## q\na\n");
+        assert_eq!(
+            vec!["S", "Line one", "line two.", "", "Line three."],
+            deck.cards[0].section_context,
+            "paragraph normalization: leading and trailing blanks drop while an interior run collapses; context={:?}",
             deck.cards[0].section_context
         );
     }

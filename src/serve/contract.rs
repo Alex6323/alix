@@ -868,6 +868,7 @@ fn carddto_sectioned_wire_shape() {
             "section_context": [
                 "*Ownership* rules",
                 "Borrowing has rules.",
+                "",
                 "```rust",
                 "let x = 1;",
                 "```"
@@ -887,6 +888,7 @@ fn carddto_sectioned_wire_shape() {
                         "text": "Borrowing has rules."
                     }
                 ],
+                [],
                 [
                     {
                         "text": "```rust"

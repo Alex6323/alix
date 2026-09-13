@@ -47,6 +47,7 @@
   "section_context": [
     "*Ownership* rules",
     "Borrowing has rules.",
+    "",
     "```rust",
     "let x = 1;",
     "```"
@@ -66,6 +67,7 @@
         "text": "Borrowing has rules."
       }
     ],
+    [],
     [
       {
         "text": "```rust"
