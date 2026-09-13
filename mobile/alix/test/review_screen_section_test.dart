@@ -1,8 +1,9 @@
 // The section affordance on the phone: a card with a section carries a
-// one-line title above the prompt and a quiet "Context" chip in the legend
-// row that opens the section in a bottom sheet; a section-less card carries
-// neither. No pairing and no server are involved: the section rides in the
-// deck. ReviewScreen calls the real bridge, so RustLib.init() is required.
+// tappable one-line title pill above the prompt that opens the section in a
+// bottom sheet; the sitting's first introduction from a section opens that
+// sheet by itself, once. A section-less card carries neither. No pairing and
+// no server are involved: the section rides in the deck. ReviewScreen calls
+// the real bridge, so RustLib.init() is required.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -63,9 +64,20 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  // Card 1 introduces the section this sitting and may arrive with it
-  // inline; card 2 is the steady state: the title line and the chip.
+  final sheetTitle = find.byKey(const ValueKey('section-sheet-title'));
+  final pill = find.byKey(const ValueKey('section-pill'));
+  final title = find.byKey(const ValueKey('section-title'));
+
+  Future<void> dismissSheet(WidgetTester tester) async {
+    expect(sheetTitle, findsOneWidget, reason: 'a sheet is open to dismiss');
+    Navigator.of(tester.element(sheetTitle)).pop();
+    await tester.pumpAndSettle();
+  }
+
+  // Card 1 introduces the section this sitting and opens the sheet by
+  // itself; card 2 is the steady state: the pill alone.
   Future<void> advanceToSecondCard(WidgetTester tester) async {
+    await dismissSheet(tester);
     await tapChip(tester, 'Reveal');
     await tapChip(tester, 'Seen');
   }
@@ -74,23 +86,18 @@ void main() {
       '---\ntitle: Roads\n---\n# $heading\n$_prose\n\n## q1?\na1\n\n## q2?\na2\n';
 
   testWidgets(
-    'a sectioned card shows the title line and the Context chip before any attempt',
+    'a sectioned card shows the title pill and no Context chip, and keeps the prose off the card',
     (tester) async {
       await pumpReview(tester, sectioned());
       await advanceToSecondCard(tester);
 
-      final title = find.byKey(const ValueKey('section-title'));
-      expect(title, findsOneWidget, reason: 'the title line is on the card');
+      expect(pill, findsOneWidget, reason: 'the title pill is on the card');
       expect(
         (tester.widget(title) as Text).data,
         _heading,
-        reason: 'the title line carries the section heading text',
+        reason: 'the pill carries the section heading text',
       );
-      expect(
-        find.text('Context'),
-        findsOneWidget,
-        reason: 'the chip is offered',
-      );
+      expect(find.text('Context'), findsNothing, reason: 'no chip');
       expect(
         find.text(_prose),
         findsNothing,
@@ -99,87 +106,64 @@ void main() {
     },
   );
 
-  testWidgets('a section-less card shows neither the title line nor the chip', (
+  testWidgets('a section-less card shows neither the title pill nor a sheet', (
     tester,
   ) async {
     await pumpReview(tester, '---\ntitle: Plain\n---\n## q?\na\n');
 
-    expect(find.byKey(const ValueKey('section-title')), findsNothing);
+    expect(pill, findsNothing);
+    expect(sheetTitle, findsNothing);
     expect(find.text('Context'), findsNothing);
   });
 
-  testWidgets(
-    'the Context chip opens the section sheet with heading and prose',
-    (tester) async {
-      await pumpReview(tester, sectioned());
-      await advanceToSecondCard(tester);
-      await tapChip(tester, 'Context');
+  testWidgets('tapping the title pill opens the section sheet with heading and prose', (
+    tester,
+  ) async {
+    await pumpReview(tester, sectioned());
+    await advanceToSecondCard(tester);
+    await tester.tap(pill);
+    await tester.pumpAndSettle();
 
-      final sheetTitle = find.byKey(const ValueKey('section-sheet-title'));
-      expect(sheetTitle, findsOneWidget, reason: 'the sheet opened');
-      expect((tester.widget(sheetTitle) as Text).data, _heading);
-      expect(
-        find.text(_prose),
-        findsOneWidget,
-        reason: 'the prose is in the sheet',
-      );
-    },
-  );
+    expect(sheetTitle, findsOneWidget, reason: 'the sheet opened');
+    expect((tester.widget(sheetTitle) as Text).data, _heading);
+    expect(find.text(_prose), findsOneWidget, reason: 'the prose is in the sheet');
+  });
 
-  testWidgets('the title line is one line that truncates, never wraps', (
+  testWidgets('the title pill is one line that truncates, never wraps', (
     tester,
   ) async {
     await pumpReview(tester, sectioned(heading: _longHeading));
     await advanceToSecondCard(tester);
 
-    final title = tester.widget<Text>(
-      find.byKey(const ValueKey('section-title')),
-    );
-    expect(title.maxLines, 1, reason: 'one line');
-    expect(title.overflow, TextOverflow.ellipsis, reason: 'ellipsis, no wrap');
+    final text = tester.widget<Text>(title);
+    expect(text.maxLines, 1, reason: 'one line');
+    expect(text.overflow, TextOverflow.ellipsis, reason: 'ellipsis, no wrap');
   });
 
   testWidgets(
-    'the first introduction from a section arrives with the section inline; the second card shows the title line only',
+    'the first introduction from a section opens the sheet by itself once; reveal does not reopen it and the second card does not open it',
     (tester) async {
       await pumpReview(tester, sectioned());
 
       expect(
-        find.byKey(const ValueKey('section-inline')),
+        sheetTitle,
         findsOneWidget,
         reason: "card 1 is the sitting's first introduction from the section",
       );
-      expect(
-        find.text(_prose),
-        findsOneWidget,
-        reason: 'the prose is on the card',
-      );
-      expect(
-        find.byKey(const ValueKey('section-title')),
-        findsNothing,
-        reason: 'the inline heading stands in for the title line',
-      );
-      expect(
-        find.text('Context'),
-        findsOneWidget,
-        reason: 'the chip is still offered',
-      );
+      expect((tester.widget(sheetTitle) as Text).data, _heading);
+      expect(find.text(_prose), findsOneWidget, reason: 'the prose is in the sheet');
+
+      await dismissSheet(tester);
+      expect(sheetTitle, findsNothing, reason: 'dismissed');
+      expect(pill, findsOneWidget, reason: 'the pill stays as the reopen route');
+      expect(find.text(_prose), findsNothing, reason: 'the prose is never on the card face');
 
       await tapChip(tester, 'Reveal');
-      expect(
-        find.text(_prose),
-        findsOneWidget,
-        reason: 'the section stays through reveal',
-      );
-      await tapChip(tester, 'Seen');
+      expect(sheetTitle, findsNothing, reason: 'a state rebuild on the same card does not reopen the sheet');
 
-      expect(find.byKey(const ValueKey('section-inline')), findsNothing);
-      expect(find.byKey(const ValueKey('section-title')), findsOneWidget);
-      expect(
-        find.text(_prose),
-        findsNothing,
-        reason: 'card 2 shows the section only on demand',
-      );
+      await tapChip(tester, 'Seen');
+      expect(sheetTitle, findsNothing, reason: 'card 2 from the same section does not open the sheet');
+      expect(pill, findsOneWidget, reason: 'card 2 keeps the pill');
     },
   );
 

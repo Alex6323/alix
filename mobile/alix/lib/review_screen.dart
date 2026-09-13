@@ -60,6 +60,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   ServerClient? _client;
   Directory? _support;
+  String? _autoOpenedSection;
   bool _summaryPushed = false;
 
   @override
@@ -220,6 +221,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
     );
   }
 
+  void _autoOpenSection(ReviewStateModel state, ReviewCardModel? card) {
+    if (card == null || !state.sectionFirst || !card.hasSection) return;
+    final key = '${card.front}\u0000${card.sectionTitle}';
+    if (_autoOpenedSection == key) return;
+    _autoOpenedSection = key;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _openSection(card);
+    });
+  }
+
   String _deckName() {
     var relative = widget.deckPath;
     if (relative.startsWith(widget.rootDir)) {
@@ -308,6 +319,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         }
         final state = _controller.state;
         final card = state.card;
+        _autoOpenSection(state, card);
         final nowMs = DateTime.now().millisecondsSinceEpoch;
         final explain =
             state.mode == ReviewMode.explain &&

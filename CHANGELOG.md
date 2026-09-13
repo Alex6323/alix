@@ -56,8 +56,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   thereafter. The web review shows the section heading as a dim title line on
   later cards and opens the full, paragraph-preserving section in a card-bounded
   drawer from that line, the `c` key, or the **Context** menu entry. The
-  phone shows the same title line and inline first encounter, and a quiet
-  **Context** chip in the legend row opens the section in a bottom sheet.
+  phone shows the heading as a tappable pill above the question that opens
+  the section in a bottom sheet, and opens that sheet by itself on the first
+  introduction from a section in a sitting.
 
 - An `assets/` directory that no deck in the workspace owns is left out of
   `alix share` and of a paired phone's pull instead of failing the whole

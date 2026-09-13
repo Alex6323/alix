@@ -43,13 +43,12 @@ The review screen is the web app's loop on a phone: reveal, then grade, or
 pick a choice, with the legend row at the bottom holding the primary action
 and the quiet extras. A card that sits under a `#` section in its deck (see
 [Sections and sub-cards](03-the-deck-format.md#sections-and-sub-cards)) shows
-the section's heading as a dim one-line title above the question, and a quiet
-**Context** chip in the legend row opens the whole section in a sheet; neither
-appears on a card without a section. The first card introduced from a section
-in a review session arrives with the section itself above the question,
-heading and prose, and keeps it there until the card is marked seen; every
-later card from that section shows the title line only, the section a tap
-away.
+the section's heading as a one-line pill above the question; tapping the pill
+opens the whole section, heading and prose, in a sheet. Neither appears on a
+card without a section, and the card itself never moves to make room. The
+first card introduced from a section in a review session opens that sheet by
+itself, once; swipe it away and the pill stays as the way back in. Every later
+card from the section shows the pill only.
 
 ## Syncing with the desktop
 

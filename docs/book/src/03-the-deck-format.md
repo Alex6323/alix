@@ -409,8 +409,9 @@ The web app shows a card's section heading as a dim one-line title above the
 question. The first card introduced from a section in a review session arrives
 with the whole section above the question; on every later card the title line,
 the `c` key, or the review menu's **Context** entry opens the section in a
-drawer over the card. The Android app does the same, with a **Context** chip in
-place of the key and the menu entry (see
+drawer over the card. The Android app shows the heading as a tappable pill
+that opens the section in a sheet, and opens that sheet by itself on the first
+introduction from a section (see
 [The mobile app](18-the-mobile-app.md#reviewing)). The kids client does not
 expose section context.
 

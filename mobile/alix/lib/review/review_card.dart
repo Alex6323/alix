@@ -155,10 +155,7 @@ class ReviewCardView extends StatelessWidget {
         _modeTag(_modeLabel(), tokens),
         const SizedBox(height: 12),
         if (card.hasSection) ...[
-          if (state.sectionFirst)
-            _sectionInline(card, theme, tokens)
-          else
-            _sectionTitle(card, theme, tokens),
+          _sectionTitle(card, theme, tokens),
           const SizedBox(height: 12),
         ],
         // A labelling context (a card table's title) sits above the prompt in
@@ -217,31 +214,41 @@ class ReviewCardView extends StatelessWidget {
     ThemeData theme,
     AlixTokens tokens,
   ) {
-    return Text(
-      card.sectionTitle,
-      key: const ValueKey('section-title'),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      textAlign: TextAlign.center,
-      style: theme.textTheme.labelMedium?.copyWith(color: tokens.dim),
-    );
-  }
-
-  Widget _sectionInline(
-    ReviewCardModel card,
-    ThemeData theme,
-    AlixTokens tokens,
-  ) {
-    return Column(
-      key: const ValueKey('section-inline'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          card.sectionTitle,
-          style: theme.textTheme.titleMedium?.copyWith(color: tokens.text),
+    return Center(
+      child: Material(
+        color: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: tokens.line),
         ),
-        ..._sectionProse(card, tokens, _sectionProseStyle(theme, tokens)),
-      ],
+        child: InkWell(
+          key: const ValueKey('section-pill'),
+          onTap: () => onOpenSection(card),
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    card.sectionTitle,
+                    key: const ValueKey('section-title'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: tokens.text,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.expand_more, size: 16, color: tokens.dim),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1365,15 +1372,6 @@ class ReviewCardView extends StatelessWidget {
 
   List<Widget> _legendChips(ReviewCardModel card) {
     final chips = [..._modeChips(card)];
-    if (card.hasSection) {
-      chips.add(
-        ReviewChip(
-          label: 'Context',
-          kind: ReviewChipKind.quiet,
-          onTap: () => onOpenSection(card),
-        ),
-      );
-    }
     final tutor = tutorCard;
     if (serverLive && tutor != null && _attempted(card)) {
       chips.add(
