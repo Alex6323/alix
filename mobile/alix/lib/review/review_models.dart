@@ -401,8 +401,8 @@ class ReviewStateModel {
   final ReviewInput input;
   final bool introducing;
 
-  /// The current card is the sitting's first introduction from its section,
-  /// so the section shows inline; the lib decides, never the client.
+  /// The current card is the sitting's first introduction from its section;
+  /// the lib decides that, never the client.
   final bool sectionFirst;
   final List<String>? choices;
   final List<List<InlineRunModel>>? choiceRuns;

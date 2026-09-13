@@ -52,8 +52,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Review state now marks the first card introduced from a section in each
-  sitting, so clients can show its section inline once and offer it on demand
-  thereafter. The web review shows the section heading as a dim title line on
+  sitting, so clients can present its section by themselves once and offer it
+  on demand thereafter. The web review shows the section heading as a dim title line on
   later cards and opens the full, paragraph-preserving section in a card-bounded
   drawer from that line, the `c` key, or the **Context** menu entry. The
   phone shows the heading as a tappable pill above the question that opens

@@ -223,7 +223,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   void _autoOpenSection(ReviewStateModel state, ReviewCardModel? card) {
     if (card == null || !state.sectionFirst || !card.hasSection) return;
-    final key = '${card.front}\u0000${card.sectionTitle}';
+    final key = card.section.join('\n');
     if (_autoOpenedSection == key) return;
     _autoOpenedSection = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {

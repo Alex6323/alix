@@ -168,6 +168,41 @@ void main() {
   );
 
   testWidgets(
+    'distinct sections with the same heading and front each auto-open once',
+    (tester) async {
+      await pumpReview(
+        tester,
+        '---\ntitle: Repeated\n---\n'
+        '# Shared\nFirst section.\n\n## same?\na1\n\n'
+        '# Shared\nSecond section.\n\n## same?\na2\n',
+      );
+
+      expect(sheetTitle, findsOneWidget, reason: 'the first section opened');
+      await dismissSheet(tester);
+      await tapChip(tester, 'Reveal');
+      await tapChip(tester, 'Seen');
+
+      final openedAutomatically = sheetTitle.evaluate().isNotEmpty;
+      if (!openedAutomatically) {
+        await tester.tap(pill);
+        await tester.pumpAndSettle();
+      }
+      expect(
+        find.text('Second section.'),
+        findsOneWidget,
+        reason:
+            'the current card carries a different section context despite its repeated heading and front',
+      );
+      expect(
+        openedAutomatically,
+        isTrue,
+        reason:
+            'the next card belongs to a different section, so its first introduction must open that section even when heading and front text repeat',
+      );
+    },
+  );
+
+  testWidgets(
     'section prose joins hard-wrapped lines into one paragraph and breaks at a blank line',
     (tester) async {
       final card = ReviewCardModel(

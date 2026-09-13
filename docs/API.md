@@ -695,7 +695,7 @@ The review-session payload; returned by every review action.
 | `keypoints` | [string]? | Explain-check rubric lines. |
 | `keypoint_runs` | [[InlineRun]]? | Display projection for `keypoints`, in exact index lockstep. Null when `keypoints` is null. |
 | `introducing` | bool | New card (no attempt or acknowledgment recorded, even if presented before): show, then `/api/introduce`, no grading. |
-| `section_first` | bool | True only for the first card introduced from a nonempty section in this sitting. That card shows the section inline; every other card offers it on demand. Chained restarts remain in the same sitting. |
+| `section_first` | bool | True only for the first card introduced from a nonempty section in this sitting. A client presents that card's section by itself; every other card offers it on demand. Chained restarts remain in the same sitting. |
 | `mode` | string | The check being rendered: `flip` \| `typing` \| `typeline` \| `choice` \| `line` \| `explain` (open set). |
 | `depth` | string | `recognize` \| `recall` \| `reconstruct` *(closed)*. |
 | `input` | string | `type` \| `draw`. |
@@ -724,7 +724,7 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `front` | string | The question's plain-text content, with inline Markdown markers stripped. |
 | `front_runs` | [InlineRun] | Display projection of `front`. |
 | `front_units` | [ContentUnitDto]? | Present when the front contains a task list, fenced code, a pipe table, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. |
-| `section_context` | [string] | The card's section: its `# ` heading and that section's prose, in file order. A blank line between paragraphs rides as an empty string; leading and trailing blanks are omitted and a run collapses to one. Present only when the card sits under a section; omitted when empty. It explains the card and is NEVER the question. The first introduction from a section this sitting shows it inline; every other card offers it on demand. Image syntax inside it is prose, not a media element. |
+| `section_context` | [string] | The card's section: its `# ` heading and that section's prose, in file order. A blank line between paragraphs rides as an empty string; leading and trailing blanks are omitted and a run collapses to one. Present only when the card sits under a section; omitted when empty. It explains the card and is NEVER the question. A client presents it by itself on the first introduction from a section this sitting; every other card offers it on demand. Image syntax inside it is prose, not a media element. |
 | `section_context_runs` | [[InlineRun]] | Display projection per section line, same shape as `context_runs`. Omitted when empty, like `section_context`. |
 | `section_context_units` | [ContentUnitDto] | The section's structural blocks in source order: one unit per raw fence and per closed, nonempty bare-`$$` block. A math fence or bare-`$$` block yields a display-math `sentence`; other fences yield `code`. Nothing freezes a section's fence, so it never yields a `diagram`. An unmatched `$$` stays in the line projection and consumes no unit. Omitted when empty, like `section_context`. |
 | `context` | [string] | Context lines: a cloze card's sentence, or a card table's title. |
