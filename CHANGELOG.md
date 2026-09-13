@@ -53,7 +53,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Review state now marks the first card introduced from a section in each
   sitting, so clients can show its section inline once and offer it on demand
-  thereafter.
+  thereafter. The web review shows the section heading as a dim title line on
+  later cards and opens the full, paragraph-preserving section in a card-bounded
+  drawer from that line, the `c` key, or the **Context** menu entry.
 
 - An `assets/` directory that no deck in the workspace owns is left out of
   `alix share` and of a paired phone's pull instead of failing the whole
