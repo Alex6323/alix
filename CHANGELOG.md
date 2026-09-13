@@ -55,7 +55,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sitting, so clients can show its section inline once and offer it on demand
   thereafter. The web review shows the section heading as a dim title line on
   later cards and opens the full, paragraph-preserving section in a card-bounded
-  drawer from that line, the `c` key, or the **Context** menu entry.
+  drawer from that line, the `c` key, or the **Context** menu entry. The
+  phone shows the same title line and inline first encounter, and a quiet
+  **Context** chip in the legend row opens the section in a bottom sheet.
 
 - An `assets/` directory that no deck in the workspace owns is left out of
   `alix share` and of a paired phone's pull instead of failing the whole
