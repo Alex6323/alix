@@ -1567,6 +1567,33 @@ mod tests {
     }
 
     #[test]
+    fn an_acyclic_yes_stays_in_the_loaded_decks_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = write_deck(dir.path(), "base.md", "## base\n1\n");
+        let (store, _s) = empty_store();
+        let mut loaded = LoadedDecks::default();
+
+        let answer = loaded.edge_satisfied("base", Some(dir.path()), Some(dir.path()), &store);
+        let key = loaded.canonical(&base);
+
+        assert!(answer.0);
+        assert_eq!(Some(&Satisfied::Yes), loaded.satisfied.get(&key));
+    }
+
+    #[test]
+    fn an_acyclic_yes_is_not_reported_as_a_provisional_cycle_answer() {
+        let dir = tempfile::tempdir().unwrap();
+        write_deck(dir.path(), "base.md", "## base\n1\n");
+        let (store, _s) = empty_store();
+        let mut loaded = LoadedDecks::default();
+
+        assert_eq!(
+            (true, false),
+            loaded.edge_satisfied("base", Some(dir.path()), Some(dir.path()), &store,)
+        );
+    }
+
+    #[test]
     fn lock_sees_through_a_source_less_prereq_to_a_sourced_ancestor() {
         let dir = tempfile::tempdir().unwrap();
         write_deck(

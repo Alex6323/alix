@@ -1792,6 +1792,36 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn sync_push_only_treats_not_found_as_an_absent_document() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deck-sync.json");
+        let original = sync_document("deck-sync", 3, "desktop");
+        std::fs::write(&path, &original).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let document =
+            ValidatedDeckDocument::parse(&sync_document("deck-sync", 99, "phone"), "deck-sync")
+                .unwrap();
+
+        let error = sync_push_document(&path, "deck-sync", None, document).unwrap_err();
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let StoreError::Io {
+            path: error_path,
+            source,
+        } = error
+        else {
+            panic!("a non-NotFound read error must be returned unchanged: {error}");
+        };
+        assert_eq!(path, error_path);
+        assert_eq!(std::io::ErrorKind::PermissionDenied, source.kind());
+        assert_eq!(original, std::fs::read(&path).unwrap());
+        assert!(!path.with_extension("json.bak").exists());
+    }
+
     #[test]
     fn open_creates_empty_store() {
         let dir = tempfile::tempdir().unwrap();
@@ -1932,6 +1962,45 @@ mod tests {
         )
         .unwrap();
         assert!(sync_conflicts(&wrong_parent).is_empty());
+    }
+
+    #[test]
+    fn sync_conflicts_accepts_the_canonical_progress_directory_it_scans() {
+        let dir = tempfile::tempdir().unwrap();
+        let progress = dir.path().join(".alix/progress");
+        std::fs::create_dir_all(&progress).unwrap();
+        let conflict = progress.join("deck1.sync-conflict-20260714-phone.json");
+        std::fs::write(&conflict, "{}").unwrap();
+
+        assert_eq!(vec![conflict], sync_conflicts(&progress));
+    }
+
+    #[test]
+    fn sync_conflicts_does_not_scan_progress_outside_dot_alix() {
+        let dir = tempfile::tempdir().unwrap();
+        let progress = dir.path().join("elsewhere/progress");
+        std::fs::create_dir_all(&progress).unwrap();
+        std::fs::write(
+            progress.join("deck1.sync-conflict-20260714-phone.json"),
+            "{}",
+        )
+        .unwrap();
+
+        assert!(sync_conflicts(&progress).is_empty());
+    }
+
+    #[test]
+    fn sync_conflicts_does_not_scan_a_non_progress_directory_under_dot_alix() {
+        let dir = tempfile::tempdir().unwrap();
+        let not_progress = dir.path().join(".alix/not-progress");
+        std::fs::create_dir_all(&not_progress).unwrap();
+        std::fs::write(
+            not_progress.join("deck1.sync-conflict-20260714-phone.json"),
+            "{}",
+        )
+        .unwrap();
+
+        assert!(sync_conflicts(&not_progress).is_empty());
     }
 
     #[test]
