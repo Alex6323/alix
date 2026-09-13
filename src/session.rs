@@ -101,6 +101,8 @@ pub struct Session {
     // so the done-summary backlog counts don't re-count what was just drilled.
     // Accumulates across chained restarts within one session.
     served: HashSet<String>,
+    introduced_sections: HashSet<Vec<String>>,
+    current_introducing: bool,
     appearances: Vec<u32>,
     choice_seed: u64,
     scheduler: Box<dyn Scheduler>,
@@ -179,6 +181,8 @@ impl Session {
             remaining_now: 0,
             floors,
             served: HashSet::new(),
+            introduced_sections: HashSet::new(),
+            current_introducing: false,
             appearances,
             choice_seed: now_ms,
             scheduler,
@@ -369,6 +373,14 @@ impl Session {
             .is_some_and(|id| store.progress(&id).is_none())
     }
 
+    pub fn section_first_for_current(&self) -> bool {
+        self.current_introducing
+            && self.current().is_some_and(|card| {
+                !card.section_context.is_empty()
+                    && !self.introduced_sections.contains(&card.section_context)
+            })
+    }
+
     pub fn cards(&self) -> &[Card] {
         &self.cards
     }
@@ -459,6 +471,10 @@ impl Session {
             self.advance(store, now_ms);
             return;
         };
+        if !self.cards[index].section_context.is_empty() {
+            self.introduced_sections
+                .insert(self.cards[index].section_context.clone());
+        }
         let state = store.get_or_insert(&id);
         if state.introduced_ms.is_none() {
             state.introduced_ms = Some(now_ms);
@@ -641,6 +657,7 @@ impl Session {
             self.appearances[i] = self.appearances[i].saturating_add(1);
         }
         self.current_idx = next;
+        self.current_introducing = decision.as_ref().is_some_and(|decision| decision.fresh);
         self.remaining_now = self
             .roster
             .iter()
@@ -1257,6 +1274,12 @@ mod tests {
         (0..n).map(|i| card("deck.md", i)).collect()
     }
 
+    fn sectioned_card(subject: &str, n: usize, section: &[&str]) -> Card {
+        let mut card = card(subject, n);
+        card.section_context = section.iter().map(|line| (*line).to_string()).collect();
+        card
+    }
+
     fn empty_store() -> (Store, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path().join("p.json")).unwrap();
@@ -1767,6 +1790,223 @@ mod tests {
         assert_eq!(1, session.stats.introduced);
         assert_eq!(0, session.stats.reviews);
         assert!(session.is_finished());
+    }
+
+    #[test]
+    fn introducing_a_card_records_its_nonempty_section() {
+        let (mut store, _dir) = empty_store();
+        let section = vec![
+            "Ownership".to_string(),
+            "Each value has one owner.".to_string(),
+        ];
+        let mut session = Session::new(
+            vec![sectioned_card(
+                "deck.md",
+                0,
+                &["Ownership", "Each value has one owner."],
+            )],
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            1_000,
+        );
+
+        assert!(
+            session.section_first_for_current(),
+            "before introduce: expected section_first=true for section={section:?}"
+        );
+        session.introduce_current(&mut store, 1_000);
+
+        assert!(
+            session.introduced_sections.contains(&section),
+            "after introduce: expected introduced_sections to contain {section:?}, actual={:?}",
+            session.introduced_sections
+        );
+    }
+
+    #[test]
+    fn reviewing_a_card_never_records_its_section_as_introduced() {
+        let (mut store, _dir) = empty_store();
+        let all = vec![sectioned_card("deck.md", 0, &["Ownership"])];
+        let id = all[0].id().unwrap();
+        store.get_or_insert(&id).introduced_ms = Some(0);
+        let now = DEFAULT_INTRODUCTION_COOLDOWN_MS + 1;
+        let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
+
+        assert!(
+            session.current_id().as_deref() == Some(id.as_str())
+                && !session.section_first_for_current(),
+            "before review: expected current={id} and section_first=false, actual_current={:?}",
+            session.current_id()
+        );
+        session.grade(&mut store, Grade::Pass, now);
+
+        assert!(
+            session.introduced_sections.is_empty(),
+            "after review: expected introduced_sections=[], actual={:?}",
+            session.introduced_sections
+        );
+    }
+
+    #[test]
+    fn skipping_a_card_never_records_its_section_as_introduced() {
+        let (mut store, _dir) = empty_store();
+        let section = vec!["Ownership".to_string()];
+        let mut session = Session::new(
+            vec![
+                sectioned_card("deck.md", 0, &["Ownership"]),
+                sectioned_card("deck.md", 1, &["Ownership"]),
+            ],
+            &mut store,
+            sched(),
+            SessionOptions {
+                order: Order::Sequential,
+                ..Default::default()
+            },
+            1_000,
+        );
+
+        assert!(
+            session.section_first_for_current(),
+            "before skip: expected section_first=true for section={section:?}"
+        );
+        session.skip(&mut store, 1_000);
+
+        assert!(
+            session.section_first_for_current(),
+            "after skip: expected next fresh card in unrecorded section={section:?} to keep section_first=true"
+        );
+        assert!(
+            session.introduced_sections.is_empty(),
+            "after skip: expected introduced_sections=[], actual={:?}",
+            session.introduced_sections
+        );
+    }
+
+    #[test]
+    fn restart_keeps_sections_introduced_in_the_sitting() {
+        let (mut store, _dir) = empty_store();
+        let section = vec!["Ownership".to_string()];
+        let mut session = Session::new(
+            vec![
+                sectioned_card("deck.md", 0, &["Ownership"]),
+                sectioned_card("deck.md", 1, &["Ownership"]),
+            ],
+            &mut store,
+            sched(),
+            SessionOptions {
+                max_session: 1,
+                order: Order::Sequential,
+                ..Default::default()
+            },
+            1_000,
+        );
+        session.introduce_current(&mut store, 1_000);
+
+        assert!(
+            session.restart(&mut store, 1_001),
+            "restart step: expected a second fresh card for section={section:?}"
+        );
+        assert!(
+            !session.section_first_for_current(),
+            "after restart: expected section_first=false for retained section={section:?}"
+        );
+        assert!(
+            session.introduced_sections.contains(&section),
+            "after restart: expected introduced_sections to contain {section:?}, actual={:?}",
+            session.introduced_sections
+        );
+    }
+
+    #[test]
+    fn an_empty_section_never_sets_section_first() {
+        let (mut store, _dir) = empty_store();
+        let mut session = Session::new(
+            vec![card("deck.md", 0)],
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            1_000,
+        );
+
+        assert!(
+            !session.section_first_for_current(),
+            "before introduce: expected section_first=false for section=[]"
+        );
+        session.introduce_current(&mut store, 1_000);
+
+        assert!(
+            session.introduced_sections.is_empty(),
+            "after introduce: expected introduced_sections=[], actual={:?}",
+            session.introduced_sections
+        );
+    }
+
+    #[test]
+    fn a_second_card_in_one_section_does_not_set_section_first() {
+        let (mut store, _dir) = empty_store();
+        let section = vec!["Ownership".to_string()];
+        let mut session = Session::new(
+            vec![
+                sectioned_card("deck.md", 0, &["Ownership"]),
+                sectioned_card("deck.md", 1, &["Ownership"]),
+            ],
+            &mut store,
+            sched(),
+            SessionOptions {
+                order: Order::Sequential,
+                ..Default::default()
+            },
+            1_000,
+        );
+
+        assert!(
+            session.section_first_for_current(),
+            "first card step: expected section_first=true for section={section:?}"
+        );
+        session.introduce_current(&mut store, 1_000);
+
+        assert!(
+            !session.section_first_for_current(),
+            "second card step: expected section_first=false for introduced section={section:?}"
+        );
+    }
+
+    #[test]
+    fn byte_identical_sections_from_two_decks_share_the_sitting_key() {
+        let (mut store, _dir) = empty_store();
+        let section = vec![
+            "Ownership".to_string(),
+            "Each value has one owner.".to_string(),
+        ];
+        let mut session = Session::new(
+            vec![
+                sectioned_card("deck-a.md", 0, &["Ownership", "Each value has one owner."]),
+                sectioned_card("deck-b.md", 1, &["Ownership", "Each value has one owner."]),
+            ],
+            &mut store,
+            sched(),
+            SessionOptions {
+                order: Order::Sequential,
+                ..Default::default()
+            },
+            1_000,
+        );
+
+        assert!(
+            session.current().map(|card| card.subject.as_ref()) == Some("deck-a.md")
+                && session.section_first_for_current(),
+            "first deck step: expected subject=deck-a.md and section_first=true for bytes={section:?}, actual_subject={:?}",
+            session.current().map(|card| card.subject.as_ref())
+        );
+        session.introduce_current(&mut store, 1_000);
+
+        assert!(
+            session.current().map(|card| card.subject.as_ref()) == Some("deck-b.md")
+                && !session.section_first_for_current(),
+            "second deck step: expected subject=deck-b.md and section_first=false for identical bytes={section:?}, actual_subject={:?}",
+            session.current().map(|card| card.subject.as_ref())
+        );
     }
 
     #[test]

@@ -334,6 +334,7 @@ pub struct ReviewState {
     pub mode: Mode,
     pub depth: Depth,
     pub introducing: bool,
+    pub section_first: bool,
     /// The correct index is deliberately absent here: it only travels in
     /// [`ChoiceFeedback`], so this payload can never leak the answer.
     pub choices: Option<Vec<String>>,
@@ -483,6 +484,7 @@ pub fn state(
         mode,
         depth,
         introducing,
+        section_first: session.section_first_for_current(),
         choices,
         choices_multiple,
         choice_runs,
