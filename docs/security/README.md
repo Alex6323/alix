@@ -170,7 +170,8 @@ They never contain card fronts, backs, notes, tutor or exam text, deck names or
 titles, request paths, or deck and source paths, even when verbose targets are
 enabled. No logging facade is installed, so dependencies cannot add their own
 records. The verbose end-to-end content laws and the real-process rotation law
-in `tests/cli.rs` enforce those boundaries.
+in `tests/cli.rs` enforce those boundaries. A failing request's message
+goes to the response body and the server's stderr, never into the log.
 
 ### Bug-report archive
 

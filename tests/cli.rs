@@ -6343,6 +6343,12 @@ fn the_verbose_log_contains_ids_but_no_learning_content_names_titles_or_paths() 
         response.starts_with(b"HTTP/1.1 200"),
         "response: {response:?}"
     );
+    std::fs::write(dir.path().join(".alix/sync.toml"), "root_id = 5\n").unwrap();
+    let response = server_request(port, "GET", "/api/sync/entries", "");
+    assert!(
+        response.starts_with(b"HTTP/1.1 500"),
+        "a corrupted root id fails the sync listing: {response:?}"
+    );
     child.kill().expect("failed to stop the server");
     let _ = child.wait();
 
@@ -6359,6 +6365,10 @@ fn the_verbose_log_contains_ids_but_no_learning_content_names_titles_or_paths() 
     assert!(
         log.contains("target=select card=card-private29qw"),
         "log: {log:?}"
+    );
+    assert!(
+        log.contains("kind=http method=GET area=api status=500"),
+        "the sync failure is recorded: {log:?}"
     );
     for private in [
         front,

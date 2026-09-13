@@ -445,7 +445,7 @@ pub fn run_review(
                                 },
                             ),
                             Some(Err(error)) => {
-                                log_error_only(&request, 500, &error);
+                                report_failure(&request, 500, &error);
                                 respond_status(request, 500);
                             }
                             None => respond_status(request, 503),

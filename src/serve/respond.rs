@@ -142,7 +142,7 @@ pub(super) fn respond_json<T: Serialize>(request: Request, value: &T) {
 }
 
 pub(super) fn respond_json_status<T: Serialize>(request: Request, code: u16, value: &T) {
-    log_http_error(&request, code, None);
+    log_http_error(&request, code);
     let body = serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string());
     let header = Header::from_bytes(
         &b"Content-Type"[..],
@@ -188,21 +188,26 @@ pub(super) fn respond_font(request: Request, bytes: &'static [u8]) {
 }
 
 pub(super) fn respond_status(request: Request, code: u16) {
-    log_http_error(&request, code, None);
+    log_http_error(&request, code);
     let _ = request.respond(Response::from_string(String::new()).with_status_code(code));
 }
 
 pub(super) fn respond_error(request: Request, code: u16, error: &dyn std::fmt::Display) {
-    let message = error.to_string();
-    log_http_error(&request, code, Some(&message));
-    let _ = request.respond(Response::from_string(message).with_status_code(code));
+    report_failure(&request, code, error);
+    log_http_error(&request, code);
+    let _ = request.respond(Response::from_string(format!("{error:#}")).with_status_code(code));
 }
 
-pub(super) fn log_error_only(request: &Request, code: u16, error: &dyn std::fmt::Display) {
-    log_http_error(request, code, Some(&error.to_string()));
+/// Printed, never logged: the log carries no paths.
+pub(super) fn report_failure(request: &Request, code: u16, error: &dyn std::fmt::Display) {
+    eprintln!(
+        "{} {} failed with {code}: {error:#}",
+        request.method(),
+        request_path(request)
+    );
 }
 
-fn log_http_error(request: &Request, code: u16, error: Option<&str>) {
+fn log_http_error(request: &Request, code: u16) {
     if code < 400 {
         return;
     }
@@ -216,19 +221,10 @@ fn log_http_error(request: &Request, code: u16, error: Option<&str>) {
     } else {
         "page"
     };
-    match error {
-        Some(error) => crate::log::error(
-            crate::log::ErrorKind::Http,
-            format_args!(
-                "method={} area={area} status={code} error={error}",
-                request.method()
-            ),
-        ),
-        None => crate::log::error(
-            crate::log::ErrorKind::Http,
-            format_args!("method={} area={area} status={code}", request.method()),
-        ),
-    }
+    crate::log::error(
+        crate::log::ErrorKind::Http,
+        format_args!("method={} area={area} status={code}", request.method()),
+    );
 }
 
 pub(super) fn respond_bytes(request: Request, bytes: Vec<u8>, content_type: &str) {

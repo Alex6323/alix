@@ -96,8 +96,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- A sync route that fails answers with the failure's message and writes it
-  to the log; `GET /api/sync/entries` sent an empty 500 with no log line.
+- A sync route that fails answers with the failure's message and prints it
+  on the server's stderr; `GET /api/sync/entries` sent an empty 500 and
+  discarded the failure. The log keeps its path-free record.
 
 - The phone refuses to pair with a desktop whose root id is not `root-`
   plus 26 lowercase Crockford base32 characters, and it never joins an
