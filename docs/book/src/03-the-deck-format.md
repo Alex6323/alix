@@ -405,10 +405,14 @@ Pressure rises by about one atmosphere per ten metres.
 About 4 atmospheres.
 ```
 
-The adult web app keeps section context behind the compact `§ c` control below
-the question. Press `c` to replace the answer area with that context while the
-question stays in place; press it again to return to the answer. The kids client
-does not expose section context.
+The web app shows a card's section heading as a dim one-line title above the
+question. The first card introduced from a section in a review session arrives
+with the whole section above the question; on every later card the title line,
+the `c` key, or the review menu's **Context** entry opens the section in a
+drawer over the card. The Android app does the same, with a **Context** chip in
+place of the key and the menu entry (see
+[The mobile app](18-the-mobile-app.md#reviewing)). The kids client does not
+expose section context.
 
 A section heading is a heading, nothing more. It takes no directives and no card
 ID, because a section owns no card to bind either to.

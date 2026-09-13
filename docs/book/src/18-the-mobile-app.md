@@ -37,6 +37,20 @@ the first answer arrives. A deck read once stays parsed in memory for as
 long as the app runs, so coming back to the list after a review does not
 read every deck again; a deck whose file changed on disk is read fresh.
 
+## Reviewing
+
+The review screen is the web app's loop on a phone: reveal, then grade, or
+pick a choice, with the legend row at the bottom holding the primary action
+and the quiet extras. A card that sits under a `#` section in its deck (see
+[Sections and sub-cards](03-the-deck-format.md#sections-and-sub-cards)) shows
+the section's heading as a dim one-line title above the question, and a quiet
+**Context** chip in the legend row opens the whole section in a sheet; neither
+appears on a card without a section. The first card introduced from a section
+in a review session arrives with the section itself above the question,
+heading and prose, and keeps it there until the card is marked seen; every
+later card from that section shows the title line only, the section a tap
+away.
+
 ## Syncing with the desktop
 
 Once paired (see [Pairing a device](19-pairing.md)), a pulled entry's row
