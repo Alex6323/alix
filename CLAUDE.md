@@ -122,7 +122,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make fmt-changelog` | Normalize `CHANGELOG.md` (~80-column wrap, one blank line between entries; idempotent), then run `changelog-check`. |
 | `make changelog-check` | Structural CHANGELOG guard (one Unreleased first, no duplicate headings, standard subsection names under Unreleased, count never decreases vs HEAD); part of `make check`. |
 | `make check` | The inner-loop gate bundle (`fmt-check`, `pre-1-0-check`, `deps-check`, `changelog-check`, `adr-check`, `gate-coverage`, `lint`, `lean-check`, `test`, `site-media-check`, `example-media-check`, `docs-audit-manifest-check`, `toolchain-check`, `tooling-test`), cheap checks first; run before considering work done. `lean-check` denies warnings on the no-default-features lib, the mobile core's build shape. Lenient on rustc warnings (no `-Dwarnings`); `make ci` / `make preflight` reproduce CI's strict gate. |
-| `make mutants` | What the CI mutation workflows invoke (`GATE_JOBS` parallelism, `MUTANTS_BASE` diff base, `MUTANTS_SHARD` one 0-indexed shard such as `0/6`; misses reconcile against `scripts/mutants-allowlist.txt`). Refuses to start while another cargo-mutants runs anywhere on the machine. **Not for local use**: it saturates the machine for hours. |
+| `make mutants` | What the CI mutation workflows invoke (`GATE_JOBS` parallelism, `MUTANTS_BASE` diff base, `MUTANTS_SHARD` one 0-indexed shard such as `0/6`). Each timeout gets one exact-mutant retry at twice its original test timeout; a one-line diff scopes structural mutants and a list precheck must name only the target before any build. Both runtimes are reported, and misses plus still-open retries reconcile against `scripts/mutants-allowlist.txt`. Refuses to start while another cargo-mutants runs anywhere on the machine. **Not for local use**: it saturates the machine for hours. |
 | `make ci` | The Rust CI bundle: `fmt-check` + `check` and lean-core build under `-Dwarnings` + `coverage`. GitHub separately gates the bridge, Flutter, JavaScript, and Playwright jobs. |
 | `make coverage` | Coverage report via `cargo-llvm-cov` (HTML). |
 | `make shape-eval` | Costed LLM release gate: does `docs/include/card-shapes.md` actually steer the deck generator? Deterministic tests prove the rule reaches the prompt; only this proves it steers. Never CI. |
@@ -431,9 +431,15 @@ to this codebase. When in doubt, mirror the surrounding code.
   parallel thirty-sixth shards per night, picked from a monotonic UTC day
   index so no state is kept and New Year cannot reset the cycle; it covers
   what predates the nightly and re-covers
-  everything on a rolling nine-night cycle. It fails on misses, mutant
-  timeouts, and overruns; the summary and artifact upload either way, and red
-  stays red until the backlog drains shard by shard.
+  everything on a rolling nine-night cycle. A timeout is retried once as an
+  exact one-mutant run with twice the original test timeout. The helper first
+  combines the exact-name regex with a synthetic diff admitting only the
+  target's source line, then requires `cargo mutants --list` to return exactly
+  that one name before it starts the run. Zero or multiple names record an open
+  error without building. The summary keeps both runtimes; a focused miss or
+  repeated timeout remains open. It fails on misses, open retries, and
+  overruns; the summary and artifact upload either way, and red stays red until
+  the backlog drains shard by shard.
   Retune the shard count from the SLOWEST slice,
   never the average, since slices are contiguous file ranges and a
   server-heavy one costs far more per mutant than a pure-function one.

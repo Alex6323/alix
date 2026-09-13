@@ -9,8 +9,9 @@ name: Mutation rotation
 # The four shards come from the UTC day index, so there is no state to keep and
 # no discontinuity at New Year. A missed night means those slices wait a cycle.
 #
-# Misses, mutant timeouts, and overruns fail the job; the summary and
-# artifact still upload either way.
+# Each mutant timeout gets one longer exact-mutant retry before it remains an
+# open row. Misses, open retries, and overruns fail the job; the summary and
+# artifact retain both runtimes either way.
 on:
   schedule:
     # 02:47 UTC, clear of the 03:17 drift job and the 04:23 diff nightly.
@@ -99,7 +100,8 @@ jobs:
             echo "| exit | ${{ steps.sweep.outputs.status || 'n/a' }} (124 = overran) |"
             echo "| caught | $(count caught.txt) |"
             echo "| missed | $(count missed.txt) |"
-            echo "| timeout | $(count timeout.txt) |"
+            echo "| initial timeout | $(count timeout-initial.txt) |"
+            echo "| open after retry | $(count timeout.txt) |"
             echo "| unviable | $(count unviable.txt) |"
             echo
             echo "Retune \`SHARDS\` from the SLOWEST slice, not the average:"
@@ -121,6 +123,6 @@ jobs:
         run: |
           status="${{ steps.sweep.outputs.status }}"
           if [ "$status" != "0" ]; then
-            echo "sweep exited $status (missed mutants, mutant timeouts, or a 124 step overrun): failing the run"
+            echo "sweep exited $status (missed mutants, open focused retries, or a 124 step overrun): failing the run"
             exit 1
           fi

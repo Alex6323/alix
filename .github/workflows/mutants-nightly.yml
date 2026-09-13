@@ -92,7 +92,8 @@ jobs:
           tool: cargo-mutants,cargo-nextest
 
       # Four jobs: GitHub's standard runner is 4-core, and unlike the laptop
-      # there is nothing else competing for it.
+      # there is nothing else competing for it. `make mutants` gives every
+      # timeout one longer exact-mutant retry and reports both runtimes.
       - name: Mutate this shard of the day's diff
         run: |
           make mutants \

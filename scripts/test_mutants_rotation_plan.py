@@ -52,6 +52,10 @@ class MutantsRotationWorkflowTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/mutants-rotation.yml").read_text(
             encoding="utf-8"
         )
+        nightly = (ROOT / ".github/workflows/mutants-nightly.yml").read_text(
+            encoding="utf-8"
+        )
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
         self.assertIn("shard: ${{ fromJSON(needs.plan.outputs.matrix) }}", workflow)
         self.assertIn('day=$(( $(date -u +%s) / 86400 ))', workflow)
@@ -62,6 +66,29 @@ class MutantsRotationWorkflowTests(unittest.TestCase):
         self.assertIn(
             "mutants-rotation-shard-${{ matrix.shard }}-of-${{ needs.plan.outputs.count }}",
             workflow,
+        )
+        self.assertIn(
+            "| initial timeout | $(count timeout-initial.txt) |",
+            workflow,
+            "rotation reports the initial timeout count",
+        )
+        self.assertIn(
+            "| open after retry | $(count timeout.txt) |",
+            workflow,
+            "rotation reports the remaining open count",
+        )
+        self.assertIn(
+            "make mutants", nightly, "nightly uses the shared retry-enabled target"
+        )
+        self.assertIn(
+            "python3 scripts/mutants_timeout_retry.py mutants.out",
+            makefile,
+            "the shared mutation target invokes the timeout helper",
+        )
+        self.assertLess(
+            makefile.index("python3 scripts/mutants_timeout_retry.py mutants.out"),
+            makefile.index("python3 scripts/mutants_allowed.py mutants.out"),
+            "timeouts are reclassified before survivor reconciliation",
         )
 
 
