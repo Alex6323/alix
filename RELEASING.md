@@ -156,19 +156,34 @@ at. **crates.io is not automated.**
    gate, user decision 2026-08-02). Resolve every finding and rerun until the
    report begins `OLD-FORMAT AUDIT: PASS`. At version 1.0 the command blocks
    and demands its own removal.
-7. **Stage everything the bump touched, then commit.** The version bump
+7. **Recovery drill, only for a release that changes how progress, sync
+   documents, or the workspace layout are written, and once for the 1.0
+   candidate** (user decision 2026-09-13: a manual gate, no scheduled
+   destructive jobs). On Linux, macOS, and Windows, by hand, against this
+   exact candidate: take an external copy of a workspace folder that has
+   review history; force-kill the process during a multi-document write;
+   remove a progress document's read permission; corrupt one progress
+   document; leave a workspace update half done; then restore from the
+   external copy, run `alix doctor`, and confirm the next review serves the
+   expected card with its progress intact. Record the dated result per
+   system in the changelog's release section, as the audits are, naming any
+   injection that could not be run on that system and any filesystem
+   limitation left open. A drill that fails because the harness itself
+   rotted rather than the product is the signal to add a scheduled Linux
+   run.
+8. **Stage everything the bump touched, then commit.** The version bump
    regenerates files beyond `Cargo.toml`: the `tests/contracts/VersionDto.json`
    snapshot (the `mod contract` test writes it) and the four lockfiles from
    step 2 all pick up the new version once the suite runs. Run `make preflight` again: its clean-tree step lists anything
    still unstaged. Then `git add -A` (stage ALL of it, never a hand-picked
    list), commit `Release vX.Y.Z`, and confirm a final `make preflight` is green
    with a clean tree.
-8. **Tag & push:** push `main` first and let CI go green, then
+9. **Tag & push:** push `main` first and let CI go green, then
    `git tag vX.Y.Z && git push origin vX.Y.Z`. The release workflow re-runs
    every blocking CI job on the tag's exact SHA (`exact-tag-ci`) before any
    publishing job runs, so green checks on other bytes cannot authorize a
    release. Then it creates the GitHub Release and attaches the binaries.
-9. **Publish to crates.io (manual):** first `make package-verify`, which builds
+10. **Publish to crates.io (manual):** first `make package-verify`, which builds
    the crate from its own tarball the way crates.io will; a file the code
    `include_*!`s but the allowlist omits fails there and nowhere earlier
    (0.8.0's card-shape guide did). Then `make publish` from `main`: it takes
@@ -187,7 +202,7 @@ at. **crates.io is not automated.**
    `make package-check` (also run inside `preflight`) asserts nothing
    untracked leaks into the tarball; eyeball `cargo package --list` too if
    unsure. Publish is irreversible.
-10. **Verify reach.** The `pages` workflow redeploys `alix.study` + the mdBook on
+11. **Verify reach.** The `pages` workflow redeploys `alix.study` + the mdBook on
    the `main` push automatically — confirm the site, the download buttons, and
    `install.sh` resolve the new asset names.
 
