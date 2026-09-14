@@ -1686,6 +1686,35 @@ test("the section title and review menu both open the drawer", async ({ page }) 
     bounds.drawer?.bottom,
     `sheet reaches the page bottom: ${JSON.stringify(bounds)}`,
   ).toBeGreaterThanOrEqual(bounds.viewport - 1);
+  const panelBounds = await page.evaluate(() => {
+    const sheet = document.querySelector(".section-drawer-panel")!;
+    const rect = sheet.getBoundingClientRect();
+    const last = sheet.lastElementChild!.getBoundingClientRect();
+    return {
+      bottom: rect.bottom,
+      height: rect.height,
+      lastChildBottom: last.bottom,
+      sheetHeight: document.querySelector(".section-drawer")!.getBoundingClientRect().height,
+      viewportWidth: window.innerWidth,
+      width: rect.width,
+    };
+  });
+  expect(
+    panelBounds.bottom,
+    `panel sits on the page bottom: ${JSON.stringify(panelBounds)}`,
+  ).toBeGreaterThanOrEqual(bounds.viewport - 1);
+  expect(
+    panelBounds.bottom - panelBounds.lastChildBottom,
+    `panel hugs its content instead of filling the sheet: ${JSON.stringify(panelBounds)}`,
+  ).toBeLessThanOrEqual(40);
+  expect(
+    panelBounds.height,
+    `short prose leaves the dimmed answer area visible above the panel: ${JSON.stringify(panelBounds)}`,
+  ).toBeLessThan(panelBounds.sheetHeight / 2);
+  expect(
+    panelBounds.width,
+    `panel keeps the card's measure: ${JSON.stringify(panelBounds)}`,
+  ).toBeLessThanOrEqual(Math.min(panelBounds.viewportWidth - 15, 1201));
   if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
     await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-drawer.png` });
   }

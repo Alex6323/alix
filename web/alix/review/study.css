@@ -160,7 +160,9 @@
   .section-drawer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 12; overflow: hidden; }
   .section-drawer-scrim { position: absolute; inset: 0; background: rgba(0,0,0,0.52); cursor: pointer; }
   .section-drawer-panel {
-    position: absolute; top: 8px; bottom: 0; left: 0; right: 0; overflow: auto; user-select: text;
+    position: absolute; bottom: 0; left: 0; right: 0; margin: 0 auto;
+    width: min(100% - 16px, var(--card-w)); max-height: calc(100% - 8px);
+    overflow: auto; user-select: text;
     padding: 22px 24px calc(22px + env(safe-area-inset-bottom)); text-align: left; color: var(--ink);
     background: var(--menu-bg); border: 1px solid var(--line); border-bottom: 0; border-radius: 12px 12px 0 0;
     box-shadow: 0 -12px 34px -12px rgba(0,0,0,0.8);
