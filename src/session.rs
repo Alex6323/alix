@@ -1677,13 +1677,21 @@ mod tests {
             "three carried in from earlier sittings"
         );
 
-        while session.current().is_some() {
+        for action in 0..10 {
+            assert!(
+                session.current().is_some(),
+                "the sitting finished before action {action} of 10"
+            );
             if session.current_fresh(&store) {
                 session.introduce_current(&mut store, now);
             } else {
                 session.grade(&mut store, Grade::Pass, now);
             }
         }
+        assert!(
+            session.is_finished(),
+            "the sitting must finish after its ten rostered actions"
+        );
 
         assert_eq!(
             (10, 16),
