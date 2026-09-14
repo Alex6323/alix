@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import pathlib
+import re
+import subprocess
+import sys
+import tomllib
+import urllib.parse
+
+
+MANIFESTS = {"Cargo.toml", "package.json", "pubspec.yaml", "pyproject.toml"}
+DEPENDENCY_TABLES = {"dependencies", "dev-dependencies", "build-dependencies"}
+NPM_DEPENDENCY_TABLES = (
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+)
+HEX_40 = re.compile(r"[0-9a-f]{40}")
+HEX_64 = re.compile(r"[0-9a-f]{64}")
+INTEGRITY = re.compile(r"sha(?:256|384|512)-.+")
+
+
+class PolicyError(Exception):
+    pass
+
+
+def load_toml(path):
+    with path.open("rb") as source:
+        return tomllib.load(source)
+
+
+def display(path, root):
+    return path.relative_to(root).as_posix()
+
+
+def require_inside(root, path):
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def tracked_files(root):
+    completed = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        raise PolicyError("git ls-files failed")
+    return {
+        pathlib.PurePosixPath(raw.decode("utf-8"))
+        for raw in completed.stdout.split(b"\0")
+        if raw
+    }
+
+
+def dependency_tables(value):
+    if not isinstance(value, dict):
+        return
+    for key, child in value.items():
+        if key in DEPENDENCY_TABLES and isinstance(child, dict):
+            yield child
+        elif isinstance(child, dict):
+            yield from dependency_tables(child)
+
+
+def check_cargo_manifest(root, manifest):
+    data = load_toml(manifest)
+    for table in dependency_tables(data):
+        for name, requirement in sorted(table.items()):
+            if not isinstance(requirement, dict):
+                continue
+            if "git" in requirement and not HEX_40.fullmatch(str(requirement.get("rev", ""))):
+                raise PolicyError(
+                    f"{display(manifest, root)}: package {name}: "
+                    "git dependency requires a 40-hex rev"
+                )
+            if "path" in requirement:
+                target = manifest.parent / str(requirement["path"])
+                if not require_inside(root, target):
+                    raise PolicyError(
+                        f"{display(manifest, root)}: package {name}: "
+                        "path dependency leaves repository"
+                    )
+
+
+def check_cargo_lock(root, lock, registry):
+    data = load_toml(lock)
+    for package in data.get("package", []):
+        source = package.get("source")
+        if source is None:
+            continue
+        name = package.get("name", "<unnamed>")
+        version = package.get("version", "<unknown>")
+        subject = f"{display(lock, root)}: package {name} {version}"
+        if source.startswith("registry+"):
+            if source != f"registry+{registry}":
+                raise PolicyError(f"{subject}: registry must be {registry}")
+            if not HEX_64.fullmatch(str(package.get("checksum", ""))):
+                raise PolicyError(f"{subject}: registry package has no checksum")
+        elif source.startswith("git+"):
+            revision = source.rpartition("#")[2]
+            if not HEX_40.fullmatch(revision):
+                raise PolicyError(f"{subject}: git source has no exact revision")
+        else:
+            raise PolicyError(f"{subject}: source is not allowed")
+
+
+def npm_package_name(path):
+    return path.rsplit("node_modules/", 1)[-1]
+
+
+def check_dependency_free_npm(root, manifest):
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    for table in NPM_DEPENDENCY_TABLES:
+        if data.get(table):
+            raise PolicyError(
+                f"{display(manifest, root)}: declared dependency-free "
+                f"but contains {table}"
+            )
+
+
+def check_npm_lock(root, lock, registry):
+    data = json.loads(lock.read_text(encoding="utf-8"))
+    for path, package in sorted(data.get("packages", {}).items()):
+        if not path:
+            continue
+        name = npm_package_name(path)
+        subject = f"{display(lock, root)}: package {name}"
+        if package.get("link"):
+            target = lock.parent / str(package.get("resolved", ""))
+            if not require_inside(root, target):
+                raise PolicyError(f"{subject}: link dependency leaves repository")
+            continue
+        resolved = str(package.get("resolved", ""))
+        parsed = urllib.parse.urlsplit(resolved)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        if origin != registry:
+            raise PolicyError(f"{subject}: registry must be {registry}")
+        if not INTEGRITY.fullmatch(str(package.get("integrity", ""))):
+            raise PolicyError(f"{subject}: registry package has no integrity")
+
+
+def yaml_scalar(value):
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
+
+
+def pub_packages(lock):
+    packages = {}
+    current = None
+    in_packages = False
+    for line in lock.read_text(encoding="utf-8").splitlines():
+        if line == "packages:":
+            in_packages = True
+            continue
+        if not in_packages:
+            continue
+        if line and not line.startswith(" "):
+            break
+        match = re.fullmatch(r"  ([^ :][^:]*):", line)
+        if match:
+            current = {}
+            packages[match.group(1)] = current
+            continue
+        if current is None:
+            continue
+        match = re.fullmatch(r"    (source|version): (.+)", line)
+        if match:
+            current[match.group(1)] = yaml_scalar(match.group(2))
+            continue
+        match = re.fullmatch(r"      (sha256|url|path|relative): (.+)", line)
+        if match:
+            current[match.group(1)] = yaml_scalar(match.group(2))
+    return packages
+
+
+def check_pub_lock(root, lock, registry):
+    for name, package in pub_packages(lock).items():
+        subject = f"{display(lock, root)}: package {name}"
+        source = package.get("source")
+        if source == "hosted":
+            if package.get("url") != registry:
+                raise PolicyError(f"{subject}: registry must be {registry}")
+            if not HEX_64.fullmatch(str(package.get("sha256", ""))):
+                raise PolicyError(f"{subject}: hosted package has no sha256")
+        elif source == "path":
+            target = lock.parent / str(package.get("path", ""))
+            if not require_inside(root, target):
+                raise PolicyError(f"{subject}: path dependency leaves repository")
+        elif source != "sdk":
+            raise PolicyError(f"{subject}: source is not allowed")
+
+
+def uv_artifacts(package):
+    sdist = package.get("sdist")
+    if isinstance(sdist, dict):
+        yield sdist
+    for wheel in package.get("wheels", []):
+        if isinstance(wheel, dict):
+            yield wheel
+
+
+def check_uv_lock(root, lock, registry):
+    data = load_toml(lock)
+    for package in data.get("package", []):
+        name = package.get("name", "<unnamed>")
+        version = package.get("version", "<unknown>")
+        subject = f"{display(lock, root)}: package {name} {version}"
+        source = package.get("source", {})
+        if "registry" in source:
+            if source["registry"] != registry:
+                raise PolicyError(f"{subject}: registry must be {registry}")
+            artifacts = list(uv_artifacts(package))
+            if not artifacts:
+                raise PolicyError(f"{subject}: registry package has no artifacts")
+            for artifact in artifacts:
+                digest = str(artifact.get("hash", ""))
+                if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                    raise PolicyError(f"{subject}: registry artifact has no sha256 hash")
+        elif "editable" in source:
+            target = lock.parent / str(source["editable"])
+            if not require_inside(root, target):
+                raise PolicyError(f"{subject}: editable dependency leaves repository")
+        else:
+            raise PolicyError(f"{subject}: source is not allowed")
+
+
+def check_policy(root, policy_path):
+    policy = load_toml(policy_path)
+    if policy.get("version") != 1:
+        raise PolicyError(f"{display(policy_path, root)}: version must be 1")
+    projects = policy.get("projects", [])
+    declared = {}
+    for project in projects:
+        manifest = pathlib.PurePosixPath(project["manifest"])
+        if manifest in declared:
+            raise PolicyError(f"{manifest}: manifest is declared more than once")
+        declared[manifest] = project
+
+    tracked = tracked_files(root)
+    manifests = {
+        path
+        for path in tracked
+        if path.name in MANIFESTS
+    }
+    for manifest in sorted(manifests - declared.keys()):
+        raise PolicyError(
+            f"{manifest}: manifest is not declared in {display(policy_path, root)}"
+        )
+    for manifest in sorted(declared.keys() - manifests):
+        raise PolicyError(f"{manifest}: declared manifest is not tracked")
+
+    registries = policy.get("registries", {})
+    locks = set()
+    for manifest_path, project in declared.items():
+        ecosystem = project["ecosystem"]
+        manifest = root / manifest_path
+        if project.get("dependency_free"):
+            if ecosystem != "npm":
+                raise PolicyError(f"{manifest_path}: dependency-free mode requires npm")
+            check_dependency_free_npm(root, manifest)
+            continue
+        lock_path = pathlib.PurePosixPath(project["lock"])
+        if lock_path not in tracked:
+            raise PolicyError(f"{lock_path}: declared lock is not tracked")
+        locks.add((ecosystem, lock_path))
+        if ecosystem == "cargo":
+            check_cargo_manifest(root, manifest)
+
+    for ecosystem, lock_path in sorted(locks):
+        lock = root / lock_path
+        registry = registries[ecosystem]
+        if ecosystem == "cargo":
+            check_cargo_lock(root, lock, registry)
+        elif ecosystem == "npm":
+            check_npm_lock(root, lock, registry)
+        elif ecosystem == "pub":
+            check_pub_lock(root, lock, registry)
+        elif ecosystem == "uv":
+            check_uv_lock(root, lock, registry)
+        else:
+            raise PolicyError(f"{lock_path}: unknown ecosystem {ecosystem}")
+    return len(manifests), len(locks)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root", type=pathlib.Path, default=pathlib.Path.cwd())
+    parser.add_argument("--policy", type=pathlib.Path)
+    args = parser.parse_args(argv)
+    root = args.root.resolve()
+    policy_path = args.policy or root / "scripts" / "dependency-policy.toml"
+    try:
+        manifests, locks = check_policy(root, policy_path)
+    except (KeyError, OSError, PolicyError, tomllib.TOMLDecodeError, json.JSONDecodeError) as error:
+        print(f"dependency-policy: {error}", file=sys.stderr)
+        return 1
+    print(f"dependency-policy: {manifests} manifests and {locks} lock roots match policy")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,67 @@
+version = 1
+
+[registries]
+cargo = "https://github.com/rust-lang/crates.io-index"
+npm = "https://registry.npmjs.org"
+pub = "https://pub.dev"
+uv = "https://pypi.org/simple"
+
+[[projects]]
+ecosystem = "cargo"
+manifest = "Cargo.toml"
+lock = "Cargo.lock"
+
+[[projects]]
+ecosystem = "cargo"
+manifest = "fuzz/Cargo.toml"
+lock = "fuzz/Cargo.lock"
+
+[[projects]]
+ecosystem = "cargo"
+manifest = "mobile/alix/rust/Cargo.toml"
+lock = "mobile/alix/rust/Cargo.lock"
+
+[[projects]]
+ecosystem = "cargo"
+manifest = "test-support/Cargo.toml"
+lock = "test-support/Cargo.lock"
+
+[[projects]]
+ecosystem = "cargo"
+manifest = "tools/gfm-harness/Cargo.toml"
+lock = "tools/gfm-harness/Cargo.lock"
+
+[[projects]]
+ecosystem = "npm"
+manifest = "e2e/package.json"
+lock = "e2e/package-lock.json"
+
+[[projects]]
+ecosystem = "npm"
+manifest = "web/alix/review/package.json"
+dependency_free = true
+
+[[projects]]
+ecosystem = "npm"
+manifest = "web/alix-kids/kids/package.json"
+dependency_free = true
+
+[[projects]]
+ecosystem = "pub"
+manifest = "mobile/alix/pubspec.yaml"
+lock = "mobile/alix/pubspec.lock"
+
+[[projects]]
+ecosystem = "pub"
+manifest = "mobile/alix/rust_builder/pubspec.yaml"
+lock = "mobile/alix/pubspec.lock"
+
+[[projects]]
+ecosystem = "pub"
+manifest = "mobile/alix/rust_builder/cargokit/build_tool/pubspec.yaml"
+lock = "mobile/alix/rust_builder/cargokit/build_tool/pubspec.lock"
+
+[[projects]]
+ecosystem = "uv"
+manifest = "orchestrator/pyproject.toml"
+lock = "orchestrator/uv.lock"

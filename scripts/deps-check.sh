@@ -33,3 +33,4 @@ EOF
 fi
 
 echo "deps-check: duplicate compatibility families match the reviewed baseline"
+python3 scripts/check-dependency-policy.py

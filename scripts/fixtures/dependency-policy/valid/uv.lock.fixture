@@ -1,0 +1,19 @@
+version = 1
+requires-python = ">=3.12"
+
+[[package]]
+name = "fixture"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "dep" },
+]
+
+[[package]]
+name = "dep"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/dep-1.0.0.tar.gz", hash = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", size = 1 }
+wheels = [
+    { url = "https://files.pythonhosted.org/dep-1.0.0.whl", hash = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", size = 1 },
+]

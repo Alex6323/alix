@@ -8,6 +8,13 @@ provenance. Review it during the required pre-release `make docs-audit`.
 
 Vulnerabilities are reported privately through [`SECURITY.md`](../../SECURITY.md).
 
+The offline dependency gate reads
+[`scripts/dependency-policy.toml`](../../scripts/dependency-policy.toml) through
+[`scripts/check-dependency-policy.py`](../../scripts/check-dependency-policy.py). It fails closed on
+undeclared Cargo, npm, pub, or uv manifests, unapproved registries, unpinned Cargo Git sources, and
+missing lockfile integrity data. `make deps-check` also retains the reviewed Cargo version-family
+baseline.
+
 ## Supported deployment model
 
 Alix supports:

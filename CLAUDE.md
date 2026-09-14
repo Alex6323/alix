@@ -112,7 +112,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make gate-coverage` | Assert every crate and test suite in the tree is reachable from `check`/`preflight`, or named CI-only in `scripts/check-gate-coverage.py` with the workflow marker proving CI runs it. Part of `make check`. |
 | `make risk-matrix-check` | Validate every required class and critical path in `scripts/testing-risk-matrix.json`, including explicit gaps and named Make commands. Part of `make check`. |
 | `make lint` | `cargo clippy --all-targets -- -D warnings` (denies warnings, matching CI, so a warning fails locally instead of on the pushed main). |
-| `make deps-check` | Reject newly introduced incompatible dependency families against the reviewed baseline; run before and after changing dependencies. |
+| `make deps-check` | Reject unreviewed parallel version families, dependency roots, sources, and missing integrity data across Cargo, npm, pub, and uv; run before and after dependency changes. |
 | `make pre-1-0-check` | Reject backwards-compatibility vocabulary in production code while the package is `0.x`. |
 | `make old-format-audit` | TEMPORARY costed LLM release gate: semantic sweep of production code for old-format recognition; blocks at 1.0 demanding its own removal. |
 | `make docs-audit` | Live, read-only semantic audit of every public text and visual surface; mandatory before desktop or mobile release, never CI. |

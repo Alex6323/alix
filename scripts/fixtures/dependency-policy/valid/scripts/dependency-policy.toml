@@ -1,0 +1,32 @@
+version = 1
+
+[registries]
+cargo = "https://github.com/rust-lang/crates.io-index"
+npm = "https://registry.npmjs.org"
+pub = "https://pub.dev"
+uv = "https://pypi.org/simple"
+
+[[projects]]
+ecosystem = "cargo"
+manifest = "Cargo.toml"
+lock = "Cargo.lock"
+
+[[projects]]
+ecosystem = "npm"
+manifest = "package.json"
+lock = "package-lock.json"
+
+[[projects]]
+ecosystem = "npm"
+manifest = "web/package.json"
+dependency_free = true
+
+[[projects]]
+ecosystem = "pub"
+manifest = "pubspec.yaml"
+lock = "pubspec.lock"
+
+[[projects]]
+ecosystem = "uv"
+manifest = "pyproject.toml"
+lock = "uv.lock"

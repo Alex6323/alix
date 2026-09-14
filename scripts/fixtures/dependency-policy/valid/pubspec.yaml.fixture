@@ -1,0 +1,5 @@
+name: fixture
+environment:
+  sdk: ^3.12.0
+dependencies:
+  dep: 1.0.0

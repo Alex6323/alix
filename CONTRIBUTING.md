@@ -182,7 +182,9 @@ surrounding code; when in doubt, mirror it. The essentials:
   tuck rare controls behind a menu. A noisy UI diff is treated like a failing
   test.
 - **No new dependency without a one-line reason** in the PR/commit. Reach for
-  std or an existing dep first.
+  std or an existing dep first. Run `make deps-check` before and after a
+  dependency change; it enforces the repository-wide source, integrity, and
+  version-family policy.
 - **Record load-bearing decisions.** Local specs and plans may stay private, but
   a choice that constrains persistence, identity, security, public client
   boundaries, cross-cutting structure, or a hard-to-remove dependency gets a
