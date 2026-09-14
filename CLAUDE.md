@@ -110,6 +110,7 @@ from the About dialog). If a sentence reads like an ask for money, cut it.
 | `make test` | Run the test suite (the primary gate). |
 | `make test-inventory` | Derive current default, ignored, and total Rust test counts from Cargo; never copy the output into evergreen prose. |
 | `make gate-coverage` | Assert every crate and test suite in the tree is reachable from `check`/`preflight`, or named CI-only in `scripts/check-gate-coverage.py` with the workflow marker proving CI runs it. Part of `make check`. |
+| `make risk-matrix-check` | Validate every required class and critical path in `scripts/testing-risk-matrix.json`, including explicit gaps and named Make commands. Part of `make check`. |
 | `make lint` | `cargo clippy --all-targets -- -D warnings` (denies warnings, matching CI, so a warning fails locally instead of on the pushed main). |
 | `make deps-check` | Reject newly introduced incompatible dependency families against the reviewed baseline; run before and after changing dependencies. |
 | `make pre-1-0-check` | Reject backwards-compatibility vocabulary in production code while the package is `0.x`. |

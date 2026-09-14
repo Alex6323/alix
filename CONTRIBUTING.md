@@ -93,6 +93,7 @@ generated PRs without prior discussion are usually closed unread.
 | `make build` | Compile. |
 | `make test` | Run the test suite (the primary gate). |
 | `make test-inventory` | Derive current default, ignored, and total Rust test counts from Cargo; never copy the output into evergreen prose. |
+| `make risk-matrix-check` | Validate the checked-in testing risk inventory, including explicit gaps and named Make commands. |
 | `make lint` | `cargo clippy --all-targets -- -D warnings` (denies warnings, matching CI). |
 | `make docs-audit` | Live semantic audit of all public text and visual assets; required before a release. |
 | `make toolchain-check` | Verify exact production toolchains, immutable Action references, and the explicit drift-job exceptions. |
@@ -118,6 +119,11 @@ comparison), and an informational `coverage` job. Three scheduled drift detector
 path: the backend CLI flag-drift smoke test, a nightly RustSec advisory scan
 (`make audit` is the blocking tag-time run), and a weekly mobile toolchain
 build (`make frb-check` + an APK build against current stable Flutter).
+
+The machine-readable inventory at `scripts/testing-risk-matrix.json` labels
+each failure class as covered, partial, or a gap with its roadmap owner.
+`make risk-matrix-check` fails if a required class or critical path disappears,
+or if a named Make command no longer resolves.
 
 Production CI and release versions are repository inputs, not ambient machine
 state: Rust comes from `rust-toolchain.toml`, formatting/coverage nightly from

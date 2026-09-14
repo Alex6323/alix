@@ -1,0 +1,151 @@
+{
+  "schema": 1,
+  "risk_classes": [
+    {
+      "id": "pure-domain-error",
+      "critical_paths": [
+        "identity",
+        "scheduling"
+      ],
+      "primary_evidence": [
+        {
+          "kind": "unit-property",
+          "command": "make test",
+          "cadence": "per-change"
+        }
+      ],
+      "state": "covered"
+    },
+    {
+      "id": "parser-hostility",
+      "critical_paths": [
+        "parser",
+        "locator"
+      ],
+      "primary_evidence": [
+        {
+          "kind": "unit-regression",
+          "command": "make test",
+          "cadence": "per-change"
+        }
+      ],
+      "state": "gap",
+      "gap": "broad regressions do not plant hostile parser and locator defects",
+      "roadmap_anchor": "risk-class-test-matrix"
+    },
+    {
+      "id": "data-loss",
+      "critical_paths": [
+        "zip-receive",
+        "store",
+        "os-matrix"
+      ],
+      "primary_evidence": [
+        {
+          "kind": "integration-regression",
+          "command": "make test",
+          "cadence": "per-change"
+        },
+        {
+          "kind": "cross-compile",
+          "command": "make windows-check",
+          "cadence": "per-change"
+        }
+      ],
+      "state": "gap",
+      "gap": "ZIP and store lack planted faults; OS jobs lack target reporting",
+      "roadmap_anchor": "risk-class-test-matrix"
+    },
+    {
+      "id": "api-drift",
+      "critical_paths": [
+        "api-contract"
+      ],
+      "primary_evidence": [
+        {
+          "kind": "contract-integration",
+          "command": "make test",
+          "cadence": "per-change"
+        }
+      ],
+      "state": "covered"
+    },
+    {
+      "id": "ui-control-no-op",
+      "critical_paths": [
+        "web-mobile-controls"
+      ],
+      "primary_evidence": [
+        {
+          "kind": "browser-integration",
+          "command": "make e2e",
+          "cadence": "per-push"
+        },
+        {
+          "kind": "flutter-integration",
+          "command": "make mobile-test",
+          "cadence": "per-push"
+        }
+      ],
+      "state": "covered"
+    },
+    {
+      "id": "concurrency-race",
+      "critical_paths": [
+        "soak"
+      ],
+      "primary_evidence": [
+        {
+          "kind": "deterministic-regression",
+          "command": "make test",
+          "cadence": "per-change"
+        }
+      ],
+      "state": "gap",
+      "gap": "no repeatable long-running concurrency workload",
+      "roadmap_anchor": "risk-class-test-matrix"
+    },
+    {
+      "id": "backend-cli-drift",
+      "critical_paths": [
+        "backend-cli"
+      ],
+      "primary_evidence": [
+        {
+          "kind": "backend-matrix",
+          "command": "make check-backends",
+          "cadence": "manual"
+        }
+      ],
+      "state": "covered"
+    },
+    {
+      "id": "ai-judgment",
+      "critical_paths": [
+        "grader-calibration"
+      ],
+      "primary_evidence": [
+        {
+          "kind": "labeled-real-model",
+          "command": "make calibrate",
+          "cadence": "release"
+        }
+      ],
+      "state": "covered"
+    },
+    {
+      "id": "release-defect",
+      "critical_paths": [
+        "packaged-artifact"
+      ],
+      "primary_evidence": [
+        {
+          "kind": "package-smoke",
+          "command": "make package-verify",
+          "cadence": "release"
+        }
+      ],
+      "state": "covered"
+    }
+  ]
+}
