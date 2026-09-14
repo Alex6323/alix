@@ -240,6 +240,66 @@ class DependencyPolicyTests(unittest.TestCase):
             result.stderr,
         )
 
+    def test_a_symlinked_include_cannot_change_the_base_of_source_paths(self):
+        cases = [
+            (
+                "patch",
+                '[patch.crates-io]\n'
+                + 'remote_dep = { path = "../../outside" }\n',
+                ".cargo/nested/local.toml: package remote_dep: "
+                "path dependency leaves repository",
+            ),
+            (
+                "paths",
+                'paths = ["../../outside"]\n',
+                ".cargo/nested/local.toml: path override leaves repository",
+            ),
+        ]
+        for label, contents, expected in cases:
+            def after_track(directory):
+                cargo = directory / ".cargo"
+                included = cargo / "nested" / "local.toml"
+                included.parent.mkdir(parents=True)
+                (cargo / "config.toml").write_text(
+                    'include = ["nested/local.toml"]\n', encoding="utf-8"
+                )
+                target = (
+                    directory / "configs" / "deeper" / "more" / "settings.toml"
+                )
+                target.parent.mkdir(parents=True)
+                target.write_text(contents, encoding="utf-8")
+                included.symlink_to(target)
+
+            with self.subTest(label=label):
+                result = self.run_fixture(after_track=after_track)
+                self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(
+                    f"dependency-policy: {expected}\n",
+                    result.stderr,
+                )
+
+    def test_a_safe_path_uses_the_symlinked_includes_lexical_base(self):
+        def after_track(directory):
+            cargo = directory / ".cargo"
+            included = cargo / "nested" / "local.toml"
+            included.parent.mkdir(parents=True)
+            (cargo / "config.toml").write_text(
+                'include = ["nested/local.toml"]\n', encoding="utf-8"
+            )
+            target = directory / "settings.toml"
+            target.write_text(
+                '[patch.crates-io]\nremote_dep = { path = "inside" }\n',
+                encoding="utf-8",
+            )
+            included.symlink_to(target)
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: 5 manifests and 4 lock roots match policy\n",
+            result.stdout,
+        )
+
     def test_a_missing_included_cargo_config_is_denied(self):
         def after_track(directory):
             cargo = directory / ".cargo"

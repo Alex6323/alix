@@ -158,7 +158,7 @@ def check_cargo_config(
             )
         check_cargo_config(
             root,
-            included.resolve(),
+            included,
             declared_sources,
             policy_path,
             next_ancestors,
