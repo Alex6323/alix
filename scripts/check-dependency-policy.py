@@ -11,6 +11,10 @@ import urllib.parse
 
 
 MANIFESTS = {"Cargo.toml", "package.json", "pubspec.yaml", "pyproject.toml"}
+ROOT_CARGO_CONFIGS = (
+    pathlib.PurePosixPath(".cargo/config.toml"),
+    pathlib.PurePosixPath(".cargo/config"),
+)
 DEPENDENCY_TABLES = {"dependencies", "dev-dependencies", "build-dependencies"}
 NPM_DEPENDENCY_TABLES = (
     "dependencies",
@@ -72,31 +76,49 @@ def dependency_tables(value):
 
 def cargo_requirement_tables(data):
     yield from dependency_tables(data)
-    for table in data.get("patch", {}).values():
-        if isinstance(table, dict):
-            yield table
+    patch = data.get("patch")
+    if isinstance(patch, dict):
+        for table in patch.values():
+            if isinstance(table, dict):
+                yield table
     if isinstance(data.get("replace"), dict):
         yield data["replace"]
 
 
-def check_cargo_manifest(root, manifest):
-    data = load_toml(manifest)
+def check_cargo_requirements(root, path, base, data):
     for table in cargo_requirement_tables(data):
         for name, requirement in sorted(table.items()):
             if not isinstance(requirement, dict):
                 continue
             if "git" in requirement and not HEX_40.fullmatch(str(requirement.get("rev", ""))):
                 raise PolicyError(
-                    f"{display(manifest, root)}: package {name}: "
+                    f"{display(path, root)}: package {name}: "
                     "git dependency requires a 40-hex rev"
                 )
             if "path" in requirement:
-                target = manifest.parent / str(requirement["path"])
+                target = base / str(requirement["path"])
                 if not require_inside(root, target):
                     raise PolicyError(
-                        f"{display(manifest, root)}: package {name}: "
+                        f"{display(path, root)}: package {name}: "
                         "path dependency leaves repository"
                     )
+
+
+def check_cargo_manifest(root, manifest):
+    check_cargo_requirements(root, manifest, manifest.parent, load_toml(manifest))
+
+
+def check_cargo_config(root, config, declared_sources, policy_path):
+    data = load_toml(config)
+    check_cargo_requirements(root, config, root, data)
+    sources = data.get("source")
+    if not isinstance(sources, dict):
+        return
+    if any(name not in declared_sources for name in sources):
+        raise PolicyError(
+            f"{display(config, root)}: source replacement is not declared in "
+            f"{display(policy_path, root)}"
+        )
 
 
 def check_cargo_lock(root, lock, registry):
@@ -267,6 +289,12 @@ def check_policy(root, policy_path):
         )
     for manifest in sorted(declared.keys() - manifests):
         raise PolicyError(f"{manifest}: declared manifest is not tracked")
+
+    declared_cargo_sources = set(policy.get("cargo", {}).get("sources", []))
+    for config_path in ROOT_CARGO_CONFIGS:
+        config = root / config_path
+        if config.is_file():
+            check_cargo_config(root, config, declared_cargo_sources, policy_path)
 
     registries = policy.get("registries", {})
     locks = set()

@@ -13,7 +13,7 @@ FIXTURE = ROOT / "scripts" / "fixtures" / "dependency-policy" / "valid"
 
 
 class DependencyPolicyTests(unittest.TestCase):
-    def run_fixture(self, change=None):
+    def run_fixture(self, change=None, after_track=None):
         with tempfile.TemporaryDirectory() as raw:
             directory = pathlib.Path(raw) / "repo"
             shutil.copytree(FIXTURE, directory)
@@ -35,6 +35,8 @@ class DependencyPolicyTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
+            if after_track is not None:
+                after_track(directory)
             return subprocess.run(
                 [sys.executable, str(CHECK), "--root", str(directory)],
                 cwd=directory,
@@ -111,6 +113,118 @@ class DependencyPolicyTests(unittest.TestCase):
         self.assert_denied(
             change,
             "Cargo.toml: package registry_dep:1.0.0: git dependency requires a 40-hex rev",
+        )
+
+    def test_an_untracked_root_cargo_config_cannot_supply_a_git_patch(self):
+        def after_track(directory):
+            path = directory / ".cargo" / "config.toml"
+            path.parent.mkdir()
+            path.write_text(
+                '[patch.crates-io]\n'
+                + 'remote_dep = { git = "https://example.com/remote", branch = "main" }\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/config.toml: package remote_dep: "
+            "git dependency requires a 40-hex rev\n",
+            result.stderr,
+        )
+
+    def test_a_root_cargo_source_replacement_must_be_declared(self):
+        def after_track(directory):
+            path = directory / ".cargo" / "config.toml"
+            path.parent.mkdir()
+            path.write_text(
+                '[source.crates-io]\nreplace-with = "mirror"\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/config.toml: source replacement is not declared "
+            "in scripts/dependency-policy.toml\n",
+            result.stderr,
+        )
+
+    def test_declared_root_cargo_sources_are_allowed(self):
+        def change(directory):
+            policy = directory / "scripts" / "dependency-policy.toml"
+            policy.write_text(
+                policy.read_text(encoding="utf-8")
+                + '\n[cargo]\nsources = ["crates-io", "mirror"]\n',
+                encoding="utf-8",
+            )
+
+        def after_track(directory):
+            path = directory / ".cargo" / "config.toml"
+            path.parent.mkdir()
+            path.write_text(
+                '[source.crates-io]\nreplace-with = "mirror"\n'
+                + '[source.mirror]\nregistry = "https://example.com/index"\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_fixture(change=change, after_track=after_track)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: 5 manifests and 4 lock roots match policy\n",
+            result.stdout,
+        )
+
+    def test_a_root_cargo_config_with_only_build_settings_is_allowed(self):
+        def after_track(directory):
+            path = directory / ".cargo" / "config.toml"
+            path.parent.mkdir()
+            path.write_text("[build]\njobs = 1\n", encoding="utf-8")
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: 5 manifests and 4 lock roots match policy\n",
+            result.stdout,
+        )
+
+    def test_a_root_cargo_config_patch_path_is_resolved_from_the_checkout_root(self):
+        def after_track(directory):
+            path = directory / ".cargo" / "config.toml"
+            path.parent.mkdir()
+            path.write_text(
+                '[patch.crates-io]\n'
+                + 'remote_dep = { path = "../outside" }\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/config.toml: package remote_dep: "
+            "path dependency leaves repository\n",
+            result.stderr,
+        )
+
+    def test_both_root_cargo_config_spellings_are_read(self):
+        def after_track(directory):
+            cargo = directory / ".cargo"
+            cargo.mkdir()
+            (cargo / "config.toml").write_text(
+                "[build]\njobs = 1\n", encoding="utf-8"
+            )
+            (cargo / "config").write_text(
+                '[patch.crates-io]\n'
+                + 'remote_dep = { path = "../../../outside" }\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/config: package remote_dep: "
+            "path dependency leaves repository\n",
+            result.stderr,
         )
 
     def test_a_cargo_path_dependency_outside_the_repository_is_denied(self):

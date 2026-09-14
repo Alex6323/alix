@@ -25,6 +25,12 @@ package managers or rejects an unlisted dependency root.
 `scripts/dependency-policy.toml` is the only hand-edited declaration of
 dependency roots and approved registries. `scripts/check-dependency-policy.py`
 enumerates tracked manifests and fails when one is absent from that policy.
+Separately, it reads both repository-root Cargo configuration spellings
+(`.cargo/config.toml` and `.cargo/config`) from disk whether tracked or
+untracked, applies the same Git revision and path-containment rules to
+`[patch.<source>]`, requires every `[source.<name>]` table to appear in the
+policy's optional `[cargo].sources` list, and does not inspect nested Cargo
+configuration files.
 
 The four approved registry hosts and their exact origins are:
 
@@ -39,8 +45,9 @@ links, pub paths, and uv editable roots must resolve inside the checkout.
 
 Registry packages carry the integrity field native to their lock format:
 Cargo `checksum`, npm `integrity`, pub `sha256`, and a SHA-256 hash on every uv
-artifact. Checks use only committed files and the Python standard library, so
-`make deps-check` has no network step.
+artifact. Manifest and lock checks use only committed files; the two root
+Cargo configuration paths are the only live-checkout inputs. Every check uses
+the Python standard library, so `make deps-check` has no network step.
 
 The existing Cargo version-family baseline stays in
 `scripts/deps-duplicates.txt`. `scripts/deps-check.sh` runs that check and the
@@ -94,7 +101,8 @@ artifact bill of materials.
 ## Verification
 
 - `scripts/test_dependency_policy.py` plants each denied source, integrity,
-  path, dependency-free, and census case and asserts its exact failure line.
+  path, dependency-free, root Cargo configuration, and census case and asserts
+  its exact failure line.
 - `python3 scripts/check-dependency-policy.py` checks every current manifest
   and lock root without network access.
 - `make deps-check` runs both the retained Cargo family check and the policy
