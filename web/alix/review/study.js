@@ -408,12 +408,17 @@ export function createStudy({
       crumbStrip.appendChild(bc);
     }
     if (hasSection()) {
+      const row = el("div", "section-title-row");
       const title = el("button", "context label section-title", c.section_context[0]);
       title.type = "button";
       title.title = c.section_context[0];
-      title.setAttribute("aria-label", `Open section context: ${c.section_context[0]}`);
-      title.addEventListener("click", openSection);
-      card.insertBefore(title, q);
+      title.setAttribute("aria-label", `Section context: ${c.section_context[0]}`);
+      title.setAttribute("aria-expanded", sectionView ? "true" : "false");
+      title.addEventListener("click", toggleSection);
+      row.appendChild(title);
+      const key = label(keys.context);
+      if (key) row.appendChild(el("span", "section-title-key", key));
+      card.insertBefore(row, q);
     }
     const frontNode = frontEl(c.front, c.front_runs, c.front_units);
     // Where context is the question (a cloze sentence) it leads and the front
@@ -628,6 +633,8 @@ export function createStudy({
     const card = doc.getElementById("card");
     if (!card) return;
     sectionView = true;
+    const opener = card.querySelector(".section-title");
+    if (opener) opener.setAttribute("aria-expanded", "true");
     const drawer = el("div", "section-drawer");
     drawer.setAttribute("role", "dialog");
     drawer.setAttribute("aria-modal", "true");
@@ -647,8 +654,8 @@ export function createStudy({
     drawer.appendChild(panel);
     card.appendChild(drawer);
     if (legend && legend.parentElement) legend.parentElement.inert = true;
-    const title = card.querySelector(".section-title");
-    const top = title ? title.offsetTop + title.offsetHeight : card.querySelector(".region.q").offsetTop;
+    const row = card.querySelector(".section-title-row");
+    const top = row ? row.offsetTop + row.offsetHeight : card.querySelector(".region.q").offsetTop;
     const height = Math.max(0, card.clientHeight - top);
     drawer.style.top = `${top}px`;
     drawer.style.height = `${height}px`;
@@ -673,11 +680,14 @@ export function createStudy({
     if (!sectionView) return;
     const drawer = doc.querySelector(".section-drawer");
     const title = doc.querySelector(".section-title");
+    const card = doc.getElementById("card");
     const done = () => {
       if (drawer) drawer.remove();
       sectionView = false;
       if (legend && legend.parentElement) legend.parentElement.inert = false;
-      if (title && title.isConnected) title.focus();
+      if (title && title.isConnected) title.setAttribute("aria-expanded", "false");
+      // The card, not the title: a ring on the title after every close reads as a highlight.
+      if (card && card.isConnected) { card.tabIndex = -1; card.focus({ preventScroll: true }); }
     };
     if (drawer && drawer.offsetHeight && drawer.animate) {
       const animation = drawer.animate(
@@ -688,6 +698,11 @@ export function createStudy({
     } else {
       done();
     }
+  }
+
+  function toggleSection() {
+    if (sectionView) closeSection();
+    else openSection();
   }
 
   // Swap the answer region between the worded answer and the cited source excerpt.

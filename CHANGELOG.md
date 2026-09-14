@@ -107,6 +107,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The web section drawer closes from its title line, which now toggles it and
+  shows its key beside it; before, the only visible close route was the dark
+  ring around the panel, and the title took a focus ring after every close.
+
 - A sync route that fails answers with the failure's message and prints it
   on the server's stderr; `GET /api/sync/entries` sent an empty 500 and
   discarded the failure. The log keeps its path-free record.

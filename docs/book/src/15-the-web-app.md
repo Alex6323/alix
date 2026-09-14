@@ -153,9 +153,10 @@ one-line title. On the first new card introduced from that section in a
 sitting, the card-bounded section drawer opens by itself once. Dismiss it and
 it stays closed through reveal or answer input; later cards from the same
 section do not open it automatically. The full section never appears inline.
-Select the title, press `c`, or use **Context** beside **Ask Tutor** in the
-review menu to open the drawer on demand. While the drawer is open, the card
-and its review keys are inert; `c`, Escape, or the drawer scrim closes it.
+Select the title (its key sits beside it), press `c`, or use **Context**
+beside **Ask Tutor** in the review menu to open the drawer on demand. While
+the drawer is open, the card and its review keys are inert; the title, `c`,
+Escape, or the drawer scrim closes it.
 A dim **"N left"** count in the header shows how many cards the session still
 holds; it can tick up when a card you missed cools back in for its retry. The
 **☰ menu** is context-aware: during review it holds **Ask Tutor** and,

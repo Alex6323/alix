@@ -1678,7 +1678,14 @@ test("the section title and review menu both open the drawer", async ({ page }) 
 
   await page.keyboard.press("c");
   await expect(drawer, "context key route: drawer closes").toHaveCount(0);
-  await expect(page.locator(".section-title"), "context key route: focus returns to title").toBeFocused();
+  await expect(page.locator(".section-title"), "context key route: the title takes no focus ring").not.toBeFocused();
+  await expect(page.locator(".section-title-key"), "title legend: names the context key").toHaveText("c");
+  await page.locator(".section-title").click();
+  await expect(drawer, "title route again: drawer reopens").toBeVisible();
+  await expect(page.locator(".section-title"), "title route again: aria-expanded true").toHaveAttribute("aria-expanded", "true");
+  await page.locator(".section-title").click();
+  await expect(drawer, "title route: a second click closes the drawer").toHaveCount(0);
+  await expect(page.locator(".section-title"), "title route: aria-expanded false").toHaveAttribute("aria-expanded", "false");
   await page.getByRole("button", { name: "Menu" }).click();
   await page.getByRole("menuitem", { name: /^Context/ }).click();
   await expect(drawer, "menu route: drawer opens").toBeVisible();
