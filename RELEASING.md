@@ -162,15 +162,17 @@ at. **crates.io is not automated.**
    destructive jobs). On Linux, macOS, and Windows, by hand, against this
    exact candidate: take an external copy of a workspace folder that has
    review history; force-kill the process during a multi-document write;
-   remove a progress document's read permission; corrupt one progress
-   document; leave a workspace update half done; then restore from the
-   external copy, run `alix doctor`, and confirm the next review serves the
-   expected card with its progress intact. Record the dated result per
-   system in the changelog's release section, as the audits are, naming any
-   injection that could not be run on that system and any filesystem
-   limitation left open. A drill that fails because the harness itself
-   rotted rather than the product is the signal to add a scheduled Linux
-   run.
+   repeat a write with the disk full (a small loop device or a quota
+   holding the workspace); do an OS restart between a write and the
+   reopen where the machine allows it; remove a progress document's read
+   permission; corrupt one progress document; leave a workspace update
+   half done; then restore from the external copy, run `alix doctor`, and
+   confirm the next review serves the expected card with its progress
+   intact. Record the dated result per system in the changelog's release
+   section, as the audits are, naming any injection that could not be run
+   on that system and any filesystem limitation left open. A drill that
+   fails because the harness itself rotted rather than the product is the
+   signal to add a scheduled Linux run.
 8. **Stage everything the bump touched, then commit.** The version bump
    regenerates files beyond `Cargo.toml`: the `tests/contracts/VersionDto.json`
    snapshot (the `mod contract` test writes it) and the four lockfiles from
