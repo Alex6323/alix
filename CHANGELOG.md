@@ -55,8 +55,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sitting, so clients can present its section by themselves once and offer it
   on demand thereafter. The web review shows the section heading as a dim
   title line on every sectioned card, never renders the section inline, and
-  opens the full, paragraph-preserving card-bounded drawer by itself once on
-  the first introduction. The title, `c` key, and **Context** menu entry open
+  opens the full, paragraph-preserving section sheet by itself once on the
+  first introduction. The title, `c` key, and **Context** menu entry open
   it on demand. The phone shows the heading as a tappable pill above the
   question that opens the section in a bottom sheet, and opens that sheet by
   itself on the first introduction from a section in a sitting.
@@ -107,13 +107,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- The web section context is a sheet that rises from the bottom of the page
-  to just under the question and covers the answer, the note and the action
-  row, so the title and the question stay readable; the title toggles it and
-  shows its key beside it, and closing it returns focus to the title without
-  a ring. Before, a card-bounded drawer hid the question, its only visible
-  close route was the dark ring around the panel, and the title took a focus
-  ring after every close.
+- The web section context dims the whole page at once and slides a sheet up
+  from the bottom of the page to just under the question, as wide as the
+  card, so the question stays legible above it; the title shows its key
+  beside it, a click anywhere on the dimmed page, `c`, or Escape closes the
+  sheet, and closing returns focus to the title without a ring. Before, a
+  card-bounded drawer hid the question, its only visible close route was the
+  dark ring around the panel, and the title took a focus ring after every
+  close.
 
 - A sync route that fails answers with the failure's message and prints it
   on the server's stderr; `GET /api/sync/entries` sent an empty 500 and

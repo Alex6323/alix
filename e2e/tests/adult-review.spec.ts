@@ -1478,14 +1478,14 @@ test("the first section introduction auto-opens without inline and the next sect
       const value = document.querySelector(selector)?.getBoundingClientRect();
       return value ? { bottom: value.bottom, top: value.top } : null;
     };
-    return { drawer: rect(".section-drawer"), question: rect("#card .region.q") };
+    return { panel: rect(".section-drawer-panel"), question: rect("#card .region.q") };
   });
   expect(
-    autoBounds.drawer?.top,
+    autoBounds.panel?.top,
     `automatic sheet sits just under the question once the card has dealt in: ${JSON.stringify(autoBounds)}`,
   ).toBeLessThanOrEqual((autoBounds.question?.bottom ?? 0) + 1);
   expect(
-    autoBounds.drawer?.top,
+    autoBounds.panel?.top,
     `automatic sheet starts under the question: ${JSON.stringify(autoBounds)}`,
   ).toBeGreaterThanOrEqual((autoBounds.question?.bottom ?? Number.MAX_SAFE_INTEGER) - 1);
   if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
@@ -1648,6 +1648,15 @@ test("the section title and review menu both open the drawer", async ({ page }) 
   await openApp(page);
 
   await expect(page.locator(".section-drawer"), "non-first section: drawer starts closed").toHaveCount(0);
+  await page.evaluate(() => {
+    const animated: string[] = [];
+    const original = Element.prototype.animate;
+    Element.prototype.animate = function (this: Element, ...args: Parameters<Element["animate"]>) {
+      animated.push(this.className);
+      return original.apply(this, args);
+    };
+    (window as unknown as { animated: string[] }).animated = animated;
+  });
   await page.locator(".section-title").click();
   const drawer = page.locator(".section-drawer");
   await expect(drawer, "title route: drawer opens").toBeVisible();
@@ -1657,64 +1666,45 @@ test("the section title and review menu both open the drawer", async ({ page }) 
   await drawer.evaluate(async (element) => {
     await Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished));
   });
+  expect(
+    await page.evaluate(() => (window as unknown as { animated: string[] }).animated),
+    "only the panel slides in; the dim appears at once",
+  ).toEqual(["section-drawer-panel"]);
   const bounds = await page.evaluate(() => {
     const rect = (selector: string) => {
       const value = document.querySelector(selector)?.getBoundingClientRect();
-      return value ? { bottom: value.bottom, top: value.top } : null;
+      return value ? { bottom: value.bottom, left: value.left, right: value.right, top: value.top } : null;
+    };
+    const covering = (selector: string) => {
+      const box = document.querySelector(selector)!.getBoundingClientRect();
+      return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.className ?? null;
     };
     return {
       drawer: rect(".section-drawer"),
-      footer: rect("body > .legend"),
+      overBar: covering(".bar"),
+      overQuestion: covering("#card .region.q"),
+      panel: rect(".section-drawer-panel"),
       question: rect("#card .region.q"),
       title: rect(".section-title"),
-      viewport: window.innerHeight,
+      viewport: { height: window.innerHeight, width: window.innerWidth },
     };
   });
-  expect(
-    bounds.drawer?.top,
-    `sheet top starts under the question: ${JSON.stringify(bounds)}`,
-  ).toBeGreaterThanOrEqual((bounds.question?.bottom ?? Number.MAX_SAFE_INTEGER) - 1);
+  const near = (actual: number | undefined, wanted: number, law: string) =>
+    expect(Math.abs((actual ?? Number.MAX_SAFE_INTEGER) - wanted), `${law}: ${JSON.stringify(bounds)}`).toBeLessThanOrEqual(1);
+  near(bounds.drawer?.top, 0, "the dim starts at the page top");
+  near(bounds.drawer?.left, 0, "the dim starts at the page's left edge");
+  near(bounds.drawer?.right, bounds.viewport.width, "the dim reaches the page's right edge");
+  near(bounds.drawer?.bottom, bounds.viewport.height, "the dim reaches the page bottom");
+  expect(bounds.overBar, `the header sits behind the dim: ${JSON.stringify(bounds)}`).toBe("section-drawer-scrim");
+  expect(bounds.overQuestion, `the question sits behind the dim: ${JSON.stringify(bounds)}`).toBe("section-drawer-scrim");
+  near(bounds.panel?.top, bounds.question?.bottom ?? -1, "the panel starts at the question's bottom edge");
+  near(bounds.panel?.bottom, bounds.viewport.height, "the panel reaches the page bottom");
+  near(bounds.panel?.left, bounds.question?.left ?? -1, "the panel's left edge is the question column's");
+  near(bounds.panel?.right, bounds.question?.right ?? -1, "the panel's right edge is the question column's");
   expect(
     bounds.title?.bottom,
-    `sheet leaves the title visible: ${JSON.stringify(bounds)}`,
-  ).toBeLessThanOrEqual((bounds.drawer?.top ?? 0) + 1);
-  expect(
-    bounds.drawer?.bottom,
-    `sheet covers the action row: ${JSON.stringify(bounds)}`,
-  ).toBeGreaterThanOrEqual((bounds.footer?.bottom ?? Number.MAX_SAFE_INTEGER) - 1);
-  expect(
-    bounds.drawer?.bottom,
-    `sheet reaches the page bottom: ${JSON.stringify(bounds)}`,
-  ).toBeGreaterThanOrEqual(bounds.viewport - 1);
-  const panelBounds = await page.evaluate(() => {
-    const sheet = document.querySelector(".section-drawer-panel")!;
-    const rect = sheet.getBoundingClientRect();
-    const last = sheet.lastElementChild!.getBoundingClientRect();
-    return {
-      bottom: rect.bottom,
-      height: rect.height,
-      lastChildBottom: last.bottom,
-      sheetHeight: document.querySelector(".section-drawer")!.getBoundingClientRect().height,
-      viewportWidth: window.innerWidth,
-      width: rect.width,
-    };
-  });
-  expect(
-    panelBounds.bottom,
-    `panel sits on the page bottom: ${JSON.stringify(panelBounds)}`,
-  ).toBeGreaterThanOrEqual(bounds.viewport - 1);
-  expect(
-    panelBounds.bottom - panelBounds.lastChildBottom,
-    `panel hugs its content instead of filling the sheet: ${JSON.stringify(panelBounds)}`,
-  ).toBeLessThanOrEqual(40);
-  expect(
-    panelBounds.height,
-    `short prose leaves the dimmed answer area visible above the panel: ${JSON.stringify(panelBounds)}`,
-  ).toBeLessThan(panelBounds.sheetHeight / 2);
-  expect(
-    panelBounds.width,
-    `panel keeps the card's measure: ${JSON.stringify(panelBounds)}`,
-  ).toBeLessThanOrEqual(Math.min(panelBounds.viewportWidth - 15, 1201));
+    `the title stays above the panel: ${JSON.stringify(bounds)}`,
+  ).toBeLessThanOrEqual((bounds.panel?.top ?? 0) + 1);
   if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
     await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-drawer.png` });
   }
@@ -1739,8 +1729,9 @@ test("the section title and review menu both open the drawer", async ({ page }) 
   await page.locator(".section-title").click();
   await expect(drawer, "title route again: drawer reopens").toBeVisible();
   await expect(page.locator(".section-title"), "title route again: aria-expanded true").toHaveAttribute("aria-expanded", "true");
-  await page.locator(".section-title").click();
-  await expect(drawer, "title route: a second click closes the drawer").toHaveCount(0);
+  const dimmedTitle = (await page.locator(".section-title").boundingBox())!;
+  await page.mouse.click(dimmedTitle.x + dimmedTitle.width / 2, dimmedTitle.y + dimmedTitle.height / 2);
+  await expect(drawer, "title route: a click on the dimmed title closes the drawer").toHaveCount(0);
   await expect(page.locator(".section-title"), "title route: aria-expanded false").toHaveAttribute("aria-expanded", "false");
   await page.getByRole("button", { name: "Menu" }).click();
   await page.getByRole("menuitem", { name: /^Context/ }).click();
@@ -1800,7 +1791,7 @@ test("the sheet follows the question when the question changes height", async ({
   });
   const before = await page.evaluate(() => ({
     question: document.querySelector("#card .region.q")!.getBoundingClientRect().bottom,
-    sheet: document.querySelector(".section-drawer")!.getBoundingClientRect().top,
+    sheet: document.querySelector(".section-drawer-panel")!.getBoundingClientRect().top,
   }));
   expect(before.sheet, `before: sheet sits under the question ${JSON.stringify(before)}`).toBeGreaterThanOrEqual(before.question - 1);
   await page.evaluate(() => {
@@ -1809,11 +1800,11 @@ test("the sheet follows the question when the question changes height", async ({
   });
   const after = await page.evaluate(() => ({
     question: document.querySelector("#card .region.q")!.getBoundingClientRect().bottom,
-    sheet: document.querySelector(".section-drawer")!.getBoundingClientRect().top,
+    sheet: document.querySelector(".section-drawer-panel")!.getBoundingClientRect().top,
   }));
   expect(after.question, `after: the question grew ${JSON.stringify({ before, after })}`).toBeGreaterThan(before.question + 40);
   await expect
-    .poll(async () => page.evaluate(() => document.querySelector(".section-drawer")!.getBoundingClientRect().top), {
+    .poll(async () => page.evaluate(() => document.querySelector(".section-drawer-panel")!.getBoundingClientRect().top), {
       message: `after: the sheet top follows the question bottom ${JSON.stringify({ before, after })}`,
     })
     .toBeGreaterThanOrEqual(after.question - 1);

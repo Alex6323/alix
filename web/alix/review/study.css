@@ -157,11 +157,10 @@
   .section-title:hover { color: var(--ink); }
   .section-title:focus-visible { outline: 1px solid var(--bolt); outline-offset: 4px; border-radius: 2px; }
   .section-title[data-quiet-focus]:focus-visible { outline: none; }
-  .section-drawer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 12; overflow: hidden; }
+  .section-drawer { position: fixed; inset: 0; z-index: 12; overflow: hidden; }
   .section-drawer-scrim { position: absolute; inset: 0; background: rgba(0,0,0,0.52); cursor: pointer; }
   .section-drawer-panel {
-    position: absolute; bottom: 0; left: 0; right: 0; margin: 0 auto;
-    width: min(100% - 16px, var(--card-w)); max-height: calc(100% - 8px);
+    position: absolute; top: 0; bottom: 0; left: 0; width: 100%;
     overflow: auto; user-select: text;
     padding: 22px 24px calc(22px + env(safe-area-inset-bottom)); text-align: left; color: var(--ink);
     background: var(--menu-bg); border: 1px solid var(--line); border-bottom: 0; border-radius: 12px 12px 0 0;

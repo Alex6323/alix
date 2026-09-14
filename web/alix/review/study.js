@@ -663,21 +663,22 @@ export function createStudy({
       questionWatch.observe(question);
     }
     panel.focus({ preventScroll: true });
-    if (drawer.animate) {
-      drawer.animate(
+    if (panel.animate) {
+      panel.animate(
         [{ transform: "translateY(100%)" }, { transform: "translateY(0)" }],
         { duration: 170, easing: "cubic-bezier(0.4, 0, 0.2, 1)" },
       );
     }
   }
 
-  // The sheet rises from the page bottom to just under the question, so the
-  // title and the question stay readable above it.
   function placeSection() {
-    const drawer = doc.querySelector(".section-drawer");
+    const panel = doc.querySelector(".section-drawer-panel");
     const question = doc.querySelector("#card .region.q");
-    if (!drawer || !question) return;
-    drawer.style.top = `${Math.round(question.getBoundingClientRect().bottom)}px`;
+    if (!panel || !question) return;
+    const box = question.getBoundingClientRect();
+    panel.style.top = `${Math.round(box.bottom)}px`;
+    panel.style.left = `${Math.round(box.left)}px`;
+    panel.style.width = `${Math.round(box.width)}px`;
   }
 
   // The sheet lives on the body, so a rerender that rebuilds the card must
@@ -712,8 +713,9 @@ export function createStudy({
         title.focus({ preventScroll: true });
       }
     };
-    if (drawer && drawer.offsetHeight && drawer.animate) {
-      const animation = drawer.animate(
+    const panel = drawer && drawer.querySelector(".section-drawer-panel");
+    if (panel && panel.offsetHeight && panel.animate) {
+      const animation = panel.animate(
         [{ transform: "translateY(0)" }, { transform: "translateY(100%)" }],
         { duration: 170, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" },
       );
