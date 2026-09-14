@@ -221,6 +221,11 @@ MUTANTS_SHARD ?=
 MUTANTS_ALL ?=
 
 mutants: gate-guard
+	@mkdir -p target; \
+	mutants_list=$$(mktemp target/mutants-list.XXXXXX); \
+	trap 'rm -f "$$mutants_list"' EXIT HUP INT TERM; \
+	cargo mutants --list --colors never >"$$mutants_list" && \
+	python3 scripts/mutants_allowed.py --check-pins "$$mutants_list" scripts/mutants-allowlist.txt
 	@if [ -z "$$TMPDIR" ] && [ -d "$$HOME/tmp" ]; then TMPDIR="$$HOME/tmp"; export TMPDIR; fi; \
 	shard=""; [ -z "$(MUTANTS_SHARD)" ] || shard="--shard $(MUTANTS_SHARD)"; \
 	if [ -n "$(MUTANTS_ALL)" ]; then \
