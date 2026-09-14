@@ -32,14 +32,17 @@ def complete_matrix():
                 "critical_paths": ["parser", "locator"],
                 "primary_evidence": [
                     {
-                        "kind": "unit-regression",
-                        "command": "make test",
+                        "kind": "parser-unit-law",
+                        "command": "make parser-hostility-test",
+                        "cadence": "per-change",
+                    },
+                    {
+                        "kind": "locator-unit-law",
+                        "command": "make locator-hostility-test",
                         "cadence": "per-change",
                     }
                 ],
-                "state": "gap",
-                "gap": "broad regressions do not plant hostile parser and locator defects",
-                "roadmap_anchor": "risk-class-test-matrix",
+                "state": "covered",
             },
             {
                 "id": "data-loss",
@@ -251,14 +254,14 @@ class RiskMatrixGuardTests(unittest.TestCase):
         self.assert_invalid(covered_gap, "pure-domain-error: covered rows cannot declare a gap")
 
         gap_without_detail = copy.deepcopy(matrix)
-        gap_without_detail["risk_classes"][1].pop("gap")
-        self.assert_invalid(gap_without_detail, "parser-hostility: gap rows require gap detail")
+        gap_without_detail["risk_classes"][2].pop("gap")
+        self.assert_invalid(gap_without_detail, "data-loss: gap rows require gap detail")
 
         gap_without_owner = copy.deepcopy(matrix)
-        gap_without_owner["risk_classes"][1].pop("roadmap_anchor")
+        gap_without_owner["risk_classes"][2].pop("roadmap_anchor")
         self.assert_invalid(
             gap_without_owner,
-            "parser-hostility: gap rows require a roadmap_anchor",
+            "data-loss: gap rows require a roadmap_anchor",
         )
 
     def test_unknown_schema_vocabulary_is_rejected(self):

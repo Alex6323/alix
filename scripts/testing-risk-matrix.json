@@ -24,14 +24,17 @@
       ],
       "primary_evidence": [
         {
-          "kind": "unit-regression",
-          "command": "make test",
+          "kind": "parser-unit-law",
+          "command": "make parser-hostility-test",
+          "cadence": "per-change"
+        },
+        {
+          "kind": "locator-unit-law",
+          "command": "make locator-hostility-test",
           "cadence": "per-change"
         }
       ],
-      "state": "gap",
-      "gap": "broad regressions do not plant hostile parser and locator defects",
-      "roadmap_anchor": "risk-class-test-matrix"
+      "state": "covered"
     },
     {
       "id": "data-loss",
