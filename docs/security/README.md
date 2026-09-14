@@ -12,8 +12,8 @@ The offline dependency gate reads
 [`scripts/dependency-policy.toml`](../../scripts/dependency-policy.toml) through
 [`scripts/check-dependency-policy.py`](../../scripts/check-dependency-policy.py). It fails closed on
 undeclared Cargo, npm, pub, or uv manifests, unapproved registries, unpinned Cargo Git sources, and
-missing lockfile integrity data. It also reads source-affecting tables, path overrides, and
-recursively included files from either root Cargo configuration spelling, tracked or untracked.
+missing lockfile integrity data. Either root Cargo configuration spelling must be tracked; the
+gate then reads its source-affecting tables, path overrides, and recursively included files.
 `make deps-check` retains the reviewed Cargo version-family baseline.
 
 ## Supported deployment model

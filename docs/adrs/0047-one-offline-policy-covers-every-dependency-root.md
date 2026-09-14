@@ -1,6 +1,7 @@
 # 0047: One offline policy covers every dependency root
 
-- Status: Accepted
+- Status: Superseded by
+  [ADR 0048](0048-root-cargo-configuration-is-reviewed.md)
 - Evidence: cargo = "https://github.com/rust-lang/crates.io-index" in scripts/dependency-policy.toml
 - Evidence: git dependency requires a 40-hex rev in scripts/check-dependency-policy.py
 - Evidence: python3 scripts/check-dependency-policy.py in scripts/deps-check.sh

@@ -115,8 +115,58 @@ class DependencyPolicyTests(unittest.TestCase):
             "Cargo.toml: package registry_dep:1.0.0: git dependency requires a 40-hex rev",
         )
 
-    def test_an_untracked_root_cargo_config_cannot_supply_a_git_patch(self):
+    def test_an_untracked_root_cargo_config_toml_is_refused(self):
         def after_track(directory):
+            path = directory / ".cargo" / "config.toml"
+            path.parent.mkdir()
+            path.write_text(
+                '[build]\ntarget-dir = "target"\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/config.toml: untracked Cargo config is "
+            "refused; track it or remove it\n",
+            result.stderr,
+        )
+
+    def test_the_same_tracked_root_cargo_config_reaches_the_table_checks(self):
+        def change(directory):
+            path = directory / ".cargo" / "config.toml"
+            path.parent.mkdir()
+            path.write_text(
+                '[build]\ntarget-dir = "target"\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_fixture(change=change)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: 5 manifests and 4 lock roots match policy\n",
+            result.stdout,
+        )
+
+    def test_an_untracked_root_cargo_config_old_spelling_is_refused(self):
+        def after_track(directory):
+            path = directory / ".cargo" / "config"
+            path.parent.mkdir()
+            path.write_text(
+                '[build]\ntarget-dir = "target"\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/config: untracked Cargo config is refused; "
+            "track it or remove it\n",
+            result.stderr,
+        )
+
+    def test_a_tracked_root_cargo_config_still_checks_git_patches(self):
+        def change(directory):
             path = directory / ".cargo" / "config.toml"
             path.parent.mkdir()
             path.write_text(
@@ -125,7 +175,7 @@ class DependencyPolicyTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: .cargo/config.toml: package remote_dep: "
@@ -134,7 +184,7 @@ class DependencyPolicyTests(unittest.TestCase):
         )
 
     def test_a_root_cargo_source_replacement_must_be_declared(self):
-        def after_track(directory):
+        def change(directory):
             path = directory / ".cargo" / "config.toml"
             path.parent.mkdir()
             path.write_text(
@@ -142,7 +192,7 @@ class DependencyPolicyTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: .cargo/config.toml: source replacement is not declared "
@@ -158,8 +208,6 @@ class DependencyPolicyTests(unittest.TestCase):
                 + '\n[cargo]\nsources = ["crates-io", "mirror"]\n',
                 encoding="utf-8",
             )
-
-        def after_track(directory):
             path = directory / ".cargo" / "config.toml"
             path.parent.mkdir()
             path.write_text(
@@ -168,7 +216,7 @@ class DependencyPolicyTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-        result = self.run_fixture(change=change, after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: 5 manifests and 4 lock roots match policy\n",
@@ -176,25 +224,25 @@ class DependencyPolicyTests(unittest.TestCase):
         )
 
     def test_a_root_cargo_config_with_only_build_settings_is_allowed(self):
-        def after_track(directory):
+        def change(directory):
             path = directory / ".cargo" / "config.toml"
             path.parent.mkdir()
             path.write_text("[build]\njobs = 1\n", encoding="utf-8")
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: 5 manifests and 4 lock roots match policy\n",
             result.stdout,
         )
 
-    def test_an_untracked_root_cargo_config_cannot_supply_a_paths_override(self):
-        def after_track(directory):
+    def test_a_tracked_root_cargo_config_still_checks_paths_overrides(self):
+        def change(directory):
             path = directory / ".cargo" / "config.toml"
             path.parent.mkdir()
             path.write_text('paths = ["../outside"]\n', encoding="utf-8")
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: .cargo/config.toml: path override leaves repository\n",
@@ -202,7 +250,7 @@ class DependencyPolicyTests(unittest.TestCase):
         )
 
     def test_an_included_cargo_config_cannot_hide_a_paths_override(self):
-        def after_track(directory):
+        def change(directory):
             cargo = directory / ".cargo"
             cargo.mkdir()
             (cargo / "config.toml").write_text(
@@ -212,7 +260,7 @@ class DependencyPolicyTests(unittest.TestCase):
                 'paths = ["../outside"]\n', encoding="utf-8"
             )
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: .cargo/local.toml: path override leaves repository\n",
@@ -220,7 +268,7 @@ class DependencyPolicyTests(unittest.TestCase):
         )
 
     def test_an_include_chain_cannot_hide_a_paths_override(self):
-        def after_track(directory):
+        def change(directory):
             cargo = directory / ".cargo"
             cargo.mkdir()
             (cargo / "config.toml").write_text(
@@ -233,7 +281,7 @@ class DependencyPolicyTests(unittest.TestCase):
                 'paths = ["../outside"]\n', encoding="utf-8"
             )
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: .cargo/b.toml: path override leaves repository\n",
@@ -256,7 +304,7 @@ class DependencyPolicyTests(unittest.TestCase):
             ),
         ]
         for label, contents, expected in cases:
-            def after_track(directory):
+            def change(directory):
                 cargo = directory / ".cargo"
                 included = cargo / "nested" / "local.toml"
                 included.parent.mkdir(parents=True)
@@ -271,7 +319,7 @@ class DependencyPolicyTests(unittest.TestCase):
                 included.symlink_to(target)
 
             with self.subTest(label=label):
-                result = self.run_fixture(after_track=after_track)
+                result = self.run_fixture(change=change)
                 self.assertEqual(1, result.returncode, result.stdout + result.stderr)
                 self.assertEqual(
                     f"dependency-policy: {expected}\n",
@@ -279,7 +327,7 @@ class DependencyPolicyTests(unittest.TestCase):
                 )
 
     def test_a_safe_path_uses_the_symlinked_includes_lexical_base(self):
-        def after_track(directory):
+        def change(directory):
             cargo = directory / ".cargo"
             included = cargo / "nested" / "local.toml"
             included.parent.mkdir(parents=True)
@@ -293,7 +341,7 @@ class DependencyPolicyTests(unittest.TestCase):
             )
             included.symlink_to(target)
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: 5 manifests and 4 lock roots match policy\n",
@@ -301,14 +349,14 @@ class DependencyPolicyTests(unittest.TestCase):
         )
 
     def test_a_missing_included_cargo_config_is_denied(self):
-        def after_track(directory):
+        def change(directory):
             cargo = directory / ".cargo"
             cargo.mkdir()
             (cargo / "config.toml").write_text(
                 'include = ["missing.toml"]\n', encoding="utf-8"
             )
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: .cargo/config.toml: included Cargo config is missing\n",
@@ -316,14 +364,14 @@ class DependencyPolicyTests(unittest.TestCase):
         )
 
     def test_an_included_cargo_config_cannot_leave_the_repository(self):
-        def after_track(directory):
+        def change(directory):
             cargo = directory / ".cargo"
             cargo.mkdir()
             (cargo / "config.toml").write_text(
                 'include = ["../../outside.toml"]\n', encoding="utf-8"
             )
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: .cargo/config.toml: included Cargo config leaves repository\n",
@@ -331,14 +379,14 @@ class DependencyPolicyTests(unittest.TestCase):
         )
 
     def test_a_cargo_config_include_cycle_is_denied(self):
-        def after_track(directory):
+        def change(directory):
             cargo = directory / ".cargo"
             cargo.mkdir()
             (cargo / "config.toml").write_text(
                 'include = ["config.toml"]\n', encoding="utf-8"
             )
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: .cargo/config.toml: included Cargo config cycle\n",
@@ -346,7 +394,7 @@ class DependencyPolicyTests(unittest.TestCase):
         )
 
     def test_a_cargo_config_include_past_the_depth_cap_is_denied(self):
-        def after_track(directory):
+        def change(directory):
             cargo = directory / ".cargo"
             cargo.mkdir()
             (cargo / "config.toml").write_text(
@@ -360,7 +408,7 @@ class DependencyPolicyTests(unittest.TestCase):
                 )
                 (cargo / f"{index}.toml").write_text(text, encoding="utf-8")
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: .cargo/32.toml: included Cargo config depth exceeds 32\n",
@@ -368,7 +416,7 @@ class DependencyPolicyTests(unittest.TestCase):
         )
 
     def test_an_included_cargo_config_with_only_build_settings_is_allowed(self):
-        def after_track(directory):
+        def change(directory):
             cargo = directory / ".cargo"
             cargo.mkdir()
             (cargo / "config.toml").write_text(
@@ -378,7 +426,7 @@ class DependencyPolicyTests(unittest.TestCase):
                 "[build]\njobs = 1\n", encoding="utf-8"
             )
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: 5 manifests and 4 lock roots match policy\n",
@@ -386,7 +434,7 @@ class DependencyPolicyTests(unittest.TestCase):
         )
 
     def test_a_root_cargo_config_patch_path_is_resolved_from_the_checkout_root(self):
-        def after_track(directory):
+        def change(directory):
             path = directory / ".cargo" / "config.toml"
             path.parent.mkdir()
             path.write_text(
@@ -395,7 +443,7 @@ class DependencyPolicyTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: .cargo/config.toml: package remote_dep: "
@@ -404,7 +452,7 @@ class DependencyPolicyTests(unittest.TestCase):
         )
 
     def test_both_root_cargo_config_spellings_are_read(self):
-        def after_track(directory):
+        def change(directory):
             cargo = directory / ".cargo"
             cargo.mkdir()
             (cargo / "config.toml").write_text(
@@ -416,7 +464,7 @@ class DependencyPolicyTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-        result = self.run_fixture(after_track=after_track)
+        result = self.run_fixture(change=change)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             "dependency-policy: .cargo/config: package remote_dep: "

@@ -355,6 +355,11 @@ def check_policy(root, policy_path):
     for config_path in ROOT_CARGO_CONFIGS:
         config = root / config_path
         if config.is_file():
+            if config_path not in tracked:
+                raise PolicyError(
+                    f"{display(config, root)}: untracked Cargo config is refused; "
+                    "track it or remove it"
+                )
             check_cargo_config(root, config, declared_cargo_sources, policy_path)
 
     registries = policy.get("registries", {})
