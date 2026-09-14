@@ -2,6 +2,10 @@
 
 - Status: Accepted
 - Evidence: sync_wire_shapes in src/serve/contract.rs
+- Details evolved 2026-09-12: Syncthing as phase 2 is off the table for
+  now; reaching the desktop beyond the LAN goes first through a Tailscale
+  mesh address over this same pairing. The pull, push and single-writer
+  rules below are unchanged.
 - Evidence: root_identity_mints_once_and_preserves_other_toml_keys in src/sync/server.rs
 - Evidence: accepted_sync_push_is_the_base_of_the_next_desktop_grade in tests/api.rs
 - Evidence: sync_push_handler_commits_once_on_the_study_owner_thread in src/serve/tests.rs
