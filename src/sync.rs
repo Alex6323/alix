@@ -1,5 +1,7 @@
+mod failure;
 mod manifest;
 
+pub use failure::*;
 pub use manifest::*;
 
 #[cfg(feature = "full")]

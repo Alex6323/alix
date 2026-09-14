@@ -2022,6 +2022,19 @@ fn sync_wire_shapes() {
         }),
     );
     pin(
+        "SyncFailureDto",
+        &SyncFailureDto {
+            class: "damaged-sync-state",
+            message: "cannot read .alix/sync.toml".to_string(),
+            remedy: "Run `alix doctor` on the computer.",
+        },
+        json!({
+            "class": "damaged-sync-state",
+            "message": "cannot read .alix/sync.toml",
+            "remedy": "Run `alix doctor` on the computer."
+        }),
+    );
+    pin(
         "SyncRootDto",
         &SyncRootDto {
             root_id: "root-00000000000000000000000000".to_string(),

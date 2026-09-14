@@ -105,7 +105,7 @@ impl CatalogState {
         }
     }
 
-    fn sync_root(&mut self) -> Result<SyncRootSnapshot, String> {
+    fn sync_root(&mut self) -> Result<SyncRootSnapshot, crate::sync::SyncFailure> {
         let path = effective_decks_dir(
             self.config.scoped,
             self.config.config_path.as_deref(),
@@ -115,14 +115,13 @@ impl CatalogState {
             self.decks_dir = path.clone();
             self.invalidate();
         }
-        let root_id = crate::sync::root_id(&path).map_err(|error| format!("{error:#}"))?;
+        let root_id = crate::sync::root_id(&path)?;
         Ok(SyncRootSnapshot { path, root_id })
     }
 
-    fn sync_snapshot(&mut self) -> Result<SyncSnapshot, String> {
+    fn sync_snapshot(&mut self) -> Result<SyncSnapshot, crate::sync::SyncFailure> {
         let root = self.sync_root()?;
-        let catalog = crate::sync::SyncCatalog::load(&root.path, &self.recent, &mut self.cache)
-            .map_err(|error| format!("{error:#}"))?;
+        let catalog = crate::sync::SyncCatalog::load(&root.path, &self.recent, &mut self.cache)?;
         Ok(SyncSnapshot { root, catalog })
     }
 }
@@ -185,11 +184,11 @@ pub(super) enum SetDeadlineError {
 type Reply<T> = mpsc::Sender<T>;
 
 pub(super) enum CatalogCommand {
-    SyncRoot(Reply<Result<SyncRootSnapshot, String>>),
-    SyncSnapshot(Reply<Result<SyncSnapshot, String>>),
+    SyncRoot(Reply<Result<SyncRootSnapshot, crate::sync::SyncFailure>>),
+    SyncSnapshot(Reply<Result<SyncSnapshot, crate::sync::SyncFailure>>),
     SyncSnapshotFor {
         expected: SyncRootSnapshot,
-        reply: Reply<Result<SyncSnapshotFor, String>>,
+        reply: Reply<Result<SyncSnapshotFor, crate::sync::SyncFailure>>,
     },
     Resolve {
         name: String,
@@ -243,16 +242,16 @@ impl CatalogHandle {
         rx.recv().ok()
     }
 
-    pub(super) fn sync_root(&self) -> Option<Result<SyncRootSnapshot, String>> {
+    pub(super) fn sync_root(&self) -> Option<Result<SyncRootSnapshot, crate::sync::SyncFailure>> {
         self.call(CatalogCommand::SyncRoot)
     }
-    pub(super) fn sync_snapshot(&self) -> Option<Result<SyncSnapshot, String>> {
+    pub(super) fn sync_snapshot(&self) -> Option<Result<SyncSnapshot, crate::sync::SyncFailure>> {
         self.call(CatalogCommand::SyncSnapshot)
     }
     pub(super) fn sync_snapshot_for(
         &self,
         expected: SyncRootSnapshot,
-    ) -> Option<Result<SyncSnapshotFor, String>> {
+    ) -> Option<Result<SyncSnapshotFor, crate::sync::SyncFailure>> {
         self.call(|reply| CatalogCommand::SyncSnapshotFor { expected, reply })
     }
 
@@ -432,13 +431,12 @@ impl CatalogState {
     fn sync_snapshot_for(
         &mut self,
         expected: &SyncRootSnapshot,
-    ) -> Result<SyncSnapshotFor, String> {
+    ) -> Result<SyncSnapshotFor, crate::sync::SyncFailure> {
         let root = self.sync_root()?;
         if root.path != expected.path || root.root_id != expected.root_id {
             return Ok(SyncSnapshotFor::RootChanged(root));
         }
-        let catalog = crate::sync::SyncCatalog::load(&root.path, &self.recent, &mut self.cache)
-            .map_err(|error| format!("{error:#}"))?;
+        let catalog = crate::sync::SyncCatalog::load(&root.path, &self.recent, &mut self.cache)?;
         Ok(SyncSnapshotFor::Same(SyncSnapshot { root, catalog }))
     }
 
@@ -871,7 +869,7 @@ mod tests {
         let error = state.sync_snapshot().unwrap_err();
 
         assert!(
-            error.contains("sync.toml"),
+            error.message.contains("sync.toml"),
             "the new root error is returned: {error}"
         );
         assert_ne!(

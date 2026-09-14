@@ -229,6 +229,8 @@ class SyncController extends ChangeNotifier {
       desktop = await _port.entries();
     } on PairingExpired {
       return aborted(syncPairingExpiredMessage);
+    } on SyncServerFailure catch (error) {
+      return aborted('could not list what the desktop serves: ${error.lines}');
     } on SyncTransportFailure catch (error) {
       return aborted(
         'could not list what the desktop serves: status ${error.status}',
@@ -263,8 +265,12 @@ class SyncController extends ChangeNotifier {
           break;
         case SyncPushTooLarge():
           refused.add('$label: too large to push');
-        case SyncPushRejected(:final status):
-          refused.add('$label: the desktop refused it (status $status)');
+        case SyncPushRejected(:final status, :final failure):
+          refused.add(
+            failure == null
+                ? '$label: the desktop refused it (status $status)'
+                : '$label: ${failure.lines}',
+          );
       }
     }
 
@@ -300,6 +306,8 @@ class SyncController extends ChangeNotifier {
         continue;
       } on PairingExpired {
         return aborted(syncPairingExpiredMessage);
+      } on SyncServerFailure catch (error) {
+        return aborted('could not pull $name: ${error.lines}');
       } on SyncTransportFailure catch (error) {
         return aborted('could not pull $name: status ${error.status}');
       } on Object catch (error) {
@@ -558,6 +566,8 @@ class SyncController extends ChangeNotifier {
       );
     } on PairingExpired {
       report = const SyncReport(error: syncPairingExpiredMessage);
+    } on SyncServerFailure catch (error) {
+      report = SyncReport(error: 'could not pull $entry: ${error.lines}');
     } on SyncTransportFailure catch (error) {
       report = SyncReport(error: 'could not pull $entry: status ${error.status}');
     } on SyncFreeSpaceRefusal catch (error) {

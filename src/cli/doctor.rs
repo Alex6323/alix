@@ -1408,8 +1408,8 @@ pub(crate) fn profile_folder_errors(profiles_dir: &Path) -> Result<Vec<String>> 
             Ok(Some(root_id)) => roots.entry(root_id).or_default().push(profile),
             Ok(None) => {}
             Err(error) => errors.push(format!(
-                "profile `{}` has an invalid sync root identity: {error:#}",
-                profile.name
+                "profile `{}` has an invalid sync root identity: {}",
+                profile.name, error.message
             )),
         }
         for path in nested_sync_root_files(&profile.folder)? {

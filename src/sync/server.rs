@@ -4,28 +4,31 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use anyhow::{Context, Result, bail};
-
 use super::{
-    ROOT_ID_PREFIX, SYNC_PULL_MANIFEST_VERSION, SyncDeckDto, SyncFileDto, SyncPullManifest,
-    digest_reader, entry_digest, is_root_id,
+    ROOT_ID_PREFIX, SYNC_PULL_MANIFEST_VERSION, SyncDeckDto, SyncFailure, SyncFailureClass,
+    SyncFileDto, SyncPullManifest, digest_reader, entry_digest, is_root_id,
 };
 #[cfg(feature = "full")]
 use crate::share::StagedFile;
 
+type Result<T> = std::result::Result<T, SyncFailure>;
+
+const ROOT_ID_FILE: &str = ".alix/sync.toml";
+
 fn root_id_path(served_dir: &Path) -> std::path::PathBuf {
-    served_dir.join(".alix/sync.toml")
+    served_dir.join(ROOT_ID_FILE)
 }
 
-fn checked_root_id(path: &Path, value: &toml::Value) -> Result<String> {
+fn checked_root_id(value: &toml::Value) -> Result<String> {
     let Some(id) = value.as_str() else {
-        bail!("{}: root_id must be a string", path.display());
+        return Err(SyncFailure::damaged(format!(
+            "{ROOT_ID_FILE}: root_id must be a string"
+        )));
     };
     if !is_root_id(id) {
-        bail!(
-            "{}: root_id must be `root-` plus 26 lowercase Crockford base32 characters",
-            path.display()
-        );
+        return Err(SyncFailure::damaged(format!(
+            "{ROOT_ID_FILE}: root_id must be `root-` plus 26 lowercase Crockford base32 characters"
+        )));
     }
     Ok(id.to_string())
 }
@@ -34,31 +37,29 @@ fn read_table(path: &Path) -> Result<Option<toml::Table>> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error).with_context(|| format!("cannot read {}", path.display())),
+        Err(_) => return Err(SyncFailure::damaged(format!("cannot read {ROOT_ID_FILE}"))),
     };
     toml::from_str(&text)
-        .with_context(|| format!("cannot parse {}", path.display()))
         .map(Some)
+        .map_err(|_| SyncFailure::damaged(format!("cannot parse {ROOT_ID_FILE}")))
 }
 
 pub fn root_id(served_dir: &Path) -> Result<String> {
     let path = root_id_path(served_dir);
     let mut table = read_table(&path)?.unwrap_or_default();
     if let Some(value) = table.get("root_id") {
-        return checked_root_id(&path, value);
+        return checked_root_id(value);
     }
-    let token = crate::token::mint()
-        .map_err(|error| anyhow::anyhow!("cannot mint root identity: {error}"))?;
+    let token =
+        crate::token::mint().map_err(|_| SyncFailure::damaged("cannot mint the root identity"))?;
     let id = format!("{ROOT_ID_PREFIX}{token}");
     table.insert("root_id".to_string(), toml::Value::String(id.clone()));
-    let text = toml::to_string_pretty(&table)?;
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("{} has no parent directory", path.display()))?;
-    crate::fsio::create_dir_all(parent)
-        .with_context(|| format!("cannot create {}", parent.display()))?;
+    let cannot_write = || SyncFailure::damaged(format!("cannot write {ROOT_ID_FILE}"));
+    let text = toml::to_string_pretty(&table).map_err(|_| cannot_write())?;
+    let parent = path.parent().ok_or_else(cannot_write)?;
+    crate::fsio::create_dir_all(parent).map_err(|_| cannot_write())?;
     crate::fsio::replace_file(&parent.join(".sync.toml.tmp"), &path, text.as_bytes())
-        .with_context(|| format!("cannot write {}", path.display()))?;
+        .map_err(|_| cannot_write())?;
     Ok(id)
 }
 
@@ -67,10 +68,7 @@ pub fn read_root_id(served_dir: &Path) -> Result<Option<String>> {
     let Some(table) = read_table(&path)? else {
         return Ok(None);
     };
-    table
-        .get("root_id")
-        .map(|value| checked_root_id(&path, value))
-        .transpose()
+    table.get("root_id").map(checked_root_id).transpose()
 }
 
 #[cfg(feature = "full")]
@@ -149,9 +147,9 @@ impl SyncCatalog {
     ) -> Result<Self> {
         let root = root
             .canonicalize()
-            .with_context(|| format!("cannot resolve served folder {}", root.display()))?;
+            .map_err(|_| SyncFailure::damaged("cannot resolve the served folder"))?;
         let rows = crate::picker::catalog(&root, recent, cache)
-            .with_context(|| format!("cannot list {}", root.display()))?;
+            .map_err(|_| SyncFailure::damaged("cannot list the served folder"))?;
         let contained: Vec<_> = rows
             .into_iter()
             .filter_map(|row| {
@@ -174,9 +172,9 @@ impl SyncCatalog {
             let store_root = if row.is_workspace {
                 crate::workspace::root_store_path(&path)
             } else {
-                let parent = path.parent().ok_or_else(|| {
-                    anyhow::anyhow!("{} has no containing folder", path.display())
-                })?;
+                let parent = path
+                    .parent()
+                    .ok_or_else(|| SyncFailure::damaged("a deck entry has no containing folder"))?;
                 crate::workspace::root_store_path(parent)
             };
             let source_decks: Vec<PathBuf> = if row.is_workspace {
@@ -192,18 +190,16 @@ impl SyncCatalog {
                 let relative_path = if row.is_workspace {
                     deck_path
                         .strip_prefix(&path)
-                        .with_context(|| {
-                            format!(
-                                "workspace member {} is outside {}",
-                                deck_path.display(),
-                                path.display()
-                            )
+                        .map_err(|_| {
+                            SyncFailure::unreadable("a member of a workspace entry lies outside it")
                         })?
                         .to_path_buf()
                 } else {
-                    PathBuf::from(deck_path.file_name().ok_or_else(|| {
-                        anyhow::anyhow!("{} has no file name", deck_path.display())
-                    })?)
+                    PathBuf::from(
+                        deck_path.file_name().ok_or_else(|| {
+                            SyncFailure::unreadable("a deck entry has no file name")
+                        })?,
+                    )
                 };
                 let wire_relative_path = wire_path(&relative_path)?;
                 let deck_path = match deck_path.canonicalize() {
@@ -263,11 +259,15 @@ impl SyncCatalog {
                     &path,
                     &excluded_decks,
                     &excluded_deck_ids,
-                )?
+                )
+                .map_err(|_| {
+                    SyncFailure::unreadable("cannot list the files of a workspace entry")
+                })?
             } else if entry_decks.is_empty() {
                 Vec::new()
             } else {
-                crate::share::staged_deck_contents_files(&path)?
+                crate::share::staged_deck_contents_files(&path)
+                    .map_err(|_| SyncFailure::unreadable("cannot list the files of a deck entry"))?
             };
             staged.extend(private_files(&store_root, &entry_decks)?);
             let files = manifest_rows(&staged)?;
@@ -275,7 +275,7 @@ impl SyncCatalog {
                 .iter()
                 .try_fold(0u64, |total, file| total.checked_add(file.bytes))
                 .ok_or_else(|| {
-                    anyhow::anyhow!("sync entry {} is too large to count", path.display())
+                    SyncFailure::damaged(format!("a {kind} entry is too large to count"))
                 })?;
             entries.push(SyncEntry {
                 name: row.name,
@@ -326,8 +326,8 @@ impl SyncCatalog {
     pub fn stage_pull(&self, name: &str, root_id: &str, stage: &Path) -> Result<StagedPull> {
         let entry = match self.entry(name) {
             EntryLookup::One(entry) => entry,
-            EntryLookup::Ambiguous => bail!("ambiguous sync entry {name:?}"),
-            EntryLookup::Missing => bail!("unknown sync entry {name:?}"),
+            EntryLookup::Ambiguous => return Err(SyncFailure::malformed("ambiguous sync entry")),
+            EntryLookup::Missing => return Err(SyncFailure::malformed("unknown sync entry")),
         };
         stage_entry(entry, root_id, stage)
     }
@@ -345,8 +345,8 @@ fn lightweight_deck_id(path: &Path) -> Option<String> {
 fn private_files(store_root: &Path, decks: &[EntryDeck]) -> Result<Vec<StagedFile>> {
     let files = crate::state::UserFiles::new(store_root);
     let mut out = Vec::new();
-    let mut push = |relative: PathBuf, source: PathBuf| -> Result<()> {
-        if is_regular_file(&source)? {
+    let mut push = |relative: PathBuf, source: PathBuf, what: PrivateFile| -> Result<()> {
+        if is_regular_file(&source, &what)? {
             out.push(StagedFile { relative, source });
         }
         Ok(())
@@ -354,18 +354,49 @@ fn private_files(store_root: &Path, decks: &[EntryDeck]) -> Result<Vec<StagedFil
     push(
         PathBuf::from(crate::config::LOCAL_MANIFEST),
         files.local_manifest(),
+        PrivateFile::LocalManifest,
     )?;
     for deck in decks {
         push(
             Path::new(".alix/progress").join(format!("{}.json", deck.deck_id)),
             files.progress_for(&deck.deck_id),
+            PrivateFile::Progress(&deck.deck_id),
         )?;
         push(
             crate::personal::sidecar_path(&deck.relative_path),
             crate::personal::sidecar_path(&deck.path),
+            PrivateFile::Sidecar(&deck.deck_id),
         )?;
     }
     Ok(out)
+}
+
+/// The files staged beside an entry's public projection, named the way a
+/// failure may name them: alix's fixed names literally, a deck by its id.
+#[cfg(feature = "full")]
+enum PrivateFile<'a> {
+    LocalManifest,
+    Progress(&'a str),
+    Sidecar(&'a str),
+}
+
+#[cfg(feature = "full")]
+impl PrivateFile<'_> {
+    fn class(&self) -> SyncFailureClass {
+        match self {
+            Self::LocalManifest | Self::Progress(_) => SyncFailureClass::DamagedSyncState,
+            Self::Sidecar(_) => SyncFailureClass::UnreadableDeckFile,
+        }
+    }
+
+    fn failure(&self, problem: &str) -> SyncFailure {
+        let what = match self {
+            Self::LocalManifest => crate::config::LOCAL_MANIFEST.to_string(),
+            Self::Progress(deck_id) => format!("the progress file of deck {deck_id}"),
+            Self::Sidecar(deck_id) => format!("the personal sidecar of deck {deck_id}"),
+        };
+        SyncFailure::new(self.class(), format!("{problem} {what}"))
+    }
 }
 
 #[cfg(feature = "full")]
@@ -376,9 +407,9 @@ fn manifest_rows(staged: &[StagedFile]) -> Result<Vec<SyncFileDto>> {
         if files.contains_key(&path) {
             continue;
         }
-        let mut source = std::fs::File::open(&file.source)
-            .with_context(|| format!("cannot open {}", file.source.display()))?;
-        let (bytes, digest) = digest_reader(&mut source)?;
+        let cannot_read = || SyncFailure::unreadable("cannot read a file inside the entry");
+        let mut source = std::fs::File::open(&file.source).map_err(|_| cannot_read())?;
+        let (bytes, digest) = digest_reader(&mut source).map_err(|_| cannot_read())?;
         files.insert(
             path.clone(),
             SyncFileDto {
@@ -392,29 +423,27 @@ fn manifest_rows(staged: &[StagedFile]) -> Result<Vec<SyncFileDto>> {
 }
 
 #[cfg(feature = "full")]
-fn is_regular_file(path: &Path) -> Result<bool> {
+fn is_regular_file(path: &Path, what: &PrivateFile<'_>) -> Result<bool> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => {
-            return Err(error).with_context(|| format!("cannot read {}", path.display()));
-        }
+        Err(_) => return Err(what.failure("cannot read")),
     };
     if metadata.file_type().is_symlink() {
-        bail!(
-            "{} is a link; paired sync does not follow links",
-            path.display()
-        );
+        return Err(what.failure(
+            "paired sync does not follow links, and a link stands where a file was expected:",
+        ));
     }
     if !metadata.is_file() {
-        bail!("{} is not a regular file", path.display());
+        return Err(what.failure("not a regular file:"));
     }
     Ok(true)
 }
 
 #[cfg(feature = "full")]
 fn stage_entry(entry: &SyncEntry, root_id: &str, stage: &Path) -> Result<StagedPull> {
-    std::fs::create_dir_all(stage).with_context(|| format!("cannot create {}", stage.display()))?;
+    let staging = || SyncFailure::damaged("cannot write the staging folder");
+    std::fs::create_dir_all(stage).map_err(|_| staging())?;
     let root = stage.join(&entry.name);
     if entry.kind == "workspace" {
         let (staged, _) = crate::share::stage_workspace_excluding(
@@ -422,29 +451,28 @@ fn stage_entry(entry: &SyncEntry, root_id: &str, stage: &Path) -> Result<StagedP
             stage,
             &entry.excluded_decks,
             &entry.excluded_deck_ids,
-        )?;
+        )
+        .map_err(|_| SyncFailure::unreadable("cannot stage the workspace entry for pull"))?;
         if staged != root {
-            bail!(
-                "staged entry {} did not keep its picker name {}",
-                staged.display(),
-                entry.name
-            );
+            return Err(SyncFailure::damaged(
+                "the staged entry did not keep its name",
+            ));
         }
     } else if entry.decks.is_empty() {
-        std::fs::create_dir_all(&root)
-            .with_context(|| format!("cannot create {}", root.display()))?;
+        std::fs::create_dir_all(&root).map_err(|_| staging())?;
     } else {
-        let (bundle, _) = crate::share::stage_deck_bundle(&entry.path, stage)?;
+        let (bundle, _) = crate::share::stage_deck_bundle(&entry.path, stage)
+            .map_err(|_| SyncFailure::unreadable("cannot stage the deck entry for pull"))?;
         std::fs::remove_file(bundle.join(crate::share::DECK_BUNDLE_MARKER))
-            .with_context(|| format!("cannot remove the share marker from {}", bundle.display()))?;
-        std::fs::rename(&bundle, &root)
-            .with_context(|| format!("cannot name staged deck {}", root.display()))?;
+            .map_err(|_| staging())?;
+        std::fs::rename(&bundle, &root).map_err(|_| staging())?;
     }
 
     let files = crate::state::UserFiles::new(&entry.store_root);
     copy_if_file(
         &files.local_manifest(),
         &root.join(crate::config::LOCAL_MANIFEST),
+        &PrivateFile::LocalManifest,
     )?;
     let mut manifest_decks = Vec::new();
     for deck in &entry.decks {
@@ -452,14 +480,22 @@ fn stage_entry(entry: &SyncEntry, root_id: &str, stage: &Path) -> Result<StagedP
         let staged_progress = root
             .join(".alix/progress")
             .join(format!("{}.json", deck.deck_id));
-        let revision = if copy_if_file(&progress, &staged_progress)? {
-            Some(crate::store::read_deck_data(&staged_progress, &deck.deck_id, None)?.0)
+        let what = PrivateFile::Progress(&deck.deck_id);
+        let revision = if copy_if_file(&progress, &staged_progress, &what)? {
+            let (revision, ..) =
+                crate::store::read_deck_data(&staged_progress, &deck.deck_id, None)
+                    .map_err(|_| what.failure("cannot read"))?;
+            Some(revision)
         } else {
             None
         };
         let sidecar = crate::personal::sidecar_path(&deck.path);
         let staged_sidecar = root.join(crate::personal::sidecar_path(&deck.relative_path));
-        copy_if_file(&sidecar, &staged_sidecar)?;
+        copy_if_file(
+            &sidecar,
+            &staged_sidecar,
+            &PrivateFile::Sidecar(&deck.deck_id),
+        )?;
         manifest_decks.push(SyncDeckDto {
             path: wire_path(&deck.relative_path)?,
             deck_id: deck.deck_id.clone(),
@@ -476,62 +512,53 @@ fn stage_entry(entry: &SyncEntry, root_id: &str, stage: &Path) -> Result<StagedP
     };
     let manifest_path = root.join(".alix/pull.json");
     let parent = manifest_path.parent().expect("pull manifest has a parent");
-    std::fs::create_dir_all(parent)
-        .with_context(|| format!("cannot create {}", parent.display()))?;
-    let bytes = serde_json::to_vec_pretty(&manifest)?;
+    let cannot_write = || SyncFailure::damaged("cannot write the pull manifest");
+    std::fs::create_dir_all(parent).map_err(|_| cannot_write())?;
+    let bytes = serde_json::to_vec_pretty(&manifest).map_err(|_| cannot_write())?;
     crate::fsio::replace_file(&parent.join(".pull.json.tmp"), &manifest_path, &bytes)
-        .with_context(|| format!("cannot write {}", manifest_path.display()))?;
+        .map_err(|_| cannot_write())?;
     Ok(StagedPull { root, manifest })
 }
 
 #[cfg(feature = "full")]
-fn copy_if_file(source: &Path, destination: &Path) -> Result<bool> {
-    let metadata = match std::fs::symlink_metadata(source) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => {
-            return Err(error).with_context(|| format!("cannot read {}", source.display()));
-        }
-    };
-    if metadata.file_type().is_symlink() {
-        bail!(
-            "{} is a link; paired sync does not follow links",
-            source.display()
-        );
-    }
-    if !metadata.is_file() {
-        bail!("{} is not a regular file", source.display());
+fn copy_if_file(source: &Path, destination: &Path, what: &PrivateFile<'_>) -> Result<bool> {
+    if !is_regular_file(source, what)? {
+        return Ok(false);
     }
     if let Some(parent) = destination.parent() {
         std::fs::create_dir_all(parent)
-            .with_context(|| format!("cannot create {}", parent.display()))?;
+            .map_err(|_| SyncFailure::damaged("cannot write the staging folder"))?;
     }
-    std::fs::copy(source, destination)
-        .with_context(|| format!("cannot copy {}", source.display()))?;
+    std::fs::copy(source, destination).map_err(|_| what.failure("cannot copy"))?;
     Ok(true)
 }
 
 #[cfg(feature = "full")]
 fn manifest_files(root: &Path) -> Result<Vec<SyncFileDto>> {
     fn walk(root: &Path, dir: &Path, out: &mut Vec<SyncFileDto>) -> Result<()> {
+        let cannot_read = || SyncFailure::damaged("cannot read the staging folder");
         let mut entries: Vec<_> = std::fs::read_dir(dir)
-            .with_context(|| format!("cannot read {}", dir.display()))?
-            .collect::<Result<_, _>>()?;
+            .map_err(|_| cannot_read())?
+            .collect::<std::result::Result<_, _>>()
+            .map_err(|_| cannot_read())?;
         entries.sort_by_key(std::fs::DirEntry::file_name);
         for entry in entries {
-            let metadata = entry.file_type()?;
+            let metadata = entry.file_type().map_err(|_| cannot_read())?;
             if metadata.is_symlink() {
-                bail!(
-                    "{} is a link; paired sync does not follow links",
-                    entry.path().display()
-                );
+                return Err(SyncFailure::unreadable(
+                    "a link was staged; paired sync does not follow links",
+                ));
             }
             if metadata.is_dir() {
                 walk(root, &entry.path(), out)?;
             } else if metadata.is_file() {
-                let relative = entry.path().strip_prefix(root)?.to_path_buf();
-                let mut file = std::fs::File::open(entry.path())?;
-                let (bytes, digest) = digest_reader(&mut file)?;
+                let relative = entry
+                    .path()
+                    .strip_prefix(root)
+                    .map_err(|_| cannot_read())?
+                    .to_path_buf();
+                let mut file = std::fs::File::open(entry.path()).map_err(|_| cannot_read())?;
+                let (bytes, digest) = digest_reader(&mut file).map_err(|_| cannot_read())?;
                 out.push(SyncFileDto {
                     path: wire_path(&relative)?,
                     bytes,
@@ -554,19 +581,27 @@ fn wire_path(path: &Path) -> Result<String> {
     for component in path.components() {
         match component {
             Component::Normal(part) => {
-                let part = part
-                    .to_str()
-                    .ok_or_else(|| anyhow::anyhow!("sync paths must be UTF-8"))?;
+                let part = part.to_str().ok_or_else(|| {
+                    SyncFailure::unreadable("a file path inside the entry is not UTF-8")
+                })?;
                 if part.is_empty() || part == "." || part == ".." || part.contains('/') {
-                    bail!("unsafe sync path component {part:?}");
+                    return Err(SyncFailure::unreadable(
+                        "a file path inside the entry has an unsafe component",
+                    ));
                 }
                 parts.push(part);
             }
-            _ => bail!("sync paths must be entry-relative"),
+            _ => {
+                return Err(SyncFailure::unreadable(
+                    "a file path inside the entry is not entry-relative",
+                ));
+            }
         }
     }
     if parts.is_empty() {
-        bail!("sync paths must not be empty");
+        return Err(SyncFailure::unreadable(
+            "a file path inside the entry is empty",
+        ));
     }
     Ok(parts.join("/"))
 }
@@ -633,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_root_identity_names_its_file_and_is_never_repaired() {
+    fn malformed_root_identity_names_its_file_by_its_fixed_name_and_is_never_repaired() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join(".alix")).unwrap();
         let path = dir.path().join(".alix/sync.toml");
@@ -642,9 +677,16 @@ mod tests {
         let error = root_id(dir.path()).unwrap_err();
 
         assert!(
-            format!("{error:#}").contains(path.to_string_lossy().as_ref()),
-            "the malformed-id error must name its file: {error:#}"
+            error
+                .message
+                .starts_with(".alix/sync.toml: root_id must be"),
+            "the malformed-id error names its file by alix's fixed name: {error}"
         );
+        assert!(
+            !error.message.contains(dir.path().to_str().unwrap()),
+            "the malformed-id error carries no path: {error}"
+        );
+        assert_eq!(SyncFailureClass::DamagedSyncState, error.class);
         assert_eq!(
             "root_id = \"root-not-canonical\"\n",
             std::fs::read_to_string(path).unwrap(),
@@ -1050,5 +1092,45 @@ mod tests {
             "sync 1000-deck index: median={}us samples={samples:?}",
             samples[samples.len() / 2]
         );
+    }
+
+    // The law the sync module's messages live under: the served folder's
+    // absolute path and a user-authored file name never appear in a failure,
+    // whatever layer produced it.
+    #[cfg(unix)]
+    #[test]
+    fn sync_failure_messages_name_no_path_and_no_user_file_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_str().unwrap().to_string();
+        let mut messages = Vec::new();
+
+        std::fs::create_dir_all(dir.path().join(".alix")).unwrap();
+        std::fs::write(dir.path().join(".alix/sync.toml"), "root_id = 5\n").unwrap();
+        let error = root_id(dir.path()).unwrap_err();
+        messages.push(("root id", format!("{error:#}")));
+        std::fs::remove_file(dir.path().join(".alix/sync.toml")).unwrap();
+
+        let deck_name = "private-notes-83yq.md";
+        write_deck(&dir.path().join(deck_name), "deck-linked", "card-linked");
+        let progress = dir.path().join(".alix/progress/deck-linked.json");
+        std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
+        std::fs::write(dir.path().join("elsewhere.json"), "{}").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("elsewhere.json"), &progress).unwrap();
+        let recent = crate::recent::RecentDecks::load(dir.path().join("recent.json"));
+        let error = SyncCatalog::load(dir.path(), &recent, &mut crate::cache::DeckCache::default())
+            .unwrap_err();
+        messages.push(("linked progress file", format!("{error:#}")));
+
+        assert_eq!(2, messages.len());
+        for (case, message) in messages {
+            assert!(
+                !message.contains(&root),
+                "{case}: the message names the served folder: {message}"
+            );
+            assert!(
+                !message.contains("private-notes-83yq"),
+                "{case}: the message names a user file: {message}"
+            );
+        }
     }
 }

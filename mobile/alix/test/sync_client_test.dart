@@ -258,6 +258,29 @@ void main() {
 
         expect(client.entries(), throwsA(isA<SyncTransportFailure>()));
       });
+
+      test('a 500 SyncFailureDto body throws SyncServerFailure', () async {
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondJson(request, 500, {
+            'class': 'damaged-sync-state',
+            'message': 'cannot read .alix/sync.toml',
+            'remedy': 'Run `alix doctor` on the computer.',
+          });
+        });
+        final client = HttpSyncClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+        addTearDown(client.close);
+
+        expect(
+          client.entries(),
+          throwsA(
+            isA<SyncServerFailure>()
+                .having((e) => e.kind, 'kind', 'damaged-sync-state')
+                .having((e) => e.message, 'message', 'cannot read .alix/sync.toml')
+                .having((e) => e.remedy, 'remedy', 'Run `alix doctor` on the computer.'),
+          ),
+        );
+      });
     });
 
     group('pull', () {
@@ -419,6 +442,31 @@ void main() {
         await expectLater(
           () => client.pull('nope', target),
           throwsA(isA<SyncTransportFailure>()),
+        );
+        expect(target.existsSync(), isFalse);
+      });
+
+      test('a 500 SyncFailureDto body throws SyncServerFailure and leaves no file behind', () async {
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondJson(request, 500, {
+            'class': 'unreadable-deck-file',
+            'message': 'cannot stage the deck entry for pull',
+            'remedy': 'Check the file on the computer, then run `alix doctor`.',
+          });
+        });
+        final client = HttpSyncClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+        addTearDown(client.close);
+        final target = targetFile();
+
+        await expectLater(
+          () => client.pull('Biology', target),
+          throwsA(
+            isA<SyncServerFailure>()
+                .having((e) => e.kind, 'kind', 'unreadable-deck-file')
+                .having((e) => e.lines, 'lines',
+                    'cannot stage the deck entry for pull\nCheck the file on the computer, then run `alix doctor`.'),
+          ),
         );
         expect(target.existsSync(), isFalse);
       });
@@ -615,6 +663,30 @@ void main() {
         final result = await client.push('deck-cells', utf8.encode('{}'), rootId: 'root-a', pulledRevision: '3');
 
         expect(result, const SyncPushRejected(status: 503, body: 'catalog owner unavailable'));
+      });
+
+      test('a 500 SyncFailureDto body maps to SyncPushRejected carrying the parsed failure', () async {
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondJson(request, 500, {
+            'class': 'damaged-sync-state',
+            'message': 'cannot write the progress file of deck deck-cells',
+            'remedy': 'Run `alix doctor` on the computer.',
+          });
+        });
+        final client = HttpSyncClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+        addTearDown(client.close);
+
+        final result = await client.push('deck-cells', utf8.encode('{}'), rootId: 'root-a', pulledRevision: '3');
+
+        expect(
+          result,
+          isA<SyncPushRejected>().having((r) => r.status, 'status', 500).having(
+                (r) => r.failure?.lines,
+                'failure lines',
+                'cannot write the progress file of deck deck-cells\nRun `alix doctor` on the computer.',
+              ),
+        );
       });
 
       test('a 401 throws PairingExpired', () async {

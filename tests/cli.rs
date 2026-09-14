@@ -6343,6 +6343,21 @@ fn the_verbose_log_contains_ids_but_no_learning_content_names_titles_or_paths() 
         response.starts_with(b"HTTP/1.1 200"),
         "response: {response:?}"
     );
+    let progress = dir.path().join(".alix/progress/deck-private83yq.json");
+    std::fs::remove_file(&progress).unwrap();
+    std::fs::create_dir(&progress).unwrap();
+    let response = server_request(port, "GET", "/api/sync/entries", "");
+    assert!(
+        response.starts_with(b"HTTP/1.1 500"),
+        "a progress file that is not a regular file fails the sync listing: {response:?}"
+    );
+    let response = String::from_utf8_lossy(&response);
+    assert!(
+        response.contains(r#""class":"damaged-sync-state""#)
+            && response.contains(r#""remedy":"Run `alix doctor` on the computer.""#),
+        "the failure body carries its class and remedy: {response}"
+    );
+    std::fs::remove_dir(&progress).unwrap();
     std::fs::write(dir.path().join(".alix/sync.toml"), "root_id = 5\n").unwrap();
     let response = server_request(port, "GET", "/api/sync/entries", "");
     assert!(
@@ -6367,8 +6382,18 @@ fn the_verbose_log_contains_ids_but_no_learning_content_names_titles_or_paths() 
         "log: {log:?}"
     );
     assert!(
-        log.contains("kind=http method=GET area=api status=500"),
-        "the sync failure is recorded: {log:?}"
+        log.contains(
+            "kind=http method=GET area=api status=500 sync=damaged-sync-state \
+             message=not a regular file: the progress file of deck deck-private83yq"
+        ),
+        "the progress file failure is recorded with its class and message: {log:?}"
+    );
+    assert!(
+        log.contains(
+            "kind=http method=GET area=api status=500 sync=damaged-sync-state \
+             message=.alix/sync.toml: root_id must be"
+        ),
+        "the root identity failure is recorded with its class and message: {log:?}"
     );
     for private in [
         front,

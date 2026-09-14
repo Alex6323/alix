@@ -179,7 +179,11 @@ titles, request paths, or deck and source paths, even when verbose targets are
 enabled. No logging facade is installed, so dependencies cannot add their own
 records. The verbose end-to-end content laws and the real-process rotation law
 in `tests/cli.rs` enforce those boundaries. A failing request's message
-goes to the response body and the server's stderr, never into the log.
+goes to the response body and the server's stderr, not into the log, with
+one exception: a paired-sync failure's message is built without paths or
+user-authored file names (alix's fixed file names and minted deck ids only)
+and is recorded with its class, so a bug-report archive carries it. The
+verbose content law covers a sync failure row.
 
 ### Bug-report archive
 

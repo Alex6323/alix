@@ -44,6 +44,36 @@ class SyncTransportFailure implements Exception {
   String toString() => 'SyncTransportFailure: status $status: $body';
 }
 
+/// A 500 whose body is `SyncFailureDto`: what failed on the desktop, named
+/// without paths, and the one sentence the person can act on.
+class SyncServerFailure implements Exception {
+  const SyncServerFailure({required this.kind, required this.message, required this.remedy});
+
+  final String kind;
+  final String message;
+  final String remedy;
+
+  static SyncServerFailure? tryParse(String body) {
+    dynamic json;
+    try {
+      json = jsonDecode(body);
+    } on FormatException {
+      return null;
+    }
+    if (json is! Map) return null;
+    final kind = json['class'];
+    final message = json['message'];
+    final remedy = json['remedy'];
+    if (kind is! String || message is! String || remedy is! String) return null;
+    return SyncServerFailure(kind: kind, message: message, remedy: remedy);
+  }
+
+  String get lines => '$message\n$remedy';
+
+  @override
+  String toString() => 'SyncServerFailure: $kind: $message';
+}
+
 /// One entry `GET /api/sync/entries` lists. Mirrors `SyncEntryDto`.
 class SyncEntry {
   const SyncEntry({
@@ -243,12 +273,14 @@ class SyncPushTooLarge extends SyncPushResult {
   int get hashCode => (SyncPushTooLarge).hashCode;
 }
 
-/// 400 or any other status this app has no dedicated mapping for.
+/// 400 or any other status this app has no dedicated mapping for;
+/// [failure] is the body parsed as `SyncFailureDto` when it is one.
 class SyncPushRejected extends SyncPushResult {
-  const SyncPushRejected({required this.status, required this.body});
+  const SyncPushRejected({required this.status, required this.body, this.failure});
 
   final int status;
   final String body;
+  final SyncServerFailure? failure;
 
   @override
   bool operator ==(Object other) =>
@@ -264,15 +296,17 @@ class SyncPushRejected extends SyncPushResult {
 /// tutor/exam/generate surface, so a caller can fake it in tests.
 abstract class SyncClient {
   /// `GET /api/sync/entries`: what the paired desktop currently serves.
-  /// Throws [PairingExpired] on 401, [SyncTransportFailure] on any other
-  /// non-200 status or a malformed body.
+  /// Throws [PairingExpired] on 401, [SyncServerFailure] on a non-200 whose
+  /// body is `SyncFailureDto`, [SyncTransportFailure] on any other non-200
+  /// status or a malformed body.
   Future<SyncEntries> entries();
 
   /// `GET /api/sync/pull?entry=<name>`: streams the entry's zip into
   /// [target] (created or truncated). Reads `Content-Length` before the
   /// body and returns it; throws [SyncTransportFailure] when the body
-  /// length differs from it, or on any non-200 status, leaving no partial
-  /// file behind. Throws [PairingExpired] on 401. [onProgress], when given,
+  /// length differs from it, or on any non-200 status ([SyncServerFailure]
+  /// when that body is `SyncFailureDto`), leaving no partial file behind.
+  /// Throws [PairingExpired] on 401. [onProgress], when given,
   /// fires once with `(0, total)` as soon as the length is known and before
   /// any byte is written, then again after each chunk; a caller that throws
   /// from that first call sees the exception unwrapped, with nothing
@@ -335,7 +369,7 @@ class HttpSyncClient implements SyncClient {
     }
     final body = await response.transform(utf8.decoder).join();
     if (response.statusCode != 200) {
-      throw SyncTransportFailure(response.statusCode, body);
+      throw _failure(response.statusCode, body);
     }
     dynamic json;
     try {
@@ -367,7 +401,7 @@ class HttpSyncClient implements SyncClient {
     }
     if (response.statusCode != 200) {
       final body = await response.transform(utf8.decoder).join();
-      throw SyncTransportFailure(response.statusCode, body);
+      throw _failure(response.statusCode, body);
     }
     final total = response.contentLength;
     onProgress?.call(0, total);
@@ -443,9 +477,16 @@ class HttpSyncClient implements SyncClient {
         return const SyncPushTooLarge();
       default:
         final body = await response.transform(utf8.decoder).join();
-        return SyncPushRejected(status: response.statusCode, body: body);
+        return SyncPushRejected(
+          status: response.statusCode,
+          body: body,
+          failure: SyncServerFailure.tryParse(body),
+        );
     }
   }
+
+  Exception _failure(int status, String body) =>
+      SyncServerFailure.tryParse(body) ?? SyncTransportFailure(status, body);
 
   Future<(String, dynamic)> _readBody(HttpClientResponse response) async {
     final text = await response.transform(utf8.decoder).join();

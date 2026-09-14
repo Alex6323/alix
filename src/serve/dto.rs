@@ -332,6 +332,13 @@ pub(super) struct SyncRootDto {
     pub(super) root_id: String,
 }
 
+#[derive(Debug, Serialize)]
+pub(super) struct SyncFailureDto {
+    pub(super) class: &'static str,
+    pub(super) message: String,
+    pub(super) remedy: &'static str,
+}
+
 #[derive(Serialize)]
 pub(super) struct DoctorDto {
     pub(super) rows: Vec<DoctorRowDto>,

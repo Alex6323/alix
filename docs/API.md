@@ -79,8 +79,9 @@ so is every client.
 - **Errors are bare status codes with empty bodies unless an endpoint names a
   structured exception.** Library removal returns `RemovalFailureDto` after a
   partial destructive result. Paired sync returns `SyncRootDto` for a root
-  mismatch and `SyncConflictDto` for a revision conflict. These bodies let a
-  client explain the refusal without exposing a host path.
+  mismatch, `SyncConflictDto` for a revision conflict, and `SyncFailureDto`
+  for every 500 (as does `GET /api/version`). These bodies let a client
+  explain the refusal without exposing a host path.
   `400` is overloaded (malformed body, unknown deck name, store failure —
   per-endpoint meaning in §5). `409` = "no active session/exam/walk of the
   kind this endpoint needs". `401` = bad/missing token. `403` = an adult-only
@@ -464,7 +465,7 @@ case writes anything.
 |---|---|
 | 200 | `SyncEntriesDto`; `unpacked_bytes` is the sum of the pull manifest's file byte counts. |
 | 401 | Missing or wrong pairing token. |
-| 500 | The root identity or catalog cannot be read. |
+| 500 | `SyncFailureDto`; the root identity or catalog cannot be read. |
 | 503 | The catalog owner is unavailable. |
 
 `GET /api/sync/pull?entry=<name>`:
@@ -474,7 +475,7 @@ case writes anything.
 | 200 | Streamed ZIP with `Content-Length`, `Cache-Control: no-store`, and `.alix/pull.json`. |
 | 400 | Missing, unknown, or ambiguous entry name. |
 | 401 | Missing or wrong pairing token. |
-| 500 | Root, catalog, staging, or archive failure. |
+| 500 | `SyncFailureDto`; root, catalog, staging, or archive failure. |
 | 503 | The catalog owner is unavailable. |
 
 `POST /api/sync/push?deck=<deck-id>`:
@@ -488,7 +489,7 @@ case writes anything.
 | 409 | `SyncConflictDto`; the disk revision differs from the pulled revision. |
 | 412 | `SyncRootDto`; `X-Alix-Root` is missing, wrong, or changed while the request was read. |
 | 413 | The document exceeds the 64 MiB sync-push cap. |
-| 500 | Catalog, current-document, backup, or atomic-write failure. |
+| 500 | `SyncFailureDto`; catalog, current-document, backup, or atomic-write failure. |
 | 503 | The catalog or study owner is unavailable. |
 
 ## 5. Endpoint reference
@@ -499,7 +500,7 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| GET | `/api/version` | – | `VersionDto` | 500 root identity unreadable; 503 catalog owner unavailable |
+| GET | `/api/version` | – | `VersionDto` | 500 `SyncFailureDto`, root identity unreadable; 503 catalog owner unavailable |
 | GET | `/api/bug-report` | – | private diagnostics ZIP | 500 collection or archive failure |
 | GET | `/api/doctor` | – | `DoctorDto` | – |
 | GET | `/api/pair` | – | `PairDto` | – |
@@ -582,9 +583,9 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| GET | `/api/sync/entries` | - | `SyncEntriesDto` | 500 root or catalog failure |
-| GET | `/api/sync/pull?entry=<name>` | - | streamed rootless ZIP containing `SyncPullManifest` | 400 missing, unknown, or ambiguous entry; 500 staging or archive failure |
-| POST | `/api/sync/push?deck=<deck-id>` | version-1 per-deck progress document; `X-Alix-Root` and `X-Alix-Pulled-Revision` required | `SyncPushDto` | 400 malformed or ambiguous; 404 deck not served; 409 `SyncConflictDto`; 412 `SyncRootDto`; 413 over 64 MiB; 500 read or write failure |
+| GET | `/api/sync/entries` | - | `SyncEntriesDto` | 500 `SyncFailureDto`, root or catalog failure |
+| GET | `/api/sync/pull?entry=<name>` | - | streamed rootless ZIP containing `SyncPullManifest` | 400 missing, unknown, or ambiguous entry; 500 `SyncFailureDto`, staging or archive failure |
+| POST | `/api/sync/push?deck=<deck-id>` | version-1 per-deck progress document; `X-Alix-Root` and `X-Alix-Pulled-Revision` required | `SyncPushDto` | 400 malformed or ambiguous; 404 deck not served; 409 `SyncConflictDto`; 412 `SyncRootDto`; 413 over 64 MiB; 500 `SyncFailureDto`, read or write failure |
 
 ### Receive
 
@@ -1121,6 +1122,24 @@ Example: `{"deck_id":"deck-cells","desktop_revision":9,"pulled_revision":7,"desk
 A root mismatch returns `SyncRootDto { root_id: string }`, naming the root the
 server currently exposes. Example:
 `{"root_id":"root-00000000000000000000000000"}`.
+
+### SyncFailureDto
+
+Every 500 from the sync routes and from `GET /api/version` carries all keys in
+`SyncFailureDto`:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `class` | string | `damaged-sync-state`, `unreadable-deck-file`, or `malformed-request`. |
+| `message` | string | What failed, lowercase; alix's own files by their fixed names (`.alix/sync.toml`, `alix.local.toml`), a deck by its minted id, everything else by its kind. Never a host path or a user-authored file name. |
+| `remedy` | string | One sentence fixed per class: `damaged-sync-state` says ``Run `alix doctor` on the computer.``, `unreadable-deck-file` says ``Check the file on the computer, then run `alix doctor`.``, `malformed-request` says `Update both apps, then file a bug report.` |
+
+Example:
+`{"class":"damaged-sync-state","message":"cannot read .alix/sync.toml","remedy":"Run `alix doctor` on the computer."}`.
+
+The same class and message go to the server's stderr and to its log record
+for the request (`sync=<class> message=<message>`), so a bug-report archive
+carries them.
 
 ### DoctorDto / DoctorRowDto
 

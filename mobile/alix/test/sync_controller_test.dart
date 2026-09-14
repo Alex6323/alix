@@ -117,6 +117,28 @@ void main() {
       expect(controller.lastReport?.error, isNull);
     });
 
+    test('a push the desktop refuses with a SyncFailureDto is reported with its remedy', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.planPushesImpl = () => [item('deck-a')];
+      port.pushImpl = (_, _, _) async => const SyncPushRejected(
+        status: 500,
+        body: '{"class":"damaged-sync-state"}',
+        failure: SyncServerFailure(
+          kind: 'damaged-sync-state',
+          message: 'cannot write the progress file of deck deck-a',
+          remedy: 'Run `alix doctor` on the computer.',
+        ),
+      );
+      final controller = SyncController(port: port);
+
+      await controller.cycle();
+
+      expect(controller.lastReport?.refused, [
+        'Biology/deck-a: cannot write the progress file of deck deck-a\n'
+        'Run `alix doctor` on the computer.',
+      ]);
+    });
+
     test('an accepted push is present in the cycle report', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
       port.planPushesImpl = () => [item('deck-a')];
@@ -215,6 +237,65 @@ void main() {
 
       expect(controller.lastReport?.error, contains('Biology'));
       expect(controller.lastReport?.error, contains('500'));
+    });
+
+    test('a pull failure the desktop explains shows its message and remedy', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.entriesImpl = () async => const SyncEntries(
+        rootId: 'root-a',
+        entries: [
+          SyncEntry(
+            name: 'Biology',
+            kind: 'workspace',
+            members: 1,
+            unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
+            leftOut: [],
+          ),
+        ],
+      );
+      port.pairedEntriesImpl = () => const [
+        SyncEntryState(
+          entry: 'Biology',
+          kind: 'workspace',
+          digest: 'xxh64-0000000000000001',
+          decks: [],
+        ),
+      ];
+      port.pullImpl = (entry, target, unpackedBytes) async {
+        throw const SyncServerFailure(
+          kind: 'damaged-sync-state',
+          message: 'cannot write the staging folder',
+          remedy: 'Run `alix doctor` on the computer.',
+        );
+      };
+      final controller = SyncController(port: port);
+
+      await controller.cycle();
+
+      expect(
+        controller.lastReport?.error,
+        'could not pull Biology: cannot write the staging folder\n'
+        'Run `alix doctor` on the computer.',
+      );
+    });
+
+    test('a listing failure the desktop explains shows its message and remedy', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.entriesImpl = () async => throw const SyncServerFailure(
+        kind: 'damaged-sync-state',
+        message: 'cannot read .alix/sync.toml',
+        remedy: 'Run `alix doctor` on the computer.',
+      );
+      final controller = SyncController(port: port);
+
+      await controller.cycle();
+
+      expect(
+        controller.lastReport?.error,
+        'could not list what the desktop serves: cannot read .alix/sync.toml\n'
+        'Run `alix doctor` on the computer.',
+      );
     });
 
     test('a tapped entry pulls only that entry', () async {

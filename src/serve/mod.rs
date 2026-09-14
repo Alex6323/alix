@@ -96,16 +96,21 @@ struct SyncPullArchive {
     path: PathBuf,
 }
 
-fn build_sync_pull_archive(snapshot: &SyncSnapshot, name: &str) -> Result<SyncPullArchive> {
+fn build_sync_pull_archive(
+    snapshot: &SyncSnapshot,
+    name: &str,
+) -> std::result::Result<SyncPullArchive, crate::sync::SyncFailure> {
     let temp = tempfile::Builder::new()
         .prefix("alix-sync-pull-")
-        .tempdir()?;
+        .tempdir()
+        .map_err(|_| crate::sync::SyncFailure::damaged("cannot create the staging folder"))?;
     let staged = snapshot
         .catalog
         .stage_pull(name, &snapshot.root.root_id, temp.path())?;
     let path = temp.path().join("pull.zip");
-    share::zip_contents_to(&staged.root, &path)?;
-    let file = std::fs::File::open(&path)?;
+    let cannot_build = || crate::sync::SyncFailure::damaged("cannot build the pull archive");
+    share::zip_contents_to(&staged.root, &path).map_err(|_| cannot_build())?;
+    let file = std::fs::File::open(&path).map_err(|_| cannot_build())?;
     Ok(SyncPullArchive { temp, file, path })
 }
 
@@ -444,10 +449,7 @@ pub fn run_review(
                                     root_id: root.root_id,
                                 },
                             ),
-                            Some(Err(error)) => {
-                                report_failure(&request, 500, &error);
-                                respond_status(request, 500);
-                            }
+                            Some(Err(error)) => respond_sync_failure(request, &error),
                             None => respond_status(request, 503),
                         }
                         continue;
@@ -561,7 +563,7 @@ pub fn run_review(
                 match (&method, path.as_str()) {
             (Method::Get, "/api/sync/entries") => match catalog.sync_snapshot() {
                 None => respond_status(request, 503),
-                Some(Err(error)) => respond_error(request, 500, &error),
+                Some(Err(error)) => respond_sync_failure(request, &error),
                 Some(Ok(snapshot)) => {
                     let entries = snapshot
                         .catalog
@@ -597,7 +599,7 @@ pub fn run_review(
                         continue;
                     }
                     Some(Err(error)) => {
-                        respond_error(request, 500, &error);
+                        respond_sync_failure(request, &error);
                         continue;
                     }
                     Some(Ok(snapshot)) => snapshot,
@@ -609,7 +611,7 @@ pub fn run_review(
                 let archive = match build_sync_pull_archive(&snapshot, &name) {
                     Ok(archive) => archive,
                     Err(error) => {
-                        respond_error(request, 500, &error);
+                        respond_sync_failure(request, &error);
                         continue;
                     }
                 };
@@ -632,7 +634,7 @@ pub fn run_review(
                         continue;
                     }
                     Some(Err(error)) => {
-                        respond_error(request, 500, &error);
+                        respond_sync_failure(request, &error);
                         continue;
                     }
                     Some(Ok(root)) => root,
@@ -683,7 +685,7 @@ pub fn run_review(
                         continue;
                     }
                     Some(Err(error)) => {
-                        respond_error(request, 500, &error);
+                        respond_sync_failure(request, &error);
                         continue;
                     }
                     Some(Ok(SyncSnapshotFor::RootChanged(current))) => {
@@ -721,7 +723,7 @@ pub fn run_review(
                     ),
                     Some(SyncPushReply::Missing) => respond_status(request, 404),
                     Some(SyncPushReply::Ambiguous) => respond_status(request, 400),
-                    Some(SyncPushReply::Failed(error)) => respond_error(request, 500, &error),
+                    Some(SyncPushReply::Failed(error)) => respond_sync_failure(request, &error),
                 }
             }
             (Method::Get, "/api/decks") => {

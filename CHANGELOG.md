@@ -107,6 +107,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A failing paired-sync request answers with a class, a message that names
+  alix's own files by their fixed names and a deck by its minted id, never
+  a path, and one remedy sentence; the same line reaches the server log and
+  so the bug-report archive, and the phone shows the message and remedy
+  instead of a bare status number.
+
 - The web section context dims the whole page at once and slides a sheet up
   from the bottom of the page to just under the question, as wide as the
   card, so the question stays legible above it; the title shows its key

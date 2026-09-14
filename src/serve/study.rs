@@ -247,7 +247,7 @@ pub(super) enum SyncPushReply {
     },
     Missing,
     Ambiguous,
-    Failed(String),
+    Failed(crate::sync::SyncFailure),
 }
 
 #[cfg(test)]
@@ -1289,7 +1289,9 @@ impl StudyState {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .push((deck_id.to_string(), thread::current().id()));
         if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
-            return SyncPushReply::Failed("cannot flush desktop progress".to_string());
+            return SyncPushReply::Failed(crate::sync::SyncFailure::damaged(
+                "cannot flush desktop progress",
+            ));
         }
         let target = match catalog.deck(deck_id) {
             crate::sync::DeckLookup::One(target) => target,
@@ -1312,7 +1314,9 @@ impl StudyState {
                 pulled_revision,
                 desktop_writer,
             },
-            Err(error) => SyncPushReply::Failed(error.to_string()),
+            Err(_) => SyncPushReply::Failed(crate::sync::SyncFailure::damaged(format!(
+                "cannot write the progress file of deck {deck_id}"
+            ))),
         }
     }
 

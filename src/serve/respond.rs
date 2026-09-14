@@ -143,6 +143,36 @@ pub(super) fn respond_json<T: Serialize>(request: Request, value: &T) {
 
 pub(super) fn respond_json_status<T: Serialize>(request: Request, code: u16, value: &T) {
     log_http_error(&request, code);
+    send_json(request, code, value);
+}
+
+/// A sync failure's message is path-free by construction, so it is the one
+/// failure message that goes to the log as well as to stderr and the body.
+pub(super) fn respond_sync_failure(request: Request, failure: &crate::sync::SyncFailure) {
+    eprintln!(
+        "{} {} failed with 500: {} ({})",
+        request.method(),
+        request_path(&request),
+        failure.message,
+        failure.class.wire()
+    );
+    log_http_record(
+        &request,
+        500,
+        format_args!(" sync={} message={}", failure.class.wire(), failure.message),
+    );
+    send_json(
+        request,
+        500,
+        &super::dto::SyncFailureDto {
+            class: failure.class.wire(),
+            message: failure.message.clone(),
+            remedy: failure.remedy(),
+        },
+    );
+}
+
+fn send_json<T: Serialize>(request: Request, code: u16, value: &T) {
     let body = serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string());
     let header = Header::from_bytes(
         &b"Content-Type"[..],
@@ -208,6 +238,10 @@ pub(super) fn report_failure(request: &Request, code: u16, error: &dyn std::fmt:
 }
 
 fn log_http_error(request: &Request, code: u16) {
+    log_http_record(request, code, format_args!(""));
+}
+
+fn log_http_record(request: &Request, code: u16, tail: std::fmt::Arguments<'_>) {
     if code < 400 {
         return;
     }
@@ -223,7 +257,10 @@ fn log_http_error(request: &Request, code: u16) {
     };
     crate::log::error(
         crate::log::ErrorKind::Http,
-        format_args!("method={} area={area} status={code}", request.method()),
+        format_args!(
+            "method={} area={area} status={code}{tail}",
+            request.method()
+        ),
     );
 }
 
@@ -329,6 +366,27 @@ mod tests {
 
         assert_eq!(
             vec!["target=error kind=http method=POST area=api status=409\n".to_string()],
+            lines
+        );
+        assert!(lines.iter().all(|line| !line.contains("private-token")));
+    }
+
+    #[test]
+    fn a_sync_failure_is_logged_with_its_class_and_path_free_message() {
+        let request: Request = TestRequest::new()
+            .with_method(Method::Get)
+            .with_path("/api/sync/entries?token=private-token")
+            .into();
+        let failure = crate::sync::SyncFailure::damaged("cannot read .alix/sync.toml");
+
+        let lines = crate::log::capture(|| respond_sync_failure(request, &failure));
+
+        assert_eq!(
+            vec![
+                "target=error kind=http method=GET area=api status=500 \
+                 sync=damaged-sync-state message=cannot read .alix/sync.toml\n"
+                    .to_string()
+            ],
             lines
         );
         assert!(lines.iter().all(|line| !line.contains("private-token")));

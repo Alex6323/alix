@@ -1,0 +1,5 @@
+{
+  "class": "damaged-sync-state",
+  "message": "cannot read .alix/sync.toml",
+  "remedy": "Run `alix doctor` on the computer."
+}
