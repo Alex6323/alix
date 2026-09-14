@@ -83,6 +83,36 @@ class DependencyPolicyTests(unittest.TestCase):
             "Cargo.toml: package remote_dep: git dependency requires a 40-hex rev",
         )
 
+    def test_a_cargo_git_patch_without_an_exact_rev_is_denied(self):
+        def change(directory):
+            path = directory / "Cargo.toml"
+            path.write_text(
+                path.read_text(encoding="utf-8")
+                + '\n[patch.crates-io]\n'
+                + 'remote_dep = { git = "https://example.com/remote", branch = "main" }\n',
+                encoding="utf-8",
+            )
+
+        self.assert_denied(
+            change,
+            "Cargo.toml: package remote_dep: git dependency requires a 40-hex rev",
+        )
+
+    def test_a_cargo_git_replace_without_an_exact_rev_is_denied(self):
+        def change(directory):
+            path = directory / "Cargo.toml"
+            path.write_text(
+                path.read_text(encoding="utf-8")
+                + '\n[replace]\n'
+                + '"registry_dep:1.0.0" = { git = "https://example.com/remote", branch = "main" }\n',
+                encoding="utf-8",
+            )
+
+        self.assert_denied(
+            change,
+            "Cargo.toml: package registry_dep:1.0.0: git dependency requires a 40-hex rev",
+        )
+
     def test_a_cargo_path_dependency_outside_the_repository_is_denied(self):
         def change(directory):
             path = directory / "Cargo.toml"

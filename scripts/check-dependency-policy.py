@@ -70,9 +70,18 @@ def dependency_tables(value):
             yield from dependency_tables(child)
 
 
+def cargo_requirement_tables(data):
+    yield from dependency_tables(data)
+    for table in data.get("patch", {}).values():
+        if isinstance(table, dict):
+            yield table
+    if isinstance(data.get("replace"), dict):
+        yield data["replace"]
+
+
 def check_cargo_manifest(root, manifest):
     data = load_toml(manifest)
-    for table in dependency_tables(data):
+    for table in cargo_requirement_tables(data):
         for name, requirement in sorted(table.items()):
             if not isinstance(requirement, dict):
                 continue
