@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core lean-check mobile-unit mobile-test-one windows-check test parser-hostility-test locator-hostility-test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap risk-matrix-check check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust gfm-measure package-verify publish
+.PHONY: build build-core lean-check mobile-unit mobile-test-one windows-check test parser-hostility-test locator-hostility-test zip-receive-fault-test store-fault-test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap risk-matrix-check check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust gfm-measure package-verify publish
 
 # Compile the workspace.
 build:
@@ -602,3 +602,9 @@ parser-hostility-test:
 
 locator-hostility-test:
 	cargo test --lib source::tests::parse_locator_fields_rejects_
+
+zip-receive-fault-test:
+	cargo test --test cli receive_a_zip_folder_refuses_to_clobber_an_existing_dest -- --exact
+
+store-fault-test:
+	cargo test --lib store::tests::every_partial_aggregate_save_is_valid_and_retryable

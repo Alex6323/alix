@@ -339,7 +339,8 @@ which is not a preflight of the whole tree. The public
 `land_deck_bundle_with_force` holds the same refusal itself rather than
 relying on its current callers (Codex). Refusing first also removes an earlier
 dependence on whether the extraction directory and the decks directory shared a
-filesystem.
+filesystem. The command-line folder clobber refusal is pinned by
+`receive_a_zip_folder_refuses_to_clobber_an_existing_dest` (`tests/cli.rs`).
 
 Received archives, decks, images, URLs, manifests, and source locators remain
 untrusted. Sanitizing personal state does not certify the remaining content as

@@ -45,8 +45,13 @@
       ],
       "primary_evidence": [
         {
-          "kind": "integration-regression",
-          "command": "make test",
+          "kind": "zip-receive-integration-law",
+          "command": "make zip-receive-fault-test",
+          "cadence": "per-change"
+        },
+        {
+          "kind": "store-fault-injection-law",
+          "command": "make store-fault-test",
           "cadence": "per-change"
         },
         {
@@ -55,8 +60,8 @@
           "cadence": "per-change"
         }
       ],
-      "state": "gap",
-      "gap": "ZIP and store lack planted faults; OS jobs lack target reporting",
+      "state": "partial",
+      "gap": "OS jobs lack target reporting",
       "roadmap_anchor": "risk-class-test-matrix"
     },
     {

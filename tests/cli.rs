@@ -3801,10 +3801,9 @@ fn receive_a_zip_folder_refuses_to_clobber_an_existing_dest() {
     write(&ws, "a.md", "## q\na\n");
     let zip_path = src.path().join("eng.zip");
     alix::share::zip_to(&ws, &zip_path).unwrap();
-
     let first = alix_env(&["receive", zip_path.to_str().unwrap()], home.path(), &[]);
     assert!(first.status.success(), "stderr: {}", stderr(&first));
-
+    let local = write(&home.path().join("decks/eng"), "a.md", "receiver-local\n");
     let second = alix_env(&["receive", zip_path.to_str().unwrap()], home.path(), &[]);
     assert!(!second.status.success());
     assert!(
@@ -3812,6 +3811,7 @@ fn receive_a_zip_folder_refuses_to_clobber_an_existing_dest() {
         "stderr: {}",
         stderr(&second)
     );
+    assert_eq!("receiver-local\n", std::fs::read_to_string(local).unwrap());
 }
 
 // ── `deck generate`: trace stub / suggest / walk with a fake backend ───────

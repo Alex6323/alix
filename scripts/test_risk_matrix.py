@@ -49,8 +49,13 @@ def complete_matrix():
                 "critical_paths": ["zip-receive", "store", "os-matrix"],
                 "primary_evidence": [
                     {
-                        "kind": "integration-regression",
-                        "command": "make test",
+                        "kind": "zip-receive-integration-law",
+                        "command": "make zip-receive-fault-test",
+                        "cadence": "per-change",
+                    },
+                    {
+                        "kind": "store-fault-injection-law",
+                        "command": "make store-fault-test",
                         "cadence": "per-change",
                     },
                     {
@@ -59,8 +64,8 @@ def complete_matrix():
                         "cadence": "per-change",
                     },
                 ],
-                "state": "gap",
-                "gap": "ZIP and store lack planted faults; OS jobs lack target reporting",
+                "state": "partial",
+                "gap": "OS jobs lack target reporting",
                 "roadmap_anchor": "risk-class-test-matrix",
             },
             {
@@ -255,13 +260,13 @@ class RiskMatrixGuardTests(unittest.TestCase):
 
         gap_without_detail = copy.deepcopy(matrix)
         gap_without_detail["risk_classes"][2].pop("gap")
-        self.assert_invalid(gap_without_detail, "data-loss: gap rows require gap detail")
+        self.assert_invalid(gap_without_detail, "data-loss: partial rows require gap detail")
 
         gap_without_owner = copy.deepcopy(matrix)
         gap_without_owner["risk_classes"][2].pop("roadmap_anchor")
         self.assert_invalid(
             gap_without_owner,
-            "data-loss: gap rows require a roadmap_anchor",
+            "data-loss: partial rows require a roadmap_anchor",
         )
 
     def test_unknown_schema_vocabulary_is_rejected(self):
