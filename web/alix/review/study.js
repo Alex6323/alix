@@ -652,20 +652,26 @@ export function createStudy({
       contextDiagram,
     );
     drawer.appendChild(panel);
-    card.appendChild(drawer);
+    doc.body.appendChild(drawer);
     if (legend && legend.parentElement) legend.parentElement.inert = true;
-    const row = card.querySelector(".section-title-row");
-    const top = row ? row.offsetTop + row.offsetHeight : card.querySelector(".region.q").offsetTop;
-    const height = Math.max(0, card.clientHeight - top);
-    drawer.style.top = `${top}px`;
-    drawer.style.height = `${height}px`;
+    placeSection();
+    win.addEventListener("resize", placeSection);
     panel.focus({ preventScroll: true });
-    if (height && drawer.animate) {
+    if (drawer.animate) {
       drawer.animate(
-        [{ height: "0px" }, { height: `${height}px` }],
+        [{ transform: "translateY(100%)" }, { transform: "translateY(0)" }],
         { duration: 170, easing: "cubic-bezier(0.4, 0, 0.2, 1)" },
       );
     }
+  }
+
+  // The sheet rises from the page bottom to just under the question, so the
+  // title and the question stay readable above it.
+  function placeSection() {
+    const drawer = doc.querySelector(".section-drawer");
+    const question = doc.querySelector("#card .region.q");
+    if (!drawer || !question) return;
+    drawer.style.top = `${Math.round(question.getBoundingClientRect().bottom)}px`;
   }
 
   function autoOpenSection() {
@@ -680,18 +686,22 @@ export function createStudy({
     if (!sectionView) return;
     const drawer = doc.querySelector(".section-drawer");
     const title = doc.querySelector(".section-title");
-    const card = doc.getElementById("card");
     const done = () => {
       if (drawer) drawer.remove();
       sectionView = false;
+      win.removeEventListener("resize", placeSection);
       if (legend && legend.parentElement) legend.parentElement.inert = false;
-      if (title && title.isConnected) title.setAttribute("aria-expanded", "false");
-      // The card, not the title: a ring on the title after every close reads as a highlight.
-      if (card && card.isConnected) { card.tabIndex = -1; card.focus({ preventScroll: true }); }
+      if (title && title.isConnected) {
+        title.setAttribute("aria-expanded", "false");
+        // A ring on the title after every close reads as a highlight.
+        title.dataset.quietFocus = "";
+        title.addEventListener("blur", () => { delete title.dataset.quietFocus; }, { once: true });
+        title.focus({ preventScroll: true });
+      }
     };
     if (drawer && drawer.offsetHeight && drawer.animate) {
       const animation = drawer.animate(
-        [{ height: `${drawer.offsetHeight}px` }, { height: "0px" }],
+        [{ transform: "translateY(0)" }, { transform: "translateY(100%)" }],
         { duration: 170, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" },
       );
       animation.onfinish = done;

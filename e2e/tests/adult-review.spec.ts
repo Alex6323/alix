@@ -1470,6 +1470,24 @@ test("the first section introduction auto-opens without inline and the next sect
   ).toBeVisible();
   await expect(page.locator(".section-inline"), "first section card: inline context is absent").toHaveCount(0);
   await expect(page.locator(".section-title"), "first section card: title stays available").toHaveText("Ocean depths");
+  await page.evaluate(async () => {
+    await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
+  });
+  const autoBounds = await page.evaluate(() => {
+    const rect = (selector: string) => {
+      const value = document.querySelector(selector)?.getBoundingClientRect();
+      return value ? { bottom: value.bottom, top: value.top } : null;
+    };
+    return { drawer: rect(".section-drawer"), question: rect("#card .region.q") };
+  });
+  expect(
+    autoBounds.drawer?.top,
+    `automatic sheet sits just under the question once the card has dealt in: ${JSON.stringify(autoBounds)}`,
+  ).toBeLessThanOrEqual((autoBounds.question?.bottom ?? 0) + 1);
+  expect(
+    autoBounds.drawer?.top,
+    `automatic sheet starts under the question: ${JSON.stringify(autoBounds)}`,
+  ).toBeGreaterThanOrEqual((autoBounds.question?.bottom ?? Number.MAX_SAFE_INTEGER) - 1);
   if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
     await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-drawer-auto-open.png` });
   }
@@ -1645,24 +1663,29 @@ test("the section title and review menu both open the drawer", async ({ page }) 
       return value ? { bottom: value.bottom, top: value.top } : null;
     };
     return {
-      card: rect("#card"),
       drawer: rect(".section-drawer"),
       footer: rect("body > .legend"),
+      question: rect("#card .region.q"),
       title: rect(".section-title"),
+      viewport: window.innerHeight,
     };
   });
   expect(
     bounds.drawer?.top,
-    `drawer top starts under title: ${JSON.stringify(bounds)}`,
-  ).toBeGreaterThanOrEqual((bounds.title?.bottom ?? Number.MAX_SAFE_INTEGER) - 1);
+    `sheet top starts under the question: ${JSON.stringify(bounds)}`,
+  ).toBeGreaterThanOrEqual((bounds.question?.bottom ?? Number.MAX_SAFE_INTEGER) - 1);
+  expect(
+    bounds.title?.bottom,
+    `sheet leaves the title visible: ${JSON.stringify(bounds)}`,
+  ).toBeLessThanOrEqual((bounds.drawer?.top ?? 0) + 1);
   expect(
     bounds.drawer?.bottom,
-    `drawer bottom stays inside card: ${JSON.stringify(bounds)}`,
-  ).toBeLessThanOrEqual((bounds.card?.bottom ?? 0) + 1);
+    `sheet covers the action row: ${JSON.stringify(bounds)}`,
+  ).toBeGreaterThanOrEqual((bounds.footer?.bottom ?? Number.MAX_SAFE_INTEGER) - 1);
   expect(
     bounds.drawer?.bottom,
-    `drawer scrim stops before footer: ${JSON.stringify(bounds)}`,
-  ).toBeLessThanOrEqual(bounds.footer?.top ?? 0);
+    `sheet reaches the page bottom: ${JSON.stringify(bounds)}`,
+  ).toBeGreaterThanOrEqual(bounds.viewport - 1);
   if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
     await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-drawer.png` });
   }
@@ -1678,7 +1701,11 @@ test("the section title and review menu both open the drawer", async ({ page }) 
 
   await page.keyboard.press("c");
   await expect(drawer, "context key route: drawer closes").toHaveCount(0);
-  await expect(page.locator(".section-title"), "context key route: the title takes no focus ring").not.toBeFocused();
+  await expect(page.locator(".section-title"), "context key route: focus returns to the title").toBeFocused();
+  expect(
+    await page.locator(".section-title").evaluate((element) => window.getComputedStyle(element).outlineStyle),
+    "context key route: the returned focus draws no ring",
+  ).toBe("none");
   await expect(page.locator(".section-title-key"), "title legend: names the context key").toHaveText("c");
   await page.locator(".section-title").click();
   await expect(drawer, "title route again: drawer reopens").toBeVisible();

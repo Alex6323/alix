@@ -154,16 +154,16 @@
     flex: none; font-family: var(--mono); font-size: 0.66rem; color: var(--dim);
     border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px;
   }
-  .card:focus { outline: none; }
   .section-title:hover { color: var(--ink); }
   .section-title:focus-visible { outline: 1px solid var(--bolt); outline-offset: 4px; border-radius: 2px; }
-  .section-drawer { position: absolute; left: 4px; right: 4px; z-index: 12; overflow: hidden; }
+  .section-title[data-quiet-focus]:focus-visible { outline: none; }
+  .section-drawer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 12; overflow: hidden; }
   .section-drawer-scrim { position: absolute; inset: 0; background: rgba(0,0,0,0.52); cursor: pointer; }
   .section-drawer-panel {
-    position: absolute; inset: 8px; overflow: auto; user-select: text;
-    padding: 22px 24px; text-align: left; color: var(--ink);
-    background: var(--menu-bg); border: 1px solid var(--line); border-radius: 12px;
-    box-shadow: 0 12px 34px -12px rgba(0,0,0,0.8);
+    position: absolute; top: 8px; bottom: 0; left: 0; right: 0; overflow: auto; user-select: text;
+    padding: 22px 24px calc(22px + env(safe-area-inset-bottom)); text-align: left; color: var(--ink);
+    background: var(--menu-bg); border: 1px solid var(--line); border-bottom: 0; border-radius: 12px 12px 0 0;
+    box-shadow: 0 -12px 34px -12px rgba(0,0,0,0.8);
   }
   .section-drawer-panel:focus { outline: none; }
 
