@@ -85,7 +85,7 @@ def focused_command(
     if selection_diff is not None:
         command.extend(["--in-diff", str(selection_diff)])
     if list_only:
-        command.append("--list")
+        command.extend(["--list", "--colors", "never"])
     return command
 
 

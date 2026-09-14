@@ -256,6 +256,54 @@ class MutantsTimeoutRetryTests(unittest.TestCase):
                 f"selection {listed!r} records why it was refused",
             )
 
+    def test_ci_forced_color_cannot_change_the_exact_list_selection(self):
+        root = pathlib.Path(self.tempdir.name) / "repo"
+        source = root / "src/lib.rs"
+        source.parent.mkdir(parents=True)
+        source.write_text("fn before() {}\nfn target() {}\n", encoding="utf-8")
+        name = "src/lib.rs:2:4: replace target -> bool with true"
+        calls = []
+
+        def command_runner(command, **kwargs):
+            calls.append((command, kwargs["env"]))
+            output = ""
+            if "--list" in command:
+                color = (
+                    command[command.index("--colors") + 1]
+                    if "--colors" in command
+                    else kwargs["env"].get("CARGO_TERM_COLOR", "auto")
+                )
+                output = (
+                    f"\x1b[38;5;13m{name}\x1b[0m\n"
+                    if color == "always"
+                    else name + "\n"
+                )
+            return subprocess.CompletedProcess(command, 0, output, "")
+
+        with (
+            mock.patch.dict(os.environ, {"CARGO_TERM_COLOR": "always"}),
+            mock.patch(
+                "mutants_timeout_retry.subprocess.run",
+                side_effect=command_runner,
+            ),
+        ):
+            result = run_focused_mutant(name, 41, self.out / "retry", root)
+
+        self.assertEqual(2, len(calls), "an exact colored selection starts the run")
+        list_command, list_environment = calls[0]
+        self.assertEqual(
+            "always",
+            list_environment["CARGO_TERM_COLOR"],
+            "the test reproduces the CI environment",
+        )
+        self.assertEqual(
+            "never",
+            list_command[list_command.index("--colors") + 1],
+            "the machine-parsed list explicitly disables color",
+        )
+        self.assertEqual(0, result.exit_code, "the focused run starts successfully")
+        self.assertEqual("", result.detail, "ANSI styling cannot cause a refusal")
+
     def test_a_selection_refusal_stays_open_with_its_detail(self):
         name = "src/store.rs:410:13: replace match guard with true"
         self.plant_initial_timeout(name)
