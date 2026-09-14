@@ -188,6 +188,143 @@ class DependencyPolicyTests(unittest.TestCase):
             result.stdout,
         )
 
+    def test_an_untracked_root_cargo_config_cannot_supply_a_paths_override(self):
+        def after_track(directory):
+            path = directory / ".cargo" / "config.toml"
+            path.parent.mkdir()
+            path.write_text('paths = ["../outside"]\n', encoding="utf-8")
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/config.toml: path override leaves repository\n",
+            result.stderr,
+        )
+
+    def test_an_included_cargo_config_cannot_hide_a_paths_override(self):
+        def after_track(directory):
+            cargo = directory / ".cargo"
+            cargo.mkdir()
+            (cargo / "config.toml").write_text(
+                'include = ["local.toml"]\n', encoding="utf-8"
+            )
+            (cargo / "local.toml").write_text(
+                'paths = ["../outside"]\n', encoding="utf-8"
+            )
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/local.toml: path override leaves repository\n",
+            result.stderr,
+        )
+
+    def test_an_include_chain_cannot_hide_a_paths_override(self):
+        def after_track(directory):
+            cargo = directory / ".cargo"
+            cargo.mkdir()
+            (cargo / "config.toml").write_text(
+                'include = "a.toml"\n', encoding="utf-8"
+            )
+            (cargo / "a.toml").write_text(
+                'include = ["b.toml"]\n', encoding="utf-8"
+            )
+            (cargo / "b.toml").write_text(
+                'paths = ["../outside"]\n', encoding="utf-8"
+            )
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/b.toml: path override leaves repository\n",
+            result.stderr,
+        )
+
+    def test_a_missing_included_cargo_config_is_denied(self):
+        def after_track(directory):
+            cargo = directory / ".cargo"
+            cargo.mkdir()
+            (cargo / "config.toml").write_text(
+                'include = ["missing.toml"]\n', encoding="utf-8"
+            )
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/config.toml: included Cargo config is missing\n",
+            result.stderr,
+        )
+
+    def test_an_included_cargo_config_cannot_leave_the_repository(self):
+        def after_track(directory):
+            cargo = directory / ".cargo"
+            cargo.mkdir()
+            (cargo / "config.toml").write_text(
+                'include = ["../../outside.toml"]\n', encoding="utf-8"
+            )
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/config.toml: included Cargo config leaves repository\n",
+            result.stderr,
+        )
+
+    def test_a_cargo_config_include_cycle_is_denied(self):
+        def after_track(directory):
+            cargo = directory / ".cargo"
+            cargo.mkdir()
+            (cargo / "config.toml").write_text(
+                'include = ["config.toml"]\n', encoding="utf-8"
+            )
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/config.toml: included Cargo config cycle\n",
+            result.stderr,
+        )
+
+    def test_a_cargo_config_include_past_the_depth_cap_is_denied(self):
+        def after_track(directory):
+            cargo = directory / ".cargo"
+            cargo.mkdir()
+            (cargo / "config.toml").write_text(
+                'include = ["0.toml"]\n', encoding="utf-8"
+            )
+            for index in range(33):
+                text = (
+                    f'include = ["{index + 1}.toml"]\n'
+                    if index < 32
+                    else "[build]\njobs = 1\n"
+                )
+                (cargo / f"{index}.toml").write_text(text, encoding="utf-8")
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: .cargo/32.toml: included Cargo config depth exceeds 32\n",
+            result.stderr,
+        )
+
+    def test_an_included_cargo_config_with_only_build_settings_is_allowed(self):
+        def after_track(directory):
+            cargo = directory / ".cargo"
+            cargo.mkdir()
+            (cargo / "config.toml").write_text(
+                'include = [{ path = "build.toml" }]\n', encoding="utf-8"
+            )
+            (cargo / "build.toml").write_text(
+                "[build]\njobs = 1\n", encoding="utf-8"
+            )
+
+        result = self.run_fixture(after_track=after_track)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(
+            "dependency-policy: 5 manifests and 4 lock roots match policy\n",
+            result.stdout,
+        )
+
     def test_a_root_cargo_config_patch_path_is_resolved_from_the_checkout_root(self):
         def after_track(directory):
             path = directory / ".cargo" / "config.toml"

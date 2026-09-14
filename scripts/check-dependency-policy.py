@@ -15,6 +15,7 @@ ROOT_CARGO_CONFIGS = (
     pathlib.PurePosixPath(".cargo/config.toml"),
     pathlib.PurePosixPath(".cargo/config"),
 )
+MAX_CARGO_CONFIG_INCLUDE_DEPTH = 32
 DEPENDENCY_TABLES = {"dependencies", "dev-dependencies", "build-dependencies"}
 NPM_DEPENDENCY_TABLES = (
     "dependencies",
@@ -108,9 +109,69 @@ def check_cargo_manifest(root, manifest):
     check_cargo_requirements(root, manifest, manifest.parent, load_toml(manifest))
 
 
-def check_cargo_config(root, config, declared_sources, policy_path):
+def cargo_config_includes(root, config, data):
+    includes = data.get("include", [])
+    if isinstance(includes, (str, dict)):
+        includes = [includes]
+    if not isinstance(includes, list):
+        raise PolicyError(
+            f"{display(config, root)}: included Cargo config path is invalid"
+        )
+    for include in includes:
+        if isinstance(include, str):
+            yield include
+        elif isinstance(include, dict) and isinstance(include.get("path"), str):
+            yield include["path"]
+        else:
+            raise PolicyError(
+                f"{display(config, root)}: included Cargo config path is invalid"
+            )
+
+
+def check_cargo_config(
+    root,
+    config,
+    declared_sources,
+    policy_path,
+    ancestors=(),
+    depth=0,
+):
+    resolved = config.resolve()
+    if resolved in ancestors:
+        raise PolicyError(f"{display(config, root)}: included Cargo config cycle")
+    if depth > MAX_CARGO_CONFIG_INCLUDE_DEPTH:
+        raise PolicyError(
+            f"{display(config, root)}: included Cargo config depth exceeds "
+            f"{MAX_CARGO_CONFIG_INCLUDE_DEPTH}"
+        )
     data = load_toml(config)
-    check_cargo_requirements(root, config, root, data)
+    next_ancestors = (*ancestors, resolved)
+    for raw_include in cargo_config_includes(root, config, data):
+        included = config.parent / raw_include
+        if not require_inside(root, included):
+            raise PolicyError(
+                f"{display(config, root)}: included Cargo config leaves repository"
+            )
+        if not included.is_file():
+            raise PolicyError(
+                f"{display(config, root)}: included Cargo config is missing"
+            )
+        check_cargo_config(
+            root,
+            included.resolve(),
+            declared_sources,
+            policy_path,
+            next_ancestors,
+            depth + 1,
+        )
+
+    base = config.parent.parent
+    check_cargo_requirements(root, config, base, data)
+    paths = data.get("paths", [])
+    if not isinstance(paths, list) or any(not isinstance(path, str) for path in paths):
+        raise PolicyError(f"{display(config, root)}: path override is invalid")
+    if any(not require_inside(root, base / path) for path in paths):
+        raise PolicyError(f"{display(config, root)}: path override leaves repository")
     sources = data.get("source")
     if not isinstance(sources, dict):
         return

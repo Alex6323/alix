@@ -27,10 +27,12 @@ dependency roots and approved registries. `scripts/check-dependency-policy.py`
 enumerates tracked manifests and fails when one is absent from that policy.
 Separately, it reads both repository-root Cargo configuration spellings
 (`.cargo/config.toml` and `.cargo/config`) from disk whether tracked or
-untracked, applies the same Git revision and path-containment rules to
-`[patch.<source>]`, requires every `[source.<name>]` table to appear in the
-policy's optional `[cargo].sources` list, and does not inspect nested Cargo
-configuration files.
+untracked. It applies the same Git revision and path-containment rules to
+`[patch.<source>]`, requires every top-level `paths` override to stay inside
+the checkout, requires every `[source.<name>]` table to appear in the policy's
+optional `[cargo].sources` list, and recursively checks explicitly included
+configuration files with a cycle and depth guard. It does not discover nested
+Cargo configuration files.
 
 The four approved registry hosts and their exact origins are:
 
@@ -46,8 +48,9 @@ links, pub paths, and uv editable roots must resolve inside the checkout.
 Registry packages carry the integrity field native to their lock format:
 Cargo `checksum`, npm `integrity`, pub `sha256`, and a SHA-256 hash on every uv
 artifact. Manifest and lock checks use only committed files; the two root
-Cargo configuration paths are the only live-checkout inputs. Every check uses
-the Python standard library, so `make deps-check` has no network step.
+Cargo configuration paths and the files they include are the only
+live-checkout inputs. Every check uses the Python standard library, so `make
+deps-check` has no network step.
 
 The existing Cargo version-family baseline stays in
 `scripts/deps-duplicates.txt`. `scripts/deps-check.sh` runs that check and the
