@@ -305,6 +305,16 @@ class RiskMatrixGuardTests(unittest.TestCase):
         wrong_schema["schema"] = 2
         self.assert_invalid(wrong_schema, "schema must be 1")
 
+        boolean_schema = copy.deepcopy(matrix)
+        boolean_schema["schema"] = True
+        self.assert_invalid(boolean_schema, "schema must be 1")
+
+        float_schema = json.dumps(matrix).replace('"schema": 1,', '"schema": 1.0,', 1)
+        self.assertIn('"schema": 1.0,', float_schema, "the float fixture replaced the schema")
+        result = self.run_guard_text(float_schema)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("risk-matrix: schema must be 1", result.stderr)
+
         result = self.run_guard_text("{")
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertIn("risk-matrix: invalid JSON:", result.stderr)

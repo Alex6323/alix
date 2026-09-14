@@ -142,7 +142,9 @@ def validate_matrix(matrix):
     if not isinstance(matrix, dict):
         return ["root must be an object"], commands, 0
     exact_keys(matrix, ROOT_KEYS, ROOT_KEYS, "root", problems)
-    if matrix.get("schema") != 1:
+    schema = matrix.get("schema")
+    # bool subclasses int, so isinstance would still let JSON true through.
+    if type(schema) is not int or schema != 1:
         problems.append("schema must be 1")
     rows = matrix.get("risk_classes")
     if not isinstance(rows, list):
