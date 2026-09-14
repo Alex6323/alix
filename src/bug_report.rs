@@ -308,7 +308,11 @@ fn copy_log(from: &Path, to: &Path, home: &Path, tokens: &[String]) -> Result<bo
 fn allowlisted_log(text: &str) -> String {
     let mut output = String::new();
     for line in text.lines() {
-        let fields = line
+        let (head, message) = match line.split_once(" message=") {
+            Some((head, message)) => (head, Some(message)),
+            None => (line, None),
+        };
+        let fields = head
             .split_ascii_whitespace()
             .filter_map(|field| field.split_once('='))
             .collect::<Vec<_>>();
@@ -328,18 +332,23 @@ fn allowlisted_log(text: &str) -> String {
                 .find_map(|(key, value)| (*key == "kind").then_some(*value))
             {
                 Some("ai") => &["target", "kind", "backend"],
-                Some("http") => &["target", "kind", "method", "area", "status"],
+                Some("http") => &[
+                    "target", "kind", "method", "area", "status", "sync", "message",
+                ],
                 Some("panic") => &["target", "kind", "file", "line", "thread"],
                 Some("parse") => &["target", "kind", "code", "line"],
                 _ => continue,
             },
             _ => continue,
         };
-        let safe = fields
+        let mut safe = fields
             .into_iter()
             .filter(|(key, _)| allowed.contains(key))
             .map(|(key, value)| format!("{key}={value}"))
             .collect::<Vec<_>>();
+        if let Some(message) = message.filter(|_| allowed.contains(&"message")) {
+            safe.push(format!("message={message}"));
+        }
         if !safe.is_empty() {
             output.push_str(&safe.join(" "));
             output.push('\n');
@@ -552,7 +561,9 @@ mod tests {
         let log = dir.path().join("alix-profile.log");
         std::fs::write(
             &log,
-            "target=error kind=http method=GET area=api status=500 future=private-log-field path=/home/alex/decks token=live-token-123456 user=alex\n",
+            "target=error kind=http method=GET area=api status=500 future=private-log-field path=/home/alex/decks token=live-token-123456 user=alex\n\
+             target=error kind=http method=GET area=api status=500 sync=damaged-sync-state message=not a regular file: the progress file of deck deck-safe83yq\n\
+             target=error kind=ai backend=claude message=private-ai-message\n",
         )
         .unwrap();
         std::fs::write(
@@ -601,11 +612,19 @@ mod tests {
             "private-note",
             "private-personal-sidecar",
             "private-log-field",
+            "private-ai-message",
             "private-ai-prompt",
             "private-ai-extra",
         ] {
             assert!(!text.contains(private), "bundle leaked {private:?}: {text}");
         }
+        assert!(
+            text.contains(
+                "target=error kind=http method=GET area=api status=500 \
+                 sync=damaged-sync-state message=not a regular file: the progress file of deck deck-safe83yq\n"
+            ),
+            "a sync failure's class and whole message survive the allowlist: {text}"
+        );
         assert!(text.contains("decks_dir = \"~/decks\""), "{text}");
         assert!(!text.contains("token ="), "{text}");
         assert!(text.contains("cards=1"), "{text}");

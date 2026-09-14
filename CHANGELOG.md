@@ -109,9 +109,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - A failing paired-sync request answers with a class, a message that names
   alix's own files by their fixed names and a deck by its minted id, never
-  a path, and one remedy sentence; the same line reaches the server log and
-  so the bug-report archive, and the phone shows the message and remedy
-  instead of a bare status number.
+  a host path or a user-authored file name, and one remedy sentence; the
+  class and message reach the server log and the bug-report archive, and
+  the phone shows the message and remedy instead of a bare status number.
 
 - The web section context dims the whole page at once and slides a sheet up
   from the bottom of the page to just under the question, as wide as the
@@ -124,7 +124,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - A sync route that fails answers with the failure's message and prints it
   on the server's stderr; `GET /api/sync/entries` sent an empty 500 and
-  discarded the failure. The log keeps its path-free record.
+  discarded the failure. The log record carries no host path.
 
 - The phone refuses to pair with a desktop whose root id is not `root-`
   plus 26 lowercase Crockford base32 characters, and it never joins an

@@ -6406,6 +6406,57 @@ fn the_verbose_log_contains_ids_but_no_learning_content_names_titles_or_paths() 
     ] {
         assert!(!log.contains(private), "log leaked {private:?}: {log:?}");
     }
+
+    let reports = home.path().join("reports");
+    std::fs::create_dir_all(test_config_dir(home.path())).unwrap();
+    std::fs::write(
+        test_config_dir(home.path()).join("config.toml"),
+        format!("decks_dir = {:?}\n", dir.path()),
+    )
+    .unwrap();
+    let output = alix_env(
+        &["bug-report", "--out", reports.to_str().unwrap()],
+        home.path(),
+        &[],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let archive = std::fs::read_dir(&reports)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .next()
+        .expect("one archive");
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(&archive).unwrap()).unwrap();
+    let mut archived = String::new();
+    for index in 0..zip.len() {
+        use std::io::Read;
+        let mut entry = zip.by_index(index).unwrap();
+        if entry.name().starts_with("log/") {
+            entry.read_to_string(&mut archived).unwrap();
+        }
+    }
+    for sync_row in [
+        "sync=damaged-sync-state message=not a regular file: the progress file of deck deck-private83yq",
+        "sync=damaged-sync-state message=.alix/sync.toml: root_id must be",
+    ] {
+        assert!(
+            archived.contains(sync_row),
+            "the bug-report archive keeps the sync failure's class and message {sync_row:?}: {archived:?}"
+        );
+    }
+    for private in [
+        front,
+        back,
+        note,
+        filename,
+        "private-depression-notes",
+        title,
+        dir.path().to_str().unwrap(),
+    ] {
+        assert!(
+            !archived.contains(private),
+            "archive leaked {private:?}: {archived:?}"
+        );
+    }
 }
 
 #[cfg(unix)]

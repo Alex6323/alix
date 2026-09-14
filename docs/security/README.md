@@ -180,10 +180,11 @@ enabled. No logging facade is installed, so dependencies cannot add their own
 records. The verbose end-to-end content laws and the real-process rotation law
 in `tests/cli.rs` enforce those boundaries. A failing request's message
 goes to the response body and the server's stderr, not into the log, with
-one exception: a paired-sync failure's message is built without paths or
-user-authored file names (alix's fixed file names and minted deck ids only)
-and is recorded with its class, so a bug-report archive carries it. The
-verbose content law covers a sync failure row.
+one exception: a paired-sync failure's message is built without host paths or
+user-authored file names (alix's fixed relative file names and minted deck
+ids only) and is recorded with its class; the bug-report archive keeps that
+record after its redaction pass. The verbose content law covers a sync
+failure row and opens the archive.
 
 ### Bug-report archive
 
