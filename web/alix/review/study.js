@@ -72,6 +72,7 @@ export function createStudy({
   let revealed = clientModel.revealed;
   let citationView = clientModel.citationView;
   let sectionView = clientModel.sectionView;
+  let questionWatch = null;
   let autoOpenedSection = null;
   let answerConcealed = clientModel.answerConcealed;
   let feedback = clientModel.feedback;
@@ -656,6 +657,11 @@ export function createStudy({
     if (legend && legend.parentElement) legend.parentElement.inert = true;
     placeSection();
     win.addEventListener("resize", placeSection);
+    const question = doc.querySelector("#card .region.q");
+    if (question && win.ResizeObserver) {
+      questionWatch = new win.ResizeObserver(placeSection);
+      questionWatch.observe(question);
+    }
     panel.focus({ preventScroll: true });
     if (drawer.animate) {
       drawer.animate(
@@ -674,6 +680,16 @@ export function createStudy({
     drawer.style.top = `${Math.round(question.getBoundingClientRect().bottom)}px`;
   }
 
+  // The sheet lives on the body, so a rerender that rebuilds the card must
+  // take it down itself.
+  function removeSectionSheet() {
+    doc.querySelectorAll(".section-drawer").forEach((stale) => stale.remove());
+    win.removeEventListener("resize", placeSection);
+    if (questionWatch) { questionWatch.disconnect(); questionWatch = null; }
+    if (legend && legend.parentElement) legend.parentElement.inert = false;
+    sectionView = false;
+  }
+
   function autoOpenSection() {
     if (!hasSection() || !state.section_first) return;
     const key = state.card.section_context.join("\n");
@@ -687,10 +703,7 @@ export function createStudy({
     const drawer = doc.querySelector(".section-drawer");
     const title = doc.querySelector(".section-title");
     const done = () => {
-      if (drawer) drawer.remove();
-      sectionView = false;
-      win.removeEventListener("resize", placeSection);
-      if (legend && legend.parentElement) legend.parentElement.inert = false;
+      removeSectionSheet();
       if (title && title.isConnected) {
         title.setAttribute("aria-expanded", "false");
         // A ring on the title after every close reads as a highlight.
@@ -1782,6 +1795,7 @@ export function createStudy({
   }
 
   function prepareRender() {
+    removeSectionSheet();
     stopDuePoll();
     summaryPaint = null;
     summaryReady = false;

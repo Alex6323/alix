@@ -1720,6 +1720,76 @@ test("the section title and review menu both open the drawer", async ({ page }) 
   await expect(drawer, "scrim route: drawer closes").toHaveCount(0);
 });
 
+test("a state applied while the sheet is open tears the sheet down", async ({ page }) => {
+  const first = longContentState({
+    answerLines: ["Answer"],
+    front: "Sheet survives nothing.",
+    sectionLines: ["Teardown", "Prose behind the sheet."],
+  });
+  const second = longContentState({
+    answerLines: ["Answer two"],
+    front: "The next card arrives.",
+    sectionLines: ["Teardown", "Prose behind the sheet."],
+    studyRevision: 2,
+  });
+  await page.route("**/api/state", (route) => route.fulfill({ json: first }));
+  await openApp(page);
+  await page.getByRole("button", { name: "Reveal" }).click();
+
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/grade", async (route) => {
+    await gate;
+    await route.fulfill({ json: second });
+  });
+  await page.getByRole("button", { name: "Got it" }).click();
+  await page.locator(".section-title").click();
+  await expect(page.locator(".section-drawer"), "grade in flight: the sheet opens").toBeVisible();
+  release();
+  await expect(page.locator(".front-text"), "grade lands: the next card renders").toHaveText("The next card arrives.");
+  await expect(page.locator(".section-drawer"), "grade lands: the sheet is torn down with the old card").toHaveCount(0);
+  await expect(page.locator(".section-title"), "grade lands: the title reports closed").toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("c");
+  await expect(page.locator(".section-drawer"), "context key after the apply: exactly one sheet").toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".section-drawer"), "Escape: the sheet closes").toHaveCount(0);
+});
+
+test("the sheet follows the question when the question changes height", async ({ page }) => {
+  await page.route("**/api/state", (route) => route.fulfill({
+    json: longContentState({
+      answerLines: ["Answer"],
+      sectionLines: ["Follows", "Prose behind the sheet."],
+    }),
+  }));
+  await openApp(page);
+  await page.locator(".section-title").click();
+  const drawer = page.locator(".section-drawer");
+  await expect(drawer, "sheet opens").toBeVisible();
+  await drawer.evaluate(async (element) => {
+    await Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished));
+  });
+  const before = await page.evaluate(() => ({
+    question: document.querySelector("#card .region.q")!.getBoundingClientRect().bottom,
+    sheet: document.querySelector(".section-drawer")!.getBoundingClientRect().top,
+  }));
+  expect(before.sheet, `before: sheet sits under the question ${JSON.stringify(before)}`).toBeGreaterThanOrEqual(before.question - 1);
+  await page.evaluate(() => {
+    const question = document.querySelector<HTMLElement>("#card .region.q")!;
+    question.style.paddingBottom = "150px";
+  });
+  const after = await page.evaluate(() => ({
+    question: document.querySelector("#card .region.q")!.getBoundingClientRect().bottom,
+    sheet: document.querySelector(".section-drawer")!.getBoundingClientRect().top,
+  }));
+  expect(after.question, `after: the question grew ${JSON.stringify({ before, after })}`).toBeGreaterThan(before.question + 40);
+  await expect
+    .poll(async () => page.evaluate(() => document.querySelector(".section-drawer")!.getBoundingClientRect().top), {
+      message: `after: the sheet top follows the question bottom ${JSON.stringify({ before, after })}`,
+    })
+    .toBeGreaterThanOrEqual(after.question - 1);
+});
+
 test("section prose joins hard wraps and preserves paragraph breaks", async ({ page }) => {
   const original = longContentState({
     answerLines: ["Answer"],
