@@ -285,6 +285,7 @@ ci:
 preflight:
 	$(MAKE) fmt-check
 	RUSTFLAGS="-Dwarnings" $(MAKE) check
+	$(MAKE) lint-js unit-js
 	RUSTFLAGS="-Dwarnings" $(MAKE) build-core
 	$(MAKE) windows-check
 	RUSTFLAGS="-Dwarnings" cargo test --manifest-path mobile/alix/rust/Cargo.toml

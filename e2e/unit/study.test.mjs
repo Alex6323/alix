@@ -178,7 +178,8 @@ test("study owns accepted state publication and screen selection", () => {
 
 test("the same load warning surfaces again for a later deck", () => {
   const notices = [];
-  const document = { getElementById: () => null };
+  const document = { getElementById: () => null, querySelectorAll: () => [] };
+  const window = { removeEventListener: () => {} };
   const study = createStudy({
     api: async () => ({}),
     post: (body) => ({ method: "POST", body }),
@@ -192,7 +193,7 @@ test("the same load warning surfaces again for a later deck", () => {
     closeMenu: () => {},
     notice: (message) => notices.push(message),
     timers: {},
-    ui: { document },
+    ui: { document, window },
   });
   const warning =
     "1 frozen diagram(s) did not resolve and fall back to source; run `alix doctor` for details";
