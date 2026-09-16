@@ -604,6 +604,35 @@ class DependencyPolicyTests(unittest.TestCase):
             "pubspec.lock: package dep: registry must be https://pub.dev",
         )
 
+    def test_a_pub_lock_this_check_cannot_read_is_denied(self):
+        def change(directory):
+            path = directory / "pubspec.lock"
+            widened = [
+                " " * (2 * (len(line) - len(line.lstrip(" ")))) + line.lstrip(" ")
+                for line in path.read_text(encoding="utf-8").split("\n")
+            ]
+            path.write_text("\n".join(widened), encoding="utf-8")
+
+        self.assert_denied(
+            change,
+            "pubspec.lock: no package entries were read; the lockfile layout is "
+            "not the one this check understands",
+        )
+
+    def test_an_npm_integrity_that_is_not_a_full_digest_is_denied(self):
+        def change(directory):
+            path = directory / "package-lock.json"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for name, package in data["packages"].items():
+                if name and package.get("integrity"):
+                    package["integrity"] = "sha512-deadbeef"
+            path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+
+        self.assert_denied(
+            change,
+            "package-lock.json: package dep: registry package has no integrity",
+        )
+
     def test_a_uv_registry_artifact_without_a_hash_is_denied(self):
         def change(directory):
             path = directory / "uv.lock"

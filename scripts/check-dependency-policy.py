@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
+import base64
+import binascii
 import json
 import pathlib
 import re
@@ -25,7 +27,8 @@ NPM_DEPENDENCY_TABLES = (
 )
 HEX_40 = re.compile(r"[0-9a-f]{40}")
 HEX_64 = re.compile(r"[0-9a-f]{64}")
-INTEGRITY = re.compile(r"sha(?:256|384|512)-.+")
+INTEGRITY = re.compile(r"sha(256|384|512)-([A-Za-z0-9+/]+={0,2})")
+DIGEST_BYTES = {"256": 32, "384": 48, "512": 64}
 
 
 class PolicyError(Exception):
@@ -204,6 +207,17 @@ def check_cargo_lock(root, lock, registry):
             raise PolicyError(f"{subject}: source is not allowed")
 
 
+def integrity_digest_matches(value):
+    match = INTEGRITY.fullmatch(str(value))
+    if match is None:
+        return False
+    try:
+        digest = base64.b64decode(match.group(2), validate=True)
+    except binascii.Error:
+        return False
+    return len(digest) == DIGEST_BYTES[match.group(1)]
+
+
 def npm_package_name(path):
     return path.rsplit("node_modules/", 1)[-1]
 
@@ -235,7 +249,7 @@ def check_npm_lock(root, lock, registry):
         origin = f"{parsed.scheme}://{parsed.netloc}"
         if origin != registry:
             raise PolicyError(f"{subject}: registry must be {registry}")
-        if not INTEGRITY.fullmatch(str(package.get("integrity", ""))):
+        if not integrity_digest_matches(package.get("integrity", "")):
             raise PolicyError(f"{subject}: registry package has no integrity")
 
 
@@ -276,7 +290,13 @@ def pub_packages(lock):
 
 
 def check_pub_lock(root, lock, registry):
-    for name, package in pub_packages(lock).items():
+    packages = pub_packages(lock)
+    if not packages:
+        raise PolicyError(
+            f"{display(lock, root)}: no package entries were read; "
+            "the lockfile layout is not the one this check understands"
+        )
+    for name, package in packages.items():
         subject = f"{display(lock, root)}: package {name}"
         source = package.get("source")
         if source == "hosted":
