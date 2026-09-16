@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Every published desktop archive and the Android APK now carry a
+  build-provenance attestation, signed during the release run against the
+  workflow identity that produced the file. Verify one with
+  `gh attestation verify <file> --repo Alex6323/alix`. The `.sha256` records
+  stay as they were; a checksum shows a download was not corrupted, while an
+  attestation also covers an archive and checksum replaced together. The
+  install script checks the checksum only.
+
 - Paired phones can list and pull complete picker entries, including their
   private progress and local sidecars, then push revision-checked progress by
   deck id. Each served folder gets a stable `.alix/sync.toml` root identity;

@@ -463,9 +463,13 @@ safe or accurate.
   characters can still shape what a reader sees, so they share the
   untrusted-rendering boundary with the entry above.
 - Exact direct toolchain and Action pins now reduce release drift, but runner
-  images and transitive build inputs are not hermetic. Release signing,
-  checksums, SBOMs, and provenance are not yet complete across every
-  distribution channel.
+  images and transitive build inputs are not hermetic: every dependency build
+  script and procedural macro executes with the authority of whoever runs the
+  build. Published desktop archives and the APK carry a SHA-256 record and a
+  build-provenance attestation signed against the producing workflow identity,
+  verifiable with `gh attestation verify`; the install script checks the
+  checksum and not the attestation. An SBOM per release, and evidence that a
+  release commit rebuilds to equivalent artifacts, are still absent.
 
 ## Security regression evidence
 

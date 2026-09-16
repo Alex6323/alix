@@ -44,6 +44,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+      # Signing an attestation needs an OIDC token for this workflow's identity
+      # and write access to the attestation store; both are scoped to this job.
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +69,7 @@ jobs:
       # Builds, archives (.tar.gz / .zip on Windows), and uploads to the release
       # that create-release made for the pushed tag.
       - uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1
+        id: upload
         with:
           bin: alix
           target: ${{ matrix.target }}
@@ -75,3 +80,11 @@ jobs:
           # `sha256sum -c` (RELEASING.md documents the check).
           checksum: sha256
           token: ${{ secrets.GITHUB_TOKEN }}
+      # The archive stays in the working directory after the upload step, so it
+      # is the attestation subject. A checksum proves a download was not
+      # corrupted; this signs the archive against the workflow identity that
+      # produced it, which a replaced archive and checksum pair cannot forge.
+      # Verify with `gh attestation verify <archive> --repo Alex6323/alix`.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.upload.outputs.tar || steps.upload.outputs.zip }}

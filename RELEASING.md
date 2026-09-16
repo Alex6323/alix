@@ -29,7 +29,19 @@ Every desktop release archive uploads with an `alix-<target>.sha256` record
 beside it. Download both files into one directory, then verify manually with
 `sha256sum -c alix-<target>.sha256` on Linux or
 `shasum -a 256 -c alix-<target>.sha256` on macOS. The normal installer
-performs the same check before extraction. Before tagging, `make audit` must
+performs the same check before extraction.
+
+Each published archive and the APK also carry a build-provenance attestation,
+signed during the release run against the workflow identity that produced the
+file. A checksum shows a download was not corrupted; it cannot help when the
+archive and its checksum are replaced together, which the attestation is for.
+Verify one with
+`gh attestation verify alix-<target>.tar.gz --repo Alex6323/alix`
+(or the `.apk` for mobile), which needs the GitHub CLI. The installer does not
+check attestations, so a `curl`-to-shell install still rests on the checksum
+alone.
+
+Before tagging, `make audit` must
 pass clean: it scans both lockfiles against the RustSec advisory database (the
 nightly advisory-drift workflow backstops this between releases, but the
 tag-time run is the blocking one).
