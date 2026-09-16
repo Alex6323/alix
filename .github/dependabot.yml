@@ -1,14 +1,76 @@
 version: 2
+
+multi-ecosystem-groups:
+  flutter-rust-bridge:
+    schedule:
+      interval: "monthly"
+
 updates:
+  # Action revisions are executable code. Keep them in one human-reviewed PR.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:17"
-      timezone: "Europe/Berlin"
+      interval: "monthly"
     groups:
       github-actions:
         patterns:
           - "*"
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 1
+
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+
+  - package-ecosystem: "cargo"
+    directory: "/fuzz"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+
+  # The mobile Cargo and pub roots share one PR because their FRB pins must
+  # remain equal and Dependabot update directories cannot overlap.
+  - package-ecosystem: "cargo"
+    directory: "/mobile/alix/rust"
+    patterns:
+      - "*"
+    multi-ecosystem-group: "flutter-rust-bridge"
+    open-pull-requests-limit: 1
+
+  - package-ecosystem: "cargo"
+    directory: "/test-support"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+
+  - package-ecosystem: "cargo"
+    directory: "/tools/gfm-harness"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+
+  - package-ecosystem: "npm"
+    directory: "/e2e"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+
+  - package-ecosystem: "pub"
+    directory: "/mobile/alix"
+    patterns:
+      - "*"
+    multi-ecosystem-group: "flutter-rust-bridge"
+    open-pull-requests-limit: 1
+
+  - package-ecosystem: "pub"
+    directory: "/mobile/alix/rust_builder/cargokit/build_tool"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+
+  - package-ecosystem: "uv"
+    directory: "/orchestrator"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
