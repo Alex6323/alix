@@ -8,13 +8,27 @@ provenance. Review it during the required pre-release `make docs-audit`.
 
 Vulnerabilities are reported privately through [`SECURITY.md`](../../SECURITY.md).
 
-The offline dependency gate reads
+The dependency gate reads
 [`scripts/dependency-policy.toml`](../../scripts/dependency-policy.toml) through
-[`scripts/check-dependency-policy.py`](../../scripts/check-dependency-policy.py). It fails closed on
-undeclared Cargo, npm, pub, or uv manifests, unapproved registries, unpinned Cargo Git sources, and
-missing lockfile integrity data. Either root Cargo configuration spelling must be tracked; the
-gate then reads its source-affecting tables, path overrides, and recursively included files.
-`make deps-check` retains the reviewed Cargo version-family baseline.
+[`scripts/check-dependency-policy.py`](../../scripts/check-dependency-policy.py) during
+`make deps-check`, which also retains the reviewed Cargo version-family baseline. It guards this
+repository's own dependency declarations against unintended change ([ADR
+0049](../adrs/0049-the-dependency-gate-is-an-accident-gate.md)): an undeclared Cargo, npm, pub, or uv
+manifest, a declared manifest or lockfile that is not tracked, a registry other than the declared
+one, a Cargo Git source without an exact revision, a path or link dependency resolving outside the
+checkout, a lockfile entry whose integrity data is missing or is not a full digest, a dependency
+added to a manifest declared dependency-free, and an untracked root Cargo configuration. A tracked
+root configuration's source-affecting tables, path overrides, and recursively included files are read
+under the same rules.
+
+It is not a defence against a hostile change. A dependency that is correctly declared, pinned, and
+checksummed passes every rule, which is the shape most published supply-chain attacks take. Every
+input the gate reads is a tracked file, so anyone able to change a lockfile can change the policy file
+in the same commit. Cargo configuration outside the checkout, in a parent directory or in
+`CARGO_HOME`, is invisible to it; release artifacts are built in CI from a fresh clone, so only
+committed configuration reaches a published binary. Dependency build scripts and procedural macros
+execute with the authority of whoever runs the build, and nothing here constrains them. Known Rust
+advisories are covered separately by `make audit`.
 
 ## Supported deployment model
 
@@ -129,6 +143,14 @@ server binds (`a_short_pairing_token_is_refused_before_the_lan_server_binds`
 and `weak_token_validation_precedes_any_socket_bind_attempt`, `tests/cli.rs`). Guarded
 `/api/*` requests accept a bearer header or bootstrap query token and compare it
 in constant time (`src/cli/launch.rs`, `src/serve/respond.rs`).
+
+Revoking a pairing token is a restart, and there is no revocation list. A token
+that LAN launch generated exists only for that process: stopping the server ends
+it, and the next launch prints a new one, so every paired client pairs again. A
+token configured under `[serve] token` survives restarts, so revoking it means
+editing that value in the profile's configuration (or removing the key, which
+returns the profile to a freshly generated token per launch) and restarting.
+Until the restart, anyone holding the old token keeps access.
 
 The server uses plain HTTP. The HTML/application shell and `/img/<key>` are
 intentionally unauthenticated so a browser can bootstrap; the token protects

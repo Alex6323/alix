@@ -1,6 +1,7 @@
 # 0048: Root Cargo configuration must be tracked
 
-- Status: Accepted
+- Status: Superseded by
+  [ADR 0049](0049-the-dependency-gate-is-an-accident-gate.md)
 - Evidence: untracked Cargo config is refused in scripts/check-dependency-policy.py
 - Recorded: 2026-09-14
 - Retrospective: No
