@@ -148,6 +148,8 @@ require_literal .github/workflows/pages.yml 'tool: mdbook@0.5.3' \
     "Pages pins mdBook"
 require_literal .github/workflows/ci.yml 'tool: cargo-llvm-cov@0.8.5' \
     "coverage pins cargo-llvm-cov"
+require_literal .github/workflows/ci.yml 'tool: cargo-deny@0.20.2' \
+    "dependency policy pins cargo-deny"
 require_literal .github/workflows/mobile-release.yml \
     'gradle="mobile/alix/android/app/build.gradle.kts"' \
     "mobile releases read the NDK from the app pin"

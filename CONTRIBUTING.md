@@ -87,6 +87,9 @@ generated PRs without prior discussion are usually closed unread.
 ## Development setup
 
 `alix` is a Rust project; everything goes through the **Makefile**.
+`make deps-check`, and therefore `make check`, requires `cargo-deny 0.20.2`;
+install that exact version with
+`cargo install cargo-deny --version 0.20.2 --locked`.
 
 | Command | What it does |
 | --- | --- |

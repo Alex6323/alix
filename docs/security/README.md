@@ -11,15 +11,18 @@ Vulnerabilities are reported privately through [`SECURITY.md`](../../SECURITY.md
 The dependency gate reads
 [`scripts/dependency-policy.toml`](../../scripts/dependency-policy.toml) through
 [`scripts/check-dependency-policy.py`](../../scripts/check-dependency-policy.py) during
-`make deps-check`, which also retains the reviewed Cargo version-family baseline. It guards this
-repository's own dependency declarations against unintended change ([ADR
+`make deps-check`. The same command runs the pinned `cargo-deny` license and
+duplicate-version checks for the published root Rust graph ([ADR
+0050](../adrs/0050-cargo-deny-governs-licenses-and-duplicate-versions.md)). It guards this repository's
+own dependency declarations against unintended change ([ADR
 0049](../adrs/0049-the-dependency-gate-is-an-accident-gate.md)): an undeclared Cargo, npm, pub, or uv
 manifest, a declared manifest or lockfile that is not tracked, a registry other than the declared
 one, a Cargo Git source without an exact revision, a path or link dependency resolving outside the
 checkout, a lockfile entry whose integrity data is missing or is not a full digest, a dependency
-added to a manifest declared dependency-free, and an untracked root Cargo configuration. A tracked
-root configuration's source-affecting tables, path overrides, and recursively included files are read
-under the same rules.
+added to a manifest declared dependency-free, an untracked root Cargo configuration, a root Rust
+license outside the reviewed allowlist, or a new duplicate crate version. A tracked root
+configuration's source-affecting tables, path overrides, and recursively included files are read under
+the same rules.
 
 It is not a defence against a hostile change. A dependency that is correctly declared, pinned, and
 checksummed passes every rule, which is the shape most published supply-chain attacks take. The

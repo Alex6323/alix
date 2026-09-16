@@ -57,11 +57,15 @@ jobs:
           toolchain: 1.97.1
           components: clippy
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2
+        with:
+          tool: cargo-deny@0.20.2
+          fallback: none
       # `make check` includes pre-1-0-check, whose script runs ripgrep; the
       # runner image does not ship it.
       - run: sudo apt-get update && sudo apt-get install -y ripgrep
-      # deps-check inspects `cargo tree --locked --offline`, which needs the
-      # registry populated on a fresh runner.
+      # deps-check runs cargo-deny offline, which needs the registry populated
+      # on a fresh runner.
       - run: cargo fetch
       - run: make check
 

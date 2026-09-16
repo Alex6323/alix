@@ -77,9 +77,9 @@ gfm-measure:
 lint:
 	cargo clippy --all-targets -- -D warnings
 
-# Reject newly compiled incompatible dependency families. Run this before and
-# after changing Cargo.toml so an avoidable duplicate is caught at the decision
-# boundary instead of after it becomes load-bearing.
+# Enforce the published root Cargo license allowlist and reviewed
+# duplicate-version exceptions, then check every Cargo, npm, pub, and uv root. Requires
+# cargo-deny 0.20.2.
 deps-check:
 	@sh scripts/deps-check.sh
 
