@@ -56,7 +56,7 @@ Node, FRB codegen, mdBook, and coverage tooling. Every external GitHub Action
 is referenced by a full commit SHA.
 
 `make toolchain-check` enforces those constraints and runs inside `make check`.
-Dependabot proposes grouped Action-SHA updates weekly; review them as executable
+Dependabot proposes grouped Action-SHA updates monthly; review them as executable
 dependency changes and do not auto-merge them.
 
 The scheduled backend and mobile drift workflows intentionally follow current

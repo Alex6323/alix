@@ -32,7 +32,7 @@ Blocking CI and release workflows use exact toolchain selections:
 - workflow inputs pin Java, Node, mdBook, `cargo-llvm-cov`, and FRB codegen.
 - release Cargo builds and codegen installation use locked dependency graphs.
 
-Every external GitHub Action reference uses a full commit SHA. A weekly grouped
+Every external GitHub Action reference uses a full commit SHA. A monthly grouped
 Dependabot update proposes new Action commits; the maintainer reviews those
 changes like executable dependency updates.
 
@@ -129,7 +129,7 @@ pins.
   `pages.yml` use exact production toolchains.
 - `.github/workflows/backend-drift.yml` and `mobile-drift.yml` name their
   intentional floating inputs.
-- `.github/dependabot.yml` proposes weekly grouped Action updates.
+- `.github/dependabot.yml` proposes monthly grouped Action updates.
 - `scripts/frb-check.sh` verifies that the exact app NDK is installed and that
   Rust, Dart, and FRB codegen versions agree.
 

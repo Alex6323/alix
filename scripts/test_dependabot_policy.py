@@ -5,6 +5,8 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CONFIG = ROOT / ".github" / "dependabot.yml"
+RELEASING = ROOT / "RELEASING.md"
+PINNING_ADR = ROOT / "docs" / "adrs" / "0016-pinned-release-toolchains.md"
 
 
 def update_blocks(text):
@@ -72,6 +74,19 @@ class DependabotPolicyTests(unittest.TestCase):
         for workflow in (ROOT / ".github" / "workflows").glob("*.yml"):
             with self.subTest(workflow=workflow.name):
                 self.assertNotIn("dependabot", workflow.read_text(encoding="utf-8").lower())
+
+    def test_live_documentation_names_the_monthly_schedule(self):
+        for path in (RELEASING, PINNING_ADR):
+            with self.subTest(path=path.relative_to(ROOT)):
+                text = path.read_text(encoding="utf-8")
+                lower = text.lower()
+                contexts = [
+                    lower[max(0, match.start() - 80) : match.end() + 80]
+                    for match in re.finditer("dependabot", lower)
+                ]
+                self.assertTrue(any("monthly" in context for context in contexts))
+                for context in contexts:
+                    self.assertNotIn("weekly", context)
 
 
 if __name__ == "__main__":
