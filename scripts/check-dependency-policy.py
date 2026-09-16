@@ -18,7 +18,13 @@ ROOT_CARGO_CONFIGS = (
     pathlib.PurePosixPath(".cargo/config"),
 )
 MAX_CARGO_CONFIG_INCLUDE_DEPTH = 32
-DEPENDENCY_TABLES = {"dependencies", "dev-dependencies", "build-dependencies"}
+DEPENDENCY_TABLES = {
+    "dependencies",
+    "dev-dependencies",
+    "build-dependencies",
+    "dev_dependencies",
+    "build_dependencies",
+}
 NPM_DEPENDENCY_TABLES = (
     "dependencies",
     "devDependencies",
@@ -188,7 +194,13 @@ def check_cargo_config(
 
 def check_cargo_lock(root, lock, registry):
     data = load_toml(lock)
-    for package in data.get("package", []):
+    packages = data.get("package")
+    if not packages:
+        raise PolicyError(
+            f"{display(lock, root)}: lockfile records no packages, "
+            "which a declared dependency root cannot produce"
+        )
+    for package in packages:
         source = package.get("source")
         if source is None:
             continue
@@ -336,7 +348,13 @@ def uv_artifacts(package):
 
 def check_uv_lock(root, lock, registry):
     data = load_toml(lock)
-    for package in data.get("package", []):
+    packages = data.get("package")
+    if not packages:
+        raise PolicyError(
+            f"{display(lock, root)}: lockfile records no packages, "
+            "which a declared dependency root cannot produce"
+        )
+    for package in packages:
         name = package.get("name", "<unnamed>")
         version = package.get("version", "<unknown>")
         subject = f"{display(lock, root)}: package {name} {version}"

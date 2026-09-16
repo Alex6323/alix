@@ -486,6 +486,44 @@ class DependencyPolicyTests(unittest.TestCase):
             "Cargo.toml: package local_dep: path dependency leaves repository",
         )
 
+    def test_a_cargo_dev_dependency_alias_cannot_leave_the_repository(self):
+        def change(directory):
+            path = directory / "Cargo.toml"
+            path.write_text(
+                path.read_text(encoding="utf-8")
+                + '\n[dev_dependencies]\nlocal_dep = { path = "../outside" }\n',
+                encoding="utf-8",
+            )
+
+        self.assert_denied(
+            change,
+            "Cargo.toml: package local_dep: path dependency leaves repository",
+        )
+
+    def test_a_cargo_lock_with_no_packages_is_denied(self):
+        def change(directory):
+            path = directory / "Cargo.lock"
+            path.write_text("version = 4\n", encoding="utf-8")
+
+        self.assert_denied(
+            change,
+            "Cargo.lock: lockfile records no packages, which a declared "
+            "dependency root cannot produce",
+        )
+
+    def test_a_uv_lock_with_no_packages_is_denied(self):
+        def change(directory):
+            path = directory / "uv.lock"
+            path.write_text(
+                'version = 1\nrequires-python = ">=3.12"\n', encoding="utf-8"
+            )
+
+        self.assert_denied(
+            change,
+            "uv.lock: lockfile records no packages, which a declared "
+            "dependency root cannot produce",
+        )
+
     def test_a_cargo_registry_package_without_a_checksum_is_denied(self):
         def change(directory):
             path = directory / "Cargo.lock"
