@@ -22,12 +22,15 @@ Reviewing that claim against the code produced no attacker for it. The
 manifests, lockfiles, and policy file the checker reads are tracked, so the
 actor it could stop already holds commit authority, and an actor with commit
 authority can edit the policy file in the same change or write ordinary code
-into the product. One input is not tracked, the presence of a root Cargo
-configuration, and the same authority adds that file to the index in the change
-that introduces it. Cargo itself already refuses a lockfile with a missing
-checksum under `--locked`, and a dependency that is correctly declared, pinned
-and checksummed passes every rule the checker has, which is the shape most
-published supply-chain attacks take.
+into the product. Two inputs are not tracked: the presence of a root Cargo
+configuration, which the gate refuses while Git does not know it, and the files
+a tracked root includes, which the walker reads whether or not they are
+tracked. An actor holding that authority simply commits either file in the
+change that introduces it. Cargo itself already refuses a lockfile with a
+missing checksum under
+`--locked`, and a dependency that is correctly declared, pinned and checksummed
+passes every rule the checker has, which is the shape most published
+supply-chain attacks take.
 
 Finding 8 is mostly about the build environment and the released artifact:
 toolchain and action pinning, advisories, licenses, SBOM, provenance, and
@@ -87,8 +90,9 @@ provenance.
 ## Verification
 
 `scripts/test_dependency_policy.py` covers every denied class, including the
-two silent-pass defects this record calls defects: a lockfile layout the pub
-reader cannot parse, and an integrity value that is not a full digest.
+silent-pass defects this record calls defects: a lockfile layout the pub reader
+cannot parse, an npm lockfile version whose package map the npm reader cannot
+find, and an integrity value that is not a full digest.
 
 ## Reversal
 

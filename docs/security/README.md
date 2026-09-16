@@ -24,10 +24,11 @@ under the same rules.
 It is not a defence against a hostile change. A dependency that is correctly declared, pinned, and
 checksummed passes every rule, which is the shape most published supply-chain attacks take. The
 manifests, lockfiles, and policy file it reads are tracked, so anyone able to change a lockfile can
-change the policy file in the same commit, and the untracked root configuration it refuses is a
-forgotten local file rather than a hostile one. Cargo configuration outside the checkout, in a
-parent directory or in `CARGO_HOME`, is invisible to it; release artifacts are built in CI from a
-fresh clone, so only committed configuration reaches a published binary. Dependency build scripts
+change the policy file in the same commit; the two inputs that are not tracked, an untracked root
+configuration and the files a tracked root includes, reach it from a checkout the same person can
+commit. Cargo configuration outside the checkout, in a parent directory or in `CARGO_HOME`, is
+invisible to it; release artifacts are built in CI from a fresh clone, so only committed
+configuration reaches a published binary. Dependency build scripts
 and procedural macros execute with the authority of whoever runs the build, and nothing here
 constrains them. Known Rust advisories are covered separately by `make audit`.
 
