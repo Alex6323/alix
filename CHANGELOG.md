@@ -107,9 +107,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- A failing paired-sync request answers with a class, a message that names
-  alix's own files by their fixed names and a deck by its minted id, never
-  a host path or a user-authored file name, and one remedy sentence; the
+- A paired-sync request that fails with a 500 answers with a class, a message
+  that names alix's own files by their fixed names and a deck by its minted id,
+  never a host path or a user-authored file name, and one remedy sentence; the
   class and message reach the server log and the bug-report archive, and
   the phone shows the message and remedy instead of a bare status number.
 

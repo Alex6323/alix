@@ -441,9 +441,10 @@ names for both sync pull and share ZIP requests.
 
 An initialized member the desktop cannot canonicalize or fully parse is named
 in its entry's `left_out` list and omitted from `members`, the pull manifest,
-and the push index. Its authored bundle files do not travel in that pull, and a
-push addressed to its deck id answers 404 unless a served member carries the
-same id, in which case the push resolves to that member.
+and the push index. Its authored bundle files do not travel in that pull. A
+push addressed to its deck id answers 404 when no served member carries that
+id, resolves to that member when exactly one does, and answers 400 when several
+served members carry it.
 
 Before pulling a newer entry, the client pushes each locally changed progress
 document with `POST /api/sync/push?deck=<deck-id>`. It sends the root identity
