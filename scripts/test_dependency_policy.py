@@ -633,6 +633,38 @@ class DependencyPolicyTests(unittest.TestCase):
             "package-lock.json: package dep: registry package has no integrity",
         )
 
+    def test_an_npm_lockfile_version_this_check_does_not_read_is_denied(self):
+        def change(directory):
+            path = directory / "package-lock.json"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            packages = data.pop("packages")
+            data["lockfileVersion"] = 1
+            data["dependencies"] = {
+                path.rsplit("node_modules/", 1)[-1]: package
+                for path, package in packages.items()
+                if path
+            }
+            path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+
+        self.assert_denied(
+            change,
+            "package-lock.json: lockfile version 1 is not a layout this check "
+            "reads",
+        )
+
+    def test_an_npm_lock_without_a_package_map_is_denied(self):
+        def change(directory):
+            path = directory / "package-lock.json"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data["packages"] = {}
+            path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+
+        self.assert_denied(
+            change,
+            "package-lock.json: no package entries were read; the lockfile "
+            "layout is not the one this check understands",
+        )
+
     def test_a_uv_registry_artifact_without_a_hash_is_denied(self):
         def change(directory):
             path = directory / "uv.lock"

@@ -25,6 +25,7 @@ NPM_DEPENDENCY_TABLES = (
     "optionalDependencies",
     "peerDependencies",
 )
+NPM_LOCK_VERSIONS = frozenset({2, 3})
 HEX_40 = re.compile(r"[0-9a-f]{40}")
 HEX_64 = re.compile(r"[0-9a-f]{64}")
 INTEGRITY = re.compile(r"sha(256|384|512)-([A-Za-z0-9+/]+={0,2})")
@@ -234,7 +235,19 @@ def check_dependency_free_npm(root, manifest):
 
 def check_npm_lock(root, lock, registry):
     data = json.loads(lock.read_text(encoding="utf-8"))
-    for path, package in sorted(data.get("packages", {}).items()):
+    version = data.get("lockfileVersion")
+    if version not in NPM_LOCK_VERSIONS:
+        raise PolicyError(
+            f"{display(lock, root)}: lockfile version {version} "
+            "is not a layout this check reads"
+        )
+    packages = data.get("packages")
+    if not packages:
+        raise PolicyError(
+            f"{display(lock, root)}: no package entries were read; "
+            "the lockfile layout is not the one this check understands"
+        )
+    for path, package in sorted(packages.items()):
         if not path:
             continue
         name = npm_package_name(path)
