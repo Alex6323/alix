@@ -18,14 +18,16 @@ recorded as supply-chain controls, the security guide described the result as a
 gate that fails closed, and the roadmap item behind them is classified as
 security work derived from the 2026-07-23 engineering review finding 8.
 
-Reviewing that claim against the code produced no attacker for it. Every input
-the checker reads is a file tracked in this repository, so the actor it could
-stop already holds commit authority, and an actor with commit authority can
-edit the policy file in the same change or write ordinary code into the
-product. Cargo itself already refuses a lockfile with a missing checksum under
-`--locked`, and a dependency that is correctly declared, pinned and checksummed
-passes every rule the checker has, which is the shape most published
-supply-chain attacks take.
+Reviewing that claim against the code produced no attacker for it. The
+manifests, lockfiles, and policy file the checker reads are tracked, so the
+actor it could stop already holds commit authority, and an actor with commit
+authority can edit the policy file in the same change or write ordinary code
+into the product. One input is not tracked, the presence of a root Cargo
+configuration, and the same authority adds that file to the index in the change
+that introduces it. Cargo itself already refuses a lockfile with a missing
+checksum under `--locked`, and a dependency that is correctly declared, pinned
+and checksummed passes every rule the checker has, which is the shape most
+published supply-chain attacks take.
 
 Finding 8 is mostly about the build environment and the released artifact:
 toolchain and action pinning, advisories, licenses, SBOM, provenance, and
@@ -53,8 +55,11 @@ roadmap item is reclassified, and the remainder of finding 8 is tracked where
 its real exposure is, in release artifact provenance.
 
 Growing the checker further requires naming the ordinary action that produces
-the input it would catch. The root-configuration walker retains no such action
-and stays only because a repository configuration may be added later.
+the input it would catch. Refusing an untracked root configuration has one, a
+local build setting written into `.cargo/config.toml` and left uncommitted,
+where the gate is what makes a machine-only build difference visible. The
+walker over a tracked configuration has no such action today and stays only
+because a repository configuration may be added later.
 
 ## Alternatives considered
 

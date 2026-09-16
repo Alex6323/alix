@@ -37,9 +37,9 @@ file. A checksum shows a download was not corrupted; it cannot help when the
 archive and its checksum are replaced together, which the attestation is for.
 Verify one with
 `gh attestation verify alix-<target>.tar.gz --repo Alex6323/alix`
-(or the `.apk` for mobile), which needs the GitHub CLI. The installer does not
-check attestations, so a `curl`-to-shell install still rests on the checksum
-alone.
+(the Windows archive is a `.zip`, and mobile publishes the `.apk`), which needs
+the GitHub CLI. The installer does not check attestations, so a `curl`-to-shell
+install still rests on the checksum alone.
 
 Before tagging, `make audit` must
 pass clean: it scans both lockfiles against the RustSec advisory database (the
