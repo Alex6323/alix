@@ -344,7 +344,9 @@ to this codebase. When in doubt, mirror the surrounding code.
   card without a locator until one does. For decision
   cards, prefer authored task-list
   answers (exactly one `[x]`, plausible `[ ]` distractors) so they are useful at
-  Recognize depth without an AI augmentation pass. Authored distractors must
+  Recognize depth without an AI augmentation pass. A task list is a choice
+  card only when mapped by a trailing `<!-- choices: single -->` or a
+  frontmatter `choices: single`; a bare task list is a checklist. Authored distractors must
   meet the same bar as the choices augmentation prompt
   (`src/augment_ai.rs::distractors_prompt`): tempting to someone who half-knows
   the material, matched to the correct answer's form and length, clearly
