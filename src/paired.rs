@@ -2649,4 +2649,133 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn a_pull_reports_the_entry_and_kind_it_landed() {
+        for bundle in [workspace_bundle(), deck_bundle()] {
+            let (_tmp, root) = fresh_root();
+
+            let report = apply(&root, &bundle);
+
+            assert_eq!(
+                report.entry, bundle.entry,
+                "a pull of `{}` must report that entry",
+                bundle.entry
+            );
+            assert_eq!(
+                report.kind, bundle.kind,
+                "a pull of `{}` must report kind `{}`",
+                bundle.entry, bundle.kind
+            );
+        }
+    }
+
+    fn bare_manifest(kind: &str, entry: &str) -> SyncPullManifest {
+        SyncPullManifest {
+            version: 1,
+            root_id: ROOT_ID.to_string(),
+            entry: entry.to_string(),
+            kind: kind.to_string(),
+            files: Vec::new(),
+            decks: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_paired_roots_id_is_the_name_of_its_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = PairedRoot::new(dir.path().join(ROOT_ID));
+        assert_eq!(
+            root.root_id(),
+            ROOT_ID,
+            "a root's id is the directory name it was opened at"
+        );
+    }
+
+    #[test]
+    fn an_entry_name_is_refused_unless_it_is_one_plain_directory_name() {
+        for name in [
+            "",
+            ".",
+            "..",
+            ".hidden",
+            "decks/organs",
+            "decks\\organs",
+            "Biology.old",
+        ] {
+            assert!(
+                check_entry_name(name).is_err(),
+                "`{name}` is not a plain entry name and must be refused"
+            );
+        }
+        for name in ["Biology", "organs.md", "notes-2026", "old"] {
+            assert!(
+                check_entry_name(name).is_ok(),
+                "`{name}` is a plain entry name and must be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn an_entry_relative_path_is_refused_when_a_part_escapes_or_names_nothing() {
+        let manifest = bare_manifest(KIND_WORKSPACE, "Biology");
+        for path in [
+            "decks//organs.md",
+            "decks/./organs.md",
+            "decks/../organs.md",
+            "..",
+            "decks\\organs.md",
+            "decks/organs.md.old",
+        ] {
+            assert!(
+                owned_path(&manifest, path).is_err(),
+                "`{path}` escapes the entry or names nothing and must be refused"
+            );
+        }
+        for path in ["decks/organs.md", "alix.toml", "assets/deck/card.webp"] {
+            assert!(
+                owned_path(&manifest, path).is_ok(),
+                "`{path}` sits inside the entry and must be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn under_dot_alix_only_a_progress_document_and_the_manifest_are_desktop_owned() {
+        let manifest = bare_manifest(KIND_WORKSPACE, "Biology");
+        for path in [MANIFEST_IN_ZIP, &document_rel(DECK_A)] {
+            assert!(
+                owned_path(&manifest, path).is_ok(),
+                "`{path}` is what the desktop owns under .alix and must be accepted"
+            );
+        }
+        for path in [
+            ".alix/progress",
+            ".alix/progress/organs.txt",
+            ".alix/progress/nested/organs.json",
+            ".alix/pushed.json",
+        ] {
+            assert!(
+                owned_path(&manifest, path).is_err(),
+                "`{path}` is private phone state and must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn a_deck_entry_owns_only_its_own_file_and_the_shared_directories() {
+        let manifest = bare_manifest(KIND_DECK, "organs.md");
+        for path in ["organs.md", "augment/x.json", "assets/deck/card.webp"] {
+            assert!(
+                owned_path(&manifest, path).is_ok(),
+                "deck entry `organs.md` owns `{path}` and must accept it"
+            );
+        }
+        for path in ["other.md", "decks/organs.md", "notes/organs.md"] {
+            assert!(
+                owned_path(&manifest, path).is_err(),
+                "deck entry `organs.md` does not own `{path}` and must refuse it"
+            );
+        }
+    }
 }
