@@ -76,6 +76,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are now buttons. Pressing one scrolls that region by most of its own height,
   so a long answer can be walked from the marker itself.
 
+- The phone's review card follows the same design: a revealed answer reads as
+  left-aligned prose at the note's own text edge, a badged note drops its
+  tinted ground and keeps its accent in the badge border, and that badge and
+  the card's type pill are one shape in two places.
+
 - Review state now marks the first card introduced from a section in each
   sitting, so clients can present its section by themselves once and offer it
   on demand thereafter. The web review shows the section heading as a dim

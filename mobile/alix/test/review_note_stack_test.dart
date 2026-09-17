@@ -111,6 +111,13 @@ Color _boxColour(WidgetTester tester) {
   return (box.decoration! as BoxDecoration).color!;
 }
 
+/// A badged note carries no ground of its own, so its accent is read from the
+/// chip's border, which is where the hue moved.
+Color _chipAccent(WidgetTester tester, ReviewBadge badge) {
+  final chip = tester.widget<Container>(_badgeChip(badge));
+  return ((chip.decoration! as BoxDecoration).border! as Border).top.color;
+}
+
 void main() {
   testWidgets('each note renders in its own box and keeps authored order', (
     tester,
@@ -130,7 +137,9 @@ void main() {
     expect(_noteBoxes, findsNWidgets(2));
   });
 
-  testWidgets('every badge names itself and tints its own box', (tester) async {
+  testWidgets('every badge names itself and marks its own accent', (
+    tester,
+  ) async {
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
     final tokens = alixDark().alix;
@@ -147,15 +156,17 @@ void main() {
       final name = badge.name.toUpperCase();
       expect(find.text(name), findsOneWidget, reason: '$badge names its chip');
       expect(
-        _boxColour(tester),
-        accents[badge]!.withValues(alpha: 0.12),
-        reason: '$badge tints its box with its own accent',
+        _chipAccent(tester, badge),
+        accents[badge]!.withValues(
+          alpha: badge == ReviewBadge.important ? 1.0 : 0.55,
+        ),
+        reason: '$badge marks itself with its own accent',
       );
-      // The accent paints borders and washes, never small text: across the 21
-      // palettes accent-on-its-own-wash measures as low as 2.0:1.
+      // The accent paints borders, never small text: across the 21 palettes
+      // accent-on-its-own-wash measures as low as 2.0:1.
       expect(
         tester.widget<Text>(find.text(name)).style!.color,
-        alixDark().colorScheme.onSurface,
+        tokens.dim,
         reason: "$badge's chip is inked, not accent-coloured",
       );
     }

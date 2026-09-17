@@ -425,7 +425,7 @@ class ReviewCardView extends StatelessWidget {
 
   Widget _modeTag(String label, AlixTokens tokens) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
       decoration: BoxDecoration(
         border: Border.all(color: tokens.line),
         borderRadius: BorderRadius.circular(6),
@@ -605,11 +605,14 @@ class ReviewCardView extends StatelessWidget {
       height: 1.5,
       color: Theme.of(context).colorScheme.onSurface,
     );
+    // The column centres each unit, so an answer narrower than the card
+    // centres as a block while a longer one fills the width and reads from
+    // the same left edge as the note below it.
     return Column(
       children: [
         for (final (index, unit) in units.indexed) ...[
           if (index > 0) const SizedBox(height: 10),
-          _unit(unit, tokens, style, TextAlign.center),
+          _unit(unit, tokens, style, TextAlign.start),
         ],
       ],
     );
@@ -1250,9 +1253,11 @@ class ReviewCardView extends StatelessWidget {
     ReviewBadge.caution => tokens.again,
   };
 
-  Widget _badgeChip(BuildContext context, ReviewBadge badge, Color accent) {
+  /// The badge and the card's type pill are the same object in two places, so
+  /// they share every value but their text and their border hue; see
+  /// [_modeTag]. The accent stays in the border, never in the small text.
+  Widget _badgeChip(ReviewBadge badge, Color accent, AlixTokens tokens) {
     final heavy = badge == ReviewBadge.important;
-    final ink = Theme.of(context).colorScheme.onSurface;
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: heavy ? 6 : 7,
@@ -1263,16 +1268,16 @@ class ReviewCardView extends StatelessWidget {
           color: heavy ? accent : accent.withValues(alpha: 0.55),
           width: heavy ? 2 : 1,
         ),
-        borderRadius: BorderRadius.circular(5),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         badge.name.toUpperCase(),
         style: TextStyle(
           fontFamily: _mono,
-          fontSize: 10,
+          fontSize: 10.5,
           height: 1.5,
-          letterSpacing: 1,
-          color: ink,
+          letterSpacing: 1.7,
+          color: tokens.dim,
         ),
       ),
     );
@@ -1288,28 +1293,32 @@ class ReviewCardView extends StatelessWidget {
     final badge = entry.badge;
     final accent = _badgeAccent(badge, tokens);
     final body = TextStyle(
-      color: badge == null
-          ? tokens.noteInk
-          : Theme.of(context).colorScheme.onSurface,
+      color: badge == null ? tokens.noteInk : tokens.dim,
       fontSize: 15,
       height: 1.4,
     );
     return Container(
       width: double.infinity,
       constraints: const BoxConstraints(maxWidth: 600),
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.12),
-        border: Border.all(
-          color: accent.withValues(alpha: badge == null ? 0.24 : 0.3),
-        ),
-        borderRadius: BorderRadius.circular(10),
+      // A badged note carries no ground: the divider, its dimmer face, and the
+      // chip's own accent separate it from the answer it sits below. A
+      // badgeless one keeps the plain note ground, which is all it has.
+      padding: EdgeInsets.symmetric(
+        horizontal: 15,
+        vertical: badge == null ? 12 : 0,
       ),
+      decoration: badge == null
+          ? BoxDecoration(
+              color: accent.withValues(alpha: 0.12),
+              border: Border.all(color: accent.withValues(alpha: 0.24)),
+              borderRadius: BorderRadius.circular(10),
+            )
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (badge != null) ...[
-            _badgeChip(context, badge, accent),
+            _badgeChip(badge, accent, tokens),
             const SizedBox(height: 9),
           ],
           for (final (index, note) in entry.units.indexed) ...[
