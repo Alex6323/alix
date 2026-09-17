@@ -1,4 +1,7 @@
-  .front-text { font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; color: var(--ink); }
+  /* The question wraps at the same measure as the answer and the note rather
+     than reaching closer to the card's edge than they do; the inset matches
+     `.note`'s own horizontal padding. */
+  .front-text { box-sizing: border-box; padding-inline: 15px; font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; color: var(--ink); }
   /* A multi-line front (a reversed card's alternatives) reads as centred lines
      rather than one run-on where the browser collapsed the newlines. */
   .front-text.multi { display: flex; flex-direction: column; gap: 0.4em; }
@@ -52,9 +55,10 @@
   .card.answered.concealing .img-mask.reveals { display: flex; }
 
   .reveal { animation: revealIn 0.24s cubic-bezier(.2,.7,.3,1) both; }
-  /* A reshaped list reveals as a left-aligned block, centered as a whole; its lines
-     are an enumeration, so their left edge must line up. */
-  .reveal.list { text-align: left; width: max-content; max-width: 100%; margin-inline: auto; }
+  /* The revealed answer reads as left-aligned prose sharing the note's text
+     edge: the inset matches `.note`'s own horizontal padding. The question
+     above it stays centred, with the pill and deck title. */
+  .reveal { text-align: left; box-sizing: border-box; width: max-content; max-width: 100%; margin-inline: auto; padding-inline: 15px; }
   /* A fenced code snippet in a reshaped answer: monospace, indentation kept. */
   .code-block { text-align: left; font: 0.86rem/1.5 var(--mono); color: var(--ink); background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin: 5px 0; overflow-x: auto; white-space: pre; }
   .table-scroll { overflow-x: auto; margin: 8px 0; }
@@ -114,21 +118,25 @@
      its-own-wash falls as low as 2.0:1, so no small text is ever the accent.
      NOTE and IMPORTANT share the accent and are told apart by their word and
      by IMPORTANT's heavier chip border. */
+  /* The note carries no box of its own: the divider above it, the dim sans face
+     against the answer's bright mono, and the badge already mark it, and a
+     tinted panel made it compete with the answer for attention. */
   .note[data-badge] {
-    background: color-mix(in srgb, var(--badge-ink) 12%, transparent);
-    border-color: color-mix(in srgb, var(--badge-ink) 30%, transparent);
-    color: var(--ink);
+    background: transparent; border-color: transparent; border-radius: 0;
+    color: var(--dim);
   }
   .note[data-badge="note"], .note[data-badge="important"] { --badge-ink: var(--bolt); }
   .note[data-badge="tip"] { --badge-ink: var(--good); }
   .note[data-badge="warning"] { --badge-ink: var(--warn); }
   .note[data-badge="caution"] { --badge-ink: var(--again); }
+  /* The badge and the card's type pill are the same object in two places, so
+     they share every value but their text; see `.mode-tag` in study.css. */
   .note-badge {
     display: inline-block; margin: 0 0 9px;
     font-family: var(--mono); font-size: 0.62rem; line-height: 1.5;
-    letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink);
-    border: 1px solid color-mix(in srgb, var(--badge-ink) 55%, transparent);
-    border-radius: 5px; padding: 1px 7px;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim);
+    border: 1px solid color-mix(in srgb, var(--badge-ink) 55%, var(--line));
+    border-radius: 6px; padding: 1px 7px;
   }
   .note[data-badge="important"] .note-badge {
     border: 2px solid var(--badge-ink); padding: 0 6px;

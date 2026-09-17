@@ -364,8 +364,8 @@ export function createStudy({
     a.addEventListener("scroll", () => updateFade(a));
     card.appendChild(a);
     if (moreHint) {
-      card.appendChild(el("div", "more-hint answer-hint"));      // "more below", pinned to the answer's bottom edge
-      card.appendChild(el("div", "more-hint answer-hint top"));  // "more above", pinned to the answer's top edge
+      card.appendChild(hintPill("more-hint answer-hint"));      // "more below", pinned to the answer's bottom edge
+      card.appendChild(hintPill("more-hint answer-hint top"));  // "more above", pinned to the answer's top edge
     }
     stack.appendChild(card);
     stage.appendChild(stack);
@@ -418,7 +418,12 @@ export function createStudy({
       title.addEventListener("click", toggleSection);
       row.appendChild(title);
       const key = label(keys.context);
-      if (key) row.appendChild(el("span", "section-title-key", key));
+      if (key) {
+        const pill = el("span", "section-title-key");
+        pill.appendChild(el("span", "ci", "§"));
+        pill.appendChild(el("span", "k", key));
+        row.appendChild(pill);
+      }
       card.insertBefore(row, q);
     }
     const frontNode = frontEl(c.front, c.front_runs, c.front_units);
@@ -805,6 +810,19 @@ export function createStudy({
     );
   }
 
+  function hintPill(className) {
+    const pill = el("button", className);
+    pill.type = "button";
+    return pill;
+  }
+
+  /* One press moves most of a region's own height, so successive presses walk
+     the prose without losing the line the reader was on. */
+  function scrollRegionBy(region, direction) {
+    const step = Math.max(40, Math.round(region.clientHeight * 0.8));
+    region.scrollBy({ top: step * direction, behavior: "smooth" });
+  }
+
   function updateHintPills(region, hints, hintClass, belowText) {
     const parent = region.parentElement;
     if (!parent) return;
@@ -815,6 +833,7 @@ export function createStudy({
     const regionBottom = region.offsetTop + region.offsetHeight;
     if (below) {
       below.style.bottom = Math.max(0, cardH - regionBottom + 8) + "px";
+      below.onclick = event => { event.stopPropagation(); scrollRegionBy(region, 1); };
       if (hints.showBottom) {
         below.textContent = belowText;
         below.classList.add("show");
@@ -822,6 +841,7 @@ export function createStudy({
     }
     if (above) {
       above.style.top = (regionTop + 8) + "px";
+      above.onclick = event => { event.stopPropagation(); scrollRegionBy(region, -1); };
       if (hints.showTop) { above.textContent = "⌃ more above"; above.classList.add("show"); }
       else above.classList.remove("show");
     }
@@ -853,8 +873,8 @@ export function createStudy({
         card.appendChild(n);
       }
       if (!card.querySelector(".note-hint:not(.top)")) {
-        card.appendChild(el("div", "more-hint note-hint"));
-        card.appendChild(el("div", "more-hint note-hint top"));
+        card.appendChild(hintPill("more-hint note-hint"));
+        card.appendChild(hintPill("more-hint note-hint top"));
       }
       n.innerHTML = "";
       renderNote(n, state.card.note);

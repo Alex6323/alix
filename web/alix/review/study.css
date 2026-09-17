@@ -49,8 +49,9 @@
   }
   .region.a .option { scroll-margin-block: 34px; }
   /* clear edge markers when an answer, excerpt, or note overflows its region */
-  .more-hint { position: absolute; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.05em; color: var(--bolt); background: var(--panel-bot, rgba(6,18,26,0.95)); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; box-shadow: 0 5px 16px -7px rgba(0,0,0,0.8); }
-  .more-hint.show { opacity: 0.94; }
+  .more-hint { appearance: none; position: absolute; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.05em; color: var(--bolt); background: var(--panel-bot, rgba(6,18,26,0.95)); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; box-shadow: 0 5px 16px -7px rgba(0,0,0,0.8); }
+  .more-hint.show { opacity: 0.94; pointer-events: auto; cursor: pointer; }
+  .more-hint.show:hover { color: var(--ink); border-color: var(--bolt); }
   /* The question reserves space beneath itself, so a clear gap between question
      and answer is ALWAYS present — even when the answer overflows and top-aligns,
      the case where centring alone left it flush under the prompt. */
@@ -134,13 +135,14 @@
      naming the check you're doing (flip / choice / typing…); see renderCard. */
   .mode-tag {
     align-self: center; flex: none; max-width: 100%;
-    margin: 2px 0 6px;
-    font-family: var(--mono); font-size: 0.66rem;
+    margin: 2px 0 13px;
+    font-family: var(--mono); font-size: 0.62rem; line-height: 1.5;
     letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint);
-    border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px;
+    border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .section-title-row {
+    position: relative;
     display: flex; flex: none; align-items: center; justify-content: center; gap: 8px;
     min-width: 0; margin: 0 0 8px;
   }
@@ -150,9 +152,17 @@
     border: 0; background: none; padding: 0; margin: 0; text-align: center; cursor: pointer;
     font-family: var(--mono);
   }
+  /* Every key-bound affordance on the card reads the same and sits in the same
+     right-hand column: glyph then keycap, pinned right so the title stays
+     centred (see .region-toggle, which this matches). */
   .section-title-key {
-    flex: none; font-family: var(--mono); font-size: 0.66rem; color: var(--dim);
-    border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px;
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    display: flex; align-items: center; gap: 6px; color: var(--dim);
+  }
+  .section-title-key .ci { flex: none; font-family: var(--mono); font-size: 0.9rem; line-height: 1; }
+  .section-title-key .k {
+    flex: none; font-family: var(--mono); font-size: 0.66rem;
+    border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px;
   }
   .section-title:hover { color: var(--ink); }
   .section-title:focus-visible { outline: 1px solid var(--bolt); outline-offset: 4px; border-radius: 2px; }

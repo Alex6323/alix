@@ -59,6 +59,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The web review card reads as one column. A revealed answer that fits its
+  width still centres, a longer one aligns to the same left edge and text
+  width as the note below it, and the question wraps at that width instead of
+  reaching nearer the card's edge than either. The question, the type pill and
+  the section title stay centred. A note no longer sits in a tinted box: the
+  divider above it, its dimmer face, and its badge carry the separation, and
+  the badge keeps each kind's accent in its border so severity stays legible
+  without reading the word. That badge and the card's type pill are now the
+  same object in two places, matching in size, border, tracking and padding.
+  The section-context key moved into the same right-hand column as the region
+  toggles, as a glyph and keycap of the same shape, and the gap under the type
+  pill grew so it no longer crowds the section title.
+
+- The "more below" and "more above" markers on an overflowing answer or note
+  are now buttons. Pressing one scrolls that region by most of its own height,
+  so a long answer can be walked from the marker itself.
+
 - Review state now marks the first card introduced from a section in each
   sitting, so clients can present its section by themselves once and offer it
   on demand thereafter. The web review shows the section heading as a dim

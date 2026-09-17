@@ -84,14 +84,15 @@ That it shows the presence of bugs, never their absence.
   await expect(notes.nth(1)).toContainText("It is not a claim that testing is useless.");
 
   // Styled, not merely tagged: each note leads with a chip naming its badge,
-  // the two badges tint their boxes differently, and the quotation carries a
-  // rule rather than a `>`.
+  // the two badges carry different accents so severity is legible without
+  // reading the word, and the quotation carries a rule rather than a `>`.
+  // The note itself has no box, so the accent lives on the chip's border.
   await expect(notes.nth(0).locator(".note-badge")).toHaveText(/note/i);
   await expect(notes.nth(1).locator(".note-badge")).toHaveText(/warning/i);
-  const tints = await notes.evaluateAll((boxes) =>
-    boxes.map((box) => getComputedStyle(box).backgroundColor),
+  const accents = await notes.evaluateAll((boxes) =>
+    boxes.map((box) => getComputedStyle(box.querySelector(".note-badge")!).borderTopColor),
   );
-  expect(new Set(tints).size).toBe(2);
+  expect(new Set(accents).size).toBe(2);
   await expect(quote).toHaveCSS("border-left-width", "3px");
 
   // The accent paints borders and washes, never small text: measured across

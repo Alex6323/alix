@@ -1725,7 +1725,7 @@ test("the section title and review menu both open the drawer", async ({ page }) 
     await page.locator(".section-title").evaluate((element) => window.getComputedStyle(element).outlineStyle),
     "context key route: the returned focus draws no ring",
   ).toBe("none");
-  await expect(page.locator(".section-title-key"), "title legend: names the context key").toHaveText("c");
+  await expect(page.locator(".section-title-key .k"), "title legend: names the context key").toHaveText("c");
   await page.locator(".section-title").click();
   await expect(drawer, "title route again: drawer reopens").toBeVisible();
   await expect(page.locator(".section-title"), "title route again: aria-expanded true").toHaveAttribute("aria-expanded", "true");
