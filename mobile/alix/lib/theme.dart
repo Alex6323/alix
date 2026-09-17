@@ -144,17 +144,24 @@ class AlixWordmark extends StatelessWidget {
 /// `alix` logo stays pinned across a route transition (identical source and
 /// destination rects, so its Hero flight has no movement) while the page body
 /// slides beneath. The drawer's own wordmark stays a plain [AlixWordmark] on
-/// purpose: a single route must not hold two Heroes with one tag.
+/// purpose: a single route must not hold two Heroes with one tag. A session
+/// screen bears no wordmark and so no Hero; its flight simply has no
+/// destination, which Flutter renders as no flight rather than an error.
 const _wordmarkHeroTag = 'alix-wordmark';
 
-/// Every wordmark-bearing screen's AppBar, built one way so the logo sits at
-/// the same x on all of them (a reserved 56px leading slot, no title spacing)
-/// and does not shift during transitions (the wordmark Hero). [leading]
-/// overrides the default, which is a back button when the route can pop, else
-/// an empty reserved slot; [actions] are the right-side controls.
+/// Every screen's AppBar, built one way so the leading slot is a reserved 56px
+/// and the title starts at the same x (no title spacing). [leading] overrides
+/// the default, which is a back button when the route can pop, else an empty
+/// reserved slot; [actions] are the right-side controls.
+///
+/// [title] replaces the wordmark, and with it the Hero. A session screen passes
+/// its own: a review or a walk names what you are looking at, the way a chat
+/// names the person, and the app's own name there is chrome that competes with
+/// the card for a phone's narrow bar.
 AppBar alixAppBar(
   BuildContext context, {
   Widget? leading,
+  Widget? title,
   List<Widget>? actions,
 }) {
   return AppBar(
@@ -165,7 +172,7 @@ AppBar alixAppBar(
             ? const BackButton()
             : const SizedBox(width: 56)),
     titleSpacing: 0,
-    title: const Hero(tag: _wordmarkHeroTag, child: AlixWordmark()),
+    title: title ?? const Hero(tag: _wordmarkHeroTag, child: AlixWordmark()),
     actions: actions,
   );
 }

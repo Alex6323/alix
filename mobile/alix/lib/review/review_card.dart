@@ -14,6 +14,54 @@ import 'package:alix_mobile/theme.dart';
 const _mono = 'IBM Plex Mono';
 const _sans = 'IBM Plex Sans';
 
+/// Names the check in force, which the chosen depth decides, not the deck.
+String reviewModeLabel(ReviewStateModel state) {
+  if (state.introducing) return 'new';
+  if (state.choices?.isNotEmpty ?? false) {
+    return state.choicesMultiple == true ? 'select all' : 'choice';
+  }
+  return switch (state.mode) {
+    ReviewMode.typeLine => 'typing · line',
+    ReviewMode.typing => 'typing',
+    ReviewMode.explain => 'explain',
+    ReviewMode.lineByLine => 'line',
+    ReviewMode.choice => 'choice',
+    ReviewMode.flip => 'flip',
+  };
+}
+
+class ReviewModeTag extends StatelessWidget {
+  const ReviewModeTag({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).alix;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+        decoration: BoxDecoration(
+          border: Border.all(color: tokens.line),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          label.toUpperCase(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: _mono,
+            fontSize: 10.5,
+            letterSpacing: 1.7,
+            color: tokens.faint,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class ReviewCardView extends StatelessWidget {
   const ReviewCardView({
     super.key,
@@ -126,18 +174,6 @@ class ReviewCardView extends StatelessWidget {
     );
   }
 
-  String _modeLabel() {
-    if (state.introducing) return 'new';
-    if (_hasChoices) return _isMulti ? 'select all' : 'choice';
-    return switch (state.mode) {
-      ReviewMode.typeLine => 'typing · line',
-      ReviewMode.typing => 'typing',
-      ReviewMode.explain => 'explain',
-      ReviewMode.lineByLine => 'line',
-      ReviewMode.choice => 'choice',
-      ReviewMode.flip => 'flip',
-    };
-  }
 
   Widget _face(BuildContext context, ReviewCardModel card) {
     final theme = Theme.of(context);
@@ -151,9 +187,6 @@ class ReviewCardView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        const SizedBox(height: 8),
-        _modeTag(_modeLabel(), tokens),
-        const SizedBox(height: 12),
         if (card.hasSection) ...[
           _sectionTitle(card, theme, tokens),
           const SizedBox(height: 12),
@@ -420,25 +453,6 @@ class ReviewCardView extends StatelessWidget {
             ),
           ),
       ],
-    );
-  }
-
-  Widget _modeTag(String label, AlixTokens tokens) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-      decoration: BoxDecoration(
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label.toUpperCase(),
-        style: TextStyle(
-          fontFamily: _mono,
-          fontSize: 10.5,
-          letterSpacing: 1.7,
-          color: tokens.faint,
-        ),
-      ),
     );
   }
 

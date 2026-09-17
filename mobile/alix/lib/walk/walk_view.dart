@@ -42,6 +42,7 @@ class WalkView extends StatelessWidget {
       child: Scaffold(
         appBar: alixAppBar(
           context,
+          title: const SizedBox.shrink(),
           actions: [
             if (!done)
               Padding(

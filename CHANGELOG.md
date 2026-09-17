@@ -76,6 +76,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are now buttons. Pressing one scrolls that region by most of its own height,
   so a long answer can be walked from the marker itself.
 
+- A review or walk on the phone no longer shows the alix wordmark in its bar,
+  the way a chat screen names the person rather than the app. The review's
+  check tag (NEW, FLIP, SELECT ALL and the rest) moves into the space that
+  frees, so the card itself starts where the tag used to sit and gains that
+  height for its question and answer.
+
 - The phone's review card follows the same design: a revealed answer reads as
   left-aligned prose at the note's own text edge, a badged note drops its
   tinted ground and keeps its accent in the badge border, and that badge and

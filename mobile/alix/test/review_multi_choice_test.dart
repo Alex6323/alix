@@ -115,7 +115,6 @@ void main() {
       ),
     );
 
-    expect(find.text('SELECT ALL'), findsOneWidget);
     expect(find.text('Submit'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('option-2')));

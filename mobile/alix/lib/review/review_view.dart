@@ -151,6 +151,9 @@ class ReviewView extends StatelessWidget {
       child: Scaffold(
         appBar: alixAppBar(
           context,
+          title: card == null
+              ? const SizedBox.shrink()
+              : ReviewModeTag(label: reviewModeLabel(state)),
           actions: [
             if (!state.finished)
               Padding(

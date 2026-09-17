@@ -61,8 +61,7 @@ Scaffold
               Padding(EdgeInsets.zero)
                 ConstrainedBox
                   SizedBox(width=56.0, height=null)
-                SizedBox(width=null, height=null)
-                  Text("alix")
+                SizedBox(width=0.0, height=0.0)
                 Padding(EdgeInsets.zero)
                   Row
                     Padding(EdgeInsets(0.0, 0.0, 16.0, 0.0))

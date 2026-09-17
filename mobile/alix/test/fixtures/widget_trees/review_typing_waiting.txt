@@ -12,11 +12,6 @@ Scaffold
                     Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
                       SizedBox(width=Infinity, height=null)
                         Column
-                          SizedBox(width=null, height=8.0)
-                          Container
-                            Padding(EdgeInsets(8.0, 2.0, 8.0, 2.0))
-                              Text("TYPING")
-                          SizedBox(width=null, height=12.0)
                           Text("Atomic?")
                           SizedBox(width=null, height=14.0)
                           Container
@@ -48,8 +43,10 @@ Scaffold
               Padding(EdgeInsets.zero)
                 ConstrainedBox
                   SizedBox(width=56.0, height=null)
-                SizedBox(width=null, height=null)
-                  Text("alix")
+                Align
+                  Container
+                    Padding(EdgeInsets(8.0, 2.0, 8.0, 2.0))
+                      Text("TYPING")
                 Padding(EdgeInsets.zero)
                   Row
                     Padding(EdgeInsets(0.0, 0.0, 16.0, 0.0))
