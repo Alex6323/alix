@@ -620,15 +620,19 @@ class ReviewCardView extends StatelessWidget {
       color: Theme.of(context).colorScheme.onSurface,
     );
     // The column centres each unit, so an answer narrower than the card
-    // centres as a block while a longer one fills the width and reads from
-    // the same left edge as the note below it.
-    return Column(
-      children: [
-        for (final (index, unit) in units.indexed) ...[
-          if (index > 0) const SizedBox(height: 10),
-          _unit(unit, tokens, style, TextAlign.start),
+    // centres as a block while a longer one fills the width. The inset is the
+    // note's own horizontal padding, which is what puts a long answer on the
+    // note's text edge rather than 15px to its left.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 15),
+      child: Column(
+        children: [
+          for (final (index, unit) in units.indexed) ...[
+            if (index > 0) const SizedBox(height: 10),
+            _unit(unit, tokens, style, TextAlign.start),
+          ],
         ],
-      ],
+      ),
     );
   }
 

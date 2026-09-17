@@ -19,8 +19,9 @@ Scaffold
                               Padding(EdgeInsets.zero)
                                 ConstrainedBox
                           SizedBox(width=null, height=22.0)
-                          Column
-                            Text("Fresh answer")
+                          Padding(EdgeInsets(15.0, 0.0, 15.0, 0.0))
+                            Column
+                              Text("Fresh answer")
                   Center
                     Container
                       Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
