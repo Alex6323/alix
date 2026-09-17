@@ -100,6 +100,24 @@ src/ask.rs: replace || with && in parse_drafted_card
 # as a value; the match-arm mutant there is killed.
 src/cli/launch.rs: replace local_lan_ip -> Option<std::net::IpAddr> with None
 
+# EQUIVALENT, provably. `check_entry_name` refuses `.` and `..` on two arms
+# that `name.starts_with('.')` on the next line already covers, so ANDing the
+# pair removes a term that decides nothing: every name the deleted term would
+# refuse still starts with a dot and is refused one line later. Proven by
+# running it, not by reading: with both arms deleted the whole lib suite is
+# green (2645 passed), including the rows of
+# `an_entry_name_is_refused_unless_it_is_one_plain_directory_name` that assert
+# `.` and `..` are refused. Line-pinned because the same description names six
+# mutants in this one condition; the other five were each applied by hand and
+# each turns a refused name into an accepted one, so each is killed. Notably
+# the next arm down is NOT equivalent: ANDing it gates `starts_with('.')`
+# behind `name == ".."`, which lets every other dotfile through.
+# Alex ruled 2026-09-17 to allowlist this rather than delete the two arms:
+# `.` and `..` are the canonical traversal names on a guard that reads input
+# from another device, and stating them explicitly outlives a later narrowing
+# of the dotfile rule.
+src/paired.rs:286: replace || with && in check_entry_name
+
 # EQUIVALENT, provably. The line above already sets `dropped[index]`, and
 # `quoted_run_end` starts its scan at `marker + 1` and only grows, so it
 # never returns less than `index + 1`. The mutant widens the fill by the
