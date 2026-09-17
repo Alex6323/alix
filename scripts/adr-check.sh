@@ -42,7 +42,13 @@ for adr in "$dir"/0*.md; do
 
     while IFS= read -r line; do
         case "$line" in
-            none*) continue ;;
+            none,[!\ ]*|none,\ *[!\ ]*) continue ;;
+            none|none,*)
+                note "$(basename "$adr"): evidence 'none' names no reason"
+                note "  expected '- Evidence: none, <why>'"
+                failed=1
+                continue
+                ;;
             *" in "*) ;;
             *)
                 note "$(basename "$adr"): malformed evidence '$line'"

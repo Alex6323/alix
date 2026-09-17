@@ -47,6 +47,12 @@ def main() -> int:
         for image in sorted(directory.glob("*.webp")):
             size = image.stat().st_size
             total += size
+            header = image.open("rb").read(12)
+            if header[:4] != b"RIFF" or header[8:12] != b"WEBP":
+                problems.append(
+                    f"{name}/{image.name} is not a WebP file; an interrupted "
+                    "capture leaves one empty"
+                )
             if size > BUDGET_BYTES:
                 problems.append(
                     f"{name}/{image.name} is {size // 1024} KiB, over the "

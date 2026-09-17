@@ -44,6 +44,21 @@ class AdrCheckTests(unittest.TestCase):
         self.assertIn("0001-missing.md", result.stderr)
         self.assertIn("name no evidence", result.stderr)
 
+    def test_a_bare_none_without_a_reason_fails_closed(self):
+        result = self.run_check(
+            {
+                "0001-bare.md": (
+                    "# Bare none\n\n"
+                    "- Status: Accepted\n"
+                    "- Evidence: none\n"
+                ),
+            }
+        )
+
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("0001-bare.md", result.stderr)
+        self.assertIn("none", result.stderr)
+
     def test_named_and_explicitly_absent_evidence_are_accepted(self):
         result = self.run_check(
             {

@@ -17,8 +17,8 @@ first=$(grep '^## \[' "$file" | head -n 1)
 [ "$first" = "## [Unreleased]" ] || fail "the first release heading must be [Unreleased], found '$first'"
 [ "$headings" -ge 2 ] || fail "only $headings release heading(s); the released history is missing"
 
-dupes=$(grep '^## \[' "$file" | LC_ALL=C sort | LC_ALL=C uniq -d)
-[ -z "$dupes" ] || fail "duplicate release headings: $dupes"
+dupes=$(sed -n 's/^## \[\([^]]*\)\].*/\1/p' "$file" | LC_ALL=C sort | LC_ALL=C uniq -d)
+[ -z "$dupes" ] || fail "duplicate release versions: $dupes"
 
 # One Added/Changed/Fixed per release: merge residue duplicates a subsection
 # instead of appending to it, and the split content reads as two half-lists.

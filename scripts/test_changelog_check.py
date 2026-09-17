@@ -25,6 +25,13 @@ class ChangelogCheckTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("skeleton intact", result.stdout)
 
+    def test_one_version_released_twice_under_different_dates_fails(self):
+        second = "## [0.1.0] - 2026-02-02\n\n### Fixed\n- A merge duplicate.\n"
+        result = run_check(HEAD + SKELETON + second + RELEASED)
+
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("0.1.0", result.stderr)
+
     def test_a_bare_unreleased_heading_fails_naming_every_missing_subsection(self):
         result = run_check(HEAD + "## [Unreleased]\n\n" + RELEASED)
         self.assertEqual(1, result.returncode)
