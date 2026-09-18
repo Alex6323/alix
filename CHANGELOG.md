@@ -95,9 +95,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   height for its question and answer.
 
 - The phone's review card follows the same design: a revealed answer reads as
-  left-aligned prose at the note's own text edge, a badged note drops its
-  tinted ground and keeps its accent in the badge border, and that badge and
-  the card's type pill are one shape in two places.
+  left-aligned prose, a badged note drops its tinted ground and keeps its
+  accent in the badge border, and that badge and the card's type pill are one
+  shape in two places. The question, the answer and an unboxed note wrap at
+  one measure, the card's own; a framed note puts that measure on its box and
+  keeps its text inside the frame.
 
 - Review state now marks the first card introduced from a section in each
   sitting, so clients can present its section by themselves once and offer it
