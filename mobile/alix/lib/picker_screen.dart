@@ -280,20 +280,8 @@ class _PickerScreenState extends State<PickerScreen> {
     }
   }
 
-  void _syncEntry(PickerEntry entry) {
-    _syncController?.cycle(entry: _entryFileName(entry.path));
-  }
-
-  /// The manifest name a picker row's path implies: the file or directory
-  /// name relative to its root, exactly what `SyncEntry.name` carries. Not
-  /// [PickerEntry.title], which is the display name (falls back to a bare
-  /// file stem for a loose deck, or `alix.toml`'s `title` for a workspace).
-  String _entryFileName(String path) {
-    final normalized = path.replaceAll('\\', '/');
-    final trimmed = normalized.endsWith('/')
-        ? normalized.substring(0, normalized.length - 1)
-        : normalized;
-    return trimmed.split('/').last;
+  void _syncAll() {
+    _syncController?.cycle();
   }
 
   void _pullAvailable(String name) {
@@ -655,9 +643,10 @@ class _PickerScreenState extends State<PickerScreen> {
           onLongPressPairedEntry: isPairedRootScreen
               ? _longPressPairedEntry
               : null,
-          onSyncEntry: syncController != null && isPairedRootScreen
-              ? _syncEntry
+          onSyncAll: syncController != null && isPairedRootScreen
+              ? _syncAll
               : null,
+          syncBusy: syncController?.running ?? false,
           availableEntries: syncController != null && isPairedRootScreen
               ? syncController.availableEntries
               : const [],
@@ -762,7 +751,7 @@ class _PickerScreenState extends State<PickerScreen> {
     if (!mounted) return;
     showAboutDialog(
       context: context,
-      applicationName: 'alix',
+      applicationName: 'Alix',
       applicationVersion: 'mobile ${app ?? 'dev'} / core ${_port.coreVersion}',
       applicationIcon: Image.asset(
         'assets/icon/alix-192.png',

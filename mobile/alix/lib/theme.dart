@@ -113,14 +113,14 @@ extension AlixThemeTokens on ThemeData {
 }
 
 /// The flat orange wordmark, the web app's header brand (never reskinned).
-/// Used as the AppBar title on every screen.
+/// The AppBar title wherever a screen names no subject of its own.
 class AlixWordmark extends StatelessWidget {
   const AlixWordmark({super.key});
 
   @override
   Widget build(BuildContext context) {
     return const Text(
-      'alix',
+      'Alix',
       style: TextStyle(
         fontFamily: 'IBM Plex Sans',
         fontWeight: FontWeight.w700,
@@ -128,7 +128,7 @@ class AlixWordmark extends StatelessWidget {
         letterSpacing: 0.5,
         // A tight line box (no extra leading below the baseline) so the
         // wordmark's glyphs center with the leading icon instead of sitting a
-        // few pixels low; 'alix' has no descenders, so 1.0 never clips.
+        // few pixels low; 'Alix' has no descenders, so 1.0 never clips.
         height: 1.0,
         // Explicit so the Hero flight (which lifts this into the transition
         // overlay, outside any DefaultTextStyle) can't fall back to Flutter's
@@ -144,9 +144,10 @@ class AlixWordmark extends StatelessWidget {
 /// `alix` logo stays pinned across a route transition (identical source and
 /// destination rects, so its Hero flight has no movement) while the page body
 /// slides beneath. The drawer's own wordmark stays a plain [AlixWordmark] on
-/// purpose: a single route must not hold two Heroes with one tag. A session
-/// screen bears no wordmark and so no Hero; its flight simply has no
-/// destination, which Flutter renders as no flight rather than an error.
+/// purpose: a single route must not hold two Heroes with one tag. A screen
+/// that names a subject of its own bears no wordmark and so no Hero; its
+/// flight simply has no destination, which Flutter renders as no flight
+/// rather than an error.
 const _wordmarkHeroTag = 'alix-wordmark';
 
 /// Every screen's AppBar, built one way so the leading slot is a reserved 56px
@@ -154,10 +155,9 @@ const _wordmarkHeroTag = 'alix-wordmark';
 /// the default, which is a back button when the route can pop, else an empty
 /// reserved slot; [actions] are the right-side controls.
 ///
-/// [title] replaces the wordmark, and with it the Hero. A session screen passes
-/// its own: a review or a walk names what you are looking at, the way a chat
-/// names the person, and the app's own name there is chrome that competes with
-/// the card for a phone's narrow bar.
+/// [title] replaces the wordmark, and with it the Hero: a screen that has a
+/// subject names it here (the card's check, the open folder), the way a chat
+/// names the person rather than the app.
 AppBar alixAppBar(
   BuildContext context, {
   Widget? leading,

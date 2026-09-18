@@ -9,6 +9,16 @@ import 'package:alix_mobile/sync/sync_models.dart' show humanBytes;
 import 'package:alix_mobile/sync_client.dart' show SyncEntry;
 import 'package:alix_mobile/theme.dart';
 
+TextStyle _ledeStyle(BuildContext context, Color? color) {
+  return TextStyle(
+    fontFamily: 'IBM Plex Mono',
+    color: color ?? Theme.of(context).alix.bolt,
+    fontSize: 12,
+    letterSpacing: 2.2,
+    fontWeight: FontWeight.w500,
+  );
+}
+
 class PickerLede extends StatelessWidget {
   const PickerLede({super.key, required this.text, this.color});
 
@@ -26,13 +36,77 @@ class PickerLede extends StatelessWidget {
         text.toUpperCase(),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontFamily: 'IBM Plex Mono',
-          color: color ?? Theme.of(context).alix.bolt,
-          fontSize: 12,
-          letterSpacing: 2.2,
-          fontWeight: FontWeight.w500,
-        ),
+        style: _ledeStyle(context, color),
+      ),
+    );
+  }
+}
+
+/// The open folder's name in the app bar's title slot, where the root screen
+/// shows the wordmark.
+class PickerTitle extends StatelessWidget {
+  const PickerTitle({super.key, required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text.toUpperCase(),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: _ledeStyle(context, null),
+    );
+  }
+}
+
+/// The paired desktop's group heading: what this phone is paired with, and
+/// the one Sync that covers every entry beneath it.
+class PickerPairedHeading extends StatelessWidget {
+  const PickerPairedHeading({
+    super.key,
+    required this.label,
+    this.onSyncAll,
+    this.busy = false,
+  });
+
+  final String label;
+  final VoidCallback? onSyncAll;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).alix;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 0, 2, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: _ledeStyle(context, tokens.dim),
+            ),
+          ),
+          if (onSyncAll != null)
+            TextButton(
+              onPressed: busy ? null : onSyncAll,
+              style: TextButton.styleFrom(
+                minimumSize: Size.zero,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                foregroundColor: tokens.bolt,
+                textStyle: const TextStyle(
+                  fontFamily: 'IBM Plex Mono',
+                  fontSize: 12,
+                  letterSpacing: 1.6,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              child: const Text('SYNC'),
+            ),
+        ],
       ),
     );
   }
@@ -70,17 +144,11 @@ class PickerDeckRow extends StatelessWidget {
     required this.entry,
     required this.onTap,
     this.onLongPress,
-    this.onSync,
   });
 
   final PickerEntry entry;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
-
-  /// Non-null only while the picker shows a paired root's top-level
-  /// entries; adds a "Sync" action to the row's overflow menu. Member rows
-  /// (`_PickerMemberRow`, a workspace's own decks) never show it.
-  final VoidCallback? onSync;
 
   @override
   Widget build(BuildContext context) {
@@ -105,16 +173,16 @@ class PickerDeckRow extends StatelessWidget {
             onLongPress: onLongPress,
             child: Container(
               constraints: const BoxConstraints(minHeight: 54),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
               decoration: BoxDecoration(
                 border: Border.all(color: tokens.line),
                 borderRadius: BorderRadius.circular(11),
               ),
               child: Row(
                 children: [
-                  if (entry.icon != null) ...[
-                    _PickerEmblem(path: entry.icon!),
-                    const SizedBox(width: 10),
+                  if (entry.isWorkspace) ...[
+                    _PickerAvatar(entry: entry),
+                    const SizedBox(width: 12),
                   ],
                   Expanded(
                     child: Column(
@@ -142,24 +210,7 @@ class PickerDeckRow extends StatelessWidget {
                       ],
                     ),
                   ),
-                  ...pickerTrailingMarker(theme, entry),
-                  if (onSync != null) ...[
-                    const SizedBox(width: 4),
-                    PopupMenuButton<void>(
-                      tooltip: 'More',
-                      icon: Icon(Icons.more_vert, size: 20, color: tokens.dim),
-                      itemBuilder: (context) => [
-                        PopupMenuItem<void>(
-                          onTap: onSync,
-                          child: const Text('Sync'),
-                        ),
-                      ],
-                    ),
-                  ],
-                  if (entry.isWorkspace) ...[
-                    const SizedBox(width: 8),
-                    Icon(Icons.chevron_right, size: 22, color: tokens.dim),
-                  ],
+                  if (!entry.isWorkspace) ...pickerTrailingMarker(theme, entry),
                 ],
               ),
             ),
@@ -706,31 +757,54 @@ List<Widget> pickerTrailingMarker(ThemeData theme, PickerEntry entry) {
   return const [];
 }
 
-class _PickerEmblem extends StatelessWidget {
-  const _PickerEmblem({required this.path});
+/// A workspace's own icon, or the disc carrying its initial that stands in
+/// when it declares none.
+class _PickerAvatar extends StatelessWidget {
+  const _PickerAvatar({required this.entry});
 
-  final String path;
+  final PickerEntry entry;
+
+  static const _size = 32.0;
 
   @override
   Widget build(BuildContext context) {
-    const size = 22.0;
-    final color = Theme.of(context).alix.dim;
-    if (path.toLowerCase().endsWith('.svg')) {
-      return SvgPicture.file(
-        File(path),
-        width: size,
-        height: size,
-        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+    final tokens = Theme.of(context).alix;
+    final path = entry.icon;
+    if (path == null) {
+      return Container(
+        width: _size,
+        height: _size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: tokens.line, shape: BoxShape.circle),
+        child: Text(
+          _initial(entry.title),
+          style: TextStyle(
+            fontFamily: 'IBM Plex Mono',
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: tokens.dim,
+          ),
+        ),
       );
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
-      child: Image.file(
-        File(path),
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
+    return ClipOval(
+      child: SizedBox(
+        width: _size,
+        height: _size,
+        child: path.toLowerCase().endsWith('.svg')
+            ? SvgPicture.file(
+                File(path),
+                fit: BoxFit.cover,
+                colorFilter: ColorFilter.mode(tokens.dim, BlendMode.srcIn),
+              )
+            : Image.file(File(path), fit: BoxFit.cover),
       ),
     );
   }
+}
+
+String _initial(String title) {
+  final trimmed = title.trim();
+  if (trimmed.isEmpty) return '·';
+  return String.fromCharCode(trimmed.runes.first).toUpperCase();
 }

@@ -38,11 +38,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `alix doctor` warns when a cloze card's front contains a blank's answer,
   the check that already covers a block note.
 
-- The phone can now sync with a paired desktop: the picker's `⋮` menu on a
-  pulled entry runs a cycle (list, push every changed deck, pull, tidy
-  renamed entries), app open runs one in the background once the desktop
-  answers with the same root, and a review session's summary silently
-  pushes that deck's progress. A one-line status shows while a cycle runs
+- The phone can now sync with a paired desktop: the Sync button beside the
+  desktop's heading in the picker runs a cycle over everything beneath it
+  (list, push every changed deck, pull, tidy renamed entries), app open runs
+  one in the background once the desktop answers with the same root, and a
+  review session's summary silently pushes that deck's progress. A one-line
+  status shows under that heading while a cycle runs
   or its report is unread; tapping it opens the report (landed, pushed, kept,
   phone-only, removed, renamed, left out, not on this phone, orphaned,
   refused), and a push or pull conflict surfaces a choice naming what each
@@ -75,6 +76,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The "more below" and "more above" markers on an overflowing answer or note
   are now buttons. Pressing one scrolls that region by most of its own height,
   so a long answer can be walked from the marker itself.
+
+- The phone's picker names the folder you opened in its bar, where the root
+  screen shows the wordmark, and drops the heading that used to repeat it in
+  the list. The wordmark itself now reads "Alix"; the lowercase spelling is
+  the command's name, not the app's.
+
+- A workspace row in the phone's picker carries its icon, or a disc with its
+  initial when it declares none, and nothing on the right: no due dot, no
+  overflow menu, no chevron. Dropping the menu also drops the height it
+  forced on a paired row, which stood 24 logical pixels taller than a local
+  one for it.
 
 - A review or walk on the phone no longer shows the alix wordmark in its bar,
   the way a chat screen names the person rather than the app. The review's

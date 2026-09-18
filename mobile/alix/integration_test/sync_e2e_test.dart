@@ -332,13 +332,11 @@ void main() {
       await tester.pumpAndSettle();
 
       // ---------------------------------------------------------------
-      // Step 4c: Sync from the row's own menu, then resolve keep-phone
-      // from the report sheet.
+      // Step 4c: Sync from the paired section's own button, then resolve
+      // keep-phone from the report sheet.
       // ---------------------------------------------------------------
       final desktopRevisionBefore = movedByDesktop['revision'] as int;
-      await tester.tap(find.byIcon(Icons.more_vert));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Sync'));
+      await tester.tap(find.text('SYNC'));
       await tester.pumpAndSettle();
       await waitUntil(
         tester,

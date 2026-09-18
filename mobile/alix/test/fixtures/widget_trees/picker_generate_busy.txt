@@ -2,25 +2,36 @@ CustomPaint
   ConstrainedBox
   Scaffold
     Material
-      Column
-        Expanded
-          ListView
-            Column
-              Text("No decks here yet. Put Markdown (.md) decks in this folder.")
-              SizedBox(width=null, height=16.0)
-              OutlinedButton(enabled=true)
-                ConstrainedBox
-                  Material
-                    CustomPaint
-                      InkWell(tap=true, longPress=false)
-                        Padding(EdgeInsetsDirectional(16.0, 0.0, 24.0, 0.0))
-                          Align
-                            Row
-                              Icon(f33c)
-                                SizedBox(width=18.0, height=18.0)
-                                  Center
-                              Flexible
-                                Text("Add the tutorial deck")
+      ListView
+        Column
+          Text("No decks here yet. Put Markdown (.md) decks in this folder.")
+          SizedBox(width=null, height=16.0)
+          OutlinedButton(enabled=true)
+            ConstrainedBox
+              Material
+                CustomPaint
+                  InkWell(tap=true, longPress=false)
+                    Padding(EdgeInsetsDirectional(16.0, 0.0, 24.0, 0.0))
+                      Align
+                        Row
+                          Icon(f33c)
+                            SizedBox(width=18.0, height=18.0)
+                              Center
+                          Flexible
+                            Text("Add the tutorial deck")
+        SizedBox(width=null, height=8.0)
+        Padding(EdgeInsets(2.0, 0.0, 2.0, 10.0))
+          Row
+            Expanded
+              Text("<version>.1:7777")
+            TextButton(enabled=true)
+              ConstrainedBox
+                Material
+                  CustomPaint
+                    InkWell(tap=true, longPress=false)
+                      Padding(EdgeInsets(12.0, 6.0, 12.0, 6.0))
+                        Align
+                          Text("SYNC")
       ConstrainedBox
         AppBar
           Material
@@ -42,7 +53,7 @@ CustomPaint
                                           SizedBox(width=24.0, height=24.0)
                                             Center
                   SizedBox(width=null, height=null)
-                    Text("alix")
+                    Text("Alix")
       Stack
   ConstrainedBox
   Padding(EdgeInsets.zero)

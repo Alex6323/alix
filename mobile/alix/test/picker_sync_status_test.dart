@@ -124,7 +124,7 @@ void main() {
     },
   );
 
-  testWidgets('no pairing means no status line and no per-entry Sync action', (
+  testWidgets('no pairing means no status line and no Sync action', (
     tester,
   ) async {
     final root = tempDir('alix-sync-status-unpaired-');
@@ -143,11 +143,12 @@ void main() {
     await settlePicker(tester);
 
     expect(find.byKey(const Key('sync-status')), findsNothing);
+    expect(find.text('SYNC'), findsNothing);
   });
 
   testWidgets(
-    "a paired root's entry row menu offers Sync, and tapping it runs a "
-    'second cycle scoped to that entry',
+    "the paired section's one Sync button runs a second cycle over the "
+    'whole desktop root',
     (tester) async {
       final support = tempDir('alix-sync-status-row-support-');
       final root = await pairedRoot(support);
@@ -172,36 +173,35 @@ void main() {
         root: root,
         support: support,
         port: port,
-        until: () => find.byIcon(Icons.more_vert).evaluate().isNotEmpty,
+        until: () => find.text('SYNC').evaluate().isNotEmpty,
       );
       expect(port.entriesCalls.length, 1);
+      expect(tester.widget<TextButton>(find.byType(TextButton)).enabled, true);
 
-      await tester.tap(find.byIcon(Icons.more_vert));
-      await tester.pumpAndSettle();
-      expect(find.text('Sync'), findsOneWidget);
       // A real entries() match now runs a real pull attempt (staging dir,
       // zip target), real dart:io the fake test zone never services on its
       // own; same gotcha as the never-pulled-entry pull below.
       await tester.runAsync(() async {
-        await tester.tap(find.text('Sync'));
+        await tester.tap(find.text('SYNC'));
         final deadline = DateTime.now().add(const Duration(seconds: 2));
-        while (port.pullCalls.isEmpty && DateTime.now().isBefore(deadline)) {
+        while (port.entriesCalls.length < 2 &&
+            DateTime.now().isBefore(deadline)) {
           await Future<void>.delayed(const Duration(milliseconds: 5));
         }
         await tester.pumpAndSettle();
       });
 
       expect(port.entriesCalls.length, 2);
-      // The manifest name (deck.md), never the display title (Deck): a
-      // titled deck's stem does not carry the .md the entry name needs.
-      expect(port.pullCalls, ['deck.md']);
+      // The cycle the button starts names no entry: it covers the root, so
+      // no row carries a sync action of its own.
+      expect(find.byIcon(Icons.more_vert), findsNothing);
     },
   );
 
   testWidgets(
     "the phone's own decks and the paired desktop's stay two lists: both "
-    'show, the desktop one under its host:port label, and only its rows '
-    'offer Sync',
+    "show, the desktop one under its own heading, which carries the "
+    'section\'s one Sync',
     (tester) async {
       final support = tempDir('alix-sync-two-lists-support-');
       final phoneRoot = tempDir('alix-sync-two-lists-phone-');
@@ -228,9 +228,10 @@ void main() {
       expect(find.text('Local Deck'), findsOneWidget);
       expect(find.text('Remote Deck'), findsOneWidget);
       expect(find.text('127.0.0.1:7777'), findsOneWidget);
-      // Only the paired desktop's own row carries the overflow menu; a
-      // phone-own row never does.
-      expect(find.byIcon(Icons.more_vert), findsOneWidget);
+      // The desktop's heading carries the one Sync for everything beneath
+      // it; no row carries an action of its own.
+      expect(find.text('SYNC'), findsOneWidget);
+      expect(find.byIcon(Icons.more_vert), findsNothing);
     },
   );
 

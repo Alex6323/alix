@@ -21,11 +21,12 @@ class PickerView extends StatelessWidget {
     required this.onAddTutorial,
     this.syncStatus,
     this.onOpenSyncReport,
+    this.onSyncAll,
+    this.syncBusy = false,
     this.pairedLabel,
     this.pairedEntries = const [],
     this.onOpenPairedEntry,
     this.onLongPressPairedEntry,
-    this.onSyncEntry,
     this.availableEntries = const [],
     this.onPullAvailable,
   });
@@ -42,14 +43,19 @@ class PickerView extends StatelessWidget {
   final ValueChanged<List<PickerEntry>> onOpenMastered;
   final VoidCallback onAddTutorial;
 
-  /// One line shown above the list while a sync cycle runs or its report
-  /// is unread; tapping it opens the report.
+  /// One line under the paired heading while a sync cycle runs or its
+  /// report is unread; tapping it opens the report.
   final String? syncStatus;
   final VoidCallback? onOpenSyncReport;
 
-  /// The active paired desktop's label ("host:port"), shown as a subdued
-  /// group heading above [pairedEntries] and [availableEntries]. Null
-  /// unless a pairing is active and this is the root screen.
+  /// Syncs every entry under [pairedLabel] at once, the section's one
+  /// action; [syncBusy] holds it while a cycle runs.
+  final VoidCallback? onSyncAll;
+  final bool syncBusy;
+
+  /// The active paired desktop's label, shown as a subdued group heading
+  /// above [pairedEntries] and [availableEntries]. Null unless a pairing is
+  /// active and this is the root screen.
   final String? pairedLabel;
 
   /// The paired desktop's own pulled top-level entries, listed below
@@ -57,10 +63,6 @@ class PickerView extends StatelessWidget {
   final List<PickerEntry> pairedEntries;
   final ValueChanged<PickerEntry>? onOpenPairedEntry;
   final ValueChanged<PickerEntry>? onLongPressPairedEntry;
-
-  /// Adds "Sync" to a paired entry row's overflow menu; never shown on a
-  /// phone-own row.
-  final ValueChanged<PickerEntry>? onSyncEntry;
 
   /// Desktop entries this phone has never pulled, shown under
   /// [pairedLabel] below [pairedEntries].
@@ -77,89 +79,81 @@ class PickerView extends StatelessWidget {
     final mastered = splitMastered
         ? entries.where((entry) => entry.mastered).toList()
         : const <PickerEntry>[];
-    final showPairedSection =
-        pairedLabel != null &&
-        (pairedEntries.isNotEmpty || availableEntries.isNotEmpty);
+    final barTitle = isMasteredView ? 'Mastered 🎉' : (isRoot ? null : title);
     return Scaffold(
-      appBar: alixAppBar(context, leading: leading),
-      body: Column(
+      appBar: alixAppBar(
+        context,
+        leading: leading,
+        title: barTitle == null ? null : PickerTitle(text: barTitle),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
-          if (syncStatus case final status?)
-            InkWell(
-              key: const Key('sync-status'),
-              onTap: onOpenSyncReport,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Text(
-                  status,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: theme.alix.dim),
+          if (deadline case final value? when !isRoot)
+            PickerDeadlineLede(deadline: value),
+          if (isLoading)
+            const SizedBox.shrink()
+          else if (entries.isEmpty)
+            PickerEmptyHint(
+              atRoot: isRoot && !isMasteredView,
+              onAddTutorial: onAddTutorial,
+            )
+          else ...[
+            for (final entry in active)
+              PickerDeckRow(
+                entry: entry,
+                onTap: () => onOpenEntry(entry),
+                onLongPress:
+                    (!entry.isWorkspace && !entry.isTrace) ||
+                        (entry.tree.isNotEmpty && !entry.isTrace) ||
+                        entry.isWorkspace
+                    ? () => onLongPressEntry(entry)
+                    : null,
+              ),
+            if (mastered.isNotEmpty)
+              PickerMasteredAffordance(
+                count: mastered.length,
+                onTap: () => onOpenMastered(mastered),
+              ),
+          ],
+          if (pairedLabel case final label?) ...[
+            const SizedBox(height: 8),
+            PickerPairedHeading(
+              label: label,
+              onSyncAll: onSyncAll,
+              busy: syncBusy,
+            ),
+            if (syncStatus case final status?)
+              InkWell(
+                key: const Key('sync-status'),
+                onTap: onOpenSyncReport,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(2, 0, 2, 10),
+                  child: Text(
+                    status,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: theme.alix.dim),
+                  ),
                 ),
               ),
-            ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              children: [
-                if (isMasteredView)
-                  const PickerLede(text: 'Mastered 🎉')
-                else if (!isRoot && title != null) ...[
-                  PickerLede(text: title!),
-                  if (deadline case final value?)
-                    PickerDeadlineLede(deadline: value),
-                ],
-                if (isLoading)
-                  const SizedBox.shrink()
-                else if (entries.isEmpty)
-                  PickerEmptyHint(
-                    atRoot: isRoot && !isMasteredView,
-                    onAddTutorial: onAddTutorial,
-                  )
-                else ...[
-                  for (final entry in active)
-                    PickerDeckRow(
-                      entry: entry,
-                      onTap: () => onOpenEntry(entry),
-                      onLongPress:
-                          (!entry.isWorkspace && !entry.isTrace) ||
-                              (entry.tree.isNotEmpty && !entry.isTrace) ||
-                              entry.isWorkspace
-                          ? () => onLongPressEntry(entry)
-                          : null,
-                    ),
-                  if (mastered.isNotEmpty)
-                    PickerMasteredAffordance(
-                      count: mastered.length,
-                      onTap: () => onOpenMastered(mastered),
-                    ),
-                ],
-                if (showPairedSection) ...[
-                  const SizedBox(height: 8),
-                  PickerLede(text: pairedLabel!, color: theme.alix.dim),
-                  for (final entry in pairedEntries)
-                    PickerDeckRow(
-                      entry: entry,
-                      onTap: () => onOpenPairedEntry?.call(entry),
-                      onLongPress:
-                          (!entry.isWorkspace && !entry.isTrace) ||
-                              (entry.tree.isNotEmpty && !entry.isTrace) ||
-                              entry.isWorkspace
-                          ? () => onLongPressPairedEntry?.call(entry)
-                          : null,
-                      onSync: onSyncEntry == null
-                          ? null
-                          : () => onSyncEntry!(entry),
-                    ),
-                  for (final entry in availableEntries)
-                    PickerAvailableEntryRow(
-                      entry: entry,
-                      onTap: () => onPullAvailable?.call(entry.name),
-                    ),
-                ],
-              ],
-            ),
-          ),
+            for (final entry in pairedEntries)
+              PickerDeckRow(
+                entry: entry,
+                onTap: () => onOpenPairedEntry?.call(entry),
+                onLongPress:
+                    (!entry.isWorkspace && !entry.isTrace) ||
+                        (entry.tree.isNotEmpty && !entry.isTrace) ||
+                        entry.isWorkspace
+                    ? () => onLongPressPairedEntry?.call(entry)
+                    : null,
+              ),
+            for (final entry in availableEntries)
+              PickerAvailableEntryRow(
+                entry: entry,
+                onTap: () => onPullAvailable?.call(entry.name),
+              ),
+          ],
         ],
       ),
     );

@@ -59,7 +59,7 @@ class _AlixAppState extends State<AlixApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'alix',
+      title: 'Alix',
       // A named gallery choice (the web app's Theme picker), not a
       // light/dark mode toggle: ONE resolved theme; themeById falls back to
       // the dark default for an unknown or absent saved id.

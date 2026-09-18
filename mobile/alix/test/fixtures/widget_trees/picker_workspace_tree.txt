@@ -1,63 +1,59 @@
 Scaffold
   Material
-    Column
-      Expanded
-        ListView
-          Padding(EdgeInsets(2.0, 0.0, 2.0, 16.0))
-            Text("PATH")
-          Padding(EdgeInsets(2.0, 0.0, 2.0, 16.0))
-            Text("🎯 2100-01-05 · 0/3 mastered")
-          Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
-            Opacity(1.00)
-              Material
-                InkWell(tap=true, longPress=true)
-                  Container
-                    ConstrainedBox
-                      Padding(EdgeInsets(17.0, 15.0, 17.0, 15.0))
-                        Row
-                          Expanded
-                            Column
-                              Text("Base")
-                          SizedBox(width=12.0, height=null)
-                          Icon(e163)
-                            SizedBox(width=8.0, height=8.0)
-                              Center
-          Opacity(0.50)
-            Material
-              InkWell(tap=true, longPress=true)
+    ListView
+      Padding(EdgeInsets(2.0, 0.0, 2.0, 16.0))
+        Text("🎯 2100-01-05 · 0/3 mastered")
+      Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
+        Opacity(1.00)
+          Material
+            InkWell(tap=true, longPress=true)
+              Container
                 ConstrainedBox
-                  IntrinsicHeight
+                  Padding(EdgeInsets(17.0, 12.0, 17.0, 12.0))
                     Row
-                      Padding(EdgeInsets(8.0, 0.0, 0.0, 0.0))
-                        SizedBox(width=15.0, height=null)
-                          CustomPaint
                       Expanded
-                        Padding(EdgeInsets(8.0, 12.0, 16.0, 12.0))
-                          Row
-                            Expanded
-                              Text("Mid")
-                            SizedBox(width=12.0, height=null)
-                            Icon(e163)
-                              SizedBox(width=8.0, height=8.0)
-                                Center
-          Opacity(0.50)
-            Material
-              InkWell(tap=true, longPress=true)
-                ConstrainedBox
-                  IntrinsicHeight
-                    Row
-                      Padding(EdgeInsets(8.0, 0.0, 0.0, 0.0))
-                        SizedBox(width=30.0, height=null)
-                          CustomPaint
-                      Expanded
-                        Padding(EdgeInsets(8.0, 12.0, 16.0, 12.0))
-                          Row
-                            Expanded
-                              Text("Tip")
-                            SizedBox(width=12.0, height=null)
-                            Icon(e163)
-                              SizedBox(width=8.0, height=8.0)
-                                Center
+                        Column
+                          Text("Base")
+                      SizedBox(width=12.0, height=null)
+                      Icon(e163)
+                        SizedBox(width=8.0, height=8.0)
+                          Center
+      Opacity(0.50)
+        Material
+          InkWell(tap=true, longPress=true)
+            ConstrainedBox
+              IntrinsicHeight
+                Row
+                  Padding(EdgeInsets(8.0, 0.0, 0.0, 0.0))
+                    SizedBox(width=15.0, height=null)
+                      CustomPaint
+                  Expanded
+                    Padding(EdgeInsets(8.0, 12.0, 16.0, 12.0))
+                      Row
+                        Expanded
+                          Text("Mid")
+                        SizedBox(width=12.0, height=null)
+                        Icon(e163)
+                          SizedBox(width=8.0, height=8.0)
+                            Center
+      Opacity(0.50)
+        Material
+          InkWell(tap=true, longPress=true)
+            ConstrainedBox
+              IntrinsicHeight
+                Row
+                  Padding(EdgeInsets(8.0, 0.0, 0.0, 0.0))
+                    SizedBox(width=30.0, height=null)
+                      CustomPaint
+                  Expanded
+                    Padding(EdgeInsets(8.0, 12.0, 16.0, 12.0))
+                      Row
+                        Expanded
+                          Text("Tip")
+                        SizedBox(width=12.0, height=null)
+                        Icon(e163)
+                          SizedBox(width=8.0, height=8.0)
+                            Center
     ConstrainedBox
       AppBar
         Material
@@ -66,6 +62,5 @@ Scaffold
               Padding(EdgeInsets.zero)
                 ConstrainedBox
                   SizedBox(width=56.0, height=null)
-                SizedBox(width=null, height=null)
-                  Text("alix")
+                Text("PATH")
     Stack
