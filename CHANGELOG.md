@@ -82,11 +82,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the list. The wordmark itself now reads "Alix"; the lowercase spelling is
   the command's name, not the app's.
 
-- A workspace row in the phone's picker carries its icon, or a disc with its
-  initial when it declares none, and nothing on the right: no due dot, no
-  overflow menu, no chevron. Dropping the menu also drops the height it
-  forced on a paired row, which stood 24 logical pixels taller than a local
-  one for it.
+- Every row in the phone's picker now opens with a disc: a workspace's own
+  icon, or its initial when it declares none, and the card glyph for a deck.
+  Nothing sits on the right any more: no due dot, no overflow menu, no
+  chevron. Dropping the menu also drops the height it forced on a paired row,
+  which stood 24 logical pixels taller than a local one for it, and the list
+  starts off the bar by the same 6 pixels that separate its rows.
 
 - A review or walk on the phone no longer shows the alix wordmark in its bar,
   the way a chat screen names the person rather than the app. The review's

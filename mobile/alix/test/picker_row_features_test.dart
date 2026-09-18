@@ -255,7 +255,7 @@ void main() {
           findsNothing);
     });
 
-    testWidgets('a plain due deck shows the due dot, not the exam marker',
+    testWidgets('a plain due deck carries no marker at all',
         (tester) async {
       final root = tempRoot('alix-picker-due-');
       // The picker's listing is read-only and never stamps, so the card
@@ -274,7 +274,7 @@ void main() {
       final row = find.ancestor(
           of: find.text('Plain'), matching: find.byType(InkWell));
       expect(find.descendant(of: row, matching: find.byIcon(Icons.circle)),
-          findsOneWidget);
+          findsNothing);
       expect(find.descendant(of: row, matching: find.text('exam')),
           findsNothing);
     });

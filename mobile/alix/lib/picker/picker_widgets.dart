@@ -180,10 +180,8 @@ class PickerDeckRow extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  if (entry.isWorkspace) ...[
-                    _PickerAvatar(entry: entry),
-                    const SizedBox(width: 12),
-                  ],
+                  _PickerAvatar(entry: entry),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,7 +208,7 @@ class PickerDeckRow extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (!entry.isWorkspace) ...pickerTrailingMarker(theme, entry),
+                  ...pickerTrailingMarker(theme, entry),
                 ],
               ),
             ),
@@ -748,17 +746,12 @@ List<Widget> pickerTrailingMarker(ThemeData theme, PickerEntry entry) {
       ),
     ];
   }
-  if (entry.due) {
-    return [
-      const SizedBox(width: 12),
-      Icon(Icons.circle, size: 8, color: tokens.bolt),
-    ];
-  }
   return const [];
 }
 
-/// A workspace's own icon, or the disc carrying its initial that stands in
-/// when it declares none.
+/// A workspace's own icon; failing that a disc carrying its initial, and for
+/// a deck a disc carrying the card glyph, so the two kinds are told apart at
+/// the same left edge.
 class _PickerAvatar extends StatelessWidget {
   const _PickerAvatar({required this.entry});
 
@@ -776,15 +769,17 @@ class _PickerAvatar extends StatelessWidget {
         height: _size,
         alignment: Alignment.center,
         decoration: BoxDecoration(color: tokens.line, shape: BoxShape.circle),
-        child: Text(
-          _initial(entry.title),
-          style: TextStyle(
-            fontFamily: 'IBM Plex Mono',
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: tokens.dim,
-          ),
-        ),
+        child: entry.isWorkspace
+            ? Text(
+                _initial(entry.title),
+                style: TextStyle(
+                  fontFamily: 'IBM Plex Mono',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: tokens.dim,
+                ),
+              )
+            : Icon(Icons.style_outlined, size: 17, color: tokens.dim),
       );
     }
     return ClipOval(

@@ -11,13 +11,17 @@ Scaffold
                 ConstrainedBox
                   Padding(EdgeInsets(17.0, 12.0, 17.0, 12.0))
                     Row
+                      Container
+                        ConstrainedBox
+                          Padding(EdgeInsets.zero)
+                            Align
+                              Icon(f3f6)
+                                SizedBox(width=17.0, height=17.0)
+                                  Center
+                      SizedBox(width=12.0, height=null)
                       Expanded
                         Column
                           Text("Base")
-                      SizedBox(width=12.0, height=null)
-                      Icon(e163)
-                        SizedBox(width=8.0, height=8.0)
-                          Center
       Opacity(0.50)
         Material
           InkWell(tap=true, longPress=true)
@@ -32,10 +36,6 @@ Scaffold
                       Row
                         Expanded
                           Text("Mid")
-                        SizedBox(width=12.0, height=null)
-                        Icon(e163)
-                          SizedBox(width=8.0, height=8.0)
-                            Center
       Opacity(0.50)
         Material
           InkWell(tap=true, longPress=true)
@@ -50,10 +50,6 @@ Scaffold
                       Row
                         Expanded
                           Text("Tip")
-                        SizedBox(width=12.0, height=null)
-                        Icon(e163)
-                          SizedBox(width=8.0, height=8.0)
-                            Center
     ConstrainedBox
       AppBar
         Material

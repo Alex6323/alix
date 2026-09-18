@@ -87,7 +87,9 @@ class PickerView extends StatelessWidget {
         title: barTitle == null ? null : PickerTitle(text: barTitle),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        // The first row sits off the bar by the same 6 that separates rows
+        // from each other, so the bar reads as one more edge in the rhythm.
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
         children: [
           if (deadline case final value? when !isRoot)
             PickerDeadlineLede(deadline: value),
