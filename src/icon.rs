@@ -144,7 +144,23 @@ pub fn sanitize_svg(raw: &str) -> Option<String> {
     let lower = cleaned.to_ascii_lowercase();
     let start = lower.find("<svg")?;
     let end = lower.rfind("</svg>")? + "</svg>".len();
-    Some(cleaned[start..end].trim().to_string())
+    Some(with_namespace(cleaned[start..end].trim()))
+}
+
+/// An icon is loaded as a standalone document (a CSS mask or an `<img>`), and
+/// a document without the SVG namespace is not SVG: the browser parses it and
+/// paints nothing.
+fn with_namespace(svg: &str) -> String {
+    const SVG_NS: &str = "http://www.w3.org/2000/svg";
+    let root = &svg[..svg.find('>').unwrap_or(svg.len())];
+    let declared = root
+        .match_indices("xmlns")
+        .any(|(i, _)| root[i + "xmlns".len()..].trim_start().starts_with('='));
+    if declared {
+        return svg.to_string();
+    }
+    let (root_tag, rest) = svg.split_at("<svg".len());
+    format!("{root_tag} xmlns=\"{SVG_NS}\"{rest}")
 }
 
 fn remove_blocks(s: &str, tag: &str) -> String {
@@ -239,6 +255,44 @@ mod tests {
     }
 
     #[test]
+    fn every_sanitized_icon_declares_the_svg_namespace_exactly_once() {
+        let cases = [
+            ("bare root", "<svg><circle r=\"8\"/></svg>"),
+            (
+                "the shape the model emits",
+                "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "already declared",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "declared with single quotes",
+                "<svg xmlns='http://www.w3.org/2000/svg'><circle r=\"8\"/></svg>",
+            ),
+            (
+                "an xlink prefix is not the default namespace",
+                "<svg xmlns:xlink=\"http://www.w3.org/1999/xlink\" viewBox=\"0 0 24 24\"><circle r=\"8\"/></svg>",
+            ),
+            ("uppercase root", "<SVG><circle r=\"8\"/></SVG>"),
+        ];
+        for (label, raw) in cases {
+            let out = sanitize_svg(raw).unwrap_or_else(|| panic!("{label}: no svg root"));
+            let lower = out.to_ascii_lowercase();
+            let root = &lower[..lower.find('>').unwrap_or(lower.len())];
+            assert_eq!(
+                root.matches("xmlns=").count(),
+                1,
+                "{label}: one default namespace declaration on the root, got {out}"
+            );
+            assert!(
+                out.contains("http://www.w3.org/2000/svg"),
+                "{label}: the declared namespace is svg's, got {out}"
+            );
+        }
+    }
+
+    #[test]
     fn block_removal_preserves_text_and_drops_an_unterminated_tail() {
         assert_eq!(
             "αβ",
@@ -263,6 +317,10 @@ mod tests {
         let svg = std::fs::read_to_string(&out).unwrap();
         assert!(svg.contains("<circle"));
         assert!(!svg.to_ascii_lowercase().contains("<script"));
+        assert!(
+            svg.contains("xmlns=\"http://www.w3.org/2000/svg\""),
+            "an installed icon is a standalone svg document: {svg}"
+        );
     }
 
     #[test]
