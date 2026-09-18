@@ -295,6 +295,9 @@ pub(super) struct AskInfoDto {
 pub(super) struct VersionDto {
     pub(super) version: &'static str,
     pub(super) root_id: String,
+    /// The launch profile serving this root, when it has one; a client shows
+    /// what it already knows about the server (its address) when it is null.
+    pub(super) profile: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

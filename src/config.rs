@@ -990,6 +990,23 @@ pub fn profiles_dir() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.config_dir().join("profiles"))
 }
 
+/// The launch profile a config path names: a file directly inside a
+/// `profiles` directory is named by its stem. Every other way of starting
+/// alix (an explicit config path, a scoped folder, the default config) has
+/// no profile name, and callers show what they know instead.
+pub fn profile_name_for(config_path: Option<&Path>) -> Option<String> {
+    config_path
+        .filter(|path| {
+            path.parent()
+                .and_then(Path::file_name)
+                .is_some_and(|name| name == "profiles")
+        })
+        .and_then(Path::file_stem)
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProfileFolder {
     pub name: String,
@@ -1640,6 +1657,29 @@ mod tests {
     fn binding_label_uses_the_first_key_or_the_fallback() {
         assert_eq!("j", Bindings::label(&[parse_key("j").unwrap()]));
         assert_eq!("?", Bindings::label(&[]));
+    }
+
+    #[test]
+    fn only_a_config_inside_a_profiles_directory_carries_a_profile_name() {
+        let cases: [(Option<&str>, Option<&str>); 7] = [
+            (Some("/c/alix/profiles/study.toml"), Some("study")),
+            (Some("/c/alix/profiles/two words.toml"), Some("two words")),
+            (Some("/c/alix/profiles/study"), Some("study")),
+            (Some("/c/alix/config.toml"), None),
+            (Some("/c/alix/profiles-old/study.toml"), None),
+            // The stem is the name whatever it looks like: `profile add`
+            // validates what it writes, so a dotfile here was placed by hand.
+            (Some("/c/alix/profiles/.toml"), Some(".toml")),
+            (None, None),
+        ];
+        for (path, expected) in cases {
+            let owned = path.map(PathBuf::from);
+            assert_eq!(
+                expected.map(str::to_string),
+                profile_name_for(owned.as_deref()),
+                "profile name for {path:?}"
+            );
+        }
     }
 
     #[test]

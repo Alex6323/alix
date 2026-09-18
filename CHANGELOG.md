@@ -22,6 +22,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pulls are streamed from bounded temporary archives and pushes have a 64 MiB
   cap.
 
+- `GET /api/version` now also reports `profile`, the launch profile serving
+  that root, or `null` when alix was started any other way. The phone's picker
+  heads the paired desktop's section with that name instead of the address it
+  dialled, and falls back to the address when there is no profile to name.
+
 - `alix deck restore` can swap the progress-only backup left by an accepted
   paired-phone push. Bare `alix doctor` reports malformed or duplicate profile
   root identities and nested `.alix/sync.toml` files.

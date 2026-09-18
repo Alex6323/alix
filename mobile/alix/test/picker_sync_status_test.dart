@@ -1,8 +1,8 @@
 // Widget tests for the picker's one-line sync status (lib/picker/
 // picker_view.dart): it appears once the app-open cycle's report is
 // unread, truncates to one line, opens the report sheet on tap, and clears
-// on close. Also covers the per-row "Sync" menu action a paired root's
-// entries gain. Driven through the real PickerScreen with a FakeSyncPort
+// on close. Also covers the paired section's own Sync button and the
+// heading it sits beside. Driven through the real PickerScreen with a FakeSyncPort
 // injected via PickerScreen.buildSyncPort, so no network and no real
 // desktop are needed; RustLib.init() is required for the picker's own
 // listing of the real temp root, same as the other picker_screen_*_test.dart
@@ -68,6 +68,7 @@ void main() {
     required Directory support,
     required SyncPort port,
     Directory? phoneRoot,
+    String? profile,
     bool Function()? until,
   }) async {
     final ownRoot = phoneRoot ?? tempDir('alix-sync-status-phone-');
@@ -79,7 +80,8 @@ void main() {
           supportDir: support,
           currentThemeId: 'dark',
           onSetTheme: (_) async {},
-          buildClient: (_) => FakeServerClient(versionReply: minServerVersion),
+          buildClient: (_) =>
+              FakeServerClient(versionReply: minServerVersion, profileReply: profile),
           buildSyncPort: (_, _) => port,
         ),
       ),
@@ -232,6 +234,43 @@ void main() {
       // it; no row carries an action of its own.
       expect(find.text('SYNC'), findsOneWidget);
       expect(find.byIcon(Icons.more_vert), findsNothing);
+    },
+  );
+
+  testWidgets(
+    "the paired heading names the desktop's launch profile, and falls back "
+    'to the address it dialled',
+    (tester) async {
+      for (final (profile, expected) in <(String?, String)>[
+        ('study', 'STUDY'),
+        (null, '127.0.0.1:7777'),
+      ]) {
+        final support = tempDir('alix-sync-profile-support-');
+        final root = await pairedRoot(support);
+        writeTestDeck(
+          '${root.path}/remote.md',
+          '---\ntitle: Remote Deck\n---\n## q\na\n',
+        );
+        final port = FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: root.path,
+        );
+
+        await pumpPaired(
+          tester,
+          root: root,
+          support: support,
+          port: port,
+          profile: profile,
+          until: () => find.text('Remote Deck').evaluate().isNotEmpty,
+        );
+
+        expect(
+          find.text(expected),
+          findsOneWidget,
+          reason: 'heading for profile ${profile ?? "(none)"}',
+        );
+      }
     },
   );
 

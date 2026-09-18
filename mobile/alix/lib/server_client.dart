@@ -139,10 +139,14 @@ const minServerVersion = '0.6.0';
 /// when the server did not send `root_id` (a desktop older than the sync
 /// surface), the signal the pairing sheet refuses on.
 class ServerVersion {
-  const ServerVersion({required this.version, this.rootId});
+  const ServerVersion({required this.version, this.rootId, this.profile});
 
   final String version;
   final String? rootId;
+
+  /// The launch profile serving the desktop's root, null when it was started
+  /// any other way; the picker then labels the pairing by its address.
+  final String? profile;
 }
 
 String? _asString(dynamic v) => v is String ? v : null;
@@ -510,7 +514,11 @@ class HttpServerClient implements ServerClient {
     final json = await _get('/api/version');
     final version = _asString(json?['version']);
     if (version == null) return null;
-    return ServerVersion(version: version, rootId: _asString(json?['root_id']));
+    return ServerVersion(
+      version: version,
+      rootId: _asString(json?['root_id']),
+      profile: _asString(json?['profile']),
+    );
   }
 
   @override

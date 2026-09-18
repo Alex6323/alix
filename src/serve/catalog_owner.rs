@@ -75,6 +75,7 @@ pub(super) enum BuildWait {
 pub(super) struct SyncRootSnapshot {
     pub(super) path: PathBuf,
     pub(super) root_id: String,
+    pub(super) profile: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -116,7 +117,12 @@ impl CatalogState {
             self.invalidate();
         }
         let root_id = crate::sync::root_id(&path)?;
-        Ok(SyncRootSnapshot { path, root_id })
+        let profile = crate::config::profile_name_for(self.config.config_path.as_deref());
+        Ok(SyncRootSnapshot {
+            path,
+            root_id,
+            profile,
+        })
     }
 
     fn sync_snapshot(&mut self) -> Result<SyncSnapshot, crate::sync::SyncFailure> {

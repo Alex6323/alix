@@ -118,8 +118,9 @@ class _PickerScreenState extends State<PickerScreen> {
   /// resolves it at the root screen; null while unpaired.
   String? _pairedDir;
 
-  /// The active pairing's "host:port" label for the paired section's group
-  /// heading; null alongside [_pairedDir].
+  /// The active pairing's label for the paired section's group heading: the
+  /// desktop's launch profile once `/api/version` names one, and the address
+  /// dialled until then or when it has none. Null alongside [_pairedDir].
   String? _pairedLabel;
 
   /// Every port-binding field of the pairing [_syncController] was built
@@ -269,6 +270,14 @@ class _PickerScreenState extends State<PickerScreen> {
     final live =
         probe != null && compareVersions(probe.version, minServerVersion) >= 0;
     if (mounted) _controller.setServerReachable(live);
+
+    if (isPairedRootScreen) {
+      final label = probe?.profile ?? '${config.host}:${config.port}';
+      if (_pairedLabel != label) {
+        _pairedLabel = label;
+        if (mounted) _controller.reload();
+      }
+    }
 
     if (freshlyBuilt && live && probe.rootId == config.rootId) {
       final syncController = _syncController!;

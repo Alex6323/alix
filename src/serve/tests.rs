@@ -95,6 +95,7 @@ fn sync_pull_archive_file_is_deleted_when_its_response_lease_ends() {
         root: SyncRootSnapshot {
             path: dir.path().to_path_buf(),
             root_id: "root-00000000000000000000000000".to_string(),
+            profile: None,
         },
         catalog,
     };

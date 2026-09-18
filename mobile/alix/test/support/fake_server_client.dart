@@ -16,6 +16,7 @@ class FakeServerClient implements ServerClient {
   FakeServerClient({
     this.versionReply,
     this.rootIdReply = 'root-test0000000000000000000000',
+    this.profileReply,
     this.expireOnVersion = false,
     this.versionGate,
     this.backendReply = 'Claude',
@@ -55,6 +56,10 @@ class FakeServerClient implements ServerClient {
   /// `VersionDto.root_id` on a non-null [versionReply]; pass null to
   /// exercise the pairing sheet's "too old for sync" refusal.
   final String? rootIdReply;
+
+  /// `VersionDto.profile`: the desktop's launch profile, null when it was
+  /// started without one.
+  final String? profileReply;
   final bool expireOnVersion;
   final Completer<void>? versionGate;
   final String? backendReply;
@@ -128,7 +133,11 @@ class FakeServerClient implements ServerClient {
     if (expireOnVersion) throw const PairingExpired();
     final reply = versionReply;
     if (reply == null) return null;
-    return ServerVersion(version: reply, rootId: rootIdReply);
+    return ServerVersion(
+      version: reply,
+      rootId: rootIdReply,
+      profile: profileReply,
+    );
   }
 
   @override

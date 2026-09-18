@@ -1925,11 +1925,31 @@ fn askinfodto_and_versiondto_wire_shape() {
     let version = VersionDto {
         version: env!("CARGO_PKG_VERSION"),
         root_id: "root-00000000000000000000000000".to_string(),
+        profile: Some("study".to_string()),
     };
     pin(
         "VersionDto",
         &version,
-        json!({"version": env!("CARGO_PKG_VERSION"), "root_id": "root-00000000000000000000000000"}),
+        json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "root_id": "root-00000000000000000000000000",
+            "profile": "study",
+        }),
+    );
+    // Not pinned through `pin`: the corpus keeps one file per DTO and the
+    // named case is the one that shows a generator the field's type.
+    assert_eq!(
+        serde_json::to_value(VersionDto {
+            profile: None,
+            ..version
+        })
+        .unwrap(),
+        json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "root_id": "root-00000000000000000000000000",
+            "profile": null,
+        }),
+        "a root with no launch profile reports a null, never an invented name"
     );
 }
 

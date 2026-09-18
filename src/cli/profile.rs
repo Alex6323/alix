@@ -317,17 +317,8 @@ pub(crate) fn launch_profile_with_log(name: &str, log: Vec<alix::log::Target>) -
 }
 
 pub(crate) fn instance_name_for_launch(config: Option<&Path>, dir: Option<&Path>) -> String {
-    if let Some(name) = config
-        .filter(|path| {
-            path.parent()
-                .and_then(Path::file_name)
-                .is_some_and(|name| name == "profiles")
-        })
-        .and_then(Path::file_stem)
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-    {
-        return name.to_string();
+    if let Some(name) = alix::config::profile_name_for(config) {
+        return name;
     }
     if let Some(path) = config {
         return path_instance("config", path);

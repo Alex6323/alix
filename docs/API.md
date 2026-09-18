@@ -46,8 +46,13 @@ so is every client.
 - Several instances can serve side by side: `alix <dir>` scopes an instance to
   one decks folder with its own state (`--lan --port <p>` per instance). Each
   instance is its own host/port/token triple to pair against.
-- `GET /api/version` → `{"version":"0.8.0","root_id":"root-00000000000000000000000000"}`
-  is the cheap "am I talking to alix, and which served folder" check.
+- `GET /api/version` →
+  `{"version":"0.8.0","root_id":"root-00000000000000000000000000","profile":"study"}`
+  is the cheap "am I talking to alix, and which served folder" check. `profile`
+  names the launch profile serving this root, and is `null` when the server was
+  started any other way (an explicit config path, a scoped folder, the default
+  config); a client then shows what it already knows, such as the address it
+  dialled.
 
 ## 2. Authentication
 

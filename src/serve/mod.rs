@@ -447,6 +447,7 @@ pub fn run_review(
                                 &VersionDto {
                                     version: env!("CARGO_PKG_VERSION"),
                                     root_id: root.root_id,
+                                    profile: root.profile,
                                 },
                             ),
                             Some(Err(error)) => respond_sync_failure(request, &error),
