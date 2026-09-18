@@ -14,6 +14,11 @@ import 'package:alix_mobile/theme.dart';
 const _mono = 'IBM Plex Mono';
 const _sans = 'IBM Plex Sans';
 
+// A centred question does not fill its measure on its widest line, so
+// left-aligned text at that same measure overhangs it on the left. Tuned on
+// the device, not derived.
+const _answerInset = 10.0;
+
 /// Names the check in force, which the chosen depth decides, not the deck.
 String reviewModeLabel(ReviewStateModel state) {
   if (state.introducing) return 'new';
@@ -619,16 +624,16 @@ class ReviewCardView extends StatelessWidget {
       height: 1.5,
       color: Theme.of(context).colorScheme.onSurface,
     );
-    // The column centres each unit, so an answer narrower than the card
-    // centres as a block while a longer one fills the card's whole measure,
-    // which is the question's.
-    return Column(
-      children: [
-        for (final (index, unit) in units.indexed) ...[
-          if (index > 0) const SizedBox(height: 10),
-          _unit(unit, tokens, style, TextAlign.start),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: _answerInset),
+      child: Column(
+        children: [
+          for (final (index, unit) in units.indexed) ...[
+            if (index > 0) const SizedBox(height: 10),
+            _unit(unit, tokens, style, TextAlign.start),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -1315,11 +1320,9 @@ class ReviewCardView extends StatelessWidget {
       width: double.infinity,
       constraints: const BoxConstraints(maxWidth: 600),
       // A badged note carries no ground: the divider, its dimmer face, and the
-      // chip's own accent separate it from the answer it sits below. A
-      // badgeless one keeps the plain note ground, which is all it has, and
-      // with it the padding that holds its text off its own border.
+      // chip's own accent separate it from the answer it sits below.
       padding: EdgeInsets.symmetric(
-        horizontal: badge == null ? 15 : 0,
+        horizontal: _answerInset,
         vertical: badge == null ? 12 : 0,
       ),
       decoration: badge == null

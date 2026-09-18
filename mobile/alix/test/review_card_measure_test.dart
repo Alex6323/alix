@@ -7,6 +7,12 @@ import 'package:alix_mobile/review/sketch.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/theme.dart';
 
+const _inset = 10.0;
+
+// A Container adds its border to its own padding, so a framed note's text
+// clears the answer edge by that one painted pixel.
+const _frameBorder = 1.0;
+
 const _question =
     'Which of the two clients decides the check a card is reviewed under, '
     'and what does the deck itself contribute to that decision?';
@@ -14,8 +20,8 @@ const _answer =
     'The chosen depth decides it, never the deck: Recognize is always a '
     'choice, Recall flips, and Reconstruct types or rebuilds.';
 const _badged =
-    'A badged note carries no ground of its own, so it needs no inset to '
-    'sit apart from the answer above it.';
+    'A badged note carries no ground of its own, so the divider and its own '
+    'chip are what set it apart from the answer above it.';
 const _plain =
     'A badgeless note keeps the plain note ground, which is the only '
     'separation it has, so it stays a framed box.';
@@ -112,11 +118,11 @@ Finder get _noteBoxes => find.byWidgetPredicate(
 
 void main() {
   testWidgets(
-    'the question, the answer and an unboxed note wrap at one measure, and a '
-    'framed note puts its box on it',
+    'every left-aligned block sits one inset inside the question, and a '
+    'framed note keeps its box on the question measure',
     (tester) async {
-      tester.view.physicalSize = const Size(1080, 2400);
-      tester.view.devicePixelRatio = 2.625;
+      tester.view.physicalSize = const Size(1080, 2280);
+      tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.reset);
       final attempt = TextEditingController();
       addTearDown(attempt.dispose);
@@ -127,19 +133,28 @@ void main() {
       final question = tester.getRect(find.text(_question, findRichText: true));
       final answer = tester.getRect(find.text(_answer, findRichText: true));
       final badged = tester.getRect(find.text(_badged, findRichText: true));
+      final plain = tester.getRect(find.text(_plain, findRichText: true));
       final framed = tester.getRect(_noteBoxes.last);
 
-      expect(answer.left, question.left, reason: 'answer left edge');
-      expect(answer.right, question.right, reason: 'answer right edge');
-      expect(badged.left, question.left, reason: 'unboxed note left edge');
-      expect(badged.right, question.right, reason: 'unboxed note right edge');
+      expect(answer.left, question.left + _inset, reason: 'answer left edge');
+      expect(answer.right, question.right - _inset, reason: 'answer right edge');
+      expect(
+        badged.left,
+        question.left + _inset,
+        reason: 'unboxed note left edge',
+      );
+      expect(
+        badged.right,
+        question.right - _inset,
+        reason: 'unboxed note right edge',
+      );
 
       expect(framed.left, question.left, reason: 'framed note box left edge');
       expect(framed.right, question.right, reason: 'framed note box right edge');
       expect(
-        tester.getRect(find.text(_plain, findRichText: true)).left,
-        greaterThan(framed.left),
-        reason: 'a framed note still pads its own text',
+        plain.left,
+        answer.left + _frameBorder,
+        reason: 'a framed note puts its text on the answer edge, not its box',
       );
     },
   );
