@@ -7,7 +7,8 @@ import 'package:alix_mobile/review/sketch.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/theme.dart';
 
-const _inset = 10.0;
+// The card's own reading column, mirrored from `_cardMeasure`.
+const _measure = 560.0;
 
 // A Container adds its border to its own padding, so a framed note's text
 // clears the answer edge by that one painted pixel.
@@ -16,6 +17,12 @@ const _frameBorder = 1.0;
 const _question =
     'Which of the two clients decides the check a card is reviewed under, '
     'and what does the deck itself contribute to that decision?';
+
+// The suite loads no fonts, so every glyph measures the same fixed width.
+// This has to stay short enough to leave slack on ONE line at the narrowest
+// measure under test, or it wraps, fills the column, and the assertion that
+// an answer unit does not shrink-wrap can no longer fail.
+const _short = 'Recall flips.';
 const _answer =
     'The chosen depth decides it, never the deck: Recognize is always a '
     'choice, Recall flips, and Reconstruct types or rebuilds.';
@@ -44,10 +51,10 @@ Widget _card(TextEditingController attempt) {
     contextLeads: false,
     contextRuns: const [],
     contextUnits: const [],
-    back: const [_answer],
-    backRuns: const [[]],
-    backUnits: [_sentence(_answer)],
-    answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 1)],
+    back: const [_short, _answer],
+    backRuns: const [[], []],
+    backUnits: [_sentence(_short), _sentence(_answer)],
+    answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 2)],
     reshaped: false,
     note: [_note(_badged, badge: ReviewBadge.warning), _note(_plain)],
     images: const [],
@@ -112,50 +119,68 @@ Widget _card(TextEditingController attempt) {
   );
 }
 
-Finder get _noteBoxes => find.byWidgetPredicate(
-  (widget) => widget is Container && widget.constraints?.maxWidth == 600,
-);
+Rect _textRect(WidgetTester tester, String text) =>
+    tester.getRect(find.text(text, findRichText: true));
+
+Future<void> _pump(
+  WidgetTester tester,
+  TextEditingController attempt,
+  Size physical,
+) async {
+  tester.view.physicalSize = physical;
+  tester.view.devicePixelRatio = 3.0;
+  await tester.pumpWidget(_card(attempt));
+  await tester.pumpAndSettle();
+}
 
 void main() {
-  testWidgets(
-    'every left-aligned block sits one inset inside the question, and a '
-    'framed note keeps its box on the question measure',
-    (tester) async {
-      tester.view.physicalSize = const Size(1080, 2280);
-      tester.view.devicePixelRatio = 3.0;
-      addTearDown(tester.view.reset);
-      final attempt = TextEditingController();
-      addTearDown(attempt.dispose);
+  // The device's own geometry in both orientations: portrait never reaches
+  // the measure, landscape is wider than it, so the cap is exercised once.
+  for (final (name, physical) in const [
+    ('portrait', Size(1080, 2280)),
+    ('landscape', Size(2280, 1080)),
+  ]) {
+    testWidgets(
+      'in $name the question, every answer unit and every note wrap on one '
+      'measure, and a framed note keeps its box on it',
+      (tester) async {
+        addTearDown(tester.view.reset);
+        final attempt = TextEditingController();
+        addTearDown(attempt.dispose);
 
-      await tester.pumpWidget(_card(attempt));
-      await tester.pumpAndSettle();
+        await _pump(tester, attempt, physical);
 
-      final question = tester.getRect(find.text(_question, findRichText: true));
-      final answer = tester.getRect(find.text(_answer, findRichText: true));
-      final badged = tester.getRect(find.text(_badged, findRichText: true));
-      final plain = tester.getRect(find.text(_plain, findRichText: true));
-      final framed = tester.getRect(_noteBoxes.last);
+        final question = _textRect(tester, _question);
+        final short = _textRect(tester, _short);
+        final answer = _textRect(tester, _answer);
+        final badged = _textRect(tester, _badged);
+        final plain = _textRect(tester, _plain);
+        // A note's own box is the innermost Container around its body.
+        final framedBox = tester.getRect(
+          find
+              .ancestor(
+                of: find.text(_plain, findRichText: true),
+                matching: find.byType(Container),
+              )
+              .first,
+        );
 
-      expect(answer.left, question.left + _inset, reason: 'answer left edge');
-      expect(answer.right, question.right - _inset, reason: 'answer right edge');
-      expect(
-        badged.left,
-        question.left + _inset,
-        reason: 'unboxed note left edge',
-      );
-      expect(
-        badged.right,
-        question.right - _inset,
-        reason: 'unboxed note right edge',
-      );
-
-      expect(framed.left, question.left, reason: 'framed note box left edge');
-      expect(framed.right, question.right, reason: 'framed note box right edge');
-      expect(
-        plain.left,
-        answer.left + _frameBorder,
-        reason: 'a framed note puts its text on the answer edge, not its box',
-      );
-    },
-  );
+        expect(question.width, lessThanOrEqualTo(_measure));
+        for (final (label, rect) in [
+          ('a wrapping answer unit', answer),
+          ('a one-line answer unit', short),
+          ('an unboxed note', badged),
+          ('a framed note box', framedBox),
+        ]) {
+          expect(rect.left, question.left, reason: '$label left edge');
+          expect(rect.right, question.right, reason: '$label right edge');
+        }
+        expect(
+          plain.left,
+          question.left + _frameBorder,
+          reason: 'a framed note puts its text one border inside its box',
+        );
+      },
+    );
+  }
 }

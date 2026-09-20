@@ -95,9 +95,10 @@ Widget _card(List<ReviewNoteModel> notes, TextEditingController attempt) {
   );
 }
 
-Finder get _noteBoxes => find.byWidgetPredicate(
-  (widget) => widget is Container && widget.constraints?.maxWidth == 600,
-);
+// A note's own box is the innermost Container around its body: the block
+// carries no width of its own any more, so there is nothing else to key on.
+Finder _noteBox(String body) =>
+    find.ancestor(of: find.text(body), matching: find.byType(Container)).first;
 
 Finder _badgeChip(ReviewBadge badge) => find.byWidgetPredicate(
   (widget) =>
@@ -106,8 +107,8 @@ Finder _badgeChip(ReviewBadge badge) => find.byWidgetPredicate(
       (widget.child! as Text).data == badge.name.toUpperCase(),
 );
 
-Color _boxColour(WidgetTester tester) {
-  final box = tester.widget<Container>(_noteBoxes.first);
+Color _boxColour(WidgetTester tester, String body) {
+  final box = tester.widget<Container>(_noteBox(body));
   return (box.decoration! as BoxDecoration).color!;
 }
 
@@ -134,7 +135,13 @@ void main() {
 
     expect(find.text('First.'), findsOneWidget);
     expect(find.text('Second.'), findsOneWidget);
-    expect(_noteBoxes, findsNWidgets(2));
+    expect(_noteBox('First.'), findsOneWidget);
+    expect(_noteBox('Second.'), findsOneWidget);
+    expect(
+      tester.getRect(_noteBox('First.')),
+      isNot(tester.getRect(_noteBox('Second.'))),
+      reason: 'two notes stack in their own boxes instead of merging',
+    );
   });
 
   testWidgets('every badge names itself and marks its own accent', (
@@ -214,6 +221,9 @@ void main() {
         reason: 'no badge, no chip',
       );
     }
-    expect(_boxColour(tester), tokens.noteBorder.withValues(alpha: 0.12));
+    expect(
+      _boxColour(tester, 'A table column.'),
+      tokens.noteBorder.withValues(alpha: 0.12),
+    );
   });
 }

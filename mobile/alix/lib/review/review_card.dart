@@ -14,10 +14,9 @@ import 'package:alix_mobile/theme.dart';
 const _mono = 'IBM Plex Mono';
 const _sans = 'IBM Plex Sans';
 
-// A centred question does not fill its measure on its widest line, so
-// left-aligned text at that same measure overhangs it on the left. Tuned on
-// the device, not derived.
-const _answerInset = 10.0;
+// One measure for the whole card, so the question, the answer and the note
+// wrap on the same column instead of each finding its own.
+const _cardMeasure = 560.0;
 
 /// Names the check in force, which the chosen depth decides, not the deck.
 String reviewModeLabel(ReviewStateModel state) {
@@ -167,9 +166,14 @@ class ReviewCardView extends StatelessWidget {
             child: SingleChildScrollView(
               primary: true,
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-              child: SizedBox(
-                width: double.infinity,
-                child: _face(context, card),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: _cardMeasure),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: _face(context, card),
+                  ),
+                ),
               ),
             ),
           ),
@@ -618,22 +622,19 @@ class ReviewCardView extends StatelessWidget {
     AlixTokens tokens,
   ) {
     final style = TextStyle(
-      fontFamily: _mono,
       fontWeight: FontWeight.w500,
       fontSize: 18,
       height: 1.5,
       color: Theme.of(context).colorScheme.onSurface,
     );
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: _answerInset),
-      child: Column(
-        children: [
-          for (final (index, unit) in units.indexed) ...[
-            if (index > 0) const SizedBox(height: 10),
-            _unit(unit, tokens, style, TextAlign.start),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (index, unit) in units.indexed) ...[
+          if (index > 0) const SizedBox(height: 10),
+          _unit(unit, tokens, style, TextAlign.justify),
         ],
-      ),
+      ],
     );
   }
 
@@ -648,7 +649,6 @@ class ReviewCardView extends StatelessWidget {
     double gap = 6,
   }) {
     final style = TextStyle(
-      fontFamily: _mono,
       fontWeight: FontWeight.w500,
       fontSize: 18,
       height: 1.5,
@@ -708,14 +708,17 @@ class ReviewCardView extends StatelessWidget {
             _runsOrText(
               line < runLines.length ? runLines[line] : null,
               lines[line],
-              textAlign: TextAlign.center,
+              textAlign: TextAlign.justify,
               style: style,
             ),
           );
         },
       );
     }
-    return Column(children: children);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
   }
 
   List<Widget> _contextLines(
@@ -1020,7 +1023,7 @@ class ReviewCardView extends StatelessWidget {
         for (var index = 0; index < fields; index++) ...[
           if (index > 0) const SizedBox(height: 10),
           ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
+            constraints: const BoxConstraints(maxWidth: _cardMeasure),
             child: TextField(
               controller: typedControllers[index],
               textAlign: TextAlign.center,
@@ -1138,7 +1141,7 @@ class ReviewCardView extends StatelessWidget {
         );
       }
       return ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
+        constraints: const BoxConstraints(maxWidth: _cardMeasure),
         child: TextField(
           controller: attemptController,
           minLines: 2,
@@ -1318,13 +1321,9 @@ class ReviewCardView extends StatelessWidget {
     );
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(maxWidth: 600),
       // A badged note carries no ground: the divider, its dimmer face, and the
       // chip's own accent separate it from the answer it sits below.
-      padding: EdgeInsets.symmetric(
-        horizontal: _answerInset,
-        vertical: badge == null ? 12 : 0,
-      ),
+      padding: EdgeInsets.symmetric(vertical: badge == null ? 12 : 0),
       decoration: badge == null
           ? BoxDecoration(
               color: accent.withValues(alpha: 0.12),
@@ -1346,6 +1345,7 @@ class ReviewCardView extends StatelessWidget {
                 runs,
                 text,
                 style: body,
+                textAlign: TextAlign.justify,
               ),
               ReviewCodeModel(:final lines) => _codeBlock(lines, tokens.text),
               ReviewDiagramModel() => _diagram(note, answered: true),

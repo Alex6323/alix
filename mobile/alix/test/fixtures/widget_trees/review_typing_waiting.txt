@@ -10,20 +10,22 @@ Scaffold
                 Stack
                   SingleChildScrollView
                     Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
-                      SizedBox(width=Infinity, height=null)
-                        Column
-                          Text("Atomic?")
-                          SizedBox(width=null, height=14.0)
-                          Container
-                            ConstrainedBox
-                              Padding(EdgeInsets.zero)
+                      Center
+                        ConstrainedBox
+                          SizedBox(width=Infinity, height=null)
+                            Column
+                              Text("Atomic?")
+                              SizedBox(width=null, height=14.0)
+                              Container
                                 ConstrainedBox
-                          SizedBox(width=null, height=22.0)
-                          Column
-                            ConstrainedBox
-                              TextField(enabled=true, label="", hint="", value="")
-                                SizedBox(width=0.0, height=0.0)
-                                CustomPaint
+                                  Padding(EdgeInsets.zero)
+                                    ConstrainedBox
+                              SizedBox(width=null, height=22.0)
+                              Column
+                                ConstrainedBox
+                                  TextField(enabled=true, label="", hint="", value="")
+                                    SizedBox(width=0.0, height=0.0)
+                                    CustomPaint
                   Center
                     Container
                       Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))

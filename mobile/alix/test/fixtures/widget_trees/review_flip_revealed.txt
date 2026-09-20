@@ -10,18 +10,19 @@ Scaffold
                 Stack
                   SingleChildScrollView
                     Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
-                      SizedBox(width=Infinity, height=null)
-                        Column
-                          Text("First question?")
-                          SizedBox(width=null, height=14.0)
-                          Container
-                            ConstrainedBox
-                              Padding(EdgeInsets.zero)
-                                ConstrainedBox
-                          SizedBox(width=null, height=22.0)
-                          Padding(EdgeInsets(10.0, 0.0, 10.0, 0.0))
+                      Center
+                        ConstrainedBox
+                          SizedBox(width=Infinity, height=null)
                             Column
-                              Text("First answer")
+                              Text("First question?")
+                              SizedBox(width=null, height=14.0)
+                              Container
+                                ConstrainedBox
+                                  Padding(EdgeInsets.zero)
+                                    ConstrainedBox
+                              SizedBox(width=null, height=22.0)
+                              Column
+                                Text("First answer")
                   Center
                     Container
                       Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))

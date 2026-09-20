@@ -94,6 +94,11 @@
   --transition-fast: 0.12s ease;
   --transition-med: 0.17s ease;
 
+  /* One reading column for a card: the question, the answer and the note all
+     wrap on it rather than each finding its own. 600px is 64 characters a
+     line at the answer's own size, measured in the browser. */
+  --measure: min(96vw, 600px);
+
   --brand: #f0883c;
   --brand-ink: #1a1206;
 

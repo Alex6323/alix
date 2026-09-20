@@ -1,7 +1,7 @@
-  /* The question wraps at the same measure as the answer and the note rather
-     than reaching closer to the card's edge than they do; the inset matches
-     `.note`'s own horizontal padding. */
-  .front-text { box-sizing: border-box; padding-inline: 15px; font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; color: var(--ink); }
+  /* The question, the answer and the note all wrap on `--measure`; the
+     question is centred in it, the prose below the divider is justified
+     against its edges. */
+  .front-text { box-sizing: border-box; width: 100%; max-width: var(--measure); margin-inline: auto; font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; color: var(--ink); }
   /* A multi-line front (a reversed card's alternatives) reads as centred lines
      rather than one run-on where the browser collapsed the newlines. */
   .front-text.multi { display: flex; flex-direction: column; gap: 0.4em; }
@@ -55,10 +55,7 @@
   .card.answered.concealing .img-mask.reveals { display: flex; }
 
   .reveal { animation: revealIn 0.24s cubic-bezier(.2,.7,.3,1) both; }
-  /* The revealed answer reads as left-aligned prose sharing the note's text
-     edge: the inset matches `.note`'s own horizontal padding. The question
-     above it stays centred, with the pill and deck title. */
-  .reveal { text-align: left; box-sizing: border-box; width: max-content; max-width: 100%; margin-inline: auto; padding-inline: 15px; }
+  .reveal { text-align: justify; box-sizing: border-box; width: 100%; max-width: var(--measure); margin-inline: auto; }
   /* A fenced code snippet in a reshaped answer: monospace, indentation kept. */
   .code-block { text-align: left; font: 0.86rem/1.5 var(--mono); color: var(--ink); background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin: 5px 0; overflow-x: auto; white-space: pre; }
   .table-scroll { overflow-x: auto; margin: 8px 0; }
@@ -81,9 +78,9 @@
   .math-error-source { overflow-wrap: anywhere; font-family: var(--mono); color: inherit; }
   .math-error-label { font: 0.7em/1.2 var(--sans); color: var(--dim); white-space: nowrap; }
   @keyframes revealIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-  /* revealed answer: neutral ink in Plex Mono (green is reserved for a genuinely
-     correct check: a passed typed line, a correct option, a ✓ key point). */
-  .answer { color: var(--ink); font-family: var(--mono); font-weight: 500; font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5; margin: 0 0 4px; white-space: pre-wrap; }
+  /* revealed answer: neutral ink (green is reserved for a genuinely correct
+     check: a passed typed line, a correct option, a ✓ key point). */
+  .answer { color: var(--ink); font-weight: 500; font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5; margin: 0 0 4px; white-space: pre-wrap; }
   .answer.pass { color: var(--good); }
   .reveal.line .line-reserve { visibility: hidden; pointer-events: none; }
   .answer.pending { width: fit-content; margin: 6px auto 8px; padding: 2px 10px 3px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,0.035); color: var(--dim); font-size: 0.72rem; line-height: 1; letter-spacing: 0.14em; }
@@ -98,8 +95,8 @@
   /* notes: a warm, clearly-separated block (yellow, like the TUI), sharing the
      answer/choice content column and its text scale */
   .note {
-    box-sizing: border-box; width: 100%; max-width: min(96vw, 1040px);
-    text-align: left; margin: 18px auto 0;
+    box-sizing: border-box; width: 100%; max-width: var(--measure);
+    text-align: justify; margin: 18px auto 0;
     background: var(--note-bg); border: 1px solid var(--note-line);
     border-radius: 10px;
     padding: 12px 15px; color: var(--note-ink);
@@ -146,13 +143,12 @@
      text keeps the answer's own face and size, and the block centres as a
      whole so its lines still share a left edge */
   blockquote.quote {
-    width: max-content; max-width: 100%; margin: 10px auto;
-    padding: 2px 0 2px 14px; text-align: left;
+    max-width: 100%; margin: 10px 0;
+    padding: 2px 0 2px 14px; text-align: justify;
     border-left: 3px solid color-mix(in srgb, var(--dim) 55%, transparent);
   }
   blockquote.quote p {
-    margin: 0 0 8px; color: var(--ink);
-    font-family: var(--mono); font-weight: 500;
+    margin: 0 0 8px; color: var(--ink); font-weight: 500;
     font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5;
     white-space: pre-wrap;
   }
@@ -160,7 +156,7 @@
   .note blockquote.quote p { color: inherit; font-size: inherit; }
 
   /* multiple-choice options */
-  .options { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: min(96vw, 1040px); margin: 0 auto; }
+  .options { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: var(--measure); margin: 0 auto; }
   .option {
     display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
     background: rgba(255,255,255,0.03); border: 1px solid var(--line); color: var(--text);

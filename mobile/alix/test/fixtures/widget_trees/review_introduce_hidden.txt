@@ -10,18 +10,20 @@ Scaffold
                 Stack
                   SingleChildScrollView
                     Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
-                      SizedBox(width=Infinity, height=null)
-                        Column
-                          Text("Fresh question?")
-                          SizedBox(width=null, height=14.0)
-                          Container
-                            ConstrainedBox
-                              Padding(EdgeInsets.zero)
+                      Center
+                        ConstrainedBox
+                          SizedBox(width=Infinity, height=null)
+                            Column
+                              Text("Fresh question?")
+                              SizedBox(width=null, height=14.0)
+                              Container
                                 ConstrainedBox
-                          SizedBox(width=null, height=22.0)
-                          SizedBox(width=0.0, height=0.0)
-                          SizedBox(width=null, height=18.0)
-                          Text("new card: try to recall it, then reveal.")
+                                  Padding(EdgeInsets.zero)
+                                    ConstrainedBox
+                              SizedBox(width=null, height=22.0)
+                              SizedBox(width=0.0, height=0.0)
+                              SizedBox(width=null, height=18.0)
+                              Text("new card: try to recall it, then reveal.")
                   Center
                     Container
                       Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))

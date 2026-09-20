@@ -10,20 +10,22 @@ Scaffold
                 Stack
                   SingleChildScrollView
                     Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
-                      SizedBox(width=Infinity, height=null)
-                        Column
-                          Text("Why?")
-                          SizedBox(width=null, height=14.0)
-                          Container
-                            ConstrainedBox
-                              Padding(EdgeInsets.zero)
+                      Center
+                        ConstrainedBox
+                          SizedBox(width=Infinity, height=null)
+                            Column
+                              Text("Why?")
+                              SizedBox(width=null, height=14.0)
+                              Container
                                 ConstrainedBox
-                          SizedBox(width=null, height=22.0)
-                          ConstrainedBox
-                            TextField(enabled=true, label="", hint="your answer (stays on this device)", value="my reason")
-                              Text("your answer (stays on this device)")
-                              SizedBox(width=0.0, height=0.0)
-                              CustomPaint
+                                  Padding(EdgeInsets.zero)
+                                    ConstrainedBox
+                              SizedBox(width=null, height=22.0)
+                              ConstrainedBox
+                                TextField(enabled=true, label="", hint="your answer (stays on this device)", value="my reason")
+                                  Text("your answer (stays on this device)")
+                                  SizedBox(width=0.0, height=0.0)
+                                  CustomPaint
                   Center
                     Container
                       Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))

@@ -65,10 +65,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- The web review card reads as one column. A revealed answer that fits its
-  width still centres, a longer one aligns to the same left edge and text
-  width as the note below it, and the question wraps at that width instead of
-  reaching nearer the card's edge than either. The question, the type pill and
+- A revealed answer is set in the card's proportional face and justified, on
+  the web and on the phone alike. Monospace stays where it carries meaning: a
+  code span, a fenced block, a typed line's expected text. Both clients had
+  set the whole answer in monospace, which was TUI heritage rather than a
+  ruling. The note is justified with it, and the last line of a paragraph
+  stays unstretched, as newspapers set it.
+
+- The phone review card now wraps the question, every answer unit and every
+  note at one measure instead of insetting the answer and the note inside the
+  question. A one-line answer unit no longer centres itself as a block while a
+  wrapping one sits left, and a line-by-line reveal aligns with the rest of
+  the answer rather than centring each line.
+
+- The web review card reads as one column. The question, the answer and the
+  note wrap at one shared measure: the question is centred in it, and every
+  answer unit and note aligns to its left edge, including a short one that
+  used to centre itself as a block. The question, the type pill and
   the section title stay centred. A note no longer sits in a tinted box: the
   divider above it, its dimmer face, and its badge carry the separation, and
   the badge keeps each kind's accent in its border so severity stays legible
