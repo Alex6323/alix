@@ -20,10 +20,15 @@ ReviewNoteModel _note(String text, {ReviewBadge? badge}) => ReviewNoteModel(
   ],
 );
 
-Widget _card(List<ReviewNoteModel> notes, TextEditingController attempt) {
+Widget _card(
+  List<ReviewNoteModel> notes,
+  TextEditingController attempt, {
+  List<ReviewContentUnitModel>? frontUnits,
+}) {
   final card = ReviewCardModel(
     front: 'Question',
     frontRuns: const [],
+    frontUnits: frontUnits,
     context: const [],
     contextLeads: false,
     contextRuns: const [],
@@ -178,6 +183,80 @@ void main() {
           .first,
     );
     expect(runs.textAlign, TextAlign.justify);
+  });
+
+  testWidgets('a checklist inside a note uses the note prose alignment', (
+    tester,
+  ) async {
+    final attempt = TextEditingController();
+    addTearDown(attempt.dispose);
+    const itemText = 'A checklist item that belongs to the authored note.';
+    final note = ReviewNoteModel(
+      badge: null,
+      units: [
+        ReviewChecklistModel([
+          ReviewChecklistItemModel(
+            checked: true,
+            text: itemText,
+            runs: const [
+              InlineRunModel(
+                text: itemText,
+                bold: false,
+                italic: false,
+                code: false,
+              ),
+            ],
+          ),
+        ]),
+      ],
+    );
+
+    await tester.pumpWidget(_card([note], attempt));
+
+    final runs = tester.widget<InlineRuns>(
+      find
+          .ancestor(of: find.text(itemText), matching: find.byType(InlineRuns))
+          .first,
+    );
+    expect(runs.textAlign, TextAlign.justify);
+  });
+
+  testWidgets('a checklist on the centred question keeps its rows at the start', (
+    tester,
+  ) async {
+    final attempt = TextEditingController();
+    addTearDown(attempt.dispose);
+    const itemText = 'A checklist item that belongs to the question.';
+
+    await tester.pumpWidget(
+      _card(
+        const [],
+        attempt,
+        frontUnits: [
+          ReviewChecklistModel([
+            ReviewChecklistItemModel(
+              checked: false,
+              text: itemText,
+              runs: const [
+                InlineRunModel(
+                  text: itemText,
+                  bold: false,
+                  italic: false,
+                  code: false,
+                ),
+              ],
+            ),
+          ]),
+        ],
+      ),
+    );
+
+    final runs = tester.widget<InlineRuns>(
+      find
+          .ancestor(of: find.text(itemText), matching: find.byType(InlineRuns))
+          .first,
+    );
+    expect(runs.textAlign, TextAlign.start);
   });
 
   testWidgets('every badge names itself and marks its own accent', (

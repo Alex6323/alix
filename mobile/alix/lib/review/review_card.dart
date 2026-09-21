@@ -363,7 +363,12 @@ class ReviewCardView extends StatelessWidget {
         style.color ?? tokens.text,
       ),
       ReviewDiagramModel() => _diagram(unit, answered: true),
-      ReviewChecklistModel(:final items) => _checklist(items, tokens, style),
+      ReviewChecklistModel(:final items) => _checklist(
+        items,
+        tokens,
+        style,
+        textAlign == TextAlign.center ? TextAlign.start : textAlign,
+      ),
       ReviewTableModel() => _table(unit, tokens, style),
       ReviewQuoteModel(:final units) => _quote(units, tokens, style, textAlign),
     };
@@ -438,6 +443,7 @@ class ReviewCardView extends StatelessWidget {
     List<ReviewChecklistItemModel> items,
     AlixTokens tokens,
     TextStyle style,
+    TextAlign textAlign,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -456,7 +462,12 @@ class ReviewCardView extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _runsOrText(item.runs, item.text, style: style),
+                  child: _runsOrText(
+                    item.runs,
+                    item.text,
+                    style: style,
+                    textAlign: textAlign,
+                  ),
                 ),
               ],
             ),
@@ -1353,6 +1364,7 @@ class ReviewCardView extends StatelessWidget {
                 items,
                 tokens,
                 body,
+                TextAlign.justify,
               ),
               ReviewTableModel() => _table(note, tokens, body),
               ReviewQuoteModel(:final units) => _quote(
