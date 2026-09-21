@@ -55,7 +55,7 @@
   .card.answered.concealing .img-mask.reveals { display: flex; }
 
   .reveal { animation: revealIn 0.24s cubic-bezier(.2,.7,.3,1) both; }
-  .reveal { text-align: justify; box-sizing: border-box; width: 100%; max-width: var(--measure); margin-inline: auto; }
+  .reveal { text-align: start; box-sizing: border-box; width: 100%; max-width: var(--measure); margin-inline: auto; }
   /* A fenced code snippet in a reshaped answer: monospace, indentation kept. */
   .code-block { text-align: left; font: 0.86rem/1.5 var(--mono); color: var(--ink); background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin: 5px 0; overflow-x: auto; white-space: pre; }
   .table-scroll { overflow-x: auto; margin: 8px 0; }
@@ -96,7 +96,7 @@
      answer/choice content column and its text scale */
   .note {
     box-sizing: border-box; width: 100%; max-width: var(--measure);
-    text-align: justify; margin: 18px auto 0;
+    text-align: start; margin: 18px auto 0;
     background: var(--note-bg); border: 1px solid var(--note-line);
     border-radius: 10px;
     padding: 12px 15px; color: var(--note-ink);
@@ -144,7 +144,7 @@
      whole so its lines still share a left edge */
   blockquote.quote {
     max-width: 100%; margin: 10px 0;
-    padding: 2px 0 2px 14px; text-align: justify;
+    padding: 2px 0 2px 14px; text-align: start;
     border-left: 3px solid color-mix(in srgb, var(--dim) 55%, transparent);
   }
   blockquote.quote p {
@@ -156,10 +156,13 @@
   .note blockquote.quote p { color: inherit; font-size: inherit; }
 
   /* Justified lines need about fifty characters, or the gaps open into
-     rivers. At the prose's smallest size (1.02rem, half an em a character)
-     that is a 25.5rem column, which `--measure` reaches at 26.5rem. */
-  @media (max-width: 26.5rem) {
-    .reveal, .note, blockquote.quote { text-align: start; }
+     rivers: half an em a character makes that 25em of the prose size. Each
+     block measures its own column, and a query cannot read a child's font
+     size, so the size is repeated here. `:where` keeps the rule weaker than
+     any alignment a child sets for itself. */
+  .reveal, .note, blockquote.quote { container-type: inline-size; }
+  @container (min-width: calc(25 * clamp(1.02rem, 2.9vw, 1.22rem))) {
+    :where(.reveal:not(.kp-list), .note, blockquote.quote) > * { text-align: justify; }
   }
 
   /* multiple-choice options */

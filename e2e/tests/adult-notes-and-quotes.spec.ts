@@ -109,19 +109,42 @@ That it shows the presence of bugs, never their absence.
     expect(ink).not.toBe(border);
   }
 
-  // Justified prose needs about fifty characters a line. The answer, the
-  // quotation and the note move together, and 26.5rem is the last ragged
-  // viewport width.
-  const rows: [number, string][] = [
-    [900, "justify"],
-    [425, "justify"],
-    [424, "start"],
-    [360, "start"],
+  // Justified prose needs about fifty characters a line, which is 25em of its
+  // own size, and each block measures its OWN column: at 450px the answer
+  // holds fifty characters while the indented quotation and the padded notes
+  // do not.
+  const sentences = page.locator(
+    "#ansRegion .reveal > .answer, #ansRegion blockquote.quote > .answer, .note > p",
+  );
+  const measure = () =>
+    sentences.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const style = getComputedStyle(node);
+        return {
+          width: node.getBoundingClientRect().width,
+          threshold: Number.parseFloat(style.fontSize) * 25,
+          alignment: style.textAlign,
+        };
+      }),
+    );
+  const rows: [number, string[]][] = [
+    [900, ["justify", "justify", "justify", "justify"]],
+    [450, ["justify", "start", "start", "start"]],
+    [425, ["start", "start", "start", "start"]],
+    [360, ["start", "start", "start", "start"]],
   ];
-  for (const [width, alignment] of rows) {
-    await page.setViewportSize({ width, height: 800 });
-    for (const prose of [page.locator("#ansRegion .answer").first(), quote, notes.nth(0)]) {
-      await expect(prose, `viewport ${width}px`).toHaveCSS("text-align", alignment);
+  for (const [viewport, alignments] of rows) {
+    await page.setViewportSize({ width: viewport, height: 800 });
+    await expect
+      .poll(async () => (await measure()).map((sentence) => sentence.alignment), {
+        message: `answer, quotation, two notes at a ${viewport}px viewport`,
+      })
+      .toEqual(alignments);
+    for (const sentence of await measure()) {
+      expect(
+        sentence.alignment,
+        `viewport ${viewport}px: ${JSON.stringify(sentence)}`,
+      ).toBe(sentence.width >= sentence.threshold ? "justify" : "start");
     }
   }
 });

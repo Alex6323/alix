@@ -73,4 +73,22 @@ Application, transport, internet, link.
     expect.soft(horizontalGap, "expected answer must be right of the drawing").toBeGreaterThanOrEqual(12);
     expect.soft(verticalOverlap, "drawing and expected answer must share a row").toBeGreaterThan(0);
   }
+
+  // Half the card is no fifty-character column, however wide the viewport.
+  const prose = await page.locator(".draw-comparison .reveal > .answer").first().evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      width: node.getBoundingClientRect().width,
+      threshold: Number.parseFloat(style.fontSize) * 25,
+      alignment: style.textAlign,
+    };
+  });
+  expect(
+    prose.width,
+    "the expected answer really is narrower than the fifty-character measure",
+  ).toBeLessThan(prose.threshold);
+  expect(
+    prose.alignment,
+    `narrow expected-answer prose must be ragged even on a wide viewport: ${JSON.stringify(prose)}`,
+  ).toBe("start");
 });

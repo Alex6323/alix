@@ -241,7 +241,9 @@ export function createWalk({
       const noteRegion = el("div", "region n");
       noteRegion.style.textAlign = "left";
       const note = el("div", "note");
-      appendRunsOrText(note, data.note, data.note_runs);
+      const paragraph = el("p");
+      appendRunsOrText(paragraph, data.note, data.note_runs);
+      note.appendChild(paragraph);
       noteRegion.appendChild(note);
       card.appendChild(noteRegion);
     }
