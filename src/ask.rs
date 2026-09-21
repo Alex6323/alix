@@ -1740,6 +1740,7 @@ mod tests {
 
     #[test]
     fn run_rejects_missing_command() {
+        let _lock = exec_lock();
         let config = AskConfig {
             command: "/nonexistent/claude".to_string(),
             model: None,
