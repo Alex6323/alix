@@ -152,15 +152,51 @@ pub fn sanitize_svg(raw: &str) -> Option<String> {
 /// paints nothing.
 fn with_namespace(svg: &str) -> String {
     const SVG_NS: &str = "http://www.w3.org/2000/svg";
-    let root = &svg[..svg.find('>').unwrap_or(svg.len())];
-    let declared = root
-        .match_indices("xmlns")
-        .any(|(i, _)| root[i + "xmlns".len()..].trim_start().starts_with('='));
-    if declared {
+    if declares_default_namespace(svg) {
         return svg.to_string();
     }
     let (root_tag, rest) = svg.split_at("<svg".len());
     format!("{root_tag} xmlns=\"{SVG_NS}\"{rest}")
+}
+
+/// Walks the root start tag attribute by attribute. A quoted value is skipped
+/// whole, since a `>` or the text `xmlns` inside one is not markup.
+fn declares_default_namespace(svg: &str) -> bool {
+    let mut rest = svg.get("<svg".len()..).unwrap_or_default();
+    loop {
+        rest = rest.trim_start();
+        if rest.is_empty() || rest.starts_with('>') || rest.starts_with("/>") {
+            return false;
+        }
+        let name_end = rest
+            .find(|c: char| c.is_whitespace() || matches!(c, '=' | '>' | '/'))
+            .unwrap_or(rest.len());
+        if name_end == 0 {
+            rest = &rest[1..];
+            continue;
+        }
+        let (name, after_name) = rest.split_at(name_end);
+        let value = after_name.trim_start().strip_prefix('=');
+        if name == "xmlns" && value.is_some() {
+            return true;
+        }
+        rest = value.map_or(after_name, skip_attribute_value);
+    }
+}
+
+fn skip_attribute_value(after_eq: &str) -> &str {
+    let value = after_eq.trim_start();
+    match value.chars().next() {
+        Some(quote @ ('"' | '\'')) => value[quote.len_utf8()..]
+            .split_once(quote)
+            .map_or("", |(_, after)| after),
+        _ => {
+            let end = value
+                .find(|c: char| c.is_whitespace() || c == '>')
+                .unwrap_or(value.len());
+            &value[end..]
+        }
+    }
 }
 
 fn remove_blocks(s: &str, tag: &str) -> String {
@@ -290,6 +326,48 @@ mod tests {
                 "{label}: the declared namespace is svg's, got {out}"
             );
         }
+    }
+
+    #[test]
+    fn namespace_detection_parses_the_root_attribute_list() {
+        let cases = [
+            (
+                "a greater-than sign inside a quoted attribute",
+                "<svg aria-label=\"a > b\" xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "an unrelated attribute whose name ends in xmlns",
+                "<svg data-xmlns=\"generator-note\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "a greater-than sign inside a single-quoted attribute",
+                "<svg aria-label='a > b'><circle r=\"8\"/></svg>",
+            ),
+            (
+                "the text xmlns= inside a quoted value",
+                "<svg data-note=\"xmlns=x\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "a declaration after an unquoted value",
+                "<svg width=24 xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "only a prefixed namespace",
+                "<svg xmlns:xlink=\"http://www.w3.org/1999/xlink\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "a quoted value that never closes",
+                "<svg aria-label=\"a > b><circle r=\"8\"/></svg>",
+            ),
+        ];
+        let failures = cases.into_iter().filter_map(|(label, raw)| {
+            let out = sanitize_svg(raw).unwrap_or_else(|| panic!("{label}: no svg root"));
+            let declarations = out.matches("http://www.w3.org/2000/svg").count();
+            (declarations != 1).then_some(format!(
+                "{label}: expected one real default SVG namespace, got {declarations} in {out}"
+            ))
+        });
+        assert_eq!(failures.collect::<Vec<_>>(), Vec::<String>::new());
     }
 
     #[test]
