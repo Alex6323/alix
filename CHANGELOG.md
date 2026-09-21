@@ -189,7 +189,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A generated or installed workspace emblem is written as a standalone SVG
   document, carrying the SVG namespace declaration; a wrong or empty one in
   the source is replaced, and a root tag spelled other than lowercase `<svg>`
-  is refused, since element names are case-sensitive there. Without the
+  is refused, since element names are case-sensitive there, as is input
+  whose closing tag does not follow its root, which used to panic. Without the
   declaration a browser parses the file as markup that is not SVG and paints
   nothing, so an emblem
   the phone drew correctly was invisible in the web picker, which also lost

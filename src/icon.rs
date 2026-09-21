@@ -139,9 +139,9 @@ pub fn sanitize_svg(raw: &str) -> Option<String> {
         &remove_blocks(raw, "script"),
         "foreignObject",
     ));
-    let start = cleaned.find("<svg")?;
-    let end = cleaned.rfind("</svg>")? + "</svg>".len();
-    Some(with_namespace(cleaned[start..end].trim()))
+    let root = &cleaned[cleaned.find("<svg")?..];
+    let end = root.rfind("</svg>")? + "</svg>".len();
+    Some(with_namespace(&root[..end]))
 }
 
 /// An icon is loaded as a standalone document (a CSS mask or an `<img>`), and
@@ -456,6 +456,26 @@ mod tests {
             let twice = sanitize_svg(&once).unwrap_or_else(|| panic!("{label}: no svg root"));
             assert_eq!(twice, once, "{label}: second pass changed the document");
         }
+    }
+
+    #[test]
+    fn a_closing_tag_that_does_not_follow_the_root_is_no_svg() {
+        let cases = [
+            ("closing tag directly before the root", "</svg><svg"),
+            (
+                "closing tag before an unterminated root",
+                "say </svg> then <svg viewBox=\"0 0 24 24\">",
+            ),
+            ("closing tag before a root with a gap", "</svg> x <svg>"),
+        ];
+        for (label, raw) in cases {
+            assert_eq!(sanitize_svg(raw), None, "{label}");
+        }
+        assert_eq!(
+            sanitize_svg("prose </svg> <svg><circle r=\"8\"/></svg> tail").as_deref(),
+            Some("<svg xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"8\"/></svg>"),
+            "a stray closing tag before a complete document"
+        );
     }
 
     #[test]
