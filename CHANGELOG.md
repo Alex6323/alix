@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The phone can cram. The sheet a long-press on a deck row opens now starts
+  with a **Cram** switch above the three depths: switch it on, then pick a
+  depth. Cram belongs to that one launch and is never saved, so a plain tap on
+  the deck never crams.
+  A crammed session also serves cards that are not due, under the same rules
+  as the web app's cram: a due card grades as a normal review, an early pass
+  only re-anchors the due date and records nothing, a miss lapses normally,
+  and retired cards stay out. Useful for loading material shortly before it
+  is needed rather than when the schedule says so.
+
 - Every published desktop archive and the Android APK now carry a
   build-provenance attestation, signed during the release run against the
   workflow identity that produced the file. Verify one with

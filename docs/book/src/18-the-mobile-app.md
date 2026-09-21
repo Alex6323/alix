@@ -37,6 +37,14 @@ the first answer arrives. A deck read once stays parsed in memory for as
 long as the app runs, so coming back to the list after a review does not
 read every deck again; a deck whose file changed on disk is read fresh.
 
+Tapping a deck opens it at the depth it was last reviewed at. **Long-press a
+deck row** to choose the depth for this session instead. The same sheet
+opens with a **Cram** switch above the depths. Switch it on, then pick a
+depth: that one session also serves cards that are not due yet, under exactly
+the rules the web app applies (see [Cramming](05-scheduling.md#cramming)).
+Cram belongs to the launch and is never saved, so the switch is off again the
+next time the sheet opens, and a plain tap on the deck never crams.
+
 ## Reviewing
 
 The review screen is the web app's loop on a phone: reveal, then grade, or

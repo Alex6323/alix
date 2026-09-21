@@ -24,6 +24,7 @@ class ReviewScreen extends StatefulWidget {
     required this.deckPath,
     required this.rootDir,
     required this.depth,
+    this.cram = false,
     this.device,
     this.supportDir,
     this.buildClient,
@@ -35,6 +36,10 @@ class ReviewScreen extends StatefulWidget {
 
   /// Null lets the core resolve the remembered depth or the deck default.
   final ReviewDepth? depth;
+
+  /// Serves cards that are not due as well; a due card still grades as a
+  /// normal review, an early pass only re-anchors its due date.
+  final bool cram;
 
   /// This install's label for the store's last-writer marker.
   final String? device;
@@ -71,6 +76,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       deckPath: widget.deckPath,
       rootDir: widget.rootDir,
       depth: widget.depth,
+      cram: widget.cram,
       device: widget.device,
     );
     if (_controller.openError == null) {

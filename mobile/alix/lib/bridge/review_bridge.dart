@@ -12,6 +12,7 @@ class ReviewBridgeFactory implements ReviewPortFactory {
     required String deckPath,
     required String rootDir,
     ReviewDepth? depth,
+    bool cram = false,
     String? device,
   }) {
     try {
@@ -20,6 +21,7 @@ class ReviewBridgeFactory implements ReviewPortFactory {
           deckPath: deckPath,
           rootDir: rootDir,
           depth: _depthToBridge(depth),
+          cram: cram,
           device: device,
         ),
       );

@@ -74,6 +74,35 @@ void main() {
     expect(port.grades, [ReviewGrade.pass]);
   });
 
+  test('a cram session opens crammed and stays crammed across a restart', () {
+    final factory = _FakeReviewFactory([
+      _FakeReviewPort(_state()),
+      _FakeReviewPort(_state()),
+    ]);
+    final controller = ReviewController(
+      factory: factory,
+      deckPath: '/decks/facts.md',
+      rootDir: '/decks',
+      depth: ReviewDepth.recall,
+      cram: true,
+    );
+    controller.restart();
+
+    expect(factory.crams, [true, true]);
+  });
+
+  test('a session opens uncrammed unless asked', () {
+    final factory = _FakeReviewFactory([_FakeReviewPort(_state())]);
+    ReviewController(
+      factory: factory,
+      deckPath: '/decks/facts.md',
+      rootDir: '/decks',
+      depth: ReviewDepth.recall,
+    );
+
+    expect(factory.crams, [false]);
+  });
+
   test(
     'restart reports an open failure and can replace it with a new port',
     () {
@@ -144,6 +173,7 @@ class _FakeReviewFactory implements ReviewPortFactory {
   _FakeReviewFactory(this.results);
 
   final List<Object> results;
+  final List<bool> crams = [];
   int opens = 0;
 
   @override
@@ -151,8 +181,10 @@ class _FakeReviewFactory implements ReviewPortFactory {
     required String deckPath,
     required String rootDir,
     ReviewDepth? depth,
+    bool cram = false,
     String? device,
   }) {
+    crams.add(cram);
     final result = results[opens++];
     if (result case final ReviewOpenFailure failure) throw failure;
     return result as ReviewPort;

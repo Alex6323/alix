@@ -506,7 +506,7 @@ class PickerDeadlineSheet extends StatelessWidget {
   }
 }
 
-class PickerDepthSheet extends StatelessWidget {
+class PickerDepthSheet extends StatefulWidget {
   const PickerDepthSheet({
     super.key,
     this.selected,
@@ -516,14 +516,34 @@ class PickerDepthSheet extends StatelessWidget {
 
   final PickerDepth? selected;
   final bool canRecognize;
-  final ValueChanged<PickerDepth> onChoose;
+  final void Function(PickerDepth depth, bool cram) onChoose;
+
+  @override
+  State<PickerDepthSheet> createState() => _PickerDepthSheetState();
+}
+
+class _PickerDepthSheetState extends State<PickerDepthSheet> {
+  bool _cram = false;
 
   @override
   Widget build(BuildContext context) {
+    final canRecognize = widget.canRecognize;
     return SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          SwitchListTile(
+            value: _cram,
+            onChanged: (on) => setState(() => _cram = on),
+            secondary: const SizedBox(width: 22),
+            title: const Text('Cram'),
+            subtitle: Text(
+              _cram
+                  ? 'now pick a depth to start'
+                  : "also cards that aren't due yet",
+            ),
+          ),
+          const Divider(height: 1),
           for (final (depth, label, hint) in [
             (
               PickerDepth.recognize,
@@ -543,7 +563,7 @@ class PickerDepthSheet extends StatelessWidget {
               enabled: canRecognize || depth != PickerDepth.recognize,
               leading: SizedBox(
                 width: 22,
-                child: depth == selected
+                child: depth == widget.selected
                     ? Icon(
                         Icons.check,
                         size: 18,
@@ -553,7 +573,7 @@ class PickerDepthSheet extends StatelessWidget {
               ),
               title: Text(label),
               subtitle: Text(hint),
-              onTap: () => onChoose(depth),
+              onTap: () => widget.onChoose(depth, _cram),
             ),
         ],
       ),

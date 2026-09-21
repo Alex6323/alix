@@ -385,6 +385,7 @@ impl ReviewSession {
         deck_path: String,
         root_dir: String,
         depth: Option<Depth>,
+        cram: Option<bool>,
         now_ms: Option<u64>,
         device: Option<String>,
     ) -> Result<ReviewSession> {
@@ -414,6 +415,7 @@ impl ReviewSession {
         };
         let opts = alix::assemble::SelectOptions {
             depth,
+            cram: cram.unwrap_or(false),
             now_ms,
             ..Default::default()
         };
@@ -919,6 +921,7 @@ mod tests {
             deck.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             None,
+            None,
             Some(T0),
             None,
         )
@@ -930,6 +933,7 @@ mod tests {
             deck.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             depth,
+            None,
             Some(LATER),
             None,
         )
@@ -941,6 +945,7 @@ mod tests {
         ReviewSession::open(
             deck.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
+            None,
             None,
             Some(LATER),
             None,
@@ -956,6 +961,38 @@ mod tests {
         runs.iter()
             .find(|run| run.text == source && run.math.is_some())
             .expect("the projected surface carries the formula")
+    }
+
+    #[test]
+    fn cram_serves_a_card_the_scheduler_holds_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = root.join("cram.md");
+        write(&deck, "## Front?\nBack.\n<!-- id: card-cramone -->\n");
+
+        let mut session = opened_after_introduction(&deck, root, Some(Depth::Recall));
+        session.grade(Grade::Pass, Some(LATER)).unwrap();
+        drop(session);
+
+        let reopen = |cram: bool| {
+            ReviewSession::open(
+                deck.to_string_lossy().into_owned(),
+                root.to_string_lossy().into_owned(),
+                Some(Depth::Recall),
+                Some(cram),
+                Some(LATER + 1),
+                None,
+            )
+            .unwrap()
+        };
+        assert!(
+            reopen(false).state(Some(LATER + 1)).card.is_none(),
+            "a card passed a moment ago is not due, so a plain session is empty",
+        );
+        assert!(
+            reopen(true).state(Some(LATER + 1)).card.is_some(),
+            "cram serves the card the scheduler is holding back",
+        );
     }
 
     #[test]
@@ -978,6 +1015,7 @@ mod tests {
             root.join("math.md").to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             Some(Depth::Recall),
+            None,
             Some(T0),
             None,
         )
@@ -1135,6 +1173,7 @@ mod tests {
             deck_path.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             None,
+            None,
             Some(T0),
             None,
         )
@@ -1226,6 +1265,7 @@ mod tests {
             root.join("d.md").to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             Some(Depth::Reconstruct),
+            None,
             Some(LATER),
             None,
         )
@@ -1263,6 +1303,7 @@ mod tests {
         let s = ReviewSession::open(
             root.join("d.md").to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
+            None,
             None,
             Some(T0),
             None,
@@ -1337,6 +1378,7 @@ mod tests {
         let s = ReviewSession::open(
             root.join("d.md").to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
+            None,
             None,
             Some(T0),
             None,
@@ -1690,6 +1732,7 @@ mod tests {
         let reopened = ReviewSession::open(
             deck.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
+            None,
             None,
             Some(LATER),
             None,
@@ -2113,6 +2156,7 @@ mod tests {
         let err = ReviewSession::open(
             trace.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
+            None,
             None,
             Some(T0),
             None,

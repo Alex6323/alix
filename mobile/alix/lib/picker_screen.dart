@@ -405,6 +405,7 @@ class _PickerScreenState extends State<PickerScreen> {
     required String root,
     required bool isPaired,
     PickerDepth? depth,
+    bool cram = false,
   }) async {
     if (!mounted) return;
     final syncController = _syncController;
@@ -438,6 +439,7 @@ class _PickerScreenState extends State<PickerScreen> {
             PickerDepth.reconstruct => ReviewDepth.reconstruct,
             null => null,
           },
+          cram: cram,
           device: widget.device,
           supportDir: widget.supportDir,
           buildClient: widget.buildClient,
@@ -468,16 +470,23 @@ class _PickerScreenState extends State<PickerScreen> {
     required String root,
     required bool isPaired,
   }) async {
-    final depth = await showModalBottomSheet<PickerDepth>(
+    final choice = await showModalBottomSheet<(PickerDepth, bool)>(
       context: context,
       builder: (sheet) => PickerDepthSheet(
         selected: entry.lastDepth,
         canRecognize: entry.canRecognize,
-        onChoose: (depth) => Navigator.of(sheet).pop(depth),
+        onChoose: (depth, cram) => Navigator.of(sheet).pop((depth, cram)),
       ),
     );
-    if (depth == null || !mounted) return;
-    await _openDeck(entry, root: root, isPaired: isPaired, depth: depth);
+    if (choice == null || !mounted) return;
+    final (depth, cram) = choice;
+    await _openDeck(
+      entry,
+      root: root,
+      isPaired: isPaired,
+      depth: depth,
+      cram: cram,
+    );
   }
 
   String _ymd(DateTime value) =>

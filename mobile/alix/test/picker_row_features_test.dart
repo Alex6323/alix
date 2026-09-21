@@ -129,6 +129,53 @@ void main() {
       expect(find.byType(ReviewScreen), findsOneWidget);
       expect(find.text('TYPING'), findsOneWidget);
     });
+
+    testWidgets('the cram switch followed by a depth opens a crammed session',
+        (tester) async {
+      final root = dueDeckRoot();
+      await tester.pumpWidget(MaterialApp(
+        theme: alixDark(),
+        home: PickerScreen(root: root.path),
+      ));
+      await settlePicker(tester);
+
+      await tester.longPress(find.text('D'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cram'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Recall'));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<ReviewScreen>(find.byType(ReviewScreen)).cram,
+        isTrue,
+      );
+    });
+
+    testWidgets(
+        'the cram switch does not outlive a dismissed sheet: a later tap is '
+        'a plain session', (tester) async {
+      final root = dueDeckRoot();
+      await tester.pumpWidget(MaterialApp(
+        theme: alixDark(),
+        home: PickerScreen(root: root.path),
+      ));
+      await settlePicker(tester);
+
+      await tester.longPress(find.text('D'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cram'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('D'));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<ReviewScreen>(find.byType(ReviewScreen)).cram,
+        isFalse,
+      );
+    });
   });
 
   group('item 11: workspace icons', () {

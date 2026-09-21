@@ -56,12 +56,14 @@ abstract class ReviewSession implements RustOpaqueInterface {
     required String deckPath,
     required String rootDir,
     Depth? depth,
+    bool? cram,
     BigInt? nowMs,
     String? device,
   }) => RustLib.instance.api.crateApiReviewReviewSessionOpen(
     deckPath: deckPath,
     rootDir: rootDir,
     depth: depth,
+    cram: cram,
     nowMs: nowMs,
     device: device,
   );

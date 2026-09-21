@@ -640,6 +640,7 @@ fn wire__crate__api__review__ReviewSession_open_impl(
             let api_deck_path = <String>::sse_decode(&mut deserializer);
             let api_root_dir = <String>::sse_decode(&mut deserializer);
             let api_depth = <Option<crate::api::review::Depth>>::sse_decode(&mut deserializer);
+            let api_cram = <Option<bool>>::sse_decode(&mut deserializer);
             let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
             let api_device = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -649,6 +650,7 @@ fn wire__crate__api__review__ReviewSession_open_impl(
                         api_deck_path,
                         api_root_dir,
                         api_depth,
+                        api_cram,
                         api_now_ms,
                         api_device,
                     )?;

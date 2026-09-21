@@ -11,9 +11,10 @@ class ReviewController extends ChangeNotifier {
     required String deckPath,
     required String rootDir,
     ReviewDepth? depth,
+    bool cram = false,
     String? device,
   }) {
-    return ReviewController._(factory, deckPath, rootDir, depth, device);
+    return ReviewController._(factory, deckPath, rootDir, depth, cram, device);
   }
 
   ReviewController._(
@@ -21,6 +22,7 @@ class ReviewController extends ChangeNotifier {
     this._deckPath,
     this._rootDir,
     this._depth,
+    this._cram,
     this._device,
   ) {
     _open();
@@ -30,6 +32,7 @@ class ReviewController extends ChangeNotifier {
   final String _deckPath;
   final String _rootDir;
   final ReviewDepth? _depth;
+  final bool _cram;
   final String? _device;
 
   ReviewPort? _port;
@@ -229,6 +232,7 @@ class ReviewController extends ChangeNotifier {
         deckPath: _deckPath,
         rootDir: _rootDir,
         depth: _depth,
+        cram: _cram,
         device: _device,
       );
       _port = port;

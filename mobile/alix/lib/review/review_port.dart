@@ -5,6 +5,7 @@ abstract interface class ReviewPortFactory {
     required String deckPath,
     required String rootDir,
     ReviewDepth? depth,
+    bool cram,
     String? device,
   });
 }
