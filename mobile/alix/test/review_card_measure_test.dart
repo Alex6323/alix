@@ -10,9 +10,10 @@ import 'package:alix_mobile/theme.dart';
 // The card's own reading column, mirrored from `_cardMeasure`.
 const _measure = 560.0;
 
-// A Container adds its border to its own padding, so a framed note's text
-// clears the answer edge by that one painted pixel.
+// A framed note holds its text off its own border, as the web's `.note`
+// does; a Container adds its border to its own padding.
 const _frameBorder = 1.0;
+const _framePadding = 15.0;
 
 const _question =
     'Which of the two clients decides the check a card is reviewed under, '
@@ -177,8 +178,13 @@ void main() {
         }
         expect(
           plain.left,
-          question.left + _frameBorder,
-          reason: 'a framed note puts its text one border inside its box',
+          framedBox.left + _frameBorder + _framePadding,
+          reason: 'a framed note holds its text off its left border',
+        );
+        expect(
+          plain.right,
+          lessThanOrEqualTo(framedBox.right - _frameBorder - _framePadding),
+          reason: 'a framed note holds its text off its right border',
         );
       },
     );

@@ -1341,7 +1341,9 @@ class ReviewCardView extends StatelessWidget {
       width: double.infinity,
       // A badged note carries no ground: the divider, its dimmer face, and the
       // chip's own accent separate it from the answer it sits below.
-      padding: EdgeInsets.symmetric(vertical: badge == null ? 12 : 0),
+      padding: badge == null
+          ? const EdgeInsets.symmetric(horizontal: 15, vertical: 12)
+          : EdgeInsets.zero,
       decoration: badge == null
           ? BoxDecoration(
               color: accent.withValues(alpha: 0.12),
