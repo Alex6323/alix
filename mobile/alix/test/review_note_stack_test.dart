@@ -338,6 +338,87 @@ void main() {
     expect(runs.textAlign, TextAlign.start);
   });
 
+  testWidgets('a sentence in nested question quotations stays justified', (
+    tester,
+  ) async {
+    final attempt = TextEditingController();
+    addTearDown(attempt.dispose);
+    const quoted = 'A sentence inside two quotations on the question.';
+
+    await tester.pumpWidget(
+      _card(
+        const [],
+        attempt,
+        frontUnits: [
+          ReviewQuoteModel([
+            ReviewQuoteModel([
+              ReviewSentenceModel(
+                text: quoted,
+                runs: const [
+                  InlineRunModel(
+                    text: quoted,
+                    bold: false,
+                    italic: false,
+                    code: false,
+                  ),
+                ],
+              ),
+            ]),
+          ]),
+        ],
+      ),
+    );
+
+    final runs = tester.widget<InlineRuns>(
+      find
+          .ancestor(of: find.text(quoted), matching: find.byType(InlineRuns))
+          .first,
+    );
+    expect(runs.textAlign, TextAlign.justify);
+  });
+
+  testWidgets('a checklist in nested question quotations stays left aligned', (
+    tester,
+  ) async {
+    final attempt = TextEditingController();
+    addTearDown(attempt.dispose);
+    const itemText = 'A checklist item inside two quotations on the question.';
+
+    await tester.pumpWidget(
+      _card(
+        const [],
+        attempt,
+        frontUnits: [
+          ReviewQuoteModel([
+            ReviewQuoteModel([
+              ReviewChecklistModel([
+                ReviewChecklistItemModel(
+                  checked: false,
+                  text: itemText,
+                  runs: const [
+                    InlineRunModel(
+                      text: itemText,
+                      bold: false,
+                      italic: false,
+                      code: false,
+                    ),
+                  ],
+                ),
+              ]),
+            ]),
+          ]),
+        ],
+      ),
+    );
+
+    final runs = tester.widget<InlineRuns>(
+      find
+          .ancestor(of: find.text(itemText), matching: find.byType(InlineRuns))
+          .first,
+    );
+    expect(runs.textAlign, TextAlign.start);
+  });
+
   testWidgets('every badge names itself and marks its own accent', (
     tester,
   ) async {
