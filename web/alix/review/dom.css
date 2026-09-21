@@ -157,12 +157,16 @@
 
   /* Justified lines need about fifty characters, or the gaps open into
      rivers: half an em a character makes that 25em of the prose size. Each
-     block measures its own column, and a query cannot read a child's font
-     size, so the size is repeated here. `:where` keeps the rule weaker than
-     any alignment a child sets for itself. */
+     block measures its own column. An `em` in a query is the CONTAINER's: a
+     note carries its prose size itself, while an answer and a quotation set
+     it on their children, so for those two the size is repeated here. `:where`
+     keeps the rule weaker than any alignment a child sets for itself. */
   .reveal, .note, blockquote.quote { container-type: inline-size; }
   @container (min-width: calc(25 * clamp(1.02rem, 2.9vw, 1.22rem))) {
-    :where(.reveal:not(.kp-list), .note, blockquote.quote) > * { text-align: justify; }
+    :where(.reveal:not(.kp-list), blockquote.quote) > * { text-align: justify; }
+  }
+  @container (min-width: 25em) {
+    :where(.note) > * { text-align: justify; }
   }
 
   /* multiple-choice options */

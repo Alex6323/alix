@@ -149,6 +149,68 @@ That it shows the presence of bugs, never their absence.
   }
 });
 
+test("a choice note uses its own font size when choosing whether to justify", async ({ page }) => {
+  fs.mkdirSync(path.join(NOTES_WORKSPACE, "decks"), { recursive: true });
+  fs.writeFileSync(path.join(NOTES_WORKSPACE, "alix.toml"), 'title = "Choice Note Measure"\n');
+  fs.writeFileSync(
+    path.join(NOTES_WORKSPACE, "decks", "measure.md"),
+    `---
+format-version: 1
+id: "deck-00000000000000000000000016"
+title: "Choice Note Measure"
+---
+## Which unit owns the alignment threshold?
+- [x] The prose block
+- [ ] The browser viewport
+- [ ] The surrounding region
+<!-- choices: single -->
+> [!NOTE]
+> Measure the paragraph itself before justification because responsibilities and prerequisites otherwise create visible rivers between ordinary words.
+<!-- id: card-choicenotemeasure1 -->
+`,
+  );
+
+  await page.setViewportSize({ width: 480, height: 800 });
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Choice Note Measure").click();
+  await adultDeckRow(page, "measure").click();
+  await page.getByTitle("choose a depth").click();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/select")),
+    page.getByRole("button", { name: /^Recognize/ }).click(),
+  ]);
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/choose")),
+    page.getByRole("button", { name: "The prose block" }).click(),
+  ]);
+
+  // A choice card sets its note at 1.05rem, not at the answer's size, so the
+  // note's own 25em is 420px: at 480px its 411px column stays ragged.
+  const measure = () =>
+    page.locator(".note > p").evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        width: node.getBoundingClientRect().width,
+        threshold: Number.parseFloat(style.fontSize) * 25,
+        alignment: style.textAlign,
+      };
+    });
+  const rows: [number, string][] = [
+    [480, "start"],
+    [900, "justify"],
+  ];
+  for (const [viewport, alignment] of rows) {
+    await page.setViewportSize({ width: viewport, height: 800 });
+    await expect
+      .poll(async () => (await measure()).alignment, { message: `viewport ${viewport}px` })
+      .toBe(alignment);
+    const note = await measure();
+    expect(note.alignment, `viewport ${viewport}px: ${JSON.stringify(note)}`).toBe(
+      note.width >= note.threshold ? "justify" : "start",
+    );
+  }
+});
+
 // Line reveal walks the answer's STEPS, so a two-line quotation is one
 // reveal action and arrives as a block, not as two `>` lines.
 test("a quotation reveals as one block under `reveal: line`", async ({ page }) => {
