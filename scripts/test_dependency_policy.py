@@ -500,6 +500,76 @@ class DependencyPolicyTests(unittest.TestCase):
             "Cargo.toml: package local_dep: path dependency leaves repository",
         )
 
+    def test_a_cargo_metadata_map_named_dev_dependencies_is_not_a_requirement_table(self):
+        def change(directory):
+            path = directory / "Cargo.toml"
+            path.write_text(
+                path.read_text(encoding="utf-8")
+                + "\n[package.metadata.example.dev_dependencies.local_dep]\n"
+                + 'path = "../outside"\n',
+                encoding="utf-8",
+            )
+            source = directory / "src" / "lib.rs"
+            source.parent.mkdir()
+            source.write_text("pub fn fixture() {}\n", encoding="utf-8")
+
+        def prove_cargo_treats_it_as_metadata(directory):
+            completed = subprocess.run(
+                [
+                    "cargo",
+                    "metadata",
+                    "--no-deps",
+                    "--format-version",
+                    "1",
+                    "--manifest-path",
+                    str(directory / "Cargo.toml"),
+                ],
+                cwd=directory,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            package = json.loads(completed.stdout)["packages"][0]
+            self.assertIn("dev_dependencies", package["metadata"]["example"])
+            self.assertNotIn(
+                "local_dep",
+                {dependency["name"] for dependency in package["dependencies"]},
+            )
+
+        result = self.run_fixture(
+            change=change,
+            after_track=prove_cargo_treats_it_as_metadata,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_a_path_dependency_is_read_at_every_cargo_grammar_position(self):
+        headers = (
+            "[dev-dependencies]",
+            "[build-dependencies]",
+            "[build_dependencies]",
+            "[target.'cfg(unix)'.dependencies]",
+            "[target.x86_64-unknown-linux-gnu.dev-dependencies]",
+            "[target.'cfg(windows)'.build-dependencies]",
+            "[workspace.dependencies]",
+            "[target.metadata.dependencies]",
+        )
+        for header in headers:
+            with self.subTest(header=header):
+
+                def change(directory, header=header):
+                    path = directory / "Cargo.toml"
+                    path.write_text(
+                        path.read_text(encoding="utf-8")
+                        + f'\n{header}\nlocal_dep = {{ path = "../outside" }}\n',
+                        encoding="utf-8",
+                    )
+
+                self.assert_denied(
+                    change,
+                    "Cargo.toml: package local_dep: path dependency leaves repository",
+                )
+
     def test_a_cargo_lock_with_no_packages_is_denied(self):
         def change(directory):
             path = directory / "Cargo.lock"

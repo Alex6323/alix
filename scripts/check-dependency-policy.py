@@ -25,6 +25,7 @@ DEPENDENCY_TABLES = {
     "dev_dependencies",
     "build_dependencies",
 }
+CARGO_FREE_FORM_TABLES = {("package", "metadata"), ("workspace", "metadata")}
 NPM_DEPENDENCY_TABLES = (
     "dependencies",
     "devDependencies",
@@ -75,14 +76,14 @@ def tracked_files(root):
     }
 
 
-def dependency_tables(value):
-    if not isinstance(value, dict):
-        return
+def dependency_tables(value, position=()):
     for key, child in value.items():
-        if key in DEPENDENCY_TABLES and isinstance(child, dict):
+        if not isinstance(child, dict) or (*position, key) in CARGO_FREE_FORM_TABLES:
+            continue
+        if key in DEPENDENCY_TABLES:
             yield child
-        elif isinstance(child, dict):
-            yield from dependency_tables(child)
+        else:
+            yield from dependency_tables(child, (*position, key))
 
 
 def cargo_requirement_tables(data):
