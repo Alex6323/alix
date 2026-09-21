@@ -140,8 +140,8 @@
   }
 
   /* a quotation is content, not chrome: a left rule marks its boundary, the
-     text keeps the answer's own face and size, and the block centres as a
-     whole so its lines still share a left edge */
+     text keeps the answer's own face and size, and the block spans the
+     column so its lines share the answer's edges */
   blockquote.quote {
     max-width: 100%; margin: 10px 0;
     padding: 2px 0 2px 14px; text-align: start;
