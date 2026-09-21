@@ -296,6 +296,48 @@ void main() {
     expect(runs.textAlign, TextAlign.justify);
   });
 
+  testWidgets('a checklist nested in a question quotation stays left aligned', (
+    tester,
+  ) async {
+    final attempt = TextEditingController();
+    addTearDown(attempt.dispose);
+    const itemText =
+        'A checklist item inside the quoted question that wraps across more '
+        'than one line on a phone-sized review card.';
+
+    await tester.pumpWidget(
+      _card(
+        const [],
+        attempt,
+        frontUnits: [
+          ReviewQuoteModel([
+            ReviewChecklistModel([
+              ReviewChecklistItemModel(
+                checked: false,
+                text: itemText,
+                runs: const [
+                  InlineRunModel(
+                    text: itemText,
+                    bold: false,
+                    italic: false,
+                    code: false,
+                  ),
+                ],
+              ),
+            ]),
+          ]),
+        ],
+      ),
+    );
+
+    final runs = tester.widget<InlineRuns>(
+      find
+          .ancestor(of: find.text(itemText), matching: find.byType(InlineRuns))
+          .first,
+    );
+    expect(runs.textAlign, TextAlign.start);
+  });
+
   testWidgets('every badge names itself and marks its own accent', (
     tester,
   ) async {

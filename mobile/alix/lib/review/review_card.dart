@@ -370,15 +370,17 @@ class ReviewCardView extends StatelessWidget {
         textAlign == TextAlign.center ? TextAlign.start : textAlign,
       ),
       ReviewTableModel() => _table(unit, tokens, style),
-      ReviewQuoteModel(:final units) => _quote(units, tokens, style),
+      ReviewQuoteModel(:final units) => _quote(units, tokens, style, textAlign),
     };
   }
 
-  /// A quoted block, its own units stacked behind a rule.
+  /// A quoted block, its own units stacked behind a rule. `surface` is the
+  /// alignment of what the quotation sits in, not of its own prose.
   Widget _quote(
     List<ReviewContentUnitModel> units,
     AlixTokens tokens,
     TextStyle style,
+    TextAlign surface,
   ) {
     return Container(
       padding: const EdgeInsets.only(left: 12),
@@ -389,7 +391,12 @@ class ReviewCardView extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           for (final unit in units)
-            _unit(unit, tokens, style, TextAlign.justify),
+            _unit(
+              unit,
+              tokens,
+              style,
+              unit is ReviewSentenceModel ? TextAlign.justify : surface,
+            ),
         ],
       ),
     );
@@ -676,7 +683,7 @@ class ReviewCardView extends StatelessWidget {
       final step = card.answerSteps[index];
       if (step is ReviewAnswerQuoteModel) {
         addGap();
-        children.add(_quote(step.units, tokens, style));
+        children.add(_quote(step.units, tokens, style, TextAlign.justify));
         index++;
         continue;
       }
@@ -1367,7 +1374,12 @@ class ReviewCardView extends StatelessWidget {
                 TextAlign.justify,
               ),
               ReviewTableModel() => _table(note, tokens, body),
-              ReviewQuoteModel(:final units) => _quote(units, tokens, body),
+              ReviewQuoteModel(:final units) => _quote(
+                units,
+                tokens,
+                body,
+                TextAlign.justify,
+              ),
             },
           ],
         ],

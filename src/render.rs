@@ -1077,6 +1077,29 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_quoted_task_list_is_a_quote_containing_a_checklist() {
+        assert_eq!(
+            Some(vec![ContentUnit::Quote {
+                units: vec![ContentUnit::Checklist {
+                    items: vec![
+                        ChecklistItem {
+                            checked: true,
+                            text: "keep".into(),
+                            runs: crate::inline::parse_inline("keep"),
+                        },
+                        ChecklistItem {
+                            checked: false,
+                            text: "drop".into(),
+                            runs: crate::inline::parse_inline("drop"),
+                        },
+                    ],
+                }],
+            }]),
+            front_units("> - [x] keep\n> - [ ] drop"),
+        );
+    }
+
     /// The typed target reads the block flags and the display reads the
     /// units. They are built from one scan, and this pins that they stay so.
     #[test]
