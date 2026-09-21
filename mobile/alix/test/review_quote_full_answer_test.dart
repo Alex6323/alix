@@ -5,6 +5,7 @@ import 'package:alix_mobile/review/review_card.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/sketch.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
+import 'package:alix_mobile/shared/inline_runs.dart';
 import 'package:alix_mobile/theme.dart';
 
 // A non-empty run list per line: `_runsOrText` renders an EMPTY list as an
@@ -145,6 +146,22 @@ void main() {
       );
     },
   );
+
+  testWidgets('a revealed quotation uses the answer prose alignment', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(ReviewMode.flip, reshaped: true));
+
+    final quote = tester.widget<InlineRuns>(
+      find
+          .ancestor(
+            of: find.text('supporting quotation continued quotation'),
+            matching: find.byType(InlineRuns),
+          )
+          .first,
+    );
+    expect(quote.textAlign, TextAlign.justify);
+  });
 
   testWidgets('a reshaped full answer keeps stanza spacing between steps', (
     tester,

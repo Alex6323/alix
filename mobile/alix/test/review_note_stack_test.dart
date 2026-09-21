@@ -5,6 +5,7 @@ import 'package:alix_mobile/review/review_card.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/sketch.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
+import 'package:alix_mobile/shared/inline_runs.dart';
 import 'package:alix_mobile/theme.dart';
 
 ReviewNoteModel _note(String text, {ReviewBadge? badge}) => ReviewNoteModel(
@@ -142,6 +143,41 @@ void main() {
       isNot(tester.getRect(_noteBox('Second.'))),
       reason: 'two notes stack in their own boxes instead of merging',
     );
+  });
+
+  testWidgets('a quotation inside a note uses the note prose alignment', (
+    tester,
+  ) async {
+    final attempt = TextEditingController();
+    addTearDown(attempt.dispose);
+    const quoted = 'A quoted passage.';
+    final note = ReviewNoteModel(
+      badge: null,
+      units: [
+        ReviewQuoteModel([
+          ReviewSentenceModel(
+            text: quoted,
+            runs: [
+              InlineRunModel(
+                text: quoted,
+                bold: false,
+                italic: false,
+                code: false,
+              ),
+            ],
+          ),
+        ]),
+      ],
+    );
+
+    await tester.pumpWidget(_card([note], attempt));
+
+    final runs = tester.widget<InlineRuns>(
+      find
+          .ancestor(of: find.text(quoted), matching: find.byType(InlineRuns))
+          .first,
+    );
+    expect(runs.textAlign, TextAlign.justify);
   });
 
   testWidgets('every badge names itself and marks its own accent', (

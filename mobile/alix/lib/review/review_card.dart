@@ -665,7 +665,7 @@ class ReviewCardView extends StatelessWidget {
       final step = card.answerSteps[index];
       if (step is ReviewAnswerQuoteModel) {
         addGap();
-        children.add(_quote(step.units, tokens, style, TextAlign.start));
+        children.add(_quote(step.units, tokens, style, TextAlign.justify));
         index++;
         continue;
       }
@@ -1359,7 +1359,7 @@ class ReviewCardView extends StatelessWidget {
                 units,
                 tokens,
                 body,
-                TextAlign.start,
+                TextAlign.justify,
               ),
             },
           ],
