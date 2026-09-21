@@ -1,5 +1,6 @@
 use std::{
     fs, io,
+    ops::Range,
     path::{Path, PathBuf},
 };
 
@@ -152,21 +153,24 @@ pub fn sanitize_svg(raw: &str) -> Option<String> {
 /// paints nothing.
 fn with_namespace(svg: &str) -> String {
     const SVG_NS: &str = "http://www.w3.org/2000/svg";
-    if declares_default_namespace(svg) {
-        return svg.to_string();
+    let mut svg = svg.to_string();
+    while let Some(declaration) = default_namespace_declaration(&svg) {
+        svg.replace_range(declaration, "");
     }
     let (root_tag, rest) = svg.split_at("<svg".len());
     format!("{root_tag} xmlns=\"{SVG_NS}\"{rest}")
 }
 
 /// Walks the root start tag attribute by attribute. A quoted value is skipped
-/// whole, since a `>` or the text `xmlns` inside one is not markup.
-fn declares_default_namespace(svg: &str) -> bool {
+/// whole, since a `>` or the text `xmlns` inside one is not markup. The range
+/// takes the whitespace before the attribute with it.
+fn default_namespace_declaration(svg: &str) -> Option<Range<usize>> {
     let mut rest = svg.get("<svg".len()..).unwrap_or_default();
     loop {
+        let start = svg.len() - rest.len();
         rest = rest.trim_start();
         if rest.is_empty() || rest.starts_with('>') || rest.starts_with("/>") {
-            return false;
+            return None;
         }
         let name_end = rest
             .find(|c: char| c.is_whitespace() || matches!(c, '=' | '>' | '/'))
@@ -177,10 +181,10 @@ fn declares_default_namespace(svg: &str) -> bool {
         }
         let (name, after_name) = rest.split_at(name_end);
         let value = after_name.trim_start().strip_prefix('=');
-        if name == "xmlns" && value.is_some() {
-            return true;
-        }
         rest = value.map_or(after_name, skip_attribute_value);
+        if name == "xmlns" && value.is_some() {
+            return Some(start..svg.len() - rest.len());
+        }
     }
 }
 
@@ -368,6 +372,77 @@ mod tests {
             ))
         });
         assert_eq!(failures.collect::<Vec<_>>(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn sanitization_never_returns_a_root_outside_the_svg_namespace() {
+        const SVG_NS: &str = "http://www.w3.org/2000/svg";
+        let cases = [
+            (
+                "a wrong default namespace",
+                "<svg xmlns=\"https://example.com/not-svg\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "an empty default namespace",
+                "<svg xmlns=\"\"><circle r=\"8\"/></svg>",
+            ),
+        ];
+
+        for (label, raw) in cases {
+            let out = sanitize_svg(raw).unwrap_or_else(|| panic!("{label}: no svg root"));
+            assert_eq!(
+                out.matches(SVG_NS).count(),
+                1,
+                "{label}: sanitizer returned a non-SVG root: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn namespace_normalization_is_exact_and_idempotent() {
+        let cases = [
+            (
+                "declared first stays byte-identical",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle r=\"8\"/></svg>",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "declared last moves first",
+                "<svg viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"8\"/></svg>",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "a root tag broken over lines",
+                "<svg\n  xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"><circle r=\"8\"/></svg>",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\"\n  viewBox=\"0 0 24 24\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "a wrong value between two attributes",
+                "<svg width=\"24\" xmlns=\"https://example.com/not-svg\" height=\"24\"><circle r=\"8\"/></svg>",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "an unquoted wrong value",
+                "<svg xmlns=nope><circle r=\"8\"/></svg>",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "two declarations, one wrong",
+                "<svg xmlns=\"\" xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"8\"/></svg>",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"8\"/></svg>",
+            ),
+            (
+                "a nested svg keeps its own declaration",
+                "<svg><svg xmlns=\"https://example.com/inner\"><circle r=\"8\"/></svg></svg>",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\"><svg xmlns=\"https://example.com/inner\"><circle r=\"8\"/></svg></svg>",
+            ),
+        ];
+        for (label, raw, expected) in cases {
+            let once = sanitize_svg(raw).unwrap_or_else(|| panic!("{label}: no svg root"));
+            assert_eq!(once, expected, "{label}: first pass");
+            let twice = sanitize_svg(&once).unwrap_or_else(|| panic!("{label}: no svg root"));
+            assert_eq!(twice, once, "{label}: second pass changed the document");
+        }
     }
 
     #[test]
