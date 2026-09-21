@@ -108,6 +108,22 @@ That it shows the presence of bugs, never their absence.
     expect(ink).toBe(body);
     expect(ink).not.toBe(border);
   }
+
+  // Justified prose needs about fifty characters a line. The answer, the
+  // quotation and the note move together, and 26.5rem is the last ragged
+  // viewport width.
+  const rows: [number, string][] = [
+    [900, "justify"],
+    [425, "justify"],
+    [424, "start"],
+    [360, "start"],
+  ];
+  for (const [width, alignment] of rows) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const prose of [page.locator("#ansRegion .answer").first(), quote, notes.nth(0)]) {
+      await expect(prose, `viewport ${width}px`).toHaveCSS("text-align", alignment);
+    }
+  }
 });
 
 // Line reveal walks the answer's STEPS, so a two-line quotation is one

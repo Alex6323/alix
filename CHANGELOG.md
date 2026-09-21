@@ -80,7 +80,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   code span, a fenced block, a typed line's expected text. Both clients had
   set the whole answer in monospace, which was TUI heritage rather than a
   ruling. The note is justified with it, and the last line of a paragraph
-  stays unstretched, as newspapers set it.
+  stays unstretched, as newspapers set it. Where a line holds fewer than about
+  fifty characters (a phone held upright), the prose is set ragged instead:
+  without hyphenation, justified narrow lines open wide gaps.
 
 - The phone review card now wraps the question, every answer unit and every
   note at one measure instead of insetting the answer and the note inside the

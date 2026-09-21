@@ -264,6 +264,10 @@ void main() {
   ) async {
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
+    // Room for fifty characters at the question's size, so the width rule
+    // does not decide this test.
+    tester.platformDispatcher.textScaleFactorTestValue = 0.5;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     const quoted = 'A quoted passage that belongs to the question.';
 
     await tester.pumpWidget(
@@ -343,6 +347,10 @@ void main() {
   ) async {
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
+    // Room for fifty characters at the question's size, so the width rule
+    // does not decide this test.
+    tester.platformDispatcher.textScaleFactorTestValue = 0.5;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     const quoted = 'A sentence inside two quotations on the question.';
 
     await tester.pumpWidget(
@@ -417,6 +425,44 @@ void main() {
           .first,
     );
     expect(runs.textAlign, TextAlign.start);
+  });
+
+  testWidgets('prose is justified only where a line holds about fifty characters', (
+    tester,
+  ) async {
+    final attempt = TextEditingController();
+    addTearDown(attempt.dispose);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    const body = 'A note long enough to be prose.';
+
+    // A badged note is as wide as the card column, the surface less 40, and is
+    // set at 15: twenty-five ems is a 375 column.
+    const rows = [
+      (width: 800.0, scale: 1.0, expected: TextAlign.justify),
+      (width: 415.0, scale: 1.0, expected: TextAlign.justify),
+      (width: 414.0, scale: 1.0, expected: TextAlign.start),
+      (width: 360.0, scale: 1.0, expected: TextAlign.start),
+      (width: 800.0, scale: 1.5, expected: TextAlign.start),
+    ];
+    for (final row in rows) {
+      await tester.binding.setSurfaceSize(Size(row.width, 800));
+      tester.platformDispatcher.textScaleFactorTestValue = row.scale;
+      await tester.pumpWidget(
+        _card([_note(body, badge: ReviewBadge.note)], attempt),
+      );
+
+      final runs = tester.widget<InlineRuns>(
+        find
+            .ancestor(of: find.text(body), matching: find.byType(InlineRuns))
+            .first,
+      );
+      expect(
+        runs.textAlign,
+        row.expected,
+        reason: 'surface ${row.width} at text scale ${row.scale}',
+      );
+    }
   });
 
   testWidgets('every badge names itself and marks its own accent', (

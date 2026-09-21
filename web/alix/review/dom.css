@@ -155,6 +155,13 @@
   blockquote.quote p:last-child { margin-bottom: 0; }
   .note blockquote.quote p { color: inherit; font-size: inherit; }
 
+  /* Justified lines need about fifty characters, or the gaps open into
+     rivers. At the prose's smallest size (1.02rem, half an em a character)
+     that is a 25.5rem column, which `--measure` reaches at 26.5rem. */
+  @media (max-width: 26.5rem) {
+    .reveal, .note, blockquote.quote { text-align: start; }
+  }
+
   /* multiple-choice options */
   .options { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: var(--measure); margin: 0 auto; }
   .option {

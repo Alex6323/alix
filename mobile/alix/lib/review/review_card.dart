@@ -1829,6 +1829,10 @@ class _ScrollWithMoreHintState extends State<ScrollWithMoreHint> {
   }
 }
 
+/// Justified lines need about fifty characters, or the gaps open into rivers;
+/// a character of the body face is about half an em wide.
+const _justifiedEms = 25.0;
+
 Widget _runsOrText(
   List<InlineRunModel>? runs,
   String text, {
@@ -1836,6 +1840,43 @@ Widget _runsOrText(
   TextAlign textAlign = TextAlign.start,
   bool contextHoles = false,
   AlixTokens? tokens,
+}) {
+  if (textAlign != TextAlign.justify) {
+    return _alignedRunsOrText(
+      runs,
+      text,
+      style: style,
+      textAlign: textAlign,
+      contextHoles: contextHoles,
+      tokens: tokens,
+    );
+  }
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      final fontSize =
+          style?.fontSize ?? DefaultTextStyle.of(context).style.fontSize ?? 14;
+      final em = MediaQuery.textScalerOf(context).scale(fontSize);
+      return _alignedRunsOrText(
+        runs,
+        text,
+        style: style,
+        textAlign: constraints.maxWidth < em * _justifiedEms
+            ? TextAlign.start
+            : TextAlign.justify,
+        contextHoles: contextHoles,
+        tokens: tokens,
+      );
+    },
+  );
+}
+
+Widget _alignedRunsOrText(
+  List<InlineRunModel>? runs,
+  String text, {
+  required TextStyle? style,
+  required TextAlign textAlign,
+  required bool contextHoles,
+  required AlixTokens? tokens,
 }) {
   final effectiveStyle = style ?? const TextStyle();
   if (runs == null) {
