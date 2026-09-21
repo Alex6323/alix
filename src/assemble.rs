@@ -1552,6 +1552,66 @@ it reads line two\n\
     }
 
     #[test]
+    fn recognize_selection_keeps_a_section_met_outside_the_partition_quiet() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("sectioned.md");
+        write_initialized(
+            &deck_path,
+            "# Ownership\n\nEach value has one owner.\n\n## First\nfirst answer\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n## Second\nsecond answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n",
+        );
+        let loaded = Deck::load(&deck_path).unwrap();
+        let first_id = loaded.cards[0].id().unwrap();
+        let second_id = loaded.cards[1].id().unwrap();
+        assert_eq!(
+            loaded.cards[0].section_context, loaded.cards[1].section_context,
+            "precondition: both cards sit under the one section"
+        );
+
+        let mut store = state::open_store(&deck_path, dir.path()).unwrap();
+        store.get_or_insert(&first_id).introduced_ms = Some(0);
+
+        let mut cache = AugmentCache::open_for_deck(&loaded).unwrap();
+        cache.set_distractors(
+            &second_id,
+            vec!["wrong one".into(), "wrong two".into(), "wrong three".into()],
+            loaded.cards[1].content_fingerprint,
+        );
+        cache.save().unwrap();
+
+        let Selected::Review(build) = select(
+            vec![deck_path],
+            &mut store,
+            &test_config(),
+            &SelectOptions {
+                depth: Some(Depth::Recognize),
+                ..Default::default()
+            },
+        )
+        .unwrap() else {
+            panic!("a fact deck selects a review session");
+        };
+        assert_eq!(
+            vec![second_id.clone()],
+            build
+                .session
+                .cards()
+                .iter()
+                .filter_map(Card::id)
+                .collect::<Vec<_>>(),
+            "the met unaugmented card is outside the Recognize partition"
+        );
+        assert!(
+            build.session.current_id() == Some(second_id) && build.session.current_fresh(&store),
+            "precondition: Recognize serves the fresh second card, actual_current={:?}",
+            build.session.current_id()
+        );
+        assert!(
+            !build.session.section_first_for_current(),
+            "the first card's progress lies outside the Recognize partition and still marks the section met"
+        );
+    }
+
+    #[test]
     fn region_selection_keeps_the_graduated_parent_in_the_lock_fold() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("gated.md");
