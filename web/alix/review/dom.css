@@ -115,8 +115,8 @@
      its-own-wash falls as low as 2.0:1, so no small text is ever the accent.
      NOTE and IMPORTANT share the accent and are told apart by their word and
      by IMPORTANT's heavier chip border. */
-  /* The note carries no box of its own: the divider above it, the dim sans face
-     against the answer's bright mono, and the badge already mark it, and a
+  /* The note carries no box of its own: the divider above it, its dim ink
+     against the answer's bright one, and the badge already mark it, and a
      tinted panel made it compete with the answer for attention. */
   .note[data-badge] {
     background: transparent; border-color: transparent; border-radius: 0;
