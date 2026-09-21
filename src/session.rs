@@ -135,10 +135,36 @@ pub struct RecognizeGap {
     pub unaugmented: u32,
 }
 
+/// What a sitting takes from its COMPLETE decks even when its own cards are a
+/// subset of them: the gate, and the sections the learner has already met.
+pub struct WholeDecks {
+    lock_graph: LockGraph,
+    met_sections: HashSet<Vec<String>>,
+}
+
+impl WholeDecks {
+    pub fn of(cards: &[Card], store: &Store) -> Self {
+        let mut met_sections = HashSet::new();
+        for card in cards {
+            let section = &card.section_context;
+            if !section.is_empty()
+                && !met_sections.contains(section)
+                && card.id().is_some_and(|id| store.progress(&id).is_some())
+            {
+                met_sections.insert(section.clone());
+            }
+        }
+        Self {
+            lock_graph: LockGraph::build(cards),
+            met_sections,
+        }
+    }
+}
+
 impl Session {
     /// The cards must be the COMPLETE decks of this sitting. A sitting built
-    /// from a subset of them uses `from_subset`, which takes the gate's graph
-    /// separately.
+    /// from a subset of them uses `from_subset`, which takes what the whole
+    /// decks decide separately.
     pub fn new(
         cards: Vec<Card>,
         store: &mut Store,
@@ -146,21 +172,24 @@ impl Session {
         options: SessionOptions,
         now_ms: u64,
     ) -> Self {
-        let lock_graph = LockGraph::build(&cards);
-        Self::from_subset(cards, store, scheduler, options, now_ms, lock_graph)
+        let whole = WholeDecks::of(&cards, store);
+        Self::from_subset(cards, store, scheduler, options, now_ms, whole)
     }
 
     /// For a sitting whose cards are a SUBSET of their decks (a topology
-    /// region, the Recognize partition): the gate is a property of the whole
-    /// deck, so its graph is built before the filter and handed in here.
+    /// region, the Recognize partition): `whole` is read before the filter.
     pub fn from_subset(
         cards: Vec<Card>,
         store: &mut Store,
         scheduler: Box<dyn Scheduler>,
         options: SessionOptions,
         now_ms: u64,
-        lock_graph: LockGraph,
+        whole: WholeDecks,
     ) -> Self {
+        let WholeDecks {
+            lock_graph,
+            met_sections,
+        } = whole;
         let floors = HashMap::new();
         let locks = lock_graph.evaluate(store);
         let roster: Vec<usize> = build_queue(
@@ -175,16 +204,6 @@ impl Session {
         .into();
         let initial_size = roster.len();
         let appearances = vec![0; cards.len()];
-        let mut met_sections = HashSet::new();
-        for card in &cards {
-            let section = &card.section_context;
-            if !section.is_empty()
-                && !met_sections.contains(section)
-                && card.id().is_some_and(|id| store.progress(&id).is_some())
-            {
-                met_sections.insert(section.clone());
-            }
-        }
 
         let mut session = Self {
             cards,
@@ -1889,6 +1908,34 @@ mod tests {
         assert!(
             !second.section_first_for_current(),
             "second sitting: a section the learner already met stays quiet"
+        );
+    }
+
+    #[test]
+    fn a_section_met_outside_a_filtered_sitting_stays_quiet_inside_it() {
+        let (mut store, _dir) = empty_store();
+        let section = ["Ownership", "Each value has one owner."];
+        let met = sectioned_card("deck.md", 0, &section);
+        let fresh = sectioned_card("deck.md", 1, &section);
+        store.get_or_insert(&met.id().unwrap()).introduced_ms = Some(1_000);
+        let whole = WholeDecks::of(&[met, fresh.clone()], &store);
+
+        let session = Session::from_subset(
+            vec![fresh],
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            2_000,
+            whole,
+        );
+
+        assert!(
+            session.current_introducing,
+            "precondition: the card inside the filtered sitting is fresh"
+        );
+        assert!(
+            !session.section_first_for_current(),
+            "progress outside the subset still means the section was met before this sitting"
         );
     }
 

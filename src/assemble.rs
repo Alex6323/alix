@@ -408,10 +408,10 @@ pub fn select(
         }
     }
 
-    // The gate is a property of the DECK, so its graph is captured while the
-    // vector is still complete: both filters below drop cards a parent block's
-    // graduation is folded from.
-    let lock_graph = crate::session::LockGraph::build(&cards);
+    // Read while the vector is still complete: both filters below drop cards
+    // a parent block's graduation is folded from, and cards whose progress
+    // says a section was already met.
+    let whole = crate::session::WholeDecks::of(&cards, store);
 
     let topology = resolve_topology(topology_sel, &augment, &deck_tokens)?;
     let topology_name = topology.map(|t| t.name.clone());
@@ -539,7 +539,7 @@ pub fn select(
         )),
         options,
         now,
-        lock_graph,
+        whole,
     );
     session.set_depth_excluded(depth_excluded);
 
@@ -1618,6 +1618,64 @@ it reads line two\n\
             Some(child_id),
             build.session.current_id(),
             "a child-only region remains reviewable after its parent graduated"
+        );
+    }
+
+    #[test]
+    fn region_selection_keeps_a_section_met_outside_the_region_quiet() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("sectioned.md");
+        write_initialized(
+            &deck_path,
+            "# Ownership\n\nEach value has one owner.\n\n## First\nfirst answer\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n## Second\nsecond answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n",
+        );
+        let loaded = Deck::load(&deck_path).unwrap();
+        let first_id = loaded.cards[0].id().unwrap();
+        let second_id = loaded.cards[1].id().unwrap();
+        assert_eq!(
+            loaded.cards[0].section_context, loaded.cards[1].section_context,
+            "precondition: both cards sit under the one section"
+        );
+
+        let mut store = state::open_store(&deck_path, dir.path()).unwrap();
+        store.get_or_insert(&first_id).introduced_ms = Some(0);
+
+        let mut cache = AugmentCache::open_for_deck(&loaded).unwrap();
+        cache.add_topology(Topology {
+            name: "second-only".to_string(),
+            principle: "review the second card".to_string(),
+            edges: Vec::new(),
+            walk: vec![second_id.clone()],
+            regions: vec![augment::TopologyRegion {
+                name: "later".to_string(),
+                cards: vec![second_id.clone()],
+            }],
+            deck_token: loaded.deck_token.clone().unwrap(),
+        });
+        cache.save().unwrap();
+
+        let Selected::Review(build) = select(
+            vec![deck_path],
+            &mut store,
+            &test_config(),
+            &SelectOptions {
+                depth: Some(Depth::Recall),
+                topology: Some("second-only".to_string()),
+                region: Some("later".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap() else {
+            panic!("a fact deck selects a review session");
+        };
+        assert!(
+            build.session.current_id() == Some(second_id) && build.session.current_fresh(&store),
+            "precondition: the region serves the never-met second card, actual_current={:?}",
+            build.session.current_id()
+        );
+        assert!(
+            !build.session.section_first_for_current(),
+            "the first card's progress lies outside the region and still marks the section met"
         );
     }
 

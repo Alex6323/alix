@@ -2931,13 +2931,14 @@ fn a_scoped_crumb_reports_a_locked_card_outside_the_sitting() {
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
     // The gate is a property of the DECK, so the graph is built complete and
     // the region filter applied after, exactly as `assemble::select` does.
+    let whole = crate::session::WholeDecks::of(&all, &store);
     let session = Session::from_subset(
         slice,
         &mut store,
         Box::new(Fsrs::default()),
         crate::session::SessionOptions::default(),
         now_ms(),
-        crate::session::LockGraph::build(&all),
+        whole,
     );
     let augment = AugmentCache::open_deck(deck.with_extension("generated.json"), "")
         .expect("the fixture augmentation loads");
