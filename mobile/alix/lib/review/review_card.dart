@@ -370,7 +370,7 @@ class ReviewCardView extends StatelessWidget {
         textAlign == TextAlign.center ? TextAlign.start : textAlign,
       ),
       ReviewTableModel() => _table(unit, tokens, style),
-      ReviewQuoteModel(:final units) => _quote(units, tokens, style, textAlign),
+      ReviewQuoteModel(:final units) => _quote(units, tokens, style),
     };
   }
 
@@ -379,7 +379,6 @@ class ReviewCardView extends StatelessWidget {
     List<ReviewContentUnitModel> units,
     AlixTokens tokens,
     TextStyle style,
-    TextAlign textAlign,
   ) {
     return Container(
       padding: const EdgeInsets.only(left: 12),
@@ -389,7 +388,8 @@ class ReviewCardView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final unit in units) _unit(unit, tokens, style, textAlign),
+          for (final unit in units)
+            _unit(unit, tokens, style, TextAlign.justify),
         ],
       ),
     );
@@ -676,7 +676,7 @@ class ReviewCardView extends StatelessWidget {
       final step = card.answerSteps[index];
       if (step is ReviewAnswerQuoteModel) {
         addGap();
-        children.add(_quote(step.units, tokens, style, TextAlign.justify));
+        children.add(_quote(step.units, tokens, style));
         index++;
         continue;
       }
@@ -1367,12 +1367,7 @@ class ReviewCardView extends StatelessWidget {
                 TextAlign.justify,
               ),
               ReviewTableModel() => _table(note, tokens, body),
-              ReviewQuoteModel(:final units) => _quote(
-                units,
-                tokens,
-                body,
-                TextAlign.justify,
-              ),
+              ReviewQuoteModel(:final units) => _quote(units, tokens, body),
             },
           ],
         ],

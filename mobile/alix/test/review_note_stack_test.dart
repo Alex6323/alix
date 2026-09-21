@@ -259,6 +259,43 @@ void main() {
     expect(runs.textAlign, TextAlign.start);
   });
 
+  testWidgets('a quotation on the question keeps its prose justified', (
+    tester,
+  ) async {
+    final attempt = TextEditingController();
+    addTearDown(attempt.dispose);
+    const quoted = 'A quoted passage that belongs to the question.';
+
+    await tester.pumpWidget(
+      _card(
+        const [],
+        attempt,
+        frontUnits: [
+          ReviewQuoteModel([
+            ReviewSentenceModel(
+              text: quoted,
+              runs: [
+                InlineRunModel(
+                  text: quoted,
+                  bold: false,
+                  italic: false,
+                  code: false,
+                ),
+              ],
+            ),
+          ]),
+        ],
+      ),
+    );
+
+    final runs = tester.widget<InlineRuns>(
+      find
+          .ancestor(of: find.text(quoted), matching: find.byType(InlineRuns))
+          .first,
+    );
+    expect(runs.textAlign, TextAlign.justify);
+  });
+
   testWidgets('every badge names itself and marks its own accent', (
     tester,
   ) async {
