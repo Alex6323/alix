@@ -135,16 +135,12 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 /// Defense in depth only: icons render in a non-executing context (a CSS
 /// mask or an `<img>`), which is what actually prevents script execution.
 pub fn sanitize_svg(raw: &str) -> Option<String> {
-    if !raw.to_ascii_lowercase().contains("<svg") {
-        return None;
-    }
     let cleaned = strip_attrs(&remove_blocks(
         &remove_blocks(raw, "script"),
         "foreignObject",
     ));
-    let lower = cleaned.to_ascii_lowercase();
-    let start = lower.find("<svg")?;
-    let end = lower.rfind("</svg>")? + "</svg>".len();
+    let start = cleaned.find("<svg")?;
+    let end = cleaned.rfind("</svg>")? + "</svg>".len();
     Some(with_namespace(cleaned[start..end].trim()))
 }
 
@@ -292,6 +288,12 @@ mod tests {
     #[test]
     fn sanitize_svg_rejects_non_svg() {
         assert_eq!(sanitize_svg("just text, no markup"), None);
+        assert_eq!(
+            sanitize_svg("<SVG><circle r=\"8\"/></SVG>"),
+            None,
+            "element names are case-sensitive in a standalone document"
+        );
+        assert_eq!(sanitize_svg("<svg><circle r=\"8\"/></SVG>"), None);
     }
 
     #[test]
@@ -314,7 +316,6 @@ mod tests {
                 "an xlink prefix is not the default namespace",
                 "<svg xmlns:xlink=\"http://www.w3.org/1999/xlink\" viewBox=\"0 0 24 24\"><circle r=\"8\"/></svg>",
             ),
-            ("uppercase root", "<SVG><circle r=\"8\"/></SVG>"),
         ];
         for (label, raw) in cases {
             let out = sanitize_svg(raw).unwrap_or_else(|| panic!("{label}: no svg root"));
@@ -328,6 +329,18 @@ mod tests {
             assert!(
                 out.contains("http://www.w3.org/2000/svg"),
                 "{label}: the declared namespace is svg's, got {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn sanitization_never_returns_an_uppercase_root_that_chromium_rejects() {
+        let raw = "<SVG viewBox=\"0 0 24 24\"><circle r=\"8\"/></SVG>";
+
+        if let Some(out) = sanitize_svg(raw) {
+            assert!(
+                out.starts_with("<svg"),
+                "sanitizer returned a case-sensitive non-SVG root: {out}"
             );
         }
     }
