@@ -102,6 +102,8 @@ pub struct Session {
     // Accumulates across chained restarts within one session.
     served: HashSet<String>,
     introduced_sections: HashSet<Vec<String>>,
+    // Sections with a card the learner met before this session opened.
+    met_sections: HashSet<Vec<String>>,
     current_introducing: bool,
     appearances: Vec<u32>,
     choice_seed: u64,
@@ -173,6 +175,16 @@ impl Session {
         .into();
         let initial_size = roster.len();
         let appearances = vec![0; cards.len()];
+        let mut met_sections = HashSet::new();
+        for card in &cards {
+            let section = &card.section_context;
+            if !section.is_empty()
+                && !met_sections.contains(section)
+                && card.id().is_some_and(|id| store.progress(&id).is_some())
+            {
+                met_sections.insert(section.clone());
+            }
+        }
 
         let mut session = Self {
             cards,
@@ -182,6 +194,7 @@ impl Session {
             floors,
             served: HashSet::new(),
             introduced_sections: HashSet::new(),
+            met_sections,
             current_introducing: false,
             appearances,
             choice_seed: now_ms,
@@ -378,6 +391,7 @@ impl Session {
             && self.current().is_some_and(|card| {
                 !card.section_context.is_empty()
                     && !self.introduced_sections.contains(&card.section_context)
+                    && !self.met_sections.contains(&card.section_context)
             })
     }
 
@@ -1829,6 +1843,52 @@ mod tests {
             session.introduced_sections.contains(&section),
             "after introduce: expected introduced_sections to contain {section:?}, actual={:?}",
             session.introduced_sections
+        );
+    }
+
+    #[test]
+    fn a_section_met_in_an_earlier_sitting_does_not_announce_itself_again() {
+        let (mut store, _dir) = empty_store();
+        let section = ["Ownership", "Each value has one owner."];
+        let deck = || {
+            vec![
+                sectioned_card("deck.md", 0, &section),
+                sectioned_card("deck.md", 1, &section),
+            ]
+        };
+
+        let mut first = Session::new(
+            deck(),
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            1_000,
+        );
+        assert!(
+            first.section_first_for_current(),
+            "first sitting: the section's first card announces it"
+        );
+        first.introduce_current(&mut store, 1_000);
+        drop(first);
+
+        let later = DEFAULT_INTRODUCTION_COOLDOWN_MS + 2_000;
+        let mut second = Session::new(
+            deck(),
+            &mut store,
+            sched(),
+            SessionOptions::default(),
+            later,
+        );
+        while second.current().is_some() && !second.current_introducing {
+            second.grade(&mut store, Grade::Pass, later);
+        }
+        assert!(
+            second.current_introducing,
+            "second sitting: the other card of the section is up for introduction"
+        );
+        assert!(
+            !second.section_first_for_current(),
+            "second sitting: a section the learner already met stays quiet"
         );
     }
 

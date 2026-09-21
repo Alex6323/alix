@@ -54,9 +54,9 @@ and the quiet extras. A card that sits under a `#` section in its deck (see
 the section's heading as a one-line pill above the question; tapping the pill
 opens the whole section, heading and prose, in a sheet. Neither appears on a
 card without a section, and the card itself never moves to make room. The
-first card introduced from a section in a review session opens that sheet by
-itself, once; swipe it away and the pill stays as the way back in. Every later
-card from the section shows the pill only.
+first card you ever meet from a section opens that sheet by itself, once;
+swipe it away and the pill stays as the way back in. Every later card from
+the section, in this sitting or any later one, shows the pill only.
 
 ## Syncing with the desktop
 

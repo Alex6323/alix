@@ -130,15 +130,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one measure, the card's own; a framed note puts that measure on its box and
   keeps its text inside the frame.
 
-- Review state now marks the first card introduced from a section in each
-  sitting, so clients can present its section by themselves once and offer it
-  on demand thereafter. The web review shows the section heading as a dim
-  title line on every sectioned card, never renders the section inline, and
-  opens the full, paragraph-preserving section sheet by itself once on the
-  first introduction. The title, `c` key, and **Context** menu entry open
-  it on demand. The phone shows the heading as a tappable pill above the
-  question that opens the section in a bottom sheet, and opens that sheet by
-  itself on the first introduction from a section in a sitting.
+- Review state now marks the first card ever introduced from a section (a
+  section with any progress stays quiet in later sittings), so clients can
+  present its section by themselves once and offer it on demand thereafter.
+  The web review shows the section heading as a dim title line on every
+  sectioned card, never renders the section inline, and opens the full,
+  paragraph-preserving section sheet by itself once on the first
+  introduction. The title, `c` key, and **Context** menu entry open it on
+  demand. The phone shows the heading as a tappable pill above the question
+  that opens the section in a bottom sheet, and opens that sheet by itself
+  under the same rule.
 
 - An `assets/` directory that no deck in the workspace owns is left out of
   `alix share` and of a paired phone's pull instead of failing the whole

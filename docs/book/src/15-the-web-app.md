@@ -152,12 +152,12 @@ that region by most of its height, so you can walk a long answer without
 reaching for the wheel. Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server).
 A card under a section keeps its section heading above the question as a dim,
-one-line title. On the first new card introduced from that section in a
-sitting, the section sheet opens by itself once: the page dims at once and
+one-line title. On the first card you ever meet from that section, the
+section sheet opens by itself once: the page dims at once and
 the sheet slides up from the bottom of the page to just under the question,
 as wide as the card, so the question stays legible above it. Dismiss it
 and it stays closed through reveal or answer input; later cards from the same
-section do not open it automatically. The full section never appears inline.
+section, in this sitting or any later one, do not open it automatically. The full section never appears inline.
 Select the title (its key sits beside it), press `c`, or use **Context**
 beside **Ask Tutor** in the review menu to open the sheet on demand. While
 the sheet is open, the card and its review keys are inert; a click on the

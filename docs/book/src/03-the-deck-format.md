@@ -406,12 +406,12 @@ About 4 atmospheres.
 ```
 
 The web app shows a card's section heading as a dim one-line title above the
-question. The first card introduced from a section in a review session arrives
-with the whole section above the question; on every later card the title line,
-the `c` key, or the review menu's **Context** entry opens the section in a
-drawer over the card. The Android app shows the heading as a tappable pill
-that opens the section in a sheet, and opens that sheet by itself on the first
-introduction from a section (see
+question. The first card you ever meet from a section opens the whole section
+in a sheet under the question, once; after that, in this sitting and every
+later one, the title line, the `c` key, or the review menu's **Context** entry
+opens it. The Android app shows the heading as a tappable pill
+that opens the section in a sheet, and opens that sheet by itself under the
+same rule (see
 [The mobile app](18-the-mobile-app.md#reviewing)). The kids client does not
 expose section context.
 
