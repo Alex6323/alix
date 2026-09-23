@@ -11,23 +11,23 @@ void main() {
         'notifyListeners();',
       ),
       [
-        95,
-        100,
-        105,
-        110,
-        115,
-        136,
-        141,
-        146,
-        151,
-        156,
-        161,
-        166,
-        171,
-        176,
-        181,
-        186,
-        191,
+        106,
+        111,
+        116,
+        121,
+        126,
+        147,
+        152,
+        157,
+        162,
+        167,
+        172,
+        177,
+        182,
+        187,
+        192,
+        197,
+        202,
       ],
       reason:
           'setServerLive, install, choose, toggleChoice, submitChoices, '
@@ -71,17 +71,18 @@ void main() {
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
-        'lib/review_screen.dart:320',
-        'lib/picker_screen.dart:624',
+        'lib/review_screen.dart:326',
+        'lib/picker_screen.dart:626',
         'lib/picker/generate_sheet.dart:42',
         'lib/walk_screen.dart:192',
       ],
       reason:
           'sync wiring added imports, fields, and methods above build() in '
-          'review_screen.dart and picker_screen.dart, and the section sheet '
+          'review_screen.dart and picker_screen.dart, the section sheet '
           'opener added one import and one method to review_screen.dart, '
-          'moving their single ListenableBuilder site; generate_sheet.dart '
-          'and walk_screen.dart are unchanged',
+          'and the skip-introduction switch added a field to both, moving '
+          'their single ListenableBuilder site; generate_sheet.dart and '
+          'walk_screen.dart are unchanged',
     );
   });
 

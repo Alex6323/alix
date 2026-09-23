@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A launch can skip the introduction of new cards. On the phone, the sheet a
+  long-press on a deck row opens has a **Skip introduction** switch under
+  Cram: switched on, that one session grades every fresh card on first sight
+  instead of showing it, waiting out the settle gap, and only then asking.
+  The first grade is the card's first learning event; nothing is introduced
+  and no introduction pick is built. Over the API it is `skip_introduction`
+  on `/api/select`. For a pass over material you already know; a first
+  encounter with a deck still wants the introduction.
+
 - The phone can cram. The sheet a long-press on a deck row opens now starts
   with a **Cram** switch above the three depths: switch it on, then pick a
   depth. Cram belongs to that one launch and is never saved, so a plain tap on

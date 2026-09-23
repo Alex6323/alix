@@ -506,6 +506,13 @@ class PickerDeadlineSheet extends StatelessWidget {
   }
 }
 
+/// What the depth sheet launches: a depth and the two modifiers above it.
+typedef PickerLaunch = ({
+  PickerDepth depth,
+  bool cram,
+  bool skipIntroduction,
+});
+
 class PickerDepthSheet extends StatefulWidget {
   const PickerDepthSheet({
     super.key,
@@ -516,7 +523,7 @@ class PickerDepthSheet extends StatefulWidget {
 
   final PickerDepth? selected;
   final bool canRecognize;
-  final void Function(PickerDepth depth, bool cram) onChoose;
+  final ValueChanged<PickerLaunch> onChoose;
 
   @override
   State<PickerDepthSheet> createState() => _PickerDepthSheetState();
@@ -524,58 +531,74 @@ class PickerDepthSheet extends StatefulWidget {
 
 class _PickerDepthSheetState extends State<PickerDepthSheet> {
   bool _cram = false;
+  bool _skipIntroduction = false;
 
   @override
   Widget build(BuildContext context) {
     final canRecognize = widget.canRecognize;
+    // A modal sheet caps its height; five rows exceed that cap on a short
+    // window, so the sheet scrolls instead of clipping its last launch.
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SwitchListTile(
-            value: _cram,
-            onChanged: (on) => setState(() => _cram = on),
-            secondary: const SizedBox(width: 22),
-            title: const Text('Cram'),
-            subtitle: Text(
-              _cram
-                  ? 'now pick a depth to start'
-                  : "also cards that aren't due yet",
-            ),
-          ),
-          const Divider(height: 1),
-          for (final (depth, label, hint) in [
-            (
-              PickerDepth.recognize,
-              'Recognize',
-              canRecognize
-                  ? 'pick the answer out of four'
-                  : 'augment the deck to enable',
-            ),
-            (PickerDepth.recall, 'Recall', 'the everyday review'),
-            (
-              PickerDepth.reconstruct,
-              'Reconstruct',
-              'type or rebuild the answer',
-            ),
-          ])
-            ListTile(
-              enabled: canRecognize || depth != PickerDepth.recognize,
-              leading: SizedBox(
-                width: 22,
-                child: depth == widget.selected
-                    ? Icon(
-                        Icons.check,
-                        size: 18,
-                        color: Theme.of(context).alix.bolt,
-                      )
-                    : null,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SwitchListTile(
+              value: _cram,
+              onChanged: (on) => setState(() => _cram = on),
+              secondary: const SizedBox(width: 22),
+              title: const Text('Cram'),
+              subtitle: Text(
+                _cram
+                    ? 'now pick a depth to start'
+                    : "also cards that aren't due yet",
               ),
-              title: Text(label),
-              subtitle: Text(hint),
-              onTap: () => widget.onChoose(depth, _cram),
             ),
-        ],
+            SwitchListTile(
+              value: _skipIntroduction,
+              onChanged: (on) => setState(() => _skipIntroduction = on),
+              secondary: const SizedBox(width: 22),
+              title: const Text('Skip introduction'),
+              subtitle: const Text('new cards are graded at first sight'),
+            ),
+            const Divider(height: 1),
+            for (final (depth, label, hint) in [
+              (
+                PickerDepth.recognize,
+                'Recognize',
+                canRecognize
+                    ? 'pick the answer out of four'
+                    : 'augment the deck to enable',
+              ),
+              (PickerDepth.recall, 'Recall', 'the everyday review'),
+              (
+                PickerDepth.reconstruct,
+                'Reconstruct',
+                'type or rebuild the answer',
+              ),
+            ])
+              ListTile(
+                enabled: canRecognize || depth != PickerDepth.recognize,
+                leading: SizedBox(
+                  width: 22,
+                  child: depth == widget.selected
+                      ? Icon(
+                          Icons.check,
+                          size: 18,
+                          color: Theme.of(context).alix.bolt,
+                        )
+                      : null,
+                ),
+                title: Text(label),
+                subtitle: Text(hint),
+                onTap: () => widget.onChoose((
+                  depth: depth,
+                  cram: _cram,
+                  skipIntroduction: _skipIntroduction,
+                )),
+              ),
+          ],
+        ),
       ),
     );
   }

@@ -386,6 +386,7 @@ impl ReviewSession {
         root_dir: String,
         depth: Option<Depth>,
         cram: Option<bool>,
+        skip_introduction: Option<bool>,
         now_ms: Option<u64>,
         device: Option<String>,
     ) -> Result<ReviewSession> {
@@ -416,6 +417,7 @@ impl ReviewSession {
         let opts = alix::assemble::SelectOptions {
             depth,
             cram: cram.unwrap_or(false),
+            skip_introduction: skip_introduction.unwrap_or(false),
             now_ms,
             ..Default::default()
         };
@@ -922,6 +924,7 @@ mod tests {
             root.to_string_lossy().into_owned(),
             None,
             None,
+            None,
             Some(T0),
             None,
         )
@@ -934,6 +937,7 @@ mod tests {
             root.to_string_lossy().into_owned(),
             depth,
             None,
+            None,
             Some(LATER),
             None,
         )
@@ -945,6 +949,7 @@ mod tests {
         ReviewSession::open(
             deck.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
+            None,
             None,
             None,
             Some(LATER),
@@ -980,6 +985,7 @@ mod tests {
                 root.to_string_lossy().into_owned(),
                 Some(Depth::Recall),
                 Some(cram),
+                None,
                 Some(LATER + 1),
                 None,
             )
@@ -993,6 +999,42 @@ mod tests {
             reopen(true).state(Some(LATER + 1)).card.is_some(),
             "cram serves the card the scheduler is holding back",
         );
+    }
+
+    #[test]
+    fn skipping_introduction_serves_a_fresh_card_for_grading() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = root.join("fresh.md");
+        write(&deck, "## Front?\nBack.\n<!-- id: card-freshone -->\n");
+        alix::stamp::stamp_deck(&deck).unwrap();
+
+        let open = |skip: bool| {
+            ReviewSession::open(
+                deck.to_string_lossy().into_owned(),
+                root.to_string_lossy().into_owned(),
+                Some(Depth::Recall),
+                None,
+                Some(skip),
+                Some(T0),
+                None,
+            )
+            .unwrap()
+        };
+        assert!(
+            open(false).state(Some(T0)).introducing,
+            "a fresh card is introduced first",
+        );
+        let mut skipping = open(true);
+        assert!(
+            !skipping.state(Some(T0)).introducing,
+            "skipping introduction: the same fresh card is served for a grade",
+        );
+        skipping.grade(Grade::Pass, Some(T0)).unwrap();
+        let state = skipping.state(Some(T0));
+        assert!(state.card.is_none(), "one card, graded once: the sitting is done");
+        assert_eq!(1, state.passed);
+        assert_eq!(0, state.introduced);
     }
 
     #[test]
@@ -1015,6 +1057,7 @@ mod tests {
             root.join("math.md").to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             Some(Depth::Recall),
+            None,
             None,
             Some(T0),
             None,
@@ -1174,6 +1217,7 @@ mod tests {
             root.to_string_lossy().into_owned(),
             None,
             None,
+            None,
             Some(T0),
             None,
         )
@@ -1266,6 +1310,7 @@ mod tests {
             root.to_string_lossy().into_owned(),
             Some(Depth::Reconstruct),
             None,
+            None,
             Some(LATER),
             None,
         )
@@ -1303,6 +1348,7 @@ mod tests {
         let s = ReviewSession::open(
             root.join("d.md").to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
+            None,
             None,
             None,
             Some(T0),
@@ -1378,6 +1424,7 @@ mod tests {
         let s = ReviewSession::open(
             root.join("d.md").to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
+            None,
             None,
             None,
             Some(T0),
@@ -1732,6 +1779,7 @@ mod tests {
         let reopened = ReviewSession::open(
             deck.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
+            None,
             None,
             None,
             Some(LATER),
@@ -2156,6 +2204,7 @@ mod tests {
         let err = ReviewSession::open(
             trace.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
+            None,
             None,
             None,
             Some(T0),

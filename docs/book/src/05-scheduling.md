@@ -87,6 +87,16 @@ at Recognize.
 This is the first step of a card's life: *introduce*, then let its depth(s)
 schedule it.
 
+A launch can **skip the introduction**: every fresh card is then graded on
+first sight, as if it had been introduced before, with no Seen press and no
+settle gap in between. The card's first grade is its first learning event,
+and the sitting's *introduced* count stays at zero. This is for a pass over
+a deck you already know (a cram, a re-read), where the introduction step is
+friction; a deck you are meeting for the first time loses the guess-first
+encounter and its section sheets. On the phone it is the **Skip introduction**
+switch in the sheet a long-press on a deck row opens; over the API it is
+`skip_introduction` on `/api/select`.
+
 ## Session depths: Recognize, Recall, Reconstruct
 
 FSRS decides *when* a card is due; the **session depth** decides *how deeply*

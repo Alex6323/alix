@@ -91,7 +91,7 @@ void main() {
     expect(factory.crams, [true, true]);
   });
 
-  test('a session opens uncrammed unless asked', () {
+  test('a session opens uncrammed and introducing unless asked', () {
     final factory = _FakeReviewFactory([_FakeReviewPort(_state())]);
     ReviewController(
       factory: factory,
@@ -101,6 +101,25 @@ void main() {
     );
 
     expect(factory.crams, [false]);
+    expect(factory.skips, [false]);
+  });
+
+  test('a session that skips introduction keeps skipping across a restart', () {
+    final factory = _FakeReviewFactory([
+      _FakeReviewPort(_state()),
+      _FakeReviewPort(_state()),
+    ]);
+    final controller = ReviewController(
+      factory: factory,
+      deckPath: '/decks/facts.md',
+      rootDir: '/decks',
+      depth: ReviewDepth.recall,
+      skipIntroduction: true,
+    );
+    controller.restart();
+
+    expect(factory.skips, [true, true]);
+    expect(factory.crams, [false, false]);
   });
 
   test(
@@ -174,6 +193,7 @@ class _FakeReviewFactory implements ReviewPortFactory {
 
   final List<Object> results;
   final List<bool> crams = [];
+  final List<bool> skips = [];
   int opens = 0;
 
   @override
@@ -182,9 +202,11 @@ class _FakeReviewFactory implements ReviewPortFactory {
     required String rootDir,
     ReviewDepth? depth,
     bool cram = false,
+    bool skipIntroduction = false,
     String? device,
   }) {
     crams.add(cram);
+    skips.add(skipIntroduction);
     final result = results[opens++];
     if (result case final ReviewOpenFailure failure) throw failure;
     return result as ReviewPort;

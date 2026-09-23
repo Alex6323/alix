@@ -748,6 +748,8 @@ pub(super) fn parse_selection(request: &mut Request) -> Option<(String, SelectOp
         #[serde(default)]
         cram: bool,
         #[serde(default)]
+        skip_introduction: bool,
+        #[serde(default)]
         session: Option<usize>,
     }
     let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
@@ -761,6 +763,7 @@ pub(super) fn parse_selection(request: &mut Request) -> Option<(String, SelectOp
             region: body.region,
             depth: body.depth,
             cram: body.cram,
+            skip_introduction: body.skip_introduction,
             session: body.session,
             // The web serves on the wall clock; only embedders inject time.
             now_ms: None,

@@ -77,6 +77,7 @@ pub struct SelectOptions {
     pub region: Option<String>,
     pub depth: Option<Depth>,
     pub cram: bool,
+    pub skip_introduction: bool,
     /// A per-launch override of `max_session` for this sitting.
     pub session: Option<usize>,
     pub now_ms: Option<u64>,
@@ -488,6 +489,7 @@ pub fn select(
         max_session: opts.session.unwrap_or(cfg.pacing.max_session),
         new_cards_percent: cfg.pacing.new_cards_percent,
         cram: opts.cram,
+        skip_introduction: opts.skip_introduction,
         order,
         topology: topology_order,
         retire_after_days: review.retire_after_days,

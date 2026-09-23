@@ -13,6 +13,7 @@ class ReviewBridgeFactory implements ReviewPortFactory {
     required String rootDir,
     ReviewDepth? depth,
     bool cram = false,
+    bool skipIntroduction = false,
     String? device,
   }) {
     try {
@@ -22,6 +23,7 @@ class ReviewBridgeFactory implements ReviewPortFactory {
           rootDir: rootDir,
           depth: _depthToBridge(depth),
           cram: cram,
+          skipIntroduction: skipIntroduction,
           device: device,
         ),
       );

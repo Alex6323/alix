@@ -45,6 +45,14 @@ the rules the web app applies (see [Cramming](05-scheduling.md#cramming)).
 Cram belongs to the launch and is never saved, so the switch is off again the
 next time the sheet opens, and a plain tap on the deck never crams.
 
+Below Cram sits **Skip introduction**. Switched on, that one session grades
+every new card on first sight instead of showing it first, waiting for the
+settle gap and only then asking (see
+[New cards](05-scheduling.md#new-cards-an-attempt-before-theyre-tested)). The two
+switches are independent: a cram over a deck you already know usually wants
+both, a first pass over new material wants neither. Like Cram, it belongs to
+the launch and is off again the next time the sheet opens.
+
 ## Reviewing
 
 The review screen is the web app's loop on a phone: reveal, then grade, or

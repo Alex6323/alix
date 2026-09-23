@@ -115,13 +115,17 @@ so is every client.
    (`is_workspace`, or a folder) is a container, not a session (see
    `DeckItemDto.name`). `DeckItemDto.selectable` says this on the wire
    directly, so a client no longer has to infer it from `is_workspace`.
-2. `POST /api/select {deck, topology?, region?, depth?, cram?, session?}`
+2. `POST /api/select {deck, topology?, region?, depth?, cram?, skip_introduction?, session?}`
    builds a session. **The response is either a `StateDto` or a
    `WalkDto` — branch on `kind` (`"review"` | `"walk"`) before anything
    else.** A trace deck walks; a fact deck reviews. `depth` is
    `"recognize" | "recall" | "reconstruct"` *(closed)*; omitted → the deck's
    remembered last depth. `cram` (default false) also queues cards that
-   aren't due (a due card still grades as a normal review). `session`
+   aren't due (a due card still grades as a normal review).
+   `skip_introduction` (default false) serves a fresh card for a grade
+   instead of an introduction: `introducing` is never true, no introduction
+   pick is built, and the first `/api/grade` is the card's first learning
+   event (`introduced_ms` stays unset, which the store already allows). `session`
    overrides `max_session` (the cards one sitting serves) for this launch; its
    new-card share stays the instance's `new_cards_percent`.
 3. Render from `StateDto` (`phase:"review"`, `card`, `mode`, `depth`, counts).
@@ -528,7 +532,7 @@ stable `root_id`; paired clients compare the latter before any progress write.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/select` | `{deck, topology?, region?, depth?, cram?, session?}` | `StateDto` \| `WalkDto` (branch on `kind`) | 400 bad body / unknown deck / build failure |
+| POST | `/api/select` | `{deck, topology?, region?, depth?, cram?, skip_introduction?, session?}` | `StateDto` \| `WalkDto` (branch on `kind`) | 400 bad body / unknown deck / build failure |
 | POST | `/api/browse` | `{deck}` | `BrowseDto` | 400 (same causes) |
 | POST | `/api/deck-drawer` | `{deck}` | `DeckDrawerDto` | never errors; empty DTO on any failure |
 | POST | `/api/reset` | `{deck}` | `ResetDto` | 400 bad body / unknown deck / load failure |

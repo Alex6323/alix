@@ -4202,6 +4202,33 @@ fn an_exhausted_recognize_deck_reports_the_gap_not_a_bare_empty_done() {
     );
 }
 
+#[test]
+fn selecting_with_skip_introduction_serves_a_fresh_card_for_grading() {
+    let (base, _guard) = spawn_test_server();
+    let resp = post_json(
+        &base,
+        "/api/select",
+        r#"{"deck":"sample.md","skip_introduction":true}"#,
+    );
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        false, body["introducing"],
+        "a fresh card is served for a grade, not an introduction: {body}"
+    );
+    assert!(
+        body["choices"].is_null(),
+        "no introduction question either: {body}"
+    );
+
+    let resp = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        1, body["passed"],
+        "the first sight counts as a review: {body}"
+    );
+    assert_eq!(0, body["introduced"], "and introduces nothing: {body}");
+}
+
 /// Revealing was deleted whole (ADR 0035): seeing an answer and leaving
 /// persists nothing, so the card is met as new next sitting, and the endpoint
 /// is gone rather than published as a no-op.

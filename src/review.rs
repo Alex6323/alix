@@ -417,7 +417,7 @@ pub fn state(
     let base_mode = card
         .map(|c| depth::check_for(c.reveal.unwrap_or_default(), depth, c))
         .unwrap_or_default();
-    let introducing = session.current_fresh(store);
+    let introducing = session.introducing(store);
     let question = current_question(session, store, augment);
     let choices_multiple = question
         .as_ref()
@@ -541,8 +541,8 @@ pub fn current_question(
     if card.multiple_choice {
         // Select-all builds only from the authored option set: AI and sampled
         // distractor pools are shaped for one correct answer.
-        let fresh = session.current_fresh(store);
-        if session.depth() != Depth::Recognize && !fresh {
+        let introducing = session.introducing(store);
+        if session.depth() != Depth::Recognize && !introducing {
             return None;
         }
         return choice::build_authored_multi(card, seed, &card.authored_distractors);
@@ -558,9 +558,9 @@ pub fn current_question(
         }
         return choice::build_sampled(card, seed, session.cards());
     }
-    // `current_fresh`, not a bare store check: a card revealed this sitting
+    // `introducing`, not a bare store check: a card revealed this sitting
     // is already engaged in the store but keeps its introduction question.
-    if session.current_fresh(store) {
+    if session.introducing(store) {
         if !card.authored_distractors.is_empty() {
             return choice::build_authored(card, seed, &card.authored_distractors);
         }
@@ -1175,6 +1175,27 @@ mod tests {
 
         let armed = state(&introduction, &fresh_store, &augment, Some(NOW));
         assert!(armed.choices.is_some(), "full distractors arm the pick");
+
+        let skipping = Session::new(
+            cards,
+            &mut fresh_store,
+            Box::new(Fsrs::default()),
+            SessionOptions {
+                depth: Depth::Recall,
+                skip_introduction: true,
+                ..Default::default()
+            },
+            NOW,
+        );
+        let graded = state(&skipping, &fresh_store, &augment, Some(NOW));
+        assert!(
+            !graded.introducing,
+            "skipping introduction: the fresh card is served for a grade"
+        );
+        assert_eq!(
+            graded.choices, None,
+            "skipping introduction: no introduction pick at Recall, distractors or not"
+        );
     }
 
     #[test]
@@ -2427,6 +2448,38 @@ mod tests {
         );
         assert_eq!(Some(true), s.choices_multiple);
         assert_eq!(Mode::Choice, s.mode);
+    }
+
+    #[test]
+    fn a_fresh_multiple_card_at_recall_is_introduced_by_its_pick_unless_skipped() {
+        let (mut store, augment, _dir) = fixtures();
+        let cards = parse(MULTI);
+
+        let introduction = session_at(cards.clone(), &mut store, Depth::Recall, NOW);
+        let s = state(&introduction, &store, &augment, Some(NOW));
+        assert!(s.introducing, "precondition: the card is fresh");
+        assert!(
+            s.choices.is_some(),
+            "the introduction of a select-all card is its own pick"
+        );
+
+        let skipping = Session::new(
+            cards,
+            &mut store,
+            Box::new(Fsrs::default()),
+            SessionOptions {
+                depth: Depth::Recall,
+                skip_introduction: true,
+                ..Default::default()
+            },
+            NOW,
+        );
+        let s = state(&skipping, &store, &augment, Some(NOW));
+        assert!(!s.introducing);
+        assert_eq!(
+            s.choices, None,
+            "skipping introduction: at Recall a select-all card is graded like any other"
+        );
     }
 
     #[test]

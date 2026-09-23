@@ -25,6 +25,7 @@ class ReviewScreen extends StatefulWidget {
     required this.rootDir,
     required this.depth,
     this.cram = false,
+    this.skipIntroduction = false,
     this.device,
     this.supportDir,
     this.buildClient,
@@ -40,6 +41,10 @@ class ReviewScreen extends StatefulWidget {
   /// Serves cards that are not due as well; a due card still grades as a
   /// normal review, an early pass only re-anchors its due date.
   final bool cram;
+
+  /// A fresh card is graded on first sight instead of being shown, then
+  /// acknowledged, then held back for the introduction cooldown.
+  final bool skipIntroduction;
 
   /// This install's label for the store's last-writer marker.
   final String? device;
@@ -77,6 +82,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       rootDir: widget.rootDir,
       depth: widget.depth,
       cram: widget.cram,
+      skipIntroduction: widget.skipIntroduction,
       device: widget.device,
     );
     if (_controller.openError == null) {

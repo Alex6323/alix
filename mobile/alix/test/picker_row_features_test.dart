@@ -152,6 +152,27 @@ void main() {
       );
     });
 
+    testWidgets('the skip-introduction switch followed by a depth opens a '
+        'session that skips it', (tester) async {
+      final root = dueDeckRoot();
+      await tester.pumpWidget(MaterialApp(
+        theme: alixDark(),
+        home: PickerScreen(root: root.path),
+      ));
+      await settlePicker(tester);
+
+      await tester.longPress(find.text('D'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Skip introduction'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Recall'));
+      await tester.pumpAndSettle();
+
+      final screen = tester.widget<ReviewScreen>(find.byType(ReviewScreen));
+      expect(screen.skipIntroduction, isTrue);
+      expect(screen.cram, isFalse, reason: 'the two switches are independent');
+    });
+
     testWidgets(
         'the cram switch does not outlive a dismissed sheet: a later tap is '
         'a plain session', (tester) async {
@@ -171,10 +192,9 @@ void main() {
       await tester.tap(find.text('D'));
       await tester.pumpAndSettle();
 
-      expect(
-        tester.widget<ReviewScreen>(find.byType(ReviewScreen)).cram,
-        isFalse,
-      );
+      final screen = tester.widget<ReviewScreen>(find.byType(ReviewScreen));
+      expect(screen.cram, isFalse);
+      expect(screen.skipIntroduction, isFalse);
     });
   });
 

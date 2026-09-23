@@ -144,6 +144,7 @@ abstract class RustLibApi extends BaseApi {
     required String rootDir,
     Depth? depth,
     bool? cram,
+    bool? skipIntroduction,
     BigInt? nowMs,
     String? device,
   });
@@ -687,6 +688,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String rootDir,
     Depth? depth,
     bool? cram,
+    bool? skipIntroduction,
     BigInt? nowMs,
     String? device,
   }) {
@@ -698,6 +700,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(rootDir, serializer);
           sse_encode_opt_box_autoadd_depth(depth, serializer);
           sse_encode_opt_box_autoadd_bool(cram, serializer);
+          sse_encode_opt_box_autoadd_bool(skipIntroduction, serializer);
           sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
           sse_encode_opt_String(device, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
@@ -708,7 +711,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiReviewReviewSessionOpenConstMeta,
-        argValues: [deckPath, rootDir, depth, cram, nowMs, device],
+        argValues: [
+          deckPath,
+          rootDir,
+          depth,
+          cram,
+          skipIntroduction,
+          nowMs,
+          device,
+        ],
         apiImpl: this,
       ),
     );
@@ -717,7 +728,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiReviewReviewSessionOpenConstMeta =>
       const TaskConstMeta(
         debugName: "ReviewSession_open",
-        argNames: ["deckPath", "rootDir", "depth", "cram", "nowMs", "device"],
+        argNames: [
+          "deckPath",
+          "rootDir",
+          "depth",
+          "cram",
+          "skipIntroduction",
+          "nowMs",
+          "device",
+        ],
       );
 
   @override

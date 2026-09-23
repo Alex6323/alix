@@ -60,6 +60,9 @@ pub struct SessionOptions {
     /// share. Either pool backfills the other when it runs short.
     pub new_cards_percent: u8,
     pub cram: bool,
+    /// A fresh card is graded on first sight instead of being shown, then
+    /// acknowledged, then held back for the introduction cooldown.
+    pub skip_introduction: bool,
     pub order: Order,
     pub topology: Option<TopologyOrder>,
     pub retire_after_days: Option<u32>,
@@ -72,6 +75,7 @@ impl Default for SessionOptions {
             max_session: DEFAULT_MAX_SESSION,
             new_cards_percent: DEFAULT_NEW_CARDS_PERCENT,
             cram: false,
+            skip_introduction: false,
             order: Order::Scheduled,
             topology: None,
             retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),
@@ -405,6 +409,12 @@ impl Session {
             .is_some_and(|id| store.progress(&id).is_none())
     }
 
+    /// The current card is served as an introduction (shown, then
+    /// acknowledged) rather than for a grade.
+    pub fn introducing(&self, store: &Store) -> bool {
+        !self.options.skip_introduction && self.current_fresh(store)
+    }
+
     pub fn section_first_for_current(&self) -> bool {
         self.current_introducing
             && self.current().is_some_and(|card| {
@@ -690,7 +700,8 @@ impl Session {
             self.appearances[i] = self.appearances[i].saturating_add(1);
         }
         self.current_idx = next;
-        self.current_introducing = decision.as_ref().is_some_and(|decision| decision.fresh);
+        self.current_introducing = !self.options.skip_introduction
+            && decision.as_ref().is_some_and(|decision| decision.fresh);
         self.remaining_now = self
             .roster
             .iter()
@@ -1940,6 +1951,43 @@ mod tests {
     }
 
     #[test]
+    fn skipping_introduction_serves_a_fresh_card_for_grading() {
+        let (mut store, _dir) = empty_store();
+        let all = vec![sectioned_card("deck.md", 0, &["Ownership"])];
+        let id = all[0].id().unwrap();
+        let options = SessionOptions {
+            skip_introduction: true,
+            ..Default::default()
+        };
+        let mut session = Session::new(all, &mut store, sched(), options, 1_000);
+
+        assert!(
+            session.current_fresh(&store),
+            "precondition: the card has no progress"
+        );
+        assert!(
+            !session.introducing(&store),
+            "skipping introduction: a fresh card is not an introduction"
+        );
+        assert!(
+            !session.section_first_for_current(),
+            "skipping introduction: its unmet section opens no sheet either"
+        );
+
+        session.grade(&mut store, Grade::Pass, 1_000);
+
+        let state = store.get(&id).expect("the graded card is recorded");
+        assert!(state.recall.is_some(), "the first sight is a graded review");
+        assert_eq!(
+            None, state.introduced_ms,
+            "grading acknowledges nothing (ADR 0035)"
+        );
+        assert_eq!(1, session.stats.reviews);
+        assert_eq!(0, session.stats.introduced);
+        assert!(session.is_finished());
+    }
+
+    #[test]
     fn reviewing_a_card_never_records_its_section_as_introduced() {
         let (mut store, _dir) = empty_store();
         let all = vec![sectioned_card("deck.md", 0, &["Ownership"])];
@@ -2594,6 +2642,7 @@ mod tests {
                 max_session: 3,
                 new_cards_percent: 0,
                 cram: false,
+                skip_introduction: false,
                 order: Order::Scheduled,
                 topology: None,
                 retire_after_days: Some(DEFAULT_RETIRE_AFTER_DAYS),

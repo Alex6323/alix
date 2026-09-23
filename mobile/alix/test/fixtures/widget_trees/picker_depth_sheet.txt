@@ -70,49 +70,60 @@ CustomPaint
           CustomPaint
             SafeArea
               Padding(EdgeInsets.zero)
-                Column
-                  ListTile(enabled=true, tap=true)
-                    InkWell(tap=true, longPress=false)
-                      Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
-                        SafeArea
-                          Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
-                            SizedBox(width=22.0, height=null)
-                            Text("Cram")
-                            Text("also cards that aren't due yet")
-                            Opacity(1.00)
-                              CustomPaint
-                  Divider
-                    SizedBox(width=null, height=1.0)
-                      Center
-                        Container
-                          Padding(EdgeInsets.zero)
-                            ConstrainedBox
-                              Padding(EdgeInsets(0.0, 0.0, 0.0, 1.0))
-                                ConstrainedBox
-                  ListTile(enabled=false, tap=true)
-                    InkWell(tap=false, longPress=false)
-                      Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
-                        SafeArea
-                          Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
-                            SizedBox(width=22.0, height=null)
-                            Text("Recognize")
-                            Text("augment the deck to enable")
-                  ListTile(enabled=true, tap=true)
-                    InkWell(tap=true, longPress=false)
-                      Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
-                        SafeArea
-                          Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
-                            SizedBox(width=22.0, height=null)
-                              Icon(e156)
-                                SizedBox(width=18.0, height=18.0)
-                                  Center
-                            Text("Recall")
-                            Text("the everyday review")
-                  ListTile(enabled=true, tap=true)
-                    InkWell(tap=true, longPress=false)
-                      Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
-                        SafeArea
-                          Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
-                            SizedBox(width=22.0, height=null)
-                            Text("Reconstruct")
-                            Text("type or rebuild the answer")
+                SingleChildScrollView
+                  Column
+                    ListTile(enabled=true, tap=true)
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              SizedBox(width=22.0, height=null)
+                              Text("Cram")
+                              Text("also cards that aren't due yet")
+                              Opacity(1.00)
+                                CustomPaint
+                    ListTile(enabled=true, tap=true)
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              SizedBox(width=22.0, height=null)
+                              Text("Skip introduction")
+                              Text("new cards are graded at first sight")
+                              Opacity(1.00)
+                                CustomPaint
+                    Divider
+                      SizedBox(width=null, height=1.0)
+                        Center
+                          Container
+                            Padding(EdgeInsets.zero)
+                              ConstrainedBox
+                                Padding(EdgeInsets(0.0, 0.0, 0.0, 1.0))
+                                  ConstrainedBox
+                    ListTile(enabled=false, tap=true)
+                      InkWell(tap=false, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              SizedBox(width=22.0, height=null)
+                              Text("Recognize")
+                              Text("augment the deck to enable")
+                    ListTile(enabled=true, tap=true)
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              SizedBox(width=22.0, height=null)
+                                Icon(e156)
+                                  SizedBox(width=18.0, height=18.0)
+                                    Center
+                              Text("Recall")
+                              Text("the everyday review")
+                    ListTile(enabled=true, tap=true)
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              SizedBox(width=22.0, height=null)
+                              Text("Reconstruct")
+                              Text("type or rebuild the answer")
