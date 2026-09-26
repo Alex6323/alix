@@ -223,6 +223,8 @@ class ReviewController extends ChangeNotifier {
 
   void applyCardNote({required String id, required List<String> notes}) {
     _requirePort().applyCardNote(id: id, notes: notes);
+    _state = _requirePort().state;
+    notifyListeners();
   }
 
   void applyExamPassed(int nowMs) => _requirePort().applyExamPassed(nowMs);

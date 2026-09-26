@@ -74,6 +74,29 @@ void main() {
     expect(port.grades, [ReviewGrade.pass]);
   });
 
+  test('applying a card note refreshes it without hiding the answer', () {
+    final note = ReviewNoteModel(
+      units: [ReviewSentenceModel(text: 'Tutor note', runs: const [])],
+    );
+    final port = _FakeReviewPort(_state())
+      ..applyCardNoteResult = _state(note: [note]);
+    final controller = ReviewController(
+      factory: _FakeReviewFactory([port]),
+      deckPath: '/decks/facts.md',
+      rootDir: '/decks',
+      depth: ReviewDepth.recall,
+    );
+    controller.reveal();
+    var notifications = 0;
+    controller.addListener(() => notifications++);
+
+    controller.applyCardNote(id: 'card-one', notes: const ['Tutor note']);
+
+    expect(controller.state.card?.note, [same(note)]);
+    expect(controller.revealed, isTrue);
+    expect(notifications, 1);
+  });
+
   test('a cram session opens crammed and stays crammed across a restart', () {
     final factory = _FakeReviewFactory([
       _FakeReviewPort(_state()),
@@ -150,7 +173,11 @@ void main() {
   );
 }
 
-ReviewStateModel _state({int remaining = 2, bool finished = false}) {
+ReviewStateModel _state({
+  int remaining = 2,
+  bool finished = false,
+  List<ReviewNoteModel> note = const [],
+}) {
   return ReviewStateModel(
     card: ReviewCardModel(
       front: 'question',
@@ -164,7 +191,7 @@ ReviewStateModel _state({int remaining = 2, bool finished = false}) {
       backUnits: const [],
       answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 1)],
       reshaped: false,
-      note: const [],
+      note: note,
       images: const [],
       imagesBack: const [],
     ),
@@ -219,6 +246,7 @@ class _FakeReviewPort implements ReviewPort {
   ReviewStateModel _state;
   ReviewStateModel? introduceResult;
   ReviewStateModel? gradeResult;
+  ReviewStateModel? applyCardNoteResult;
   final List<ReviewGrade> grades = [];
 
   @override
@@ -276,7 +304,9 @@ class _FakeReviewPort implements ReviewPort {
   }
 
   @override
-  void applyCardNote({required String id, required List<String> notes}) {}
+  void applyCardNote({required String id, required List<String> notes}) {
+    _state = applyCardNoteResult ?? _state;
+  }
 
   @override
   void applyExamPassed(int nowMs) {}

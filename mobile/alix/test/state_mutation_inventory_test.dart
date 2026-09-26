@@ -28,12 +28,14 @@ void main() {
         192,
         197,
         202,
+        227,
       ],
       reason:
           'setServerLive, install, choose, toggleChoice, submitChoices, '
           'check, openAttempt, toggleKeypoint, reveal, the six sketch '
           'transitions (tool, begin, extend, end, undo, clear), '
-          'revealNextLine, and restart own every ReviewController mutation',
+          'revealNextLine, restart, and applyCardNote own every '
+          'ReviewController mutation',
     );
     expect(_linesContaining('lib/picker_screen.dart', 'setState('), isEmpty);
     expect(

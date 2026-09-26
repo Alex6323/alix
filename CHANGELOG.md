@@ -223,6 +223,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Making a tutor answer into a note refreshes the current card without hiding
+  its revealed answer.
+
 - A generated or installed workspace emblem is written as a standalone SVG
   document, carrying the SVG namespace declaration; a wrong or empty one in
   the source is replaced, and a root tag spelled other than lowercase `<svg>`
