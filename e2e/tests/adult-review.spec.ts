@@ -1139,28 +1139,33 @@ test("an empty session says when the next card is due", async ({ page }) => {
   await expect(page.locator(".summary .remark")).toHaveText(/^Next due in \d+ min\.$/);
 });
 
-test("the tutor leave prompt keeps Enter for composing and Escape stays", async ({ page }) => {
+test("the tutor leave prompt owns Enter and Escape from the chat box", async ({ page }) => {
   await openWildCram(page, "Recall");
   await answerCurrentWildCard(page);
   await mockCompletedTutor(page);
   await page.getByRole("button", { name: "Ask tutor" }).click();
   await expect(page.locator(".ask-q")).toHaveText("Why?");
 
-  await page.getByRole("button", { name: /^Close/ }).click();
+  const input = page.locator(".ask-input");
+  await expect(input).toBeFocused();
+  await input.press("Escape");
   const leave = page.getByRole("button", { name: /^Leave anyway/ });
   await expect(leave).toBeVisible();
   await expect(leave.locator(".k")).toHaveCount(0);
+  await expect(input).not.toBeFocused();
 
-  const input = page.locator(".ask-input");
-  await input.focus();
-  await input.press("Enter");
-  await expect(input).toHaveValue("\n");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".ask-panel")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Ask tutor" }).click();
+  await expect(input).toBeFocused();
+  await input.press("Escape");
   await expect(leave).toBeVisible();
-
   await page.keyboard.press("Escape");
   await expect(leave).toHaveCount(0);
   await expect(page.locator(".ask-panel")).toBeVisible();
   await expect(page.getByRole("button", { name: /^Close/ })).toBeVisible();
+  await expect(input).toBeFocused();
 });
 
 test("a fenced tutor answer renders as a code block", async ({ page }) => {

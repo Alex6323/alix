@@ -22,8 +22,9 @@ the single-threaded server never blocks and the session stays responsive
 while it works.
 
 In the web panel, `Enter` inserts a newline and `Shift-Enter` sends. Closing a
-tutor that contains a conversation asks for an explicit click on **Leave
-anyway**; `Escape` chooses **Stay** so it cannot also abandon the card.
+tutor that contains a conversation moves the caret out of the chat box and
+asks for confirmation: `Enter` chooses **Leave anyway**, while `Escape`
+chooses **Stay** and returns the caret to the chat box.
 
 Tutor replies use the same content grammar as a card. Ordinary explanation
 stays prose, backticks mark inline code, and multi-line code arrives in a

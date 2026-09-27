@@ -121,6 +121,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   point per line, omit points the card's notes already cover, and save nothing
   when they cover everything.
 
+- The web tutor's leave confirmation now moves focus out of the chat box so
+  `Enter` confirms **Leave anyway**. `Escape` chooses **Stay** and restores the
+  caret to the chat box.
+
 - Tutor replies now use the deck content grammar on both reply wires. The web
   tutor renders fenced multi-line code as code blocks and backticks as inline
   code while keeping the raw reply for follow-up questions, notes, and cards.

@@ -83,6 +83,8 @@ export function createTutor({
 
   function close() {
     if (!confirmingClose && data && data.transcript && data.transcript.length) {
+      const input = doc.querySelector(".ask-input");
+      if (input) input.blur();
       confirmingClose = true;
       renderLeaveConfirm();
       return Promise.resolve(false);
@@ -408,7 +410,10 @@ export function createTutor({
   function handleKey(event) {
     if (!open) return false;
     if (confirmingClose) {
-      if (event.key === "Escape") {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        close();
+      } else if (event.key === "Escape") {
         event.preventDefault();
         cancelClose();
       }
