@@ -290,10 +290,6 @@ void main() {
   ) async {
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
-    // Room for fifty characters at the question's size, so the width rule
-    // does not decide this test.
-    tester.platformDispatcher.textScaleFactorTestValue = 0.5;
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     const itemText =
         'A checklist item inside the quoted question that wraps across more '
         'than one line on a phone-sized review card.';
@@ -375,10 +371,6 @@ void main() {
   ) async {
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
-    // Room for fifty characters at the question's size, so the width rule
-    // does not decide this test.
-    tester.platformDispatcher.textScaleFactorTestValue = 0.5;
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     const itemText = 'A checklist item inside two quotations on the question.';
 
     await tester.pumpWidget(

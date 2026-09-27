@@ -136,9 +136,9 @@ void main() {
     expect(failures, isEmpty, reason: 'a badge word may not vanish on its ground');
   });
 
-  // Same 4.0 floor and the same reason as the note-wash law above: AA would
-  // mean retuning a shipped palette. Inline code is the case that needs it,
-  // because in the answer region its colour is the only signal it has.
+  // A 4.0 floor, not AA's 4.5, since AA would mean retuning a shipped
+  // palette. Inline code is the case that needs it, because in the answer
+  // region its colour is the only signal it has.
   test('code ink stays off the card surface in every theme', () {
     final failures = <String, double>{};
     for (final theme in alixThemes) {
