@@ -6,7 +6,18 @@
   "transcript": [
     {
       "a": "so drops are deterministic",
-      "q": "why one owner?"
+      "q": "why one owner?",
+      "units": [
+        {
+          "kind": "sentence",
+          "runs": [
+            {
+              "text": "so drops are deterministic"
+            }
+          ],
+          "text": "so drops are deterministic"
+        }
+      ]
     }
   ]
 }

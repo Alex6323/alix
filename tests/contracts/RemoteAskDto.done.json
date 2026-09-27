@@ -12,5 +12,16 @@
   "error": null,
   "note": null,
   "status": "The tutor has partial context.",
-  "thinking": false
+  "thinking": false,
+  "units": [
+    {
+      "kind": "sentence",
+      "runs": [
+        {
+          "text": "so drops are deterministic"
+        }
+      ],
+      "text": "so drops are deterministic"
+    }
+  ]
 }

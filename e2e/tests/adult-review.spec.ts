@@ -1163,6 +1163,35 @@ test("the tutor leave prompt keeps Enter for composing and Escape stays", async 
   await expect(page.getByRole("button", { name: /^Close/ })).toBeVisible();
 });
 
+test("a fenced tutor answer renders as a code block", async ({ page }) => {
+  await openWildCram(page, "Recall");
+  await answerCurrentWildCard(page);
+  await page.route("**/api/ask", (route) =>
+    route.fulfill({
+      json: {
+        transcript: [{
+          q: "Show the function.",
+          a: "```rust\nfn answer() {\n    println!(\"yes\");\n}\n```",
+          units: [{
+            kind: "code",
+            lines: ["fn answer() {", "    println!(\"yes\");", "}"],
+          }],
+        }],
+        thinking: false,
+        status: null,
+        error: null,
+        draft: null,
+      },
+    }),
+  );
+
+  await page.getByRole("button", { name: "Ask tutor" }).click();
+
+  const code = page.locator(".ask-a pre code");
+  await expect(code).toHaveText("fn answer() {\n    println!(\"yes\");\n}");
+  await expect(page.locator(".ask-a")).not.toContainText("```");
+});
+
 test("leaving an unsaved tutor returns to its originating card without pulling state", async ({ page }) => {
   await openWildCram(page, "Recall");
   const firstState = await (await page.request.get("/api/state")).json();

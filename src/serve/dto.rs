@@ -249,6 +249,7 @@ pub(super) struct MemberDto {
 pub(super) struct ExchangeDto {
     pub(super) q: String,
     pub(super) a: String,
+    pub(super) units: Vec<ContentUnit>,
 }
 
 #[derive(Debug, Serialize)]
@@ -761,6 +762,7 @@ pub(super) struct RemoteAskDto {
     pub(super) card_only: bool,
     pub(super) status: Option<String>,
     pub(super) answer: Option<String>,
+    pub(super) units: Vec<ContentUnit>,
     pub(super) draft: Option<DraftCardDto>,
     /// An empty vec is a valid settled result ("nothing to save"), not an error.
     pub(super) note: Option<Vec<String>>,

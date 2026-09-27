@@ -115,6 +115,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a reshape cached for a card with a machine note is recomputed on the next
   `alix deck augment --target format`.
 
+- Tutor replies now use the deck content grammar on both reply wires. The web
+  tutor renders fenced multi-line code as code blocks and backticks as inline
+  code while keeping the raw reply for follow-up questions, notes, and cards.
+
 - Remote tutor card requests now require `deck_id` and `card_id`, and every
   remote tutor response includes `card_only`. A client that omits either id
   receives an ordinary 400 response.

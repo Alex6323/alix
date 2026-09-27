@@ -137,6 +137,7 @@ pub(super) enum AskAction {
 pub(super) struct Ask {
     pub(super) cli: CliSession,
     pub(super) transcript: Vec<Exchange>,
+    transcript_units: Vec<Vec<crate::render::ContentUnit>>,
     pub(super) subject: Option<String>,
     pub(super) pending: Option<Pending>,
     pub(super) draft: Option<ask::DraftCard>,
@@ -148,6 +149,7 @@ impl Ask {
         Self {
             cli: CliSession::new(),
             transcript: Vec::new(),
+            transcript_units: Vec::new(),
             subject: None,
             pending: None,
             draft: None,
@@ -158,6 +160,7 @@ impl Ask {
     fn align(&mut self, subject: Option<String>) {
         if self.subject != subject {
             self.transcript.clear();
+            self.transcript_units.clear();
             self.draft = None;
             self.context_warning = None;
             // Advancing makes an in-flight completion ineligible (ADR 0027):
@@ -174,9 +177,15 @@ impl Ask {
             transcript: self
                 .transcript
                 .iter()
-                .map(|(q, a)| ExchangeDto {
+                .enumerate()
+                .map(|(index, (q, a))| ExchangeDto {
                     q: q.clone(),
                     a: a.clone(),
+                    units: self
+                        .transcript_units
+                        .get(index)
+                        .cloned()
+                        .unwrap_or_else(|| crate::render::tutor_answer_units(a)),
                 })
                 .collect(),
             thinking: self.pending.is_some(),
@@ -275,6 +284,8 @@ impl Ask {
         match (reply, purpose) {
             (Reply::Answer(answer), Purpose::Question(question)) => {
                 self.cli.started = true;
+                self.transcript_units
+                    .push(crate::render::tutor_answer_units(&answer));
                 self.transcript.push((question, answer));
                 (None, None)
             }
@@ -406,7 +417,10 @@ enum RemoteAskPurpose {
 }
 
 enum RemoteAskOutcome {
-    Answer(String),
+    Answer {
+        text: String,
+        units: Vec<crate::render::ContentUnit>,
+    },
     Draft(ask::DraftCard),
     // an empty vec is a settled success, not an error
     Note(Vec<String>),
@@ -536,7 +550,10 @@ impl RemoteAsk {
             }
         };
         self.outcome = Some(match (reply, &self.purpose) {
-            (Reply::Answer(text), RemoteAskPurpose::Question) => RemoteAskOutcome::Answer(text),
+            (Reply::Answer(text), RemoteAskPurpose::Question) => RemoteAskOutcome::Answer {
+                units: crate::render::tutor_answer_units(&text),
+                text,
+            },
             (Reply::Answer(text), RemoteAskPurpose::Draft) => {
                 match ask::parse_drafted_card(&text) {
                     Ok(card) => RemoteAskOutcome::Draft(card),
@@ -557,16 +574,18 @@ impl RemoteAsk {
                 card_only: self.card_only,
                 status: self.status.clone(),
                 answer: None,
+                units: Vec::new(),
                 draft: None,
                 note: None,
                 error: None,
                 elapsed: Some(now_ms().saturating_sub(self.started_ms) / 1000),
             },
-            Some(RemoteAskOutcome::Answer(a)) => RemoteAskDto {
+            Some(RemoteAskOutcome::Answer { text, units }) => RemoteAskDto {
                 thinking: false,
                 card_only: self.card_only,
                 status: self.status.clone(),
-                answer: Some(a.clone()),
+                answer: Some(text.clone()),
+                units: units.clone(),
                 draft: None,
                 note: None,
                 error: None,
@@ -577,6 +596,7 @@ impl RemoteAsk {
                 card_only: self.card_only,
                 status: self.status.clone(),
                 answer: None,
+                units: Vec::new(),
                 draft: Some(DraftCardDto {
                     front: d.front.clone(),
                     back: d.back.clone(),
@@ -590,6 +610,7 @@ impl RemoteAsk {
                 card_only: self.card_only,
                 status: self.status.clone(),
                 answer: None,
+                units: Vec::new(),
                 draft: None,
                 note: Some(lines.clone()),
                 error: None,
@@ -600,6 +621,7 @@ impl RemoteAsk {
                 card_only: self.card_only,
                 status: self.status.clone(),
                 answer: None,
+                units: Vec::new(),
                 draft: None,
                 note: None,
                 error: Some(e.clone()),

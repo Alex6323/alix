@@ -1059,7 +1059,7 @@ deduplicated; `chosen` echoes the submission after that normalization, and
 
 ### AskDto / ExchangeDto / AskInfoDto / DraftCardDto
 
-`AskDto`: `transcript: [{q, a}]`, `thinking: bool`, `status: string?`,
+`AskDto`: `transcript: [{q, a, units}]`, `thinking: bool`, `status: string?`,
 `error: string?`, `draft: DraftCardDto?`. `status` may report that only frozen
 evidence is available when the live source cannot be used. `draft` is the last card the tutor
 drafted from the conversation (`POST /api/ask/card/draft`, §4.5); it persists
@@ -1068,6 +1068,11 @@ until the subject changes. `DraftCardDto`: `front: string`, `back:
 canonical lowercase name: `"claude"` | `"gemini"` | `"codex"` | `"copilot"`;
 clients use it to name who is answering), `model: string`, `effort: string`
 (literal `"default"` when unset).
+
+Each `ExchangeDto` keeps the raw answer in `a` for transcript replay and note
+or card creation. Its `units: [ContentUnitDto]` is the same answer parsed with
+the deck content grammar, including inline code runs and fenced `code` units;
+clients render `units` and do not parse `a` themselves.
 
 ### CreateCardReq / CreateCardResp
 
@@ -1435,16 +1440,17 @@ just the newest turn's outcome.
 | `card_only` | bool | Fixed when the job starts and unchanged on thinking, settled, and error replies. True means the server used only the request's fallback card payload; false on the idle DTO. |
 | `status` | string? | Fixed when the job starts and always serialized. The desktop tutor's frozen-only warning when frozen evidence exists without usable live context; otherwise `null`. |
 | `answer` | string? | The tutor's reply to a question call. `null` for a draft or note call, or while thinking. |
+| `units` | [ContentUnitDto] | The settled question answer parsed with the deck content grammar. Empty while thinking and for draft, note, error, or idle replies. The raw `answer` stays available for history replay. |
 | `draft` | DraftCardDto? | The drafted card from a draft call. `null` for a question or note call, or while thinking. |
 | `note` | [string]? | Condensed note lines (at most three) from a note call, since 0.6.0. `null` for a question/draft call, or while thinking; an empty array is a valid settled outcome ("nothing to save"), not an error. |
 | `error` | string? | Set on failure. |
 | `elapsed` | number? | Seconds the in-flight call has run; `null` once settled. |
 
 Example, settled with a draft (from the pinned test):
-`{"thinking":false,"card_only":false,"status":"The tutor has partial context.","answer":"so drops are deterministic","draft":{"front":"Why does Rust use one owner per value?","back":["so drops are deterministic","no GC needed"]},"note":null,"error":null,"elapsed":null}`.
+`{"thinking":false,"card_only":false,"status":"The tutor has partial context.","answer":"so drops are deterministic","units":[{"kind":"sentence","text":"so drops are deterministic","runs":[{"text":"so drops are deterministic"}]}],"draft":{"front":"Why does Rust use one owner per value?","back":["so drops are deterministic","no GC needed"]},"note":null,"error":null,"elapsed":null}`.
 
 Example, settled with a note (from the pinned test):
-`{"thinking":false,"card_only":false,"status":null,"answer":null,"draft":null,"note":["ownership drops values deterministically","no GC needed"],"error":null,"elapsed":null}`.
+`{"thinking":false,"card_only":false,"status":null,"answer":null,"units":[],"draft":null,"note":["ownership drops values deterministically","no GC needed"],"error":null,"elapsed":null}`.
 
 ### RemoteExamDto
 

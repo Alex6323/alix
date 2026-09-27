@@ -25,6 +25,12 @@ In the web panel, `Enter` inserts a newline and `Shift-Enter` sends. Closing a
 tutor that contains a conversation asks for an explicit click on **Leave
 anyway**; `Escape` chooses **Stay** so it cannot also abandon the card.
 
+Tutor replies use the same content grammar as a card. Ordinary explanation
+stays prose, backticks mark inline code, and multi-line code arrives in a
+fenced block that the panel renders as code rather than showing the fence
+markers. The raw reply is still kept for follow-up questions and for making a
+note or card.
+
 One conversation spans the **whole review run**. For Claude, `alix` uses
 `--session-id` for the first question and `--resume` for each follow-up, so the
 model remembers earlier cards and questions efficiently. Other backends re-inline

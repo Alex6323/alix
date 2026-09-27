@@ -487,6 +487,7 @@ impl JobsState {
                         card_only: false,
                         status: None,
                         answer: None,
+                        units: Vec::new(),
                         draft: None,
                         note: None,
                         error: None,

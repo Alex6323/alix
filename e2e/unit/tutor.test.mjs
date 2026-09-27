@@ -24,6 +24,11 @@ test("the adult app wires table rendering into the tutor", async () => {
     /^\s*appendTable,\s*$/m,
     "a table answer crashes the tutor unless app.js injects appendTable into its `ui`",
   );
+  assert.match(
+    tutorUi,
+    /^\s*appendUnits,\s*$/m,
+    "a structured tutor answer needs the shared recursive unit renderer",
+  );
 });
 
 test("tutor owns its transcript and chooses the walk endpoint explicitly", async () => {

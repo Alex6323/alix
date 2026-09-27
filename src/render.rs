@@ -356,6 +356,14 @@ fn text_units_with(
         .collect()
 }
 
+/// Parse a tutor reply with the same prose and structural-block grammar used
+/// by authored card content. Tutor replies have no frozen diagram assets, so
+/// every non-math fence remains source code.
+pub fn tutor_answer_units(text: &str) -> Vec<ContentUnit> {
+    let mut projector = DisplayProjector::default();
+    text_units_with(text, &mut projector, true, &[])
+}
+
 /// With `split_prose_sentences` set, one prose run can yield several units,
 /// and they share that run's span; the answer path, the only caller that
 /// reads spans, passes false.
@@ -2013,6 +2021,56 @@ mod tests {
             section_units(&lines),
             "an info-carrying line is content, not a closer"
         );
+    }
+
+    #[test]
+    fn a_tutor_answer_fence_is_one_code_unit() {
+        assert_eq!(
+            vec![ContentUnit::Code {
+                lines: vec![
+                    "fn answer() {".into(),
+                    "    println!(\"yes\");".into(),
+                    "}".into()
+                ]
+            }],
+            tutor_answer_units("```rust\nfn answer() {\n    println!(\"yes\");\n}\n```")
+        );
+    }
+
+    #[test]
+    fn tutor_answer_backticks_are_an_inline_code_run() {
+        let units = tutor_answer_units("Call `drop(value)` explicitly.");
+        let [ContentUnit::Sentence { text, runs }] = units.as_slice() else {
+            panic!("inline tutor prose must be one sentence unit");
+        };
+        assert_eq!("Call `drop(value)` explicitly.", text);
+        assert!(
+            runs.iter().any(|run| run.code && run.text == "drop(value)"),
+            "the backtick body must stay a code run: {runs:?}"
+        );
+    }
+
+    #[test]
+    fn tutor_answer_prose_splits_like_other_section_prose() {
+        assert_eq!(
+            vec![sentence("First idea."), sentence("Second idea.")],
+            tutor_answer_units("First idea. Second idea.")
+        );
+    }
+
+    #[test]
+    fn an_unclosed_tutor_answer_fence_is_one_code_unit() {
+        assert_eq!(
+            vec![ContentUnit::Code {
+                lines: vec!["let answer = 42;".into()]
+            }],
+            tutor_answer_units("```rust\nlet answer = 42;")
+        );
+    }
+
+    #[test]
+    fn a_lone_pipe_row_in_a_tutor_answer_stays_prose() {
+        assert_eq!(vec![sentence("| value |")], tutor_answer_units("| value |"));
     }
 
     #[test]

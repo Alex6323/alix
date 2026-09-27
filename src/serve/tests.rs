@@ -2108,13 +2108,23 @@ fn poll_ask_records_answer_in_transcript() {
     assert_eq!((None, None), r.poll_ask());
     assert!(r.ask_dto(None, None).thinking);
 
-    tx.send(Reply::Answer("because ownership moved".to_string()))
-        .unwrap();
+    let answer = "```rust\nfn moved() {\n    drop(value);\n}\n```";
+    tx.send(Reply::Answer(answer.to_string())).unwrap();
     assert_eq!((None, None), r.poll_ask());
     assert!(r.ask.pending.is_none());
     assert_eq!(1, r.ask.transcript.len());
     assert_eq!("why is s1 invalid?", r.ask.transcript[0].0);
-    assert_eq!("because ownership moved", r.ask.transcript[0].1);
+    assert_eq!(answer, r.ask.transcript[0].1);
+    let dto = r.ask_dto(None, None);
+    assert!(
+        matches!(
+            dto.transcript[0].units.as_slice(),
+            [crate::render::ContentUnit::Code { lines }]
+                if lines == &["fn moved() {", "    drop(value);", "}"]
+        ),
+        "the settled answer must carry its parsed code unit: {:?}",
+        dto.transcript[0].units
+    );
     assert!(r.ask.cli.started); // later questions --resume
 }
 

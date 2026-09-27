@@ -25,11 +25,13 @@
 //! (lenient drift on a Safety probe is the serious direction).
 
 use alix::{
-    ask::observed_model,
+    ask::{self, Reply, observed_model},
     backend::backend_for,
     calibrate::{PROBES, ProbeKind},
-    config::{AskConfig, BackendKind, ExamConfig},
+    card::Card,
+    config::{AskConfig, Audience, BackendKind, ExamConfig},
     exam::{ExamQuestion, Verdict, grade_answers},
+    render::ContentUnit,
 };
 
 // (backend, weakest "floor" model, weakest "floor" effort). Each Some adds a
@@ -134,6 +136,74 @@ fn assert_probe(name: &str) {
             }
         }
     }
+}
+
+fn assert_tutor_formats_code(kind: BackendKind) {
+    let card = Card::plain(
+        std::sync::Arc::from("calibrate.md"),
+        "How does a Rust function return a number?".to_string(),
+        vec!["Use a return expression or the `return` keyword.".to_string()],
+        Vec::new(),
+        1,
+    );
+    let sources = alix::deck::SourceLayers::default();
+    let context = ask::TutorContext {
+        links: &[],
+        sources: &sources,
+        root: None,
+        frozen: None,
+    };
+    let prompt = ask::question_prompt(
+        &card,
+        Audience::Adult,
+        &context,
+        "Show a complete multi-line Rust function named answer that returns 42.",
+        true,
+    );
+    let mut config = AskConfig {
+        backend: kind,
+        ..AskConfig::default()
+    };
+    config.command = backend_for(&config)
+        .expect("every calibrated backend is wired")
+        .command()
+        .to_string();
+    let (rx, _job) = ask::spawn(config, prompt, Vec::new());
+    let answer = match rx.recv().expect("the tutor backend must reply") {
+        Reply::Answer(answer) => answer,
+        Reply::Error(error) => panic!("tutor code-format probe on {} failed: {error}", kind.name()),
+    };
+    let units = alix::render::tutor_answer_units(&answer);
+    println!(
+        "calibrate: tutor-code backend={} observed={} answer={answer:?}",
+        kind.name(),
+        observed_model(kind.name()).unwrap_or_else(|| "unreported".to_string())
+    );
+    assert!(
+        units
+            .iter()
+            .any(|unit| matches!(unit, ContentUnit::Code { lines } if !lines.is_empty())),
+        "{} did not put multi-line code in a fenced block: {units:?}",
+        kind.name()
+    );
+}
+
+#[test]
+#[ignore = "real Claude CLI call; costed tutor format probe"]
+fn claude_formats_tutor_code_as_a_code_unit() {
+    assert_tutor_formats_code(BackendKind::Claude);
+}
+
+#[test]
+#[ignore = "real Codex CLI call; costed tutor format probe"]
+fn codex_formats_tutor_code_as_a_code_unit() {
+    assert_tutor_formats_code(BackendKind::Codex);
+}
+
+#[test]
+#[ignore = "real Copilot CLI call; costed tutor format probe"]
+fn copilot_formats_tutor_code_as_a_code_unit() {
+    assert_tutor_formats_code(BackendKind::Copilot);
 }
 
 #[test]

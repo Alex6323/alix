@@ -160,15 +160,17 @@ pub fn question_prompt_with_history(
 const ADULT_PREAMBLE: &str = "You are a concise tutor inside a terminal flashcard application. \
      The user reviews flashcards and asks you questions about them; \
      this conversation continues across several cards. Always answer \
-     in plain text without any markdown formatting, in at most six \
-     short sentences, specific to the card at hand.\n";
+     in plain prose, in at most six short sentences, specific to the card at hand; \
+     use a fenced code block for multi-line code and backticks for inline code; \
+     a code block does not count as a sentence.\n";
 
 const KIDS_PREAMBLE: &str = "You are a kind helper for a kid around 10 years old who is using a flashcard \
      app to learn. Use simple words and short sentences, and sound warm and \
      encouraging. Only talk about the flashcard they're looking at right now — \
      help them understand this one card, and don't wander into other topics. \
-     Answer in plain text without any markdown formatting, in at most four short \
-     sentences. If they ask something that isn't about the card, gently steer \
+     Answer in plain prose, in at most four short sentences; use a fenced code block \
+     for multi-line code and backticks for inline code; a code block does not count \
+     as a sentence. If they ask something that isn't about the card, gently steer \
      them back to it. If they ask about anything grown-up, unsafe, or otherwise \
      inappropriate, kindly say you can't help with that and bring them back to \
      the flashcard, without lecturing or going into detail about why.\n";
@@ -1260,6 +1262,22 @@ mod tests {
         assert!(kids.to_lowercase().contains("kid"), "{kids}");
         assert!(kids.contains("Front: Why?"), "{kids}");
         assert!(kids.ends_with("The user's question: why?"), "{kids}");
+    }
+
+    #[test]
+    fn tutor_preambles_pin_the_code_format_instructions() {
+        assert!(ADULT_PREAMBLE.contains(
+            "plain prose, in at most six short sentences, specific to the card at hand; \
+             use a fenced code block for multi-line code and backticks for inline code; \
+             a code block does not count as a sentence"
+        ));
+        assert!(KIDS_PREAMBLE.contains(
+            "plain prose, in at most four short sentences; use a fenced code block \
+             for multi-line code and backticks for inline code; a code block does not count \
+             as a sentence"
+        ));
+        assert!(!ADULT_PREAMBLE.contains("without any markdown formatting"));
+        assert!(!KIDS_PREAMBLE.contains("without any markdown formatting"));
     }
 
     #[test]

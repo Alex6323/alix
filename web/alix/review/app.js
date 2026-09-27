@@ -213,6 +213,7 @@ const tutor = createTutor({
   ui: {
     appendContext,
     appendQuote,
+    appendUnits,
     appendRuns,
     appendRunsOrText,
     appendTable,

@@ -7519,7 +7519,8 @@ impl Drop for FifoRelease {
 fn remote_ask_round_trips_an_answer_for_a_client_supplied_card() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
-    let fake = fake_reply(scripts.path(), "because it demonstrates addition");
+    let answer = "```rust\nfn answer() {\n    println!(\"four\");\n}\n```";
+    let fake = fake_reply(scripts.path(), answer);
     let (base, _guard) = spawn_full_server(Some(&fake));
 
     let resp = post_json(
@@ -7535,8 +7536,11 @@ fn remote_ask_round_trips_an_answer_for_a_client_supplied_card() {
     let body = poll_until(&base, "/api/remote/ask", |b| {
         !b["thinking"].as_bool().unwrap()
     });
+    assert_eq!(answer, body["answer"], "body: {body}");
+    assert_eq!("code", body["units"][0]["kind"], "body: {body}");
     assert_eq!(
-        "because it demonstrates addition", body["answer"],
+        serde_json::json!(["fn answer() {", "    println!(\"four\");", "}"]),
+        body["units"][0]["lines"],
         "body: {body}"
     );
     assert!(body["error"].is_null(), "body: {body}");
@@ -7558,10 +7562,7 @@ fn remote_ask_round_trips_an_answer_for_a_client_supplied_card() {
     let body = poll_until(&base, "/api/remote/ask", |b| {
         !b["thinking"].as_bool().unwrap()
     });
-    assert_eq!(
-        "because it demonstrates addition", body["answer"],
-        "body: {body}"
-    );
+    assert_eq!(answer, body["answer"], "body: {body}");
     assert!(body["error"].is_null(), "body: {body}");
 }
 

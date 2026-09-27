@@ -146,28 +146,34 @@ export function appendTable(parent, unit) {
   parent.appendChild(scroll);
 }
 
-/// A quoted block: its own units inside a blockquote, so a quote never
-/// renders its `>` marker as text.
-export function appendQuote(parent, units) {
-  const quote = el("blockquote", "quote");
+// The recursive content-unit renderer shared by ordinary tutor answers and
+// quoted blocks. The caller owns the outer container.
+export function appendUnits(parent, units) {
   for (const unit of units || []) {
     if (unit.kind === "sentence") {
       const paragraph = el("p");
       if (unit.runs) appendRuns(paragraph, unit.runs);
       else paragraph.textContent = unit.text || "";
-      quote.appendChild(paragraph);
+      parent.appendChild(paragraph);
     } else if (unit.kind === "code") {
       const pre = el("pre");
       pre.appendChild(el("code", null, (unit.lines || []).join("\n")));
-      quote.appendChild(pre);
+      parent.appendChild(pre);
     } else if (unit.kind === "checklist") {
-      appendChecklist(quote, unit.items);
+      appendChecklist(parent, unit.items);
     } else if (unit.kind === "table") {
-      appendTable(quote, unit);
+      appendTable(parent, unit);
     } else if (unit.kind === "quote") {
-      appendQuote(quote, unit.units);
+      appendQuote(parent, unit.units);
     }
   }
+}
+
+/// A quoted block: its own units inside a blockquote, so a quote never
+/// renders its `>` marker as text.
+export function appendQuote(parent, units) {
+  const quote = el("blockquote", "quote");
+  appendUnits(quote, units);
   parent.appendChild(quote);
 }
 

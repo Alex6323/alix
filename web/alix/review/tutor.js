@@ -10,6 +10,7 @@ export function createTutor({
 }) {
   const {
     appendQuote,
+    appendUnits,
     appendRuns,
     appendTable,
     appendRunsOrText,
@@ -195,7 +196,7 @@ export function createTutor({
 
   function fillLog(log) {
     const signature = JSON.stringify([
-      data.transcript.length,
+      data.transcript,
       data.thinking,
       data.status,
       data.error,
@@ -205,7 +206,10 @@ export function createTutor({
     log.innerHTML = "";
     for (const exchange of data.transcript) {
       log.appendChild(el("div", "ask-q", exchange.q));
-      log.appendChild(el("div", "ask-a", exchange.a));
+      const answer = el("div", "ask-a");
+      if (exchange.units && exchange.units.length) appendUnits(answer, exchange.units);
+      else answer.textContent = exchange.a;
+      log.appendChild(answer);
     }
     if (data.thinking) {
       const thinking = el("div", "ask-thinking");

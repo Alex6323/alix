@@ -1827,6 +1827,7 @@ fn askdto_populated_wire_shape() {
         transcript: vec![ExchangeDto {
             q: "why one owner?".to_string(),
             a: "so drops are deterministic".to_string(),
+            units: crate::render::tutor_answer_units("so drops are deterministic"),
         }],
         thinking: true,
         status: Some("asking claude".to_string()),
@@ -1837,7 +1838,15 @@ fn askdto_populated_wire_shape() {
         "AskDto.populated",
         &dto,
         json!({
-            "transcript": [{"q": "why one owner?", "a": "so drops are deterministic"}],
+            "transcript": [{
+                "q": "why one owner?",
+                "a": "so drops are deterministic",
+                "units": [{
+                    "kind": "sentence",
+                    "text": "so drops are deterministic",
+                    "runs": [{"text": "so drops are deterministic"}]
+                }]
+            }],
             "thinking": true,
             "status": "asking claude",
             "error": null,
@@ -1874,6 +1883,7 @@ fn askdto_with_draft_wire_shape() {
         transcript: vec![ExchangeDto {
             q: "why one owner?".to_string(),
             a: "so drops are deterministic".to_string(),
+            units: crate::render::tutor_answer_units("so drops are deterministic"),
         }],
         thinking: false,
         status: None,
@@ -1887,7 +1897,15 @@ fn askdto_with_draft_wire_shape() {
         "AskDto.with_draft",
         &dto,
         json!({
-            "transcript": [{"q": "why one owner?", "a": "so drops are deterministic"}],
+            "transcript": [{
+                "q": "why one owner?",
+                "a": "so drops are deterministic",
+                "units": [{
+                    "kind": "sentence",
+                    "text": "so drops are deterministic",
+                    "runs": [{"text": "so drops are deterministic"}]
+                }]
+            }],
             "thinking": false,
             "status": null,
             "error": null,
@@ -2316,6 +2334,7 @@ fn remoteaskdto_thinking_wire_shape() {
         card_only: false,
         status: None,
         answer: None,
+        units: Vec::new(),
         draft: None,
         note: None,
         error: None,
@@ -2329,6 +2348,7 @@ fn remoteaskdto_thinking_wire_shape() {
             "card_only": false,
             "status": null,
             "answer": null,
+            "units": [],
             "draft": null,
             "note": null,
             "error": null,
@@ -2344,6 +2364,7 @@ fn remoteaskdto_done_wire_shape() {
         card_only: false,
         status: Some("The tutor has partial context.".to_string()),
         answer: Some("so drops are deterministic".to_string()),
+        units: crate::render::tutor_answer_units("so drops are deterministic"),
         draft: Some(DraftCardDto {
             front: "Why does Rust use one owner per value?".to_string(),
             back: vec![
@@ -2363,6 +2384,11 @@ fn remoteaskdto_done_wire_shape() {
             "card_only": false,
             "status": "The tutor has partial context.",
             "answer": "so drops are deterministic",
+            "units": [{
+                "kind": "sentence",
+                "text": "so drops are deterministic",
+                "runs": [{"text": "so drops are deterministic"}]
+            }],
             "draft": {
                 "front": "Why does Rust use one owner per value?",
                 "back": ["so drops are deterministic", "no GC needed"]
@@ -2381,6 +2407,7 @@ fn remoteaskdto_note_wire_shape() {
         card_only: false,
         status: None,
         answer: None,
+        units: Vec::new(),
         draft: None,
         note: Some(vec![
             "ownership drops values deterministically".to_string(),
@@ -2397,6 +2424,7 @@ fn remoteaskdto_note_wire_shape() {
             "card_only": false,
             "status": null,
             "answer": null,
+            "units": [],
             "draft": null,
             "note": ["ownership drops values deterministically", "no GC needed"],
             "error": null,
