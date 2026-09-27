@@ -37,7 +37,13 @@ export function createTutor({
   }
 
   let open = false;
-  let data = { transcript: [], thinking: false, status: null, error: null };
+  let data = {
+    transcript: [],
+    thinking: false,
+    can_distill: false,
+    status: null,
+    error: null,
+  };
   let info = { backend: "claude", model: "default", effort: "default" };
   let poll = null;
   let confirmingClose = false;
@@ -116,7 +122,7 @@ export function createTutor({
   }
 
   function canDistill() {
-    return !data.thinking && data.transcript.length > 0;
+    return data.can_distill === true;
   }
 
   function saveNote() {

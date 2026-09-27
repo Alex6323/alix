@@ -1,4 +1,5 @@
 {
+  "can_distill": false,
   "draft": {
     "back": [
       "so drops are deterministic"

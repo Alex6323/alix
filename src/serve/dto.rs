@@ -256,6 +256,7 @@ pub(super) struct ExchangeDto {
 pub(super) struct AskDto {
     pub(super) transcript: Vec<ExchangeDto>,
     pub(super) thinking: bool,
+    pub(super) can_distill: bool,
     pub(super) status: Option<String>,
     pub(super) error: Option<String>,
     pub(super) draft: Option<DraftCardDto>,

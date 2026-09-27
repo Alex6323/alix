@@ -1059,11 +1059,15 @@ deduplicated; `chosen` echoes the submission after that normalization, and
 
 ### AskDto / ExchangeDto / AskInfoDto / DraftCardDto
 
-`AskDto`: `transcript: [{q, a, units}]`, `thinking: bool`, `status: string?`,
-`error: string?`, `draft: DraftCardDto?`. `status` may report that only frozen
-evidence is available when the live source cannot be used. `draft` is the last card the tutor
-drafted from the conversation (`POST /api/ask/card/draft`, §4.5); it persists
-until the subject changes. `DraftCardDto`: `front: string`, `back:
+`AskDto`: `transcript: [{q, a, units}]`, `thinking: bool`, `can_distill:
+bool`, `status: string?`, `error: string?`, `draft: DraftCardDto?`.
+`can_distill` is true only when the transcript has an answer newer than the
+last note or card made from it and no tutor call is running. Clients use this
+server-owned gate for both distillation actions. `status` may report that only
+frozen evidence is available when the live source cannot be used. `draft` is
+the last card the tutor drafted from the conversation (`POST
+/api/ask/card/draft`, §4.5); it persists until the subject changes.
+`DraftCardDto`: `front: string`, `back:
 [string]`. `AskInfoDto`: `backend: string` (the configured AI backend's
 canonical lowercase name: `"claude"` | `"gemini"` | `"codex"` | `"copilot"`;
 clients use it to name who is answering), `model: string`, `effort: string`

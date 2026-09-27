@@ -138,6 +138,7 @@ pub(super) struct Ask {
     pub(super) cli: CliSession,
     pub(super) transcript: Vec<Exchange>,
     transcript_units: Vec<Vec<crate::render::ContentUnit>>,
+    pub(super) noted_through: usize,
     pub(super) subject: Option<String>,
     pub(super) pending: Option<Pending>,
     pub(super) draft: Option<ask::DraftCard>,
@@ -150,6 +151,7 @@ impl Ask {
             cli: CliSession::new(),
             transcript: Vec::new(),
             transcript_units: Vec::new(),
+            noted_through: 0,
             subject: None,
             pending: None,
             draft: None,
@@ -161,6 +163,7 @@ impl Ask {
         if self.subject != subject {
             self.transcript.clear();
             self.transcript_units.clear();
+            self.noted_through = 0;
             self.draft = None;
             self.context_warning = None;
             // Advancing makes an in-flight completion ineligible (ADR 0027):
@@ -189,6 +192,7 @@ impl Ask {
                 })
                 .collect(),
             thinking: self.pending.is_some(),
+            can_distill: self.can_distill(),
             status: status.or_else(|| self.context_warning.clone()),
             error,
             draft: self.draft.as_ref().map(|d| DraftCardDto {
@@ -196,6 +200,10 @@ impl Ask {
                 back: d.back.clone(),
             }),
         }
+    }
+
+    fn can_distill(&self) -> bool {
+        self.pending.is_none() && self.transcript.len() > self.noted_through
     }
 
     // `subject` is the same key the owner's poll realigns with; deriving it
@@ -220,9 +228,7 @@ impl Ask {
             return false;
         }
         self.align(subject);
-        if matches!(action, AskAction::Condense | AskAction::DraftCard)
-            && self.transcript.is_empty()
-        {
+        if matches!(action, AskAction::Condense | AskAction::DraftCard) && !self.can_distill() {
             return false;
         }
         self.context_warning = (context.frozen.is_some() && !has_source_context)
@@ -245,7 +251,7 @@ impl Ask {
                 (prompt, Purpose::Question(q))
             }
             AskAction::Condense => (
-                ask::condense_prompt(card, &self.transcript),
+                ask::condense_prompt(card, &self.transcript[self.noted_through..]),
                 Purpose::Condense,
             ),
             AskAction::DraftCard => (
@@ -296,7 +302,10 @@ impl Ask {
                     return (Some("nothing to save".to_string()), None);
                 }
                 match save(&pending_card, &notes) {
-                    Ok(()) => (Some("note saved".to_string()), None),
+                    Ok(()) => {
+                        self.noted_through = self.transcript.len();
+                        (Some("note saved".to_string()), None)
+                    }
                     Err(e) => (None, Some(e)),
                 }
             }
@@ -305,6 +314,7 @@ impl Ask {
                 match ask::parse_drafted_card(&text) {
                     Ok(card) => {
                         self.draft = Some(card);
+                        self.noted_through = self.transcript.len();
                         (Some("card drafted".to_string()), None)
                     }
                     Err(e) => (None, Some(e.to_string())),

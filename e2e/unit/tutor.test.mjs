@@ -38,6 +38,7 @@ test("tutor owns its transcript and chooses the walk endpoint explicitly", async
   const transcript = {
     transcript: [{ q: "Why?", a: "Because." }],
     thinking: false,
+    can_distill: false,
     status: null,
     error: null,
   };
@@ -70,6 +71,14 @@ test("tutor owns its transcript and chooses the walk endpoint explicitly", async
   assert.equal(tutor.data(), transcript);
   assert.equal(calls[0].path, "/api/walk/ask");
   assert.equal(renders, 2);
+
+  await tutor.saveNote();
+  await tutor.draftCard();
+  assert.equal(calls.length, 1, "the server owns the distillation gate");
+
+  transcript.can_distill = true;
+  await tutor.draftCard();
+  assert.equal(calls[1].path, "/api/ask/card/draft");
 
   walking = false;
   calls.length = 0;

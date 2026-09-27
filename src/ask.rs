@@ -289,10 +289,12 @@ pub fn with_source_root(cfg: &AskConfig, root: &Path) -> AskConfig {
 pub fn condense_prompt(card: &Card, transcript: &[Exchange]) -> String {
     let mut p = String::from(
         "Below is a flashcard and a conversation the learner had about it. \
-         Condense the key insight of the conversation into AT MOST three \
-         short lines (each under 100 characters) that are worth rereading \
-         the next time this card comes up. Output ONLY those lines: plain \
-         text, no markdown, no bullets, no numbering.\n\n",
+         Extract the key points from the conversation that are worth rereading \
+         the next time this card comes up. Output each key point as one short line \
+         under 100 characters, at most three lines. Do not repeat anything the \
+         flashcard's existing notes already say. If the existing notes already \
+         cover every key point, output nothing. Output ONLY the key-point lines: \
+         plain text, no markdown, no bullets, no numbering.\n\n",
     );
     push_card(&mut p, card);
     for (q, a) in transcript {
@@ -1432,10 +1434,20 @@ mod tests {
     }
 
     #[test]
-    fn condense_prompt_contains_conversation() {
+    fn condense_prompt_pins_the_key_point_and_existing_note_contract() {
         let transcript = vec![("q".to_string(), "a".to_string())];
         let p = condense_prompt(&card(), &transcript);
-        assert!(p.contains("AT MOST three"));
+        assert!(p.contains("Output each key point as one short line"), "{p}");
+        assert!(p.contains("at most three lines"), "{p}");
+        assert!(
+            p.contains("Do not repeat anything the flashcard's existing notes already say"),
+            "{p}"
+        );
+        assert!(
+            p.contains("If the existing notes already cover every key point, output nothing"),
+            "{p}"
+        );
+        assert!(!p.contains("Condense the key insight"), "{p}");
         assert!(p.contains("Question: q"));
         assert!(p.contains("Answer: a"));
     }

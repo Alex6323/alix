@@ -1,4 +1,5 @@
 {
+  "can_distill": false,
   "draft": null,
   "error": null,
   "status": "asking claude",

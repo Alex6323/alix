@@ -115,6 +115,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a reshape cached for a card with a machine note is recomputed on the next
   `alix deck augment --target format`.
 
+- **Make this a note** and **Make this a card** now enable only for an
+  unprocessed tutor answer and disable again after a note is saved or a card
+  draft lands. Notes use only exchanges since the last note, keep one key
+  point per line, omit points the card's notes already cover, and save nothing
+  when they cover everything.
+
 - Tutor replies now use the deck content grammar on both reply wires. The web
   tutor renders fenced multi-line code as code blocks and backticks as inline
   code while keeping the raw reply for follow-up questions, notes, and cards.

@@ -2135,6 +2135,7 @@ fn ask_transcript_resets_when_the_card_changes() {
     r.ask
         .transcript
         .push(("old q".to_string(), "old a".to_string()));
+    r.ask.noted_through = 1;
     r.ask.subject = Some("a-different-card-id".to_string());
     r.ask.cli.started = true;
 
@@ -2143,6 +2144,7 @@ fn ask_transcript_resets_when_the_card_changes() {
     // Cleared and re-tagged, but the underlying Claude session (cli.started)
     // survives.
     assert!(r.ask.transcript.is_empty());
+    assert_eq!(0, r.ask.noted_through);
     assert_eq!(card.id(), r.ask.subject);
     assert!(r.ask.cli.started);
 }
@@ -2152,6 +2154,7 @@ fn poll_ask_condense_appends_note_to_sidecar_and_live_card() {
     let dir = tempfile::tempdir().unwrap();
     let (mut r, card, deck) = one_card_reviewing(dir.path());
     r.ask.transcript.push(("q".to_string(), "a".to_string()));
+    assert!(r.ask_dto(None, None).can_distill);
     let (tx, rx) = std::sync::mpsc::channel();
     r.ask.subject = card.id();
     r.ask.pending = Some(Pending {
@@ -2160,6 +2163,12 @@ fn poll_ask_condense_appends_note_to_sidecar_and_live_card() {
         purpose: Purpose::Condense,
         card,
     });
+    let pending = r.ask_dto(None, None);
+    assert!(pending.thinking);
+    assert!(
+        !pending.can_distill,
+        "a running tutor call closes the distillation gate"
+    );
     tx.send(Reply::Answer("- key insight to reread".to_string()))
         .unwrap();
     let (status, error) = r.poll_ask();
@@ -2178,6 +2187,62 @@ fn poll_ask_condense_appends_note_to_sidecar_and_live_card() {
             .and_then(|current| current.only_note())
             .is_some_and(|note| note.contains("key insight to reread"))
     );
+    assert!(
+        !r.ask_dto(None, None).can_distill,
+        "the exchange that made the note has crossed the watermark"
+    );
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    r.ask.pending = Some(Pending {
+        rx,
+        job: ask::AskJob::default(),
+        purpose: Purpose::Question("next question".to_string()),
+        card: r.session.current().unwrap().clone(),
+    });
+    tx.send(Reply::Answer("next answer".to_string())).unwrap();
+    assert_eq!((None, None), r.poll_ask());
+    assert!(
+        r.ask_dto(None, None).can_distill,
+        "the answer after the watermark can make a new note or card"
+    );
+}
+
+#[test]
+fn condense_prompt_contains_only_exchanges_after_the_watermark() {
+    let _lock = crate::testutil::exec_lock();
+    let dir = tempfile::tempdir().unwrap();
+    let (mut reviewing, card, _deck) = one_card_reviewing(dir.path());
+    reviewing.ask.subject = card.id();
+    reviewing.ask.transcript = vec![
+        (
+            "already noted question".to_string(),
+            "already noted answer".to_string(),
+        ),
+        ("fresh question".to_string(), "fresh answer".to_string()),
+    ];
+    reviewing.ask.noted_through = 1;
+
+    let prompt_path = dir.path().join("prompt");
+    let cli = crate::testutil::fake_cli(
+        dir.path(),
+        &format!("cat > {}; printf '%s\\n' ignored", prompt_path.display()),
+    );
+    let config = crate::testutil::ask_config(&cli);
+    assert!(reviewing.start_ask(&config, Audience::Adult, AskAction::Condense));
+    reviewing
+        .ask
+        .pending
+        .as_ref()
+        .expect("the condense job started")
+        .rx
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("the fake backend completed");
+
+    let prompt = std::fs::read_to_string(prompt_path).unwrap();
+    assert!(!prompt.contains("already noted question"), "{prompt}");
+    assert!(!prompt.contains("already noted answer"), "{prompt}");
+    assert!(prompt.contains("Question: fresh question"), "{prompt}");
+    assert!(prompt.contains("Answer: fresh answer"), "{prompt}");
 }
 
 #[test]
@@ -2351,6 +2416,7 @@ fn poll_ask_draft_surfaces_a_parsed_card() {
     let dir = tempfile::tempdir().unwrap();
     let (mut r, card, _deck) = one_card_reviewing(dir.path());
     r.ask.transcript.push(("q".to_string(), "a".to_string()));
+    assert!(r.ask_dto(None, None).can_distill);
     let (tx, rx) = std::sync::mpsc::channel();
     r.ask.subject = card.id();
     r.ask.pending = Some(Pending {
@@ -2370,6 +2436,10 @@ fn poll_ask_draft_surfaces_a_parsed_card() {
         .expect("a draft should be surfaced");
     assert_eq!("term?", draft.front);
     assert_eq!(vec!["definition".to_string()], draft.back);
+    assert!(
+        !r.ask_dto(None, None).can_distill,
+        "a drafted card crosses the same transcript watermark as a note"
+    );
 }
 
 #[test]
