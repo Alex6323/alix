@@ -783,6 +783,33 @@ mod tests {
     }
 
     #[test]
+    fn catalog_indexes_both_loose_decks_and_workspace_members_by_exact_id() {
+        let served = tempfile::tempdir().unwrap();
+        let loose = served.path().join("loose.md");
+        write_deck(&loose, "deck-loose", "card-loose");
+        let workspace = served.path().join("course");
+        std::fs::create_dir_all(workspace.join("decks")).unwrap();
+        std::fs::write(workspace.join("alix.toml"), "title = \"Course\"\n").unwrap();
+        let member = workspace.join("decks/member.md");
+        write_deck(&member, "deck-member", "card-member");
+        let catalog = SyncCatalog::load(
+            served.path(),
+            &crate::recent::RecentDecks::load(served.path().join("recent.json")),
+            &mut crate::cache::DeckCache::default(),
+        )
+        .unwrap();
+
+        let DeckLookup::One(loose_target) = catalog.deck("deck-loose") else {
+            panic!("the loose deck must be indexed exactly once");
+        };
+        let DeckLookup::One(member_target) = catalog.deck("deck-member") else {
+            panic!("the workspace member must be indexed exactly once");
+        };
+        assert_eq!(loose, loose_target.path);
+        assert_eq!(member, member_target.path);
+    }
+
+    #[test]
     fn pull_stages_private_files_and_describes_exact_rootless_payload() {
         let served = tempfile::tempdir().unwrap();
         let deck = served.path().join("inside.md");

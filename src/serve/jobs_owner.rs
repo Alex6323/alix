@@ -12,7 +12,8 @@ use anyhow::anyhow;
 
 use super::{catalog_owner::CatalogHandle, dto::*, jobs::*};
 use crate::{
-    config::{AskConfig, ExamConfig, GenerateDeckConfig},
+    assemble::AssembleConfig,
+    config::{AskConfig, Audience, ExamConfig, GenerateDeckConfig},
     deck::Deck,
     exam, generate, share, trace,
 };
@@ -22,6 +23,8 @@ pub(super) struct JobsState {
     // name map sees received and generated decks without waiting for the
     // next metadata drift check.
     pub(super) catalog: CatalogHandle,
+    pub(super) config: AssembleConfig,
+    pub(super) audience: Audience,
     pub(super) generating: Option<Generating>,
     pub(super) sharing: Option<Sharing>,
     pub(super) receiving: Option<Receiving>,
@@ -422,7 +425,14 @@ impl JobsState {
                 reply,
             } => {
                 let out = self.remote_slot_free().then(|| {
-                    let job = RemoteAsk::ask(&ask_cfg, &req.card, req.history, &req.question);
+                    let resolution = resolve_remote_card(&self.catalog, &self.config, &req.card);
+                    let job = RemoteAsk::ask(
+                        &ask_cfg,
+                        self.audience,
+                        resolution,
+                        req.history,
+                        &req.question,
+                    );
                     let dto = job.dto();
                     self.remote_ask = Some(job);
                     dto
@@ -438,7 +448,8 @@ impl JobsState {
                 reply,
             } => {
                 let out = self.remote_slot_free().then(|| {
-                    let job = RemoteAsk::draft(&ask_cfg, &req.card, req.history);
+                    let resolution = resolve_remote_card(&self.catalog, &self.config, &req.card);
+                    let job = RemoteAsk::draft(&ask_cfg, resolution, req.history);
                     let dto = job.dto();
                     self.remote_ask = Some(job);
                     dto
@@ -454,7 +465,8 @@ impl JobsState {
                 reply,
             } => {
                 let out = self.remote_slot_free().then(|| {
-                    let job = RemoteAsk::note(&ask_cfg, &req.card, req.history);
+                    let resolution = resolve_remote_card(&self.catalog, &self.config, &req.card);
+                    let job = RemoteAsk::note(&ask_cfg, resolution, req.history);
                     let dto = job.dto();
                     self.remote_ask = Some(job);
                     dto
@@ -473,6 +485,7 @@ impl JobsState {
                     None => RemoteAskDto {
                         thinking: false,
                         card_only: false,
+                        status: None,
                         answer: None,
                         draft: None,
                         note: None,

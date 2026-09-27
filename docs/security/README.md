@@ -183,11 +183,21 @@ The phone checks the served root id's grammar before deriving its paired
 directory from it, at pairing and at every open, so a malformed or
 path-shaped id from a desktop cannot place the paired tree outside `paired/`.
 
-Remote tutor inputs are supplied by the client, remote exams resolve a selected
-desktop deck, and remote generation accepts web URLs rather than a
-client-selected desktop path. The remote exam handlers deliberately avoid the
-poll path that writes progress. These controls do not turn pairing into a
-multi-user authorization system.
+Remote tutor requests carry client fallback text but resolve their stable deck
+and card ids against the desktop's served catalog. A match gives the tutor the
+desktop's assembled card and the same grounding as a local tutor call. A
+pairing-token holder can therefore make the desktop run its AI CLI rooted at
+the live local source of any served deck when that deck's effective
+`source_access` setting allows it, with the read tools granted by
+`ask::with_source_root`. The effective setting includes a workspace manifest's
+override. Unknown, ambiguous, unreadable, or unmatched cards stay card-only,
+and no phone-supplied path is used. The same pairing token already authorizes
+`/api/remote/ask`; there is no additional per-deck authorization boundary.
+
+Remote exams resolve a selected desktop deck, and remote generation accepts
+web URLs rather than a client-selected desktop path. The remote exam handlers
+deliberately avoid the poll path that writes progress. These controls do not
+turn pairing into a multi-user authorization system.
 
 ### Local server log
 
@@ -307,8 +317,9 @@ trust decision.
 A feature that runs its own AI subprocess derives that subprocess's
 configuration instead of reusing the tutor's. The grounding call that turns a
 declared source into a working directory plus read tools,
-`ask::with_source_root`, is reached only from the tutor's ask path, so no
-derived configuration acquires source grounding by that route. Deck
+`ask::with_source_root`, is reached only from a local or paired tutor's ask
+path, so no other derived configuration acquires source grounding by that
+route. Deck
 generation, trace generation, a workspace source refresh, exam grading, and
 workspace icon drawing additionally force the source-access flag off rather
 than inheriting it (`src/generate.rs`, `src/trace_ai.rs`,

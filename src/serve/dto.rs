@@ -721,10 +721,6 @@ pub(super) fn exam_dto(ex: &Examining) -> ExamDto {
 }
 
 #[derive(Debug, Deserialize)]
-#[expect(
-    dead_code,
-    reason = "required wire ids are consumed by the following resolution change"
-)]
 pub(super) struct RemoteCard {
     pub(super) deck_id: String,
     pub(super) card_id: String,
@@ -763,6 +759,7 @@ pub(super) struct RemoteNoteReq {
 pub(super) struct RemoteAskDto {
     pub(super) thinking: bool,
     pub(super) card_only: bool,
+    pub(super) status: Option<String>,
     pub(super) answer: Option<String>,
     pub(super) draft: Option<DraftCardDto>,
     /// An empty vec is a valid settled result ("nothing to save"), not an error.

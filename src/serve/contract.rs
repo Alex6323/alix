@@ -2314,6 +2314,7 @@ fn remoteaskdto_thinking_wire_shape() {
     let dto = RemoteAskDto {
         thinking: true,
         card_only: false,
+        status: None,
         answer: None,
         draft: None,
         note: None,
@@ -2326,6 +2327,7 @@ fn remoteaskdto_thinking_wire_shape() {
         json!({
             "thinking": true,
             "card_only": false,
+            "status": null,
             "answer": null,
             "draft": null,
             "note": null,
@@ -2340,6 +2342,7 @@ fn remoteaskdto_done_wire_shape() {
     let dto = RemoteAskDto {
         thinking: false,
         card_only: false,
+        status: Some("The tutor has partial context.".to_string()),
         answer: Some("so drops are deterministic".to_string()),
         draft: Some(DraftCardDto {
             front: "Why does Rust use one owner per value?".to_string(),
@@ -2358,6 +2361,7 @@ fn remoteaskdto_done_wire_shape() {
         json!({
             "thinking": false,
             "card_only": false,
+            "status": "The tutor has partial context.",
             "answer": "so drops are deterministic",
             "draft": {
                 "front": "Why does Rust use one owner per value?",
@@ -2375,6 +2379,7 @@ fn remoteaskdto_note_wire_shape() {
     let dto = RemoteAskDto {
         thinking: false,
         card_only: false,
+        status: None,
         answer: None,
         draft: None,
         note: Some(vec![
@@ -2390,6 +2395,7 @@ fn remoteaskdto_note_wire_shape() {
         json!({
             "thinking": false,
             "card_only": false,
+            "status": null,
             "answer": null,
             "draft": null,
             "note": ["ownership drops values deterministically", "no GC needed"],

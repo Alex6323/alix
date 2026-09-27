@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A paired phone's tutor is grounded like the desktop's when its stable deck
+  and card ids match: it receives the assembled card, every note layer, links,
+  frozen evidence, and the same allowed live source root. An unmatched or
+  unreadable card falls back to the phone's card text and says that it was
+  answered from the card alone.
+
 - A launch can skip the introduction of new cards. On the phone, the sheet a
   long-press on a deck row opens has a **Skip introduction** switch under
   Cram: switched on, that one session grades every fresh card on first sight

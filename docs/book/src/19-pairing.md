@@ -27,7 +27,13 @@ be at least 16 characters; `--lan` refuses a shorter one before it binds.
 Nothing under `/api/remote/*` writes the server's own progress store,
 session, decks, or recent list; it only computes an answer and hands it
 back. A tutor question re-sends the whole conversation with every call,
-since the server keeps no session for a remote client. An AI exam sitting is
+since the server keeps no session for a remote client. When the stable deck
+and card ids match what the desktop serves, the tutor uses the desktop's
+assembled card, notes, links, frozen evidence, and allowed live source root,
+just like the desktop tutor. When either id cannot be matched, the reply is
+marked `card_only` and uses only the card text the phone sent; the phone names
+that limit as "Answered from the card alone: the paired desktop could not
+match this card." An AI exam sitting is
 graded on the server, but the result, any remediation cards, and what counts
 as mastered stay the phone's to keep. A deck generation call hands back the
 full deck text and a suggested file name; a note condense hands back up to

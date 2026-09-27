@@ -13,10 +13,12 @@ use anyhow::{Result, bail};
 use super::{
     CardsBuild, SessionBuild,
     catalog::{DeckFiles, collect_images},
+    catalog_owner::CatalogHandle,
     dto::*,
 };
 use crate::{
     ask::{self, CliSession, Exchange, Reply},
+    assemble::{AssembleConfig, tutor_deck},
     augment::{self, AugmentCache},
     augment_ai,
     card::Card,
@@ -31,6 +33,59 @@ use crate::{
 pub(super) fn can_fetch_url_sources(cfg: &AskConfig) -> bool {
     cfg.allowed_tools.iter().any(|tool| tool == "WebFetch")
         && crate::backend::ensure_source_reachable(cfg, true).is_ok()
+}
+
+struct TutorInfo {
+    links: Vec<String>,
+    sources: crate::deck::SourceLayers,
+    root: Option<PathBuf>,
+    source_base: Option<SourceBase>,
+}
+
+struct TutorContextData {
+    links: Vec<String>,
+    sources: crate::deck::SourceLayers,
+    root: Option<PathBuf>,
+    frozen: Option<String>,
+}
+
+impl TutorContextData {
+    fn context(&self) -> ask::TutorContext<'_> {
+        ask::TutorContext {
+            links: &self.links,
+            sources: &self.sources,
+            root: self.root.as_deref(),
+            frozen: self.frozen.as_deref(),
+        }
+    }
+}
+
+fn tutor_context_for(card: &Card, info: TutorInfo, cfg: &AskConfig) -> (TutorContextData, bool) {
+    let frozen = info.source_base.as_ref().and_then(|base| {
+        let blocks = card
+            .citations
+            .iter()
+            .filter_map(|citation| trace::frozen_excerpt_block(citation, base))
+            .collect::<Vec<_>>();
+        (!blocks.is_empty()).then(|| blocks.join("\n\n"))
+    });
+    let root = info.root.filter(|path| path.exists());
+    let has_url_source = info
+        .sources
+        .own
+        .iter()
+        .chain(&info.sources.workspace)
+        .any(|source| crate::deck::is_url(source));
+    let has_source_context = root.is_some() || (has_url_source && can_fetch_url_sources(cfg));
+    (
+        TutorContextData {
+            links: info.links,
+            sources: info.sources,
+            root,
+            frozen,
+        },
+        has_source_context,
+    )
 }
 
 pub(super) struct Reviewing {
@@ -272,6 +327,78 @@ fn remote_card(c: &RemoteCard) -> Card {
     card
 }
 
+pub(super) enum RemoteCardResolution {
+    Grounded {
+        card: Card,
+        info: Box<crate::session::DeckInfo>,
+    },
+    CardOnly(Card),
+}
+
+fn remote_resolution_failure(
+    card: &RemoteCard,
+    cause: impl std::fmt::Display,
+) -> RemoteCardResolution {
+    eprintln!(
+        "error: remote tutor could not resolve deck `{}` card `{}`: {cause}; using request card fields only",
+        card.deck_id, card.card_id
+    );
+    RemoteCardResolution::CardOnly(remote_card(card))
+}
+
+pub(super) fn resolve_remote_card(
+    catalog: &CatalogHandle,
+    cfg: &AssembleConfig,
+    requested: &RemoteCard,
+) -> RemoteCardResolution {
+    let snapshot = match catalog.sync_snapshot() {
+        Some(Ok(snapshot)) => snapshot,
+        Some(Err(error)) => return remote_resolution_failure(requested, error),
+        None => return remote_resolution_failure(requested, "catalog owner is unavailable"),
+    };
+    let path = match snapshot.catalog.deck(&requested.deck_id) {
+        crate::sync::DeckLookup::One(target) => target.path.clone(),
+        crate::sync::DeckLookup::Ambiguous => {
+            return remote_resolution_failure(requested, "deck id is ambiguous");
+        }
+        crate::sync::DeckLookup::Missing => {
+            return remote_resolution_failure(requested, "deck id is missing");
+        }
+    };
+    resolve_remote_target(&path, cfg, requested)
+}
+
+fn resolve_remote_target(
+    path: &Path,
+    cfg: &AssembleConfig,
+    requested: &RemoteCard,
+) -> RemoteCardResolution {
+    let deck = match tutor_deck(path, cfg) {
+        Ok(deck) => deck,
+        Err(error) => return remote_resolution_failure(requested, error),
+    };
+    let Some(card) = deck
+        .cards
+        .into_iter()
+        .find(|card| card.id().as_deref() == Some(requested.card_id.as_str()))
+    else {
+        return remote_resolution_failure(requested, "card id is missing from the deck");
+    };
+    RemoteCardResolution::Grounded {
+        card,
+        info: Box::new(deck.info),
+    }
+}
+
+impl RemoteCardResolution {
+    fn into_card(self) -> (Card, bool) {
+        match self {
+            Self::Grounded { card, .. } => (card, false),
+            Self::CardOnly(card) => (card, true),
+        }
+    }
+}
+
 enum RemoteAskPurpose {
     Question,
     Draft,
@@ -290,6 +417,7 @@ pub(super) struct RemoteAsk {
     rx: Receiver<Reply>,
     purpose: RemoteAskPurpose,
     card_only: bool,
+    status: Option<String>,
     started_ms: u64,
     outcome: Option<RemoteAskOutcome>,
     job: ask::AskJob,
@@ -304,44 +432,88 @@ impl Drop for RemoteAsk {
 impl RemoteAsk {
     pub(super) fn ask(
         cfg: &AskConfig,
-        card: &RemoteCard,
+        audience: Audience,
+        resolution: RemoteCardResolution,
         history: Vec<RemoteTurn>,
         question: &str,
     ) -> Self {
-        let card = remote_card(card);
         let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
-        let no_sources = crate::deck::SourceLayers::default();
-        let context = ask::TutorContext {
-            links: &[],
-            sources: &no_sources,
-            root: None,
-            frozen: None,
+        let (card, context_data, has_source_context, card_only) = match resolution {
+            RemoteCardResolution::Grounded { card, info } => {
+                let info = *info;
+                let tutor_info = TutorInfo {
+                    links: info.links,
+                    sources: info.source_layers,
+                    root: info.source_access.then_some(info.base_root).flatten(),
+                    source_base: Some(info.source_base),
+                };
+                let (context, has_source_context) = tutor_context_for(&card, tutor_info, cfg);
+                (card, context, has_source_context, false)
+            }
+            RemoteCardResolution::CardOnly(card) => (
+                card,
+                TutorContextData {
+                    links: Vec::new(),
+                    sources: crate::deck::SourceLayers::default(),
+                    root: None,
+                    frozen: None,
+                },
+                false,
+                true,
+            ),
         };
-        let prompt =
-            ask::question_prompt_with_history(&card, Audience::Adult, &context, &prior, question);
-        Self::spawn(cfg, prompt, RemoteAskPurpose::Question, false)
+        let context = context_data.context();
+        let status = (context.frozen.is_some() && !has_source_context)
+            .then(|| ask::FROZEN_ONLY_WARNING.to_string());
+        let run_cfg = match context.root {
+            Some(root) => ask::with_source_root(cfg, root),
+            None => cfg.clone(),
+        };
+        let prompt = ask::question_prompt_with_history(&card, audience, &context, &prior, question);
+        Self::spawn(
+            &run_cfg,
+            prompt,
+            RemoteAskPurpose::Question,
+            card_only,
+            status,
+        )
     }
 
-    pub(super) fn draft(cfg: &AskConfig, card: &RemoteCard, history: Vec<RemoteTurn>) -> Self {
-        let card = remote_card(card);
+    pub(super) fn draft(
+        cfg: &AskConfig,
+        resolution: RemoteCardResolution,
+        history: Vec<RemoteTurn>,
+    ) -> Self {
+        let (card, card_only) = resolution.into_card();
         let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
         let prompt = ask::draft_card_prompt(&card, &prior);
-        Self::spawn(cfg, prompt, RemoteAskPurpose::Draft, false)
+        Self::spawn(cfg, prompt, RemoteAskPurpose::Draft, card_only, None)
     }
 
-    pub(super) fn note(cfg: &AskConfig, card: &RemoteCard, history: Vec<RemoteTurn>) -> Self {
-        let card = remote_card(card);
+    pub(super) fn note(
+        cfg: &AskConfig,
+        resolution: RemoteCardResolution,
+        history: Vec<RemoteTurn>,
+    ) -> Self {
+        let (card, card_only) = resolution.into_card();
         let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
         let prompt = ask::condense_prompt(&card, &prior);
-        Self::spawn(cfg, prompt, RemoteAskPurpose::Note, false)
+        Self::spawn(cfg, prompt, RemoteAskPurpose::Note, card_only, None)
     }
 
-    fn spawn(cfg: &AskConfig, prompt: String, purpose: RemoteAskPurpose, card_only: bool) -> Self {
+    fn spawn(
+        cfg: &AskConfig,
+        prompt: String,
+        purpose: RemoteAskPurpose,
+        card_only: bool,
+        status: Option<String>,
+    ) -> Self {
         let (rx, job) = ask::spawn(cfg.clone(), prompt, Vec::new());
         Self {
             rx,
             purpose,
             card_only,
+            status,
             started_ms: now_ms(),
             outcome: None,
             job,
@@ -383,6 +555,7 @@ impl RemoteAsk {
             None => RemoteAskDto {
                 thinking: true,
                 card_only: self.card_only,
+                status: self.status.clone(),
                 answer: None,
                 draft: None,
                 note: None,
@@ -392,6 +565,7 @@ impl RemoteAsk {
             Some(RemoteAskOutcome::Answer(a)) => RemoteAskDto {
                 thinking: false,
                 card_only: self.card_only,
+                status: self.status.clone(),
                 answer: Some(a.clone()),
                 draft: None,
                 note: None,
@@ -401,6 +575,7 @@ impl RemoteAsk {
             Some(RemoteAskOutcome::Draft(d)) => RemoteAskDto {
                 thinking: false,
                 card_only: self.card_only,
+                status: self.status.clone(),
                 answer: None,
                 draft: Some(DraftCardDto {
                     front: d.front.clone(),
@@ -413,6 +588,7 @@ impl RemoteAsk {
             Some(RemoteAskOutcome::Note(lines)) => RemoteAskDto {
                 thinking: false,
                 card_only: self.card_only,
+                status: self.status.clone(),
                 answer: None,
                 draft: None,
                 note: Some(lines.clone()),
@@ -422,6 +598,7 @@ impl RemoteAsk {
             Some(RemoteAskOutcome::Error(e)) => RemoteAskDto {
                 thinking: false,
                 card_only: self.card_only,
+                status: self.status.clone(),
                 answer: None,
                 draft: None,
                 note: None,
@@ -575,35 +752,18 @@ impl Reviewing {
         let Some(card) = self.session.current().cloned() else {
             return false;
         };
-        let links = self.links.get(&*card.deck_id).cloned().unwrap_or_default();
-        let no_sources = crate::deck::SourceLayers::default();
-        let sources = self
-            .source_layers
-            .get(&*card.deck_id)
-            .unwrap_or(&no_sources);
-        let root = self.base_roots.get(&*card.deck_id).cloned();
-        let frozen = self.source_bases.get(&*card.deck_id).and_then(|base| {
-            let blocks = card
-                .citations
-                .iter()
-                .filter_map(|citation| trace::frozen_excerpt_block(citation, base))
-                .collect::<Vec<_>>();
-            (!blocks.is_empty()).then(|| blocks.join("\n\n"))
-        });
-        let live_root = root.as_deref().filter(|path| path.exists());
-        let has_url_source = sources
-            .own
-            .iter()
-            .chain(&sources.workspace)
-            .any(|source| crate::deck::is_url(source));
-        let has_source_context =
-            live_root.is_some() || (has_url_source && can_fetch_url_sources(cfg));
-        let context = ask::TutorContext {
-            links: &links,
-            sources,
-            root: live_root,
-            frozen: frozen.as_deref(),
+        let info = TutorInfo {
+            links: self.links.get(&*card.deck_id).cloned().unwrap_or_default(),
+            sources: self
+                .source_layers
+                .get(&*card.deck_id)
+                .cloned()
+                .unwrap_or_default(),
+            root: self.base_roots.get(&*card.deck_id).cloned(),
+            source_base: self.source_bases.get(&*card.deck_id).cloned(),
         };
+        let (context_data, has_source_context) = tutor_context_for(&card, info, cfg);
+        let context = context_data.context();
         let subject = card.id();
         self.ask.start(
             cfg,
@@ -1461,6 +1621,7 @@ mod tests {
             rx: ask_rx,
             purpose: RemoteAskPurpose::Question,
             card_only: false,
+            status: None,
             started_ms: now_ms().saturating_sub(2_500),
             outcome: None,
             job: ask::AskJob::default(),
@@ -1475,6 +1636,37 @@ mod tests {
 
         assert_eq!(Some(2), ask.dto().elapsed);
         assert_eq!(Some(2), generating.dto().elapsed);
+    }
+
+    #[test]
+    fn a_deck_load_error_resolves_the_remote_card_from_request_fields_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("broken.md");
+        std::fs::write(&path, "---\nformat-version: [\n---\n").unwrap();
+        let requested = RemoteCard {
+            deck_id: "deck-broken".to_string(),
+            card_id: "card-broken".to_string(),
+            subject: "phone.md".to_string(),
+            front: "request front".to_string(),
+            back: vec!["request back".to_string()],
+            at: None,
+        };
+        let cfg = AssembleConfig {
+            review: crate::config::ReviewConfig::default(),
+            ask: AskConfig::default(),
+            pacing: crate::assemble::Pacing {
+                max_session: 10,
+                new_cards_percent: 30,
+            },
+            instance_store: None,
+        };
+
+        let RemoteCardResolution::CardOnly(card) = resolve_remote_target(&path, &cfg, &requested)
+        else {
+            panic!("a deck load error must use only the request card");
+        };
+        assert_eq!("request front", card.front);
+        assert_eq!(["request back"], card.back.as_slice());
     }
 
     #[test]

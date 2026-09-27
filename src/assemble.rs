@@ -64,6 +64,7 @@ pub struct Pacing {
     pub new_cards_percent: u8,
 }
 
+#[derive(Clone)]
 pub struct AssembleConfig {
     pub review: ReviewConfig,
     pub ask: AskConfig,
@@ -97,6 +98,15 @@ pub struct SessionBuild {
     pub topology_name: Option<String>,
     pub region_name: Option<String>,
     pub augment: AugmentCache,
+}
+
+pub struct TutorDeck {
+    pub cards: Vec<Card>,
+    pub info: DeckInfo,
+    label: String,
+    settings: DeckSettings,
+    augment: AugmentCache,
+    authored_len: usize,
 }
 
 pub struct WalkBuild {
@@ -347,6 +357,80 @@ pub fn exclude_unstamped(cards: Vec<Card>, label: &str) -> Vec<Card> {
     kept
 }
 
+pub fn tutor_deck(path: &Path, cfg: &AssembleConfig) -> Result<TutorDeck> {
+    let expanded = expand_workspaces(&[path.to_path_buf()])?;
+    let (cards, label, decks, settings) = load_decks(&expanded.decks, &expanded.defaults)?;
+    let mut cards = exclude_unstamped(cards, &label);
+    let mut infos = decks.into_values();
+    let mut info = infos
+        .next()
+        .context("the tutor deck did not produce deck information")?;
+    if infos.next().is_some() {
+        bail!("the tutor loader accepts exactly one deck");
+    }
+    let [settings] = settings.as_slice() else {
+        bail!("the tutor loader accepts exactly one deck");
+    };
+    let workspace_override = workspace::root_for_deck(&info.path)
+        .and_then(|root| workspace::manifest_source_access(&root));
+    info.source_access = workspace_override.unwrap_or(cfg.ask.source_access);
+
+    let augment = AugmentCache::open_for_workspace(&workspace::content_root(path))
+        .context("cannot open deck augmentation")?;
+    for card in &mut cards {
+        augment.apply_format(card);
+        if let Some(note) = card
+            .id()
+            .and_then(|id| augment.note(&id, card.content_fingerprint))
+            .map(str::to_string)
+        {
+            card.append_note(&[note]);
+        }
+    }
+    let authored_len = cards.len();
+
+    let subject: Arc<str> = Arc::from(label.as_str());
+    let deck_id: Arc<str> = info
+        .deck_token
+        .as_deref()
+        .map(Arc::from)
+        .unwrap_or_else(|| Arc::from(label.as_str()));
+    let personal = crate::personal::read(path, &label);
+    let deck_blocks: Vec<crate::sidecar::DeckCard> = cards
+        .iter()
+        .map(|card| crate::sidecar::DeckCard {
+            id: card.id().unwrap_or_default(),
+            notes: Vec::new(),
+        })
+        .collect();
+    let (roster, _orphans) = crate::sidecar::merge(&deck_blocks, &personal.blocks());
+    let mut personal_cards = personal.cards;
+    bind_personal(&mut personal_cards, &subject, &deck_id);
+    for mut card in personal_cards {
+        augment.apply_format(&mut card);
+        if let Some(note) = card
+            .id()
+            .and_then(|id| augment.note(&id, card.content_fingerprint))
+            .map(str::to_string)
+        {
+            card.append_note(&[note]);
+        }
+        cards.push(card);
+    }
+    for (card, seat) in cards.iter_mut().zip(&roster) {
+        card.notes.extend(seat.notes.iter().cloned());
+    }
+
+    Ok(TutorDeck {
+        cards,
+        info,
+        label,
+        settings: settings.clone(),
+        augment,
+        authored_len,
+    })
+}
+
 pub fn select(
     paths: Vec<PathBuf>,
     store: &mut Store,
@@ -382,37 +466,24 @@ pub fn select(
             deck.display()
         );
     }
-    let expanded = expand_workspaces(&deck_paths)?;
-    let (cards, deck_label, mut decks, settings) = load_decks(&expanded.decks, &expanded.defaults)?;
-    let mut cards = exclude_unstamped(cards, &deck_label);
-    for info in decks.values_mut() {
-        let workspace_override = workspace::root_for_deck(&info.path)
-            .and_then(|root| workspace::manifest_source_access(&root));
-        info.source_access = workspace_override.unwrap_or(cfg.ask.source_access);
-    }
-    let label = deck_label;
+    let TutorDeck {
+        mut cards,
+        info,
+        label,
+        settings,
+        augment,
+        authored_len,
+    } = tutor_deck(deck, cfg)?;
+    let decks = HashMap::from([(info.deck_token.clone().unwrap_or_default(), info)]);
 
     let deck_tokens: std::collections::HashSet<String> = decks
         .values()
         .filter_map(|d| d.deck_token.clone())
         .collect();
-    let augment = AugmentCache::open_for_workspace(&workspace::content_root(deck))
-        .context("cannot open deck augmentation")?;
-    for card in &mut cards {
-        augment.apply_format(card);
-        if let Some(note) = card
-            .id()
-            .and_then(|id| augment.note(&id, card.content_fingerprint))
-            .map(str::to_string)
-        {
-            card.append_note(&[note]);
-        }
-    }
-
     // Read while the vector is still complete: both filters below drop cards
     // a parent block's graduation is folded from, and cards whose progress
     // says a section was already met.
-    let whole = crate::session::WholeDecks::of(&cards, store);
+    let whole = crate::session::WholeDecks::of(&cards[..authored_len], store);
 
     let topology = resolve_topology(topology_sel, &augment, &deck_tokens)?;
     let topology_name = topology.map(|t| t.name.clone());
@@ -434,7 +505,6 @@ pub fn select(
 
     let review = cfg.review.for_workspace(&workspace::content_root(deck));
 
-    let subject: Arc<str> = Arc::from(label.as_str());
     let deck_id: Arc<str> = decks
         .values()
         .next()
@@ -442,43 +512,17 @@ pub fn select(
         .map(Arc::from)
         .unwrap_or_else(|| Arc::from(label.as_str()));
     // Quirk: a `--region` focus always excludes personal cards (they belong to
-    // no topology).
-    if region_sel.is_none() {
-        let personal = crate::personal::read(deck, &label);
-        let deck_blocks: Vec<crate::sidecar::DeckCard> = cards
-            .iter()
-            .map(|card| crate::sidecar::DeckCard {
-                id: card.id().unwrap_or_default(),
-                notes: Vec::new(),
-            })
-            .collect();
-        let (roster, _orphans) = crate::sidecar::merge(&deck_blocks, &personal.blocks());
-
-        let mut personal_cards = personal.cards;
-        bind_personal(&mut personal_cards, &subject, &deck_id);
-        for mut card in personal_cards {
-            augment.apply_format(&mut card);
-            if let Some(note) = card
-                .id()
-                .and_then(|id| augment.note(&id, card.content_fingerprint))
-                .map(str::to_string)
-            {
-                card.append_note(&[note]);
-            }
-            cards.push(card);
-        }
-        for (card, seat) in cards.iter_mut().zip(&roster) {
-            card.notes.extend(seat.notes.iter().cloned());
-        }
+    // no topology). The region-id retain above already enforces that invariant.
+    if region_sel.is_some() {
+        cards.retain(|card| card.line < PERSONAL_LINE_BASE);
     }
 
     // Order comes from the deck's own setting, not a CLI flag: ordering is
     // authored, not launched.
-    let target_settings: Vec<&DeckSettings> = settings.iter().collect();
     let order = resolve(
         "review",
         None,
-        target_settings.iter().map(|s| s.order),
+        std::iter::once(settings.order),
         Order::default(),
     );
 
@@ -1955,6 +1999,96 @@ it reads line two\n\
         assert_eq!(
             Some("mine on my own card".to_string()),
             note_for("card-vq1")
+        );
+    }
+
+    #[test]
+    fn the_tutor_loader_matches_review_cards_after_every_shared_enrichment() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rust.md");
+        write_initialized(
+            &path,
+            "## authored front\nauthored back\n> [!NOTE]\n> authored note\n<!-- id: card-q1 -->\n",
+        );
+        crate::personal::append_cards(
+            &path,
+            "deck-rust",
+            "## personal front\npersonal back\n<!-- id: card-vq1 -->\n",
+        )
+        .unwrap();
+        crate::personal::append_note(&path, "deck-rust", "card-q1", &["sidecar note".to_string()])
+            .unwrap();
+
+        let loaded = Deck::load(&path).unwrap();
+        let authored = loaded.cards.first().unwrap();
+        let id = authored.id().unwrap();
+        let mut cache = AugmentCache::open_for_deck(&loaded).unwrap();
+        cache.set_format(
+            &id,
+            augment::Format {
+                front: Some("formatted front".to_string()),
+                back: vec!["formatted back".to_string()],
+                note: None,
+                mode: None,
+            },
+            authored.format_fingerprint(),
+        );
+        cache.set_note(
+            &id,
+            "augmentation note".to_string(),
+            authored.content_fingerprint,
+        );
+        cache.save().unwrap();
+
+        let cfg = test_config();
+        let tutor = tutor_deck(&path, &cfg).unwrap();
+        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
+        let Selected::Review(review) = select(
+            vec![path],
+            &mut store,
+            &cfg,
+            &SelectOptions {
+                cram: true,
+                skip_introduction: true,
+                session: Some(100),
+                ..SelectOptions::default()
+            },
+        )
+        .unwrap() else {
+            panic!("a fact deck must review");
+        };
+        let signature = |card: &Card| {
+            (
+                card.id(),
+                card.front.clone(),
+                card.back_for_display().to_vec(),
+                card.notes_text(),
+            )
+        };
+        let mut tutor_cards: Vec<_> = tutor.cards.iter().map(signature).collect();
+        let mut review_cards: Vec<_> = review.session.cards().iter().map(signature).collect();
+        tutor_cards.sort();
+        review_cards.sort();
+
+        assert_eq!(review_cards, tutor_cards);
+        let authored = tutor_cards
+            .iter()
+            .find(|card| card.0.as_deref() == Some("card-q1"))
+            .expect("the authored card is loaded");
+        assert_eq!("formatted front", authored.1);
+        assert!(
+            authored.3.as_deref().is_some_and(|notes| {
+                notes.contains("authored note")
+                    && notes.contains("augmentation note")
+                    && notes.contains("sidecar note")
+            }),
+            "authored, augmentation, and sidecar notes all survive"
+        );
+        assert!(
+            tutor_cards
+                .iter()
+                .any(|card| card.0.as_deref() == Some("card-vq1")),
+            "personal cards are part of the shared tutor deck"
         );
     }
 

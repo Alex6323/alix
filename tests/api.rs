@@ -622,6 +622,83 @@ fn fake_reply_capturing_prompt(dir: &Path, reply: &str) -> (PathBuf, PathBuf) {
     (path, prompt)
 }
 
+fn fake_reply_capturing_prompt_and_cwd(dir: &Path, reply: &str) -> (PathBuf, PathBuf, PathBuf) {
+    let out = dir.join("fake-reply");
+    let prompt = dir.join("prompt.log");
+    let cwd = dir.join("cwd.log");
+    std::fs::write(&out, reply).unwrap();
+    let path = dir.join("fake-claude");
+    std::fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\npwd > {cwd}\ncat > {prompt}\ncat {out}\n",
+            cwd = cwd.display(),
+            prompt = prompt.display(),
+            out = out.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    (path, prompt, cwd)
+}
+
+fn add_grounded_tutor_fixture(dir: &Path) {
+    let deck_path = dir.join("grounded.md");
+    std::fs::write(dir.join("source.txt"), "source context\n").unwrap();
+    std::fs::write(
+        &deck_path,
+        "---\nformat-version: 1\nid: \"deck-grounded\"\nsource: source.txt\n---\n\
+         ## server authored front\nserver authored back\n> [!NOTE]\n> authored note sentinel\n\
+         <!-- at: 1 -->\n<!-- id: card-grounded -->\n",
+    )
+    .unwrap();
+    let deck = alix::deck::Deck::load(&deck_path).unwrap();
+    let card = deck.cards.first().unwrap();
+    let mut cache = AugmentCache::open_for_deck(&deck).unwrap();
+    cache.set_note(
+        "card-grounded",
+        "augmentation note sentinel".to_string(),
+        card.content_fingerprint,
+    );
+    cache.save().unwrap();
+    alix::personal::append_note(
+        &deck_path,
+        "deck-grounded",
+        "card-grounded",
+        &["personal sidecar note sentinel".to_string()],
+    )
+    .unwrap();
+}
+
+fn add_frozen_tutor_fixture(dir: &Path) {
+    let workspace = dir.join("frozen-workspace");
+    let decks = workspace.join("decks");
+    let assets = workspace.join("assets/deck-frozen");
+    std::fs::create_dir_all(&decks).unwrap();
+    std::fs::create_dir_all(&assets).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "").unwrap();
+    let bytes = b"fn frozen_sentinel() {}\n";
+    let object = alix::assets::object_name(bytes, "rs");
+    std::fs::write(assets.join(&object), bytes).unwrap();
+    let fingerprint = alix::source::format_locator_fingerprint(alix::source::excerpt_fingerprint(
+        &alix::source::Excerpt {
+            path: PathBuf::from("src/lib.rs"),
+            lines: vec![(1, "fn frozen_sentinel() {}".to_string())],
+            truncated: false,
+        },
+    ));
+    std::fs::write(
+        decks.join("frozen.md"),
+        format!(
+            "---\nformat-version: 1\nid: \"deck-frozen\"\nsource: missing-source-root\n---\n\
+             ## frozen front\nfrozen back\n\
+             <!-- at: src/lib.rs:1 fingerprint: {fingerprint} asset: {object} -->\n\
+             <!-- id: card-frozen -->\n"
+        ),
+    )
+    .unwrap();
+}
+
 /// Polls `GET path` (bounded: up to 5s, 20ms apart) until `done` accepts the
 /// parsed body, returning it — for the handful of endpoints that kick a
 /// background job (`thinking`/a phase change) rather than answering inline.
@@ -2167,20 +2244,21 @@ fn remote_card_requires_both_ids_for_ask_draft_and_note() {
 }
 
 #[test]
-fn remote_ask_reports_card_only_false_for_every_pre_resolution_shape() {
+fn a_missing_remote_deck_reports_card_only_true_for_every_result_shape() {
     let _lock = exec_lock();
-    let assert_false = |body: &serde_json::Value, phase: &str| {
-        assert_eq!(Some(false), body["card_only"].as_bool(), "{phase}: {body}");
+    let assert_true = |body: &serde_json::Value, phase: &str| {
+        assert_eq!(Some(true), body["card_only"].as_bool(), "{phase}: {body}");
     };
 
     {
         let scripts = TempDir::new().unwrap();
-        let fake = fake_reply(scripts.path(), "## drafted?\nanswer\n");
+        let (fake, prompt_path) =
+            fake_reply_capturing_prompt(scripts.path(), "## drafted?\nanswer\n");
         let (base, _guard) = spawn_full_server(Some(&fake));
 
         let response = http(&base, "GET", "/api/remote/ask", &[], &[]);
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-        assert_false(&body, "idle");
+        assert_eq!(Some(false), body["card_only"].as_bool(), "idle: {body}");
 
         let response = post_json(
             &base,
@@ -2188,11 +2266,14 @@ fn remote_ask_reports_card_only_false_for_every_pre_resolution_shape() {
             r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[],"question":"why?"}"#,
         );
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-        assert_false(&body, "question thinking");
+        assert_true(&body, "question thinking");
         let body = poll_until(&base, "/api/remote/ask", |body| {
             !body["thinking"].as_bool().unwrap()
         });
-        assert_false(&body, "answer");
+        assert_true(&body, "answer");
+        let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+        assert!(prompt.contains("Front: q"), "prompt: {prompt}");
+        assert!(prompt.contains("Answer:\na"), "prompt: {prompt}");
 
         let response = post_json(
             &base,
@@ -2200,11 +2281,11 @@ fn remote_ask_reports_card_only_false_for_every_pre_resolution_shape() {
             r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[{"q":"why?","a":"because"}]}"#,
         );
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-        assert_false(&body, "draft thinking");
+        assert_true(&body, "draft thinking");
         let body = poll_until(&base, "/api/remote/ask", |body| {
             !body["thinking"].as_bool().unwrap()
         });
-        assert_false(&body, "draft");
+        assert_true(&body, "draft");
 
         let response = post_json(
             &base,
@@ -2212,11 +2293,11 @@ fn remote_ask_reports_card_only_false_for_every_pre_resolution_shape() {
             r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[{"q":"why?","a":"because"}]}"#,
         );
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-        assert_false(&body, "note thinking");
+        assert_true(&body, "note thinking");
         let body = poll_until(&base, "/api/remote/ask", |body| {
             !body["thinking"].as_bool().unwrap()
         });
-        assert_false(&body, "note");
+        assert_true(&body, "note");
     }
 
     {
@@ -2234,13 +2315,372 @@ fn remote_ask_reports_card_only_false_for_every_pre_resolution_shape() {
             r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[],"question":"why?"}"#,
         );
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-        assert_false(&body, "error thinking");
+        assert_true(&body, "error thinking");
         let body = poll_until(&base, "/api/remote/ask", |body| {
             !body["thinking"].as_bool().unwrap()
         });
-        assert_false(&body, "error");
+        assert_true(&body, "error");
         assert!(body["error"].is_string(), "body: {body}");
     }
+}
+
+#[test]
+fn a_grounded_remote_card_uses_the_server_copy_for_questions_drafts_and_notes() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let (fake, prompt_path) =
+        fake_reply_capturing_prompt(scripts.path(), "## drafted front\ndrafted back\n");
+    let (base, _guard) = spawn_full_server(Some(&fake));
+
+    let question = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"deck_id":"deck-sample","card_id":"card-s1","subject":"phone.md","front":"phone fallback front","back":["phone fallback back"],"at":null},"history":[],"question":"why?"}"#,
+    );
+    let body: serde_json::Value = serde_json::from_slice(&question.body).unwrap();
+    assert_eq!(Some(false), body["card_only"].as_bool(), "{body}");
+    poll_until(&base, "/api/remote/ask", |body| {
+        !body["thinking"].as_bool().unwrap()
+    });
+    let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+    assert!(prompt.contains("2 + 2"), "prompt: {prompt}");
+    assert!(!prompt.contains("phone fallback front"), "prompt: {prompt}");
+
+    let draft = post_json(
+        &base,
+        "/api/remote/ask/draft",
+        r#"{"card":{"deck_id":"deck-sample","card_id":"card-s1","subject":"phone.md","front":"phone fallback front","back":["phone fallback back"],"at":null},"history":[{"q":"why?","a":"because"}]}"#,
+    );
+    let body: serde_json::Value = serde_json::from_slice(&draft.body).unwrap();
+    assert_eq!(Some(false), body["card_only"].as_bool(), "{body}");
+    poll_until(&base, "/api/remote/ask", |body| {
+        !body["thinking"].as_bool().unwrap()
+    });
+    let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+    assert!(prompt.contains("2 + 2"), "prompt: {prompt}");
+    assert!(!prompt.contains("phone fallback front"), "prompt: {prompt}");
+
+    let note = post_json(
+        &base,
+        "/api/remote/ask/note",
+        r#"{"card":{"deck_id":"deck-sample","card_id":"card-s1","subject":"phone.md","front":"phone fallback front","back":["phone fallback back"],"at":null},"history":[{"q":"why?","a":"because"}]}"#,
+    );
+    let body: serde_json::Value = serde_json::from_slice(&note.body).unwrap();
+    assert_eq!(Some(false), body["card_only"].as_bool(), "{body}");
+    poll_until(&base, "/api/remote/ask", |body| {
+        !body["thinking"].as_bool().unwrap()
+    });
+    let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+    assert!(prompt.contains("2 + 2"), "prompt: {prompt}");
+    assert!(!prompt.contains("phone fallback front"), "prompt: {prompt}");
+}
+
+#[test]
+fn a_grounded_remote_question_uses_all_notes_and_the_allowed_source_root() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let (fake, prompt_path, cwd_path) =
+        fake_reply_capturing_prompt_and_cwd(scripts.path(), "## drafted front\ndrafted back\n");
+    let (base, guard) =
+        spawn_full_server_fixture(Some(&fake), add_grounded_tutor_fixture, |opts| {
+            opts.cfg.ask.source_access = true
+        });
+    let card = r#"{"deck_id":"deck-grounded","card_id":"card-grounded","subject":"phone.md","front":"phone front","back":["phone back"],"at":null}"#;
+
+    let response = post_json(
+        &base,
+        "/api/remote/ask",
+        &format!(r#"{{"card":{card},"history":[],"question":"why?"}}"#),
+    );
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(Some(false), body["card_only"].as_bool(), "{body}");
+    poll_until(&base, "/api/remote/ask", |body| {
+        !body["thinking"].as_bool().unwrap()
+    });
+    let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+    assert!(
+        prompt.contains("authored note sentinel"),
+        "prompt: {prompt}"
+    );
+    assert!(
+        prompt.contains("augmentation note sentinel"),
+        "prompt: {prompt}"
+    );
+    assert!(
+        prompt.contains("personal sidecar note sentinel"),
+        "prompt: {prompt}"
+    );
+    assert_eq!(
+        guard.dir.path().canonicalize().unwrap(),
+        PathBuf::from(std::fs::read_to_string(&cwd_path).unwrap().trim())
+            .canonicalize()
+            .unwrap()
+    );
+
+    for endpoint in ["/api/remote/ask/draft", "/api/remote/ask/note"] {
+        let response = post_json(
+            &base,
+            endpoint,
+            &format!(r#"{{"card":{card},"history":[{{"q":"why?","a":"because"}}]}}"#),
+        );
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(Some(false), body["card_only"].as_bool(), "{body}");
+        poll_until(&base, "/api/remote/ask", |body| {
+            !body["thinking"].as_bool().unwrap()
+        });
+        let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+        assert!(
+            prompt.contains("authored note sentinel"),
+            "prompt: {prompt}"
+        );
+        assert!(
+            prompt.contains("augmentation note sentinel"),
+            "prompt: {prompt}"
+        );
+        assert!(
+            prompt.contains("personal sidecar note sentinel"),
+            "prompt: {prompt}"
+        );
+    }
+}
+
+#[test]
+fn source_access_off_keeps_grounded_notes_without_rooting_the_remote_job() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let (fake, prompt_path, cwd_path) = fake_reply_capturing_prompt_and_cwd(scripts.path(), "fine");
+    let (base, guard) =
+        spawn_full_server_fixture(Some(&fake), add_grounded_tutor_fixture, |opts| {
+            opts.cfg.ask.source_access = false
+        });
+    let response = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"deck_id":"deck-grounded","card_id":"card-grounded","subject":"phone.md","front":"phone front","back":["phone back"],"at":null},"history":[],"question":"why?"}"#,
+    );
+    assert_eq!(200, response.status);
+    poll_until(&base, "/api/remote/ask", |body| {
+        !body["thinking"].as_bool().unwrap()
+    });
+    let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+    assert!(
+        prompt.contains("authored note sentinel"),
+        "prompt: {prompt}"
+    );
+    assert!(
+        prompt.contains("augmentation note sentinel"),
+        "prompt: {prompt}"
+    );
+    assert!(
+        prompt.contains("personal sidecar note sentinel"),
+        "prompt: {prompt}"
+    );
+    let cwd = PathBuf::from(std::fs::read_to_string(&cwd_path).unwrap().trim());
+    assert_ne!(
+        guard.dir.path().canonicalize().unwrap(),
+        cwd.canonicalize().unwrap(),
+        "source_access off must not root the helper in the deck source"
+    );
+}
+
+#[test]
+fn frozen_remote_grounding_without_a_live_root_reports_the_desktop_warning() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let (fake, prompt_path) = fake_reply_capturing_prompt(scripts.path(), "fine");
+    let (base, _guard) = spawn_full_server_fixture(Some(&fake), add_frozen_tutor_fixture, |opts| {
+        opts.cfg.ask.source_access = true
+    });
+    let response = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"deck_id":"deck-frozen","card_id":"card-frozen","subject":"phone.md","front":"phone front","back":["phone back"],"at":null},"history":[],"question":"why?"}"#,
+    );
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(Some(false), body["card_only"].as_bool(), "{body}");
+    assert_eq!(
+        Some(alix::ask::FROZEN_ONLY_WARNING),
+        body["status"].as_str(),
+        "{body}"
+    );
+    let body = poll_until(&base, "/api/remote/ask", |body| {
+        !body["thinking"].as_bool().unwrap()
+    });
+    assert_eq!(
+        Some(alix::ask::FROZEN_ONLY_WARNING),
+        body["status"].as_str(),
+        "{body}"
+    );
+    let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+    assert!(
+        prompt.contains("fn frozen_sentinel() {}"),
+        "prompt: {prompt}"
+    );
+}
+
+#[test]
+fn ambiguous_decks_and_absent_cards_use_only_the_request_card() {
+    let _lock = exec_lock();
+
+    {
+        let scripts = TempDir::new().unwrap();
+        let (fake, prompt_path) = fake_reply_capturing_prompt(scripts.path(), "fine");
+        let (base, _guard) = spawn_full_server_fixture(
+            Some(&fake),
+            |dir| {
+                for name in ["ambiguous-one.md", "ambiguous-two.md"] {
+                    std::fs::write(
+                        dir.join(name),
+                        "---\nformat-version: 1\nid: \"deck-ambiguous\"\n---\n\
+                         ## server front\nserver back\n<!-- id: card-server -->\n",
+                    )
+                    .unwrap();
+                }
+            },
+            |_| {},
+        );
+        let response = post_json(
+            &base,
+            "/api/remote/ask",
+            r#"{"card":{"deck_id":"deck-ambiguous","card_id":"card-server","subject":"phone.md","front":"ambiguous fallback front","back":["ambiguous fallback back"],"at":null},"history":[],"question":"why?"}"#,
+        );
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(Some(true), body["card_only"].as_bool(), "{body}");
+        poll_until(&base, "/api/remote/ask", |body| {
+            !body["thinking"].as_bool().unwrap()
+        });
+        let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+        assert!(
+            prompt.contains("ambiguous fallback front"),
+            "prompt: {prompt}"
+        );
+        assert!(!prompt.contains("server front"), "prompt: {prompt}");
+    }
+
+    {
+        let scripts = TempDir::new().unwrap();
+        let (fake, prompt_path) = fake_reply_capturing_prompt(scripts.path(), "fine");
+        let (base, _guard) = spawn_full_server(Some(&fake));
+        let response = post_json(
+            &base,
+            "/api/remote/ask",
+            r#"{"card":{"deck_id":"deck-sample","card_id":"card-absent","subject":"phone.md","front":"absent fallback front","back":["absent fallback back"],"at":null},"history":[],"question":"why?"}"#,
+        );
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(Some(true), body["card_only"].as_bool(), "{body}");
+        poll_until(&base, "/api/remote/ask", |body| {
+            !body["thinking"].as_bool().unwrap()
+        });
+        let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+        assert!(prompt.contains("absent fallback front"), "prompt: {prompt}");
+        assert!(!prompt.contains("2 + 2"), "prompt: {prompt}");
+    }
+}
+
+#[test]
+fn an_unreadable_indexed_deck_uses_only_the_request_card() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let (fake, prompt_path) = fake_reply_capturing_prompt(scripts.path(), "fine");
+    let (base, guard) = spawn_full_server(Some(&fake));
+    let grounded = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"deck_id":"deck-sample","card_id":"card-s1","subject":"phone.md","front":"first fallback","back":["first fallback"],"at":null},"history":[],"question":"why?"}"#,
+    );
+    assert_eq!(200, grounded.status);
+    poll_until(&base, "/api/remote/ask", |body| {
+        !body["thinking"].as_bool().unwrap()
+    });
+
+    let path = guard.dir().join("sample.md");
+    let original = std::fs::metadata(&path).unwrap().permissions();
+    let mut unreadable = original.clone();
+    unreadable.set_mode(0o000);
+    std::fs::set_permissions(&path, unreadable).unwrap();
+    let response = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"deck_id":"deck-sample","card_id":"card-s1","subject":"phone.md","front":"unreadable fallback front","back":["unreadable fallback back"],"at":null},"history":[],"question":"why?"}"#,
+    );
+    std::fs::set_permissions(&path, original).unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(Some(true), body["card_only"].as_bool(), "{body}");
+    poll_until(&base, "/api/remote/ask", |body| {
+        !body["thinking"].as_bool().unwrap()
+    });
+    let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+    assert!(
+        prompt.contains("unreadable fallback front"),
+        "prompt: {prompt}"
+    );
+    assert!(!prompt.contains("2 + 2"), "prompt: {prompt}");
+}
+
+#[test]
+fn an_exact_reversed_card_id_resolves_to_the_server_reversed_half() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let (fake, prompt_path) = fake_reply_capturing_prompt(scripts.path(), "fine");
+    let (base, _guard) = spawn_full_server_fixture(
+        Some(&fake),
+        |dir| {
+            std::fs::write(
+                dir.join("reverse.md"),
+                "---\nformat-version: 1\nid: \"deck-reverse\"\ndirection: both\n---\n\
+                 ## server forward front\nserver forward back\n<!-- id: card-reverse -->\n",
+            )
+            .unwrap();
+        },
+        |_| {},
+    );
+    let response = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"deck_id":"deck-reverse","card_id":"card-reverse-r","subject":"phone.md","front":"phone front","back":["phone back"],"at":null},"history":[],"question":"why?"}"#,
+    );
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(Some(false), body["card_only"].as_bool(), "{body}");
+    poll_until(&base, "/api/remote/ask", |body| {
+        !body["thinking"].as_bool().unwrap()
+    });
+    let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+    assert!(
+        prompt.contains("Front: server forward back"),
+        "prompt: {prompt}"
+    );
+    assert!(
+        prompt.contains("Answer:\nserver forward front"),
+        "prompt: {prompt}"
+    );
+    assert!(!prompt.contains("phone front"), "prompt: {prompt}");
+}
+
+#[test]
+fn a_remote_question_uses_the_servers_kids_audience() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let (fake, prompt_path) = fake_reply_capturing_prompt(scripts.path(), "fine");
+    let (base, _guard) =
+        spawn_full_server_fixture(Some(&fake), |_| {}, |opts| opts.audience = Audience::Kids);
+    let response = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"deck_id":"deck-sample","card_id":"card-s1","subject":"phone.md","front":"phone front","back":["phone back"],"at":null},"history":[],"question":"why?"}"#,
+    );
+    assert_eq!(200, response.status);
+    poll_until(&base, "/api/remote/ask", |body| {
+        !body["thinking"].as_bool().unwrap()
+    });
+    let prompt = std::fs::read_to_string(&prompt_path).unwrap();
+    assert!(
+        prompt.contains("You are a kind helper for a kid around 10 years old"),
+        "prompt: {prompt}"
+    );
+    assert!(
+        !prompt.contains("You are a concise tutor"),
+        "prompt: {prompt}"
+    );
 }
 
 /// The request-body caps are generous by design (256 KiB): a body of a few

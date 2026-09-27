@@ -354,6 +354,9 @@ pub fn draft_card_prompt(card: &Card, transcript: &[Exchange]) -> String {
     for b in &card.back {
         p.push_str(&format!("{b}\n"));
     }
+    for note in &card.notes {
+        p.push_str(&format!("Note: {}\n", note.body));
+    }
     p.push_str("\nThe conversation:\n");
     for (q, a) in transcript {
         p.push_str(&format!("Q: {q}\nA: {a}\n"));

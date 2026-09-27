@@ -255,6 +255,7 @@ pub fn run_review(
         cfg,
     } = opts;
     let ask_cfg = cfg.ask.clone();
+    let jobs_cfg = cfg.clone();
     let review_cfg = cfg.review;
     let keys = ReviewKeys::from(&bindings);
     let picker_keys = PickerKeysDto::from(&picker_keys);
@@ -308,6 +309,8 @@ pub fn run_review(
         failure.clone(),
         JobsState {
             catalog: catalog.clone(),
+            config: jobs_cfg,
+            audience,
             generating: None,
             sharing: None,
             receiving: None,

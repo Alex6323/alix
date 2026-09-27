@@ -371,12 +371,25 @@ onto disk.
 A remote tutor turn is stateless on the server: `POST /api/remote/ask
 {card, history, question}` re-sends the card's required stable `deck_id` and
 `card_id`, its fallback text, and the prior exchanges (`history`, a list of
-`RemoteTurn`) every time; an empty `history` is exactly the first turn. Poll
+`RemoteTurn`) every time; an empty `history` is exactly the first turn. The
+server first resolves `deck_id` through its served catalog and then matches
+`card_id` exactly in the same assembled deck the desktop tutor uses. A match
+therefore includes authored and personal cards, cached formatting and notes,
+personal sidecar notes, links, sources, frozen excerpts, and the same
+`source_access` decision. A local source root, when allowed and live, becomes
+the AI helper's working directory. Unknown or ambiguous deck ids, an absent
+card id, or a deck/catalog load failure use the request's fallback text
+instead and set `card_only: true`; no path supplied by the client is opened.
+
+Poll
 `GET /api/remote/ask` while `thinking`, then read `answer` or `error`,
 mirroring §4.5's pattern. A settled reply stays readable on `GET
 /api/remote/ask` until the next POST replaces the slot, and a GET before any
 POST is not an error, just a blank `RemoteAskDto` (`thinking: false`,
-`card_only: false`, everything nullable is `null`). `POST
+`card_only: false`, everything nullable is `null`). `status` is always
+serialized. It carries the same frozen-only warning as the desktop tutor when
+frozen evidence exists without usable live source context, and is `null`
+otherwise. `POST
 /api/remote/ask/draft {card, history}` distills the exchange into a draft
 card the same way `/api/ask/card/draft` does. Like `/api/ask/card/draft` and
 `/api/ask/card/create` (§4.5), it is adult-only (403 under `[serve] audience
@@ -1420,6 +1433,7 @@ just the newest turn's outcome.
 |---|---|---|
 | `thinking` | bool | Poll while true. |
 | `card_only` | bool | Fixed when the job starts and unchanged on thinking, settled, and error replies. True means the server used only the request's fallback card payload; false on the idle DTO. |
+| `status` | string? | Fixed when the job starts and always serialized. The desktop tutor's frozen-only warning when frozen evidence exists without usable live context; otherwise `null`. |
 | `answer` | string? | The tutor's reply to a question call. `null` for a draft or note call, or while thinking. |
 | `draft` | DraftCardDto? | The drafted card from a draft call. `null` for a question or note call, or while thinking. |
 | `note` | [string]? | Condensed note lines (at most three) from a note call, since 0.6.0. `null` for a question/draft call, or while thinking; an empty array is a valid settled outcome ("nothing to save"), not an error. |
@@ -1427,10 +1441,10 @@ just the newest turn's outcome.
 | `elapsed` | number? | Seconds the in-flight call has run; `null` once settled. |
 
 Example, settled with a draft (from the pinned test):
-`{"thinking":false,"card_only":false,"answer":"so drops are deterministic","draft":{"front":"Why does Rust use one owner per value?","back":["so drops are deterministic","no GC needed"]},"note":null,"error":null,"elapsed":null}`.
+`{"thinking":false,"card_only":false,"status":"The tutor has partial context.","answer":"so drops are deterministic","draft":{"front":"Why does Rust use one owner per value?","back":["so drops are deterministic","no GC needed"]},"note":null,"error":null,"elapsed":null}`.
 
 Example, settled with a note (from the pinned test):
-`{"thinking":false,"card_only":false,"answer":null,"draft":null,"note":["ownership drops values deterministically","no GC needed"],"error":null,"elapsed":null}`.
+`{"thinking":false,"card_only":false,"status":null,"answer":null,"draft":null,"note":["ownership drops values deterministically","no GC needed"],"error":null,"elapsed":null}`.
 
 ### RemoteExamDto
 

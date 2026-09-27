@@ -8,5 +8,6 @@
     "ownership drops values deterministically",
     "no GC needed"
   ],
+  "status": null,
   "thinking": false
 }
