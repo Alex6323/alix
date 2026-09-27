@@ -160,7 +160,7 @@ void main() {
           )
           .first,
     );
-    expect(quote.textAlign, TextAlign.justify);
+    expect(quote.textAlign, TextAlign.start);
   });
 
   testWidgets('a reshaped full answer keeps stanza spacing between steps', (

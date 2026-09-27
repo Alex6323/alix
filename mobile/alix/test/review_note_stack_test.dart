@@ -182,7 +182,7 @@ void main() {
           .ancestor(of: find.text(quoted), matching: find.byType(InlineRuns))
           .first,
     );
-    expect(runs.textAlign, TextAlign.justify);
+    expect(runs.textAlign, TextAlign.start);
   });
 
   testWidgets('a checklist inside a note uses the note prose alignment', (
@@ -218,7 +218,7 @@ void main() {
           .ancestor(of: find.text(itemText), matching: find.byType(InlineRuns))
           .first,
     );
-    expect(runs.textAlign, TextAlign.justify);
+    expect(runs.textAlign, TextAlign.start);
   });
 
   testWidgets('a checklist on the centred question keeps its rows at the start', (
@@ -259,15 +259,11 @@ void main() {
     expect(runs.textAlign, TextAlign.start);
   });
 
-  testWidgets('a quotation on the question keeps its prose justified', (
+  testWidgets('a quotation on the question sets its prose at the start', (
     tester,
   ) async {
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
-    // Room for fifty characters at the question's size, so the width rule
-    // does not decide this test.
-    tester.platformDispatcher.textScaleFactorTestValue = 0.5;
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     const quoted = 'A quoted passage that belongs to the question.';
 
     await tester.pumpWidget(
@@ -297,7 +293,7 @@ void main() {
           .ancestor(of: find.text(quoted), matching: find.byType(InlineRuns))
           .first,
     );
-    expect(runs.textAlign, TextAlign.justify);
+    expect(runs.textAlign, TextAlign.start);
   });
 
   testWidgets('a checklist nested in a question quotation stays left aligned', (
@@ -346,15 +342,11 @@ void main() {
     expect(runs.textAlign, TextAlign.start);
   });
 
-  testWidgets('a sentence in nested question quotations stays justified', (
+  testWidgets('a sentence in nested question quotations stays at the start', (
     tester,
   ) async {
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
-    // Room for fifty characters at the question's size, so the width rule
-    // does not decide this test.
-    tester.platformDispatcher.textScaleFactorTestValue = 0.5;
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     const quoted = 'A sentence inside two quotations on the question.';
 
     await tester.pumpWidget(
@@ -386,7 +378,7 @@ void main() {
           .ancestor(of: find.text(quoted), matching: find.byType(InlineRuns))
           .first,
     );
-    expect(runs.textAlign, TextAlign.justify);
+    expect(runs.textAlign, TextAlign.start);
   });
 
   testWidgets('a checklist in nested question quotations stays left aligned', (
@@ -435,7 +427,7 @@ void main() {
     expect(runs.textAlign, TextAlign.start);
   });
 
-  testWidgets('prose is justified only where a line holds about fifty characters', (
+  testWidgets('note prose is ragged right at every width and text scale', (
     tester,
   ) async {
     final attempt = TextEditingController();
@@ -444,14 +436,11 @@ void main() {
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     const body = 'A note long enough to be prose.';
 
-    // A badged note is as wide as the card column, the surface less 40, and is
-    // set at 15: twenty-five ems is a 375 column.
     const rows = [
-      (width: 800.0, scale: 1.0, expected: TextAlign.justify),
-      (width: 415.0, scale: 1.0, expected: TextAlign.justify),
-      (width: 414.0, scale: 1.0, expected: TextAlign.start),
-      (width: 360.0, scale: 1.0, expected: TextAlign.start),
-      (width: 800.0, scale: 1.5, expected: TextAlign.start),
+      (width: 800.0, scale: 1.0),
+      (width: 415.0, scale: 1.0),
+      (width: 360.0, scale: 1.0),
+      (width: 800.0, scale: 1.5),
     ];
     for (final row in rows) {
       await tester.binding.setSurfaceSize(Size(row.width, 800));
@@ -467,7 +456,7 @@ void main() {
       );
       expect(
         runs.textAlign,
-        row.expected,
+        TextAlign.start,
         reason: 'surface ${row.width} at text scale ${row.scale}',
       );
     }

@@ -109,105 +109,21 @@ That it shows the presence of bugs, never their absence.
     expect(ink).not.toBe(border);
   }
 
-  // Justified prose needs about fifty characters a line, which is 25em of its
-  // own size, and each block measures its OWN column: at 450px the answer
-  // holds fifty characters while the indented quotation and the padded notes
-  // do not.
+  // Prose below the question is set ragged right at every width: the answer,
+  // the quotation and the notes never justify, on a wide desktop or a phone
+  // held upright alike.
   const sentences = page.locator(
     "#ansRegion .reveal > .answer, #ansRegion blockquote.quote > .answer, .note > p",
   );
-  const measure = () =>
-    sentences.evaluateAll((nodes) =>
-      nodes.map((node) => {
-        const style = getComputedStyle(node);
-        return {
-          width: node.getBoundingClientRect().width,
-          threshold: Number.parseFloat(style.fontSize) * 25,
-          alignment: style.textAlign,
-        };
-      }),
-    );
-  const rows: [number, string[]][] = [
-    [900, ["justify", "justify", "justify", "justify"]],
-    [450, ["justify", "start", "start", "start"]],
-    [425, ["start", "start", "start", "start"]],
-    [360, ["start", "start", "start", "start"]],
-  ];
-  for (const [viewport, alignments] of rows) {
+  await expect(sentences).toHaveCount(4);
+  for (const viewport of [900, 450, 360]) {
     await page.setViewportSize({ width: viewport, height: 800 });
     await expect
-      .poll(async () => (await measure()).map((sentence) => sentence.alignment), {
-        message: `answer, quotation, two notes at a ${viewport}px viewport`,
-      })
-      .toEqual(alignments);
-    for (const sentence of await measure()) {
-      expect(
-        sentence.alignment,
-        `viewport ${viewport}px: ${JSON.stringify(sentence)}`,
-      ).toBe(sentence.width >= sentence.threshold ? "justify" : "start");
-    }
-  }
-});
-
-test("a choice note uses its own font size when choosing whether to justify", async ({ page }) => {
-  fs.mkdirSync(path.join(NOTES_WORKSPACE, "decks"), { recursive: true });
-  fs.writeFileSync(path.join(NOTES_WORKSPACE, "alix.toml"), 'title = "Choice Note Measure"\n');
-  fs.writeFileSync(
-    path.join(NOTES_WORKSPACE, "decks", "measure.md"),
-    `---
-format-version: 1
-id: "deck-00000000000000000000000016"
-title: "Choice Note Measure"
----
-## Which unit owns the alignment threshold?
-- [x] The prose block
-- [ ] The browser viewport
-- [ ] The surrounding region
-<!-- choices: single -->
-> [!NOTE]
-> Measure the paragraph itself before justification because responsibilities and prerequisites otherwise create visible rivers between ordinary words.
-<!-- id: card-choicenotemeasure1 -->
-`,
-  );
-
-  await page.setViewportSize({ width: 480, height: 800 });
-  await page.locator("#navRefresh").click();
-  await adultDeckRow(page, "Choice Note Measure").click();
-  await adultDeckRow(page, "measure").click();
-  await page.getByTitle("choose a depth").click();
-  await Promise.all([
-    page.waitForResponse((response) => response.url().includes("/api/select")),
-    page.getByRole("button", { name: /^Recognize/ }).click(),
-  ]);
-  await Promise.all([
-    page.waitForResponse((response) => response.url().includes("/api/choose")),
-    page.getByRole("button", { name: "The prose block" }).click(),
-  ]);
-
-  // A choice card sets its note at 1.05rem, not at the answer's size, so the
-  // note's own 25em is 420px: at 480px its 411px column stays ragged.
-  const measure = () =>
-    page.locator(".note > p").evaluate((node) => {
-      const style = getComputedStyle(node);
-      return {
-        width: node.getBoundingClientRect().width,
-        threshold: Number.parseFloat(style.fontSize) * 25,
-        alignment: style.textAlign,
-      };
-    });
-  const rows: [number, string][] = [
-    [480, "start"],
-    [900, "justify"],
-  ];
-  for (const [viewport, alignment] of rows) {
-    await page.setViewportSize({ width: viewport, height: 800 });
-    await expect
-      .poll(async () => (await measure()).alignment, { message: `viewport ${viewport}px` })
-      .toBe(alignment);
-    const note = await measure();
-    expect(note.alignment, `viewport ${viewport}px: ${JSON.stringify(note)}`).toBe(
-      note.width >= note.threshold ? "justify" : "start",
-    );
+      .poll(
+        () => sentences.evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).textAlign)),
+        { message: `answer, quotation, two notes at a ${viewport}px viewport` },
+      )
+      .toEqual(["start", "start", "start", "start"]);
   }
 });
 

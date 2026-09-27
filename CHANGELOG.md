@@ -84,14 +84,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- A revealed answer is set in the card's proportional face and justified, on
+- A revealed answer is set in the card's proportional face, ragged right, on
   the web and on the phone alike. Monospace stays where it carries meaning: a
   code span, a fenced block, a typed line's expected text. Both clients had
   set the whole answer in monospace, which was TUI heritage rather than a
-  ruling. The note is justified with it, and the last line of a paragraph
-  stays unstretched, as newspapers set it. Where a line holds fewer than about
-  fifty characters (a phone held upright), the prose is set ragged instead:
-  without hyphenation, justified narrow lines open wide gaps.
+  ruling. The note is set the same way. An earlier unreleased build justified
+  both above a fifty-character line; that rule is gone, since without
+  hyphenation justified lines open gaps at every width, only less so on wide
+  ones.
 
 - The phone review card now wraps the question, every answer unit and every
   note at one measure instead of insetting the answer and the note inside the
