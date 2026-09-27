@@ -109,6 +109,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a reshape cached for a card with a machine note is recomputed on the next
   `alix deck augment --target format`.
 
+- Remote tutor card requests now require `deck_id` and `card_id`, and every
+  remote tutor response includes `card_only`. A client that omits either id
+  receives an ordinary 400 response.
+
 - A revealed answer is set in the card's proportional face, ragged right, on
   the web and on the phone alike. Monospace stays where it carries meaning: a
   code span, a fenced block, a typed line's expected text. Both clients had

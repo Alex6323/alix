@@ -2828,15 +2828,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TutorCard dco_decode_tutor_card(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return TutorCard(
       id: dco_decode_String(arr[0]),
-      subject: dco_decode_String(arr[1]),
-      front: dco_decode_String(arr[2]),
-      back: dco_decode_list_String(arr[3]),
-      at: dco_decode_opt_String(arr[4]),
-      line: dco_decode_usize(arr[5]),
+      deckId: dco_decode_String(arr[1]),
+      subject: dco_decode_String(arr[2]),
+      front: dco_decode_String(arr[3]),
+      back: dco_decode_list_String(arr[4]),
+      at: dco_decode_opt_String(arr[5]),
+      line: dco_decode_usize(arr[6]),
     );
   }
 
@@ -4466,6 +4467,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TutorCard sse_decode_tutor_card(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_id = sse_decode_String(deserializer);
+    var var_deckId = sse_decode_String(deserializer);
     var var_subject = sse_decode_String(deserializer);
     var var_front = sse_decode_String(deserializer);
     var var_back = sse_decode_list_String(deserializer);
@@ -4473,6 +4475,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_line = sse_decode_usize(deserializer);
     return TutorCard(
       id: var_id,
+      deckId: var_deckId,
       subject: var_subject,
       front: var_front,
       back: var_back,
@@ -5968,6 +5971,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_tutor_card(TutorCard self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.id, serializer);
+    sse_encode_String(self.deckId, serializer);
     sse_encode_String(self.subject, serializer);
     sse_encode_String(self.front, serializer);
     sse_encode_list_String(self.back, serializer);

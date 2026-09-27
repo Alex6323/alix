@@ -369,13 +369,14 @@ hand it back: a result leaves the server only as the HTTP response, never
 onto disk.
 
 A remote tutor turn is stateless on the server: `POST /api/remote/ask
-{card, history, question}` re-sends the whole card and prior exchanges
-(`history`, a list of `RemoteTurn`) every time; an empty `history` is
-exactly the first turn. Poll `GET /api/remote/ask` while `thinking`, then
-read `answer` or `error`, mirroring §4.5's pattern. A settled reply stays
-readable on `GET /api/remote/ask` until the next POST replaces the slot,
-and a GET before any POST is not an error, just a blank `RemoteAskDto`
-(`thinking: false`, everything else `null`). `POST
+{card, history, question}` re-sends the card's required stable `deck_id` and
+`card_id`, its fallback text, and the prior exchanges (`history`, a list of
+`RemoteTurn`) every time; an empty `history` is exactly the first turn. Poll
+`GET /api/remote/ask` while `thinking`, then read `answer` or `error`,
+mirroring §4.5's pattern. A settled reply stays readable on `GET
+/api/remote/ask` until the next POST replaces the slot, and a GET before any
+POST is not an error, just a blank `RemoteAskDto` (`thinking: false`,
+`card_only: false`, everything nullable is `null`). `POST
 /api/remote/ask/draft {card, history}` distills the exchange into a draft
 card the same way `/api/ask/card/draft` does. Like `/api/ask/card/draft` and
 `/api/ask/card/create` (§4.5), it is adult-only (403 under `[serve] audience
@@ -663,10 +664,10 @@ first, same as a double `POST`.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/remote/ask` | `{card, history, question}` (`RemoteAskReq`) | `RemoteAskDto` | 400 bad/oversized body / empty question / a card with empty front and back; 409 a turn is already thinking |
+| POST | `/api/remote/ask` | `{card, history, question}` (`RemoteAskReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty question / a card with empty front and back; 409 a turn is already thinking |
 | GET | `/api/remote/ask` | – | `RemoteAskDto` (poll) | – |
-| POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / empty `history`; 403 kids; 409 a turn is already thinking |
-| POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / empty `history`; 409 a turn is already thinking |
+| POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 403 kids; 409 a turn is already thinking |
+| POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 409 a turn is already thinking |
 | POST | `/api/remote/exam/start` | `{deck}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / a non-trace deck with no deck or workspace source / a trace deck with no checkpoints / the backend can't reach a non-trace deck's grounding |
 | GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when no sitting is open) | – |
 | POST | `/api/remote/exam/grade` | `{answers: [string]}` | `RemoteExamDto` | 400 bad/oversized body / wrong number of answers; 409 no sitting open / not in the answering phase |
@@ -1381,14 +1382,15 @@ hop numbers).
 
 ### RemoteCard / RemoteTurn / RemoteAskReq / RemoteDraftReq / RemoteNoteReq
 
-Request bodies for the remote surface (§4.11). The server holds no card or
-session of its own for a remote call, so the client sends full context every
-time; these derive `Deserialize` only, so, like `CreateCardReq`, they are
-documented here but not snapshot-pinned (§8).
+Request bodies for the remote surface (§4.11). The server holds no tutor
+session of its own for a remote call, so the client sends the stable ids,
+fallback card text, and history every time; these derive `Deserialize` only,
+so, like `CreateCardReq`, they are documented here but not snapshot-pinned
+(§8).
 
-`RemoteCard`: `subject: string`, `front: string`, `back: [string]`, `at:
-string?` (one card citation locator, if any: carried through for
-completeness, though the ungrounded tutor prompt doesn't read it).
+`RemoteCard`: required `deck_id: string`, required `card_id: string`,
+`subject: string`, `front: string`, `back: [string]`, `at: string?`. The text
+fields and optional citation locator are the card-only fallback payload.
 
 `RemoteTurn`: one prior tutor exchange the client re-sends: `q: string`,
 `a: string`.
@@ -1405,7 +1407,7 @@ kept as its own type so the name matches its own endpoint).
 
 Example `RemoteAskReq` body (a real request from `tests/api.rs`'s remote
 round-trip suite):
-`{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},"history":[],"question":"why does this matter?"}`.
+`{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},"history":[],"question":"why does this matter?"}`.
 
 ### RemoteAskDto
 
@@ -1417,6 +1419,7 @@ just the newest turn's outcome.
 | Key | Type | Meaning |
 |---|---|---|
 | `thinking` | bool | Poll while true. |
+| `card_only` | bool | Fixed when the job starts and unchanged on thinking, settled, and error replies. True means the server used only the request's fallback card payload; false on the idle DTO. |
 | `answer` | string? | The tutor's reply to a question call. `null` for a draft or note call, or while thinking. |
 | `draft` | DraftCardDto? | The drafted card from a draft call. `null` for a question or note call, or while thinking. |
 | `note` | [string]? | Condensed note lines (at most three) from a note call, since 0.6.0. `null` for a question/draft call, or while thinking; an empty array is a valid settled outcome ("nothing to save"), not an error. |
@@ -1424,10 +1427,10 @@ just the newest turn's outcome.
 | `elapsed` | number? | Seconds the in-flight call has run; `null` once settled. |
 
 Example, settled with a draft (from the pinned test):
-`{"thinking":false,"answer":"so drops are deterministic","draft":{"front":"Why does Rust use one owner per value?","back":["so drops are deterministic","no GC needed"]},"note":null,"error":null,"elapsed":null}`.
+`{"thinking":false,"card_only":false,"answer":"so drops are deterministic","draft":{"front":"Why does Rust use one owner per value?","back":["so drops are deterministic","no GC needed"]},"note":null,"error":null,"elapsed":null}`.
 
 Example, settled with a note (from the pinned test):
-`{"thinking":false,"answer":null,"draft":null,"note":["ownership drops values deterministically","no GC needed"],"error":null,"elapsed":null}`.
+`{"thinking":false,"card_only":false,"answer":null,"draft":null,"note":["ownership drops values deterministically","no GC needed"],"error":null,"elapsed":null}`.
 
 ### RemoteExamDto
 

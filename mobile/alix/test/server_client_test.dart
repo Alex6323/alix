@@ -111,6 +111,35 @@ void main() {
     });
   });
 
+  group('remote tutor wire models', () {
+    test('TutorCardContext sends both stable ids', () {
+      const card = TutorCardContext(
+        deckId: 'deck-d1',
+        cardId: 'card-q1',
+        subject: 'sample.md',
+        front: 'q',
+        back: ['a'],
+      );
+
+      expect(card.toJson(), {
+        'deck_id': 'deck-d1',
+        'card_id': 'card-q1',
+        'subject': 'sample.md',
+        'front': 'q',
+        'back': ['a'],
+        'at': null,
+      });
+    });
+
+    test('RemoteAsk reads card_only and defaults an absent field to false', () {
+      expect(RemoteAsk.fromJson(const {'thinking': false}).cardOnly, isFalse);
+      expect(
+        RemoteAsk.fromJson(const {'thinking': false, 'card_only': true}).cardOnly,
+        isTrue,
+      );
+    });
+  });
+
   group('HttpServerClient', () {
     HttpServer? server;
 
@@ -151,7 +180,13 @@ void main() {
       expect((await client.version())?.version, '0.6.0');
       expect(
         await client.postAsk(
-          const TutorCardContext(subject: 's', front: 'f', back: ['b']),
+          const TutorCardContext(
+            deckId: 'deck-d1',
+            cardId: 'card-q1',
+            subject: 's',
+            front: 'f',
+            back: ['b'],
+          ),
           const [],
           'why?',
         ),
@@ -246,6 +281,7 @@ void main() {
       final ask = await client.getAsk();
       expect(ask, isNotNull);
       expect(ask!.thinking, isFalse);
+      expect(ask.cardOnly, isFalse);
       expect(ask.answer, 'so drops are deterministic');
       expect(ask.draft, isNotNull);
       expect(ask.draft!.front, 'Why does Rust use one owner per value?');
@@ -374,14 +410,27 @@ void main() {
       addTearDown(client.close);
 
       final result = await client.postNote(
-        const TutorCardContext(subject: 's', front: 'f', back: ['b']),
+        const TutorCardContext(
+          deckId: 'deck-d1',
+          cardId: 'card-q1',
+          subject: 's',
+          front: 'f',
+          back: ['b'],
+        ),
         const [TutorTurn(q: 'q1', a: 'a1')],
       );
 
       expect(result, isTrue);
       expect(seenMethod, 'POST');
       expect(seenPath, '/api/remote/ask/note');
-      expect(seenBody?['card'], {'subject': 's', 'front': 'f', 'back': ['b'], 'at': null});
+      expect(seenBody?['card'], {
+        'deck_id': 'deck-d1',
+        'card_id': 'card-q1',
+        'subject': 's',
+        'front': 'f',
+        'back': ['b'],
+        'at': null,
+      });
       expect(seenBody?['history'], [
         {'q': 'q1', 'a': 'a1'},
       ]);
@@ -488,7 +537,16 @@ void main() {
       addTearDown(client.close);
 
       expect(
-        client.postNote(const TutorCardContext(subject: 's', front: 'f', back: ['b']), const []),
+        client.postNote(
+          const TutorCardContext(
+            deckId: 'deck-d1',
+            cardId: 'card-q1',
+            subject: 's',
+            front: 'f',
+            back: ['b'],
+          ),
+          const [],
+        ),
         throwsA(isA<PairingExpired>()),
       );
       expect(client.generateStart('https://example.org'), throwsA(isA<PairingExpired>()));
@@ -505,7 +563,16 @@ void main() {
       addTearDown(client.close);
 
       expect(
-        await client.postNote(const TutorCardContext(subject: 's', front: 'f', back: ['b']), const []),
+        await client.postNote(
+          const TutorCardContext(
+            deckId: 'deck-d1',
+            cardId: 'card-q1',
+            subject: 's',
+            front: 'f',
+            back: ['b'],
+          ),
+          const [],
+        ),
         isFalse,
       );
       expect(await client.generateStart('https://example.org'), isFalse);

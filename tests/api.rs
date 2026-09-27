@@ -2102,7 +2102,7 @@ fn remote_ask_refuses_empty_questions_and_empty_cards_but_not_partial_cards() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[],"question":"   "}"#,
     );
     assert_eq!(400, resp.status, "an empty question must be refused");
@@ -2110,7 +2110,7 @@ fn remote_ask_refuses_empty_questions_and_empty_cards_but_not_partial_cards() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.md","front":" ","back":[" "],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":" ","back":[" "],"at":null},
             "history":[],"question":"why?"}"#,
     );
     assert_eq!(400, resp.status, "an all-empty card must be refused");
@@ -2118,13 +2118,129 @@ fn remote_ask_refuses_empty_questions_and_empty_cards_but_not_partial_cards() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.md","front":" ","back":["4"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":" ","back":["4"],"at":null},
             "history":[],"question":"why?"}"#,
     );
     assert_eq!(
         200, resp.status,
         "an empty front with a non-empty back is askable"
     );
+}
+
+#[test]
+fn remote_card_requires_both_ids_for_ask_draft_and_note() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "fine");
+    let (base, _guard) = spawn_full_server(Some(&fake));
+    let cases = [
+        (
+            "/api/remote/ask",
+            r#"{"card":{"card_id":"card-q1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[],"question":"why?"}"#,
+        ),
+        (
+            "/api/remote/ask",
+            r#"{"card":{"deck_id":"deck-d1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[],"question":"why?"}"#,
+        ),
+        (
+            "/api/remote/ask/draft",
+            r#"{"card":{"card_id":"card-q1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[{"q":"why?","a":"because"}]}"#,
+        ),
+        (
+            "/api/remote/ask/draft",
+            r#"{"card":{"deck_id":"deck-d1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[{"q":"why?","a":"because"}]}"#,
+        ),
+        (
+            "/api/remote/ask/note",
+            r#"{"card":{"card_id":"card-q1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[{"q":"why?","a":"because"}]}"#,
+        ),
+        (
+            "/api/remote/ask/note",
+            r#"{"card":{"deck_id":"deck-d1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[{"q":"why?","a":"because"}]}"#,
+        ),
+    ];
+
+    for (path, body) in cases {
+        let response = post_json(&base, path, body);
+        assert_eq!(400, response.status, "path={path}, body={body}");
+    }
+}
+
+#[test]
+fn remote_ask_reports_card_only_false_for_every_pre_resolution_shape() {
+    let _lock = exec_lock();
+    let assert_false = |body: &serde_json::Value, phase: &str| {
+        assert_eq!(Some(false), body["card_only"].as_bool(), "{phase}: {body}");
+    };
+
+    {
+        let scripts = TempDir::new().unwrap();
+        let fake = fake_reply(scripts.path(), "## drafted?\nanswer\n");
+        let (base, _guard) = spawn_full_server(Some(&fake));
+
+        let response = http(&base, "GET", "/api/remote/ask", &[], &[]);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_false(&body, "idle");
+
+        let response = post_json(
+            &base,
+            "/api/remote/ask",
+            r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[],"question":"why?"}"#,
+        );
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_false(&body, "question thinking");
+        let body = poll_until(&base, "/api/remote/ask", |body| {
+            !body["thinking"].as_bool().unwrap()
+        });
+        assert_false(&body, "answer");
+
+        let response = post_json(
+            &base,
+            "/api/remote/ask/draft",
+            r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[{"q":"why?","a":"because"}]}"#,
+        );
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_false(&body, "draft thinking");
+        let body = poll_until(&base, "/api/remote/ask", |body| {
+            !body["thinking"].as_bool().unwrap()
+        });
+        assert_false(&body, "draft");
+
+        let response = post_json(
+            &base,
+            "/api/remote/ask/note",
+            r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[{"q":"why?","a":"because"}]}"#,
+        );
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_false(&body, "note thinking");
+        let body = poll_until(&base, "/api/remote/ask", |body| {
+            !body["thinking"].as_bool().unwrap()
+        });
+        assert_false(&body, "note");
+    }
+
+    {
+        let scripts = TempDir::new().unwrap();
+        let fake = fake_reply(scripts.path(), "unused");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\nexit 1\n",
+        )
+        .unwrap();
+        let (base, _guard) = spawn_full_server(Some(&fake));
+        let response = post_json(
+            &base,
+            "/api/remote/ask",
+            r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"q","back":["a"],"at":null},"history":[],"question":"why?"}"#,
+        );
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_false(&body, "error thinking");
+        let body = poll_until(&base, "/api/remote/ask", |body| {
+            !body["thinking"].as_bool().unwrap()
+        });
+        assert_false(&body, "error");
+        assert!(body["error"].is_string(), "body: {body}");
+    }
 }
 
 /// The request-body caps are generous by design (256 KiB): a body of a few
@@ -2165,7 +2281,7 @@ fn the_body_caps_admit_a_kilobytes_scale_body_on_both_route_families() {
 
     // remote family (MAX_REMOTE_BODY): a long client-supplied card.
     let body = format!(
-        r#"{{"card":{{"subject":"sample.md","front":" ","back":["4 {pad}"],"at":null}},"history":[],"question":"why?"}}"#
+        r#"{{"card":{{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":" ","back":["4 {pad}"],"at":null}},"history":[],"question":"why?"}}"#
     );
     assert_eq!(
         200,
@@ -6231,7 +6347,7 @@ fn server_shutdown_cancels_the_in_flight_remote_tutor_worker() {
     let response = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[],"question":"why?"}"#,
     );
     assert_eq!(200, response.status);
@@ -6969,7 +7085,7 @@ fn remote_ask_round_trips_an_answer_for_a_client_supplied_card() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[],"question":"why does this matter?"}"#,
     );
     assert_eq!(200, resp.status);
@@ -6991,7 +7107,7 @@ fn remote_ask_round_trips_an_answer_for_a_client_supplied_card() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[{"q":"why does this matter?","a":"because it demonstrates addition"}],
             "question":"anything else?"}"#,
     );
@@ -7047,7 +7163,7 @@ fn remote_ask_answers_409_while_a_turn_is_thinking_and_the_loop_stays_live() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[],"question":"why?"}"#,
     );
     assert_eq!(200, resp.status);
@@ -7062,7 +7178,7 @@ fn remote_ask_answers_409_while_a_turn_is_thinking_and_the_loop_stays_live() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[],"question":"again?"}"#,
     );
     assert_eq!(409, resp.status);
@@ -7113,7 +7229,7 @@ fn remote_note_round_trips_condensed_lines_capped_and_cleaned_server_side() {
     let resp = post_json(
         &base,
         "/api/remote/ask/note",
-        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[{"q":"why does this matter?","a":"because it demonstrates addition"},
                        {"q":"anything else?","a":"no, that covers it"}]}"#,
     );
@@ -7145,7 +7261,7 @@ fn remote_note_rejects_empty_history_and_garbage_body_with_400() {
     let resp = post_json(
         &base,
         "/api/remote/ask/note",
-        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},"history":[]}"#,
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},"history":[]}"#,
     );
     assert_eq!(400, resp.status);
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
@@ -7189,7 +7305,7 @@ fn remote_note_answers_409_while_a_call_is_thinking_in_the_shared_slot() {
     let resp = post_json(
         &base,
         "/api/remote/ask/note",
-        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[{"q":"why?","a":"because"}]}"#,
     );
     assert_eq!(200, resp.status);
@@ -7204,7 +7320,7 @@ fn remote_note_answers_409_while_a_call_is_thinking_in_the_shared_slot() {
     let resp = post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
             "history":[],"question":"again?"}"#,
     );
     assert_eq!(409, resp.status);
@@ -7732,7 +7848,7 @@ fn remote_endpoints_never_write_the_server_store() {
     post_json(
         &base,
         "/api/remote/ask",
-        r#"{"card":{"subject":"examdeck.md","front":"c","back":["a"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"examdeck.md","front":"c","back":["a"],"at":null},
             "history":[],"question":"why?"}"#,
     );
     let body = poll_until(&base, "/api/remote/ask", |b| {
@@ -7742,7 +7858,7 @@ fn remote_endpoints_never_write_the_server_store() {
     post_json(
         &base,
         "/api/remote/ask/draft",
-        r#"{"card":{"subject":"examdeck.md","front":"c","back":["a"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"examdeck.md","front":"c","back":["a"],"at":null},
             "history":[{"q":"why?","a":"because"}]}"#,
     );
     let body = poll_until(&base, "/api/remote/ask", |b| {
@@ -7752,7 +7868,7 @@ fn remote_endpoints_never_write_the_server_store() {
     post_json(
         &base,
         "/api/remote/ask/note",
-        r#"{"card":{"subject":"examdeck.md","front":"c","back":["a"],"at":null},
+        r#"{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"examdeck.md","front":"c","back":["a"],"at":null},
             "history":[{"q":"why?","a":"because"}]}"#,
     );
     let body = poll_until(&base, "/api/remote/ask", |b| {

@@ -208,6 +208,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
       isScrollControlled: true,
       builder: (_) => TutorSheet(
         card: TutorCardContext(
+          deckId: tutor.deckId,
+          cardId: tutor.id,
           subject: tutor.subject,
           front: tutor.front,
           back: tutor.back,

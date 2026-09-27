@@ -3590,6 +3590,7 @@ impl SseDecode for crate::api::review::TutorCard {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_deckId = <String>::sse_decode(deserializer);
         let mut var_subject = <String>::sse_decode(deserializer);
         let mut var_front = <String>::sse_decode(deserializer);
         let mut var_back = <Vec<String>>::sse_decode(deserializer);
@@ -3597,6 +3598,7 @@ impl SseDecode for crate::api::review::TutorCard {
         let mut var_line = <usize>::sse_decode(deserializer);
         return crate::api::review::TutorCard {
             id: var_id,
+            deck_id: var_deckId,
             subject: var_subject,
             front: var_front,
             back: var_back,
@@ -4907,6 +4909,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::review::TutorCard {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.id.into_into_dart().into_dart(),
+            self.deck_id.into_into_dart().into_dart(),
             self.subject.into_into_dart().into_dart(),
             self.front.into_into_dart().into_dart(),
             self.back.into_into_dart().into_dart(),
@@ -6223,6 +6226,7 @@ impl SseEncode for crate::api::review::TutorCard {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.deck_id, serializer);
         <String>::sse_encode(self.subject, serializer);
         <String>::sse_encode(self.front, serializer);
         <Vec<String>>::sse_encode(self.back, serializer);

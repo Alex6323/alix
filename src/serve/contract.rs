@@ -2313,6 +2313,7 @@ fn receivedto_done_wire_shape() {
 fn remoteaskdto_thinking_wire_shape() {
     let dto = RemoteAskDto {
         thinking: true,
+        card_only: false,
         answer: None,
         draft: None,
         note: None,
@@ -2324,6 +2325,7 @@ fn remoteaskdto_thinking_wire_shape() {
         &dto,
         json!({
             "thinking": true,
+            "card_only": false,
             "answer": null,
             "draft": null,
             "note": null,
@@ -2337,6 +2339,7 @@ fn remoteaskdto_thinking_wire_shape() {
 fn remoteaskdto_done_wire_shape() {
     let dto = RemoteAskDto {
         thinking: false,
+        card_only: false,
         answer: Some("so drops are deterministic".to_string()),
         draft: Some(DraftCardDto {
             front: "Why does Rust use one owner per value?".to_string(),
@@ -2354,6 +2357,7 @@ fn remoteaskdto_done_wire_shape() {
         &dto,
         json!({
             "thinking": false,
+            "card_only": false,
             "answer": "so drops are deterministic",
             "draft": {
                 "front": "Why does Rust use one owner per value?",
@@ -2370,6 +2374,7 @@ fn remoteaskdto_done_wire_shape() {
 fn remoteaskdto_note_wire_shape() {
     let dto = RemoteAskDto {
         thinking: false,
+        card_only: false,
         answer: None,
         draft: None,
         note: Some(vec![
@@ -2384,6 +2389,7 @@ fn remoteaskdto_note_wire_shape() {
         &dto,
         json!({
             "thinking": false,
+            "card_only": false,
             "answer": null,
             "draft": null,
             "note": ["ownership drops values deterministically", "no GC needed"],

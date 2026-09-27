@@ -289,6 +289,7 @@ enum RemoteAskOutcome {
 pub(super) struct RemoteAsk {
     rx: Receiver<Reply>,
     purpose: RemoteAskPurpose,
+    card_only: bool,
     started_ms: u64,
     outcome: Option<RemoteAskOutcome>,
     job: ask::AskJob,
@@ -318,28 +319,29 @@ impl RemoteAsk {
         };
         let prompt =
             ask::question_prompt_with_history(&card, Audience::Adult, &context, &prior, question);
-        Self::spawn(cfg, prompt, RemoteAskPurpose::Question)
+        Self::spawn(cfg, prompt, RemoteAskPurpose::Question, false)
     }
 
     pub(super) fn draft(cfg: &AskConfig, card: &RemoteCard, history: Vec<RemoteTurn>) -> Self {
         let card = remote_card(card);
         let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
         let prompt = ask::draft_card_prompt(&card, &prior);
-        Self::spawn(cfg, prompt, RemoteAskPurpose::Draft)
+        Self::spawn(cfg, prompt, RemoteAskPurpose::Draft, false)
     }
 
     pub(super) fn note(cfg: &AskConfig, card: &RemoteCard, history: Vec<RemoteTurn>) -> Self {
         let card = remote_card(card);
         let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
         let prompt = ask::condense_prompt(&card, &prior);
-        Self::spawn(cfg, prompt, RemoteAskPurpose::Note)
+        Self::spawn(cfg, prompt, RemoteAskPurpose::Note, false)
     }
 
-    fn spawn(cfg: &AskConfig, prompt: String, purpose: RemoteAskPurpose) -> Self {
+    fn spawn(cfg: &AskConfig, prompt: String, purpose: RemoteAskPurpose, card_only: bool) -> Self {
         let (rx, job) = ask::spawn(cfg.clone(), prompt, Vec::new());
         Self {
             rx,
             purpose,
+            card_only,
             started_ms: now_ms(),
             outcome: None,
             job,
@@ -380,6 +382,7 @@ impl RemoteAsk {
         match &self.outcome {
             None => RemoteAskDto {
                 thinking: true,
+                card_only: self.card_only,
                 answer: None,
                 draft: None,
                 note: None,
@@ -388,6 +391,7 @@ impl RemoteAsk {
             },
             Some(RemoteAskOutcome::Answer(a)) => RemoteAskDto {
                 thinking: false,
+                card_only: self.card_only,
                 answer: Some(a.clone()),
                 draft: None,
                 note: None,
@@ -396,6 +400,7 @@ impl RemoteAsk {
             },
             Some(RemoteAskOutcome::Draft(d)) => RemoteAskDto {
                 thinking: false,
+                card_only: self.card_only,
                 answer: None,
                 draft: Some(DraftCardDto {
                     front: d.front.clone(),
@@ -407,6 +412,7 @@ impl RemoteAsk {
             },
             Some(RemoteAskOutcome::Note(lines)) => RemoteAskDto {
                 thinking: false,
+                card_only: self.card_only,
                 answer: None,
                 draft: None,
                 note: Some(lines.clone()),
@@ -415,6 +421,7 @@ impl RemoteAsk {
             },
             Some(RemoteAskOutcome::Error(e)) => RemoteAskDto {
                 thinking: false,
+                card_only: self.card_only,
                 answer: None,
                 draft: None,
                 note: None,
@@ -1453,6 +1460,7 @@ mod tests {
         let ask = RemoteAsk {
             rx: ask_rx,
             purpose: RemoteAskPurpose::Question,
+            card_only: false,
             started_ms: now_ms().saturating_sub(2_500),
             outcome: None,
             job: ask::AskJob::default(),

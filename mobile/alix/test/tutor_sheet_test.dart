@@ -18,6 +18,8 @@ import 'support/fake_server_client.dart';
 const _pollInterval = Duration(milliseconds: 10);
 
 const _card = TutorCardContext(
+  deckId: 'deck-rust',
+  cardId: 'card-ownership',
   subject: 'Rust',
   front: 'Why does Rust use one owner per value?',
   back: ['so drops are deterministic'],

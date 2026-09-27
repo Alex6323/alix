@@ -472,6 +472,7 @@ impl JobsState {
                     }
                     None => RemoteAskDto {
                         thinking: false,
+                        card_only: false,
                         answer: None,
                         draft: None,
                         note: None,

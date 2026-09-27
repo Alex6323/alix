@@ -160,21 +160,27 @@ List<String> _asStringList(dynamic v) => v is List ? v.whereType<String>().toLis
 /// The card the tutor is discussing, sent whole on every call since the
 /// server holds no session of its own for a remote turn. Mirrors
 /// `RemoteCard` on the wire; a caller building one from the bridge's
-/// generated `TutorCard` copies the same four fields across.
+/// generated `TutorCard` copies the same fields across.
 class TutorCardContext {
   const TutorCardContext({
+    required this.deckId,
+    required this.cardId,
     required this.subject,
     required this.front,
     required this.back,
     this.at,
   });
 
+  final String deckId;
+  final String cardId;
   final String subject;
   final String front;
   final List<String> back;
   final String? at;
 
   Map<String, dynamic> toJson() => {
+        'deck_id': deckId,
+        'card_id': cardId,
         'subject': subject,
         'front': front,
         'back': back,
@@ -215,6 +221,7 @@ class DraftCard {
 class RemoteAsk {
   const RemoteAsk({
     required this.thinking,
+    this.cardOnly = false,
     this.answer,
     this.draft,
     this.note,
@@ -223,6 +230,7 @@ class RemoteAsk {
   });
 
   final bool thinking;
+  final bool cardOnly;
   final String? answer;
   final DraftCard? draft;
 
@@ -238,6 +246,7 @@ class RemoteAsk {
 
   static RemoteAsk fromJson(Map<String, dynamic> json) => RemoteAsk(
         thinking: _asBool(json['thinking']),
+        cardOnly: _asBool(json['card_only']),
         answer: _asString(json['answer']),
         draft: DraftCard.fromJson(json['draft']),
         note: json['note'] is List ? _asStringList(json['note']) : null,

@@ -48,6 +48,7 @@ class ReviewBridgePort implements ReviewPort {
         ? null
         : ReviewTutorCardModel(
             id: tutor.id,
+            deckId: tutor.deckId,
             subject: tutor.subject,
             front: tutor.front,
             back: tutor.back,

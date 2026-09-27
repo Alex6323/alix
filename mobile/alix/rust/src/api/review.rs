@@ -344,6 +344,7 @@ pub fn seed_choice_distractors(deck_path: String, _root_dir: String) -> Result<(
 
 pub struct TutorCard {
     pub id: String,
+    pub deck_id: String,
     pub subject: String,
     pub front: String,
     pub back: Vec<String>,
@@ -534,6 +535,7 @@ impl ReviewSession {
         let card = self.session.current()?;
         Some(TutorCard {
             id: card.id()?,
+            deck_id: card.deck_id.to_string(),
             subject: card.subject.to_string(),
             front: card.front.clone(),
             back: card.back.clone(),
@@ -1432,6 +1434,7 @@ mod tests {
         )
         .unwrap();
         let tutor = s.tutor_card().expect("a card is current");
+        assert_eq!(tutor.deck_id, "deck-d1");
         assert_eq!(tutor.line, authored_line);
     }
 

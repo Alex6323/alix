@@ -718,6 +718,7 @@ class ReviewState {
 
 class TutorCard {
   final String id;
+  final String deckId;
   final String subject;
   final String front;
   final List<String> back;
@@ -726,6 +727,7 @@ class TutorCard {
 
   const TutorCard({
     required this.id,
+    required this.deckId,
     required this.subject,
     required this.front,
     required this.back,
@@ -736,6 +738,7 @@ class TutorCard {
   @override
   int get hashCode =>
       id.hashCode ^
+      deckId.hashCode ^
       subject.hashCode ^
       front.hashCode ^
       back.hashCode ^
@@ -748,6 +751,7 @@ class TutorCard {
       other is TutorCard &&
           runtimeType == other.runtimeType &&
           id == other.id &&
+          deckId == other.deckId &&
           subject == other.subject &&
           front == other.front &&
           back == other.back &&
