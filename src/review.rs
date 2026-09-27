@@ -61,12 +61,11 @@ pub struct ImageView {
     pub crop: Option<CropView>,
 }
 
-/// One note as a client renders it: its badge, when a blockquote opened it,
-/// and the display units of its body.
+/// One note as a client renders it: its badge and the display units of its
+/// body.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct NoteView {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub badge: Option<crate::card::Badge>,
+    pub badge: crate::card::Badge,
     pub units: Vec<ContentUnit>,
 }
 
@@ -954,7 +953,7 @@ mod tests {
         assert_eq!(
             card.note,
             [NoteView {
-                badge: Some(crate::card::Badge::Note),
+                badge: crate::card::Badge::Note,
                 units: vec![ContentUnit::Sentence {
                     text: "a note line".into(),
                     runs: crate::inline::parse_inline("a note line"),
@@ -1026,7 +1025,7 @@ mod tests {
                 "$x^2$".to_string(),
                 "```".to_string(),
             ],
-            vec![crate::card::Note::bare("Remember $x^2$.".to_string())],
+            vec![crate::card::Note::plain("Remember $x^2$.".to_string())],
             1,
         );
         card.context = vec!["Use $⍰ + ⬚$".to_string()];
@@ -1057,7 +1056,7 @@ mod tests {
             std::sync::Arc::from("deck.md"),
             "$x^2$".to_string(),
             vec!["$x^2$".to_string()],
-            vec![crate::card::Note::bare("$x^2$".to_string())],
+            vec![crate::card::Note::plain("$x^2$".to_string())],
             1,
         );
         card.context = vec!["$x^2$".to_string()];
@@ -1075,7 +1074,7 @@ mod tests {
         assert_eq!(
             plain.note,
             [NoteView {
-                badge: Some(crate::card::Badge::Note),
+                badge: crate::card::Badge::Note,
                 units: vec![
                     ContentUnit::Sentence {
                         text: "Intro here.".into(),

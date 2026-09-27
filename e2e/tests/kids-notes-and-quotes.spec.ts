@@ -2,9 +2,8 @@
 // exact path independent of the shared fixtures, then removes it even when an
 // assertion fails.
 //
-// Kids speaks the notes through the mascot (`renderWhy`, kids/study.js). A
-// badged note is its own tinted callout in the bubble; a badgeless one (a
-// table column, an augmentation, a personal note) stays plain speech.
+// Kids speaks the notes through the mascot (`renderWhy`, kids/study.js).
+// Every note is its own callout in the bubble, tinted by its badge.
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "./helpers";

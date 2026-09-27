@@ -468,7 +468,7 @@ pub fn select(
             cards.push(card);
         }
         for (card, seat) in cards.iter_mut().zip(&roster) {
-            card.append_note(&seat.notes);
+            card.notes.extend(seat.notes.iter().cloned());
         }
     }
 

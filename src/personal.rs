@@ -26,7 +26,7 @@ impl Personal {
         });
         let notes = self.notes.iter().map(|note| SidecarBlock::Note {
             card: note.card.clone(),
-            lines: note.lines.clone(),
+            note: note.note.clone(),
         });
         cards.chain(notes).collect()
     }
@@ -88,6 +88,8 @@ fn marker(card_id: &str) -> String {
     format!("<!-- note: {card_id} -->")
 }
 
+/// A fresh note opens with the badge line the deck grammar asks for; later
+/// lines for the same card join the run under it.
 fn rewrite(text: &str, card_id: &str, notes: &[String]) -> String {
     let quoted = |note: &String| format!("> {note}");
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
@@ -95,7 +97,7 @@ fn rewrite(text: &str, card_id: &str, notes: &[String]) -> String {
         let mut out = text.trim_end().to_string();
         out.push_str("\n\n");
         out.push_str(&marker(card_id));
-        out.push('\n');
+        out.push_str("\n> [!NOTE]\n");
         for note in notes {
             out.push_str(&quoted(note));
             out.push('\n');
@@ -157,6 +159,7 @@ pub fn append_cards(deck: &Path, deck_id: &str, blocks: &str) -> Result<(), Deck
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::card::Note;
 
     fn deck(dir: &Path) -> PathBuf {
         let deck = dir.join("spanish.md");
@@ -219,7 +222,7 @@ mod tests {
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         assert_eq!(
             "---\nfor: deck-abc\n---\n\n\
-             <!-- note: card-one -->\n> mine\n",
+             <!-- note: card-one -->\n> [!NOTE]\n> mine\n",
             text
         );
     }
@@ -268,9 +271,14 @@ mod tests {
             .skip_while(|line| *line != "<!-- note: card-one -->")
             .collect();
         assert_eq!(
-            vec!["<!-- note: card-one -->", "> first", "> second"],
+            vec![
+                "<!-- note: card-one -->",
+                "> [!NOTE]",
+                "> first",
+                "> second"
+            ],
             block,
-            "the marker opens the block and every note follows it: {text}"
+            "the marker opens the block, the badge follows, then every note: {text}"
         );
         assert_eq!(1, text.matches("card-one").count());
     }
@@ -289,8 +297,8 @@ mod tests {
             vec!["card-one".to_string(), "card-two".to_string()],
             parsed.iter().map(|n| n.card.clone()).collect::<Vec<_>>()
         );
-        assert_eq!(vec!["mine".to_string()], parsed[0].lines);
-        assert_eq!(vec!["other".to_string()], parsed[1].lines);
+        assert_eq!(Note::plain("mine".to_string()), parsed[0].note);
+        assert_eq!(Note::plain("other".to_string()), parsed[1].note);
     }
 
     #[test]
@@ -376,8 +384,8 @@ mod tests {
     fn an_unreadable_sidecar_errors_instead_of_being_replaced() {
         use std::os::unix::fs::PermissionsExt;
 
-        let original =
-            "---\nformat-version: 1\nfor: deck-abc\n---\n\n<!-- note: card-one -->\n> mine\n";
+        let original = "---\nformat-version: 1\nfor: deck-abc\n---\n\n\
+                        <!-- note: card-one -->\n> [!NOTE]\n> mine\n";
         for writer in ["append_note", "append_cards"] {
             let dir = tempfile::tempdir().unwrap();
             let deck = deck(dir.path());
@@ -419,6 +427,6 @@ mod tests {
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         let quoted: Vec<&str> = text.lines().filter(|line| line.starts_with('>')).collect();
-        assert_eq!(vec!["> first", "> second", "> third"], quoted);
+        assert_eq!(vec!["> [!NOTE]", "> first", "> second", "> third"], quoted);
     }
 }

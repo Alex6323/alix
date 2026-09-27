@@ -85,21 +85,7 @@ class ReviewSummaryView extends StatelessWidget {
           if (partial > 0) _summaryRow(context, 'almost', '$partial', tokens),
           if (noteText != null) ...[
             const SizedBox(height: 18),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-              decoration: BoxDecoration(
-                color: tokens.noteBorder.withValues(alpha: 0.12),
-                border: Border.all(
-                  color: tokens.noteBorder.withValues(alpha: 0.24),
-                ),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                noteText,
-                style: TextStyle(color: tokens.noteInk, fontSize: 15),
-              ),
-            ),
+            Text(noteText, style: TextStyle(color: tokens.dim, fontSize: 15)),
           ],
           const SizedBox(height: 24),
           ReviewChip(

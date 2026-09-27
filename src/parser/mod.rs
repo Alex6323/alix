@@ -30,7 +30,7 @@ pub use frontmatter::{
 };
 use frontmatter::{MappableBlock, bad_value, parse_frontmatter, parse_reveal};
 pub use normalize::normalize;
-pub use sidecar::{SidecarNote, notes, without_notes};
+pub use sidecar::{SidecarNote, UnbadgedNote, notes, unbadged_notes, without_notes};
 
 // Deliberately not Unicode whitespace; anything outside this set is content.
 pub(crate) const WHITESPACE: [char; 6] = ['\t', '\n', '\x0B', '\x0C', '\r', ' '];
@@ -2099,7 +2099,7 @@ fn names_answer(note: &str, answer: &str) -> bool {
 
 /// One authored note after its name-addressed lines are separated out.
 struct SplitNote {
-    badge: Option<crate::card::Badge>,
+    badge: crate::card::Badge,
     block: Option<String>,
     addressed: Vec<(String, bool, String)>,
 }
@@ -2478,7 +2478,7 @@ fn build_table_cards_inner(
             return Err(ParseError::FrontWithoutAnswer(row.line));
         }
         let note = row.cells.get(2).filter(|cell| !cell.is_empty()).cloned();
-        let notes = Vec::from_iter(note.map(Note::bare));
+        let notes = Vec::from_iter(note.map(Note::plain));
         let mut card = Card::plain(Arc::clone(subject), front, vec![back], notes, row.line);
         card.deck_id = Arc::clone(deck_id);
         card.context = raw.title.iter().cloned().collect();
@@ -2542,7 +2542,7 @@ fn note_run_is_empty(lines: &[&str], from: usize) -> bool {
 fn append_note(card: &mut RawCard, text: &str) {
     if let Some(badge) = card.pending_badge.take() {
         card.notes.push(Note {
-            badge: Some(badge),
+            badge,
             body: text.to_string(),
         });
         return;
@@ -2552,7 +2552,7 @@ fn append_note(card: &mut RawCard, text: &str) {
             note.body.push('\n');
             note.body.push_str(text);
         }
-        None => card.notes.push(Note::bare(text.to_string())),
+        None => card.notes.push(Note::plain(text.to_string())),
     }
 }
 
@@ -6245,11 +6245,11 @@ a
         assert_eq!(
             vec![
                 Note {
-                    badge: Some(Badge::Note),
+                    badge: Badge::Note,
                     body: "first\nstill first".to_string(),
                 },
                 Note {
-                    badge: Some(Badge::Warning),
+                    badge: Badge::Warning,
                     body: "second".to_string(),
                 },
             ],
@@ -6264,7 +6264,7 @@ a
 
         assert_eq!(
             vec![Note {
-                badge: Some(Badge::Note),
+                badge: Badge::Note,
                 body: "first\n[!WARNING]\nstill first".to_string(),
             }],
             deck.cards[0].notes,
@@ -6292,7 +6292,7 @@ a
             let deck = parse(&format!("## Q\nanswer\n> {spelling}\n> because\n"));
             assert_eq!(
                 vec![Note {
-                    badge: Some(badge),
+                    badge,
                     body: "because".to_string()
                 }],
                 deck.cards[0].notes,
@@ -7894,7 +7894,7 @@ a
             .expect("the ungrouped card");
         assert_eq!(
             vec![Note {
-                badge: Some(Badge::Note),
+                badge: Badge::Note,
                 body: "Fastest.".to_string()
             }],
             base.notes,

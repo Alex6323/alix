@@ -11,7 +11,7 @@ const DECK: &str = "---\nformat-version: 1\nid: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\
 const SIDECAR: &str = "---\nformat-version: 1\n\
 for: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\n---\n\n\
 <!-- note: card-4b7k2m9q1x5z8t3v6n0d4f7h2j -->\n\
-> my own note\n";
+> [!NOTE]\n> my own note\n";
 
 fn fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();

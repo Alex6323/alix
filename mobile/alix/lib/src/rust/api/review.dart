@@ -509,10 +509,10 @@ class MultiChoiceFeedback {
 }
 
 class NoteView {
-  final Badge? badge;
+  final Badge badge;
   final List<ContentUnit> units;
 
-  const NoteView({this.badge, required this.units});
+  const NoteView({required this.badge, required this.units});
 
   @override
   int get hashCode => badge.hashCode ^ units.hashCode;

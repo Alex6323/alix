@@ -855,17 +855,15 @@ export function createStudy({
     updateHintPills(n, hints, "note-hint", "⌵ more below");
   }
 
-  // Adds (or removes) the note region and a divider before it. Because content is
-  // top-aligned, adding it on reveal doesn't shift the question or answer, so it
-  // only needs to exist while shown — no premature empty zone or stray divider.
+  // Adds (or removes) the note region. Because content is top-aligned, adding
+  // it on reveal doesn't shift the question or answer, so it only needs to
+  // exist while shown — no premature empty zone.
   function setNote(show) {
     const card = doc.getElementById("card");
     if (!card) return;
-    let divider = doc.getElementById("noteDivider");
     let n = doc.getElementById("noteRegion");
     const has = state.card.note && state.card.note.length > 0;
     if (show && has) {
-      if (!divider) { divider = el("div", "divider"); divider.id = "noteDivider"; card.appendChild(divider); }
       if (!n) {
         n = el("div", "region n");
         n.id = "noteRegion";
@@ -880,7 +878,6 @@ export function createStudy({
       renderNote(n, state.card.note);
       updateNoteFade(n);
     } else {
-      if (divider) divider.remove();
       if (n) n.remove();
       card.querySelectorAll(".note-hint").forEach(hint => hint.remove());
     }
@@ -1704,7 +1701,7 @@ export function createStudy({
       if (newLeft === 0 && !state.can_restart) return "Nothing due right now. Come back later.";
       return null;
     };
-    const noteEl = el("div", "note", "");
+    const noteEl = el("div", "remark", "");
     wrap.appendChild(noteEl);
     const examDue = state.exam_due || [];
     examDue.forEach(name => {

@@ -67,12 +67,8 @@
   .region.a.choices.withnote { max-height: 74%; }
   .region.a.balanced { justify-content: safe center; }
   .region.a.filled { justify-content: flex-start; }
-  .region.n { flex: 0 0 auto; max-height: 30%; }   /* note */
-  /* keep the note (and its divider) pinned to the bottom of the card */
-  #noteDivider {
-    margin-top: auto;
-    background: linear-gradient(90deg, transparent, var(--note-line) 18%, var(--note-line) 82%, transparent);
-  }
+  /* the note, pinned to the bottom of the card */
+  .region.n { flex: 0 0 auto; max-height: 30%; margin-top: auto; }
   .region.a.citable, .region.a.hidable { cursor: pointer; }
   .region-toggles { position: absolute; top: 6px; right: 10px; z-index: 2;
                     display: flex; align-items: center; gap: 10px;
@@ -188,6 +184,7 @@
   .summary .row b.passed { color: var(--good); }
   .summary .row b.partly { color: var(--warn); }
   .summary .row b.failed { color: var(--again); }
+  .summary .remark { margin-top: 18px; color: var(--dim); }
 
   /* ── explain (understanding) cards ── */
   .explain-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 64px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }

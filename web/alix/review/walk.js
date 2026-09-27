@@ -236,11 +236,14 @@ export function createWalk({
       });
       a.appendChild(points);
     }
+    // A checkpoint's note is alix's own, so it is a NOTE like any other
+    // machine note: the bar and the badge word set it off, no divider.
     if (data.note) {
-      card.appendChild(el("div", "divider"));
       const noteRegion = el("div", "region n");
       noteRegion.style.textAlign = "left";
       const note = el("div", "note");
+      note.dataset.badge = "note";
+      note.appendChild(el("span", "note-badge", "note"));
       const paragraph = el("p");
       appendRunsOrText(paragraph, data.note, data.note_runs);
       note.appendChild(paragraph);

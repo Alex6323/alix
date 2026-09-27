@@ -85,10 +85,12 @@ sealed class ReviewContentUnitModel {
 /// null for a note no blockquote opened (a table's note column, an AI
 /// augmentation, a personal note).
 class ReviewNoteModel {
-  ReviewNoteModel({this.badge, required Iterable<ReviewContentUnitModel> units})
-    : units = List.unmodifiable(units);
+  ReviewNoteModel({
+    required this.badge,
+    required Iterable<ReviewContentUnitModel> units,
+  }) : units = List.unmodifiable(units);
 
-  final ReviewBadge? badge;
+  final ReviewBadge badge;
   final List<ReviewContentUnitModel> units;
 }
 

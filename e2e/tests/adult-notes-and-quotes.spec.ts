@@ -83,31 +83,22 @@ That it shows the presence of bugs, never their absence.
   await expect(notes.nth(1)).toHaveAttribute("data-badge", "warning");
   await expect(notes.nth(1)).toContainText("It is not a claim that testing is useless.");
 
-  // Styled, not merely tagged: each note leads with a chip naming its badge,
-  // the two badges carry different accents so severity is legible without
-  // reading the word, and the quotation carries a rule rather than a `>`.
-  // The note itself has no box, so the accent lives on the chip's border.
+  // Styled, not merely tagged: each note leads with its badge word, the bar
+  // beside it takes the same colour, the two badges differ, and the
+  // quotation carries a rule rather than a `>`. Nothing between the answer
+  // and the note: the bar and the word are the separation.
   await expect(notes.nth(0).locator(".note-badge")).toHaveText(/note/i);
   await expect(notes.nth(1).locator(".note-badge")).toHaveText(/warning/i);
   const accents = await notes.evaluateAll((boxes) =>
-    boxes.map((box) => getComputedStyle(box.querySelector(".note-badge")!).borderTopColor),
+    boxes.map((box) => [
+      getComputedStyle(box).borderLeftColor,
+      getComputedStyle(box.querySelector(".note-badge")!).color,
+    ]),
   );
-  expect(new Set(accents).size).toBe(2);
+  for (const [bar, word] of accents) expect(bar).toBe(word);
+  expect(new Set(accents.map(([bar]) => bar)).size).toBe(2);
+  await expect(page.locator("#noteDivider")).toHaveCount(0);
   await expect(quote).toHaveCSS("border-left-width", "3px");
-
-  // The accent paints borders and washes, never small text: measured across
-  // the 21 palettes, accent-on-its-own-wash falls to 2.0:1. Each chip takes
-  // the note's own ink and keeps the hue in its border.
-  for (const index of [0, 1]) {
-    const chip = notes.nth(index).locator(".note-badge");
-    const [ink, border, body] = await chip.evaluate((node) => [
-      getComputedStyle(node).color,
-      getComputedStyle(node).borderTopColor,
-      getComputedStyle(node.parentElement as HTMLElement).color,
-    ]);
-    expect(ink).toBe(body);
-    expect(ink).not.toBe(border);
-  }
 
   // Prose below the question is set ragged right at every width: the answer,
   // the quotation and the notes never justify, on a wide desktop or a phone
@@ -124,6 +115,74 @@ That it shows the presence of bugs, never their absence.
         { message: `answer, quotation, two notes at a ${viewport}px viewport` },
       )
       .toEqual(["start", "start", "start", "start"]);
+  }
+});
+
+// GitHub's five badge colours, one set per brightness: every badge on a dark
+// palette paints the dark set on its bar and word, and the light set on a
+// light palette, whatever the palette's own accents are.
+test("every badge takes GitHub's colour for the palette's brightness", async ({ page }) => {
+  fs.mkdirSync(path.join(NOTES_WORKSPACE, "decks"), { recursive: true });
+  fs.writeFileSync(path.join(NOTES_WORKSPACE, "alix.toml"), 'title = "Five Badges"\n');
+  fs.writeFileSync(
+    path.join(NOTES_WORKSPACE, "decks", "badges.md"),
+    `---
+format-version: 1
+id: "deck-00000000000000000000000017"
+title: "Five Badges"
+---
+## Which badges exist?
+Five.
+> [!NOTE]
+> A note.
+
+> [!TIP]
+> A tip.
+
+> [!IMPORTANT]
+> An important one.
+
+> [!WARNING]
+> A warning.
+
+> [!CAUTION]
+> A caution.
+<!-- id: card-fivebadges00000001 -->
+`,
+  );
+  const sets: Record<string, Record<string, string>> = {
+    "ayu-dark": { note: "#4493f8", tip: "#3fb950", important: "#ab7df8", warning: "#d29922", caution: "#f85149" },
+    "solarized-light": { note: "#0969da", tip: "#1a7f37", important: "#8250df", warning: "#9a6700", caution: "#cf222e" },
+  };
+  const rgb = (hex: string) =>
+    `rgb(${[1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16)).join(", ")})`;
+
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Five Badges").click();
+  await adultDeckRow(page, "badges").click();
+  await page.getByTitle("choose a depth").click();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/select")),
+    page.getByRole("button", { name: /^Recall/ }).click(),
+  ]);
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await expect(page.locator(".note")).toHaveCount(5);
+
+  for (const [palette, colours] of Object.entries(sets)) {
+    await page.evaluate((id) => {
+      document.documentElement.dataset.theme = id;
+    }, palette);
+    const painted = await page.locator(".note").evaluateAll((boxes) =>
+      boxes.map((box) => [
+        (box as HTMLElement).dataset.badge,
+        getComputedStyle(box).borderLeftColor,
+        getComputedStyle(box.querySelector(".note-badge")!).color,
+      ]),
+    );
+    for (const [badge, bar, word] of painted) {
+      expect(bar, `${palette}: ${badge} bar`).toBe(rgb(colours[badge!]));
+      expect(word, `${palette}: ${badge} word`).toBe(rgb(colours[badge!]));
+    }
   }
 });
 

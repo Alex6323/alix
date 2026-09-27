@@ -18,6 +18,67 @@ const _sans = 'IBM Plex Sans';
 // wrap on the same column instead of each finding its own.
 const _cardMeasure = 560.0;
 
+/// A note is prose dimmer than the answer, marked by a bar in its badge's
+/// colour with the badge word above the text: no box, no wash, nothing that
+/// competes with the answer for attention.
+class NoteBlock extends StatelessWidget {
+  const NoteBlock({super.key, required this.badge, required this.children});
+
+  final ReviewBadge badge;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = badgeColour(badge, Theme.of(context).brightness);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 2, 0, 2),
+      decoration: BoxDecoration(
+        border: Border(left: BorderSide(color: accent, width: 4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            badge.name.toUpperCase(),
+            style: TextStyle(
+              fontFamily: _mono,
+              fontSize: 10.5,
+              height: 1.5,
+              letterSpacing: 1.7,
+              fontWeight: FontWeight.w600,
+              color: accent,
+            ),
+          ),
+          const SizedBox(height: 6),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+/// GitHub's badge colours, the light set on a light theme and the dark set on
+/// a dark one, the same on every palette.
+Color badgeColour(ReviewBadge badge, Brightness brightness) {
+  final light = brightness == Brightness.light;
+  return switch (badge) {
+    ReviewBadge.note => light
+        ? const Color(0xFF0969DA)
+        : const Color(0xFF4493F8),
+    ReviewBadge.tip => light ? const Color(0xFF1A7F37) : const Color(0xFF3FB950),
+    ReviewBadge.important => light
+        ? const Color(0xFF8250DF)
+        : const Color(0xFFAB7DF8),
+    ReviewBadge.warning => light
+        ? const Color(0xFF9A6700)
+        : const Color(0xFFD29922),
+    ReviewBadge.caution => light
+        ? const Color(0xFFCF222E)
+        : const Color(0xFFF85149),
+  };
+}
+
 /// Names the check in force, which the chosen depth decides, not the deck.
 String reviewModeLabel(ReviewStateModel state) {
   if (state.introducing) return 'new';
@@ -1261,6 +1322,8 @@ class ReviewCardView extends StatelessWidget {
     );
   }
 
+  /// No hairline between the answer and the notes: each note's bar and badge
+  /// word are the separation.
   Widget _note(
     BuildContext context,
     ReviewCardModel card,
@@ -1268,9 +1331,7 @@ class ReviewCardView extends StatelessWidget {
   ) {
     return Column(
       children: [
-        const SizedBox(height: 18),
-        _divider(tokens),
-        const SizedBox(height: 14),
+        const SizedBox(height: 22),
         for (final (index, note) in card.note.indexed) ...[
           if (index > 0) const SizedBox(height: 10),
           _noteBlock(context, note, tokens),
@@ -1279,111 +1340,43 @@ class ReviewCardView extends StatelessWidget {
     );
   }
 
-  /// NOTE and IMPORTANT share the accent hue: alix palettes carry four
-  /// semantic hues, not GitHub's five, and their word plus IMPORTANT's
-  /// heavier chip border separates them. The accent paints borders and the
-  /// wash only, never small text: across the 21 palettes accent-on-its-own-
-  /// wash falls as low as 2.0:1.
-  Color _badgeAccent(ReviewBadge? badge, AlixTokens tokens) => switch (badge) {
-    null => tokens.noteBorder,
-    ReviewBadge.note || ReviewBadge.important => tokens.bolt,
-    ReviewBadge.tip => tokens.good,
-    ReviewBadge.warning => tokens.warn,
-    ReviewBadge.caution => tokens.again,
-  };
-
-  /// The badge and the card's type pill are the same object in two places, so
-  /// they share every value but their text and their border hue; see
-  /// [_modeTag]. The accent stays in the border, never in the small text.
-  Widget _badgeChip(ReviewBadge badge, Color accent, AlixTokens tokens) {
-    final heavy = badge == ReviewBadge.important;
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: heavy ? 6 : 7,
-        vertical: heavy ? 0 : 1,
-      ),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: heavy ? accent : accent.withValues(alpha: 0.55),
-          width: heavy ? 2 : 1,
-        ),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        badge.name.toUpperCase(),
-        style: TextStyle(
-          fontFamily: _mono,
-          fontSize: 10.5,
-          height: 1.5,
-          letterSpacing: 1.7,
-          color: tokens.dim,
-        ),
-      ),
-    );
-  }
-
-  // One box per note, so several notes stack instead of merging into one and
-  // losing their badges.
+  // One block per note, so several notes stack instead of merging into one
+  // and losing their badges.
   Widget _noteBlock(
     BuildContext context,
     ReviewNoteModel entry,
     AlixTokens tokens,
   ) {
-    final badge = entry.badge;
-    final accent = _badgeAccent(badge, tokens);
-    final body = TextStyle(
-      color: badge == null ? tokens.noteInk : tokens.dim,
-      fontSize: 15,
-      height: 1.4,
-    );
-    return Container(
-      width: double.infinity,
-      // A badged note carries no ground: the divider, its dimmer face, and the
-      // chip's own accent separate it from the answer it sits below.
-      padding: badge == null
-          ? const EdgeInsets.symmetric(horizontal: 15, vertical: 12)
-          : EdgeInsets.zero,
-      decoration: badge == null
-          ? BoxDecoration(
-              color: accent.withValues(alpha: 0.12),
-              border: Border.all(color: accent.withValues(alpha: 0.24)),
-              borderRadius: BorderRadius.circular(10),
-            )
-          : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (badge != null) ...[
-            _badgeChip(badge, accent, tokens),
-            const SizedBox(height: 9),
-          ],
-          for (final (index, note) in entry.units.indexed) ...[
-            if (index > 0) const SizedBox(height: 10),
-            switch (note) {
-              ReviewSentenceModel(:final text, :final runs) => _runsOrText(
-                runs,
-                text,
-                style: body,
-              ),
-              ReviewCodeModel(:final lines) => _codeBlock(lines, tokens.text),
-              ReviewDiagramModel() => _diagram(note, answered: true),
-              ReviewChecklistModel(:final items) => _checklist(
-                items,
-                tokens,
-                body,
-                TextAlign.start,
-              ),
-              ReviewTableModel() => _table(note, tokens, body),
-              ReviewQuoteModel(:final units) => _quote(
-                units,
-                tokens,
-                body,
-                TextAlign.start,
-              ),
-            },
-          ],
+    final body = TextStyle(color: tokens.dim, fontSize: 15, height: 1.4);
+    return NoteBlock(
+      badge: entry.badge,
+      children: [
+        for (final (index, note) in entry.units.indexed) ...[
+          if (index > 0) const SizedBox(height: 10),
+          switch (note) {
+            ReviewSentenceModel(:final text, :final runs) => _runsOrText(
+              runs,
+              text,
+              style: body,
+            ),
+            ReviewCodeModel(:final lines) => _codeBlock(lines, tokens.text),
+            ReviewDiagramModel() => _diagram(note, answered: true),
+            ReviewChecklistModel(:final items) => _checklist(
+              items,
+              tokens,
+              body,
+              TextAlign.start,
+            ),
+            ReviewTableModel() => _table(note, tokens, body),
+            ReviewQuoteModel(:final units) => _quote(
+              units,
+              tokens,
+              body,
+              TextAlign.start,
+            ),
+          },
         ],
-      ),
+      ],
     );
   }
 

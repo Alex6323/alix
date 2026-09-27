@@ -495,8 +495,7 @@ function appendNoteUnits(parent, units) {
 // The mascot speaks the card's notes (the "why"). Each NoteDto is
 // {badge,units}; NoteUnitDto is a tagged union: {kind:"sentence",text} → a
 // spoken line; {kind:"code",lines} → a small block. Several notes stack in
-// authored order; a badged one becomes its own tinted callout, a badgeless
-// one (table column, augmentation, personal note) stays plain speech.
+// authored order, each its own callout tinted by its badge.
 // An empty/absent note shows nothing (no empty bubble).
 function renderWhy(parent, card) {
   const notes = (card.note || []).filter((note) => (note.units || []).length);
@@ -506,7 +505,6 @@ function renderWhy(parent, card) {
   row.appendChild(mascotEl("mascot-sm"));
   const txt = el("div", "rev-why-text");
   for (const note of notes) {
-    if (!note.badge) { appendNoteUnits(txt, note.units); continue; }
     const box = el("div", "rev-why-note");
     box.dataset.badge = note.badge;
     box.appendChild(el("span", "rev-why-badge", note.badge));

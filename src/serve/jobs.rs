@@ -1338,7 +1338,7 @@ impl Walking {
             Arc::from(trace.subject.as_str()),
             cp.prompt.clone(),
             cp.points.clone(),
-            Vec::from_iter((!note.is_empty()).then(|| crate::card::Note::bare(note))),
+            Vec::from_iter((!note.is_empty()).then(|| crate::card::Note::plain(note))),
             cp.line,
         ))
     }

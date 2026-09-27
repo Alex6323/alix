@@ -90,15 +90,16 @@
   .answer .mark { margin-left: 10px; font-weight: 700; }   /* ✓ / ✗ after the line */
   .expected { color: var(--good); font-family: var(--mono); font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5; margin: 2px 0 8px; }
 
-
-  /* notes: a warm, clearly-separated block (yellow, like the TUI), sharing the
-     answer/choice content column and its text scale */
+  /* A note is prose under the answer, dimmer than it and marked by a bar in
+     its badge's colour with the badge word above the text: no box, no wash,
+     nothing that competes with the answer for attention. The five colours
+     are GitHub's own, the light set on light palettes and the dark set on
+     dark ones (`light-dark()` reads the palette's `color-scheme`). */
   .note {
     box-sizing: border-box; width: 100%; max-width: var(--measure);
     text-align: start; margin: 18px auto 0;
-    background: var(--note-bg); border: 1px solid var(--note-line);
-    border-radius: 10px;
-    padding: 12px 15px; color: var(--note-ink);
+    border-left: 4px solid var(--badge-ink);
+    padding: 2px 0 2px 14px; color: var(--dim);
     font-size: clamp(1.02rem, 2.9vw, 1.22rem);
   }
   .card:has(.region.a.choices) .note { font-size: 1.05rem; }
@@ -107,35 +108,16 @@
   .note .checklist { display: grid; gap: 6px; margin: 8px 0; }
   .note .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
   .note .checklist-box { flex: none; font-family: var(--mono); }
-
-  /* a badged note takes the badge's own accent; every theme already defines
-     the four hues, so no palette needs a new token. The accent paints the
-     wash and the borders only: measured across all 21 palettes, accent-on-
-     its-own-wash falls as low as 2.0:1, so no small text is ever the accent.
-     NOTE and IMPORTANT share the accent and are told apart by their word and
-     by IMPORTANT's heavier chip border. */
-  /* The note carries no box of its own: the divider above it, its dim ink
-     against the answer's bright one, and the badge already mark it, and a
-     tinted panel made it compete with the answer for attention. */
-  .note[data-badge] {
-    background: transparent; border-color: transparent; border-radius: 0;
-    color: var(--dim);
-  }
-  .note[data-badge="note"], .note[data-badge="important"] { --badge-ink: var(--bolt); }
-  .note[data-badge="tip"] { --badge-ink: var(--good); }
-  .note[data-badge="warning"] { --badge-ink: var(--warn); }
-  .note[data-badge="caution"] { --badge-ink: var(--again); }
-  /* The badge and the card's type pill are the same object in two places, so
-     they share every value but their text; see `.mode-tag` in study.css. */
+  .note[data-badge="note"] { --badge-ink: light-dark(#0969da, #4493f8); }
+  .note[data-badge="tip"] { --badge-ink: light-dark(#1a7f37, #3fb950); }
+  .note[data-badge="important"] { --badge-ink: light-dark(#8250df, #ab7df8); }
+  .note[data-badge="warning"] { --badge-ink: light-dark(#9a6700, #d29922); }
+  .note[data-badge="caution"] { --badge-ink: light-dark(#cf222e, #f85149); }
   .note-badge {
-    display: inline-block; margin: 0 0 9px;
+    display: block; margin: 0 0 6px;
     font-family: var(--mono); font-size: 0.62rem; line-height: 1.5;
-    letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim);
-    border: 1px solid color-mix(in srgb, var(--badge-ink) 55%, var(--line));
-    border-radius: 6px; padding: 1px 7px;
-  }
-  .note[data-badge="important"] .note-badge {
-    border: 2px solid var(--badge-ink); padding: 0 6px;
+    letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600;
+    color: var(--badge-ink);
   }
 
   /* a quotation is content, not chrome: a left rule marks its boundary, the

@@ -219,7 +219,7 @@ ReviewCardModel _cardFromBridge(bridge.CardView card) {
     note: [
       for (final note in card.note)
         ReviewNoteModel(
-          badge: note.badge == null ? null : _badgeFromBridge(note.badge!),
+          badge: _badgeFromBridge(note.badge),
           units: [for (final unit in note.units) _noteFromBridge(unit)],
         ),
     ],

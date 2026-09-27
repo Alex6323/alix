@@ -1218,7 +1218,7 @@ mod tests {
         std::fs::write(decks.join("spanish.md"), "## darse cuenta\nto realise\n").unwrap();
         let personal = decks.join("spanish.local.md");
         let text = "---\nformat-version: 1\nfor: deck-abc\n---\n\n\
-                    <!-- note: card-one -->\n> mine\n";
+                    <!-- note: card-one -->\n> [!NOTE]\n> mine\n";
         std::fs::write(&personal, text).unwrap();
 
         let error = initialize(&personal).unwrap_err();

@@ -786,7 +786,22 @@ fn sidecar_findings(dir: &Path, report: &mut Report) {
             .and_then(|n| n.to_str())
             .is_some_and(alix::workspace::is_sidecar_name)
     }) {
+        unbadged_note_findings(path, report);
         orphan_note_findings(path, report);
+    }
+}
+
+fn unbadged_note_findings(sidecar: &Path, report: &mut Report) {
+    let Ok(text) = std::fs::read_to_string(sidecar) else {
+        return;
+    };
+    for unbadged in alix::parser::unbadged_notes(&text) {
+        report.warn(format!(
+            "{}:{}: the note for `{}` opens with no badge line (`> [!NOTE]`), so it is not read",
+            sidecar.display(),
+            unbadged.line,
+            unbadged.card
+        ));
     }
 }
 

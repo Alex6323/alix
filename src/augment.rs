@@ -1023,7 +1023,7 @@ impl AugmentCache {
             // author's badge to another's text.
             let badge = match card.notes.as_slice() {
                 [only] => only.badge,
-                _ => None,
+                _ => crate::card::Badge::Note,
             };
             card.notes = vec![crate::card::Note {
                 badge,
@@ -2133,7 +2133,7 @@ mod tests {
             "f".into(),
             vec!["a".into()],
             vec![crate::card::Note {
-                badge: Some(crate::card::Badge::Warning),
+                badge: crate::card::Badge::Warning,
                 body: "as written".to_string(),
             }],
             1,
@@ -2152,7 +2152,7 @@ mod tests {
         cache.apply_format(&mut card);
         assert_eq!(
             vec![crate::card::Note {
-                badge: Some(crate::card::Badge::Warning),
+                badge: crate::card::Badge::Warning,
                 body: "as reshaped".to_string()
             }],
             card.notes,
@@ -2169,11 +2169,11 @@ mod tests {
             vec!["a".into()],
             vec![
                 crate::card::Note {
-                    badge: Some(crate::card::Badge::Warning),
+                    badge: crate::card::Badge::Warning,
                     body: "first".to_string(),
                 },
                 crate::card::Note {
-                    badge: Some(crate::card::Badge::Tip),
+                    badge: crate::card::Badge::Tip,
                     body: "second".to_string(),
                 },
             ],
@@ -2192,7 +2192,7 @@ mod tests {
         );
         cache.apply_format(&mut card);
         assert_eq!(
-            vec![crate::card::Note::bare("as reshaped".to_string())],
+            vec![crate::card::Note::plain("as reshaped".to_string())],
             card.notes,
             "the reshape is of every note flattened, so it replaces the stack \
              without claiming either author's badge"
@@ -2207,7 +2207,7 @@ mod tests {
             "f".into(),
             vec!["a".into()],
             vec![crate::card::Note {
-                badge: Some(crate::card::Badge::Warning),
+                badge: crate::card::Badge::Warning,
                 body: "first".to_string(),
             }],
             1,
@@ -2226,7 +2226,7 @@ mod tests {
         );
 
         card.notes.push(crate::card::Note {
-            badge: Some(crate::card::Badge::Tip),
+            badge: crate::card::Badge::Tip,
             body: "new second note".to_string(),
         });
         cache.apply_format(&mut card);
@@ -2234,11 +2234,11 @@ mod tests {
         assert_eq!(
             vec![
                 crate::card::Note {
-                    badge: Some(crate::card::Badge::Warning),
+                    badge: crate::card::Badge::Warning,
                     body: "first".to_string(),
                 },
                 crate::card::Note {
-                    badge: Some(crate::card::Badge::Tip),
+                    badge: crate::card::Badge::Tip,
                     body: "new second note".to_string(),
                 },
             ],

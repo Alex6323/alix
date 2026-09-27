@@ -6,10 +6,12 @@
  * its own layout CSS and its per-screen `--card-w`/`--card-h`; only the colour
  * palette + fonts live here, so all three screens theme together.
  *
- * Every themeable value is a variable. The five colours that used to be
- * hardcoded in the pages — the body halo, the menu background, the note trio,
- * and the trace excerpt background — are variables now too (--halo, --menu-bg,
- * --note-*, --excerpt-bg). */
+ * Every themeable value is a variable. The colours that used to be hardcoded
+ * in the pages — the body halo, the menu background, the note's code ink and
+ * the trace excerpt background — are variables now too (--halo, --menu-bg,
+ * --note-code, --excerpt-bg). Each palette declares its `color-scheme`, which
+ * `light-dark()` reads for the few literals that come in a light and a dark
+ * set (the note badges). */
 
 /* ── IBM Plex — self-hosted webfonts (served from `/fonts/`, see src/serve.rs)
  * so the app works fully offline. Latin + Latin-Ext subset for now (see
@@ -133,6 +135,7 @@
 /* ── alix — the default (Alix Adult palette) ────────────────────────── */
 :root,
 [data-theme="dark"] {
+  color-scheme: dark;
   --void: #0f1016;
   --panel-top: #171a24;
   --panel-bot: #0f1016;
@@ -146,13 +149,8 @@
   --again: #e88f8f;
   --halo: #0f1016;
   --menu-bg: #171a24;
-  --note-border: #e6b45c;
-  --note-ink: #f0dcae;
   --note-code: #c9cdd8;
   --code: #78b9d6;
-  /* note wash + border — derived from --note-border so every theme adapts */
-  --note-bg: color-mix(in srgb, var(--note-border) 12%, transparent);
-  --note-line: color-mix(in srgb, var(--note-border) 24%, transparent);
   --excerpt-bg: #171a24;
   --mono: 'IBM Plex Mono', ui-monospace, monospace;
   --sans: 'IBM Plex Sans', system-ui, sans-serif;
@@ -164,6 +162,7 @@
 
 /* ── alix Light — paper & ink, Alix Adult palette ────────────────────── */
 [data-theme="light"] {
+  color-scheme: light;
   --void: #f4f4fa;
   --panel-top: #ffffff;
   --panel-bot: #f4f4fa;
@@ -177,8 +176,6 @@
   --again: #d23b34;
   --halo: #f4f4fa;
   --menu-bg: #ffffff;
-  --note-border: #c98a12;
-  --note-ink: #6a5117;
   --note-code: #2b3a40;
   --code: #176b8a;
   --excerpt-bg: #ffffff;
@@ -202,6 +199,7 @@
  * both the flat ground and the panel-bot gradient stop. No --sans override —
  * these keep the adult app's own IBM Plex, unlike Kid's rounded font. */
 [data-theme="sunrise"] {
+  color-scheme: light;
   --void: #fff5ec;
   --panel-top: #ffffff;
   --panel-bot: #ffe7d4;
@@ -215,8 +213,6 @@
   --again: #ce2a1f;
   --halo: #fff5ec;
   --menu-bg: #ffffff;
-  --note-border: #90630d;
-  --note-ink: #613b1b;
   --note-code: #3f2612;
   --code: #426f9f;
   --excerpt-bg: #ffe7d4;
@@ -227,6 +223,7 @@
 }
 
 [data-theme="ocean"] {
+  color-scheme: light;
   --void: #eafaf7;
   --panel-top: #ffffff;
   --panel-bot: #cdeeff;
@@ -240,8 +237,6 @@
   --again: #c83427;
   --halo: #eafaf7;
   --menu-bg: #ffffff;
-  --note-border: #90630d;
-  --note-ink: #1a4c46;
   --note-code: #11312d;
   --code: #147482;
   --excerpt-bg: #cdeeff;
@@ -252,6 +247,7 @@
 }
 
 [data-theme="berry"] {
+  color-scheme: light;
   --void: #fdeefb;
   --panel-top: #ffffff;
   --panel-bot: #f1dbff;
@@ -265,8 +261,6 @@
   --again: #c52956;
   --halo: #fdeefb;
   --menu-bg: #ffffff;
-  --note-border: #945d0c;
-  --note-ink: #5c3163;
   --note-code: #3a1f3e;
   --code: #6f62ad;
   --excerpt-bg: #f1dbff;
@@ -284,12 +278,13 @@
 
 /* ── GitHub Dark ── */
 [data-theme="github-dark"] {
+  color-scheme: dark;
   --void: #0d1117; --panel-top: #161b22; --panel-bot: #161b22;
   --ink: #e6edf3; --dim: #7d8590; --line: #30363d;
   --bolt: #2f81f7; --bolt-hi: #2f81f7;
   --good: #3fb950; --warn: #d29922; --again: #f85149;
   --halo: #161b22; --menu-bg: #161b22;
-  --note-border: #d29922; --note-ink: #e6edf3; --note-code: #e6edf3;
+  --note-code: #e6edf3;
   --code: #58a6ff;
   --excerpt-bg: #161b22;
   --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
@@ -297,12 +292,13 @@
 
 /* ── GitHub Light — aligned to the Alix Adult palette ── */
 [data-theme="github-light"] {
+  color-scheme: light;
   --void: #ffffff; --panel-top: #f6f8fa; --panel-bot: #ffffff;
   --ink: #1f2328; --dim: #656d76; --line: rgba(20, 20, 30, .12);
   --bolt: #0969da; --bolt-hi: #0969da;
   --good: #1a7f37; --warn: #9a6700; --again: #d1242f;
   --halo: #ffffff; --menu-bg: #f6f8fa;
-  --note-border: #9a6700; --note-ink: #1f2328; --note-code: #1f2328;
+  --note-code: #1f2328;
   --code: #0969da;
   --excerpt-bg: #f6f8fa;
   --text: #3d444d; --faint: #8c959f; --accent-ink: #ffffff; --brand-text: #c2410c;
@@ -310,12 +306,13 @@
 
 /* ── One Dark — aligned to the Alix Adult palette ── */
 [data-theme="one-dark"] {
+  color-scheme: dark;
   --void: #282c34; --panel-top: #31363f; --panel-bot: #282c34;
   --ink: #dcdfe4; --dim: #9aa0ab; --line: rgba(255, 255, 255, .10);
   --bolt: #61afef; --bolt-hi: #61afef;
   --good: #98c379; --warn: #e5c07b; --again: #e06c75;
   --halo: #282c34; --menu-bg: #31363f;
-  --note-border: #e5c07b; --note-ink: #dcdfe4; --note-code: #dcdfe4;
+  --note-code: #dcdfe4;
   --code: #61afef;
   --excerpt-bg: #31363f;
   --text: #c8ccd4; --faint: #6b727d; --accent-ink: #081a2a; --brand-text: #f5a35f;
@@ -323,12 +320,13 @@
 
 /* ── Dracula — aligned to the Alix Adult palette ── */
 [data-theme="dracula"] {
+  color-scheme: dark;
   --void: #282a36; --panel-top: #343746; --panel-bot: #282a36;
   --ink: #f8f8f2; --dim: #9a9ab5; --line: rgba(255, 255, 255, .10);
   --bolt: #bd93f9; --bolt-hi: #bd93f9;
   --good: #50fa7b; --warn: #f1fa8c; --again: #ff5555;
   --halo: #282a36; --menu-bg: #343746;
-  --note-border: #f1fa8c; --note-ink: #f8f8f2; --note-code: #f8f8f2;
+  --note-code: #f8f8f2;
   --code: #8be9fd;
   --excerpt-bg: #343746;
   --text: #d4d4e0; --faint: #6d6d8a; --accent-ink: #1c142b; --brand-text: #f5a35f;
@@ -336,12 +334,13 @@
 
 /* ── Monokai ── */
 [data-theme="monokai"] {
+  color-scheme: dark;
   --void: #272822; --panel-top: #1e1f1c; --panel-bot: #1e1f1c;
   --ink: #f8f8f2; --dim: #88846f; --line: #1e1f1c;
   --bolt: #f92672; --bolt-hi: #f92672;
   --good: #a6e22e; --warn: #e6db74; --again: #f92672;
   --halo: #1e1f1c; --menu-bg: #1e1f1c;
-  --note-border: #e6db74; --note-ink: #f8f8f2; --note-code: #f8f8f2;
+  --note-code: #f8f8f2;
   --code: #66d9ef;
   --excerpt-bg: #1e1f1c;
   --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
@@ -349,12 +348,13 @@
 
 /* ── Catppuccin Mocha ── */
 [data-theme="catppuccin-mocha"] {
+  color-scheme: dark;
   --void: #1e1e2e; --panel-top: #181825; --panel-bot: #181825;
   --ink: #cdd6f4; --dim: #a6adc8; --line: #45475a;
   --bolt: #cba6f7; --bolt-hi: #cba6f7;
   --good: #a6e3a1; --warn: #f9e2af; --again: #f38ba8;
   --halo: #181825; --menu-bg: #181825;
-  --note-border: #f9e2af; --note-ink: #cdd6f4; --note-code: #cdd6f4;
+  --note-code: #cdd6f4;
   --code: #89b4fa;
   --excerpt-bg: #181825;
   --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
@@ -362,12 +362,13 @@
 
 /* ── Catppuccin Latte ── */
 [data-theme="catppuccin-latte"] {
+  color-scheme: light;
   --void: #eff1f5; --panel-top: #e6e9ef; --panel-bot: #e6e9ef;
   --ink: #4c4f69; --dim: #6c6f85; --line: #bcc0cc;
   --bolt: #8839ef; --bolt-hi: #8839ef;
   --good: #40a02b; --warn: #df8e1d; --again: #d20f39;
   --halo: #e6e9ef; --menu-bg: #e6e9ef;
-  --note-border: #df8e1d; --note-ink: #4c4f69; --note-code: #4c4f69;
+  --note-code: #4c4f69;
   --code: #1e66f5;
   --excerpt-bg: #e6e9ef;
   --text: #5c5f77; --faint: #8c8fa1; --accent-ink: #ffffff; --brand-text: #c2410c;
@@ -375,12 +376,13 @@
 
 /* ── Tokyo Night ── */
 [data-theme="tokyo-night"] {
+  color-scheme: dark;
   --void: #1a1b26; --panel-top: #16161e; --panel-bot: #16161e;
   --ink: #c0caf5; --dim: #565f89; --line: #15161e;
   --bolt: #7aa2f7; --bolt-hi: #7aa2f7;
   --good: #9ece6a; --warn: #e0af68; --again: #f7768e;
   --halo: #16161e; --menu-bg: #16161e;
-  --note-border: #e0af68; --note-ink: #c0caf5; --note-code: #c0caf5;
+  --note-code: #c0caf5;
   --code: #7aa2f7;
   --excerpt-bg: #16161e;
   --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
@@ -388,12 +390,13 @@
 
 /* ── Solarized Dark ── */
 [data-theme="solarized-dark"] {
+  color-scheme: dark;
   --void: #002b36; --panel-top: #073642; --panel-bot: #073642;
   --ink: #839496; --dim: #586e75; --line: #073642;
   --bolt: #268bd2; --bolt-hi: #268bd2;
   --good: #859900; --warn: #b58900; --again: #dc322f;
   --halo: #073642; --menu-bg: #073642;
-  --note-border: #b58900; --note-ink: #839496; --note-code: #839496;
+  --note-code: #839496;
   --code: #268bd2;
   --excerpt-bg: #073642;
   --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
@@ -401,12 +404,13 @@
 
 /* ── Solarized Light — aligned to the Alix Adult palette ── */
 [data-theme="solarized-light"] {
+  color-scheme: light;
   --void: #fdf6e3; --panel-top: #eee8d5; --panel-bot: #fdf6e3;
   --ink: #073642; --dim: #839496; --line: rgba(80, 70, 40, .20);
   --bolt: #268bd2; --bolt-hi: #268bd2;
   --good: #859900; --warn: #b58900; --again: #dc322f;
   --halo: #fdf6e3; --menu-bg: #eee8d5;
-  --note-border: #b58900; --note-ink: #073642; --note-code: #073642;
+  --note-code: #073642;
   --code: #176f9c;
   --excerpt-bg: #eee8d5;
   --text: #586e75; --faint: #93a1a1; --accent-ink: #ffffff; --brand-text: #c2410c;
@@ -414,12 +418,13 @@
 
 /* ── Gruvbox Dark — aligned to the Alix Adult palette ── */
 [data-theme="gruvbox-dark"] {
+  color-scheme: dark;
   --void: #282828; --panel-top: #3c3836; --panel-bot: #282828;
   --ink: #fbf1c7; --dim: #a89984; --line: rgba(255, 255, 255, .10);
   --bolt: #fabd2f; --bolt-hi: #fabd2f;
   --good: #b8bb26; --warn: #fabd2f; --again: #fb4934;
   --halo: #282828; --menu-bg: #3c3836;
-  --note-border: #fabd2f; --note-ink: #fbf1c7; --note-code: #fbf1c7;
+  --note-code: #fbf1c7;
   --code: #83a598;
   --excerpt-bg: #3c3836;
   --text: #ebdbb2; --faint: #7c6f64; --accent-ink: #2a2000; --brand-text: #fe8019;
@@ -427,12 +432,13 @@
 
 /* ── Gruvbox Light ── */
 [data-theme="gruvbox-light"] {
+  color-scheme: light;
   --void: #fbf1c7; --panel-top: #ebdbb2; --panel-bot: #ebdbb2;
   --ink: #3c3836; --dim: #7c6f64; --line: #d5c4a1;
   --bolt: #458588; --bolt-hi: #458588;
   --good: #98971a; --warn: #d79921; --again: #cc241d;
   --halo: #ebdbb2; --menu-bg: #ebdbb2;
-  --note-border: #d79921; --note-ink: #3c3836; --note-code: #3c3836;
+  --note-code: #3c3836;
   --code: #076678;
   --excerpt-bg: #ebdbb2;
   --text: #504945; --faint: #7c6f64; --accent-ink: #ffffff; --brand-text: #c2410c;
@@ -440,12 +446,13 @@
 
 /* ── Nord — aligned to the Alix Adult palette ── */
 [data-theme="nord"] {
+  color-scheme: dark;
   --void: #2e3440; --panel-top: #3b4252; --panel-bot: #2e3440;
   --ink: #eceff4; --dim: #a3adba; --line: rgba(255, 255, 255, .10);
   --bolt: #88c0d0; --bolt-hi: #88c0d0;
   --good: #a3be8c; --warn: #ebcb8b; --again: #bf616a;
   --halo: #2e3440; --menu-bg: #3b4252;
-  --note-border: #ebcb8b; --note-ink: #eceff4; --note-code: #eceff4;
+  --note-code: #eceff4;
   --code: #88c0d0;
   --excerpt-bg: #3b4252;
   --text: #d8dee9; --faint: #7b869c; --accent-ink: #10202a; --brand-text: #f5a35f;
@@ -453,12 +460,13 @@
 
 /* ── Ayu Dark ── */
 [data-theme="ayu-dark"] {
+  color-scheme: dark;
   --void: #0d1017; --panel-top: #10141c; --panel-bot: #10141c;
   --ink: #bfbdb6; --dim: #5c6773; --line: #1b1f29;
   --bolt: #e6b450; --bolt-hi: #e6b450;
   --good: #aad94c; --warn: #ffb454; --again: #f07178;
   --halo: #10141c; --menu-bg: #10141c;
-  --note-border: #ffb454; --note-ink: #bfbdb6; --note-code: #bfbdb6;
+  --note-code: #bfbdb6;
   --code: #59c2ff;
   --excerpt-bg: #10141c;
   --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
@@ -466,12 +474,13 @@
 
 /* ── Rosé Pine ── */
 [data-theme="rose-pine"] {
+  color-scheme: dark;
   --void: #191724; --panel-top: #1f1d2e; --panel-bot: #1f1d2e;
   --ink: #e0def4; --dim: #6e6a86; --line: #26233a;
   --bolt: #c4a7e7; --bolt-hi: #c4a7e7;
   --good: #31748f; --warn: #f6c177; --again: #eb6f92;
   --halo: #1f1d2e; --menu-bg: #1f1d2e;
-  --note-border: #f6c177; --note-ink: #e0def4; --note-code: #e0def4;
+  --note-code: #e0def4;
   --code: #9ccfd8;
   --excerpt-bg: #1f1d2e;
   --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;
@@ -479,12 +488,13 @@
 
 /* ── Everforest Dark ── */
 [data-theme="everforest-dark"] {
+  color-scheme: dark;
   --void: #2d353b; --panel-top: #343f44; --panel-bot: #343f44;
   --ink: #d3c6aa; --dim: #859289; --line: #3d484d;
   --bolt: #a7c080; --bolt-hi: #a7c080;
   --good: #a7c080; --warn: #dbbc7f; --again: #e67e80;
   --halo: #343f44; --menu-bg: #343f44;
-  --note-border: #dbbc7f; --note-ink: #d3c6aa; --note-code: #d3c6aa;
+  --note-code: #d3c6aa;
   --code: #7fbbb3;
   --excerpt-bg: #343f44;
   --text: #c9cdd8; --faint: #6b7085; --accent-ink: #08131a; --brand-text: #f5a35f;

@@ -451,7 +451,7 @@ fn card_dto_structures_the_note() {
         Arc::from("s.md"),
         "the front".to_string(),
         vec!["the back".to_string()],
-        vec![Note::bare(note.to_string())],
+        vec![Note::plain(note.to_string())],
         1,
     );
     let dto = card_dto((&card).into(), card.id());
@@ -482,16 +482,17 @@ fn parser_note_origins_and_multi_note_order_reach_the_wire() {
 
     let table_dto = card_dto((&table.cards[0]).into(), table.cards[0].id());
     assert_eq!(
-        None, table_dto.note[0].badge,
-        "a table note stays badgeless"
+        crate::card::Badge::Note,
+        table_dto.note[0].badge,
+        "a table note is a plain NOTE"
     );
 
     let mut card = alert.cards[0].clone();
-    card.notes.push(Note::bare("personal body".to_string()));
+    card.notes.push(Note::plain("personal body".to_string()));
     let dto = card_dto((&card).into(), card.id());
     assert_eq!(2, dto.note.len(), "each source becomes its own wire note");
-    assert_eq!(Some(crate::card::Badge::Warning), dto.note[0].badge);
-    assert_eq!(None, dto.note[1].badge);
+    assert_eq!(crate::card::Badge::Warning, dto.note[0].badge);
+    assert_eq!(crate::card::Badge::Note, dto.note[1].badge);
     let bodies = dto
         .note
         .iter()
@@ -1678,7 +1679,7 @@ fn browse_payload_renders_a_repeated_formula_once() {
         Arc::from("s.md"),
         "$x^2$".to_string(),
         vec!["$x^2$".to_string()],
-        vec![Note::bare("$x^2$".to_string())],
+        vec![Note::plain("$x^2$".to_string())],
         1,
     );
     let browsing = Browsing {

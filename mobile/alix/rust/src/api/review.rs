@@ -151,7 +151,7 @@ pub struct _ImageView {
 
 #[flutter_rust_bridge::frb(mirror(NoteView))]
 pub struct _NoteView {
-    pub badge: Option<Badge>,
+    pub badge: Badge,
     pub units: Vec<ContentUnit>,
 }
 

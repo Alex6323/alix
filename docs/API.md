@@ -791,11 +791,11 @@ become what they have to reproduce. Example payload:
 ### NoteDto
 
 One post-answer note. `units: [ContentUnitDto]` is its body, the same tagged
-union the other `*_units` fields carry. `badge: string?` is the GitHub alert
-badge that opened it, lowercased: one of `note`, `tip`, `important`,
-`warning`, `caution`. The key is ABSENT (never null) for a note no blockquote
-opened: a card table's note column, an AI augmentation, or a personal note the
-reviewer appended. A client that renders no badge styling still renders
+union the other `*_units` fields carry. `badge: string` is the GitHub alert
+badge, lowercased: one of `note`, `tip`, `important`, `warning`, `caution`.
+Always present: a note alix adds (a card table's note column, an AI
+augmentation, a note the tutor condensed) is `note`, indistinguishable from an
+authored `[!NOTE]`. A client that renders no badge styling still renders
 `units` and loses nothing but colour.
 
 ### CitationDto

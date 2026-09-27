@@ -19,10 +19,7 @@ Scaffold
                         Text("introduced")
                         Text("1")
                   SizedBox(width=null, height=18.0)
-                  Container
-                    ConstrainedBox
-                      Padding(EdgeInsets(16.0, 13.0, 16.0, 13.0))
-                        Text("Nothing due right now, come back later.")
+                  Text("Nothing due right now, come back later.")
                   SizedBox(width=null, height=24.0)
                   Material
                     CustomPaint

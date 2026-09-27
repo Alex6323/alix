@@ -1,27 +1,67 @@
 use super::{WHITESPACE, trim_ws};
+use crate::card::{Badge, Note};
 
-/// A run of `>` lines in a personal file, addressed to a card by the
-/// `<!-- note: -->` marker that opens it.
+/// A note in a personal file, addressed to a card by the `<!-- note: -->`
+/// marker that opens it: the deck's own note grammar, a `>` run whose first
+/// line is a badge.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SidecarNote {
     pub card: String,
-    pub lines: Vec<String>,
+    pub note: Note,
+}
+
+/// A marker whose run opens with no badge line, by marker line number
+/// (1-based) and card; it is no note, and doctor names it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnbadgedNote {
+    pub line: usize,
+    pub card: String,
 }
 
 pub fn notes(text: &str) -> Vec<SidecarNote> {
+    runs(text)
+        .into_iter()
+        .filter_map(|(_, card, run)| {
+            let (first, rest) = run.split_first()?;
+            let badge = Badge::parse(first)?;
+            Some(SidecarNote {
+                card,
+                note: Note {
+                    badge,
+                    body: rest.join("\n"),
+                },
+            })
+        })
+        .collect()
+}
+
+pub fn unbadged_notes(text: &str) -> Vec<UnbadgedNote> {
+    runs(text)
+        .into_iter()
+        .filter(|(_, _, run)| {
+            run.first()
+                .is_none_or(|first| Badge::parse(first).is_none())
+        })
+        .map(|(index, card, _)| UnbadgedNote {
+            line: index + 1,
+            card,
+        })
+        .collect()
+}
+
+/// Every marker with the quoted text of the run under it, by marker index.
+fn runs(text: &str) -> Vec<(usize, String, Vec<String>)> {
     let lines: Vec<&str> = text.lines().collect();
     let mut out = Vec::new();
     for (index, line) in lines.iter().enumerate() {
         let Some(card) = marker_target(trim_ws(line)) else {
             continue;
         };
-        out.push(SidecarNote {
-            card: card.to_string(),
-            lines: lines[index + 1..quoted_run_end(&lines, index)]
-                .iter()
-                .map(|line| quoted_text(line).unwrap_or_default().to_string())
-                .collect(),
-        });
+        let run = lines[index + 1..quoted_run_end(&lines, index)]
+            .iter()
+            .map(|line| quoted_text(line).unwrap_or_default().to_string())
+            .collect();
+        out.push((index, card.to_string(), run));
     }
     out
 }
@@ -122,28 +162,58 @@ mod tests {
     }
 
     #[test]
-    fn a_marker_carries_the_quoted_lines_below_it() {
-        let text = "<!-- note: card-abc -->\n> not the same as realizar\n> really\n";
+    fn a_marker_carries_the_badged_note_below_it() {
+        let text = "<!-- note: card-abc -->\n> [!NOTE]\n> not the same as realizar\n> really\n";
         assert_eq!(
             vec![SidecarNote {
                 card: "card-abc".into(),
-                lines: vec!["not the same as realizar".into(), "really".into()],
+                note: Note {
+                    badge: Badge::Note,
+                    body: "not the same as realizar\nreally".into(),
+                },
             }],
             notes(text)
         );
+        assert!(unbadged_notes(text).is_empty());
+    }
+
+    #[test]
+    fn every_badge_opens_a_sidecar_note_and_nothing_else_does() {
+        for (line, badge) in [
+            ("[!NOTE]", Badge::Note),
+            ("[!TIP]", Badge::Tip),
+            ("[!IMPORTANT]", Badge::Important),
+            ("[!WARNING]", Badge::Warning),
+            ("[!CAUTION]", Badge::Caution),
+        ] {
+            let text = format!("<!-- note: card-abc -->\n> {line}\n> body\n");
+            assert_eq!(badge, notes(&text)[0].note.badge, "{line}");
+        }
+        for run in ["> body\n", "> [!note]\n> body\n", "> [!HINT]\n> body\n", ""] {
+            let text = format!("<!-- note: card-abc -->\n{run}");
+            assert!(notes(&text).is_empty(), "{run:?} is no note");
+            assert_eq!(
+                vec![UnbadgedNote {
+                    line: 1,
+                    card: "card-abc".into(),
+                }],
+                unbadged_notes(&text),
+                "{run:?} is reported"
+            );
+        }
     }
 
     #[test]
     fn a_blank_line_ends_the_run_so_later_quotes_are_not_swept_in() {
-        let text = "<!-- note: card-abc -->\n> mine\n\n> a later quote\n";
-        assert_eq!(vec!["mine".to_string()], notes(text)[0].lines);
+        let text = "<!-- note: card-abc -->\n> [!NOTE]\n> mine\n\n> a later quote\n";
+        assert_eq!("mine", notes(text)[0].note.body);
     }
 
     #[test]
     fn blocks_are_returned_in_file_order_across_intervening_content() {
-        let text = "<!-- note: card-one -->\n> first\n\n\
+        let text = "<!-- note: card-one -->\n> [!TIP]\n> first\n\n\
                     ## a personal card <!-- id: card-xyz -->\nan answer\n\n\
-                    <!-- note: card-two -->\n> second\n";
+                    <!-- note: card-two -->\n> [!NOTE]\n> second\n";
         assert_eq!(
             vec!["card-one".to_string(), "card-two".to_string()],
             notes(text)
@@ -154,13 +224,16 @@ mod tests {
     }
 
     #[test]
-    fn a_marker_with_nothing_below_it_is_still_a_block_so_doctor_can_report_it() {
+    fn a_marker_with_only_a_badge_below_it_is_an_empty_note() {
         assert_eq!(
             vec![SidecarNote {
                 card: "card-abc".into(),
-                lines: Vec::new(),
+                note: Note {
+                    badge: Badge::Note,
+                    body: String::new(),
+                },
             }],
-            notes("<!-- note: card-abc -->\n")
+            notes("<!-- note: card-abc -->\n> [!NOTE]\n")
         );
     }
 

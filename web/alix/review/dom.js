@@ -524,8 +524,7 @@ export function appendSectionContext(parent, lines, runs, units, makeDiagram) {
 }
 
 // Each NoteDto is its own `.note` block, so several notes stack as siblings
-// rather than one badge overwriting another. `badge` is absent for a note no
-// blockquote opened (table column, augmentation, personal note).
+// rather than one badge overwriting another.
 export function renderNote(parent, notes) {
   for (const { badge, units } of notes || []) {
     renderNoteBlock(parent, badge, units || []);
@@ -535,10 +534,8 @@ export function renderNote(parent, notes) {
 function renderNoteBlock(parent, badge, units) {
   if (units.length === 0) return;
   const note = el("div", "note");
-  if (badge) {
-    note.dataset.badge = badge;
-    note.appendChild(el("span", "note-badge", badge));
-  }
+  note.dataset.badge = badge;
+  note.appendChild(el("span", "note-badge", badge));
   for (const unit of units) {
     if (unit.kind === "sentence") {
       const paragraph = el("p");

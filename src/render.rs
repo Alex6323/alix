@@ -1015,7 +1015,7 @@ mod tests {
             Arc::from("s.txt"),
             "front".to_string(),
             vec!["back".to_string()],
-            vec![crate::card::Note::bare(note.to_string())],
+            vec![crate::card::Note::plain(note.to_string())],
             1,
         )
     }

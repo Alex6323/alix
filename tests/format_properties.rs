@@ -268,7 +268,7 @@ proptest! {
         }
         prop_assert_eq!(
             Vec::from_iter(card.note.as_ref().map(|body| alix::card::Note {
-                badge: Some(alix::card::Badge::Note),
+                badge: alix::card::Badge::Note,
                 body: body.clone(),
             })),
             deck.cards[0].notes.clone(),

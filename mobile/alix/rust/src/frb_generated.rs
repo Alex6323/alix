@@ -2090,7 +2090,7 @@ const _: fn() = || {
     }
     {
         let NoteView = None::<crate::api::review::NoteView>.unwrap();
-        let _: Option<crate::api::review::Badge> = NoteView.badge;
+        let _: crate::api::review::Badge = NoteView.badge;
         let _: Vec<crate::api::review::ContentUnit> = NoteView.units;
     }
     {
@@ -2971,7 +2971,7 @@ impl SseDecode for crate::api::review::MultiChoiceFeedback {
 impl SseDecode for crate::api::review::NoteView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_badge = <Option<crate::api::review::Badge>>::sse_decode(deserializer);
+        let mut var_badge = <crate::api::review::Badge>::sse_decode(deserializer);
         let mut var_units = <Vec<crate::api::review::ContentUnit>>::sse_decode(deserializer);
         return crate::api::review::NoteView {
             badge: var_badge,
@@ -3015,17 +3015,6 @@ impl SseDecode for Option<String> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<String>::sse_decode(deserializer));
-        } else {
-            return None;
-        }
-    }
-}
-
-impl SseDecode for Option<crate::api::review::Badge> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(<crate::api::review::Badge>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -5756,7 +5745,7 @@ impl SseEncode for crate::api::review::MultiChoiceFeedback {
 impl SseEncode for crate::api::review::NoteView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Option<crate::api::review::Badge>>::sse_encode(self.badge, serializer);
+        <crate::api::review::Badge>::sse_encode(self.badge, serializer);
         <Vec<crate::api::review::ContentUnit>>::sse_encode(self.units, serializer);
     }
 }
@@ -5784,16 +5773,6 @@ impl SseEncode for Option<String> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <String>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<crate::api::review::Badge> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <crate::api::review::Badge>::sse_encode(value, serializer);
         }
     }
 }

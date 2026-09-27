@@ -932,7 +932,7 @@ mod tests {
             Arc::from("deck.txt"),
             "Why?".to_string(),
             vec!["Because.".to_string()],
-            vec![crate::card::Note::bare("a note".to_string())],
+            vec![crate::card::Note::plain("a note".to_string())],
             1,
         )
     }

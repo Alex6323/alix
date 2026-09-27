@@ -8,7 +8,8 @@ import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/shared/inline_runs.dart';
 import 'package:alix_mobile/theme.dart';
 
-ReviewNoteModel _note(String text, {ReviewBadge? badge}) => ReviewNoteModel(
+ReviewNoteModel _note(String text, {ReviewBadge badge = ReviewBadge.note}) =>
+    ReviewNoteModel(
   badge: badge,
   units: [
     ReviewSentenceModel(
@@ -24,6 +25,7 @@ Widget _card(
   List<ReviewNoteModel> notes,
   TextEditingController attempt, {
   List<ReviewContentUnitModel>? frontUnits,
+  ThemeData? theme,
 }) {
   final card = ReviewCardModel(
     front: 'Question',
@@ -59,7 +61,7 @@ Widget _card(
     newLeft: 0,
   );
   return MaterialApp(
-    theme: alixDark(),
+    theme: theme ?? alixDark(),
     home: Scaffold(
       body: ReviewCardView(
         state: state,
@@ -101,28 +103,15 @@ Widget _card(
   );
 }
 
-// A note's own box is the innermost Container around its body: the block
+// A note's own block is the innermost Container around its body: the block
 // carries no width of its own any more, so there is nothing else to key on.
 Finder _noteBox(String body) =>
     find.ancestor(of: find.text(body), matching: find.byType(Container)).first;
 
-Finder _badgeChip(ReviewBadge badge) => find.byWidgetPredicate(
-  (widget) =>
-      widget is Container &&
-      widget.child is Text &&
-      (widget.child! as Text).data == badge.name.toUpperCase(),
-);
-
-Color _boxColour(WidgetTester tester, String body) {
+/// The bar is the block's left border, the only decoration a note carries.
+BorderSide _bar(WidgetTester tester, String body) {
   final box = tester.widget<Container>(_noteBox(body));
-  return (box.decoration! as BoxDecoration).color!;
-}
-
-/// A badged note carries no ground of its own, so its accent is read from the
-/// chip's border, which is where the hue moved.
-Color _chipAccent(WidgetTester tester, ReviewBadge badge) {
-  final chip = tester.widget<Container>(_badgeChip(badge));
-  return ((chip.decoration! as BoxDecoration).border! as Border).top.color;
+  return ((box.decoration! as BoxDecoration).border! as Border).left;
 }
 
 void main() {
@@ -157,7 +146,7 @@ void main() {
     addTearDown(attempt.dispose);
     const quoted = 'A quoted passage.';
     final note = ReviewNoteModel(
-      badge: null,
+      badge: ReviewBadge.note,
       units: [
         ReviewQuoteModel([
           ReviewSentenceModel(
@@ -192,7 +181,7 @@ void main() {
     addTearDown(attempt.dispose);
     const itemText = 'A checklist item that belongs to the authored note.';
     final note = ReviewNoteModel(
-      badge: null,
+      badge: ReviewBadge.note,
       units: [
         ReviewChecklistModel([
           ReviewChecklistItemModel(
@@ -462,86 +451,86 @@ void main() {
     }
   });
 
-  testWidgets('every badge names itself and marks its own accent', (
+  testWidgets('every badge paints its GitHub colour on the bar and the word', (
     tester,
   ) async {
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
-    final tokens = alixDark().alix;
-    final accents = {
-      ReviewBadge.note: tokens.bolt,
-      ReviewBadge.tip: tokens.good,
-      ReviewBadge.important: tokens.bolt,
-      ReviewBadge.warning: tokens.warn,
-      ReviewBadge.caution: tokens.again,
+    const sets = {
+      Brightness.dark: {
+        ReviewBadge.note: Color(0xFF4493F8),
+        ReviewBadge.tip: Color(0xFF3FB950),
+        ReviewBadge.important: Color(0xFFAB7DF8),
+        ReviewBadge.warning: Color(0xFFD29922),
+        ReviewBadge.caution: Color(0xFFF85149),
+      },
+      Brightness.light: {
+        ReviewBadge.note: Color(0xFF0969DA),
+        ReviewBadge.tip: Color(0xFF1A7F37),
+        ReviewBadge.important: Color(0xFF8250DF),
+        ReviewBadge.warning: Color(0xFF9A6700),
+        ReviewBadge.caution: Color(0xFFCF222E),
+      },
     };
 
-    for (final badge in ReviewBadge.values) {
-      await tester.pumpWidget(_card([_note('Body.', badge: badge)], attempt));
-      final name = badge.name.toUpperCase();
-      expect(find.text(name), findsOneWidget, reason: '$badge names its chip');
-      expect(
-        _chipAccent(tester, badge),
-        accents[badge]!.withValues(
-          alpha: badge == ReviewBadge.important ? 1.0 : 0.55,
-        ),
-        reason: '$badge marks itself with its own accent',
-      );
-      // The accent paints borders, never small text: across the 21 palettes
-      // accent-on-its-own-wash measures as low as 2.0:1.
-      expect(
-        tester.widget<Text>(find.text(name)).style!.color,
-        tokens.dim,
-        reason: "$badge's chip is inked, not accent-coloured",
-      );
+    for (final MapEntry(key: brightness, value: colours) in sets.entries) {
+      final theme = brightness == Brightness.dark ? alixDark() : alixLight();
+      for (final badge in ReviewBadge.values) {
+        await tester.pumpWidget(
+          _card([_note('Body.', badge: badge)], attempt, theme: theme),
+        );
+        // MaterialApp animates a theme change over several frames.
+        await tester.pumpAndSettle();
+        final name = badge.name.toUpperCase();
+        expect(find.text(name), findsOneWidget, reason: '$badge names itself');
+        final bar = _bar(tester, 'Body.');
+        expect(bar.width, 4, reason: '$brightness $badge: the bar is 4 wide');
+        expect(
+          bar.color,
+          colours[badge],
+          reason: '$brightness $badge: the bar takes the GitHub colour',
+        );
+        expect(
+          tester.widget<Text>(find.text(name)).style!.color,
+          colours[badge],
+          reason: '$brightness $badge: the word takes the same colour',
+        );
+        expect(
+          find.text(name),
+          findsOneWidget,
+          reason: '$badge is named once, by the word above the text',
+        );
+      }
     }
   });
 
-  testWidgets('the heavier important border does not change chip height', (
+  testWidgets('a note carries no box and no hairline above it', (
     tester,
   ) async {
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
-
-    await tester.pumpWidget(
-      _card([
-        for (final badge in ReviewBadge.values)
-          _note('Body.', badge: badge),
-      ], attempt),
-    );
-
-    final heights = {
-      for (final badge in ReviewBadge.values)
-        badge.name: tester.getSize(_badgeChip(badge)).height,
-    };
-    expect(
-      heights.values.toSet(),
-      hasLength(1),
-      reason:
-          'a heavier border is a semantic cue, not a reason for IMPORTANT to '
-          'shift its note body or break the shared chip rhythm: $heights',
-    );
-  });
-
-  testWidgets('a badgeless note keeps the plain note ground and no chip', (
-    tester,
-  ) async {
-    final attempt = TextEditingController();
-    addTearDown(attempt.dispose);
-    final tokens = alixDark().alix;
 
     await tester.pumpWidget(_card([_note('A table column.')], attempt));
 
-    for (final badge in ReviewBadge.values) {
-      expect(
-        find.text(badge.name.toUpperCase()),
-        findsNothing,
-        reason: 'no badge, no chip',
-      );
-    }
+    final box = tester.widget<Container>(_noteBox('A table column.'));
+    final decoration = box.decoration! as BoxDecoration;
+    expect(decoration.color, isNull, reason: 'no wash');
+    final border = decoration.border! as Border;
+    expect(border.top, BorderSide.none);
+    expect(border.right, BorderSide.none);
+    expect(border.bottom, BorderSide.none);
     expect(
-      _boxColour(tester, 'A table column.'),
-      tokens.noteBorder.withValues(alpha: 0.12),
+      find.descendant(
+        of: find.byType(ReviewCardView),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Container &&
+              widget.constraints?.maxHeight == 1 &&
+              widget.decoration != null,
+        ),
+      ),
+      findsOneWidget,
+      reason: 'one hairline remains, between the question and the answer',
     );
   });
 }

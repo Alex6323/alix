@@ -116,7 +116,7 @@ function longContentState({
         back_to: index + 1,
       })),
       reshaped: false,
-      note: note.length === 0 ? [] : [{ units: note }],
+      note: note.length === 0 ? [] : [{ badge: "note", units: note }],
       images: [],
       images_back: [],
       citations,
@@ -582,7 +582,7 @@ test("keyboard-focused choices stay clear of both overflow hints", async ({ page
   ).toBeLessThanOrEqual(lowerEdge.safeBottom);
 });
 
-test("a source answer and its note have a visible separator", async ({ page }, testInfo) => {
+test("a source answer and its note read as separate blocks", async ({ page }, testInfo) => {
   const sourceLines = Array.from(
     { length: 24 },
     (_, index) => ({ n: index + 1, text: `source line ${index + 1}: evidence for the answer` }),
@@ -606,14 +606,19 @@ test("a source answer and its note have a visible separator", async ({ page }, t
 
   const card = page.locator("#card");
   await expect(card.locator(".source-excerpt")).toBeVisible();
-  await expect(card.locator(".note")).toBeVisible();
-  const divider = card.locator("#noteDivider");
+  const note = card.locator(".note");
+  await expect(note).toBeVisible();
+  // No hairline between the answer and the note: the note's own bar and badge
+  // word mark it off, so the bar must visibly contrast with the ground beside
+  // it, measured on the rendered pixels rather than on a style value.
+  await expect(card.locator("#noteDivider")).toHaveCount(0);
+  await expect(note).toHaveCSS("border-left-width", "4px");
   const cardBox = await card.boundingBox();
-  const dividerBox = await divider.boundingBox();
+  const noteBox = await note.boundingBox();
   expect(cardBox).not.toBeNull();
-  expect(dividerBox).not.toBeNull();
-  const screenshot = await card.screenshot({ path: testInfo.outputPath("source-note-separator.png") });
-  const contrast = await page.evaluate(async ({ png, x0, x1, y }) => {
+  expect(noteBox).not.toBeNull();
+  const screenshot = await card.screenshot({ path: testInfo.outputPath("source-note-bar.png") });
+  const contrast = await page.evaluate(async ({ png, barX, groundX, y }) => {
     const image = new Image();
     image.src = `data:image/png;base64,${png}`;
     await image.decode();
@@ -623,33 +628,21 @@ test("a source answer and its note have a visible separator", async ({ page }, t
     const context = canvas.getContext("2d", { willReadFrequently: true });
     if (!context) return 0;
     context.drawImage(image, 0, 0);
-    const start = Math.round(x0 * canvas.width);
-    const end = Math.round(x1 * canvas.width);
-    const center = Math.round(y * canvas.height);
-    const average = (row: number) => {
-      const pixels = context.getImageData(start, row, end - start, 1).data;
-      const color = [0, 0, 0];
-      for (let index = 0; index < pixels.length; index += 4) {
-        color[0] += pixels[index];
-        color[1] += pixels[index + 1];
-        color[2] += pixels[index + 2];
-      }
-      return color.map((value) => value / (pixels.length / 4));
+    const row = Math.round(y * canvas.height);
+    const sample = (x: number) => {
+      const pixels = context.getImageData(Math.round(x * canvas.width), row, 1, 1).data;
+      return [pixels[0], pixels[1], pixels[2]];
     };
-    const above = average(center - 4);
-    const below = average(center + 4);
-    const background = above.map((value, index) => (value + below[index]) / 2);
-    return Math.max(...[-1, 0, 1].map((offset) => {
-      const band = average(center + offset);
-      return Math.hypot(...band.map((value, index) => value - background[index]));
-    }));
+    const bar = sample(barX);
+    const ground = sample(groundX);
+    return Math.hypot(...bar.map((value, index) => value - ground[index]));
   }, {
     png: screenshot.toString("base64"),
-    x0: ((dividerBox?.x ?? 0) - (cardBox?.x ?? 0) + (dividerBox?.width ?? 0) * 0.25) / (cardBox?.width ?? 1),
-    x1: ((dividerBox?.x ?? 0) - (cardBox?.x ?? 0) + (dividerBox?.width ?? 0) * 0.75) / (cardBox?.width ?? 1),
-    y: ((dividerBox?.y ?? 0) - (cardBox?.y ?? 0) + (dividerBox?.height ?? 0) / 2) / (cardBox?.height ?? 1),
+    barX: ((noteBox?.x ?? 0) - (cardBox?.x ?? 0) + 2) / (cardBox?.width ?? 1),
+    groundX: ((noteBox?.x ?? 0) - (cardBox?.x ?? 0) + 9) / (cardBox?.width ?? 1),
+    y: ((noteBox?.y ?? 0) - (cardBox?.y ?? 0) + (noteBox?.height ?? 0) / 2) / (cardBox?.height ?? 1),
   });
-  expect(contrast, "the rendered separator must visibly contrast with the card background").toBeGreaterThan(50);
+  expect(contrast, "the note's bar must visibly contrast with the ground beside it").toBeGreaterThan(50);
 });
 
 // A second fence AFTER the reveal boundary must consume the SECOND fence
@@ -1143,7 +1136,7 @@ test("an empty session says when the next card is due", async ({ page }) => {
   await openApp(page);
 
   await expect(page.getByRole("heading", { name: "Nothing due.", exact: true })).toBeVisible();
-  await expect(page.locator(".summary .note")).toHaveText(/^Next due in \d+ min\.$/);
+  await expect(page.locator(".summary .remark")).toHaveText(/^Next due in \d+ min\.$/);
 });
 
 test("the tutor leave prompt keeps Enter for composing and Escape stays", async ({ page }) => {

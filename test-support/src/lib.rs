@@ -168,7 +168,7 @@ pub fn after_note() -> Effects {
         deck: DECK.to_string(),
         sidecar: Some(
             "---\nfor: deck-parityparityparityparit\n---\n\n\
-             <!-- note: card-parityparityparityparit -->\n> the condensed insight\n"
+             <!-- note: card-parityparityparityparit -->\n> [!NOTE]\n> the condensed insight\n"
                 .to_string(),
         ),
         scheduled: Vec::new(),

@@ -101,7 +101,7 @@ function summaryHarness(state, pending) {
     },
   });
   study.apply(state);
-  const note = () => stage.children[0].children.find((c) => c.cls === "note");
+  const note = () => stage.children[0].children.find((c) => c.cls === "remark");
   const rows = () =>
     stage.children[0].children
       .filter((c) => c.cls === "row")

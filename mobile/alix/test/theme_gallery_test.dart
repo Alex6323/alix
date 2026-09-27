@@ -13,6 +13,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:alix_mobile/review/review_card.dart';
+import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/theme.dart';
 
 const _cssPath = '../../web/shared/theme.css';
@@ -113,37 +115,25 @@ void main() {
     }
   });
 
-  // A note's small text (the badge chip at 10 px, the body at 15) is
-  // `onSurface` over the badge accent at 12% alpha. WCAG AA for normal text is
-  // 4.5:1 and this floor is deliberately lower: solarized-dark's own
-  // surface/onSurface pair is 4.75:1, so ANY tinted surface in that palette
-  // sits under AA and reaching it means retuning a shipped theme. The floor is
-  // a regression guard, not an accessibility claim: painting small text in the
-  // accent itself, as the first version of this chip did, measured 2.0:1.
-  test('note small text stays legible over every badge wash in every theme', () {
+  // A note's badge word (10.5 px, weight 600) is painted in GitHub's colour
+  // for the theme's brightness on the theme's own surface. The five colours
+  // are the same on every palette by decision, and GitHub's dark caution red
+  // on the two grey-blue grounds (nord, everforest) measures 3.7:1, so the
+  // floor sits under that. WCAG AA for normal text is 4.5:1: the floor is a
+  // regression guard against a word that vanishes, not an accessibility
+  // claim.
+  test('the badge word in its GitHub colour reads on every theme surface', () {
     final failures = <String, double>{};
     for (final theme in alixThemes) {
-      final tokens = theme.data.extension<AlixTokens>()!;
       final surface = theme.data.colorScheme.surface;
-      final washes = <String, Color>{
-        'note': tokens.bolt,
-        'tip': tokens.good,
-        'important': tokens.bolt,
-        'warning': tokens.warn,
-        'caution': tokens.again,
-        'badgeless': tokens.noteBorder,
-      };
-      for (final entry in washes.entries) {
-        final wash = Color.alphaBlend(
-          entry.value.withValues(alpha: 0.12),
-          surface,
-        );
-        final ratio = _contrast(theme.data.colorScheme.onSurface, wash);
-        if (ratio < 4.0) failures['${theme.id}/${entry.key}'] = ratio;
+      for (final badge in ReviewBadge.values) {
+        final word = badgeColour(badge, theme.data.brightness);
+        final ratio = _contrast(word, surface);
+        if (ratio < 3.5) failures['${theme.id}/${badge.name}'] = ratio;
       }
     }
 
-    expect(failures, isEmpty, reason: 'a note wash may not swallow its text');
+    expect(failures, isEmpty, reason: 'a badge word may not vanish on its ground');
   });
 
   // Same 4.0 floor and the same reason as the note-wash law above: AA would
@@ -195,8 +185,6 @@ void main() {
         expect(tokens.dim, core('dim'), reason: '--dim');
         expect(tokens.faint, extra('faint'), reason: '--faint');
         expect(tokens.text, extra('text'), reason: '--text');
-        expect(tokens.noteBorder, core('note-border'), reason: '--note-border');
-        expect(tokens.noteInk, core('note-ink'), reason: '--note-ink');
         expect(tokens.code, core('code'), reason: '--code');
 
         expect(scheme.surface, core('void'), reason: '--void');

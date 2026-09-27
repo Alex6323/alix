@@ -232,16 +232,20 @@ impl Badge {
     }
 }
 
-/// The badge is absent for a note no blockquote opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Note {
-    pub badge: Option<Badge>,
+    pub badge: Badge,
     pub body: String,
 }
 
 impl Note {
-    pub fn bare(body: String) -> Self {
-        Self { badge: None, body }
+    /// A note alix adds (a table column, an augmentation, the tutor): a NOTE,
+    /// indistinguishable from an authored one.
+    pub fn plain(body: String) -> Self {
+        Self {
+            badge: Badge::Note,
+            body,
+        }
     }
 }
 
@@ -413,12 +417,11 @@ impl Card {
         let mut input = String::new();
         for note in &self.notes {
             input.push_str(match note.badge {
-                Some(Badge::Note) => "note",
-                Some(Badge::Tip) => "tip",
-                Some(Badge::Important) => "important",
-                Some(Badge::Warning) => "warning",
-                Some(Badge::Caution) => "caution",
-                None => "",
+                Badge::Note => "note",
+                Badge::Tip => "tip",
+                Badge::Important => "important",
+                Badge::Warning => "warning",
+                Badge::Caution => "caution",
             });
             input.push('\u{1f}');
             input.push_str(&note.body);
@@ -440,7 +443,7 @@ impl Card {
         if notes.is_empty() {
             return;
         }
-        self.notes.push(Note::bare(notes.join("\n")));
+        self.notes.push(Note::plain(notes.join("\n")));
     }
 }
 
@@ -495,7 +498,7 @@ mod tests {
             Arc::from(subject),
             front.to_string(),
             back.iter().map(|s| s.to_string()).collect(),
-            Vec::from_iter(note.map(|s| Note::bare(s.to_string()))),
+            Vec::from_iter(note.map(|s| Note::plain(s.to_string()))),
             1,
         )
     }
@@ -598,8 +601,8 @@ mod tests {
         c.append_note(&["second".to_string(), "third".to_string()]);
         assert_eq!(
             vec![
-                Note::bare("first".to_string()),
-                Note::bare("second\nthird".to_string()),
+                Note::plain("first".to_string()),
+                Note::plain("second\nthird".to_string()),
             ],
             c.notes,
             "each call adds one bare note, and the lines of one call join"
@@ -610,17 +613,17 @@ mod tests {
     fn an_appended_note_stands_beside_the_badged_one() {
         let mut c = card("d.md", "front", &["back"], None);
         c.notes.push(Note {
-            badge: Some(Badge::Warning),
+            badge: Badge::Warning,
             body: "authored".to_string(),
         });
         c.append_note(&["from the sidecar".to_string()]);
         assert_eq!(
             vec![
                 Note {
-                    badge: Some(Badge::Warning),
+                    badge: Badge::Warning,
                     body: "authored".to_string(),
                 },
-                Note::bare("from the sidecar".to_string()),
+                Note::plain("from the sidecar".to_string()),
             ],
             c.notes,
             "an appended note stands beside the authored one rather than joining a \
@@ -636,20 +639,20 @@ mod tests {
             c.format_fingerprint()
         };
         let badged = stack(vec![Note {
-            badge: Some(Badge::Tip),
+            badge: Badge::Tip,
             body: "x".to_string(),
         }]);
-        let bare = stack(vec![Note::bare("tipx".to_string())]);
+        let bare = stack(vec![Note::plain("tipx".to_string())]);
         assert_ne!(
             badged, bare,
             "a badge and a body must not run together, or a stale reshape of one \
              stack applies to a different one"
         );
         let split = stack(vec![
-            Note::bare("one".to_string()),
-            Note::bare("two".to_string()),
+            Note::plain("one".to_string()),
+            Note::plain("two".to_string()),
         ]);
-        let joined = stack(vec![Note::bare("one\ntwo".to_string())]);
+        let joined = stack(vec![Note::plain("one\ntwo".to_string())]);
         assert_ne!(
             split, joined,
             "two notes and one note carrying both lines are different authored input"
@@ -661,13 +664,13 @@ mod tests {
         );
         let two = stack(vec![
             Note {
-                badge: Some(Badge::Tip),
+                badge: Badge::Tip,
                 body: "a".to_string(),
             },
-            Note::bare("b".to_string()),
+            Note::plain("b".to_string()),
         ]);
         let one = stack(vec![Note {
-            badge: Some(Badge::Tip),
+            badge: Badge::Tip,
             body: "a\u{1f}b".to_string(),
         }]);
         assert_ne!(
@@ -682,7 +685,7 @@ mod tests {
     fn every_note_reaches_the_text_payloads_and_the_projection() {
         let mut c = card("d.md", "front", &["back"], Some("first"));
         c.notes.push(Note {
-            badge: Some(Badge::Caution),
+            badge: Badge::Caution,
             body: "second".to_string(),
         });
         assert_eq!(
@@ -692,7 +695,7 @@ mod tests {
         );
         let views = crate::render::note_views(&c);
         assert_eq!(
-            vec![None, Some(Badge::Caution)],
+            vec![Badge::Note, Badge::Caution],
             views.iter().map(|view| view.badge).collect::<Vec<_>>(),
             "the projection is one view per note, each with its own badge"
         );

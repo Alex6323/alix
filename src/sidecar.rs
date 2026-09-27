@@ -5,6 +5,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::card::Note;
+
 /// One file in a folder listing, already read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileEntry {
@@ -857,20 +859,20 @@ mod tests {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeckCard {
     pub id: String,
-    pub notes: Vec<String>,
+    pub notes: Vec<Note>,
 }
 
 /// One block of the personal file, in file order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SidecarBlock {
-    Note { card: String, lines: Vec<String> },
-    Card { id: String, notes: Vec<String> },
+    Note { card: String, note: Note },
+    Card { id: String, notes: Vec<Note> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionCard {
     pub id: String,
-    pub notes: Vec<String>,
+    pub notes: Vec<Note>,
     pub personal: bool,
 }
 
@@ -878,7 +880,7 @@ pub struct SessionCard {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Orphan {
     pub card: String,
-    pub lines: Vec<String>,
+    pub note: Note,
 }
 
 /// Fold a deck and its personal file into one session: deck cards in deck
@@ -907,18 +909,18 @@ pub fn merge(deck: &[DeckCard], sidecar: &[SidecarBlock]) -> (Vec<SessionCard>, 
     // card declared after it.
     let mut orphans = Vec::new();
     for block in sidecar {
-        let SidecarBlock::Note { card, lines } = block else {
+        let SidecarBlock::Note { card, note } = block else {
             continue;
         };
         let mut attached = false;
         for session in cards.iter_mut().filter(|session| &session.id == card) {
-            session.notes.extend(lines.iter().cloned());
+            session.notes.push(note.clone());
             attached = true;
         }
         if !attached {
             orphans.push(Orphan {
                 card: card.clone(),
-                lines: lines.clone(),
+                note: note.clone(),
             });
         }
     }
@@ -929,29 +931,37 @@ pub fn merge(deck: &[DeckCard], sidecar: &[SidecarBlock]) -> (Vec<SessionCard>, 
 mod merge_tests {
     use super::*;
 
+    fn plain(bodies: &[&str]) -> Vec<Note> {
+        bodies.iter().map(|n| Note::plain(n.to_string())).collect()
+    }
+
     fn deck_card(id: &str, notes: &[&str]) -> DeckCard {
         DeckCard {
             id: id.to_string(),
-            notes: notes.iter().map(|n| n.to_string()).collect(),
+            notes: plain(notes),
         }
     }
 
-    fn note(card: &str, lines: &[&str]) -> SidecarBlock {
+    fn note(card: &str, body: &str) -> SidecarBlock {
         SidecarBlock::Note {
             card: card.to_string(),
-            lines: lines.iter().map(|l| l.to_string()).collect(),
+            note: Note::plain(body.to_string()),
         }
     }
 
     fn own_card(id: &str, notes: &[&str]) -> SidecarBlock {
         SidecarBlock::Card {
             id: id.to_string(),
-            notes: notes.iter().map(|n| n.to_string()).collect(),
+            notes: plain(notes),
         }
     }
 
     fn ids(cards: &[SessionCard]) -> Vec<&str> {
         cards.iter().map(|c| c.id.as_str()).collect()
+    }
+
+    fn bodies(card: &SessionCard) -> Vec<&str> {
+        card.notes.iter().map(|n| n.body.as_str()).collect()
     }
 
     #[test]
@@ -972,11 +982,11 @@ mod merge_tests {
     fn a_cards_own_notes_come_first_then_sidecar_notes_in_sidecar_order() {
         let (cards, _) = merge(
             &[deck_card("a", &["authored one", "authored two"])],
-            &[note("a", &["mine first"]), note("a", &["mine second"])],
+            &[note("a", "mine first"), note("a", "mine second")],
         );
         assert_eq!(
             vec!["authored one", "authored two", "mine first", "mine second"],
-            cards[0].notes
+            bodies(&cards[0])
         );
     }
 
@@ -984,19 +994,19 @@ mod merge_tests {
     fn identical_notes_are_never_deduplicated() {
         let (cards, _) = merge(
             &[deck_card("a", &["same"])],
-            &[note("a", &["same"]), note("a", &["same"])],
+            &[note("a", "same"), note("a", "same")],
         );
-        assert_eq!(vec!["same", "same", "same"], cards[0].notes);
+        assert_eq!(vec!["same", "same", "same"], bodies(&cards[0]));
     }
 
     #[test]
-    fn a_note_for_an_unknown_card_becomes_an_orphan_keeping_its_lines() {
-        let (cards, orphans) = merge(&[deck_card("a", &[])], &[note("gone", &["still mine"])]);
+    fn a_note_for_an_unknown_card_becomes_an_orphan_keeping_its_body() {
+        let (cards, orphans) = merge(&[deck_card("a", &[])], &[note("gone", "still mine")]);
         assert!(cards[0].notes.is_empty());
         assert_eq!(
             vec![Orphan {
                 card: "gone".to_string(),
-                lines: vec!["still mine".to_string()],
+                note: Note::plain("still mine".to_string()),
             }],
             orphans
         );
@@ -1004,11 +1014,8 @@ mod merge_tests {
 
     #[test]
     fn a_sidecar_note_may_address_a_personal_card() {
-        let (cards, orphans) = merge(
-            &[],
-            &[own_card("p", &["its own"]), note("p", &["about mine"])],
-        );
-        assert_eq!(vec!["its own", "about mine"], cards[0].notes);
+        let (cards, orphans) = merge(&[], &[own_card("p", &["its own"]), note("p", "about mine")]);
+        assert_eq!(vec!["its own", "about mine"], bodies(&cards[0]));
         assert!(
             orphans.is_empty(),
             "a note on a personal card is not an orphan"
@@ -1017,7 +1024,7 @@ mod merge_tests {
 
     #[test]
     fn a_note_placed_before_the_personal_card_it_addresses_still_attaches() {
-        let (_, orphans) = merge(&[], &[note("p", &["about mine"]), own_card("p", &[])]);
+        let (_, orphans) = merge(&[], &[note("p", "about mine"), own_card("p", &[])]);
         assert!(
             orphans.is_empty(),
             "attachment does not depend on block order"
@@ -1028,10 +1035,10 @@ mod merge_tests {
     fn a_repeated_id_gives_every_card_carrying_it_the_note() {
         let (cards, orphans) = merge(
             &[deck_card("dup", &[]), deck_card("dup", &[])],
-            &[note("dup", &["shared"])],
+            &[note("dup", "shared")],
         );
-        assert_eq!(vec!["shared"], cards[0].notes);
-        assert_eq!(vec!["shared"], cards[1].notes);
+        assert_eq!(vec!["shared"], bodies(&cards[0]));
+        assert_eq!(vec!["shared"], bodies(&cards[1]));
         assert!(
             orphans.is_empty(),
             "an attached note is never also an orphan"

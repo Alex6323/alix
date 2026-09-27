@@ -133,7 +133,7 @@ fn statedto_review_phase_wire_shape() {
             ],
             reshaped: true,
             note: vec![NoteDto {
-                badge: Some(crate::card::Badge::Note),
+                badge: crate::card::Badge::Note,
                 units: vec![
                 ContentUnit::Sentence {
                     text: "Ownership frees memory deterministically.".to_string(),
@@ -970,7 +970,7 @@ fn carddto_wire_shape() {
             ],
             reshaped: false,
             note: vec![crate::review::NoteView {
-                badge: Some(crate::card::Badge::Note),
+                badge: crate::card::Badge::Note,
                 units: vec![ContentUnit::Sentence {
                     text: "A **city**.".to_string(),
                     runs: crate::inline::parse_inline("A **city**."),

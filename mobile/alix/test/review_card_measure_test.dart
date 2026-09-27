@@ -10,10 +10,10 @@ import 'package:alix_mobile/theme.dart';
 // The card's own reading column, mirrored from `_cardMeasure`.
 const _measure = 560.0;
 
-// A framed note holds its text off its own border, as the web's `.note`
-// does; a Container adds its border to its own padding.
-const _frameBorder = 1.0;
-const _framePadding = 15.0;
+// A note holds its text off its bar, as the web's `.note` does; a Container
+// adds its border to its own padding.
+const _bar = 4.0;
+const _barGap = 14.0;
 
 const _question =
     'Which of the two clients decides the check a card is reviewed under, '
@@ -27,19 +27,19 @@ const _short = 'Recall flips.';
 const _answer =
     'The chosen depth decides it, never the deck: Recognize is always a '
     'choice, Recall flips, and Reconstruct types or rebuilds.';
-const _badged =
-    'A badged note carries no ground of its own, so the divider and its own '
-    'chip are what set it apart from the answer above it.';
+const _warning =
+    'A note carries no ground of its own, so its bar and its badge word are '
+    'what set it apart from the answer above it.';
 const _plain =
-    'A badgeless note keeps the plain note ground, which is the only '
-    'separation it has, so it stays a framed box.';
+    'A plain note is a NOTE like any other, marked by the same bar in the '
+    'colour GitHub gives that badge.';
 
 ReviewSentenceModel _sentence(String text) => ReviewSentenceModel(
   text: text,
   runs: [InlineRunModel(text: text, bold: false, italic: false, code: false)],
 );
 
-ReviewNoteModel _note(String text, {ReviewBadge? badge}) =>
+ReviewNoteModel _note(String text, {ReviewBadge badge = ReviewBadge.note}) =>
     ReviewNoteModel(badge: badge, units: [_sentence(text)]);
 
 Widget _card(TextEditingController attempt) {
@@ -57,7 +57,7 @@ Widget _card(TextEditingController attempt) {
     backUnits: [_sentence(_short), _sentence(_answer)],
     answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 2)],
     reshaped: false,
-    note: [_note(_badged, badge: ReviewBadge.warning), _note(_plain)],
+    note: [_note(_warning, badge: ReviewBadge.warning), _note(_plain)],
     images: const [],
     imagesBack: const [],
   );
@@ -143,7 +143,7 @@ void main() {
   ]) {
     testWidgets(
       'in $name the question, every answer unit and every note wrap on one '
-      'measure, and a framed note keeps its box on it',
+      'measure, and a note holds its text off its bar',
       (tester) async {
         addTearDown(tester.view.reset);
         final attempt = TextEditingController();
@@ -154,13 +154,12 @@ void main() {
         final question = _textRect(tester, _question);
         final short = _textRect(tester, _short);
         final answer = _textRect(tester, _answer);
-        final badged = _textRect(tester, _badged);
         final plain = _textRect(tester, _plain);
-        // A note's own box is the innermost Container around its body.
-        final framedBox = tester.getRect(
+        // A note's own block is the innermost Container around its body.
+        Rect block(String body) => tester.getRect(
           find
               .ancestor(
-                of: find.text(_plain, findRichText: true),
+                of: find.text(body, findRichText: true),
                 matching: find.byType(Container),
               )
               .first,
@@ -170,21 +169,21 @@ void main() {
         for (final (label, rect) in [
           ('a wrapping answer unit', answer),
           ('a one-line answer unit', short),
-          ('an unboxed note', badged),
-          ('a framed note box', framedBox),
+          ('a WARNING note block', block(_warning)),
+          ('a NOTE note block', block(_plain)),
         ]) {
           expect(rect.left, question.left, reason: '$label left edge');
           expect(rect.right, question.right, reason: '$label right edge');
         }
         expect(
           plain.left,
-          framedBox.left + _frameBorder + _framePadding,
-          reason: 'a framed note holds its text off its left border',
+          block(_plain).left + _bar + _barGap,
+          reason: 'a note holds its text off its bar',
         );
         expect(
           plain.right,
-          lessThanOrEqualTo(framedBox.right - _frameBorder - _framePadding),
-          reason: 'a framed note holds its text off its right border',
+          lessThanOrEqualTo(block(_plain).right),
+          reason: 'a note runs to the measure on the right',
         );
       },
     );

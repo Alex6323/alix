@@ -534,7 +534,7 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
     std::fs::write(
         decks.join("spanish.local.md"),
         "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
-         <!-- note: card-gonegonegonegonegonegonego -->\n> addressed to nothing\n\n\
+         <!-- note: card-gonegonegonegonegonegonego -->\n> [!NOTE]\n> addressed to nothing\n\n\
          ## a copy\nmine\n<!-- id: card-onetwothreefourfivesixsev -->\n",
     )
     .unwrap();
@@ -542,7 +542,7 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
     std::fs::write(
         decks.join("german.local.md"),
         "---\nformat-version: 1\nfor: deck-nosuchdecknosuchdecknos\n---\n\n\
-         <!-- note: card-onetwothreefourfivesixsev -->\n> stray\n",
+         <!-- note: card-onetwothreefourfivesixsev -->\n> [!NOTE]\n> stray\n",
     )
     .unwrap();
 
@@ -564,6 +564,41 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
     assert!(
         err.contains("german.local.md"),
         "the file naming an absent deck is reported: {err}"
+    );
+}
+
+#[test]
+fn doctor_reports_a_personal_note_that_opens_with_no_badge_line() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    std::fs::create_dir(ws.join("decks")).unwrap();
+    let decks = ws.join("decks");
+    std::fs::write(
+        decks.join("spanish.md"),
+        "---\nformat-version: 1\nid: deck-spanishspanishspanishspa\n---\n\
+         ## darse cuenta\nto realise\n<!-- id: card-onetwothreefourfivesixsev -->\n",
+    )
+    .unwrap();
+    std::fs::write(
+        decks.join("spanish.local.md"),
+        "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
+         <!-- note: card-onetwothreefourfivesixsev -->\n> no badge above me\n\n\
+         <!-- note: card-onetwothreefourfivesixsev -->\n> [!TIP]\n> badged\n",
+    )
+    .unwrap();
+
+    let out = alix(&["doctor", ws.to_str().unwrap()]);
+    assert!(out.status.success(), "a warning never fails doctor");
+    let err = stderr(&out);
+    assert!(
+        err.contains("spanish.local.md:6: the note for `card-onetwothreefourfivesixsev` opens with no badge line"),
+        "the unbadged run is reported by line and card: {err}"
+    );
+    assert_eq!(
+        1,
+        err.matches("opens with no badge line").count(),
+        "the badged run beside it is not reported: {err}"
     );
 }
 
@@ -5499,7 +5534,7 @@ fn doctor_quotes_the_personal_key_the_parser_actually_accepts() {
         &decks,
         "spanish.local.md",
         "---\nformat-version: 1\nfor: deck-germangermangermangerm\n---\n\n\
-         <!-- note: card-onetwothreefourfivesixsev -->\n> mine\n",
+         <!-- note: card-onetwothreefourfivesixsev -->\n> [!NOTE]\n> mine\n",
     );
     // Carries the key without the name that would make it a personal file.
     write(
@@ -5527,7 +5562,7 @@ fn deck_init_refuses_a_personal_file_without_changing_it() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "spanish.md", "## darse cuenta\nto realise\n");
     let original = "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
-                    <!-- note: card-onetwothreefourfivesixsev -->\n> mine\n";
+                    <!-- note: card-onetwothreefourfivesixsev -->\n> [!NOTE]\n> mine\n";
     let path = write(dir.path(), "spanish.local.md", original);
 
     let out = alix(&["deck", "init", &path]);

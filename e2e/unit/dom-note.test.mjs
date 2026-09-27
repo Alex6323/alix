@@ -62,18 +62,16 @@ test("a note arrives wrapped in its badge and still renders its body", () => {
   );
 });
 
-test("a badgeless note renders its body and carries no badge", () => {
+test("a plain note renders its body under the NOTE badge word", () => {
   const parent = new Node("div");
-  renderNote(parent, [{ units: [sentence("Its note column.")] }]);
+  renderNote(parent, [{ badge: "note", units: [sentence("Its note column.")] }]);
 
   const [note] = parent.children;
-  assert.equal(note.dataset.badge, undefined, "a table column opens no badge");
-  assert.equal(
-    note.children.some((child) => child.className === "note-badge"),
-    false,
-    "no badge, no chip",
-  );
-  assert.equal(note.textContent, "Its note column.");
+  assert.equal(note.dataset.badge, "note", "a table column is a plain NOTE");
+  const [word, ...body] = note.children;
+  assert.equal(word.className, "note-badge");
+  assert.equal(word.textContent, "note");
+  assert.equal(body.map((child) => child.textContent).join(""), "Its note column.");
 });
 
 test("several notes stack as siblings, each keeping its own badge", () => {

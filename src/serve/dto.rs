@@ -48,12 +48,9 @@ pub(super) struct CardDto {
     pub(super) crumb: Option<CrumbDto>,
 }
 
-/// One note on the wire. `badge` is absent for a note no blockquote opened
-/// (a table's note column, an augmentation, a personal note).
 #[derive(Debug, Serialize)]
 pub(super) struct NoteDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) badge: Option<crate::card::Badge>,
+    pub(super) badge: crate::card::Badge,
     pub(super) units: Vec<ContentUnit>,
 }
 

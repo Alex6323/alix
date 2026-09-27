@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:alix_mobile/review/review_card.dart';
+import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/shared/inline_runs.dart';
 import 'package:alix_mobile/theme.dart';
@@ -414,18 +416,16 @@ class WalkPhaseBody extends StatelessWidget {
   Widget _noteBlock(AlixTokens tokens) {
     final note = state.note;
     if (note == null || note.isEmpty) return const SizedBox.shrink();
-    return Container(
-      margin: const EdgeInsets.only(top: 16),
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-      decoration: BoxDecoration(
-        color: tokens.noteBorder.withValues(alpha: 0.12),
-        border: Border.all(color: tokens.noteBorder.withValues(alpha: 0.24)),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: InlineRuns(
-        runs: state.noteRuns ?? const [],
-        style: TextStyle(color: tokens.noteInk, fontSize: 15, height: 1.4),
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: NoteBlock(
+        badge: ReviewBadge.note,
+        children: [
+          InlineRuns(
+            runs: state.noteRuns ?? const [],
+            style: TextStyle(color: tokens.dim, fontSize: 15, height: 1.4),
+          ),
+        ],
       ),
     );
   }

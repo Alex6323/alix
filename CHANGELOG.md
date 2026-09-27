@@ -84,6 +84,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Every note is a badged block, on the web and on the phone alike: the badge
+  word above the text and a 4px bar down its left edge, both in GitHub's own
+  colour for that badge (`#0969da` NOTE, `#1a7f37` TIP, `#8250df` IMPORTANT,
+  `#9a6700` WARNING, `#cf222e` CAUTION on light themes; `#4493f8`, `#3fb950`,
+  `#ab7df8`, `#d29922`, `#f85149` on dark ones), the same on every palette.
+  The tinted box, the chip and the hairline between the answer and the notes
+  are gone; the text is dimmer than the answer so a note never competes with
+  it. A note alix adds (a table's note column, an augmentation, a note the
+  tutor condensed, a trace checkpoint's note) is a NOTE like any other, so
+  `NoteDto.badge` is always present on the wire and the mobile bridge's
+  `NoteView.badge` is no longer optional. A session summary's remark ("Next
+  due in N min.") is plain text rather than a note box. The web palettes'
+  `--note-border`, `--note-ink`, `--note-bg` and `--note-line` tokens are
+  removed (`--note-code` stays), and each palette now declares its
+  `color-scheme`.
+
+- The tutor writes a personal note as a deck-grammar note: the `>` block
+  under the `<!-- note: card-id -->` marker opens with `> [!NOTE]`, and a
+  block with no badge line is no longer read (`alix doctor` names it by line
+  and card). A personal file written before this change is not recognised; it
+  is rewritten by hand or by disposable tooling outside the repository. The
+  `format` augmentation's fingerprint now covers the badge of every note, so
+  a reshape cached for a card with a machine note is recomputed on the next
+  `alix deck augment --target format`.
+
 - A revealed answer is set in the card's proportional face, ragged right, on
   the web and on the phone alike. Monospace stays where it carries meaning: a
   code span, a fenced block, a typed line's expected text. Both clients had

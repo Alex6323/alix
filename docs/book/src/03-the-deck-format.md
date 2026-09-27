@@ -334,11 +334,15 @@ To agree on initial sequence numbers in both directions.
 ```
 
 The five are `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, and
-`[!CAUTION]`, spelled exactly as GitHub spells them. Each opens its own
-callout with a chip naming it, coloured from whatever theme you are using
-rather than from GitHub's palette. Several notes on one card stack in the
-order you wrote them. Spelling them GitHub's way is the point: a deck pasted
-from a repository keeps its meaning without editing.
+`[!CAUTION]`, spelled exactly as GitHub spells them. Each renders as its own
+block under the answer: the badge word above the text and a bar down its left
+edge, both in GitHub's colour for that badge (one set on light themes, one on
+dark, the same on every palette), the text itself dimmer than the answer so
+the note never competes with it. Several notes on one card stack in the order
+you wrote them. Spelling them GitHub's way is the point: a deck pasted from a
+repository keeps its meaning without editing. A note alix adds itself (a
+table's note column, an AI augmentation, a note the tutor condensed) is a
+`[!NOTE]` like any other.
 
 Every **other** blockquote is a quote, and a quote is content. It belongs to
 the answer and reveals with it, so you can finally put someone's actual words
@@ -675,6 +679,7 @@ for: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f
 ---
 
 <!-- note: card-3f7k2m9q1x8w5z0t6v4b2n8d7c -->
+> [!NOTE]
 > the "cuenta" is the tally you finally add up
 
 ## a gap the exam found
@@ -684,10 +689,12 @@ the answer
 
 Two kinds of block live there, in any order:
 
-- A **note**: a `<!-- note: <card-id> -->` marker followed by `>` lines. Those
-  lines are appended to that card's own note when you review it. If you want a
-  label above your note, write a `## ` heading; it is yours, alix never writes
-  or rewrites one.
+- A **note**: a `<!-- note: <card-id> -->` marker followed by a note in the
+  deck's own grammar, a `>` block opening with a badge line. It stands beside
+  that card's own notes when you review it; a block with no badge line is not
+  a note, and `alix doctor` names it. The tutor writes `> [!NOTE]`; you may
+  write any of the five. If you want a label above your note, write a `## `
+  heading; it is yours, alix never writes or rewrites one.
 - A **card**, written exactly like a deck card and closed by its own
   `<!-- id: -->` line. It joins the session after the deck's own cards and is
   drilled and scheduled like any other, but it does not count toward the deck's

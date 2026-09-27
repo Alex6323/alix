@@ -68,7 +68,7 @@ struct ImageMeasurement {
 /// the digest is what the committed baseline compares.
 #[derive(Debug, Serialize)]
 struct NoteMeasurement {
-    badge: Option<String>,
+    badge: String,
     body: String,
 }
 
@@ -178,7 +178,7 @@ fn card_measurement(card: &Card) -> CardMeasurement {
             .notes
             .iter()
             .map(|note| NoteMeasurement {
-                badge: note.badge.map(|badge| format!("{badge:?}")),
+                badge: format!("{:?}", note.badge),
                 body: note.body.clone(),
             })
             .collect(),
@@ -450,11 +450,7 @@ fn digest_line(measurement: &Measurement) -> DigestLine {
             .enumerate()
             .flat_map(|(index, card)| {
                 card.notes.iter().map(move |note| {
-                    format!(
-                        "{index}:{}:{}",
-                        note.badge.as_deref().unwrap_or("-"),
-                        note.body
-                    )
+                    format!("{index}:{}:{}", note.badge, note.body)
                 })
             })
             .collect(),
@@ -538,7 +534,7 @@ mod tests {
         );
 
         let before = serde_json::to_string(&digest_line(&warned)).expect("digest");
-        warned.cards[0].notes[0].badge = Some("Tip".to_string());
+        warned.cards[0].notes[0].badge = "Tip".to_string();
         let after = serde_json::to_string(&digest_line(&warned)).expect("digest");
         assert_ne!(
             before, after,
