@@ -193,6 +193,23 @@ mod tests {
     }
 
     #[test]
+    fn note_discovery_and_removal_agree_for_an_indented_marker() {
+        let text = "  <!-- note: card-abc -->\n> [!NOTE]\n> mine\n";
+
+        assert_eq!(
+            vec![SidecarNote {
+                card: "card-abc".into(),
+                note: Note {
+                    badge: Badge::Note,
+                    body: "mine".into(),
+                },
+            }],
+            notes(text)
+        );
+        assert_eq!("", without_notes(text));
+    }
+
+    #[test]
     fn every_badge_opens_a_sidecar_note_and_nothing_else_does() {
         for (line, badge) in [
             ("[!NOTE]", Badge::Note),
