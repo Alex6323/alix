@@ -2129,6 +2129,27 @@ fn poll_ask_records_answer_in_transcript() {
 }
 
 #[test]
+fn ask_dto_reparses_a_transcript_entry_without_cached_units() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut r, _card, _deck) = one_card_reviewing(dir.path());
+    r.ask.transcript.push((
+        "why?".to_string(),
+        "```rust\nfn fresh() {}\n```".to_string(),
+    ));
+
+    let dto = r.ask_dto(None, None);
+
+    assert!(
+        matches!(
+            dto.transcript[0].units.as_slice(),
+            [crate::render::ContentUnit::Code { lines }] if lines == &["fn fresh() {}"]
+        ),
+        "the raw transcript answer must be parsed when no cached units exist: {:?}",
+        dto.transcript[0].units
+    );
+}
+
+#[test]
 fn ask_transcript_resets_when_the_card_changes() {
     let dir = tempfile::tempdir().unwrap();
     let (mut r, card, _deck) = one_card_reviewing(dir.path());
