@@ -2750,6 +2750,37 @@ mod tests {
     }
 
     #[test]
+    fn mint_tutor_card_rejects_content_already_in_the_deck() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let deck = dir.path().join("geo.md");
+        let authored = crate::parser::parse_str(
+            "geo.md",
+            "## capital of france?\nParis\n<!-- id: card-france -->\n",
+        )
+        .unwrap();
+        let deck_fingerprints = HashSet::from([authored[0].block_fingerprint]);
+
+        let err = mint_tutor_card(
+            &mut store,
+            &deck,
+            "geo.md",
+            "capital of france?",
+            &["Paris".to_string()],
+            100,
+            &deck_fingerprints,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, MintError::Duplicate));
+        assert!(
+            !crate::personal::sidecar_path(&deck).exists(),
+            "a card duplicated from the authored deck must not reach the sidecar"
+        );
+    }
+
+    #[test]
     fn mint_tutor_card_rejects_either_empty_side_before_parsing() {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
