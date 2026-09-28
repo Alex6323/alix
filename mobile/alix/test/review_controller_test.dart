@@ -76,6 +76,7 @@ void main() {
 
   test('applying a card note refreshes it without hiding the answer', () {
     final note = ReviewNoteModel(
+      badge: ReviewBadge.note,
       units: [ReviewSentenceModel(text: 'Tutor note', runs: const [])],
     );
     final port = _FakeReviewPort(_state())
