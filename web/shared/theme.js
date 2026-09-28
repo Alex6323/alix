@@ -75,7 +75,8 @@
       '<div class="ts-card">' +
         '<div class="ts-q">What guarantee does ownership give each value?</div>' +
         '<div class="ts-a">Exactly one owner at a time.</div>' +
-        '<div class="ts-note">Lets Rust free memory with no garbage collector.</div>' +
+        '<div class="ts-note"><span class="ts-badge">Note</span>' +
+          'Lets Rust free memory with no garbage collector.</div>' +
       '</div>';
     panel.appendChild(sample);
 

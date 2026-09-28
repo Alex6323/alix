@@ -1168,6 +1168,20 @@ test("the tutor leave prompt owns Enter and Escape from the chat box", async ({ 
   await expect(input).toBeFocused();
 });
 
+test("the theme sheet's sample note is drawn like a real note", async ({ page }) => {
+  // The sample card previews a palette without touching the app; its note
+  // must read the same tokens the review card's note reads, or a retired
+  // variable leaves it unstyled while every real note looks right.
+  await openApp(page);
+  await page.evaluate(() => (document.getElementById("theme-open") as HTMLElement).click());
+  const note = page.locator(".theme-sample .ts-note");
+  await expect(note).toBeVisible();
+  await expect(note).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  // The default palette is dark, so the NOTE badge colour is GitHub's dark blue.
+  await expect(note).toHaveCSS("border-left-color", "rgb(68, 147, 248)");
+  await expect(note.locator(".ts-badge")).toHaveText("Note");
+});
+
 test("a fenced tutor answer renders as a code block", async ({ page }) => {
   await openWildCram(page, "Recall");
   await answerCurrentWildCard(page);

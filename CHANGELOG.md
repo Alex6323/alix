@@ -104,7 +104,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   due in N min.") is plain text rather than a note box. The web palettes'
   `--note-border`, `--note-ink`, `--note-bg` and `--note-line` tokens are
   removed (`--note-code` stays), and each palette now declares its
-  `color-scheme`.
+  `color-scheme`. The theme sheet's sample card previews its note the same
+  way: the NOTE bar and word in the previewed palette's blue, no box.
 
 - The tutor writes a personal note as a deck-grammar note: the `>` block
   under the `<!-- note: card-id -->` marker opens with `> [!NOTE]`, and a

@@ -546,10 +546,19 @@
 }
 .ts-q { color: var(--ink); font-weight: 600; font-size: 0.84rem; margin-bottom: 9px; }
 .ts-a { color: var(--good); font-size: 0.82rem; margin-bottom: 9px; }
+/* The review card's note in miniature: a bar in the NOTE badge's colour (GitHub's
+   blue, light or dark by the previewed palette's color-scheme), the badge word,
+   dim text, no box. */
 .ts-note {
-  color: var(--note-ink); background: var(--note-bg);
-  border-left: 2px solid var(--note-border); border-radius: 6px;
-  padding: 5px 9px; font-size: 0.72rem;
+  --badge-ink: light-dark(#0969da, #4493f8);
+  color: var(--dim); border-left: 2px solid var(--badge-ink);
+  padding: 2px 0 2px 9px; font-size: 0.72rem;
+}
+.ts-badge {
+  display: block; margin: 0 0 3px;
+  font-family: var(--mono); font-size: 0.56rem; line-height: 1.5;
+  letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600;
+  color: var(--badge-ink);
 }
 
 .theme-group-label {
