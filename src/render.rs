@@ -2038,6 +2038,16 @@ mod tests {
     }
 
     #[test]
+    fn a_tutor_answer_mermaid_fence_stays_code_without_a_frozen_asset() {
+        assert_eq!(
+            vec![ContentUnit::Code {
+                lines: vec!["flowchart LR".into(), " A-->B".into()]
+            }],
+            tutor_answer_units("```mermaid\nflowchart LR\n A-->B\n```")
+        );
+    }
+
+    #[test]
     fn tutor_answer_backticks_are_an_inline_code_run() {
         let units = tutor_answer_units("Call `drop(value)` explicitly.");
         let [ContentUnit::Sentence { text, runs }] = units.as_slice() else {
