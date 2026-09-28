@@ -953,6 +953,25 @@ mod tests {
     }
 
     #[test]
+    fn changing_a_recent_deck_outside_the_root_rebuilds_resolution() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("decks");
+        std::fs::create_dir(&root).unwrap();
+        let outside = dir.path().join("outside.md");
+        write_deck(&outside, "outside");
+        let mut s = state_over(&root);
+        s.recent.record(std::slice::from_ref(&outside), 1000);
+
+        assert!(matches!(s.resolve("outside.md"), Resolved::One(_)));
+        assert_eq!(1, s.rebuild_count());
+
+        write_deck(&outside, "outside-changed");
+
+        assert!(matches!(s.resolve("outside.md"), Resolved::One(_)));
+        assert_eq!(2, s.rebuild_count());
+    }
+
+    #[test]
     fn two_rows_sharing_one_name_resolve_ambiguous_never_one_of_them() {
         // Container members carry qualified names, so the colliding pair is
         // a root deck plus a recent entry outside the root with the same
