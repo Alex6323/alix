@@ -603,6 +603,28 @@ fn doctor_reports_a_personal_note_that_opens_with_no_badge_line() {
 }
 
 #[test]
+fn doctor_does_not_report_a_personal_cards_progress_as_orphaned() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    std::fs::create_dir(ws.join("decks")).unwrap();
+    let deck = write(&ws.join("decks"), "math.md", VALID_DECK);
+    let id = sample_personal_card(&deck, "deck-mathdeck");
+    let mut store = deck_store(&deck);
+    store.get_or_insert(&id);
+    store.save().unwrap();
+
+    let out = alix(&["doctor", ws.to_str().unwrap()]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        !stderr(&out).contains(&format!("orphaned store key (card) `{id}`")),
+        "a live personal card must own its progress: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
 fn doctor_reports_a_moved_excerpt_and_repair_rebases_it_without_touching_the_evidence() {
     // The frozen bytes are intact, only further down the file. Nothing about
     // the evidence changed, so the address is the only thing to correct.
