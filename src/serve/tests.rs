@@ -2207,6 +2207,7 @@ fn poll_ask_condense_appends_note_to_sidecar_and_live_card() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn condense_prompt_contains_only_exchanges_after_the_watermark() {
     let _lock = crate::testutil::exec_lock();
