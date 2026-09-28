@@ -6366,6 +6366,21 @@ a
         );
     }
 
+    #[test]
+    fn a_bracketed_citation_opening_a_quotation_is_not_badge_shaped() {
+        let deck = parse("## Q\nanswer\n> [Smith 2020] wrote this.\n");
+
+        assert_eq!(
+            vec!["answer", "> [Smith 2020] wrote this."],
+            deck.cards[0].back
+        );
+        assert!(
+            deck.lints.is_empty(),
+            "a bracketed citation is ordinary quoted prose: {:?}",
+            deck.lints
+        );
+    }
+
     /// A badged note trails its card like every other recognized machinery:
     /// a directive may stand above it, and answer content may not follow it.
     #[test]
