@@ -1,62 +1,23 @@
-// The tutor sheet: a modal bottom sheet holding one phone-owned
-// question/answer transcript against the paired desktop's AI backend, plus a
-// tucked "Make a card" distillation flow. Data and callbacks only: this file
-// never imports the generated bridge (`src/rust/*`), so its tests run
-// without a Rust dylib. review_screen.dart owns the bridge session and hands
-// this sheet a plain [TutorCardContext] and a mint closure over it.
+// The tutor sheet: a modal bottom sheet showing one card's tutor
+// conversation and its composer. The conversation itself (transcript, job in
+// flight, note watermark) belongs to the review screen's [TutorConversation];
+// this sheet is a view over it, so dismissing the sheet loses nothing and a
+// result that lands while it is closed is there when it reopens. Data and
+// callbacks only: this file never imports the generated bridge, so its tests
+// run without a Rust dylib.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_rust_bridge/flutter_rust_bridge.dart'
-    show AnyhowException;
 
-import 'package:alix_mobile/bridge/bridge_error.dart';
-
+import 'package:alix_mobile/review/unit_widgets.dart';
 import 'package:alix_mobile/server_client.dart';
+import 'package:alix_mobile/theme.dart';
+import 'package:alix_mobile/tutor_conversation.dart';
 
-/// The exact wording for a 401 mid-conversation: the paired server is right
-/// there but rejects this app's token (a restarted desktop mints a fresh
-/// one). Every [ServerClient] call can throw [PairingExpired]; every call
-/// site here catches it and shows exactly this line.
-const _pairingExpiredMessage =
-    'Pairing expired. Pair again from Settings → Connected devices.';
-
-/// One card's tutor conversation. Opened over the current review card;
-/// closing it drops the transcript (nothing is persisted until "Make a
-/// card" mints one).
 class TutorSheet extends StatefulWidget {
-  const TutorSheet({
-    super.key,
-    required this.card,
-    required this.client,
-    required this.mint,
-    required this.onNote,
-    this.pollInterval = const Duration(milliseconds: 400),
-  });
+  const TutorSheet({super.key, required this.conversation});
 
-  /// The current card's authored fields, sent whole on every call (the
-  /// server holds no session of its own for a remote turn).
-  final TutorCardContext card;
-
-  /// The paired desktop's AI backend, over `/api/remote/*`.
-  final ServerClient client;
-
-  /// Mints a drafted card from the edited front/back (a closure over the
-  /// bridge session's `mintTutorCard`); the sheet never calls the bridge
-  /// itself. Throws on a rejected mint (e.g. a duplicate); the thrown
-  /// message is shown verbatim.
-  final Future<String> Function(String front, List<String> back) mint;
-
-  /// Applies the condensed note lines the desktop hands back to the deck (a
-  /// closure over the bridge session's `applyCardNote`); the sheet never
-  /// calls the bridge itself. Synchronous, unlike [mint]: `applyCardNote`
-  /// does not fail the way a mint can, so there is nothing to await or
-  /// catch here.
-  final void Function(List<String> notes) onNote;
-
-  /// How often to poll `GET /api/remote/ask` while a turn or a draft is in
-  /// flight. Tests shrink this well below the default.
-  final Duration pollInterval;
+  final TutorConversation conversation;
 
   @override
   State<TutorSheet> createState() => _TutorSheetState();
@@ -67,182 +28,52 @@ class _TutorSheetState extends State<TutorSheet> {
   final _draftFront = TextEditingController();
   final _draftBack = TextEditingController();
 
-  /// Settled turns only; re-sent verbatim as `history` on every `postAsk`
-  /// call (the server is stateless between turns).
-  final List<(String q, String a)> _transcript = [];
+  /// The draft the editor fields were last filled from, so a draft that
+  /// arrived while the sheet was closed fills them once on open and the
+  /// learner's edits survive later rebuilds.
+  DraftCard? _filledDraft;
 
-  String? _pendingQuestion;
-  int? _pendingElapsed;
-
-  bool _draftPending = false;
-  int? _draftElapsed;
-  bool _editingDraft = false;
-
-  bool _notePending = false;
-  int? _noteElapsed;
-
-  /// Fetched once per sheet open, then cached; null reads as "the backend"
-  /// in the working row (a plain refusal is not worth its own error UI).
-  String? _backendName;
-
-  Timer? _pollTimer;
+  TutorConversation get _conversation => widget.conversation;
 
   @override
   void initState() {
     super.initState();
-    _fetchBackendName();
+    _conversation.addListener(_onConversation);
+    _syncFields();
   }
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
+    _conversation.removeListener(_onConversation);
     _question.dispose();
     _draftFront.dispose();
     _draftBack.dispose();
     super.dispose();
   }
 
-  Future<void> _fetchBackendName() async {
-    try {
-      final name = await widget.client.backendName();
-      if (!mounted) return;
-      setState(() => _backendName = name);
-    } on PairingExpired {
-      _pairingExpired();
-    }
+  void _onConversation() {
+    _syncFields();
+    if (mounted) setState(() {});
   }
 
-  List<TutorTurn> _historyTurns() => [
-        for (final (q, a) in _transcript) TutorTurn(q: q, a: a),
-      ];
-
-  // ── send ──────────────────────────────────────────────────────────────
-
-  Future<void> _send() async {
-    final question = _question.text.trim();
-    if (question.isEmpty || _pendingQuestion != null || _draftPending || _notePending) return;
-    final history = _historyTurns();
-    setState(() {
-      _pendingQuestion = question;
-      _pendingElapsed = null;
-    });
-    _question.clear();
-
-    bool ok;
-    try {
-      ok = await widget.client.postAsk(widget.card, history, question);
-    } on PairingExpired {
-      _pairingExpired();
-      if (mounted) setState(() => _pendingQuestion = null);
-      return;
-    }
-    if (!ok) {
-      _snack('The desktop did not answer.');
-      if (mounted) setState(() => _pendingQuestion = null);
-      return;
-    }
-    // The sheet may have been dismissed while postAsk was in flight; a
-    // timer started now would outlive dispose and never be cancelled.
-    if (!mounted) return;
-    _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(widget.pollInterval, (_) => _pollAsk());
-  }
-
-  Future<void> _pollAsk() async {
-    RemoteAsk? dto;
-    try {
-      dto = await widget.client.getAsk();
-    } on PairingExpired {
-      _pollTimer?.cancel();
-      _pairingExpired();
-      if (mounted) setState(() => _pendingQuestion = null);
-      return;
-    }
-    if (dto == null || !mounted) return;
-    if (dto.thinking) {
-      setState(() => _pendingElapsed = dto!.elapsed);
-      return;
-    }
-    _pollTimer?.cancel();
-    if (dto.error != null) {
-      final question = _pendingQuestion;
-      setState(() {
-        // Nothing is lost: the question goes back in the input rather than
-        // the transcript, since it never got a real answer.
-        _question.text = question ?? '';
-        _pendingQuestion = null;
-        _pendingElapsed = null;
-      });
-      _snack('The tutor call failed.');
-      return;
-    }
-    setState(() {
-      _transcript.add((_pendingQuestion ?? '', dto!.answer ?? ''));
-      _pendingQuestion = null;
-      _pendingElapsed = null;
-    });
-  }
-
-  // ── make a card ───────────────────────────────────────────────────────
-
-  Future<void> _makeCard() async {
-    if (_transcript.isEmpty) {
-      _snack('Ask something first.');
-      return;
-    }
-    final history = _historyTurns();
-    setState(() {
-      _draftPending = true;
-      _draftElapsed = null;
-    });
-
-    bool ok;
-    try {
-      ok = await widget.client.postDraft(widget.card, history);
-    } on PairingExpired {
-      _pairingExpired();
-      if (mounted) setState(() => _draftPending = false);
-      return;
-    }
-    if (!ok) {
-      _snack('The desktop did not answer.');
-      if (mounted) setState(() => _draftPending = false);
-      return;
-    }
-    // Same guard as _send: no timer may start once the sheet is gone.
-    if (!mounted) return;
-    _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(widget.pollInterval, (_) => _pollDraft());
-  }
-
-  Future<void> _pollDraft() async {
-    RemoteAsk? dto;
-    try {
-      dto = await widget.client.getAsk();
-    } on PairingExpired {
-      _pollTimer?.cancel();
-      _pairingExpired();
-      if (mounted) setState(() => _draftPending = false);
-      return;
-    }
-    if (dto == null || !mounted) return;
-    if (dto.thinking) {
-      setState(() => _draftElapsed = dto!.elapsed);
-      return;
-    }
-    _pollTimer?.cancel();
-    final draft = dto.draft;
-    if (dto.error != null || draft == null) {
-      setState(() => _draftPending = false);
-      _snack('The tutor call failed.');
-      return;
-    }
-    setState(() {
-      _draftPending = false;
-      _editingDraft = true;
+  /// Pulls what the conversation holds for the composer and the draft
+  /// editor: a question a failed turn handed back, a draft not yet edited.
+  void _syncFields() {
+    final restored = _conversation.takeRestoredQuestion();
+    if (restored != null) _question.text = restored;
+    final draft = _conversation.draft;
+    if (draft != null && !identical(draft, _filledDraft)) {
+      _filledDraft = draft;
       _draftFront.text = draft.front;
       _draftBack.text = draft.back.join('\n');
-    });
+    }
+  }
+
+  void _send() {
+    final question = _question.text.trim();
+    if (question.isEmpty || _conversation.busy) return;
+    _question.clear();
+    unawaited(_conversation.send(question));
   }
 
   Future<void> _confirmDraft() async {
@@ -252,113 +83,23 @@ class _TutorSheetState extends State<TutorSheet> {
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList();
-    try {
-      await widget.mint(front, back);
-    } on AnyhowException catch (e) {
-      _snack(bridgeErrorText(e));
-      return;
-    }
-    if (!mounted) return;
-    setState(() {
-      _editingDraft = false;
+    final added = await _conversation.confirmDraft(front, back);
+    if (added && mounted) {
+      _filledDraft = null;
       _draftFront.clear();
       _draftBack.clear();
-    });
-    _snack('Card added.');
+    }
   }
 
   void _cancelDraft() {
-    setState(() {
-      _editingDraft = false;
-      _draftFront.clear();
-      _draftBack.clear();
-    });
-  }
-
-  // ── make a note ───────────────────────────────────────────────────────
-
-  Future<void> _makeNote() async {
-    if (_transcript.isEmpty) {
-      _snack('Ask something first.');
-      return;
-    }
-    final history = _historyTurns();
-    setState(() {
-      _notePending = true;
-      _noteElapsed = null;
-    });
-
-    bool ok;
-    try {
-      ok = await widget.client.postNote(widget.card, history);
-    } on PairingExpired {
-      _pairingExpired();
-      if (mounted) setState(() => _notePending = false);
-      return;
-    }
-    if (!ok) {
-      _snack('The desktop did not answer.');
-      if (mounted) setState(() => _notePending = false);
-      return;
-    }
-    // Same guard as _send/_makeCard: no timer may start once the sheet is
-    // gone.
-    if (!mounted) return;
-    _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(widget.pollInterval, (_) => _pollNote());
-  }
-
-  Future<void> _pollNote() async {
-    RemoteAsk? dto;
-    try {
-      dto = await widget.client.getAsk();
-    } on PairingExpired {
-      _pollTimer?.cancel();
-      _pairingExpired();
-      if (mounted) setState(() => _notePending = false);
-      return;
-    }
-    if (dto == null || !mounted) return;
-    if (dto.thinking) {
-      setState(() => _noteElapsed = dto!.elapsed);
-      return;
-    }
-    if (dto.error != null) {
-      _pollTimer?.cancel();
-      setState(() => _notePending = false);
-      _snack('The tutor call failed.');
-      return;
-    }
-    // Three states, per RemoteAsk.note's doc: null here means this settled
-    // reply is not (yet) a note outcome, so keep polling; the timer is left
-    // running and this tick is a no-op.
-    final notes = dto.note;
-    if (notes == null) return;
-    _pollTimer?.cancel();
-    setState(() => _notePending = false);
-    if (notes.isEmpty) {
-      _snack('nothing to save');
-      return;
-    }
-    widget.onNote(notes);
-    _snack('note saved');
-  }
-
-  // ── shared ────────────────────────────────────────────────────────────
-
-  void _pairingExpired() {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text(_pairingExpiredMessage)));
-  }
-
-  void _snack(String text) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    _filledDraft = null;
+    _draftFront.clear();
+    _draftBack.clear();
+    _conversation.cancelDraft();
   }
 
   String _workingLabel(int? elapsed) {
-    final who = _backendName ?? 'The backend';
+    final who = _conversation.backendName ?? 'The backend';
     final suffix = elapsed != null ? ' ${elapsed}s' : '';
     return '$who is working…$suffix';
   }
@@ -368,6 +109,9 @@ class _TutorSheetState extends State<TutorSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = theme.extension<AlixTokens>()!;
+    final conversation = _conversation;
+    final transcript = conversation.transcript;
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(
@@ -377,7 +121,7 @@ class _TutorSheetState extends State<TutorSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              widget.card.front,
+              conversation.card.front,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleMedium,
@@ -388,48 +132,86 @@ class _TutorSheetState extends State<TutorSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (final (q, a) in _transcript) _turn(theme, q, a),
-                    if (_pendingQuestion != null)
-                      _working(theme, _workingLabel(_pendingElapsed)),
+                    for (final (index, exchange) in transcript.indexed)
+                      _turn(
+                        theme,
+                        tokens,
+                        exchange,
+                        cardOnly: index == transcript.length - 1 &&
+                            exchange.cardOnly,
+                      ),
+                    if (conversation.status case final status?)
+                      _dimLine(theme, status),
+                    if (conversation.pendingQuestion != null)
+                      _dimLine(theme, _workingLabel(conversation.pendingElapsed)),
+                    if (conversation.message case final message?)
+                      _dimLine(theme, message, key: const ValueKey('tutor-message')),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 12),
-            if (_editingDraft) _draftEditor(theme) else _composer(theme),
+            if (conversation.draft != null)
+              _draftEditor(theme)
+            else
+              _composer(theme, conversation),
           ],
         ),
       ),
     );
   }
 
-  Widget _turn(ThemeData theme, String q, String a) {
+  Widget _turn(
+    ThemeData theme,
+    AlixTokens tokens,
+    TutorExchange exchange, {
+    required bool cardOnly,
+  }) {
+    final style = theme.textTheme.bodyMedium ?? const TextStyle();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(q, style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant)),
+          Text(exchange.q,
+              style: style.copyWith(color: theme.colorScheme.onSurfaceVariant)),
           const SizedBox(height: 4),
-          Text(a, style: theme.textTheme.bodyMedium),
+          if (exchange.units.isEmpty)
+            Text(exchange.a, style: style)
+          else
+            for (final unit in exchange.units)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: unitWidget(unit, tokens, style, TextAlign.start),
+              ),
+          if (cardOnly)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                cardOnlyMessage,
+                key: const ValueKey('tutor-card-only-line'),
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _working(ThemeData theme, String label) {
+  Widget _dimLine(ThemeData theme, String text, {Key? key}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Text(
-        label,
+        text,
+        key: key,
         style: theme.textTheme.bodySmall
             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
       ),
     );
   }
 
-  Widget _composer(ThemeData theme) {
+  Widget _composer(ThemeData theme, TutorConversation conversation) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -449,53 +231,44 @@ class _TutorSheetState extends State<TutorSheet> {
             IconButton(
               key: const ValueKey('tutor-send-button'),
               icon: const Icon(Icons.send),
-              // Disabled during a draft or a note too: ask, draft, and note
-              // share the one poll timer, so a send now would orphan
-              // whichever row is in flight.
-              onPressed: _pendingQuestion == null && !_draftPending && !_notePending
-                  ? _send
-                  : null,
+              onPressed: conversation.busy ? null : _send,
             ),
           ],
         ),
         Align(
           alignment: Alignment.centerRight,
-          child: _draftPending
+          child: conversation.draftPending || conversation.notePending
               ? Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    _workingLabel(_draftElapsed),
+                    _workingLabel(conversation.draftPending
+                        ? conversation.draftElapsed
+                        : conversation.noteElapsed),
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
                 )
-              : _notePending
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        _workingLabel(_noteElapsed),
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                      ),
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextButton(
-                          key: const ValueKey('tutor-make-note-button'),
-                          onPressed: _pendingQuestion == null ? _makeNote : null,
-                          // Matches the web's "Make this a note" chip wording.
-                          child: const Text('Make this a note'),
-                        ),
-                        TextButton(
-                          key: const ValueKey('tutor-make-card-button'),
-                          onPressed:
-                              _pendingQuestion == null ? _makeCard : null,
-                          // Matches the web's "Make this a card" chip wording.
-                          child: const Text('Make this a card'),
-                        ),
-                      ],
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      key: const ValueKey('tutor-make-note-button'),
+                      onPressed: conversation.canDistill
+                          ? () => unawaited(conversation.makeNote())
+                          : null,
+                      // Matches the web's "Make this a note" chip wording.
+                      child: const Text('Make this a note'),
                     ),
+                    TextButton(
+                      key: const ValueKey('tutor-make-card-button'),
+                      onPressed: conversation.canDistill
+                          ? () => unawaited(conversation.makeCard())
+                          : null,
+                      // Matches the web's "Make this a card" chip wording.
+                      child: const Text('Make this a card'),
+                    ),
+                  ],
+                ),
         ),
       ],
     );

@@ -731,6 +731,16 @@ ThemeData _theme(ColorScheme scheme, AlixTokens tokens) {
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(shape: radius),
     ),
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: scheme.surface,
+      contentTextStyle: TextStyle(color: scheme.onSurface),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: tokens.line),
+      ),
+      elevation: 0,
+      behavior: SnackBarBehavior.floating,
+    ),
     extensions: [tokens],
   );
 }

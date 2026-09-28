@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/server_client.dart';
 
 void main() {
@@ -137,6 +138,144 @@ void main() {
         RemoteAsk.fromJson(const {'thinking': false, 'card_only': true}).cardOnly,
         isTrue,
       );
+    });
+
+    test('RemoteAsk reads the done snapshot: units, status, and no note', () {
+      final snapshot = File('../../tests/contracts/RemoteAskDto.done.json');
+      final dto = RemoteAsk.fromJson(
+        jsonDecode(snapshot.readAsStringSync()) as Map<String, dynamic>,
+      );
+
+      expect(dto.thinking, isFalse);
+      expect(dto.answer, 'so drops are deterministic');
+      expect(dto.status, 'The tutor has partial context.');
+      expect(dto.note, isNull, reason: 'an absent note is not a note result');
+      expect(dto.draft?.front, 'Why does Rust use one owner per value?');
+      final unit = dto.units.single as ReviewSentenceModel;
+      expect(unit.text, 'so drops are deterministic');
+      expect(unit.runs.single.text, 'so drops are deterministic');
+    });
+
+    test('every ContentUnitDto kind maps to its review model', () {
+      const json = [
+        {
+          'kind': 'sentence',
+          'text': 'bold x',
+          'runs': [
+            {'text': 'bold', 'bold': true},
+            {'text': ' '},
+            {
+              'text': 'x',
+              'math': {'display': false, 'svg': '<svg/>'},
+            },
+          ],
+        },
+        {
+          'kind': 'code',
+          'lines': ['fn main() {}', '  let x = 1;'],
+        },
+        {
+          'kind': 'diagram',
+          'src': '/img/0c6d4b01aba232a4',
+          'width': 188,
+          'height': 114,
+          'alt': 'flowchart LR\n A-->B',
+        },
+        {
+          'kind': 'checklist',
+          'items': [
+            {
+              'checked': true,
+              'text': 'done',
+              'runs': [
+                {'text': 'done'},
+              ],
+            },
+            {
+              'checked': false,
+              'text': 'open',
+              'runs': [
+                {'text': 'open', 'italic': true},
+              ],
+            },
+          ],
+        },
+        {
+          'kind': 'table',
+          'aligns': ['none', 'left', 'center', 'right'],
+          'header': [
+            [
+              {'text': 'a'},
+            ],
+            [
+              {'text': 'b'},
+            ],
+            [
+              {'text': 'c'},
+            ],
+            [
+              {'text': 'd'},
+            ],
+          ],
+          'rows': [
+            [
+              [
+                {'text': '1'},
+              ],
+              [
+                {'text': '2', 'code': true},
+              ],
+              [
+                {'text': '3'},
+              ],
+              [
+                {'text': '4'},
+              ],
+            ],
+          ],
+        },
+        {
+          'kind': 'quote',
+          'units': [
+            {
+              'kind': 'sentence',
+              'text': 'quoted',
+              'runs': [
+                {'text': 'quoted'},
+              ],
+            },
+          ],
+        },
+        {'kind': 'unknown-kind', 'text': 'dropped'},
+      ];
+
+      final units = contentUnitsFromJson(json);
+
+      expect(units, hasLength(6), reason: 'an unknown kind is dropped');
+      final sentence = units[0] as ReviewSentenceModel;
+      expect(sentence.text, 'bold x');
+      expect(sentence.runs[0].bold, isTrue);
+      expect(sentence.runs[1].bold, isFalse);
+      expect(sentence.runs[2].math?.svg, '<svg/>');
+      expect(sentence.runs[2].math?.display, isFalse);
+      expect((units[1] as ReviewCodeModel).lines, ['fn main() {}', '  let x = 1;']);
+      final diagram = units[2] as ReviewSentenceModel;
+      expect(diagram.text, 'flowchart LR\n A-->B',
+          reason: 'a diagram shows its accessible text, the phone reads rasters from disk');
+      final checklist = units[3] as ReviewChecklistModel;
+      expect(checklist.items.map((item) => item.checked), [true, false]);
+      expect(checklist.items[1].runs.single.italic, isTrue);
+      final table = units[4] as ReviewTableModel;
+      expect(table.aligns, [
+        ReviewCellAlign.none,
+        ReviewCellAlign.left,
+        ReviewCellAlign.center,
+        ReviewCellAlign.right,
+      ]);
+      expect(table.header.map((cell) => cell.single.text), ['a', 'b', 'c', 'd']);
+      expect(table.rows.single[1].single.code, isTrue);
+      final quote = units[5] as ReviewQuoteModel;
+      expect((quote.units.single as ReviewSentenceModel).text, 'quoted');
     });
   });
 

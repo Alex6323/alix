@@ -7,11 +7,10 @@ import 'package:alix_mobile/review/masked_image.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/sketch.dart';
 import 'package:alix_mobile/review/sketch_canvas.dart';
+import 'package:alix_mobile/review/unit_widgets.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
-import 'package:alix_mobile/shared/inline_runs.dart';
 import 'package:alix_mobile/theme.dart';
 
-const _mono = 'IBM Plex Mono';
 const _sans = 'IBM Plex Sans';
 
 // One measure for the whole card, so the question, the answer and the note
@@ -42,7 +41,7 @@ class NoteBlock extends StatelessWidget {
           Text(
             badge.name.toUpperCase(),
             style: TextStyle(
-              fontFamily: _mono,
+              fontFamily: monoFontFamily,
               fontSize: 10.5,
               height: 1.5,
               letterSpacing: 1.7,
@@ -116,7 +115,7 @@ class ReviewModeTag extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: _mono,
+            fontFamily: monoFontFamily,
             fontSize: 10.5,
             letterSpacing: 1.7,
             color: tokens.faint,
@@ -388,7 +387,7 @@ class ReviewCardView extends StatelessWidget {
     );
     final units = card.frontUnits;
     if (units == null) {
-      return _runsOrText(
+      return runsOrText(
         card.frontRuns,
         card.front,
         style: style,
@@ -400,146 +399,8 @@ class ReviewCardView extends StatelessWidget {
       children: [
         for (final (index, unit) in units.indexed) ...[
           if (index > 0) const SizedBox(height: 10),
-          _unit(unit, tokens, style, TextAlign.center),
+          unitWidget(unit, tokens, style, TextAlign.center),
         ],
-      ],
-    );
-  }
-
-  Widget _unit(
-    ReviewContentUnitModel unit,
-    AlixTokens tokens,
-    TextStyle style,
-    TextAlign textAlign,
-  ) {
-    return switch (unit) {
-      ReviewSentenceModel(:final text, :final runs) => _runsOrText(
-        runs,
-        text,
-        style: style,
-        textAlign: textAlign,
-      ),
-      ReviewCodeModel(:final lines) => _codeBlock(
-        lines,
-        style.color ?? tokens.text,
-      ),
-      ReviewDiagramModel() => _diagram(unit, answered: true),
-      ReviewChecklistModel(:final items) => _checklist(
-        items,
-        tokens,
-        style,
-        textAlign == TextAlign.center ? TextAlign.start : textAlign,
-      ),
-      ReviewTableModel() => _table(unit, tokens, style),
-      ReviewQuoteModel(:final units) => _quote(units, tokens, style, textAlign),
-    };
-  }
-
-  /// A quoted block, its own units stacked behind a rule. `surface` is the
-  /// alignment of what the quotation sits in, not of its own prose.
-  Widget _quote(
-    List<ReviewContentUnitModel> units,
-    AlixTokens tokens,
-    TextStyle style,
-    TextAlign surface,
-  ) {
-    return Container(
-      padding: const EdgeInsets.only(left: 12),
-      decoration: BoxDecoration(
-        border: Border(left: BorderSide(color: tokens.dim, width: 3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final unit in units)
-            _unit(
-              unit,
-              tokens,
-              style,
-              unit is ReviewSentenceModel ? TextAlign.start : surface,
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _table(ReviewTableModel unit, AlixTokens tokens, TextStyle style) {
-    TextAlign cellAlign(int index) => switch (index < unit.aligns.length
-        ? unit.aligns[index]
-        : ReviewCellAlign.none) {
-      ReviewCellAlign.center => TextAlign.center,
-      ReviewCellAlign.right => TextAlign.right,
-      ReviewCellAlign.none || ReviewCellAlign.left => TextAlign.left,
-    };
-    Widget cell(List<InlineRunModel> runs, int index, TextStyle cellStyle) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        child: _runsOrText(
-          runs,
-          '',
-          style: cellStyle,
-          textAlign: cellAlign(index),
-        ),
-      );
-    }
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Table(
-        defaultColumnWidth: const IntrinsicColumnWidth(),
-        border: TableBorder.all(color: tokens.dim.withValues(alpha: 0.4)),
-        children: [
-          TableRow(
-            children: [
-              for (final (index, runs) in unit.header.indexed)
-                cell(runs, index, style.copyWith(fontWeight: FontWeight.w600)),
-            ],
-          ),
-          for (final row in unit.rows)
-            TableRow(
-              children: [
-                for (final (index, runs) in row.indexed)
-                  cell(runs, index, style),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _checklist(
-    List<ReviewChecklistItemModel> items,
-    AlixTokens tokens,
-    TextStyle style,
-    TextAlign textAlign,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final item in items)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.checked ? '☑' : '☐',
-                  style: style.copyWith(
-                    color: item.checked ? tokens.good : tokens.dim,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _runsOrText(
-                    item.runs,
-                    item.text,
-                    style: style,
-                    textAlign: textAlign,
-                  ),
-                ),
-              ],
-            ),
-          ),
       ],
     );
   }
@@ -711,7 +572,7 @@ class ReviewCardView extends StatelessWidget {
       children: [
         for (final (index, unit) in units.indexed) ...[
           if (index > 0) const SizedBox(height: 10),
-          _unit(unit, tokens, style, TextAlign.start),
+          unitWidget(unit, tokens, style, TextAlign.start),
         ],
       ],
     );
@@ -744,7 +605,7 @@ class ReviewCardView extends StatelessWidget {
       final step = card.answerSteps[index];
       if (step is ReviewAnswerQuoteModel) {
         addGap();
-        children.add(_quote(step.units, tokens, style, TextAlign.start));
+        children.add(quoteWidget(step.units, tokens, style, TextAlign.start));
         index++;
         continue;
       }
@@ -752,7 +613,7 @@ class ReviewCardView extends StatelessWidget {
         addGap();
         for (final unit in step.units) {
           if (unit is ReviewTableModel) {
-            children.add(_table(unit, tokens, style));
+            children.add(tableWidget(unit, tokens, style));
           }
         }
         index++;
@@ -776,15 +637,15 @@ class ReviewCardView extends StatelessWidget {
         onFence: (code, unit, closed) {
           addGap();
           if (closed && unit is ReviewDiagramModel) {
-            children.add(_diagram(unit, answered: true));
+            children.add(diagramWidget(unit, answered: true));
           } else {
-            children.add(_codeBlock(code, style.color ?? tokens.text));
+            children.add(codeBlock(code, style.color ?? tokens.text));
           }
         },
         onLine: (line) {
           addGap();
           children.add(
-            _runsOrText(
+            runsOrText(
               line < runLines.length ? runLines[line] : null,
               lines[line],
               style: style,
@@ -818,10 +679,10 @@ class ReviewCardView extends StatelessWidget {
       card.contextUnits,
       onBlock: (source, unit, closed) {
         if (closed && unit is ReviewDiagramModel) {
-          add(_diagram(unit, answered: answered));
+          add(diagramWidget(unit, answered: answered));
         } else if (closed && unit is ReviewSentenceModel) {
           add(
-            _runsOrText(
+            runsOrText(
               unit.runs,
               unit.text,
               textAlign: TextAlign.center,
@@ -829,12 +690,12 @@ class ReviewCardView extends StatelessWidget {
             ),
           );
         } else {
-          add(_codeBlock(source, style?.color ?? tokens.text));
+          add(codeBlock(source, style?.color ?? tokens.text));
         }
       },
       onLine: (index) {
         add(
-          _runsOrText(
+          runsOrText(
             index < card.contextRuns.length ? card.contextRuns[index] : null,
             card.context[index],
             textAlign: TextAlign.center,
@@ -1031,18 +892,18 @@ class ReviewCardView extends StatelessWidget {
           Text(
             '${index + 1}',
             style: TextStyle(
-              fontFamily: _mono,
+              fontFamily: monoFontFamily,
               fontSize: 13.5,
               color: numberColor,
             ),
           ),
           const SizedBox(width: 14),
           Expanded(
-            child: _runsOrText(
+            child: runsOrText(
               runs,
               option,
               style: TextStyle(
-                fontFamily: _mono,
+                fontFamily: monoFontFamily,
                 fontSize: 16,
                 height: 1.35,
                 color: textColor,
@@ -1106,7 +967,7 @@ class ReviewCardView extends StatelessWidget {
               controller: typedControllers[index],
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: _mono,
+                fontFamily: monoFontFamily,
                 fontSize: 17,
                 color: onSurface,
               ),
@@ -1139,7 +1000,7 @@ class ReviewCardView extends StatelessWidget {
               TextSpan(
                 text: input,
                 style: TextStyle(
-                  fontFamily: _mono,
+                  fontFamily: monoFontFamily,
                   fontWeight: FontWeight.w500,
                   fontSize: 18,
                   color: tokens.good,
@@ -1171,7 +1032,7 @@ class ReviewCardView extends StatelessWidget {
                   TextSpan(
                     text: input,
                     style: TextStyle(
-                      fontFamily: _mono,
+                      fontFamily: monoFontFamily,
                       fontSize: 15,
                       color: tokens.again,
                     ),
@@ -1193,7 +1054,7 @@ class ReviewCardView extends StatelessWidget {
             result.expected,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontFamily: _mono,
+              fontFamily: monoFontFamily,
               fontWeight: FontWeight.w500,
               fontSize: 18,
               color: tokens.good,
@@ -1270,7 +1131,7 @@ class ReviewCardView extends StatelessWidget {
     return Text(
       text.toUpperCase(),
       style: TextStyle(
-        fontFamily: _mono,
+        fontFamily: monoFontFamily,
         fontSize: small ? 9.5 : 10.5,
         letterSpacing: 1.4,
         color: color,
@@ -1307,7 +1168,7 @@ class ReviewCardView extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: _runsOrText(
+              child: runsOrText(
                 runs,
                 point,
                 style: TextStyle(
@@ -1354,21 +1215,21 @@ class ReviewCardView extends StatelessWidget {
         for (final (index, note) in entry.units.indexed) ...[
           if (index > 0) const SizedBox(height: 10),
           switch (note) {
-            ReviewSentenceModel(:final text, :final runs) => _runsOrText(
+            ReviewSentenceModel(:final text, :final runs) => runsOrText(
               runs,
               text,
               style: body,
             ),
-            ReviewCodeModel(:final lines) => _codeBlock(lines, tokens.text),
-            ReviewDiagramModel() => _diagram(note, answered: true),
-            ReviewChecklistModel(:final items) => _checklist(
+            ReviewCodeModel(:final lines) => codeBlock(lines, tokens.text),
+            ReviewDiagramModel() => diagramWidget(note, answered: true),
+            ReviewChecklistModel(:final items) => checklistWidget(
               items,
               tokens,
               body,
               TextAlign.start,
             ),
-            ReviewTableModel() => _table(note, tokens, body),
-            ReviewQuoteModel(:final units) => _quote(
+            ReviewTableModel() => tableWidget(note, tokens, body),
+            ReviewQuoteModel(:final units) => quoteWidget(
               units,
               tokens,
               body,
@@ -1822,93 +1683,6 @@ class _ScrollWithMoreHintState extends State<ScrollWithMoreHint> {
   }
 }
 
-Widget _runsOrText(
-  List<InlineRunModel>? runs,
-  String text, {
-  required TextStyle? style,
-  TextAlign textAlign = TextAlign.start,
-  bool contextHoles = false,
-  AlixTokens? tokens,
-}) {
-  final effectiveStyle = style ?? const TextStyle();
-  if (runs == null) {
-    return Text(text, textAlign: textAlign, style: effectiveStyle);
-  }
-  return InlineRuns(
-    runs: runs,
-    style: effectiveStyle,
-    textAlign: textAlign,
-    contextHoles: contextHoles,
-    holeColor: tokens?.boltHi,
-    mutedHoleColor: tokens?.dim,
-  );
-}
-
-Widget _diagram(ReviewDiagramModel unit, {required bool answered}) {
-  final alt = answered && unit.revealedAlt != null
-      ? unit.revealedAlt!
-      : unit.alt;
-  if (unit.regions.isEmpty) {
-    return Semantics(
-      label: alt,
-      image: true,
-      child: Image.file(
-        File(unit.src),
-        width: unit.width.toDouble(),
-        fit: BoxFit.scaleDown,
-        errorBuilder: (_, _, _) => const SizedBox.shrink(),
-      ),
-    );
-  }
-  // A masked diagram is the shipped occlusion surface over the frozen
-  // raster: regions are raster-pixel boxes, exactly what MaskedCardImage
-  // places against the decoded source size.
-  return Semantics(
-    label: alt,
-    image: true,
-    child: Builder(
-      builder: (context) => MaskedCardImage(
-        provider: FileImage(File(unit.src)),
-        image: ReviewImageModel(
-          src: unit.src,
-          alt: alt,
-          regions: unit.regions,
-          crop: null,
-        ),
-        answered: answered,
-        height: unit.height.toDouble(),
-        onAskedGone: () => ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'this card asks about a region outside its diagram',
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-Widget _codeBlock(List<String> lines, Color foreground) {
-  return Container(
-    width: double.infinity,
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-    decoration: BoxDecoration(
-      color: Colors.black.withValues(alpha: 0.32),
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: Text(
-      lines.join('\n'),
-      style: TextStyle(
-        fontFamily: _mono,
-        fontSize: 13,
-        height: 1.45,
-        color: foreground,
-      ),
-    ),
-  );
-}
-
 void _walkContextBlocks(
   List<String> lines,
   List<ReviewContentUnitModel> units, {
@@ -1988,7 +1762,7 @@ List<Widget> _sectionProse(
     final runs = runParts.contains(null)
         ? null
         : _joinRunLines(runParts.cast<List<InlineRunModel>>());
-    add(_runsOrText(runs, textParts.join(' '), style: style));
+    add(runsOrText(runs, textParts.join(' '), style: style));
     textParts.clear();
     runParts.clear();
   }
@@ -2000,11 +1774,11 @@ List<Widget> _sectionProse(
     onBlock: (source, unit, closed) {
       flush();
       if (closed && unit is ReviewDiagramModel) {
-        add(_diagram(unit, answered: true));
+        add(diagramWidget(unit, answered: true));
       } else if (closed && unit is ReviewSentenceModel) {
-        add(_runsOrText(unit.runs, unit.text, style: style));
+        add(runsOrText(unit.runs, unit.text, style: style));
       } else {
-        add(_codeBlock(source, style.color ?? tokens.text));
+        add(codeBlock(source, style.color ?? tokens.text));
       }
     },
     onLine: (index) {

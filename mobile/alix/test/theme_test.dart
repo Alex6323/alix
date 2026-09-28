@@ -108,4 +108,21 @@ void main() {
     expect(tokens.faint, const Color(0xFFBBAA99));
     expect(data.colorScheme.onSecondary, const Color(0xFF998877));
   });
+
+  test('every palette draws a SnackBar on its ground in its ink, no action colour', () {
+    for (final theme in alixThemes) {
+      final data = theme.data;
+      final tokens = data.extension<AlixTokens>()!;
+      final snack = data.snackBarTheme;
+      expect(snack.backgroundColor, data.colorScheme.surface,
+          reason: '${theme.id}: the SnackBar sits on the palette ground');
+      expect(snack.contentTextStyle?.color, data.colorScheme.onSurface,
+          reason: '${theme.id}: its text is the palette ink');
+      final shape = snack.shape as RoundedRectangleBorder;
+      expect(shape.side.color, tokens.line,
+          reason: '${theme.id}: a hairline separates it from the same ground');
+      expect(snack.actionTextColor, isNull,
+          reason: '${theme.id}: no action colour is themed');
+    }
+  });
 }

@@ -76,13 +76,20 @@ Once paired, review gains things it doesn't have offline:
 - An **Ask** chip, shown once you've attempted the current card (revealed
   it, picked a choice, submitted a typed answer, or walked all its lines)
   but not before: the same attempt-first rule the web tutor follows. It opens
-  the same question/answer flow as the desktop tutor, including **Make a
-  card** and **Make a note** (condenses the exchange into up to three lines
-  and appends them to the deck's personal sidecar, `<deck>.local.md`, on
-  the phone; sync that file alongside the deck, and an empty result says so
-  rather than doing nothing silently), re-sending the whole exchange to the
-  paired desktop on every turn (the server keeps no session of its own for a
-  remote turn).
+  the same question/answer flow as the desktop tutor: replies render with the
+  card's own content grammar (code blocks, checklists, tables, quotations),
+  and **Make this a card** and **Make this a note** enable once an answer
+  exists that nothing was made from yet. A note condenses the exchanges
+  since the last note into key points and appends them to the deck's
+  personal sidecar, `<deck>.local.md`, on the phone (sync that file
+  alongside the deck; an empty result says so rather than doing nothing
+  silently). Every question re-sends the whole exchange to the paired
+  desktop (the server keeps no session of its own for a remote turn). The
+  conversation belongs to the card, not the sheet: closing the sheet while
+  the desktop is still working loses nothing, the answer or note lands
+  anyway, a note saved with the sheet closed is announced on the review
+  screen, and reopening the sheet shows the whole transcript. Moving to
+  another card starts a fresh conversation.
 - A **Take the exam** chip on the session summary, for any deck that
   declares a `source:`. It opens a full-screen exam: one question at a
   time, then a Pass/Partial/Fail breakdown per question and, on a fail, a
@@ -115,10 +122,9 @@ exam, a note, or a generation (the restart case above, caught mid-session
 instead of at pairing time), the phone shows one SnackBar: "Pairing expired.
 Pair again from Settings → Connected devices." On the review and exam screens it
 carries a **Re-pair** action that reopens the pairing sheet directly; the
-tutor sheet's own SnackBar sits under its own still-open modal and has no
-room for one, so there you follow the message's own instruction instead.
-Pinning `[serve] token` is what stops this from happening in the first
-place.
+tutor sheet shows the same line inside the sheet instead, so there you
+follow the message's own instruction. Pinning `[serve] token` is what stops
+this from happening in the first place.
 
 ## Security posture
 

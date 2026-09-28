@@ -73,7 +73,7 @@ void main() {
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
-        'lib/review_screen.dart:328',
+        'lib/review_screen.dart:375',
         'lib/picker_screen.dart:626',
         'lib/picker/generate_sheet.dart:42',
         'lib/walk_screen.dart:192',
@@ -83,8 +83,10 @@ void main() {
           'review_screen.dart and picker_screen.dart, the section sheet '
           'opener added one import and one method to review_screen.dart, '
           'and the skip-introduction switch added a field to both, moving '
-          'their single ListenableBuilder site; generate_sheet.dart and '
-          'walk_screen.dart are unchanged',
+          'their single ListenableBuilder site; the tutor conversation '
+          'ownership added an import, three fields, and three methods to '
+          'review_screen.dart; generate_sheet.dart and walk_screen.dart are '
+          'unchanged',
     );
   });
 

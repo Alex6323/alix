@@ -89,13 +89,15 @@ Scaffold
                 Text("Settings")
     SizedBox(width=null, height=null)
       Align
-        Material
-          SafeArea
-            Padding(EdgeInsets.zero)
-              Padding(EdgeInsetsDirectional(24.0, 0.0, 24.0, 0.0))
-                Wrap
-                  Row
-                    Expanded
-                      Padding(EdgeInsets(0.0, 14.0, 0.0, 14.0))
-                        Text("Paired with <version>.1")
+        SafeArea
+          Padding(EdgeInsets.zero)
+            Padding(EdgeInsets(15.0, 5.0, 15.0, 10.0))
+              Material
+                CustomPaint
+                  Padding(EdgeInsetsDirectional(16.0, 0.0, 16.0, 0.0))
+                    Wrap
+                      Row
+                        Expanded
+                          Padding(EdgeInsets(0.0, 14.0, 0.0, 14.0))
+                            Text("Paired with <version>.1")
     Stack

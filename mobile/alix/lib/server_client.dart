@@ -7,6 +7,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:alix_mobile/review/review_models.dart';
+import 'package:alix_mobile/shared/inline_models.dart';
+
 /// Thrown when the paired server answers 401: the token this app holds no
 /// longer matches what the server expects (a fresh `--lan` launch mints a
 /// new one). Every [ServerClient] call can throw this instead of returning
@@ -157,6 +160,100 @@ bool _asBool(dynamic v) => v == true;
 
 List<String> _asStringList(dynamic v) => v is List ? v.whereType<String>().toList() : const [];
 
+/// `[ContentUnitDto]` (docs/API.md) to the review models, so a tutor answer
+/// renders through the card's unit widgets. A unit of an unknown kind or
+/// without its required fields is dropped rather than guessed at.
+List<ReviewContentUnitModel> contentUnitsFromJson(dynamic json) {
+  if (json is! List) return const [];
+  return [for (final unit in json) ?_contentUnitFromJson(unit)];
+}
+
+ReviewContentUnitModel? _contentUnitFromJson(dynamic json) {
+  if (json is! Map) return null;
+  switch (json['kind']) {
+    case 'sentence':
+      final text = _asString(json['text']);
+      if (text == null) return null;
+      return ReviewSentenceModel(text: text, runs: _runsFromJson(json['runs']));
+    case 'code':
+      return ReviewCodeModel(_asStringList(json['lines']));
+    case 'diagram':
+      // The desktop serves the raster behind `src` over HTTP and the phone's
+      // diagram widget reads a file, so a diagram shows its accessible text.
+      final alt = _asString(json['alt']);
+      if (alt == null) return null;
+      return ReviewSentenceModel(
+        text: alt,
+        runs: [InlineRunModel(text: alt, bold: false, italic: false, code: false)],
+      );
+    case 'checklist':
+      final items = json['items'];
+      if (items is! List) return null;
+      return ReviewChecklistModel([
+        for (final item in items)
+          if (item is Map && item['text'] is String)
+            ReviewChecklistItemModel(
+              checked: _asBool(item['checked']),
+              text: item['text'] as String,
+              runs: _runsFromJson(item['runs']),
+            ),
+      ]);
+    case 'table':
+      final header = json['header'];
+      final rows = json['rows'];
+      if (header is! List || rows is! List) return null;
+      return ReviewTableModel(
+        aligns: [
+          for (final align in _asStringList(json['aligns']))
+            switch (align) {
+              'left' => ReviewCellAlign.left,
+              'center' => ReviewCellAlign.center,
+              'right' => ReviewCellAlign.right,
+              _ => ReviewCellAlign.none,
+            },
+        ],
+        header: [for (final cell in header) _runsFromJson(cell)],
+        rows: [
+          for (final row in rows)
+            if (row is List) [for (final cell in row) _runsFromJson(cell)],
+        ],
+      );
+    case 'quote':
+      return ReviewQuoteModel(contentUnitsFromJson(json['units']));
+    default:
+      return null;
+  }
+}
+
+List<InlineRunModel> _runsFromJson(dynamic json) {
+  if (json is! List) return const [];
+  return [
+    for (final run in json)
+      if (run is Map && run['text'] is String)
+        InlineRunModel(
+          text: run['text'] as String,
+          bold: _asBool(run['bold']),
+          italic: _asBool(run['italic']),
+          strike: _asBool(run['strike']),
+          code: _asBool(run['code']),
+          link: _asBool(run['link']),
+          sub: _asBool(run['sub']),
+          sup: _asBool(run['sup']),
+          ins: _asBool(run['ins']),
+          math: _mathFromJson(run['math']),
+        ),
+  ];
+}
+
+InlineMathModel? _mathFromJson(dynamic json) {
+  if (json is! Map) return null;
+  return InlineMathModel(
+    display: _asBool(json['display']),
+    svg: _asString(json['svg']),
+    error: _asString(json['error']),
+  );
+}
+
 /// The card the tutor is discussing, sent whole on every call since the
 /// server holds no session of its own for a remote turn. Mirrors
 /// `RemoteCard` on the wire; a caller building one from the bridge's
@@ -223,6 +320,8 @@ class RemoteAsk {
     required this.thinking,
     this.cardOnly = false,
     this.answer,
+    this.units = const [],
+    this.status,
     this.draft,
     this.note,
     this.error,
@@ -232,6 +331,15 @@ class RemoteAsk {
   final bool thinking;
   final bool cardOnly;
   final String? answer;
+
+  /// The answer parsed with the card content grammar, for display; empty
+  /// while thinking, on an error, and on a reply the desktop sent no units
+  /// for, where the client renders [answer] as plain text.
+  final List<ReviewContentUnitModel> units;
+
+  /// The desktop's one-line context warning for this reply, null when it
+  /// had none.
+  final String? status;
   final DraftCard? draft;
 
   /// Condensed note lines from a note call. THREE distinct wire states,
@@ -248,6 +356,8 @@ class RemoteAsk {
         thinking: _asBool(json['thinking']),
         cardOnly: _asBool(json['card_only']),
         answer: _asString(json['answer']),
+        units: contentUnitsFromJson(json['units']),
+        status: _asString(json['status']),
         draft: DraftCard.fromJson(json['draft']),
         note: json['note'] is List ? _asStringList(json['note']) : null,
         error: _asString(json['error']),

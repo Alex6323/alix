@@ -130,6 +130,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tutor renders fenced multi-line code as code blocks and backticks as inline
   code while keeping the raw reply for follow-up questions, notes, and cards.
 
+- The phone's tutor sheet now matches the desktop tutor: a reply renders with
+  the card's own unit widgets (code blocks, checklists, tables, quotations); a
+  reply answered from the card alone says so under the latest answer; **Make
+  this a note** and **Make this a card** enable only for an answer nothing
+  was made from yet, and a note condenses only the exchanges since the last
+  one; and the conversation belongs to the review screen, so closing the
+  sheet mid-call loses nothing: the answer, note, or draft lands anyway, a
+  note saved while the sheet is closed is announced on the review screen,
+  and reopening shows the whole transcript. SnackBars sit on the palette
+  ground in its ink on every theme.
+
 - Remote tutor card requests now require `deck_id` and `card_id`, and every
   remote tutor response includes `card_only`. A client that omits either id
   receives an ordinary 400 response.

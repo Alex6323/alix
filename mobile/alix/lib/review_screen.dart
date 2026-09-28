@@ -16,6 +16,7 @@ import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/sync/sync_controller.dart';
 import 'package:alix_mobile/sync/sync_models.dart';
 import 'package:alix_mobile/sync/sync_sheet.dart';
+import 'package:alix_mobile/tutor_conversation.dart';
 import 'package:alix_mobile/tutor_sheet.dart';
 
 class ReviewScreen extends StatefulWidget {
@@ -72,6 +73,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
   Directory? _support;
   String? _autoOpenedSection;
   bool _summaryPushed = false;
+
+  /// The current card's tutor conversation, kept across sheet openings so a
+  /// closed sheet loses nothing; a conversation for an earlier card stays
+  /// in [_retiredTutors] until its last call settles, then goes.
+  TutorConversation? _tutor;
+  final List<TutorConversation> _retiredTutors = [];
+  bool _tutorSheetOpen = false;
 
   @override
   void initState() {
@@ -154,6 +162,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
     _attempt.dispose();
     _controller.removeListener(_maybePushSummary);
     _controller.dispose();
+    _tutor?.dispose();
+    for (final retired in _retiredTutors) {
+      retired.dispose();
+    }
     _client?.close();
     super.dispose();
   }
@@ -203,28 +215,63 @@ class _ReviewScreenState extends State<ReviewScreen> {
   void _openTutor(ReviewTutorCardModel tutor) {
     final client = _client;
     if (client == null) return;
+    final conversation = _tutorFor(tutor, client);
+    _tutorSheetOpen = true;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => TutorSheet(
-        card: TutorCardContext(
-          deckId: tutor.deckId,
-          cardId: tutor.id,
-          subject: tutor.subject,
-          front: tutor.front,
-          back: tutor.back,
-          at: tutor.at,
-        ),
-        client: client,
-        mint: (front, back) async => _controller.mintTutorCard(
-          front: front,
-          back: back,
-          nowMs: DateTime.now().millisecondsSinceEpoch,
-        ),
-        onNote: (notes) =>
-            _controller.applyCardNote(id: tutor.id, notes: notes),
+      builder: (_) => TutorSheet(conversation: conversation),
+    ).whenComplete(() => _tutorSheetOpen = false);
+  }
+
+  TutorConversation _tutorFor(ReviewTutorCardModel tutor, ServerClient client) {
+    final current = _tutor;
+    if (current != null && current.card.cardId == tutor.id) return current;
+    if (current != null) _retireTutor(current);
+    return _tutor = TutorConversation(
+      card: TutorCardContext(
+        deckId: tutor.deckId,
+        cardId: tutor.id,
+        subject: tutor.subject,
+        front: tutor.front,
+        back: tutor.back,
+        at: tutor.at,
       ),
+      client: client,
+      mint: (front, back) async => _controller.mintTutorCard(
+        front: front,
+        back: back,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+      onNote: (notes) => _controller.applyCardNote(id: tutor.id, notes: notes),
+      onMessage: _tutorMessage,
     );
+  }
+
+  /// The sheet shows a conversation's messages inline; one that lands while
+  /// the sheet is closed (a note saved after the learner moved on) is
+  /// announced here instead.
+  void _tutorMessage(String text) {
+    if (_tutorSheetOpen || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  /// A conversation for a card the learner left keeps polling until its
+  /// call settles, so its note or card still lands; then it is disposed.
+  void _retireTutor(TutorConversation conversation) {
+    if (!conversation.busy) {
+      conversation.dispose();
+      return;
+    }
+    _retiredTutors.add(conversation);
+    void settled() {
+      if (conversation.busy) return;
+      conversation.removeListener(settled);
+      _retiredTutors.remove(conversation);
+      conversation.dispose();
+    }
+
+    conversation.addListener(settled);
   }
 
   void _openSection(ReviewCardModel card) {

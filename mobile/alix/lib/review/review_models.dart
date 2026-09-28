@@ -81,9 +81,8 @@ sealed class ReviewContentUnitModel {
   const ReviewContentUnitModel();
 }
 
-/// One post-answer note. [badge] is the GitHub alert badge that opened it,
-/// null for a note no blockquote opened (a table's note column, an AI
-/// augmentation, a personal note).
+/// One post-answer note and the GitHub alert badge it carries; a note alix
+/// added (an augmentation, a tutor note) carries NOTE like an authored one.
 class ReviewNoteModel {
   ReviewNoteModel({
     required this.badge,
