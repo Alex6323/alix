@@ -91,7 +91,10 @@ Once paired, review gains things it doesn't have offline:
   screen, and reopening the sheet shows the whole transcript. Moving to
   another card starts a fresh conversation; while the previous card's note
   or card draft is still being made, the new card's tutor says so and
-  waits, since the desktop makes one thing at a time.
+  waits, since the desktop makes one thing at a time. A desktop restarted
+  mid-call forgets the call; the phone reports it as failed (the question
+  goes back into the chat box) rather than waiting for a result that will
+  never come.
 - A **Take the exam** chip on the session summary, for any deck that
   declares a `source:`. It opens a full-screen exam: one question at a
   time, then a Pass/Partial/Fail breakdown per question and, on a fail, a

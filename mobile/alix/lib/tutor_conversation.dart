@@ -284,7 +284,8 @@ class TutorConversation extends ChangeNotifier {
       _changed();
       return true;
     }
-    if (dto.error != null) {
+    final answer = dto.answer;
+    if (dto.error != null || answer == null) {
       // Nothing is lost: the question goes back to the composer rather than
       // the transcript, since it never got a real answer.
       _restoredQuestion = _pendingQuestion;
@@ -295,7 +296,7 @@ class TutorConversation extends ChangeNotifier {
     }
     _transcript.add(TutorExchange(
       q: _pendingQuestion ?? '',
-      a: dto.answer ?? '',
+      a: answer,
       units: dto.units,
       cardOnly: dto.cardOnly,
     ));
@@ -436,15 +437,12 @@ class TutorConversation extends ChangeNotifier {
       _changed();
       return true;
     }
-    if (dto.error != null) {
+    final notes = dto.note;
+    if (dto.error != null || notes == null) {
       _notePending = false;
       _say('The tutor call failed.');
       return false;
     }
-    // Three states, per RemoteAsk.note's doc: null here means this settled
-    // reply is not (yet) a note outcome, so keep polling.
-    final notes = dto.note;
-    if (notes == null) return true;
     _notePending = false;
     if (notes.isEmpty) {
       _say('nothing to save');

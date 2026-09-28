@@ -116,6 +116,39 @@ void main() {
     expect(a.transcript, hasLength(1), reason: "B's answer did not land in A");
   });
 
+  testWidgets("a settled reply without this call's outcome ends the call and frees the slot",
+      (tester) async {
+    // The DTO a desktop restarted under a pinned token serves on the next
+    // GET: settled, everything null.
+    const blank = RemoteAsk(thinking: false);
+    final client = FakeServerClient(getAskReplies: const [
+      RemoteAsk(thinking: false, answer: 'an answer'),
+      blank,
+    ]);
+    final slot = TutorSlot();
+    var noteCalls = 0;
+    final subject = conversation(client, slot, 'card-a', onNote: (_) => noteCalls++);
+
+    await subject.send('q');
+    await tester.pump(_pollInterval);
+    await subject.makeNote();
+    await tester.pump(_pollInterval);
+    expect(subject.notePending, isFalse, reason: 'a blank settled reply is a failed note');
+    expect(slot.owner, isNull, reason: 'the failed note gives the slot back');
+    expect(noteCalls, 0);
+    expect(subject.message, 'The tutor call failed.');
+    final callsAfterNote = client.getAskCalls;
+    await tester.pump(_pollInterval * 3);
+    expect(client.getAskCalls, callsAfterNote, reason: 'the note poll stopped');
+
+    await subject.send('q2');
+    await tester.pump(_pollInterval);
+    expect(subject.pendingQuestion, isNull);
+    expect(subject.transcript, hasLength(1), reason: 'no empty exchange is appended');
+    expect(subject.takeRestoredQuestion(), 'q2', reason: 'the question goes back to the composer');
+    expect(slot.owner, isNull);
+  });
+
   testWidgets('a refused POST and an expired pairing give the slot back at once', (tester) async {
     final slot = TutorSlot();
     final refused = conversation(FakeServerClient(postAskReplies: const [false]), slot, 'card-a');
