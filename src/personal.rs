@@ -205,6 +205,21 @@ mod tests {
     }
 
     #[test]
+    fn an_unstamped_sidecar_card_never_becomes_an_addressable_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = deck(dir.path());
+        std::fs::write(
+            sidecar_path(&deck),
+            "---\nfor: deck-abc\n---\n## draft\nanswer\n",
+        )
+        .unwrap();
+
+        let personal = read(&deck, "spanish");
+        assert!(personal.cards.is_empty());
+        assert!(personal.blocks().is_empty());
+    }
+
+    #[test]
     fn a_sidecar_sits_beside_its_deck_under_the_personal_suffix() {
         assert_eq!(
             Path::new("/decks/spanish.local.md"),
