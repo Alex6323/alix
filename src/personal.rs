@@ -384,6 +384,26 @@ mod tests {
     }
 
     #[test]
+    fn reading_a_personal_card_keeps_an_addressed_note_out_of_its_answer() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = deck(dir.path());
+        std::fs::write(
+            sidecar_path(&deck),
+            "---\nfor: deck-abc\n---\n\n\
+             ## mine\nback\n<!-- id: card-zz -->\n\n\
+             <!-- note: card-one -->\n> [!NOTE]\n> a note\n",
+        )
+        .unwrap();
+
+        let personal = read(&deck, "spanish");
+
+        assert_eq!(1, personal.cards.len());
+        assert_eq!(vec!["back"], personal.cards[0].back);
+        assert!(personal.cards[0].notes.is_empty());
+        assert_eq!(1, personal.notes.len());
+    }
+
+    #[test]
     fn empty_card_text_writes_no_sidecar() {
         let dir = tempfile::tempdir().unwrap();
         let deck = deck(dir.path());
