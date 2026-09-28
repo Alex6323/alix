@@ -178,6 +178,21 @@ mod tests {
     }
 
     #[test]
+    fn a_marker_trims_spaces_around_its_card_id() {
+        let text = "<!-- note:  card-abc  -->\n> [!NOTE]\n> spaced marker\n";
+        assert_eq!(
+            vec![SidecarNote {
+                card: "card-abc".into(),
+                note: Note {
+                    badge: Badge::Note,
+                    body: "spaced marker".into(),
+                },
+            }],
+            notes(text)
+        );
+    }
+
+    #[test]
     fn every_badge_opens_a_sidecar_note_and_nothing_else_does() {
         for (line, badge) in [
             ("[!NOTE]", Badge::Note),
