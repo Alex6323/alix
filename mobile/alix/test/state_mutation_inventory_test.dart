@@ -73,7 +73,7 @@ void main() {
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
-        'lib/review_screen.dart:375',
+        'lib/review_screen.dart:378',
         'lib/picker_screen.dart:626',
         'lib/picker/generate_sheet.dart:42',
         'lib/walk_screen.dart:192',
@@ -84,7 +84,7 @@ void main() {
           'opener added one import and one method to review_screen.dart, '
           'and the skip-introduction switch added a field to both, moving '
           'their single ListenableBuilder site; the tutor conversation '
-          'ownership added an import, three fields, and three methods to '
+          'ownership added an import, four fields, and three methods to '
           'review_screen.dart; generate_sheet.dart and walk_screen.dart are '
           'unchanged',
     );

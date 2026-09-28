@@ -79,6 +79,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   /// in [_retiredTutors] until its last call settles, then goes.
   TutorConversation? _tutor;
   final List<TutorConversation> _retiredTutors = [];
+  final _tutorSlot = TutorSlot();
   bool _tutorSheetOpen = false;
 
   @override
@@ -166,6 +167,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     for (final retired in _retiredTutors) {
       retired.dispose();
     }
+    _tutorSlot.dispose();
     _client?.close();
     super.dispose();
   }
@@ -238,6 +240,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         at: tutor.at,
       ),
       client: client,
+      slot: _tutorSlot,
       mint: (front, back) async => _controller.mintTutorCard(
         front: front,
         back: back,

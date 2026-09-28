@@ -89,7 +89,9 @@ Once paired, review gains things it doesn't have offline:
   the desktop is still working loses nothing, the answer or note lands
   anyway, a note saved with the sheet closed is announced on the review
   screen, and reopening the sheet shows the whole transcript. Moving to
-  another card starts a fresh conversation.
+  another card starts a fresh conversation; while the previous card's note
+  or card draft is still being made, the new card's tutor says so and
+  waits, since the desktop makes one thing at a time.
 - A **Take the exam** chip on the session summary, for any deck that
   declares a `source:`. It opens a full-screen exam: one question at a
   time, then a Pass/Partial/Fail breakdown per question and, on a fail, a

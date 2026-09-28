@@ -71,7 +71,7 @@ class _TutorSheetState extends State<TutorSheet> {
 
   void _send() {
     final question = _question.text.trim();
-    if (question.isEmpty || _conversation.busy) return;
+    if (question.isEmpty || !_conversation.canSend) return;
     _question.clear();
     unawaited(_conversation.send(question));
   }
@@ -102,6 +102,12 @@ class _TutorSheetState extends State<TutorSheet> {
     final who = _conversation.backendName ?? 'The backend';
     final suffix = elapsed != null ? ' ${elapsed}s' : '';
     return '$who is working…$suffix';
+  }
+
+  /// The desktop's one ask slot is held by the card the learner left.
+  String _previousCardLabel() {
+    final who = _conversation.backendName ?? 'The backend';
+    return '$who is still working on the previous card…';
   }
 
   // ── build ─────────────────────────────────────────────────────────────
@@ -231,19 +237,23 @@ class _TutorSheetState extends State<TutorSheet> {
             IconButton(
               key: const ValueKey('tutor-send-button'),
               icon: const Icon(Icons.send),
-              onPressed: conversation.busy ? null : _send,
+              onPressed: conversation.canSend ? _send : null,
             ),
           ],
         ),
         Align(
           alignment: Alignment.centerRight,
-          child: conversation.draftPending || conversation.notePending
+          child: conversation.draftPending ||
+                  conversation.notePending ||
+                  conversation.slotBusy
               ? Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    _workingLabel(conversation.draftPending
-                        ? conversation.draftElapsed
-                        : conversation.noteElapsed),
+                    conversation.slotBusy
+                        ? _previousCardLabel()
+                        : _workingLabel(conversation.draftPending
+                            ? conversation.draftElapsed
+                            : conversation.noteElapsed),
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),

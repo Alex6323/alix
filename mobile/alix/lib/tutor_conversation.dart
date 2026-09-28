@@ -44,15 +44,38 @@ class TutorExchange {
   final bool cardOnly;
 }
 
+/// The phone's mirror of the desktop's one remote ask slot: the server
+/// replaces a settled job on the next POST whether or not its client has
+/// read the result, so only the conversation holding this slot may POST,
+/// and it holds the slot until its call settles.
+class TutorSlot extends ChangeNotifier {
+  TutorConversation? _owner;
+  TutorConversation? get owner => _owner;
+
+  bool _take(TutorConversation conversation) {
+    if (_owner != null && _owner != conversation) return false;
+    _owner = conversation;
+    return true;
+  }
+
+  void _release(TutorConversation conversation) {
+    if (_owner != conversation) return;
+    _owner = null;
+    notifyListeners();
+  }
+}
+
 class TutorConversation extends ChangeNotifier {
   TutorConversation({
     required this.card,
     required this.client,
+    required this.slot,
     required this.mint,
     required this.onNote,
     required this.onMessage,
     this.pollInterval = const Duration(milliseconds: 400),
   }) {
+    slot.addListener(_changed);
     _fetchBackendName();
   }
 
@@ -62,6 +85,9 @@ class TutorConversation extends ChangeNotifier {
 
   /// The paired desktop's AI backend, over `/api/remote/*`.
   final ServerClient client;
+
+  /// Shared with every other conversation on the same desktop.
+  final TutorSlot slot;
 
   /// Mints a drafted card from the edited front/back (a closure over the
   /// bridge session's `mintTutorCard`). Throws on a rejected mint (e.g. a
@@ -138,6 +164,8 @@ class TutorConversation extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _pollTimer?.cancel();
+    slot.removeListener(_changed);
+    slot._release(this);
     super.dispose();
   }
 
@@ -151,14 +179,20 @@ class TutorConversation extends ChangeNotifier {
     onMessage(text);
   }
 
-  /// A call is in flight: ask, draft and note share the desktop's one ask
-  /// slot and this object's one poll timer.
+  /// A call of this conversation is in flight: ask, draft and note share
+  /// this object's one poll timer.
   bool get busy => _pendingQuestion != null || _draftPending || _notePending;
+
+  /// Another conversation's call holds the desktop's ask slot, so this one
+  /// waits (the learner moved on while a note or draft was in flight).
+  bool get slotBusy => slot.owner != null && slot.owner != this;
+
+  bool get canSend => !busy && !slotBusy;
 
   /// Whether "Make this a note" and "Make this a card" may run: an answer
   /// exists that nothing was made from yet, and no call is in flight. The
   /// same gate the desktop serves as `AskDto.can_distill`.
-  bool get canDistill => !busy && _transcript.length > _notedThrough;
+  bool get canDistill => canSend && _transcript.length > _notedThrough;
 
   /// The latest reply was answered from the card alone.
   bool get latestCardOnly =>
@@ -181,16 +215,32 @@ class TutorConversation extends ChangeNotifier {
           TutorTurn(q: exchange.q, a: exchange.a),
       ];
 
-  void _poll(Future<void> Function() tick) {
+  /// One GET in flight at a time: the next poll is scheduled only after the
+  /// awaited one, and a tick returns whether the call is still in flight.
+  /// Overlapping GETs would each read the desktop's one terminal DTO and
+  /// apply it twice.
+  void _poll(Future<bool> Function() tick) {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(pollInterval, (_) => tick());
+    _pollTimer = Timer(pollInterval, () async {
+      final inFlight = await tick();
+      if (_disposed) return;
+      if (inFlight) {
+        _poll(tick);
+      } else {
+        slot._release(this);
+      }
+    });
   }
+
+  /// A call ended before its poll started (a refused POST, an expired
+  /// pairing): the slot goes back at once.
+  void _settledWithoutPoll() => slot._release(this);
 
   // ── send ──────────────────────────────────────────────────────────────
 
   Future<void> send(String question) async {
     final text = question.trim();
-    if (text.isEmpty || busy) return;
+    if (text.isEmpty || !canSend || !slot._take(this)) return;
     final history = _history();
     _pendingQuestion = text;
     _pendingElapsed = null;
@@ -203,36 +253,37 @@ class TutorConversation extends ChangeNotifier {
     } on PairingExpired {
       if (_disposed) return;
       _pendingQuestion = null;
+      _settledWithoutPoll();
       _say(pairingExpiredMessage);
       return;
     }
     if (_disposed) return;
     if (!ok) {
       _pendingQuestion = null;
+      _settledWithoutPoll();
       _say('The desktop did not answer.');
       return;
     }
     _poll(_pollAsk);
   }
 
-  Future<void> _pollAsk() async {
+  Future<bool> _pollAsk() async {
     RemoteAsk? dto;
     try {
       dto = await client.getAsk();
     } on PairingExpired {
-      _pollTimer?.cancel();
-      if (_disposed) return;
+      if (_disposed) return false;
       _pendingQuestion = null;
       _say(pairingExpiredMessage);
-      return;
+      return false;
     }
-    if (dto == null || _disposed) return;
+    if (_disposed) return false;
+    if (dto == null) return true;
     if (dto.thinking) {
       _pendingElapsed = dto.elapsed;
       _changed();
-      return;
+      return true;
     }
-    _pollTimer?.cancel();
     if (dto.error != null) {
       // Nothing is lost: the question goes back to the composer rather than
       // the transcript, since it never got a real answer.
@@ -240,7 +291,7 @@ class TutorConversation extends ChangeNotifier {
       _pendingQuestion = null;
       _pendingElapsed = null;
       _say('The tutor call failed.');
-      return;
+      return false;
     }
     _transcript.add(TutorExchange(
       q: _pendingQuestion ?? '',
@@ -252,12 +303,13 @@ class TutorConversation extends ChangeNotifier {
     _pendingQuestion = null;
     _pendingElapsed = null;
     _changed();
+    return false;
   }
 
   // ── make a card ───────────────────────────────────────────────────────
 
   Future<void> makeCard() async {
-    if (!canDistill) return;
+    if (!canDistill || !slot._take(this)) return;
     final history = _history();
     _draftPending = true;
     _draftElapsed = null;
@@ -270,47 +322,49 @@ class TutorConversation extends ChangeNotifier {
     } on PairingExpired {
       if (_disposed) return;
       _draftPending = false;
+      _settledWithoutPoll();
       _say(pairingExpiredMessage);
       return;
     }
     if (_disposed) return;
     if (!ok) {
       _draftPending = false;
+      _settledWithoutPoll();
       _say('The desktop did not answer.');
       return;
     }
     _poll(_pollDraft);
   }
 
-  Future<void> _pollDraft() async {
+  Future<bool> _pollDraft() async {
     RemoteAsk? dto;
     try {
       dto = await client.getAsk();
     } on PairingExpired {
-      _pollTimer?.cancel();
-      if (_disposed) return;
+      if (_disposed) return false;
       _draftPending = false;
       _say(pairingExpiredMessage);
-      return;
+      return false;
     }
-    if (dto == null || _disposed) return;
+    if (_disposed) return false;
+    if (dto == null) return true;
     if (dto.thinking) {
       _draftElapsed = dto.elapsed;
       _changed();
-      return;
+      return true;
     }
-    _pollTimer?.cancel();
     final draft = dto.draft;
     if (dto.error != null || draft == null) {
       _draftPending = false;
       _say('The tutor call failed.');
-      return;
+      return false;
     }
     _draftPending = false;
     _draft = draft;
     // A draft consumes the exchanges it was made from, as on the desktop.
     _notedThrough = _transcript.length;
     _changed();
+    return false;
   }
 
   /// Mints the edited draft; on a rejected mint the message is shown and the
@@ -337,7 +391,7 @@ class TutorConversation extends ChangeNotifier {
   // ── make a note ───────────────────────────────────────────────────────
 
   Future<void> makeNote() async {
-    if (!canDistill) return;
+    if (!canDistill || !slot._take(this)) return;
     // Only the exchanges nothing was made from yet, as the desktop condenses.
     final history = _history(from: _notedThrough);
     _notePending = true;
@@ -351,54 +405,54 @@ class TutorConversation extends ChangeNotifier {
     } on PairingExpired {
       if (_disposed) return;
       _notePending = false;
+      _settledWithoutPoll();
       _say(pairingExpiredMessage);
       return;
     }
     if (_disposed) return;
     if (!ok) {
       _notePending = false;
+      _settledWithoutPoll();
       _say('The desktop did not answer.');
       return;
     }
     _poll(_pollNote);
   }
 
-  Future<void> _pollNote() async {
+  Future<bool> _pollNote() async {
     RemoteAsk? dto;
     try {
       dto = await client.getAsk();
     } on PairingExpired {
-      _pollTimer?.cancel();
-      if (_disposed) return;
+      if (_disposed) return false;
       _notePending = false;
       _say(pairingExpiredMessage);
-      return;
+      return false;
     }
-    if (dto == null || _disposed) return;
+    if (_disposed) return false;
+    if (dto == null) return true;
     if (dto.thinking) {
       _noteElapsed = dto.elapsed;
       _changed();
-      return;
+      return true;
     }
     if (dto.error != null) {
-      _pollTimer?.cancel();
       _notePending = false;
       _say('The tutor call failed.');
-      return;
+      return false;
     }
     // Three states, per RemoteAsk.note's doc: null here means this settled
-    // reply is not (yet) a note outcome, so keep polling; the timer is left
-    // running and this tick is a no-op.
+    // reply is not (yet) a note outcome, so keep polling.
     final notes = dto.note;
-    if (notes == null) return;
-    _pollTimer?.cancel();
+    if (notes == null) return true;
     _notePending = false;
     if (notes.isEmpty) {
       _say('nothing to save');
-      return;
+      return false;
     }
     _notedThrough = _transcript.length;
     onNote(notes);
     _say('note saved');
+    return false;
   }
 }

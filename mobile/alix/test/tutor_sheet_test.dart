@@ -58,6 +58,7 @@ void main() {
     harness = _Harness(TutorConversation(
       card: _card,
       client: client,
+      slot: TutorSlot(),
       mint: mint ?? (front, back) async => 'card-1',
       onNote: onNote ?? (_) {},
       onMessage: (text) => harness.messages.add(text),

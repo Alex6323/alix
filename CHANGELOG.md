@@ -138,8 +138,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one; and the conversation belongs to the review screen, so closing the
   sheet mid-call loses nothing: the answer, note, or draft lands anyway, a
   note saved while the sheet is closed is announced on the review screen,
-  and reopening shows the whole transcript. SnackBars sit on the palette
-  ground in its ink on every theme.
+  and reopening shows the whole transcript. The next card's tutor waits
+  while the previous card's note or draft is still being made, since the
+  desktop makes one thing at a time. SnackBars sit on the palette ground in
+  its ink on every theme.
 
 - Remote tutor card requests now require `deck_id` and `card_id`, and every
   remote tutor response includes `card_only`. A client that omits either id

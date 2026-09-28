@@ -24,6 +24,7 @@ class FakeServerClient implements ServerClient {
     this.expireOnPostAsk = false,
     this.postAskGate,
     List<RemoteAsk>? getAskReplies,
+    Map<int, Completer<RemoteAsk?>>? getAskGates,
     List<bool>? postDraftReplies,
     List<bool>? postNoteReplies,
     this.examStartReply = true,
@@ -42,6 +43,7 @@ class FakeServerClient implements ServerClient {
     this.expireOnGenerateGet = false,
   })  : postAskReplies = postAskReplies ?? const [true],
         getAskReplies = getAskReplies ?? const [],
+        getAskGates = getAskGates ?? const {},
         postDraftReplies = postDraftReplies ?? const [true],
         postNoteReplies = postNoteReplies ?? const [true],
         examGetReplies = examGetReplies ?? const [],
@@ -72,6 +74,11 @@ class FakeServerClient implements ServerClient {
   /// "request still in flight while the sheet is dismissed" lever.
   final Completer<bool>? postAskGate;
   final List<RemoteAsk> getAskReplies;
+
+  /// Parks a specific (0-based) `getAsk()` call on a completer instead of
+  /// answering from [getAskReplies]: the lever for a poll still in flight
+  /// when the next tick would fire, or when another conversation acts.
+  final Map<int, Completer<RemoteAsk?>> getAskGates;
   final List<bool> postDraftReplies;
   final List<bool> postNoteReplies;
 
@@ -153,12 +160,16 @@ class FakeServerClient implements ServerClient {
     return reply;
   }
 
+  /// How many `getAsk()` calls have been made.
+  int get getAskCalls => _pollCall;
+
   @override
   Future<RemoteAsk?> getAsk() async {
+    final call = _pollCall++;
+    final gate = getAskGates[call];
+    if (gate != null) return gate.future;
     if (getAskReplies.isEmpty) return null;
-    final reply = getAskReplies[_pollCall.clamp(0, getAskReplies.length - 1)];
-    _pollCall++;
-    return reply;
+    return getAskReplies[call.clamp(0, getAskReplies.length - 1)];
   }
 
   @override
