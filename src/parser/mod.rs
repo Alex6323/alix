@@ -5730,6 +5730,12 @@ a
     }
 
     #[test]
+    fn a_note_line_preserves_indentation_beyond_its_quote_marker() {
+        let deck = parse("## q\nanswer\n> [!NOTE]\n>   indented\n");
+        assert_eq!(Some("  indented"), deck.cards[0].only_note());
+    }
+
+    #[test]
     fn an_all_task_list_answer_is_a_single_correct_checkbox_card() {
         let deck =
             parse("## Which is prime?\n- [ ] 4\n- [x] 5\n- [ ] 6\n<!-- choices: single -->\n");
