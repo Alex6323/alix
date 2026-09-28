@@ -2003,6 +2003,47 @@ it reads line two\n\
     }
 
     #[test]
+    fn tutor_deck_preserves_each_sidecar_note_as_its_own_note() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rust.md");
+        write_initialized(&path, "## q1\na1\n<!-- id: card-q1 -->\n");
+        std::fs::write(
+            crate::personal::sidecar_path(&path),
+            "---\nfor: deck-rust\n---\n\
+             <!-- note: card-q1 -->\n\
+             > [!TIP]\n\
+             > first personal note\n\
+             \n\
+             <!-- note: card-q1 -->\n\
+             > [!WARNING]\n\
+             > second personal note\n",
+        )
+        .unwrap();
+
+        let tutor = tutor_deck(&path, &test_config()).unwrap();
+        let card = tutor
+            .cards
+            .iter()
+            .find(|card| card.id().as_deref() == Some("card-q1"))
+            .expect("the authored card is in the tutor deck");
+
+        assert_eq!(
+            vec![
+                crate::card::Note {
+                    badge: crate::card::Badge::Tip,
+                    body: "first personal note".to_string(),
+                },
+                crate::card::Note {
+                    badge: crate::card::Badge::Warning,
+                    body: "second personal note".to_string(),
+                },
+            ],
+            card.notes,
+            "sidecar note blocks keep their order, badge, and identity"
+        );
+    }
+
+    #[test]
     fn the_tutor_loader_matches_review_cards_after_every_shared_enrichment() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rust.md");
