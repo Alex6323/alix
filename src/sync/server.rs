@@ -805,8 +805,10 @@ mod tests {
         let DeckLookup::One(member_target) = catalog.deck("deck-member") else {
             panic!("the workspace member must be indexed exactly once");
         };
-        assert_eq!(loose, loose_target.path);
-        assert_eq!(member, member_target.path);
+        // The catalog stores canonical paths; the temp dir is a symlink on
+        // macOS and a short name on Windows.
+        assert_eq!(loose.canonicalize().unwrap(), loose_target.path);
+        assert_eq!(member.canonicalize().unwrap(), member_target.path);
     }
 
     #[test]
