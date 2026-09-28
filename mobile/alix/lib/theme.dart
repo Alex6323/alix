@@ -41,8 +41,6 @@ class AlixTokens extends ThemeExtension<AlixTokens> {
   final Color faint;
   final Color text;
 
-  /// The note block's warm pair (--note-border / --note-ink).
-
   /// Inline code's ink (--code). The answer region is already monospace, so
   /// colour is the only signal a code span has left there.
   final Color code;
