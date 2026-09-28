@@ -648,6 +648,18 @@ mod tests {
             "a badge and a body must not run together, or a stale reshape of one \
              stack applies to a different one"
         );
+        let note = stack(vec![Note {
+            badge: Badge::Note,
+            body: "same".to_string(),
+        }]);
+        let tip = stack(vec![Note {
+            badge: Badge::Tip,
+            body: "same".to_string(),
+        }]);
+        assert_ne!(
+            note, tip,
+            "the badge is authored input, so changing it must invalidate a stale reshape"
+        );
         let split = stack(vec![
             Note::plain("one".to_string()),
             Note::plain("two".to_string()),
@@ -678,6 +690,15 @@ mod tests {
             "nobody types a unit separator, but without the record separator these \
              two stacks hash the same, and the encoding has to be unambiguous rather \
              than unambiguous for realistic input"
+        );
+        let swapped_separator_collision = stack(vec![Note {
+            badge: Badge::Tip,
+            body: "a\u{1f}note\u{1e}b".to_string(),
+        }]);
+        assert_ne!(
+            two, swapped_separator_collision,
+            "the field and record separators have distinct roles; swapping them makes \
+             this two-note stack collide with one note carrying the boundary bytes"
         );
     }
 
