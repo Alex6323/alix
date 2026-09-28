@@ -2331,6 +2331,39 @@ it reads line two\n\
     }
 
     #[test]
+    fn tutor_deck_applies_a_cached_note_to_an_injected_personal_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rust.md");
+        write_initialized(&path, "## q1\na1\n<!-- id: card-q1 -->\n");
+        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
+        write_personal_card(&mut store, &path, "deck-rust");
+        let personal_card = crate::parser::parse_str(
+            "rust.md",
+            "## personal front\npersonal back\n<!-- id: card-vq1 -->\n",
+        )
+        .unwrap()
+        .remove(0);
+        let personal_id = personal_card.id().unwrap();
+
+        let deck = Deck::load(&path).unwrap();
+        let mut cache = AugmentCache::open_for_deck(&deck).unwrap();
+        cache.set_note(
+            &personal_id,
+            "cached personal note".to_string(),
+            personal_card.content_fingerprint,
+        );
+        cache.save().unwrap();
+
+        let tutor = tutor_deck(&path, &test_config()).unwrap();
+        let synth = tutor
+            .cards
+            .iter()
+            .find(|card| card.id().as_deref() == Some(personal_id.as_str()))
+            .expect("the injected personal card should be in the tutor deck");
+        assert_eq!(Some("cached personal note"), synth.only_note());
+    }
+
+    #[test]
     fn select_falls_back_to_the_stored_last_depth_before_the_default() {
         use crate::depth::Depth;
 
