@@ -1533,6 +1533,31 @@ mod tests {
     }
 
     #[test]
+    fn apply_card_note_rejects_a_card_id_outside_the_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("d.md"),
+            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n## q\na\n<!-- id: card-q1 -->\n",
+        );
+        let sidecar = alix::personal::sidecar_path(&root.join("d.md"));
+        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
+
+        let err = s
+            .apply_card_note("card-outside".to_string(), vec!["stale".to_string()])
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("no card in the session"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            !sidecar.exists(),
+            "a rejected foreign card id must not create a personal sidecar"
+        );
+    }
+
+    #[test]
     fn apply_card_note_with_empty_notes_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -1551,6 +1576,22 @@ mod tests {
             before_bytes, after_bytes,
             "an empty notes vec is a no-op: not one byte changes"
         );
+    }
+
+    #[test]
+    fn apply_card_note_with_empty_notes_ignores_an_unknown_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("d.md"),
+            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n## q\na\n<!-- id: card-q1 -->\n",
+        );
+        let sidecar = alix::personal::sidecar_path(&root.join("d.md"));
+        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
+
+        s.apply_card_note("card-outside".to_string(), Vec::new())
+            .expect("an empty note is a no-op before card-id validation");
+        assert!(!sidecar.exists(), "an empty note must not create a sidecar");
     }
 
     #[test]
