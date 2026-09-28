@@ -394,7 +394,7 @@ export function createTutor({
       "leave-msg",
       "Leave the tutor? Moving on to the next card drops this conversation. Making a note or a card keeps it.",
     ));
-    chip("Leave anyway", "again", close);
+    chip("Leave anyway", "again", close, "enter");
     chip("Stay", "primary", cancelClose, "esc");
   }
 

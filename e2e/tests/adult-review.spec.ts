@@ -1151,7 +1151,7 @@ test("the tutor leave prompt owns Enter and Escape from the chat box", async ({ 
   await input.press("Escape");
   const leave = page.getByRole("button", { name: /^Leave anyway/ });
   await expect(leave).toBeVisible();
-  await expect(leave.locator(".k")).toHaveCount(0);
+  await expect(leave.locator(".k")).toHaveText("enter");
   await expect(input).not.toBeFocused();
 
   await page.keyboard.press("Enter");

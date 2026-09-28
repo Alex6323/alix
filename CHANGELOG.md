@@ -122,8 +122,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   when they cover everything.
 
 - The web tutor's leave confirmation now moves focus out of the chat box so
-  `Enter` confirms **Leave anyway**. `Escape` chooses **Stay** and restores the
-  caret to the chat box.
+  `Enter` confirms **Leave anyway**, and the chip shows that key like the
+  other leave prompts do. `Escape` chooses **Stay** and restores the caret to
+  the chat box.
 
 - Tutor replies now use the deck content grammar on both reply wires. The web
   tutor renders fenced multi-line code as code blocks and backticks as inline
