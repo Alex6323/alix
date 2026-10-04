@@ -6997,6 +6997,29 @@ fn trace_restart_resets_to_the_first_hop() {
 }
 
 #[test]
+fn trace_restart_preserves_the_configured_scheduler() {
+    let (base, guard) =
+        spawn_full_server_fixture(None, |_dir| {}, |opts| opts.cfg.review.short_term = false);
+    post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
+    post_json(&base, "/api/trace/predict", r#"{"text":"my guess"}"#);
+    post_json(&base, "/api/trace/restart", "{}");
+    post_json(&base, "/api/trace/predict", r#"{"text":"my second guess"}"#);
+    post_json(&base, "/api/trace/grade", r#"{"delta":"n"}"#);
+
+    let store = open_deck_store(guard.dir(), "trace.md");
+    let state = store
+        .get("card-t1")
+        .and_then(|card| card.recall)
+        .expect("the restarted trace grade wrote a Recall schedule");
+    assert!(
+        state.graduated(),
+        "short_term=false still graduates the first pass after restart: state={}, goods={}",
+        state.state,
+        state.learning_goods,
+    );
+}
+
+#[test]
 fn trace_leave_returns_to_the_picker_state_dto() {
     let (base, _guard) = spawn_full_server(None);
     post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);

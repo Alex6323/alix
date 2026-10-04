@@ -2082,6 +2082,43 @@ mod tests {
     }
 
     #[test]
+    fn trace_open_uses_the_workspace_local_review_scheduler() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join(alix::config::LOCAL_MANIFEST),
+            "[review]\nshort_term = false\n",
+        );
+        let deck = trace_fixture(root);
+        let checkpoint_id = alix::deck::Deck::load(&deck).unwrap().cards[0]
+            .id()
+            .expect("the trace fixture is stamped");
+        let mut session = TraceSession::open(
+            deck.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(T0),
+            None,
+        )
+        .unwrap();
+
+        session.predict("guess".to_string());
+        session.grade(TraceSessionDelta::Got, Some(T0)).unwrap();
+
+        let store_path = alix::workspace::root_store_path(root);
+        let state = alix::state::open_store(&deck, &store_path)
+            .unwrap()
+            .get(&checkpoint_id)
+            .and_then(|card| card.recall)
+            .expect("the bridge trace grade wrote a Recall schedule");
+        assert!(
+            state.graduated(),
+            "the bridge must apply workspace short_term=false: state={}, goods={}",
+            state.state,
+            state.learning_goods,
+        );
+    }
+
+    #[test]
     fn trace_excerpt_resolves_an_in_folder_source_inside_a_workspace_member() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
