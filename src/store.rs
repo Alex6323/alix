@@ -3053,6 +3053,7 @@ mod tests {
 
         for id in &ids {
             store.get_or_insert(id).recall = Some(FsrsState {
+                state: 2,
                 scheduled_days: 90,
                 ..Default::default()
             });

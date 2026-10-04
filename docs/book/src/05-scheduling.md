@@ -155,9 +155,10 @@ I have never met?", not "have I started this deck?".
 
 ## Retiring cards
 
-A card doesn't stay in rotation forever. Once its interval grows past
-**`retire_after`** (default one year), the card **retires**: it rests and is no
-longer scheduled, *not even under cram*, until you `alix reset` it. Set
+A card doesn't stay in rotation forever. Once a graduated card's Recall
+interval reaches **`retire_after`** (a positive duration, default one year),
+the card **retires**: it rests and is no longer scheduled, *not even under
+cram*, until you `alix reset` it. Set
 `retire_after = "never"` to keep drilling a deck forever (facts you never want to
 risk forgetting); a workspace can override it in its `alix.local.toml`.
 

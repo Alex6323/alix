@@ -1110,6 +1110,9 @@ fn parse_retire_after(s: &str) -> Result<Option<u32>> {
     let Ok(n) = num.trim().parse::<u32>() else {
         bail!("invalid retire_after {s:?}: expected e.g. \"1y\", \"2w\", \"30d\", or \"never\"");
     };
+    if n == 0 {
+        bail!("retire_after must be positive or \"never\"");
+    }
     let days = match unit.trim().to_ascii_lowercase().as_str() {
         "" | "d" => n,
         "w" => n.saturating_mul(7),
@@ -1599,6 +1602,7 @@ mod tests {
 
     #[test]
     fn parse_retire_after_units() {
+        assert!(parse_retire_after("0d").is_err());
         assert_eq!(Some(365), parse_retire_after("1y").unwrap());
         assert_eq!(Some(180), parse_retire_after("6m").unwrap());
         assert_eq!(Some(14), parse_retire_after("2w").unwrap());

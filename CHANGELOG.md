@@ -276,6 +276,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A card cannot retire before it graduates, preserving the published
+  `retired <= graduated` count invariant; `retire_after` also rejects a
+  zero-day duration instead of hiding a deck's Learning cards.
+
 - Making a tutor answer into a note refreshes the current card without hiding
   its revealed answer.
 

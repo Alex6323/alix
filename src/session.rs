@@ -930,7 +930,7 @@ pub fn is_retired_id(card_id: &str, store: &Store, retire_after_days: Option<u32
     store
         .get(card_id)
         .and_then(|s| s.schedule(Depth::Recall))
-        .is_some_and(|f| f.scheduled_days >= cap)
+        .is_some_and(|f| f.graduated() && f.scheduled_days >= cap)
 }
 
 pub fn count_due_soon(
@@ -3044,8 +3044,35 @@ mod tests {
         assert!(due > 1000 && due < 1000 + 86_400_000, "due {due}");
     }
 
+    #[test]
+    fn a_fresh_pass_cannot_retire_before_graduation() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(1);
+        let id = all[0].id().unwrap();
+        let mut session = Session::new(
+            all.clone(),
+            &mut store,
+            sched(),
+            SessionOptions {
+                retire_after_days: Some(0),
+                ..Default::default()
+            },
+            1_000,
+        );
+
+        session.grade(&mut store, Grade::Pass, 1_000);
+
+        let learning = store.get(&id).unwrap().recall.unwrap();
+        assert!(!learning.graduated(), "first Pass is still Learning");
+        assert!(
+            !is_retired(&all[0], &store, Some(0)),
+            "an ungraduated card cannot retire"
+        );
+    }
+
     fn retired_fsrs() -> crate::store::FsrsState {
         crate::store::FsrsState {
+            state: 2,
             scheduled_days: DEFAULT_RETIRE_AFTER_DAYS,
             ..Default::default()
         }
@@ -4063,6 +4090,7 @@ mod tests {
         let synth = personal_card(&mut store, "deck.md", "personal back", 0);
         let id = synth.id().unwrap();
         store.get_or_insert(&id).recall = Some(crate::store::FsrsState {
+            state: 2,
             scheduled_days: 10,
             ..Default::default()
         });
