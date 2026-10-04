@@ -1517,6 +1517,11 @@ impl Tracing {
         }
     }
 
+    pub(super) fn restart(&mut self) {
+        self.session.restart();
+        self.ask = Ask::new();
+    }
+
     pub(super) fn checkpoint_card(&self) -> Option<Card> {
         let trace = self.session.trace();
         let cp = self.session.checkpoint()?;

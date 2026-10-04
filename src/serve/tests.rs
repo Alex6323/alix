@@ -2523,7 +2523,7 @@ fn trace_dto_tracks_phase_excerpt_and_rail() {
     let dir = tempfile::tempdir().unwrap();
     let trace = trace_deck(dir.path());
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    let session = TraceSession::new(trace);
+    let session = TraceSession::new(trace, crate::scheduler::Fsrs::default());
     let mut w = Tracing::new(session);
 
     let d = trace_dto(&w);
@@ -2596,7 +2596,7 @@ fn trace_ask_condense_appends_a_note_to_the_checkpoint() {
     let dir = tempfile::tempdir().unwrap();
     let trace = trace_deck(dir.path());
     let deck_path = trace.deck_path.clone();
-    let session = TraceSession::new(trace);
+    let session = TraceSession::new(trace, crate::scheduler::Fsrs::default());
     let mut w = Tracing::new(session);
     w.session.predict("guess".to_string());
 
@@ -2653,7 +2653,7 @@ fn a_frozen_trace_checkpoint_with_a_live_local_source_needs_no_fallback_warning(
             .first()
             .is_some_and(|checkpoint| trace.frozen_block(checkpoint).is_some())
     );
-    let mut tracing = Tracing::new(TraceSession::new(trace));
+    let mut tracing = Tracing::new(TraceSession::new(trace, crate::scheduler::Fsrs::default()));
     let cli = crate::testutil::fake_reply(dir.path(), "answer");
     let mut cfg = crate::testutil::ask_config(&cli);
     cfg.source_access = true;
@@ -2682,7 +2682,7 @@ fn a_frozen_trace_checkpoint_without_reachable_source_warns_about_the_fallback()
             .first()
             .is_some_and(|checkpoint| trace.frozen_block(checkpoint).is_some())
     );
-    let mut tracing = Tracing::new(TraceSession::new(trace));
+    let mut tracing = Tracing::new(TraceSession::new(trace, crate::scheduler::Fsrs::default()));
     let cli = crate::testutil::fake_reply(dir.path(), "answer");
     let cfg = crate::testutil::ask_config(&cli);
 

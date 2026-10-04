@@ -276,6 +276,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A trace deck's checkpoints are scheduled with the configured `[review]`
+  settings (`retention`, `short_term`, a workspace deadline); they had used
+  the built-in defaults.
 - A card cannot retire before it graduates, preserving the published
   `retired <= graduated` count invariant; `retire_after` also rejects a
   zero-day duration instead of hiding a deck's Learning cards.

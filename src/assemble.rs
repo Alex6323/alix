@@ -431,6 +431,25 @@ pub fn tutor_deck(path: &Path, cfg: &AssembleConfig) -> Result<TutorDeck> {
     })
 }
 
+fn review_scheduler(review: &ReviewConfig, now: u64) -> Fsrs {
+    let tuning = review.deadline.and_then(|date| {
+        crate::scheduler::deadline_tuning(
+            date,
+            review.deadline_ramp_days,
+            review.retention,
+            crate::time::local_date(now),
+            crate::time::end_of_local_day_ms(date),
+        )
+    });
+    Fsrs::tuned(
+        review.retention,
+        review.recognize_retention,
+        review.introduction_cooldown_ms,
+        tuning,
+        review.short_term,
+    )
+}
+
 pub fn select(
     paths: Vec<PathBuf>,
     store: &mut Store,
@@ -444,11 +463,15 @@ pub fn select(
         resolve_duplicates_at_open(path);
     }
 
+    let now = opts.now_ms.unwrap_or_else(now_ms);
     if let Some(mut deck) = lone_trace_deck(&paths) {
         deck.cards = exclude_unstamped(deck.cards, &deck.subject);
         let trace = Trace::from_deck(&deck)?;
+        let review = cfg
+            .review
+            .for_workspace(&workspace::content_root(&deck.path));
         return Ok(Selected::Trace(TraceSessionBuild {
-            session: TraceSession::new(trace),
+            session: TraceSession::new(trace, review_scheduler(&review, now)),
         }));
     }
 
@@ -539,16 +562,6 @@ pub fn select(
         retire_after_days: review.retire_after_days,
         depth,
     };
-    let now = opts.now_ms.unwrap_or_else(now_ms);
-    let tuning = review.deadline.and_then(|date| {
-        crate::scheduler::deadline_tuning(
-            date,
-            review.deadline_ramp_days,
-            review.retention,
-            crate::time::local_date(now),
-            crate::time::end_of_local_day_ms(date),
-        )
-    });
     // Recognize schedules only cards with cached distractors, so it never
     // degrades to a plain flip; un-augmented cards stay reviewable at other
     // depths. The excluded cards ride along on the session so the done
@@ -577,13 +590,7 @@ pub fn select(
     let mut session = Session::from_subset(
         cards,
         store,
-        Box::new(Fsrs::tuned(
-            review.retention,
-            review.recognize_retention,
-            review.introduction_cooldown_ms,
-            tuning,
-            review.short_term,
-        )),
+        Box::new(review_scheduler(&review, now)),
         options,
         now,
         whole,
@@ -1838,6 +1845,37 @@ it reads line two\n\
         assert_eq!(
             before, after,
             "a read-only listing must not write the store"
+        );
+    }
+
+    #[test]
+    fn short_term_off_graduates_a_trace_checkpoint_on_its_first_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let trace = dir.path().join("t.md");
+        std::fs::write(&trace, TRACE_DECK).unwrap();
+        std::fs::write(dir.path().join("source.txt"), "first\nsecond\nthird\n").unwrap();
+        let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
+        let mut cfg = test_config();
+        cfg.review.short_term = false;
+        let selected = select(vec![trace], &mut store, &cfg, &SelectOptions::default()).unwrap();
+        let Selected::Trace(mut build) = selected else {
+            panic!("a trace deck selects a trace session");
+        };
+
+        build.session.predict("first".to_string());
+        build
+            .session
+            .grade(&mut store, crate::trace::Delta::Passed, 1_000);
+
+        let state = store
+            .get("card-qhop1")
+            .and_then(|s| s.recall)
+            .expect("the passed checkpoint has a Recall schedule");
+        assert!(
+            state.graduated(),
+            "short_term=false graduates a trace checkpoint on its first pass: state={}, goods={}",
+            state.state,
+            state.learning_goods,
         );
     }
 

@@ -235,6 +235,7 @@ pub enum Phase {
 
 pub struct TraceSession {
     trace: Trace,
+    scheduler: Fsrs,
     current: usize,
     phase: Phase,
     predictions: Vec<String>,
@@ -242,15 +243,24 @@ pub struct TraceSession {
 }
 
 impl TraceSession {
-    pub fn new(trace: Trace) -> TraceSession {
+    pub fn new(trace: Trace, scheduler: Fsrs) -> TraceSession {
         let n = trace.checkpoints.len();
         TraceSession {
             trace,
+            scheduler,
             current: 0,
             phase: Phase::Predict,
             predictions: vec![String::new(); n],
             deltas: vec![None; n],
         }
+    }
+
+    pub fn restart(&mut self) {
+        let n = self.trace.checkpoints.len();
+        self.current = 0;
+        self.phase = Phase::Predict;
+        self.predictions = vec![String::new(); n];
+        self.deltas = vec![None; n];
     }
 
     pub fn trace(&self) -> &Trace {
@@ -288,7 +298,8 @@ impl TraceSession {
         }
         if let Some(checkpoint) = self.trace.checkpoints.get(self.current) {
             let state = store.get_or_insert(&checkpoint.card_id);
-            Fsrs::default().apply(state, Depth::Recall, delta.grade(), now_ms, false);
+            self.scheduler
+                .apply(state, Depth::Recall, delta.grade(), now_ms, false);
         }
         self.deltas[self.current] = Some(delta);
         if self.current + 1 < self.trace.checkpoints.len() {
@@ -544,7 +555,7 @@ mod tests {
         let card0 = Trace::from_deck(&deck).unwrap().checkpoints[0]
             .card_id
             .clone();
-        let mut session = TraceSession::new(Trace::from_deck(&deck).unwrap());
+        let mut session = TraceSession::new(Trace::from_deck(&deck).unwrap(), Fsrs::default());
         session.predict("p".to_string());
         session.grade(&mut store, Delta::Passed, 1);
         assert_eq!(Phase::Done, session.phase());
@@ -922,7 +933,7 @@ mod tests {
         let trace = Trace::from_deck(&deck).unwrap();
         let card0 = trace.checkpoints[0].card_id.clone();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let mut session = TraceSession::new(trace);
+        let mut session = TraceSession::new(trace, crate::scheduler::Fsrs::default());
 
         assert_eq!(Phase::Predict, session.phase());
         assert_eq!(2, session.total());
@@ -955,7 +966,7 @@ mod tests {
         let card0 = trace.checkpoints[0].card_id.clone();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         assert!(store.get(&card0).is_none(), "no entry before the grade");
-        let mut session = TraceSession::new(trace);
+        let mut session = TraceSession::new(trace, crate::scheduler::Fsrs::default());
         session.predict("guess".to_string());
         session.grade(&mut store, Delta::Passed, 1000);
         assert!(store.get(&card0).is_some(), "the grade created the entry");
@@ -967,7 +978,7 @@ mod tests {
         let deck = trace_deck(dir.path());
         let trace = Trace::from_deck(&deck).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let mut session = TraceSession::new(trace);
+        let mut session = TraceSession::new(trace, crate::scheduler::Fsrs::default());
         let card0 = session.checkpoint().unwrap().card_id.clone();
         session.predict("guess".to_string());
         session.grade(&mut store, Delta::Partial, 1000);
@@ -983,7 +994,7 @@ mod tests {
         let deck = trace_deck(dir.path());
         let trace = Trace::from_deck(&deck).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let mut session = TraceSession::new(trace);
+        let mut session = TraceSession::new(trace, crate::scheduler::Fsrs::default());
         session.grade(&mut store, Delta::Passed, 1000);
         assert_eq!(Phase::Predict, session.phase());
         assert_eq!(0, session.current_index());

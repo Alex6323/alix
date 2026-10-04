@@ -20,8 +20,7 @@ use crate::{
     exam, review,
     session::now_ms,
     store::{self, Store},
-    trace::{self, TraceSession},
-    workspace,
+    trace, workspace,
 };
 
 pub(super) struct StudyConfig {
@@ -1193,8 +1192,7 @@ impl StudyState {
             }
             StudyCommand::TraceRestart(reply) => {
                 let dto = self.tracing.as_mut().map(|w| {
-                    let fresh = TraceSession::new(w.session.trace().clone());
-                    *w = Tracing::new(fresh);
+                    w.restart();
                     trace_dto(w)
                 });
                 let _ = reply.send(dto);
