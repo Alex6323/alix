@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `[review] short_term = false` turns off FSRS's same-day learning steps: a
+  card's first correct recall graduates it onto a day-scale interval, so a deck
+  loads in one pass per card. A miss before that pass schedules the card a day
+  or so out without graduating it. The default stays on.
 - A paired phone's tutor is grounded like the desktop's when its stable deck
   and card ids match: it receives the assembled card, every note layer, links,
   frozen evidence, and the same allowed live source root. An unmatched or

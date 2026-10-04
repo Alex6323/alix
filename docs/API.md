@@ -1018,7 +1018,9 @@ vocabulary `"unseen"` | `"seen"` | `"learning"` | `"learned-strong"` |
 `"learned-fading"` | `"learned-weak"` | `"retired"`). The tiers are a ladder
 of what the learner DID: `unseen` has no store entry; `seen` has one but no
 correct answer yet (a wrong attempt stays `seen`); `learning` was correct at
-least once (`total_passes > 0`) but has not graduated; the three `learned-*`
+least once (`total_passes > 0`) but has not graduated, which with
+`[review] short_term = false` only a card failed or partly passed before its
+first pass reaches, since one pass graduates; the three `learned-*`
 values are a graduated card banded by its CURRENT Recall retrievability
 (strong: `>= 0.9`, matching the scheduler's default request retention; weak:
 `< 0.7`; fading between; the thresholds live lib-side, clients only map the

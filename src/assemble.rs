@@ -582,6 +582,7 @@ pub fn select(
             review.recognize_retention,
             review.introduction_cooldown_ms,
             tuning,
+            review.short_term,
         )),
         options,
         now,

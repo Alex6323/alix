@@ -28,6 +28,12 @@ short-term *learning* steps); a card **graduates** into the review phase (where
 intervals grow to days, then weeks) only after **two** spaced correct recalls,
 and missing it resets that progress, so a slip doesn't shortcut it.
 
+Set **`short_term = false`** in `[review]` to turn the learning steps off: a
+card's first correct recall graduates it straight onto a day-scale interval, so
+loading a whole deck takes one pass per card instead of several same-day
+returns. A miss before that first pass schedules it a day or so out without
+graduating it.
+
 A session shows each due card once. Miss one and it returns **spaced** (after its
 short step, interleaved behind other cards) not drilled again the instant you saw
 the answer (which would test your working memory, not your recall). That gap is

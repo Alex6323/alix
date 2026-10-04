@@ -75,6 +75,7 @@ retention = 0.9          # FSRS target recall probability (0.70–0.99); higher 
 recognize_retention = 0.85  # same, for the Recognize depth alone; recognition decays slower
 retire_after = "1y"      # a card rests once its Recall interval reaches this ("2w", "6m", "30d", or "never")
 introduction_cooldown = "5m"  # settle gap before a new card's first quiz ("90s", "10m", "1h"; "0" = none)
+short_term = true        # FSRS's same-day learning steps; false graduates a card on its first pass
 max_session = 10         # cards a single sitting serves (default 10)
 new_cards_percent = 30   # new-card share of max_session; the rest are due cards (default 30)
 ```
@@ -86,7 +87,9 @@ a card retires (rests until `alix reset`); `"never"` keeps it in rotation foreve
 `introduction_cooldown` is the settle gap between seeing a new card and its first
 graded quiz, and the same floor keeps *any* just-seen card (a miss, a wrong
 pick) from returning immediately, so one knob paces both. A bare number is
-minutes; `"0"` disables the gap.
+minutes; `"0"` disables the gap. `short_term` switches FSRS's same-day learning
+steps; off, one correct recall graduates a card (see
+[Scheduling](05-scheduling.md#fsrs)).
 
 `max_session` is how many cards one sitting serves; `new_cards_percent` is the
 new-card slice of that cap (so at the defaults, three new and seven due out of

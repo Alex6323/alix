@@ -197,6 +197,7 @@ pub struct Fsrs {
     recognize_fsrs: FSRS,
     introduction_cooldown_ms: u64,
     due_ceiling_ms: Option<u64>,
+    short_term: bool,
 }
 
 impl Fsrs {
@@ -206,6 +207,7 @@ impl Fsrs {
             DEFAULT_RECOGNIZE_RETENTION,
             introduction_cooldown_ms,
             None,
+            true,
         )
     }
 
@@ -214,20 +216,23 @@ impl Fsrs {
         recognize_retention: f64,
         introduction_cooldown_ms: u64,
         deadline: Option<DeadlineTuning>,
+        short_term: bool,
     ) -> Self {
-        let parameters = fsrs_parameters(retention, deadline);
+        let parameters = fsrs_parameters(retention, deadline, short_term);
         let recognize_parameters = fsrs_parameters(
             recognize_retention,
             deadline.map(|t| DeadlineTuning {
                 retention: t.retention_for(recognize_retention),
                 ..t
             }),
+            short_term,
         );
         Self {
             fsrs: FSRS::new(parameters),
             recognize_fsrs: FSRS::new(recognize_parameters),
             introduction_cooldown_ms,
             due_ceiling_ms: deadline.map(|t| t.due_ceiling_ms),
+            short_term,
         }
     }
 
@@ -239,11 +244,15 @@ impl Fsrs {
     }
 }
 
-fn fsrs_parameters(retention: f64, deadline: Option<DeadlineTuning>) -> Parameters {
+fn fsrs_parameters(
+    retention: f64,
+    deadline: Option<DeadlineTuning>,
+    short_term: bool,
+) -> Parameters {
     Parameters {
         request_retention: deadline.map_or(retention, |t| t.retention),
         maximum_interval: deadline.map_or(36500, |t| t.max_interval_days),
-        enable_short_term: true,
+        enable_short_term: short_term,
         ..Parameters::default()
     }
 }
@@ -299,9 +308,8 @@ impl Scheduler for Fsrs {
             .next(card, ms_to_dt(now_ms), rating_for(grade));
         let mut next = from_fsrs_card(&info.card);
 
-        // Graduation gate: the learning phase (state 0|1) needs two full Goods
-        // before Review; a Fail resets the count, Relearning re-graduates on
-        // one Good.
+        // Graduation gate: a Fail resets the learning phase's (state 0|1) Good
+        // count; Relearning re-graduates on one Good.
         let learning = matches!(pre_state, 0 | 1);
         let mut goods = prev_goods;
         if learning {
@@ -311,11 +319,13 @@ impl Scheduler for Fsrs {
                 Grade::Partial => {}
             }
         }
-        if next.state == 2 && learning && goods < 2 {
-            // rs-fsrs would graduate on this single Good; hold in Learning instead.
+        let goods_to_graduate = if self.short_term { 2 } else { 1 };
+        if next.state == 2 && learning && goods < goods_to_graduate {
             next.state = 1;
-            next.scheduled_days = 0;
-            next.due_ms = now_ms.saturating_add(LEARNING_HOLD_MS);
+            if self.short_term {
+                next.scheduled_days = 0;
+                next.due_ms = now_ms.saturating_add(LEARNING_HOLD_MS);
+            }
         }
         next.learning_goods = if next.state == 2 { 0 } else { goods };
 
@@ -413,6 +423,7 @@ mod tests {
                 max_interval_days: 36500,
                 due_ceiling_ms: u64::MAX,
             }),
+            true,
         );
         let plain = Fsrs::new(0.9, 0);
         for sched in [&tuned, &plain] {
@@ -462,11 +473,81 @@ mod tests {
     }
 
     #[test]
+    fn law_short_term_decides_whether_one_pass_graduates_a_new_card() {
+        for short_term in [true, false] {
+            let sched = Fsrs::tuned(
+                0.9,
+                DEFAULT_RECOGNIZE_RETENTION,
+                DEFAULT_INTRODUCTION_COOLDOWN_MS,
+                None,
+                short_term,
+            );
+            let mut state = CardState::introduced_at(1_000);
+            sched.apply(&mut state, Depth::Recall, Grade::Pass, 1_000, false);
+            let f = state.recall.expect("a pass creates the Recall schedule");
+            assert_eq!(
+                !short_term,
+                f.graduated(),
+                "short_term={short_term}: one pass graduates only with the steps off \
+                 (state={}, goods={})",
+                f.state,
+                f.learning_goods,
+            );
+            if short_term {
+                assert_eq!(
+                    0, f.scheduled_days,
+                    "short_term=true: the first pass keeps a same-day step",
+                );
+            } else {
+                assert!(
+                    f.scheduled_days >= 1,
+                    "short_term=false: the first pass takes the library's day-scale \
+                     interval, got {}",
+                    f.scheduled_days,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn without_short_term_a_fail_keeps_a_new_card_learning_on_a_day_scale_interval() {
+        let sched = Fsrs::tuned(
+            0.9,
+            DEFAULT_RECOGNIZE_RETENTION,
+            DEFAULT_INTRODUCTION_COOLDOWN_MS,
+            None,
+            false,
+        );
+        let mut state = CardState::introduced_at(1_000);
+        sched.apply(&mut state, Depth::Recall, Grade::Fail, 1_000, false);
+        let failed = state.recall.expect("a fail creates the Recall schedule");
+        assert!(
+            !failed.graduated(),
+            "fail: a card with no pass is not graduated (state={})",
+            failed.state,
+        );
+        assert!(
+            failed.scheduled_days >= 1,
+            "fail: the library's day-scale interval is kept, got {}",
+            failed.scheduled_days,
+        );
+        let later = failed.due_ms;
+        sched.apply(&mut state, Depth::Recall, Grade::Pass, later, false);
+        let passed = state.recall.expect("the schedule survives the pass");
+        assert!(
+            passed.graduated(),
+            "pass after fail: the first pass graduates (state={}, goods={})",
+            passed.state,
+            passed.learning_goods,
+        );
+    }
+
+    #[test]
     fn recognize_runs_its_own_retention_and_schedules_longer() {
         // Same review sequence, laxer desired retention: the recognize engine
         // must produce a longer interval than the recall engine, or the
         // per-depth tuning is wired to nothing.
-        let sched = Fsrs::tuned(0.9, 0.7, 0, None);
+        let sched = Fsrs::tuned(0.9, 0.7, 0, None, true);
         let mut st = CardState::introduced_at(0);
         let mut now = 1_000;
         for _ in 0..3 {
@@ -783,6 +864,7 @@ mod tests {
                 max_interval_days: 7,
                 due_ceiling_ms: 9_000,
             }),
+            true,
         );
         assert_eq!(0.96, parameters.request_retention);
         assert_eq!(7, parameters.maximum_interval);
@@ -809,6 +891,7 @@ mod tests {
                 max_interval_days: 3,
                 due_ceiling_ms: ceiling,
             }),
+            true,
         );
         let mut st = CardState::introduced_at(0);
         st.recall = Some(FsrsState {

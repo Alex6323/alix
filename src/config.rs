@@ -442,6 +442,7 @@ pub struct ReviewConfig {
     pub recognize_retention: f64,
     pub retire_after_days: Option<u32>,
     pub introduction_cooldown_ms: u64,
+    pub short_term: bool,
     pub max_session: Option<usize>,
     pub new_cards_percent: Option<u8>,
     pub deadline: Option<chrono::NaiveDate>,
@@ -455,6 +456,7 @@ impl Default for ReviewConfig {
             recognize_retention: crate::scheduler::DEFAULT_RECOGNIZE_RETENTION,
             retire_after_days: Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
             introduction_cooldown_ms: crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS,
+            short_term: true,
             max_session: None,
             new_cards_percent: None,
             deadline: None,
@@ -490,6 +492,9 @@ impl ReviewConfig {
             && let Ok(ms) = parse_introduction_cooldown(&cooldown)
         {
             review.introduction_cooldown_ms = ms;
+        }
+        if let Some(short_term) = raw.review.short_term {
+            review.short_term = short_term;
         }
         if let Some(n) = raw.review.max_session {
             review.max_session = Some(n);
@@ -568,6 +573,7 @@ struct RawReviewConfig {
     recognize_retention: Option<f64>,
     retire_after: Option<String>,
     introduction_cooldown: Option<String>,
+    short_term: Option<bool>,
     max_session: Option<usize>,
     new_cards_percent: Option<u8>,
 }
@@ -579,6 +585,7 @@ struct RawLocalReviewConfig {
     recognize_retention: Option<f64>,
     retire_after: Option<String>,
     introduction_cooldown: Option<String>,
+    short_term: Option<bool>,
     max_session: Option<usize>,
     new_cards_percent: Option<u8>,
     deadline: Option<String>,
@@ -943,6 +950,9 @@ impl Config {
         if let Some(cooldown) = raw.review.introduction_cooldown {
             review.introduction_cooldown_ms = parse_introduction_cooldown(&cooldown)
                 .context("in [review] introduction_cooldown")?;
+        }
+        if let Some(short_term) = raw.review.short_term {
+            review.short_term = short_term;
         }
         review.max_session = raw.review.max_session;
         review.new_cards_percent = raw.review.new_cards_percent.map(|n| n.min(100));
@@ -1335,6 +1345,7 @@ pub fn default_config_toml() -> &'static str {
 # retention = 0.9               # FSRS target retrievability (0.70–0.99); higher = shorter intervals
 # retire_after = "1y"           # a card rests once its interval reaches this ("2w", "6m", "30d", or "never")
 # introduction_cooldown = "5m"       # settle gap before a new card's first quiz, and the same-card retry floor ("90s", "10m"; "0" = none)
+# short_term = true             # FSRS's same-day learning steps; false graduates a card on its first pass
 # max_session = 10              # cards a single sitting serves (--session overrides per instance)
 # new_cards_percent = 30        # new-card share of max_session; the rest are due cards (each pool backfills the other)
 "#
@@ -1394,6 +1405,21 @@ mod tests {
     fn review_retention_is_clamped_to_a_sane_band() {
         let config = Config::from_toml("[review]\nretention = 0.5\n").unwrap();
         assert_eq!(MIN_RETENTION, config.review.retention);
+    }
+
+    #[test]
+    fn review_short_term_defaults_on_and_parses_off() {
+        assert!(Config::from_toml("").unwrap().review.short_term, "default");
+        let config = Config::from_toml("[review]\nshort_term = false\n").unwrap();
+        assert!(!config.review.short_term, "short_term = false");
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("alix.local.toml"),
+            "[review]\nshort_term = false\n",
+        )
+        .unwrap();
+        let resolved = ReviewConfig::default().for_workspace(dir.path());
+        assert!(!resolved.short_term, "workspace overlay");
     }
 
     #[test]
