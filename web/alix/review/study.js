@@ -23,8 +23,8 @@ export function createStudy({
   openAugment,
   model,
   rerender,
-  walkData,
-  replaceWalk,
+  traceData,
+  replaceTraceSession,
   openTutor,
   startExam,
   closeMenu,
@@ -113,7 +113,7 @@ export function createStudy({
   }
 
   function screen() {
-    return model.currentScreen({ ...clientModel, state, browsing, walk: walkData() });
+    return model.currentScreen({ ...clientModel, state, browsing, trace: traceData() });
   }
 
   function setKeys(next) {
@@ -159,10 +159,10 @@ export function createStudy({
     return api("/api/browse", post({ deck: it.name })).then(d => { browsing = { cards: d.cards, label: d.label, i: 0 }; rerender(); return d; });
   }
   function closeBrowse() {
-    clientModel = model.enterPicker({ ...clientModel, state, browsing, walk: walkData() });
+    clientModel = model.enterPicker({ ...clientModel, state, browsing, trace: traceData() });
     state = clientModel.state;
     browsing = clientModel.browsing;
-    replaceWalk(clientModel.walk);
+    replaceTraceSession(clientModel.trace);
     api("/api/deselect", post({})).then(apply);
   }
   function browseGo(delta) { if (!browsing) return; const n = browsing.i + delta; if (n >= 0 && n < browsing.cards.length) { browsing.i = n; rerender(); } }
@@ -188,7 +188,7 @@ export function createStudy({
       ...clientModel,
       state,
       browsing,
-      walk: walkData(),
+      trace: traceData(),
       revealed,
       citationView,
       sectionView,
@@ -205,7 +205,7 @@ export function createStudy({
       drawCanvas: drawCanvasEl,
     }, s);
     state = clientModel.state;
-    replaceWalk(clientModel.walk);
+    replaceTraceSession(clientModel.trace);
     revealed = clientModel.revealed;
     citationView = clientModel.citationView;
     sectionView = clientModel.sectionView;
@@ -1094,7 +1094,7 @@ export function createStudy({
       a.appendChild(el("div", "explain-label", "your answer"));
       a.appendChild(el("div", "explain-answer", explainInput));
     }
-    // With cached key points, the reveal is the same green ▸ list a trace walk
+    // With cached key points, the reveal is the same green ▸ list a trace
     // shows — but you walk it top to bottom marking each yes/no, and the coverage
     // derives the grade. Otherwise show the plain back lines.
     if (hasKeypoints()) {

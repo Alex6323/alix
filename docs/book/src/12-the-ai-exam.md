@@ -75,7 +75,7 @@ A **trace** deck is examined differently: instead of generated questions, its ex
 asks you to *retrace the whole path from memory* in a sentence or two (**the
 compression**) graded holistically against the checkpoints (no question
 generation, no source read). Passing masters the trace; a fail sends you back to
-**re-walk** it. See [trace decks](13-trace-decks.md) for the full flow.
+**retrace** it. See [trace decks](13-trace-decks.md) for the full flow.
 
 Resetting a whole deck (`alix reset <deck>`) also clears its mastered state, so a
 re-drilled deck must pass again; resetting only an individual card (`--card`)

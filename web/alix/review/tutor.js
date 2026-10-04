@@ -4,7 +4,7 @@ export function createTutor({
   rerender,
   updateBusy,
   timers,
-  walk,
+  trace,
   study,
   ui,
 }) {
@@ -66,7 +66,7 @@ export function createTutor({
   }
 
   function endpoint(suffix = "") {
-    return walk.isOpen() ? `/api/walk/ask${suffix}` : `/api/ask${suffix}`;
+    return trace.isOpen() ? `/api/trace/ask${suffix}` : `/api/ask${suffix}`;
   }
 
   function show() {
@@ -92,14 +92,14 @@ export function createTutor({
     confirmingClose = false;
     open = false;
     stopPoll();
-    if (walk.isOpen() && needsStateRefresh) {
-      return api("/api/walk").then((next) => {
-        walk.replace(next);
+    if (trace.isOpen() && needsStateRefresh) {
+      return api("/api/trace").then((next) => {
+        trace.replace(next);
         rerender();
         return true;
       }).catch(() => rerender());
     }
-    if (!walk.isOpen() && needsStateRefresh) {
+    if (!trace.isOpen() && needsStateRefresh) {
       return api("/api/state").then((next) => {
         study.replaceState(next);
         rerender();
@@ -234,7 +234,7 @@ export function createTutor({
       log.appendChild(el(
         "div",
         "ask-hint",
-        walk.isOpen() ? "Ask the tutor about this step." : "Ask the tutor about this card.",
+        trace.isOpen() ? "Ask the tutor about this step." : "Ask the tutor about this card.",
       ));
     }
     const scroll = log.closest(".ask-scroll") || log;
@@ -381,7 +381,7 @@ export function createTutor({
     const sendButton = chip("Send", "primary", () => send(input.value), "shift+enter");
     sendButton.disabled = data.thinking;
     chip("Make this a note", "distill", saveNote, label(keys().make_note)).disabled = !canDistill();
-    if (!walk.isOpen()) {
+    if (!trace.isOpen()) {
       chip("Make this a card", "distill", draftCard, label(keys().make_card)).disabled = !canDistill();
     }
     chip("Close", "", close, "esc");

@@ -13,7 +13,7 @@ depth, where there is one. Run any command with `--help` for its full flags.
   [workspace](08-workspaces.md) dir opens the picker drilled into it.
 
 Every review starts from the picker. There's no direct deck launch. Browsing a
-deck read-only, sitting the AI exam, and walking a [trace](13-trace-decks.md)
+deck read-only, sitting the AI exam, and tracing a [trace deck](13-trace-decks.md)
 are all reached from the web picker rather than as their own commands (see
 [the web app](15-the-web-app.md)).
 

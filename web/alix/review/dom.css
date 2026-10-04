@@ -159,7 +159,7 @@
   .option.dim { opacity: 0.45; }
 
 
-  /* explain key-point checklist, mirroring the trace walk's key-points list
+  /* explain key-point checklist, mirroring the trace's key-points list
      (green ▸ bullets), with a per-point yes/no the cursor walks top to bottom. */
   .kp-list { margin: 0; padding: 0; list-style: none; text-align: left; }
   .kp-list .lbl { display: block; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--good); margin-bottom: 6px; }

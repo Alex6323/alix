@@ -8,7 +8,7 @@ import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
-import 'package:alix_mobile/walk_screen.dart';
+import 'package:alix_mobile/trace_screen.dart';
 
 import 'support/deck_fixture.dart';
 import 'support/fake_server_client.dart';
@@ -53,7 +53,7 @@ void main() {
     return root;
   }
 
-  Future<void> pumpWalk(
+  Future<void> pumpTraceSession(
     WidgetTester tester, {
     required Directory root,
     Directory? support,
@@ -62,11 +62,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: alixDark(),
-        home: WalkScreen(
+        home: TraceSessionScreen(
           key: UniqueKey(),
           deckPath: '${root.path}/trace.md',
           rootDir: root.path,
-          supportDir: support ?? tempDir('alix-walk-structure-support-'),
+          supportDir: support ?? tempDir('alix-trace-structure-support-'),
           buildClient: buildClient,
         ),
       ),
@@ -86,61 +86,61 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('walk tree: predict', (tester) async {
-    final root = traceRoot('alix-walk-structure-predict-');
-    await pumpWalk(tester, root: root);
+  testWidgets('trace tree: predict', (tester) async {
+    final root = traceRoot('alix-trace-structure-predict-');
+    await pumpTraceSession(tester, root: root);
     await expectWidgetTree(
       tester,
-      'walk_predict',
-      root: find.byType(WalkScreen),
+      'trace_predict',
+      root: find.byType(TraceSessionScreen),
     );
   });
 
-  testWidgets('walk tree: reveal with excerpt and with excerpt error', (
+  testWidgets('trace tree: reveal with excerpt and with excerpt error', (
     tester,
   ) async {
-    final root = traceRoot('alix-walk-structure-reveal-');
-    await pumpWalk(tester, root: root);
+    final root = traceRoot('alix-trace-structure-reveal-');
+    await pumpTraceSession(tester, root: root);
     await reveal(tester);
     await expectWidgetTree(
       tester,
-      'walk_reveal_excerpt',
-      root: find.byType(WalkScreen),
+      'trace_reveal_excerpt',
+      root: find.byType(TraceSessionScreen),
     );
 
     final missing = traceRoot(
-      'alix-walk-structure-no-source-',
+      'alix-trace-structure-no-source-',
       hops: 1,
       source: false,
     );
-    await pumpWalk(tester, root: missing);
+    await pumpTraceSession(tester, root: missing);
     await reveal(tester);
     await expectWidgetTree(
       tester,
-      'walk_reveal_excerpt_error',
-      root: find.byType(WalkScreen),
+      'trace_reveal_excerpt_error',
+      root: find.byType(TraceSessionScreen),
     );
   });
 
-  testWidgets('walk tree: done offline, exam available, and exam cooldown', (
+  testWidgets('trace tree: done offline, exam available, and exam cooldown', (
     tester,
   ) async {
-    final offline = traceRoot('alix-walk-structure-done-offline-', hops: 1);
-    await pumpWalk(tester, root: offline);
+    final offline = traceRoot('alix-trace-structure-done-offline-', hops: 1);
+    await pumpTraceSession(tester, root: offline);
     await finishOneHop(tester);
     await expectWidgetTree(
       tester,
-      'walk_done_offline',
-      root: find.byType(WalkScreen),
+      'trace_done_offline',
+      root: find.byType(TraceSessionScreen),
     );
 
-    final live = traceRoot('alix-walk-structure-done-live-', hops: 1);
-    final liveSupport = tempDir('alix-walk-structure-live-support-');
+    final live = traceRoot('alix-trace-structure-done-live-', hops: 1);
+    final liveSupport = tempDir('alix-trace-structure-live-support-');
     await savePairing(
       const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc', rootId: 'root-test0000000000000000000000'),
       support: liveSupport,
     );
-    await pumpWalk(
+    await pumpTraceSession(
       tester,
       root: live,
       support: liveSupport,
@@ -149,23 +149,23 @@ void main() {
     await finishOneHop(tester);
     await expectWidgetTree(
       tester,
-      'walk_done_exam_available',
-      root: find.byType(WalkScreen),
+      'trace_done_exam_available',
+      root: find.byType(TraceSessionScreen),
     );
 
-    final cooldown = traceRoot('alix-walk-structure-cooldown-', hops: 1);
-    final cooldownSupport = tempDir('alix-walk-structure-cooldown-support-');
+    final cooldown = traceRoot('alix-trace-structure-cooldown-', hops: 1);
+    final cooldownSupport = tempDir('alix-trace-structure-cooldown-support-');
     await savePairing(
       const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc', rootId: 'root-test0000000000000000000000'),
       support: cooldownSupport,
     );
-    WalkSession.open(
+    TraceSession.open(
       deckPath: '${cooldown.path}/trace.md',
       rootDir: cooldown.path,
     ).applyExamFailed(
       nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch - 500),
     );
-    await pumpWalk(
+    await pumpTraceSession(
       tester,
       root: cooldown,
       support: cooldownSupport,
@@ -174,16 +174,16 @@ void main() {
     await finishOneHop(tester);
     await expectWidgetTree(
       tester,
-      'walk_done_exam_cooldown',
-      root: find.byType(WalkScreen),
+      'trace_done_exam_cooldown',
+      root: find.byType(TraceSessionScreen),
     );
   });
 
-  testWidgets('walk tree: save warning and failed-open feedback', (
+  testWidgets('trace tree: save warning and failed-open feedback', (
     tester,
   ) async {
-    final root = traceRoot('alix-walk-structure-save-');
-    await pumpWalk(tester, root: root);
+    final root = traceRoot('alix-trace-structure-save-');
+    await pumpTraceSession(tester, root: root);
     await reveal(tester);
     Directory('${root.path}/.alix').createSync();
     final progress = File('${root.path}/.alix/progress');
@@ -195,11 +195,11 @@ void main() {
     expect(find.textContaining("Progress isn't being saved"), findsOneWidget);
     await expectWidgetTree(
       tester,
-      'walk_save_warning',
-      root: find.byType(WalkScreen),
+      'trace_save_warning',
+      root: find.byType(TraceSessionScreen),
     );
 
-    final invalid = tempDir('alix-walk-structure-invalid-');
+    final invalid = tempDir('alix-trace-structure-invalid-');
     writeTestDeck('${invalid.path}/trace.md', '---\ntitle: Facts\n---\n## q?\na\n');
     await tester.pumpWidget(
       MaterialApp(
@@ -209,25 +209,25 @@ void main() {
             builder: (context) => FilledButton(
               onPressed: () => Navigator.of(context).push<void>(
                 MaterialPageRoute(
-                  builder: (_) => WalkScreen(
+                  builder: (_) => TraceSessionScreen(
                     deckPath: '${invalid.path}/trace.md',
                     rootDir: invalid.path,
-                    supportDir: tempDir('alix-walk-structure-invalid-support-'),
+                    supportDir: tempDir('alix-trace-structure-invalid-support-'),
                   ),
                 ),
               ),
-              child: const Text('Open invalid walk'),
+              child: const Text('Open invalid trace'),
             ),
           ),
         ),
       ),
     );
-    await tester.tap(find.text('Open invalid walk'));
+    await tester.tap(find.text('Open invalid trace'));
     await tester.pumpAndSettle();
     expect(find.textContaining('not a trace'), findsOneWidget);
     await expectWidgetTree(
       tester,
-      'walk_failed_open_feedback',
+      'trace_failed_open_feedback',
       root: find.byType(MaterialApp),
     );
   });

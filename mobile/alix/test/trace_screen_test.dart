@@ -1,4 +1,4 @@
-// T5.2 widget tests: the on-device trace walk, driven against the REAL
+// T5.2 widget tests: the on-device trace, driven against the REAL
 // embedded core (RustLib.init in setUpAll; real deck files on disk),
 // mirroring bridge_test.dart's own fixtures/pattern and the review screen's
 // exam-chip tests (review_screen_exam_chip_test.dart) for the client-
@@ -18,7 +18,7 @@ import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
-import 'package:alix_mobile/walk_screen.dart';
+import 'package:alix_mobile/trace_screen.dart';
 
 import 'support/deck_fixture.dart';
 import 'support/fake_server_client.dart';
@@ -37,7 +37,7 @@ void main() {
   }
 
   Directory tempSupport() {
-    final dir = Directory.systemTemp.createTempSync('alix-walk-support-');
+    final dir = Directory.systemTemp.createTempSync('alix-trace-support-');
     addTearDown(() {
       if (dir.existsSync()) dir.deleteSync(recursive: true);
     });
@@ -47,7 +47,7 @@ void main() {
   /// A two-hop trace over a real in-folder source file, matching the rust
   /// bridge's own `trace_fixture` verbatim (mobile/alix/rust/src/api/review.rs).
   Directory twoHopRoot() {
-    final root = tempRoot('alix-walk-2hop-');
+    final root = tempRoot('alix-trace-2hop-');
     File('${root.path}/source.txt').writeAsStringSync('first\nsecond\nthird\n');
     writeTestDeck(
       '${root.path}/t.md',
@@ -69,7 +69,7 @@ void main() {
   /// A one-hop trace, for tests only interested in reaching the done
   /// screen quickly (the exam-handoff visibility rules).
   Directory oneHopRoot() {
-    final root = tempRoot('alix-walk-1hop-');
+    final root = tempRoot('alix-trace-1hop-');
     File('${root.path}/source.txt').writeAsStringSync('first\nsecond\n');
     writeTestDeck(
       '${root.path}/t.md',
@@ -85,7 +85,7 @@ void main() {
   }
 
   Directory highlightedRoot() {
-    final root = tempRoot('alix-walk-highlighted-');
+    final root = tempRoot('alix-trace-highlighted-');
     File(
       '${root.path}/source.txt',
     ).writeAsStringSync('origin calls resolve_source_root\n');
@@ -105,7 +105,7 @@ void main() {
   /// A trace whose checkpoint locator has nothing to resolve against (no
   /// `% source:` at all): the excerpt-error fallback path.
   Directory noSourceRoot() {
-    final root = tempRoot('alix-walk-nosource-');
+    final root = tempRoot('alix-trace-nosource-');
     writeTestDeck(
       '${root.path}/t.md',
       '---\n'
@@ -118,7 +118,7 @@ void main() {
     return root;
   }
 
-  group('walking a trace end-to-end', () {
+  group('tracing a trace end-to-end', () {
     testWidgets(
       'predict shows the prompt, reveal shows the real excerpt and points, '
       'grading advances hops, and done shows the tally',
@@ -127,7 +127,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             theme: alixDark(),
-            home: WalkScreen(
+            home: TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: tempSupport(),
@@ -172,11 +172,11 @@ void main() {
         await tester.pumpAndSettle();
 
         // Done: the tally.
-        expect(find.text('WALK COMPLETE'), findsOneWidget);
+        expect(find.text('TRACE COMPLETE'), findsOneWidget);
         expect(find.text('got it'), findsOneWidget);
         expect(find.text('partly'), findsOneWidget);
         expect(find.text('missed it'), findsOneWidget);
-        expect(find.text('Walk again'), findsOneWidget);
+        expect(find.text('Trace again'), findsOneWidget);
 
         // No hop rail, no live-grade chrome: only the delta chips + the
         // done actions ever appear; a fresh predict/reveal is what advances.
@@ -191,7 +191,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             theme: alixDark(),
-            home: WalkScreen(
+            home: TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: tempSupport(),
@@ -220,7 +220,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             theme: alixDark(),
-            home: WalkScreen(
+            home: TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: tempSupport(),
@@ -265,7 +265,7 @@ void main() {
   });
 
   group('the exam handoff on the done screen', () {
-    Future<void> walkOneHopToDone(WidgetTester tester) async {
+    Future<void> traceOneHopToDone(WidgetTester tester) async {
       await tester.enterText(find.byType(TextField), 'a guess');
       await tester.tap(find.text('Reveal'));
       await tester.pumpAndSettle();
@@ -286,7 +286,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             theme: alixDark(),
-            home: WalkScreen(
+            home: TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: support,
@@ -296,7 +296,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        await walkOneHopToDone(tester);
+        await traceOneHopToDone(tester);
 
         expect(find.text('Take the exam'), findsOneWidget);
 
@@ -311,7 +311,7 @@ void main() {
 
     testWidgets(
       'paired but the probe fails (unreachable): "Take the exam" does not exist even '
-      'though a config exists, and the walk itself never touched the server to get here',
+      'though a config exists, and the trace itself never touched the server to get here',
       (tester) async {
         final root = oneHopRoot();
         final support = tempSupport();
@@ -323,7 +323,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             theme: alixDark(),
-            home: WalkScreen(
+            home: TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: support,
@@ -333,10 +333,10 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        await walkOneHopToDone(tester);
+        await traceOneHopToDone(tester);
 
         expect(find.text('Take the exam'), findsNothing);
-        expect(find.text('Walk again'), findsOneWidget);
+        expect(find.text('Trace again'), findsOneWidget);
       },
     );
 
@@ -353,7 +353,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: alixDark(),
-          home: WalkScreen(
+          home: TraceSessionScreen(
             deckPath: '${root.path}/t.md',
             rootDir: root.path,
             supportDir: support,
@@ -362,7 +362,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await walkOneHopToDone(tester);
+      await traceOneHopToDone(tester);
 
       expect(find.text('Take the exam'), findsNothing);
     });
@@ -381,7 +381,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             theme: alixDark(),
-            home: WalkScreen(
+            home: TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: support,
@@ -411,7 +411,7 @@ void main() {
     );
 
     testWidgets(
-      'unpaired: "Take the exam" does not exist, the walk stays fully offline',
+      'unpaired: "Take the exam" does not exist, the trace stays fully offline',
       (tester) async {
         final root = oneHopRoot();
         final support = tempSupport();
@@ -419,7 +419,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             theme: alixDark(),
-            home: WalkScreen(
+            home: TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: support,
@@ -427,11 +427,11 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        await walkOneHopToDone(tester);
+        await traceOneHopToDone(tester);
 
         expect(find.text('Take the exam'), findsNothing);
         expect(find.textContaining('re-sitting'), findsNothing);
-        expect(find.text('Walk again'), findsOneWidget);
+        expect(find.text('Trace again'), findsOneWidget);
       },
     );
 
@@ -452,7 +452,7 @@ void main() {
         final justNow = BigInt.from(
           DateTime.now().millisecondsSinceEpoch - 500,
         );
-        WalkSession.open(
+        TraceSession.open(
           deckPath: '${root.path}/t.md',
           rootDir: root.path,
         ).applyExamFailed(nowMs: justNow);
@@ -460,7 +460,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             theme: alixDark(),
-            home: WalkScreen(
+            home: TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: support,
@@ -469,25 +469,25 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        await walkOneHopToDone(tester);
+        await traceOneHopToDone(tester);
 
         expect(find.text('Take the exam'), findsNothing);
         expect(find.textContaining('re-sitting'), findsOneWidget);
-        expect(find.text('Walk again'), findsOneWidget);
+        expect(find.text('Trace again'), findsOneWidget);
       },
     );
   });
 
-  group('the picker routes a trace row to the walk', () {
+  group('the picker routes a trace row to the trace', () {
     testWidgets(
-      'tapping a trace row opens WalkScreen, not the old refusal snack',
+      'tapping a trace row opens TraceSessionScreen, not the old refusal snack',
       (tester) async {
-        final root = tempRoot('alix-picker-walk-');
+        final root = tempRoot('alix-picker-trace-');
         File('${root.path}/source.txt').writeAsStringSync('alpha\nbeta\n');
         writeTestDeck(
           '${root.path}/t.md',
           '---\n'
-          'trace: a picker-launched walk\n'
+          'trace: a picker-launched trace\n'
           'source: source.txt\n'
           'title: T\n'
           '---\n'
@@ -507,7 +507,7 @@ void main() {
         await tester.tap(find.text('T'));
         await tester.pumpAndSettle();
 
-        expect(find.byType(WalkScreen), findsOneWidget);
+        expect(find.byType(TraceSessionScreen), findsOneWidget);
         expect(find.text('Predict'), findsOneWidget);
         expect(
           find.text(
@@ -520,15 +520,15 @@ void main() {
     );
   });
 
-  group('leaving an unfinished walk asks first (parity with a review)', () {
-    // Pushes a WalkScreen onto a route so it has a back button, then settles.
-    Future<void> pushWalk(WidgetTester tester, Directory root) async {
+  group('leaving an unfinished trace asks first (parity with a review)', () {
+    // Pushes a TraceSessionScreen onto a route so it has a back button, then settles.
+    Future<void> pushTraceSession(WidgetTester tester, Directory root) async {
       await tester.pumpWidget(const MaterialApp(home: Scaffold()));
       final context = tester.element(find.byType(Scaffold));
       unawaited(
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => WalkScreen(
+            builder: (_) => TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
               supportDir: tempSupport(),
@@ -539,34 +539,34 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('back mid-walk confirms; Keep walking stays', (tester) async {
-      await pushWalk(tester, twoHopRoot());
+    testWidgets('back mid-trace confirms; Keep tracing stays', (tester) async {
+      await pushTraceSession(tester, twoHopRoot());
       expect(find.text('checkpoint 1 / 2'), findsOneWidget);
 
       await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
       expect(
-        find.text('Leave the walk?'),
+        find.text('Leave the trace?'),
         findsOneWidget,
-        reason: 'an unfinished walk asks before leaving, like a review',
+        reason: 'an unfinished trace asks before leaving, like a review',
       );
 
-      await tester.tap(find.text('Keep walking'));
+      await tester.tap(find.text('Keep tracing'));
       await tester.pumpAndSettle();
-      expect(find.text('Leave the walk?'), findsNothing);
-      expect(find.byType(WalkScreen), findsOneWidget);
+      expect(find.text('Leave the trace?'), findsNothing);
+      expect(find.byType(TraceSessionScreen), findsOneWidget);
     });
 
-    testWidgets('Leave confirms out of the walk', (tester) async {
-      await pushWalk(tester, twoHopRoot());
+    testWidgets('Leave confirms out of the trace', (tester) async {
+      await pushTraceSession(tester, twoHopRoot());
       await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Leave'));
       await tester.pumpAndSettle();
       expect(
-        find.byType(WalkScreen),
+        find.byType(TraceSessionScreen),
         findsNothing,
-        reason: 'Leave pops the walk',
+        reason: 'Leave pops the trace',
       );
     });
   });

@@ -19,7 +19,7 @@
   "excerpt_error": null,
   "given_runs": [],
   "givens": [],
-  "kind": "walk",
+  "kind": "trace",
   "locator": null,
   "note": "see also Vec",
   "note_runs": [

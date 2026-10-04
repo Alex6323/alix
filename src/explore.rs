@@ -133,7 +133,7 @@ fn explore_prompt(source: &str, spec: &GenerationSpec, url: bool, cfg: &TraceCon
     p
 }
 
-pub fn walk(
+pub fn trace(
     source: &str,
     spec: &GenerationSpec,
     cfg: &TraceConfig,
@@ -147,17 +147,17 @@ pub fn walk(
         let (base_dir, _) = resolve_source(None, Some(source));
         Some(base_dir)
     };
-    let prompt = walk_prompt(source, spec, url, cfg);
+    let prompt = trace_prompt(source, spec, url, cfg);
     let run_cfg = build_run_config(cfg, ask_cfg, cwd, url);
     let raw = ask::run(&run_cfg, &prompt, &[])?;
     let cards = clean_to_cards(&raw);
     if cards.trim().is_empty() {
-        bail!("the explore walk produced no checkpoints");
+        bail!("the explore trace produced no checkpoints");
     }
     Ok(cards)
 }
 
-fn walk_prompt(source: &str, spec: &GenerationSpec, url: bool, cfg: &TraceConfig) -> String {
+fn trace_prompt(source: &str, spec: &GenerationSpec, url: bool, cfg: &TraceConfig) -> String {
     let goal = &spec.goal;
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
@@ -174,10 +174,10 @@ fn walk_prompt(source: &str, spec: &GenerationSpec, url: bool, cfg: &TraceConfig
          `Cargo.toml:8-20` or `src/lib.rs:12-33`) — never comma-separated"
     };
     let mut p = format!(
-        "You are building an EXPLORE walk: a short predict-and-verify trace that \
+        "You are building an EXPLORE trace: a short predict-and-verify trace deck that \
          teaches a newcomer the SHAPE of a source by making them PREDICT its \
          structure before each reveal. The learner's aim:\n\n    {goal}\n\n{explore}\n\n\
-         Walk it the way you read a codebase cold, one hop per step:\n\
+         Trace it the way you read a codebase cold, one hop per step:\n\
          1. from the manifest / dependencies — what KIND of thing is this?\n\
          2. from the module / file names — what are its core DOMAIN NOUNS (the model)?\n\
          3. from the entry point — how is it DRIVEN (its commands / surfaces)?\n\
@@ -855,8 +855,8 @@ mod tests {
     }
 
     #[test]
-    fn walk_prompt_example_writes_a_badged_note() {
-        let prompt = walk_prompt(
+    fn trace_prompt_example_writes_a_badged_note() {
+        let prompt = trace_prompt(
             ".",
             &spec("understand the source"),
             false,
@@ -960,12 +960,12 @@ mod tests {
     }
 
     #[test]
-    fn walk_prompt_predicts_shape_with_evidence() {
+    fn trace_prompt_predicts_shape_with_evidence() {
         let mut spec = spec("understand the repo");
         spec.language = Some("German".to_string());
         spec.audience = Some("new contributors".to_string());
-        let p = walk_prompt(".", &spec, false, &TraceConfig::default());
-        assert!(p.contains("EXPLORE walk"));
+        let p = trace_prompt(".", &spec, false, &TraceConfig::default());
+        assert!(p.contains("EXPLORE trace"));
         assert!(p.contains("PREDICT its"));
         assert!(p.contains("DOMAIN NOUNS"));
         assert!(p.contains("SPINE"));
@@ -994,8 +994,8 @@ mod tests {
                 ),
             ),
             (
-                "walk",
-                walk_prompt(
+                "trace",
+                trace_prompt(
                     ".",
                     &spec("understand the repo"),
                     false,
@@ -1030,8 +1030,8 @@ mod tests {
                 ),
             ),
             (
-                "walk",
-                walk_prompt(
+                "trace",
+                trace_prompt(
                     ".",
                     &spec("understand the repo"),
                     false,
@@ -1052,7 +1052,7 @@ mod tests {
     // The fake backend is a /bin/sh script (`testutil` is unix-only).
     #[cfg(unix)]
     #[test]
-    fn walk_runs_the_backend_and_returns_checkpoints() {
+    fn trace_runs_the_backend_and_returns_checkpoints() {
         use crate::testutil::{ask_config, exec_lock, fake_reply};
 
         let _guard = exec_lock();
@@ -1062,7 +1062,7 @@ mod tests {
             "## What happens next?\nThe parser builds a card.\n",
         );
 
-        let checkpoints = walk(
+        let checkpoints = trace(
             "https://example.org/source",
             &spec("understand the path"),
             &TraceConfig::default(),

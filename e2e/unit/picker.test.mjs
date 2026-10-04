@@ -6,7 +6,7 @@ import { createPicker } from "../../web/alix/review/picker.js";
 function harness(responses) {
   const calls = [];
   const applied = [];
-  const walks = [];
+  const traces = [];
   const stored = new Map();
   const picker = createPicker({
     api: async (path, options) => {
@@ -23,10 +23,10 @@ function harness(responses) {
     isBrowsing: () => false,
     examIsOpen: () => false,
     augmentIsOpen: () => false,
-    walkIsOpen: () => false,
+    traceIsOpen: () => false,
     tutorIsOpen: () => false,
     applyStudy: (state) => applied.push(state),
-    openWalk: (walk) => walks.push(walk),
+    openTraceSession: (trace) => traces.push(trace),
     openBrowse: () => {},
     startExam: () => {},
     openAugment: () => {},
@@ -37,18 +37,18 @@ function harness(responses) {
       window: { addEventListener: () => {} },
     },
   });
-  return { applied, calls, picker, stored, walks };
+  return { applied, calls, picker, stored, traces };
 }
 
-test("picker owns review and walk launch transitions", async () => {
+test("picker owns review and trace launch transitions", async () => {
   const review = { kind: "review", phase: "review", card: { id: "card-1" } };
-  const walk = { kind: "walk", phase: "predict", deck: "trace.md" };
-  const run = harness([review, walk]);
+  const trace = { kind: "trace", phase: "predict", deck: "trace.md" };
+  const run = harness([review, trace]);
 
   await run.picker.select("facts.md", "Foundations", "Basics", "recall", false);
 
   assert.deepEqual(run.applied, [review]);
-  assert.deepEqual(run.walks, []);
+  assert.deepEqual(run.traces, []);
   assert.equal(run.stored.get("alix.lastDeck"), "facts.md");
   assert.deepEqual(run.calls[0], {
     path: "/api/select",
@@ -66,6 +66,6 @@ test("picker owns review and walk launch transitions", async () => {
 
   await run.picker.select("trace.md", null, null, null, false);
 
-  assert.deepEqual(run.walks, [walk]);
+  assert.deepEqual(run.traces, [trace]);
   assert.equal(run.stored.get("alix.lastDeck"), "trace.md");
 });

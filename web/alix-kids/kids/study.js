@@ -42,7 +42,7 @@ function syncSaveAlert() {
 // ── The review loop ───────────────────────────────────────────────────────
 // Every review action (/api/select, /api/grade, /api/introduce, /api/deselect)
 // returns the NEXT StateDto -- apply it, reset the per-card view state, and route.
-// `/api/select` and each action can also return a WalkDto (a trace deck); kids
+// `/api/select` and each action can also return a TraceSessionDto (a trace deck); kids
 // v1 handles only the review StateDto, so we branch on `kind` and route a
 // non-review payload to a gentle "not ready" screen (rendered by renderReview).
 function apply(s) {
@@ -65,7 +65,7 @@ function revealDone() {
 // state.mode: choice → tap-the-answer, line → reveal-next, everything else →
 // fill-in-the-blank. The persistent Home / Ask Alix bar renders for every card.
 function renderReview() {
-  // Kids handle only the review StateDto; a trace deck resolves to a WalkDto.
+  // Kids handle only the review StateDto; a trace deck resolves to a TraceSessionDto.
   if (!state || state.kind !== "review" || !state.card) { renderNotReady(); return; }
 
   const card = state.card;

@@ -94,6 +94,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A trace deck's session is now called a trace, not a walk. The web API
+  routes moved from `/api/walk` and `/api/walk/{predict,grade,restart,leave,ask,
+  ask/note}` to the same paths under `/api/trace`, and the session payload's
+  `kind` is `"trace"` instead of `"walk"` (the payload is now documented as
+  `TraceSessionDto`). The old routes and `kind` are gone. On the web and the
+  phone the done screen reads "Trace again", "Trace finished.", and "Trace
+  it again before re-sitting", and leaving mid-way asks "Leave the trace?"
+  with "Keep tracing".
+
 - Every note is a badged block, on the web and on the phone alike: the badge
   word above the text and a 4px bar down its left edge, both in GitHub's own
   colour for that badge (`#0969da` NOTE, `#1a7f37` TIP, `#8250df` IMPORTANT,
@@ -197,7 +206,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   which stood 24 logical pixels taller than a local one for it, and the list
   starts off the bar by the same 6 pixels that separate its rows.
 
-- A review or walk on the phone no longer shows the alix wordmark in its bar,
+- A review or trace on the phone no longer shows the alix wordmark in its bar,
   the way a chat screen names the person rather than the app. The review's
   check tag (NEW, FLIP, SELECT ALL and the rest) moves into the space that
   frees, so the card itself starts where the tag used to sit and gains that

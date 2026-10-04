@@ -71,8 +71,8 @@ study = createStudy({
   openAugment: (deck) => augment.open(deck),
   model: { create: createModel, applyStudyState, enterPicker, currentScreen },
   rerender: render,
-  walkData: () => walk.data(),
-  replaceWalk: (next) => walk.replace(next),
+  traceData: () => trace.data(),
+  replaceTraceSession: (next) => trace.replace(next),
   openTutor: () => tutor.show(),
   startExam: (deck) => exam.start(deck),
   closeMenu: () => menu.classList.remove("open"),
@@ -130,10 +130,10 @@ const picker = createPicker({
   isBrowsing: study.isBrowsing,
   examIsOpen: () => exam.isOpen(),
   augmentIsOpen: () => augment.isOpen(),
-  walkIsOpen: () => walk.isOpen(),
+  traceIsOpen: () => trace.isOpen(),
   tutorIsOpen: () => tutor.isOpen(),
   applyStudy: study.apply,
-  openWalk: (next) => walk.open(next),
+  openTraceSession: (next) => trace.open(next),
   openBrowse: study.openBrowse,
   startExam: (deck) => exam.start(deck),
   openAugment: (deck) => augment.open(deck),
@@ -201,9 +201,9 @@ const tutor = createTutor({
     setInterval: window.setInterval.bind(window),
     clearInterval: window.clearInterval.bind(window),
   },
-  walk: {
-    isOpen: () => walk.isOpen(),
-    replace: (next) => walk.replace(next),
+  trace: {
+    isOpen: () => trace.isOpen(),
+    replace: (next) => trace.replace(next),
   },
   study: {
     state: study.state,
@@ -230,7 +230,7 @@ const tutor = createTutor({
   },
 });
 
-const walk = createWalk({
+const trace = createTraceSession({
   api,
   fetchApi: apiClient.fetch,
   post,
@@ -355,7 +355,7 @@ function render() {
   if (exam.isOpen()) { exam.render(); return; }
   if (augment.isOpen()) { augment.render(); return; }
   const screen = study.screen();
-  if (screen === "walk") { walk.render(); return; }
+  if (screen === "trace") { trace.render(); return; }
   if (screen === "browse") { study.render(); return; }
   if (screen === "picker") { picker.render(); return; }
   if (tutor.isOpen()) { study.prepareSurface(); tutor.render(); return; }
@@ -392,7 +392,7 @@ function clearLegendSides() {
 
 document.addEventListener("keydown", (event) => {
   if (event.altKey || event.metaKey) return;
-  if (walk.isOpen()) { walk.handleKey(event); return; }
+  if (trace.isOpen()) { trace.handleKey(event); return; }
   if (!study.state()) return;
   if (exam.isOpen()) { exam.handleKey(event); return; }
   if (study.isBrowsing()) { study.handleKey(event); return; }
@@ -413,9 +413,9 @@ menu.addEventListener("click", (e) => e.stopPropagation());
 document.getElementById("mAsk").addEventListener("click", () => {
   menu.classList.remove("open");
   if (study.sectionOpen()) return;
-  // Mirrors the footer/keyboard availability: a walk offers the tutor only once
+  // Mirrors the footer/keyboard availability: a trace offers the tutor only once
   // a checkpoint is revealed (nothing to ask about while still predicting).
-  if (walk.isOpen()) { if (walk.data().phase === "reveal") tutor.show(); }
+  if (trace.isOpen()) { if (trace.data().phase === "reveal") tutor.show(); }
   else if (study.isAnswered()) tutor.show();
 });
 document.getElementById("mContext").addEventListener("click", () => { menu.classList.remove("open"); study.openSection(); });
@@ -429,13 +429,13 @@ mDraw.addEventListener("click", () => { if (!study.sectionOpen()) study.toggleDr
 document.addEventListener("click", () => menu.classList.remove("open"));
 
 
-// Show the right menu items for the current screen (picker vs review vs walk).
+// Show the right menu items for the current screen (picker vs review vs trace).
 function setMenuContext(ctx) {
   document.querySelectorAll("#menu .m-picker").forEach((b) => { b.style.display = ctx === "picker" ? "" : "none"; });
-  // Ask Tutor is the one .m-review item that also makes sense mid-walk; the
+  // Ask Tutor is the one .m-review item that also makes sense mid-trace; the
   // rest (Remove card, Promote) are per-deck-card actions a trace checkpoint
   // doesn't have, so they get their own narrower checks below.
-  document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = (ctx === "review" || ctx === "walk") ? "" : "none"; });
+  document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = (ctx === "review" || ctx === "trace") ? "" : "none"; });
   document.getElementById("mContext").style.display = ctx === "review" && study && study.hasSection() ? "" : "none";
   document.getElementById("mRemove").style.display = ctx === "review" ? "" : "none";
   // (a remediation card) — narrower than the other .m-review items, so it

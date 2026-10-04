@@ -41,7 +41,7 @@ export function createExam({
         const mins = Math.max(1, Math.round(next.cooldown_ms / 60000));
         alertUser(
           "This trace exam is cooling down after a recent fail.\n" +
-          `Re-walk it and try again in about ${mins} min.`,
+          `Retrace it and try again in about ${mins} min.`,
         );
         return next;
       }
@@ -232,7 +232,7 @@ export function createExam({
         wrap.appendChild(el(
           "div",
           "exam-wait",
-          "Re-walk the trace to strengthen the weak hops, then re-sit.",
+          "Trace it again to strengthen the weak hops, then re-sit.",
         ));
       }
       stage.appendChild(wrap);

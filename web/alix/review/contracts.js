@@ -8,12 +8,12 @@ export function isReviewState(value) {
     && ["select", "review", "done", "browse"].includes(value.phase);
 }
 
-export function isWalkState(value) {
-  return isRecord(value) && value.kind === "walk" && typeof value.phase === "string";
+export function isTraceSessionState(value) {
+  return isRecord(value) && value.kind === "trace" && typeof value.phase === "string";
 }
 
 export function isStudyState(value) {
-  return isReviewState(value) || isWalkState(value);
+  return isReviewState(value) || isTraceSessionState(value);
 }
 
 export function hasPhase(value) {
@@ -33,13 +33,13 @@ export function validatorFor(path) {
     case "/api/restart":
     case "/api/exam/close":
     case "/api/augment/close":
-    case "/api/walk/leave":
+    case "/api/trace/leave":
       return isStudyState;
-    case "/api/walk":
-    case "/api/walk/predict":
-    case "/api/walk/grade":
-    case "/api/walk/restart":
-      return isWalkState;
+    case "/api/trace":
+    case "/api/trace/predict":
+    case "/api/trace/grade":
+    case "/api/trace/restart":
+      return isTraceSessionState;
     default:
       return undefined;
   }

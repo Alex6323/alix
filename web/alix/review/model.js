@@ -6,7 +6,7 @@ export function createModel(storage) {
   return {
     state: null,
     browsing: null,
-    walk: null,
+    trace: null,
     revealed: 0,
     citationView: false,
     sectionView: false,
@@ -49,11 +49,11 @@ export function applyStudyState(model, state) {
 }
 
 export function enterPicker(model) {
-  return { ...model, state: null, browsing: null, walk: null };
+  return { ...model, state: null, browsing: null, trace: null };
 }
 
 export function currentScreen(model) {
-  if (model.walk?.kind === "walk") return "walk";
+  if (model.trace?.kind === "trace") return "trace";
   if (model.browsing) return "browse";
   if (model.state?.kind !== "review") return "picker";
   if (model.state.phase === "done") return "summary";

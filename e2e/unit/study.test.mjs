@@ -10,7 +10,7 @@ import {
 import { createStudy, modeTag } from "../../web/alix/review/study.js";
 
 function harness() {
-  const walks = [];
+  const traces = [];
   let renders = 0;
   const study = createStudy({
     api: async () => ({}),
@@ -18,15 +18,15 @@ function harness() {
     storage: { getItem: () => null, setItem: () => {} },
     model: { create: createModel, applyStudyState, currentScreen, enterPicker },
     rerender: () => renders++,
-    walkData: () => null,
-    replaceWalk: (walk) => walks.push(walk),
+    traceData: () => null,
+    replaceTraceSession: (trace) => traces.push(trace),
     openTutor: () => {},
     startExam: () => {},
     closeMenu: () => {},
     timers: {},
     ui: {},
   });
-  return { renders: () => renders, study, walks };
+  return { renders: () => renders, study, traces };
 }
 
 function node(tag = "div", cls = null, text = "") {
@@ -67,8 +67,8 @@ function summaryHarness(state, pending) {
     storage: { getItem: () => null, setItem: () => {} },
     model: { create: createModel, applyStudyState, currentScreen, enterPicker },
     rerender: () => study.render(),
-    walkData: () => null,
-    replaceWalk: () => {},
+    traceData: () => null,
+    replaceTraceSession: () => {},
     openTutor: () => {},
     startExam: () => {},
     closeMenu: () => {},
@@ -165,7 +165,7 @@ test("study owns accepted state publication and screen selection", () => {
 
   assert.equal(run.study.state(), review);
   assert.equal(run.study.screen(), "study");
-  assert.deepEqual(run.walks, [null]);
+  assert.deepEqual(run.traces, [null]);
   assert.equal(run.renders(), 1);
 
   const done = { ...review, phase: "done", card: null };
@@ -186,8 +186,8 @@ test("the same load warning surfaces again for a later deck", () => {
     storage: { getItem: () => null, setItem: () => {} },
     model: { create: createModel, applyStudyState, currentScreen, enterPicker },
     rerender: () => {},
-    walkData: () => null,
-    replaceWalk: () => {},
+    traceData: () => null,
+    replaceTraceSession: () => {},
     openTutor: () => {},
     startExam: () => {},
     closeMenu: () => {},

@@ -88,7 +88,7 @@ so is every client.
   for every 500 (as does `GET /api/version`). These bodies let a client
   explain the refusal without exposing a host path.
   `400` is overloaded (malformed body, unknown deck name, store failure —
-  per-endpoint meaning in §5). `409` = "no active session/exam/walk of the
+  per-endpoint meaning in §5). `409` = "no active session/exam/trace of the
   kind this endpoint needs". `401` = bad/missing token. `403` = an adult-only
   endpoint (§4.5) called while `[serve] audience = "kids"`. `404` = unknown
   route or image. `503` = a background owner thread is gone and the server is
@@ -117,8 +117,8 @@ so is every client.
    directly, so a client no longer has to infer it from `is_workspace`.
 2. `POST /api/select {deck, topology?, region?, depth?, cram?, skip_introduction?, session?}`
    builds a session. **The response is either a `StateDto` or a
-   `WalkDto` — branch on `kind` (`"review"` | `"walk"`) before anything
-   else.** A trace deck walks; a fact deck reviews. `depth` is
+   `TraceSessionDto` — branch on `kind` (`"review"` | `"trace"`) before anything
+   else.** A trace deck traces; a fact deck reviews. `depth` is
    `"recognize" | "recall" | "reconstruct"` *(closed)*; omitted → the deck's
    remembered last depth. `cram` (default false) also queues cards that
    aren't due (a due card still grades as a normal review).
@@ -185,14 +185,14 @@ so is every client.
    same `StateDto`; there is no separate finished flag.
 6. `POST /api/deselect` returns to the select phase.
 
-### 4.2 The walk (trace decks)
+### 4.2 The trace (trace decks)
 
-`WalkDto` drives a predict-and-verify loop: `phase` cycles
+`TraceSessionDto` drives a predict-and-verify loop: `phase` cycles
 `"predict"` → `"reveal"` → … → `"done"` *(closed)*. Submit a prediction with
-`POST /api/walk/predict {text}`; grade with `POST /api/walk/grade {delta}`
+`POST /api/trace/predict {text}`; grade with `POST /api/trace/grade {delta}`
 where `delta` is a single key `"n"|"p"|"f"` (got it / partly / missed it —
-the same letters as the review grade keys). `POST /api/walk/restart`
-rewalks; `POST /api/walk/leave` exits and, like every closer, returns the
+the same letters as the review grade keys). `POST /api/trace/restart`
+retraces; `POST /api/trace/leave` exits and, like every closer, returns the
 picker `StateDto`.
 
 ### 4.3 The exam
@@ -224,8 +224,8 @@ entry carrying its own optional guidance steer (poll `GET /api/augment` while
 
 `POST /api/ask {question}` starts a call; poll `GET /api/ask` while
 `thinking`; the growing `transcript` carries the whole exchange.
-`POST /api/ask/note` condenses the exchange into a deck note. The walk has its
-own mirror: `/api/walk/ask`, `/api/walk/ask/note`, `GET /api/walk/ask`.
+`POST /api/ask/note` condenses the exchange into a deck note. The trace has its
+own mirror: `/api/trace/ask`, `/api/trace/ask/note`, `GET /api/trace/ask`.
 Frozen excerpts are always supplied as evidence. When no usable live
 `source:` (deck or workspace) is available, `status` carries a deterministic
 warning that the tutor has only the frozen evidence rather than the full
@@ -340,7 +340,7 @@ paths. Preview flushes pending progress first and returns 500 if that flush
 fails.
 
 `POST /api/library/remove {name}` performs the previewed irreversible removal
-only while the Study owner is idle; an active review, browse, exam, walk,
+only while the Study owner is idle; an active review, browse, exam, trace,
 tutor, or augment session returns 409 without changing files. A loose deck or
 member loses its deck text, progress, frozen assets, augmentation, and `.bak`
 siblings. A workspace composes that rule across initialized members, then
@@ -424,7 +424,7 @@ question locally and submits them as one batch: `POST
 call. A failed, remediable result's cards come back as deck-format text on
 `RemoteExamDto.cards` (§6) for the **client** to parse and store: the
 server generates them but never keeps them. A trace sitting never offers
-remediation (`can_remediate` stays false): a failed compression is re-walked
+remediation (`can_remediate` stays false): a failed compression is retraced
 instead.
 
 `POST /api/remote/generate {url, guidance?}` mirrors §4.7's `/api/generate`,
@@ -546,7 +546,7 @@ stable `root_id`; paired clients compare the latter before any progress write.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/select` | `{deck, topology?, region?, depth?, cram?, skip_introduction?, session?}` | `StateDto` \| `WalkDto` (branch on `kind`) | 400 bad body / unknown deck / build failure |
+| POST | `/api/select` | `{deck, topology?, region?, depth?, cram?, skip_introduction?, session?}` | `StateDto` \| `TraceSessionDto` (branch on `kind`) | 400 bad body / unknown deck / build failure |
 | POST | `/api/browse` | `{deck}` | `BrowseDto` | 400 (same causes) |
 | POST | `/api/deck-drawer` | `{deck}` | `DeckDrawerDto` | never errors; empty DTO on any failure |
 | POST | `/api/reset` | `{deck}` | `ResetDto` | 400 bad body / unknown deck / load failure |
@@ -655,18 +655,18 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 | POST | `/api/augment/remove` | `{target, topology?}` | `AugmentDto` | 409 |
 | POST | `/api/augment/close` | – | `StateDto` | – |
 
-### Walk
+### Trace
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| GET | `/api/walk` | – | `WalkDto` (poll) | 409 not walking |
-| POST | `/api/walk/predict` | `{text}` | `WalkDto` | 409 |
-| POST | `/api/walk/grade` | `{delta: "n"\|"p"\|"f"}` | `WalkDto` | 400 no delta; 409 |
-| POST | `/api/walk/restart` | – | `WalkDto` | 409 |
-| POST | `/api/walk/ask` | `{question}` | `AskDto` | 409 |
-| GET | `/api/walk/ask` | – | `AskDto` | 409 |
-| POST | `/api/walk/ask/note` | – | `AskDto` | 409 |
-| POST | `/api/walk/leave` | – | `StateDto` | 409 |
+| GET | `/api/trace` | – | `TraceSessionDto` (poll) | 409 not tracing |
+| POST | `/api/trace/predict` | `{text}` | `TraceSessionDto` | 409 |
+| POST | `/api/trace/grade` | `{delta: "n"\|"p"\|"f"}` | `TraceSessionDto` | 400 no delta; 409 |
+| POST | `/api/trace/restart` | – | `TraceSessionDto` | 409 |
+| POST | `/api/trace/ask` | `{question}` | `AskDto` | 409 |
+| GET | `/api/trace/ask` | – | `AskDto` | 409 |
+| POST | `/api/trace/ask/note` | – | `AskDto` | 409 |
+| POST | `/api/trace/leave` | – | `StateDto` | 409 |
 
 ### Remote (paired clients) (since 0.6.0)
 
@@ -715,7 +715,7 @@ The review-session payload; returned by every review action.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `kind` | string | Always `"review"` — the discriminator vs `WalkDto`. |
+| `kind` | string | Always `"review"` — the discriminator vs `TraceSessionDto`. |
 | `phase` | string | `"select"` \| `"review"` \| `"done"` *(closed)*. `done` is session end. |
 | `card` | CardDto? | Null in select phase and when done. |
 | `choices` | [string]? | Choice options; the correct indices are never sent (see `ChooseFeedbackDto`). |
@@ -975,7 +975,7 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `reviewable_recognize` / `reviewable_recall` / `reviewable_reconstruct` | bool | Per-depth honest due-ness — gate depth choices on these. Same group-aggregates-members caveat as `reviewable`. `reviewable_recognize` is pick-only: it needs a card that is both due at Recognize **and** recognizable (see `can_recognize`). |
 | `can_recognize` | bool | The deck has at least one recognizable card: authored task-list options, or cached choice distractors (`alix deck augment --target choices`), that build a pick. Gate the **Recognize** depth on this: a deck without it can build no pick, so Recognize is unavailable (grey it out) even under cram. Group rows aggregate members. |
 | `mastered` | bool | Exam passed. |
-| `is_trace` | bool | Selecting it walks instead of reviewing. |
+| `is_trace` | bool | Selecting it traces instead of reviewing. |
 | `examable` | bool | Its exam can be sat right now. |
 | `has_exam` | bool | Has an exam at all (even if locked). |
 | `recent` | bool | Belongs in a recents view. |
@@ -1370,11 +1370,11 @@ attempted and failed; one target's error doesn't stop the rest from running).
 `AugmentRowDto`: `kind`, `label`, `covered: number`, `eligible: number`,
 `items: [string]`, `busy: bool`.
 
-### WalkDto
+### TraceSessionDto
 
 | Key | Type | Meaning |
 |---|---|---|
-| `kind` | string | Always `"walk"`. |
+| `kind` | string | Always `"trace"`. |
 | `phase` | string | `predict` \| `reveal` \| `done` *(closed)*. |
 | `description` / `source` | string / string? | |
 | `description_runs` | [InlineRun] | Display projection of `description`. |
@@ -1397,7 +1397,7 @@ attempted and failed; one target's error doesn't stop the rest from running).
 ### HopDto
 
 `prompt: string`, `delta: string?` (`passed` \| `partly` \| `failed`, null
-while unwalked), `current: bool`.
+while untraced), `current: bool`.
 
 ### SummaryDto
 
@@ -1478,7 +1478,7 @@ deck, distinguished by `is_trace` (since 0.6.0).
 | `passed` | bool? | Null until graded. |
 | `grades` | [ExamGradeDto] | Populated in `results`/`remediated`. A trace sitting's is always one holistic grade. |
 | `gaps` | [string] | Named understanding gaps. |
-| `can_remediate` | bool | Always false for a trace sitting: a failed compression is re-walked, not remediated into cards. |
+| `can_remediate` | bool | Always false for a trace sitting: a failed compression is retraced, not remediated into cards. |
 | `cards` | string? | Deck-format text, set in the `remediated` phase: the client parses and stores these; the server never does. Always null for a trace sitting. |
 | `is_trace` | bool | A trace (compression) sitting vs a fact-deck sitting, since 0.6.0. `false` at `idle`. |
 | `thinking` | bool | Poll while true. |
@@ -1524,7 +1524,7 @@ they may change without notice and native clients must not depend on them:
 ## 8. Known quirks
 
 - **Two verdict vocabularies** remain, deliberately: self-grade tokens
-  (`passed`/`partly`/`failed`, lowercase — grades, walk deltas and verdicts)
+  (`passed`/`partly`/`failed`, lowercase — grades, trace deltas and verdicts)
   and AI-exam verdicts (`PASS`/`PARTIAL`/`FAIL`, uppercase). Distinct
   domains, both closed sets.
 - **`/api/deck-drawer` never errors** (empty DTO on any failure) and an

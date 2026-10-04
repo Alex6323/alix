@@ -539,9 +539,9 @@ fn statedto_done_phase_carries_the_recognize_gap() {
 }
 
 #[test]
-fn walkdto_predict_phase_wire_shape() {
-    let dto = WalkDto {
-        kind: "walk",
+fn tracesessiondto_predict_phase_wire_shape() {
+    let dto = TraceSessionDto {
+        kind: "trace",
         phase: "predict",
         description: "how a String grows".to_string(),
         description_runs: crate::inline::parse_inline("how a String grows"),
@@ -575,10 +575,10 @@ fn walkdto_predict_phase_wire_shape() {
         summary: None,
     };
     pin(
-        "WalkDto.predict",
+        "TraceSessionDto.predict",
         &dto,
         json!({
-            "kind": "walk",
+            "kind": "trace",
             "phase": "predict",
             "description": "how a String grows",
             "description_runs": [{"text": "how a String grows"}],
@@ -607,9 +607,9 @@ fn walkdto_predict_phase_wire_shape() {
 }
 
 #[test]
-fn walkdto_done_phase_wire_shape() {
-    let dto = WalkDto {
-        kind: "walk",
+fn tracesessiondto_done_phase_wire_shape() {
+    let dto = TraceSessionDto {
+        kind: "trace",
         phase: "done",
         description: "how a String grows".to_string(),
         description_runs: crate::inline::parse_inline("how a String grows"),
@@ -649,10 +649,10 @@ fn walkdto_done_phase_wire_shape() {
         }),
     };
     pin(
-        "WalkDto.done",
+        "TraceSessionDto.done",
         &dto,
         json!({
-            "kind": "walk",
+            "kind": "trace",
             "phase": "done",
             "description": "how a String grows",
             "description_runs": [{"text": "how a String grows"}],
@@ -2642,7 +2642,7 @@ fn remoteexamdto_trace_results_wire_shape() {
         }],
         gaps: vec!["it reads the second line".to_string()],
         // A trace sitting never offers remediation (a failed compression is
-        // re-walked, not remediated into cards): true here would be a bug.
+        // retraced, not remediated into cards): true here would be a bug.
         can_remediate: false,
         cards: None,
         is_trace: true,

@@ -5,13 +5,13 @@ import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/shared/inline_runs.dart';
 import 'package:alix_mobile/theme.dart';
-import 'package:alix_mobile/walk/walk_models.dart';
+import 'package:alix_mobile/trace/trace_models.dart';
 
 const _mono = 'IBM Plex Mono';
 const _sans = 'IBM Plex Sans';
 
-class WalkSaveBanner extends StatelessWidget {
-  const WalkSaveBanner({super.key, required this.saveError});
+class TraceSessionSaveBanner extends StatelessWidget {
+  const TraceSessionSaveBanner({super.key, required this.saveError});
 
   final String saveError;
 
@@ -39,10 +39,10 @@ class WalkSaveBanner extends StatelessWidget {
   }
 }
 
-class WalkDescriptionEyebrow extends StatelessWidget {
-  const WalkDescriptionEyebrow({super.key, required this.state});
+class TraceSessionDescriptionEyebrow extends StatelessWidget {
+  const TraceSessionDescriptionEyebrow({super.key, required this.state});
 
-  final WalkStateModel state;
+  final TraceSessionStateModel state;
 
   @override
   Widget build(BuildContext context) {
@@ -66,14 +66,14 @@ class WalkDescriptionEyebrow extends StatelessWidget {
   }
 }
 
-class WalkPhaseBody extends StatelessWidget {
-  const WalkPhaseBody({
+class TraceSessionPhaseBody extends StatelessWidget {
+  const TraceSessionPhaseBody({
     super.key,
     required this.state,
     required this.predictionController,
   });
 
-  final WalkStateModel state;
+  final TraceSessionStateModel state;
   final TextEditingController predictionController;
 
   @override
@@ -83,7 +83,7 @@ class WalkPhaseBody extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
       child: SizedBox(
         width: double.infinity,
-        child: state.phase == WalkPhaseModel.reveal
+        child: state.phase == TraceSessionPhaseModel.reveal
             ? _revealBody(context, tokens)
             : _predictBody(context, tokens),
       ),
@@ -344,7 +344,7 @@ class WalkPhaseBody extends StatelessWidget {
   }
 
   Widget _gutterLine(
-    WalkLineModel line,
+    TraceSessionLineModel line,
     List<String> terms,
     AlixTokens tokens,
   ) {
@@ -431,42 +431,42 @@ class WalkPhaseBody extends StatelessWidget {
   }
 }
 
-class WalkFooter extends StatelessWidget {
-  const WalkFooter({
+class TraceSessionFooter extends StatelessWidget {
+  const TraceSessionFooter({
     super.key,
     required this.phase,
     required this.onReveal,
     required this.onGrade,
   });
 
-  final WalkPhaseModel phase;
+  final TraceSessionPhaseModel phase;
   final VoidCallback onReveal;
-  final ValueChanged<WalkGrade> onGrade;
+  final ValueChanged<TraceSessionGrade> onGrade;
 
   @override
   Widget build(BuildContext context) {
     final chips = switch (phase) {
-      WalkPhaseModel.predict => [
-        WalkChip(label: 'Reveal', kind: WalkChipKind.primary, onTap: onReveal),
+      TraceSessionPhaseModel.predict => [
+        TraceSessionChip(label: 'Reveal', kind: TraceSessionChipKind.primary, onTap: onReveal),
       ],
-      WalkPhaseModel.reveal => [
-        WalkChip(
+      TraceSessionPhaseModel.reveal => [
+        TraceSessionChip(
           label: 'Missed it',
-          kind: WalkChipKind.failed,
-          onTap: () => onGrade(WalkGrade.missed),
+          kind: TraceSessionChipKind.failed,
+          onTap: () => onGrade(TraceSessionGrade.missed),
         ),
-        WalkChip(
+        TraceSessionChip(
           label: 'Partly',
-          kind: WalkChipKind.partly,
-          onTap: () => onGrade(WalkGrade.partly),
+          kind: TraceSessionChipKind.partly,
+          onTap: () => onGrade(TraceSessionGrade.partly),
         ),
-        WalkChip(
+        TraceSessionChip(
           label: 'Got it',
-          kind: WalkChipKind.passed,
-          onTap: () => onGrade(WalkGrade.got),
+          kind: TraceSessionChipKind.passed,
+          onTap: () => onGrade(TraceSessionGrade.got),
         ),
       ],
-      WalkPhaseModel.done => const <Widget>[],
+      TraceSessionPhaseModel.done => const <Widget>[],
     };
     if (chips.isEmpty) {
       return SizedBox(height: 12 + MediaQuery.of(context).padding.bottom);
@@ -488,10 +488,10 @@ class WalkFooter extends StatelessWidget {
   }
 }
 
-enum WalkChipKind { base, primary, failed, partly, passed }
+enum TraceSessionChipKind { base, primary, failed, partly, passed }
 
-class WalkChip extends StatelessWidget {
-  const WalkChip({
+class TraceSessionChip extends StatelessWidget {
+  const TraceSessionChip({
     super.key,
     required this.label,
     required this.kind,
@@ -499,7 +499,7 @@ class WalkChip extends StatelessWidget {
   });
 
   final String label;
-  final WalkChipKind kind;
+  final TraceSessionChipKind kind;
   final VoidCallback? onTap;
 
   @override
@@ -510,22 +510,22 @@ class WalkChip extends StatelessWidget {
     Color borderColor = Colors.transparent;
     late final Color foreground;
     switch (kind) {
-      case WalkChipKind.base:
+      case TraceSessionChipKind.base:
         borderColor = tokens.line;
         foreground = tokens.text;
-      case WalkChipKind.primary:
+      case TraceSessionChipKind.primary:
         fill = theme.colorScheme.primary;
         borderColor = theme.colorScheme.primary;
         foreground = theme.colorScheme.onPrimary;
-      case WalkChipKind.failed:
+      case TraceSessionChipKind.failed:
         fill = tokens.again.withValues(alpha: 0.12);
         borderColor = tokens.again.withValues(alpha: 0.42);
         foreground = tokens.again;
-      case WalkChipKind.partly:
+      case TraceSessionChipKind.partly:
         fill = tokens.warn.withValues(alpha: 0.14);
         borderColor = tokens.warn.withValues(alpha: 0.42);
         foreground = tokens.warn;
-      case WalkChipKind.passed:
+      case TraceSessionChipKind.passed:
         fill = tokens.good.withValues(alpha: 0.13);
         borderColor = tokens.good.withValues(alpha: 0.42);
         foreground = tokens.good;

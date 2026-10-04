@@ -21,7 +21,7 @@ use crate::{
     stamp, state,
     store::Store,
     time::now_ms,
-    trace::{Trace, Walk},
+    trace::{Trace, TraceSession},
     workspace,
 };
 
@@ -109,8 +109,8 @@ pub struct TutorDeck {
     authored_len: usize,
 }
 
-pub struct WalkBuild {
-    pub walk: Walk,
+pub struct TraceSessionBuild {
+    pub session: TraceSession,
 }
 
 #[allow(
@@ -119,7 +119,7 @@ pub struct WalkBuild {
 )]
 pub enum Selected {
     Review(SessionBuild),
-    Walk(WalkBuild),
+    Trace(TraceSessionBuild),
 }
 
 #[derive(Debug)]
@@ -254,7 +254,7 @@ fn resolve_topology<'a>(
     }
 }
 
-fn single_trace_to_walk(deck_paths: &[PathBuf]) -> Option<Deck> {
+fn lone_trace_deck(deck_paths: &[PathBuf]) -> Option<Deck> {
     match deck_paths {
         [path] => Deck::load(path).ok().filter(|deck| deck.is_trace()),
         _ => None,
@@ -444,11 +444,11 @@ pub fn select(
         resolve_duplicates_at_open(path);
     }
 
-    if let Some(mut deck) = single_trace_to_walk(&paths) {
+    if let Some(mut deck) = lone_trace_deck(&paths) {
         deck.cards = exclude_unstamped(deck.cards, &deck.subject);
         let trace = Trace::from_deck(&deck)?;
-        return Ok(Selected::Walk(WalkBuild {
-            walk: Walk::new(trace),
+        return Ok(Selected::Trace(TraceSessionBuild {
+            session: TraceSession::new(trace),
         }));
     }
 
@@ -1842,7 +1842,7 @@ it reads line two\n\
     }
 
     #[test]
-    fn a_lone_trace_deck_selects_as_a_walk_and_a_fact_deck_as_a_review() {
+    fn a_lone_trace_deck_selects_as_a_trace_and_a_fact_deck_as_a_review() {
         let dir = tempfile::tempdir().unwrap();
         let trace = dir.path().join("t.md");
         std::fs::write(&trace, TRACE_DECK).unwrap();
@@ -1852,17 +1852,17 @@ it reads line two\n\
         let mut store = open_store(Some(dir.path().join("p.json"))).unwrap();
         let cfg = AssembleConfig { ..test_config() };
         match select(vec![trace], &mut store, &cfg, &SelectOptions::default()).unwrap() {
-            Selected::Walk(_) => {}
-            Selected::Review(_) => panic!("trace deck must walk"),
+            Selected::Trace(_) => {}
+            Selected::Review(_) => panic!("trace deck must trace"),
         }
         match select(vec![fact], &mut store, &cfg, &SelectOptions::default()).unwrap() {
             Selected::Review(_) => {}
-            Selected::Walk(_) => panic!("fact deck must review"),
+            Selected::Trace(_) => panic!("fact deck must review"),
         }
     }
 
     #[test]
-    fn single_trace_to_walk_only_for_a_lone_trace_deck() {
+    fn lone_trace_deck_is_found_only_for_a_single_trace_deck() {
         let dir = tempfile::tempdir().unwrap();
         let trace = dir.path().join("t.md");
         std::fs::write(
@@ -1873,9 +1873,9 @@ it reads line two\n\
         let fact = dir.path().join("f.md");
         std::fs::write(&fact, "## q\na\n<!-- id: card-qf -->\n").unwrap();
 
-        assert!(single_trace_to_walk(std::slice::from_ref(&trace)).is_some());
-        assert!(single_trace_to_walk(std::slice::from_ref(&fact)).is_none());
-        assert!(single_trace_to_walk(&[trace, fact]).is_none());
+        assert!(lone_trace_deck(std::slice::from_ref(&trace)).is_some());
+        assert!(lone_trace_deck(std::slice::from_ref(&fact)).is_none());
+        assert!(lone_trace_deck(&[trace, fact]).is_none());
     }
 
     #[test]
@@ -2543,7 +2543,7 @@ it reads line two\n\
             Selected::Review(build) => {
                 assert_eq!(build.augment.note(&id, fingerprint), Some("seeded"));
             }
-            Selected::Walk(_) => panic!("a fact deck must review"),
+            Selected::Trace(_) => panic!("a fact deck must review"),
         }
     }
 
@@ -2570,7 +2570,7 @@ it reads line two\n\
                 !build.session.is_finished(),
                 "served once the short cooldown passed"
             ),
-            Selected::Walk(_) => panic!("a fact deck must review"),
+            Selected::Trace(_) => panic!("a fact deck must review"),
         }
     }
 
@@ -2594,7 +2594,7 @@ it reads line two\n\
             Selected::Review(build) => {
                 assert!(build.session.is_finished(), "nothing is due 30s in")
             }
-            Selected::Walk(_) => panic!("a fact deck must review"),
+            Selected::Trace(_) => panic!("a fact deck must review"),
         }
         let late = SelectOptions {
             now_ms: Some(t0 + DEFAULT_INTRODUCTION_COOLDOWN_MS + 1_000),
@@ -2607,7 +2607,7 @@ it reads line two\n\
                     "due once the cooldown elapsed"
                 )
             }
-            Selected::Walk(_) => panic!("a fact deck must review"),
+            Selected::Trace(_) => panic!("a fact deck must review"),
         }
     }
 

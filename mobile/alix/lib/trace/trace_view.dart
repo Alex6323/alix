@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/theme.dart';
-import 'package:alix_mobile/walk/walk_models.dart';
-import 'package:alix_mobile/walk/walk_summary.dart';
-import 'package:alix_mobile/walk/walk_widgets.dart';
+import 'package:alix_mobile/trace/trace_models.dart';
+import 'package:alix_mobile/trace/trace_summary.dart';
+import 'package:alix_mobile/trace/trace_widgets.dart';
 
 const _mono = 'IBM Plex Mono';
 
-class WalkView extends StatelessWidget {
-  const WalkView({
+class TraceSessionView extends StatelessWidget {
+  const TraceSessionView({
     super.key,
     required this.state,
     required this.predictionController,
@@ -22,20 +22,20 @@ class WalkView extends StatelessWidget {
     required this.onRestart,
   });
 
-  final WalkStateModel state;
+  final TraceSessionStateModel state;
   final TextEditingController predictionController;
   final bool examAvailable;
   final int? cooldownMs;
   final Future<bool> Function(BuildContext context) confirmLeave;
   final VoidCallback onReveal;
-  final ValueChanged<WalkGrade> onGrade;
+  final ValueChanged<TraceSessionGrade> onGrade;
   final VoidCallback onOpenExam;
   final VoidCallback onRestart;
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).alix;
-    final done = state.phase == WalkPhaseModel.done;
+    final done = state.phase == TraceSessionPhaseModel.done;
     return LeaveGuard(
       finished: done,
       confirm: () => confirmLeave(context),
@@ -64,11 +64,11 @@ class WalkView extends StatelessWidget {
           child: Column(
             children: [
               if (state.saveError case final saveError?)
-                WalkSaveBanner(saveError: saveError),
-              if (!done) WalkDescriptionEyebrow(state: state),
+                TraceSessionSaveBanner(saveError: saveError),
+              if (!done) TraceSessionDescriptionEyebrow(state: state),
               Expanded(
                 child: done
-                    ? WalkSummaryView(
+                    ? TraceSessionSummaryView(
                         state: state,
                         examAvailable: examAvailable,
                         cooldownMs: cooldownMs,
@@ -78,12 +78,12 @@ class WalkView extends StatelessWidget {
                     : Column(
                         children: [
                           Expanded(
-                            child: WalkPhaseBody(
+                            child: TraceSessionPhaseBody(
                               state: state,
                               predictionController: predictionController,
                             ),
                           ),
-                          WalkFooter(
+                          TraceSessionFooter(
                             phase: state.phase,
                             onReveal: onReveal,
                             onGrade: onGrade,

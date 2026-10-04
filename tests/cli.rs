@@ -3871,7 +3871,7 @@ fn receive_a_zip_folder_refuses_to_clobber_an_existing_dest() {
     assert_eq!("receiver-local\n", std::fs::read_to_string(local).unwrap());
 }
 
-// ── `deck generate`: trace stub / suggest / walk with a fake backend ───────
+// ── `deck generate`: trace stub / suggest / explore trace with a fake backend
 
 #[test]
 fn generate_builds_checkpoints_into_an_existing_trace_stub() {
@@ -3954,7 +3954,7 @@ fn generate_trace_plan_prints_the_suggestion_menu() {
 }
 
 #[test]
-fn generate_trace_walk_writes_an_explore_deck() {
+fn generate_trace_writes_an_explore_deck() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "notes.md", "some source material\n");
     let cli = fake_claude(dir.path(), "## what it is\nsome point\n<!-- at: 1 -->\n");
@@ -3963,7 +3963,7 @@ fn generate_trace_walk_writes_an_explore_deck() {
         "config.toml",
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
-    let out_path = dir.path().join("walk.md");
+    let out_path = dir.path().join("trace.md");
     let out = alix(&[
         "deck",
         "generate",
@@ -3982,7 +3982,7 @@ fn generate_trace_walk_writes_an_explore_deck() {
 }
 
 #[test]
-fn generate_trace_walk_refuses_to_clobber_an_existing_output() {
+fn generate_trace_refuses_to_clobber_an_existing_output() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "notes.md", "some source material\n");
     let cli = fake_claude(dir.path(), "## what it is\nsome point\n<!-- at: 1 -->\n");
@@ -3991,8 +3991,8 @@ fn generate_trace_walk_refuses_to_clobber_an_existing_output() {
         "config.toml",
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
-    let out_path = dir.path().join("walk.md");
-    write(dir.path(), "walk.md", "already here\n");
+    let out_path = dir.path().join("trace.md");
+    write(dir.path(), "trace.md", "already here\n");
     let out = alix(&[
         "deck",
         "generate",
@@ -6689,7 +6689,7 @@ fn generate_trace_keeps_a_silent_backends_full_trace_budget() {
             cli.display()
         ),
     );
-    let out_path = dir.path().join("walk.md");
+    let out_path = dir.path().join("trace.md");
 
     let out = alix(&[
         "deck",

@@ -1,21 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createWalk } from "../../web/alix/review/walk.js";
+import { createTraceSession } from "../../web/alix/review/trace.js";
 
-test("walk owns prediction grade and leave transitions", async () => {
+test("trace owns prediction grade and leave transitions", async () => {
   const calls = [];
   const applied = [];
   let renders = 0;
-  const reveal = { kind: "walk", phase: "reveal", prediction: "next" };
-  const next = { kind: "walk", phase: "predict", current: 2 };
+  const reveal = { kind: "trace", phase: "reveal", prediction: "next" };
+  const next = { kind: "trace", phase: "predict", current: 2 };
   const picker = { kind: "review", phase: "select" };
   const responses = {
-    "/api/walk/predict": reveal,
-    "/api/walk/grade": next,
-    "/api/walk/leave": picker,
+    "/api/trace/predict": reveal,
+    "/api/trace/grade": next,
+    "/api/trace/leave": picker,
   };
-  const walk = createWalk({
+  const trace = createTraceSession({
     api: async (path, options) => {
       calls.push({ path, options });
       return responses[path];
@@ -30,24 +30,24 @@ test("walk owns prediction grade and leave transitions", async () => {
     ui: {},
   });
 
-  walk.open({ kind: "walk", phase: "predict", current: 1 });
-  await walk.predict("next");
+  trace.open({ kind: "trace", phase: "predict", current: 1 });
+  await trace.predict("next");
 
-  assert.equal(walk.isOpen(), true);
-  assert.equal(walk.data(), reveal);
+  assert.equal(trace.isOpen(), true);
+  assert.equal(trace.data(), reveal);
   assert.deepEqual(calls[0], {
-    path: "/api/walk/predict",
+    path: "/api/trace/predict",
     options: { method: "POST", body: { text: "next" } },
   });
 
-  await walk.grade("n");
+  await trace.grade("n");
 
-  assert.equal(walk.data(), next);
+  assert.equal(trace.data(), next);
   assert.deepEqual(calls[1].options.body, { delta: "n" });
 
-  await walk.leave();
+  await trace.leave();
 
-  assert.equal(walk.isOpen(), false);
+  assert.equal(trace.isOpen(), false);
   assert.deepEqual(applied, [picker]);
   assert.equal(renders, 3);
 });

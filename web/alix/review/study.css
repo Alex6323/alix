@@ -180,7 +180,7 @@
   .summary h2 { font-size: 1.6rem; margin: 0 0 18px; }
   .summary .row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--dim); }
   .summary .row b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
-  /* the walk's done-summary tallies its got/partly/missed counts in the grade colours (the review summary passes no class, so it stays neutral ink). */
+  /* the trace's done-summary tallies its got/partly/missed counts in the grade colours (the review summary passes no class, so it stays neutral ink). */
   .summary .row b.passed { color: var(--good); }
   .summary .row b.partly { color: var(--warn); }
   .summary .row b.failed { color: var(--again); }

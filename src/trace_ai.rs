@@ -1,4 +1,4 @@
-//! Split out of `trace` so the core trace walk compiles without the AI backend.
+//! Split out of `trace` so the core trace compiles without the AI backend.
 
 use std::path::PathBuf;
 

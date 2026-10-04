@@ -1,6 +1,6 @@
 ---
 title: "Rust ownership moves"
-description: A guided predict-and-verify walk through real source.
+description: A guided predict-and-verify trace through real source.
 trace: How `let s2 = s1` moves a String and avoids a double free.
 source: https://github.com/rust-lang/book/blob/main/src/ch04-01-what-is-ownership.md
 id: "deck-5w9g21vjyf3xf3kpn9q8cckavs"
@@ -8,7 +8,7 @@ id: "deck-5w9g21vjyf3xf3kpn9q8cckavs"
 
 <!-- Frozen excerpts from "The Rust Programming Language" (github.com/rust-lang/book). -->
 <!-- Chapter 4 "Understanding Ownership", dual MIT/Apache-2.0. -->
-<!-- Frozen under this deck's own asset directory, so the example stays walkable offline. -->
+<!-- Frozen under this deck's own asset directory, so the example traces offline. -->
 
 ## A `String` lives partly on the stack and partly on the heap. What are the three parts kept on the stack, and where do the contents live?
 Stack: a pointer, a length, and a capacity.

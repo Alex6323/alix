@@ -12,7 +12,7 @@ test("the adult app wires table rendering into the tutor", async () => {
     "utf8",
   );
   const tutorStart = source.indexOf("const tutor = createTutor({");
-  const tutorEnd = source.indexOf("const walk = createWalk({", tutorStart);
+  const tutorEnd = source.indexOf("const trace = createTraceSession({", tutorStart);
   const tutorWiring = source.slice(tutorStart, tutorEnd);
   const uiStart = tutorWiring.indexOf("\n  ui: {");
   const uiEnd = tutorWiring.indexOf("\n  },", uiStart);
@@ -31,10 +31,10 @@ test("the adult app wires table rendering into the tutor", async () => {
   );
 });
 
-test("tutor owns its transcript and chooses the walk endpoint explicitly", async () => {
+test("tutor owns its transcript and chooses the trace endpoint explicitly", async () => {
   const calls = [];
   let renders = 0;
-  let walking = true;
+  let tracing = true;
   const transcript = {
     transcript: [{ q: "Why?", a: "Because." }],
     thinking: false,
@@ -51,8 +51,8 @@ test("tutor owns its transcript and chooses the walk endpoint explicitly", async
     rerender: () => renders++,
     updateBusy: () => {},
     timers: { setInterval: () => 1, clearInterval: () => {} },
-    walk: {
-      isOpen: () => walking,
+    trace: {
+      isOpen: () => tracing,
       replace: () => {},
     },
     study: {
@@ -69,7 +69,7 @@ test("tutor owns its transcript and chooses the walk endpoint explicitly", async
 
   assert.equal(tutor.isOpen(), true);
   assert.equal(tutor.data(), transcript);
-  assert.equal(calls[0].path, "/api/walk/ask");
+  assert.equal(calls[0].path, "/api/trace/ask");
   assert.equal(renders, 2);
 
   await tutor.saveNote();
@@ -80,7 +80,7 @@ test("tutor owns its transcript and chooses the walk endpoint explicitly", async
   await tutor.draftCard();
   assert.equal(calls[1].path, "/api/ask/card/draft");
 
-  walking = false;
+  tracing = false;
   calls.length = 0;
   tutor.data().transcript.length = 0;
   await tutor.close();

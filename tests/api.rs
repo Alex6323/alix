@@ -433,9 +433,9 @@ fn choice_answer(front: &str) -> &'static str {
     }
 }
 
-/// A two-hop predict-and-verify trace over [`TRACE_SOURCE`], for the walk and
+/// A two-hop predict-and-verify trace over [`TRACE_SOURCE`], for the trace and
 /// (trace) exam endpoint families — mirrors `src/serve/tests.rs`'s
-/// `walk_deck` fixture in miniature (kept to two hops; that's enough to
+/// `trace_deck` fixture in miniature (kept to two hops; that's enough to
 /// exercise a hop transition without a bigger fixture to maintain).
 const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nsource: source.txt\n---\n\
 ## Predict the first hop\n\
@@ -455,8 +455,8 @@ const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 /// (seen
 /// with cached AI distractors, so a Recognize-depth session quizzes it as a real
 /// multiple-choice — see `current_question`, `src/serve/dto.rs`) — and
-/// [`TRACE_DECK`] (routed to a real `Walk` by the real
-/// classifier in `assemble::select`, for the walk and trace-exam families).
+/// [`TRACE_DECK`] (routed to a real `TraceSession` by the real
+/// classifier in `assemble::select`, for the trace and trace-exam families).
 ///
 /// `ask_command`, when `Some`, points `[ask] command` at a fake CLI (see this
 /// module's `fake_reply`); `None` keeps every AI path off, which is what every
@@ -533,9 +533,9 @@ fn spawn_full_server_fixture(
     if let Some(cmd) = ask_command {
         opts.cfg.ask.command = cmd.to_str().unwrap().to_string();
     }
-    // A picked trace deck now walks (predict → verify) via the real
+    // A picked trace deck now traces (predict → verify) via the real
     // classifier/assembler (`assemble::select`) instead of a hand-rolled
-    // `build_walk` stub.
+    // per-fixture stub.
     let mut opts = ReviewOptions {
         cfg: AssembleConfig {
             pacing: Pacing {
@@ -6235,18 +6235,18 @@ fn share_and_receive_close_arms_exist() {
     );
 }
 
-/// The walk tutor: a question lands in the walk transcript, and a note
+/// The trace tutor: a question lands in the trace transcript, and a note
 /// condensed from it is appended to the trace deck file.
 #[test]
-fn walk_ask_question_then_note_writes_to_the_checkpoint() {
+fn trace_ask_question_then_note_writes_to_the_checkpoint() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
     let count = scripts.path().join("calls");
-    let fake = scripts.path().join("fake-walk-tutor");
+    let fake = scripts.path().join("fake-trace-tutor");
     std::fs::write(
         &fake,
         format!(
-            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\necho x >> {count}\nif [ \"$(wc -l < {count})\" -gt 1 ]; then echo '- the hop forwards the value'; else echo 'a walk answer'; fi\n",
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\necho x >> {count}\nif [ \"$(wc -l < {count})\" -gt 1 ]; then echo '- the hop forwards the value'; else echo 'a trace answer'; fi\n",
             count = count.display()
         ),
     )
@@ -6255,21 +6255,21 @@ fn walk_ask_question_then_note_writes_to_the_checkpoint() {
     let (base, guard) = spawn_full_server(Some(&fake));
     post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
 
-    let resp = post_gated(&base, "/api/walk/ask", r#"{"question":"why?"}"#);
+    let resp = post_gated(&base, "/api/trace/ask", r#"{"question":"why?"}"#);
     assert_eq!(200, resp.status);
-    let body = poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
+    let body = poll_until(&base, "/api/trace/ask", |b| b["thinking"] == false);
     assert_eq!(1, body["transcript"].as_array().unwrap().len(), "{body}");
 
-    let resp = post_gated(&base, "/api/walk/ask/note", "{}");
+    let resp = post_gated(&base, "/api/trace/ask/note", "{}");
     assert_eq!(200, resp.status);
-    poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
+    poll_until(&base, "/api/trace/ask", |b| b["thinking"] == false);
     let deck = std::fs::read_to_string(guard.dir().join("trace.md")).unwrap();
     assert!(
         !deck.contains("the hop forwards the value"),
         "the authored trace deck must not carry the note: {deck}"
     );
     let sidecar = std::fs::read_to_string(guard.dir().join("trace.local.md"))
-        .expect("the walk note went to a sidecar");
+        .expect("the trace note went to a sidecar");
     assert!(
         sidecar.contains("the hop forwards the value"),
         "sidecar: {sidecar}"
@@ -6414,15 +6414,15 @@ fn every_accepted_mutation_advances_the_revision() {
     }
 }
 
-/// The transition family: select, deselect, browse, and a trace-deck (walk)
+/// The transition family: select, deselect, browse, and a trace-deck
 /// select each replace or drop the active session, and every one must
 /// strictly advance `study_revision`, or an in-flight card-relative request
-/// from the old session could land on the new one. Browse and walk payloads
+/// from the old session could land on the new one. Browse and trace payloads
 /// carry no revision, so their bumps are measured through the next select's
 /// delta: transition plus select is at least two.
 #[test]
 fn every_session_transition_strictly_advances_the_revision() {
-    // The full server: a trace-deck select routes through the walk classifier.
+    // The full server: a trace-deck select routes through the trace classifier.
     let (base, _guard) = spawn_full_server(None);
     let rev = |b: &serde_json::Value| b["study_revision"].as_u64().unwrap();
 
@@ -6459,7 +6459,7 @@ fn every_session_transition_strictly_advances_the_revision() {
     let r5 = rev(&serde_json::from_slice(&resp.body).unwrap());
     assert!(
         r5 >= r4 + 2,
-        "a walk select and the following select must each advance the revision ({r4} -> {r5})"
+        "a trace select and the following select must each advance the revision ({r4} -> {r5})"
     );
 }
 
@@ -6928,31 +6928,31 @@ fn a_mastery_save_failure_surfaces_and_the_mastery_survives_repair() {
     );
 }
 
-// ── Walk (a two-hop trace deck) ───────────────────────────────────────────
+// ── Trace (a two-hop trace deck) ───────────────────────────────────────────
 
 /// `/api/select` now classifies through the real `assemble::select` (no more
-/// per-fixture `build_walk` stub) — this pins that the trace fixture still
-/// round-trips as a walk through that real classifier, not a harness replica.
+/// per-fixture stub) — this pins that the trace fixture still
+/// round-trips as a trace through that real classifier, not a harness replica.
 #[test]
-fn selecting_a_trace_deck_returns_a_walk_through_the_real_classifier() {
+fn selecting_a_trace_deck_returns_a_trace_through_the_real_classifier() {
     let (base, _guard) = spawn_full_server(None);
 
     let resp = post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!("walk", body["kind"], "body: {body}");
+    assert_eq!("trace", body["kind"], "body: {body}");
 }
 
 #[test]
-fn selecting_a_trace_deck_returns_a_walk_dto_not_a_review_state() {
+fn selecting_a_trace_deck_returns_a_trace_dto_not_a_review_state() {
     let (base, _guard) = spawn_full_server(None);
 
     let resp = post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!("walk", body["kind"], "body: {body}");
+    assert_eq!("trace", body["kind"], "body: {body}");
     assert_eq!("predict", body["phase"], "body: {body}");
     assert_eq!(1, body["current"], "body: {body}");
     assert_eq!(2, body["total"], "body: {body}");
@@ -6960,11 +6960,11 @@ fn selecting_a_trace_deck_returns_a_walk_dto_not_a_review_state() {
 }
 
 #[test]
-fn walk_predict_then_self_grade_reveals_the_excerpt_and_advances_the_hop() {
+fn trace_predict_then_self_grade_reveals_the_excerpt_and_advances_the_hop() {
     let (base, _guard) = spawn_full_server(None);
     post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
 
-    let resp = post_json(&base, "/api/walk/predict", r#"{"text":"my guess"}"#);
+    let resp = post_json(&base, "/api/trace/predict", r#"{"text":"my guess"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -6972,7 +6972,7 @@ fn walk_predict_then_self_grade_reveals_the_excerpt_and_advances_the_hop() {
     assert_eq!("my guess", body["prediction"], "body: {body}");
     assert_eq!("first", body["excerpt"]["lines"][0]["text"], "body: {body}");
 
-    let resp = post_json(&base, "/api/walk/grade", r#"{"delta":"n"}"#);
+    let resp = post_json(&base, "/api/trace/grade", r#"{"delta":"n"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -6982,13 +6982,13 @@ fn walk_predict_then_self_grade_reveals_the_excerpt_and_advances_the_hop() {
 }
 
 #[test]
-fn walk_restart_resets_to_the_first_hop() {
+fn trace_restart_resets_to_the_first_hop() {
     let (base, _guard) = spawn_full_server(None);
     post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
-    post_json(&base, "/api/walk/predict", r#"{"text":"my guess"}"#);
-    post_json(&base, "/api/walk/grade", r#"{"delta":"n"}"#); // now on hop 2
+    post_json(&base, "/api/trace/predict", r#"{"text":"my guess"}"#);
+    post_json(&base, "/api/trace/grade", r#"{"delta":"n"}"#); // now on hop 2
 
-    let resp = post_json(&base, "/api/walk/restart", "{}");
+    let resp = post_json(&base, "/api/trace/restart", "{}");
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -6997,11 +6997,11 @@ fn walk_restart_resets_to_the_first_hop() {
 }
 
 #[test]
-fn walk_leave_returns_to_the_picker_state_dto() {
+fn trace_leave_returns_to_the_picker_state_dto() {
     let (base, _guard) = spawn_full_server(None);
     post_json(&base, "/api/select", r#"{"deck":"trace.md"}"#);
 
-    let resp = post_json(&base, "/api/walk/leave", "{}");
+    let resp = post_json(&base, "/api/trace/leave", "{}");
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -7010,10 +7010,10 @@ fn walk_leave_returns_to_the_picker_state_dto() {
 }
 
 #[test]
-fn get_api_walk_with_no_active_walk_yields_409() {
+fn get_api_trace_with_no_active_trace_yields_409() {
     let (base, _guard) = spawn_full_server(None);
 
-    let resp = http(&base, "GET", "/api/walk", &[], &[]);
+    let resp = http(&base, "GET", "/api/trace", &[], &[]);
 
     assert_eq!(409, resp.status);
 }
@@ -8058,7 +8058,7 @@ fn remote_exam_trace_grade_pass_settles_to_results_and_writes_no_store() {
 }
 
 /// A trace exam that FAILS: `results` with `passed: false`, and
-/// `can_remediate` stays false (a trace is re-walked, not remediated), so
+/// `can_remediate` stays false (a trace is retraced, not remediated), so
 /// `/api/remote/exam/remediate` 409s with no extra guard needed. The re-sit
 /// cooldown a failed trace normally starts is store-side and browser-only,
 /// unwritten here, the byte-compare's other half.
@@ -8267,7 +8267,7 @@ fn remote_endpoints_never_write_the_server_store() {
     assert_eq!(true, body["is_trace"], "body: {body}");
     post_json(&base, "/api/remote/exam/close", "{}");
 
-    // (d) a remote trace exam that FAILS (no remediation: a trace re-walks).
+    // (d) a remote trace exam that FAILS (no remediation: a trace is retraced).
     std::fs::write(
         &grades_path,
         r#"{"verdict":"fail","feedback":"missed the second hop","missed":["it reads the second line"]}"#,

@@ -27,7 +27,7 @@ use crate::{
     session::{Session, now_ms},
     share,
     source::SourceBase,
-    trace::{self, Walk},
+    trace::{self, TraceSession},
 };
 
 pub(super) fn can_fetch_url_sources(cfg: &AskConfig) -> bool {
@@ -207,9 +207,9 @@ impl Ask {
     }
 
     // `subject` is the same key the owner's poll realigns with; deriving it
-    // from the card here bit once (a walk checkpoint card carries no id, so
+    // from the card here bit once (a trace checkpoint card carries no id, so
     // start aligned on None while poll aligned on the checkpoint id, and the
-    // mismatch dropped every pending walk answer).
+    // mismatch dropped every pending trace answer).
     #[expect(
         clippy::too_many_arguments,
         reason = "typed tutor inputs keep the owner transition explicit"
@@ -1504,22 +1504,22 @@ impl Receiving {
     }
 }
 
-pub(super) struct Walking {
-    pub(super) walk: Walk,
+pub(super) struct Tracing {
+    pub(super) session: TraceSession,
     pub(super) ask: Ask,
 }
 
-impl Walking {
-    pub(super) fn new(walk: Walk) -> Self {
-        Walking {
-            walk,
+impl Tracing {
+    pub(super) fn new(session: TraceSession) -> Self {
+        Tracing {
+            session,
             ask: Ask::new(),
         }
     }
 
     pub(super) fn checkpoint_card(&self) -> Option<Card> {
-        let trace = self.walk.trace();
-        let cp = self.walk.checkpoint()?;
+        let trace = self.session.trace();
+        let cp = self.session.checkpoint()?;
         let mut note = String::new();
         if let Ok(ex) = trace.excerpt(cp) {
             note.push_str("Source excerpt:\n");
@@ -1553,14 +1553,14 @@ impl Walking {
         };
         let root = cfg
             .source_access
-            .then(|| self.walk.trace().base_root.clone())
+            .then(|| self.session.trace().base_root.clone())
             .flatten();
         let frozen = self
-            .walk
+            .session
             .checkpoint()
-            .and_then(|checkpoint| self.walk.trace().frozen_block(checkpoint));
+            .and_then(|checkpoint| self.session.trace().frozen_block(checkpoint));
         let live_root = root.as_deref().filter(|path| path.exists());
-        let sources = &self.walk.trace().source_layers;
+        let sources = &self.session.trace().source_layers;
         let has_url_source = sources
             .own
             .iter()
@@ -1573,12 +1573,12 @@ impl Walking {
             None => AskAction::Condense,
         };
         let context = ask::TutorContext {
-            links: &self.walk.trace().links,
+            links: &self.session.trace().links,
             sources,
             root: live_root,
             frozen: frozen.as_deref(),
         };
-        let subject = self.walk.checkpoint().map(|c| c.card_id.clone());
+        let subject = self.session.checkpoint().map(|c| c.card_id.clone());
         self.ask.start(
             cfg,
             audience,
@@ -1592,14 +1592,14 @@ impl Walking {
 
     pub(super) fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
         self.ask
-            .align(self.walk.checkpoint().map(|c| c.card_id.clone()));
-        let deck_path = self.walk.trace().deck_path.clone();
-        // A checkpoint card is built for the walk and carries no token of its
+            .align(self.session.checkpoint().map(|c| c.card_id.clone()));
+        let deck_path = self.session.trace().deck_path.clone();
+        // A checkpoint card is built for the trace and carries no token of its
         // own; the checkpoint holds the id the note is addressed to.
-        let checkpoint = self.walk.checkpoint().map(|c| c.card_id.clone());
+        let checkpoint = self.session.checkpoint().map(|c| c.card_id.clone());
         self.ask.poll(|card, notes| {
             let card_id = checkpoint
-                .ok_or_else(|| "the walk is on no checkpoint to attach a note to".to_string())?;
+                .ok_or_else(|| "the trace is on no checkpoint to attach a note to".to_string())?;
             crate::personal::append_note(&deck_path, &card.deck_id, &card_id, notes)
                 .map_err(|e| e.to_string())
         })

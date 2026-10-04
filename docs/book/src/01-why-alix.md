@@ -17,7 +17,7 @@ schedule) but treats it as only the first step: the part that *loads* the raw
 material. On top of it sit two things ordinary flashcards can't do.
 
 **Traces** teach you to follow a mechanism, not just recall a fact. A trace is a
-walk along a real chain of reasoning through a real source (a data flow through
+path along a real chain of reasoning through a real source (a data flow through
 code, the steps of a proof, the clauses of a contract) where at each step you
 predict what comes next *before* it's revealed. It trains the thing experts
 actually have: not a bag of facts, but the chain of *because this, therefore

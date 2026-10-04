@@ -1,5 +1,5 @@
 //! The Study/Progress owner: ADR 0027's one physical owner thread for the
-//! active session (review, browse, exam, walk, tutor transcript) and every
+//! active session (review, browse, exam, trace, tutor transcript) and every
 //! progress document mutation. HTTP workers parse and resolve, then send one
 //! typed command and block on its typed reply; the owner never sees a raw
 //! request and workers never see the store.
@@ -20,7 +20,7 @@ use crate::{
     exam, review,
     session::now_ms,
     store::{self, Store},
-    trace::{self, Walk},
+    trace::{self, TraceSession},
     workspace,
 };
 
@@ -58,7 +58,7 @@ pub(super) struct StudyState {
     pub(super) writes: u64,
     pub(super) browsing: Option<Browsing>,
     pub(super) examining: Option<Examining>,
-    pub(super) walking: Option<Walking>,
+    pub(super) tracing: Option<Tracing>,
     // Owned here (not by Jobs yet) because opening an augment session
     // replaces the active store, and the store has exactly one owner.
     pub(super) augmenting: Option<Augmenting>,
@@ -76,7 +76,7 @@ pub(super) enum SessionSnapshot {
 }
 
 pub(super) enum SelectedDto {
-    Walk(Box<WalkDto>),
+    Trace(Box<TraceSessionDto>),
     Review(Box<StateDto>),
 }
 
@@ -225,9 +225,9 @@ pub(super) enum RemovalOutcome {
     },
 }
 
-pub(super) enum WalkGradeReply {
-    Dto(Box<WalkDto>),
-    NoWalk,
+pub(super) enum TraceSessionGradeReply {
+    Dto(Box<TraceSessionDto>),
+    NoSession,
     NoDelta,
 }
 
@@ -271,9 +271,9 @@ pub(super) fn take_sync_owner_threads(deck_id: &str) -> Vec<thread::ThreadId> {
     matched
 }
 
-/// A walk-tutor start: a question begins a new exchange only when one was
+/// A trace-tutor start: a question begins a new exchange only when one was
 /// given; a note condenses the transcript unconditionally.
-pub(super) enum WalkAskAction {
+pub(super) enum TraceSessionAskAction {
     Question(Option<String>),
     Note,
 }
@@ -371,23 +371,23 @@ pub(super) enum StudyCommand {
     },
     ExamRemediate(Reply<Option<ExamDto>>),
     ExamClose(Reply<Transition<StateDto>>),
-    WalkPoll(Reply<Option<WalkDto>>),
-    WalkPredict {
+    TracePoll(Reply<Option<TraceSessionDto>>),
+    TracePredict {
         text: String,
-        reply: Reply<Option<WalkDto>>,
+        reply: Reply<Option<TraceSessionDto>>,
     },
-    WalkGrade {
+    TraceGrade {
         self_delta: Option<crate::trace::Delta>,
-        reply: Reply<WalkGradeReply>,
+        reply: Reply<TraceSessionGradeReply>,
     },
-    WalkRestart(Reply<Option<WalkDto>>),
-    WalkAsk {
-        action: WalkAskAction,
+    TraceRestart(Reply<Option<TraceSessionDto>>),
+    TraceAsk {
+        action: TraceSessionAskAction,
         ask_cfg: crate::config::AskConfig,
         reply: Reply<Option<AskDto>>,
     },
-    WalkAskPoll(Reply<Option<AskDto>>),
-    WalkLeave(Reply<Transition<StateDto>>),
+    TraceAskPoll(Reply<Option<AskDto>>),
+    TraceLeave(Reply<Transition<StateDto>>),
     TutorStart {
         action: Option<AskAction>,
         ask_cfg: crate::config::AskConfig,
@@ -648,37 +648,37 @@ impl StudyHandle {
     pub(super) fn exam_close(&self) -> Option<Transition<StateDto>> {
         self.call(StudyCommand::ExamClose)
     }
-    pub(super) fn walk_poll(&self) -> Option<Option<WalkDto>> {
-        self.call(StudyCommand::WalkPoll)
+    pub(super) fn trace_poll(&self) -> Option<Option<TraceSessionDto>> {
+        self.call(StudyCommand::TracePoll)
     }
-    pub(super) fn walk_predict(&self, text: String) -> Option<Option<WalkDto>> {
-        self.call(|reply| StudyCommand::WalkPredict { text, reply })
+    pub(super) fn trace_predict(&self, text: String) -> Option<Option<TraceSessionDto>> {
+        self.call(|reply| StudyCommand::TracePredict { text, reply })
     }
-    pub(super) fn walk_grade(
+    pub(super) fn trace_grade(
         &self,
         self_delta: Option<crate::trace::Delta>,
-    ) -> Option<WalkGradeReply> {
-        self.call(|reply| StudyCommand::WalkGrade { self_delta, reply })
+    ) -> Option<TraceSessionGradeReply> {
+        self.call(|reply| StudyCommand::TraceGrade { self_delta, reply })
     }
-    pub(super) fn walk_restart(&self) -> Option<Option<WalkDto>> {
-        self.call(StudyCommand::WalkRestart)
+    pub(super) fn trace_restart(&self) -> Option<Option<TraceSessionDto>> {
+        self.call(StudyCommand::TraceRestart)
     }
-    pub(super) fn walk_ask(
+    pub(super) fn trace_ask(
         &self,
-        action: WalkAskAction,
+        action: TraceSessionAskAction,
         ask_cfg: crate::config::AskConfig,
     ) -> Option<Option<AskDto>> {
-        self.call(|reply| StudyCommand::WalkAsk {
+        self.call(|reply| StudyCommand::TraceAsk {
             action,
             ask_cfg,
             reply,
         })
     }
-    pub(super) fn walk_ask_poll(&self) -> Option<Option<AskDto>> {
-        self.call(StudyCommand::WalkAskPoll)
+    pub(super) fn trace_ask_poll(&self) -> Option<Option<AskDto>> {
+        self.call(StudyCommand::TraceAskPoll)
     }
-    pub(super) fn walk_leave(&self) -> Option<Transition<StateDto>> {
-        self.call(StudyCommand::WalkLeave)
+    pub(super) fn trace_leave(&self) -> Option<Transition<StateDto>> {
+        self.call(StudyCommand::TraceLeave)
     }
     pub(super) fn image_path(&self, key: String) -> Option<ImageSource> {
         self.call(|reply| StudyCommand::ImagePath { key, reply })
@@ -856,7 +856,7 @@ impl StudyState {
                     Transition::FlushFailed
                 } else {
                     self.reviewing = None;
-                    self.walking = None;
+                    self.tracing = None;
                     self.browsing = None;
                     if let Ok(s) =
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
@@ -1161,57 +1161,57 @@ impl StudyState {
                 };
                 let _ = reply.send(out);
             }
-            StudyCommand::WalkPoll(reply) => {
-                let dto = self.walking.as_ref().map(walk_dto);
+            StudyCommand::TracePoll(reply) => {
+                let dto = self.tracing.as_ref().map(trace_dto);
                 let _ = reply.send(dto);
             }
-            StudyCommand::WalkPredict { text, reply } => {
-                let dto = self.walking.as_mut().map(|w| {
-                    w.walk.predict(text);
-                    walk_dto(w)
+            StudyCommand::TracePredict { text, reply } => {
+                let dto = self.tracing.as_mut().map(|w| {
+                    w.session.predict(text);
+                    trace_dto(w)
                 });
                 let _ = reply.send(dto);
             }
-            StudyCommand::WalkGrade { self_delta, reply } => {
-                let out = match self.walking.as_mut() {
-                    None => WalkGradeReply::NoWalk,
+            StudyCommand::TraceGrade { self_delta, reply } => {
+                let out = match self.tracing.as_mut() {
+                    None => TraceSessionGradeReply::NoSession,
                     Some(w) => match self_delta {
                         Some(delta) => {
-                            w.walk.grade(&mut self.store, delta, now_ms());
+                            w.session.grade(&mut self.store, delta, now_ms());
                             flush_mutation(
                                 &self.store,
                                 &mut self.store_dirty,
                                 &mut self.save_error,
                             );
                             self.writes = self.writes.wrapping_add(1);
-                            WalkGradeReply::Dto(Box::new(walk_dto(w)))
+                            TraceSessionGradeReply::Dto(Box::new(trace_dto(w)))
                         }
-                        None => WalkGradeReply::NoDelta,
+                        None => TraceSessionGradeReply::NoDelta,
                     },
                 };
                 let _ = reply.send(out);
             }
-            StudyCommand::WalkRestart(reply) => {
-                let dto = self.walking.as_mut().map(|w| {
-                    let fresh = Walk::new(w.walk.trace().clone());
-                    *w = Walking::new(fresh);
-                    walk_dto(w)
+            StudyCommand::TraceRestart(reply) => {
+                let dto = self.tracing.as_mut().map(|w| {
+                    let fresh = TraceSession::new(w.session.trace().clone());
+                    *w = Tracing::new(fresh);
+                    trace_dto(w)
                 });
                 let _ = reply.send(dto);
             }
-            StudyCommand::WalkAsk {
+            StudyCommand::TraceAsk {
                 action,
                 ask_cfg,
                 reply,
             } => {
                 let audience = self.config.audience;
-                let dto = self.walking.as_mut().map(|w| {
+                let dto = self.tracing.as_mut().map(|w| {
                     match action {
-                        WalkAskAction::Question(Some(q)) => {
+                        TraceSessionAskAction::Question(Some(q)) => {
                             w.start_ask(&ask_cfg, audience, Some(q));
                         }
-                        WalkAskAction::Question(None) => {}
-                        WalkAskAction::Note => {
+                        TraceSessionAskAction::Question(None) => {}
+                        TraceSessionAskAction::Note => {
                             w.start_ask(&ask_cfg, audience, None);
                         }
                     }
@@ -1219,19 +1219,19 @@ impl StudyState {
                 });
                 let _ = reply.send(dto);
             }
-            StudyCommand::WalkAskPoll(reply) => {
-                let dto = self.walking.as_mut().map(|w| {
+            StudyCommand::TraceAskPoll(reply) => {
+                let dto = self.tracing.as_mut().map(|w| {
                     let (status, error) = w.poll_ask();
                     w.ask_dto(status, error)
                 });
                 let _ = reply.send(dto);
             }
-            StudyCommand::WalkLeave(reply) => {
+            StudyCommand::TraceLeave(reply) => {
                 let out = if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error)
                 {
                     Transition::FlushFailed
                 } else {
-                    self.walking = None;
+                    self.tracing = None;
                     if let Ok(s) =
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
                     {
@@ -1383,16 +1383,16 @@ impl StudyState {
             };
         let recorded_paths = paths.clone();
         match assemble::select(paths, &mut candidate, &self.config.cfg, &opts) {
-            Ok(assemble::Selected::Walk(wb)) => {
+            Ok(assemble::Selected::Trace(wb)) => {
                 self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);
-                let w = Walking::new(wb.walk);
-                let dto = walk_dto(&w);
-                self.walking = Some(w);
+                let w = Tracing::new(wb.session);
+                let dto = trace_dto(&w);
+                self.tracing = Some(w);
                 self.reviewing = None;
                 self.examining = None;
                 self.revision += 1;
-                Transition::Done((SelectedDto::Walk(Box::new(dto)), None))
+                Transition::Done((SelectedDto::Trace(Box::new(dto)), None))
             }
             Ok(assemble::Selected::Review(b)) => {
                 self.install_store(candidate);
@@ -1402,7 +1402,7 @@ impl StudyState {
                 // `assemble::select` already saved the store, stamp included.
                 r.rotate_variant();
                 self.reviewing = Some(r);
-                self.walking = None;
+                self.tracing = None;
                 self.revision += 1;
                 Transition::Done((SelectedDto::Review(Box::new(self.review_dto())), record))
             }
@@ -1432,7 +1432,7 @@ impl StudyState {
                 self.writes = self.writes.wrapping_add(1);
                 self.browsing = Some(Browsing::new(b));
                 self.reviewing = None;
-                self.walking = None;
+                self.tracing = None;
                 self.examining = None;
                 self.revision += 1;
                 Transition::Done((browse_payload(self.browsing.as_ref()), recorded_paths))
@@ -1578,7 +1578,7 @@ impl StudyState {
         self.reviewing.is_none()
             && self.browsing.is_none()
             && self.examining.is_none()
-            && self.walking.is_none()
+            && self.tracing.is_none()
             && self.augmenting.is_none()
     }
 
@@ -1915,7 +1915,7 @@ mod tests {
                 writes: 0,
                 browsing: None,
                 examining: None,
-                walking: None,
+                tracing: None,
                 augmenting: None,
             },
             deck_id,
@@ -1970,7 +1970,7 @@ mod tests {
             writes: 0,
             browsing: None,
             examining: None,
-            walking: None,
+            tracing: None,
             augmenting: None,
         };
         let catalog = crate::sync::SyncCatalog::load(
@@ -2117,7 +2117,7 @@ mod tests {
             writes: 0,
             browsing: None,
             examining: None,
-            walking: None,
+            tracing: None,
             augmenting: None,
         };
         let snapshot =

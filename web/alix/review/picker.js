@@ -6,10 +6,10 @@ export function createPicker({
   isBrowsing,
   examIsOpen,
   augmentIsOpen,
-  walkIsOpen,
+  traceIsOpen,
   tutorIsOpen,
   applyStudy,
-  openWalk,
+  openTraceSession,
   openBrowse,
   startExam,
   openAugment,
@@ -72,8 +72,8 @@ export function createPicker({
     if (name) sessionStorage.setItem("alix.lastDeck", name);
   }
 
-  function isWalk(next) {
-    return !!next && next.kind === "walk";
+  function isTraceSession(next) {
+    return !!next && next.kind === "trace";
   }
 
   function select(name, topology, region, depth, cram) {
@@ -85,7 +85,7 @@ export function createPicker({
       depth: depth || null,
       cram: !!cram,
     })).then((next) => {
-      if (isWalk(next)) openWalk(next);
+      if (isTraceSession(next)) openTraceSession(next);
       else applyStudy(next);
       return next;
     }).catch(() => notice("could not start the session: the server log has details"));
@@ -137,7 +137,7 @@ export function createPicker({
     return JSON.stringify(data).replace(/\d+[smhdw] ago/g, "\u0000 ago");
   }
   const idleInSelect = () =>
-    currentState() && currentState().phase === "select" && !isBrowsing() && !examIsOpen() && !augmentIsOpen() && !walkIsOpen() && !tutorIsOpen();
+    currentState() && currentState().phase === "select" && !isBrowsing() && !examIsOpen() && !augmentIsOpen() && !traceIsOpen() && !tutorIsOpen();
   win.addEventListener("focus", async () => {
     if (!idleInSelect()) return;
     // An opportunistic re-scan stays quiet on failure too; the visible error
@@ -152,7 +152,7 @@ export function createPicker({
 
   // The deck-selection screen, mirroring the terminal picker. Three sections —
   // Workspaces (each with its last-progress time), loose Decks, and
-  // Folders — and single-launch: click a deck to start it (a trace walks, a deck
+  // Folders — and single-launch: click a deck to start it (a trace deck traces, a deck
   // reviews, an exam-due deck sits its exam) or open a workspace/folder to drill
   // into its unlock dependency tree. 🔒 exam locked (still drillable) · 🕒 nothing due ·
   // mastered 🎉 decks live in the Mastered window (m). The filter searches every
@@ -240,26 +240,26 @@ export function createPicker({
 
     // Rows that carry the depth split (the Learn ▾ chip and its v key): a deck —
     // not a workspace/folder — that isn't exam-primary, has a remembered depth,
-    // and isn't a trace (walked — depths don't apply).
+    // and isn't a trace (traced — depths don't apply).
     const hasDepthSplit = (row) => !!(row && row._item && !row._open
       && row._item.state !== "examdue" && row._item.last_depth && !row._item.is_trace);
 
-    // The plain Learn/primary button's gate: a trace always walks and an
+    // The plain Learn/primary button's gate: a trace always traces and an
     // exam-due deck's primary is its exam (both non-depth, via `canStart`);
     // otherwise it reviews at the deck's own last-used depth.
     const canStartPrimary = (it, gated) =>
       (it.is_trace || it.state === "examdue") ? canStart(it, gated)
         : (canDoDepth(it, it.last_depth) && canStartAt(it, gated, it.last_depth));
 
-    // Launch one deck/member. An exam-due deck sits its exam; a trace will walk
-    // once the web hosts walks (for now it reviews its explain cards — the single
+    // Launch one deck/member. An exam-due deck sits its exam; a trace will trace
+    // once the web hosts traces (for now it reviews its explain cards — the single
     // place to change). Launching inside a workspace remembers it so leaving the
     // session returns here.
     function launch(it, wsName, gated) {
       if (!canStartPrimary(it, gated)) return;
       lastWorkspace = wsName || null;
-      // A trace's primary action is always the WALK (its exam is reached via the
-      // "Take exam" button, or the walk's capstone). An exam-due fact deck sits its
+      // A trace's primary action is always the TRACE (its exam is reached via the
+      // "Take exam" button, or the trace's capstone). An exam-due fact deck sits its
       // exam when available (sourced + prerequisites passed); else it reviews.
       if (!it.is_trace && it.state === "examdue" && it.examable) startExam(it.name);
       else {
@@ -569,9 +569,9 @@ export function createPicker({
           primary = el("button", "chip primary", examPrimary ? "Take exam" : "Learn");
           // A plain Learn subtly names the depth it'll resume at (the deck's own
           // remembered last depth); an exam-due deck's primary names its exam instead.
-          // A trace has no depth (it's walked — depths don't apply), so it never gets a tag.
+          // A trace has no depth (it's traced — depths don't apply), so it never gets a tag.
           if (!examPrimary && it.last_depth && !it.is_trace) primary.appendChild(el("span", "depth-tag", " ·" + it.last_depth));
-          // Learn (facts → review, trace → walk) is Enter; an exam-due deck's
+          // Learn (facts → review, trace → tracing) is Enter; an exam-due deck's
           // primary is its exam (also enter, or 🔒 when that exam is locked).
           primary.appendChild(el("span", "k", examPrimary && !it.examable ? "\u{1F512}" : "enter"));
           primary.disabled = !canStartPrimary(it, f._gated);
@@ -630,7 +630,7 @@ export function createPicker({
         // "Take exam" sits to the RIGHT of Back for any deck that HAS an exam but
         // isn't already exam-due (where the primary is the exam): enabled to test
         // out early, or disabled with a 🔒 key hint when its exam is locked. A trace
-        // always shows it — its primary is the Walk, so this is the only way to reach
+        // always shows it — its primary is the Trace, so this is the only way to reach
         // its compression exam (whatever its drill state).
         if (f && f._item && f._item.has_exam && (f._item.is_trace || f._item.state !== "examdue")) {
           const it = f._item;
@@ -956,7 +956,7 @@ export function createPicker({
       applyFilter();
       syncPrimary();
       const rows = visibleRows();
-      // Re-land on the deck just launched (review/browse/exam/walk), so the cursor
+      // Re-land on the deck just launched (review/browse/exam/trace), so the cursor
       // doesn't jump while the user was away; otherwise focus the first row. The
       // marker is one-shot — cleared once consumed, so later re-renders (filtering)
       // behave normally.

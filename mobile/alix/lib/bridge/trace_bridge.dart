@@ -1,45 +1,45 @@
 import 'package:alix_mobile/bridge/bridge_error.dart';
 import 'package:alix_mobile/bridge/inline_run_bridge.dart';
 import 'package:alix_mobile/src/rust/api/review.dart' as bridge;
-import 'package:alix_mobile/walk/walk_models.dart';
-import 'package:alix_mobile/walk/walk_port.dart';
+import 'package:alix_mobile/trace/trace_models.dart';
+import 'package:alix_mobile/trace/trace_port.dart';
 
-class WalkBridgeFactory implements WalkPortFactory {
-  const WalkBridgeFactory();
+class TraceSessionBridgeFactory implements TraceSessionPortFactory {
+  const TraceSessionBridgeFactory();
 
   @override
-  WalkPort open({
+  TraceSessionPort open({
     required String deckPath,
     required String rootDir,
     String? device,
   }) {
     try {
-      return WalkBridgePort(
-        bridge.WalkSession.open(
+      return TraceSessionBridgePort(
+        bridge.TraceSession.open(
           deckPath: deckPath,
           rootDir: rootDir,
           device: device,
         ),
       );
     } catch (error) {
-      throw WalkOpenFailure(bridgeErrorText(error));
+      throw TraceSessionOpenFailure(bridgeErrorText(error));
     }
   }
 }
 
-class WalkBridgePort implements WalkPort {
-  WalkBridgePort(this._session);
+class TraceSessionBridgePort implements TraceSessionPort {
+  TraceSessionBridgePort(this._session);
 
-  final bridge.WalkSession _session;
+  final bridge.TraceSession _session;
 
   @override
-  WalkStateModel get state => _stateFromBridge(_session.state());
+  TraceSessionStateModel get state => _stateFromBridge(_session.state());
 
   @override
   void predict(String text) => _session.predict(text: text);
 
   @override
-  WalkStateModel grade(WalkGrade grade) {
+  TraceSessionStateModel grade(TraceSessionGrade grade) {
     return _stateFromBridge(_session.grade(delta: _gradeToBridge(grade)));
   }
 
@@ -59,12 +59,12 @@ class WalkBridgePort implements WalkPort {
   }
 }
 
-WalkStateModel _stateFromBridge(bridge.WalkState state) {
-  return WalkStateModel(
+TraceSessionStateModel _stateFromBridge(bridge.TraceSessionState state) {
+  return TraceSessionStateModel(
     phase: switch (state.phase) {
-      bridge.WalkPhase.predict => WalkPhaseModel.predict,
-      bridge.WalkPhase.reveal => WalkPhaseModel.reveal,
-      bridge.WalkPhase.done => WalkPhaseModel.done,
+      bridge.TraceSessionPhase.predict => TraceSessionPhaseModel.predict,
+      bridge.TraceSessionPhase.reveal => TraceSessionPhaseModel.reveal,
+      bridge.TraceSessionPhase.done => TraceSessionPhaseModel.done,
     },
     description: state.description,
     descriptionRuns: inlineRunsFromBridge(state.descriptionRuns),
@@ -81,11 +81,11 @@ WalkStateModel _stateFromBridge(bridge.WalkState state) {
     prediction: state.prediction,
     excerpt: state.excerpt == null
         ? null
-        : WalkExcerptModel(
+        : TraceSessionExcerptModel(
             path: state.excerpt!.path,
             lines: [
               for (final line in state.excerpt!.lines)
-                WalkLineModel(number: line.n, text: line.text),
+                TraceSessionLineModel(number: line.n, text: line.text),
             ],
             truncated: state.excerpt!.truncated,
           ),
@@ -98,7 +98,7 @@ WalkStateModel _stateFromBridge(bridge.WalkState state) {
         : inlineRunsFromBridge(state.noteRuns!),
     summary: state.summary == null
         ? null
-        : WalkSummaryModel(
+        : TraceSessionSummaryModel(
             passed: state.summary!.passed,
             partly: state.summary!.partly,
             failed: state.summary!.failed,
@@ -109,10 +109,10 @@ WalkStateModel _stateFromBridge(bridge.WalkState state) {
   );
 }
 
-bridge.WalkDelta _gradeToBridge(WalkGrade grade) {
+bridge.TraceSessionDelta _gradeToBridge(TraceSessionGrade grade) {
   return switch (grade) {
-    WalkGrade.missed => bridge.WalkDelta.missed,
-    WalkGrade.partly => bridge.WalkDelta.partly,
-    WalkGrade.got => bridge.WalkDelta.got,
+    TraceSessionGrade.missed => bridge.TraceSessionDelta.missed,
+    TraceSessionGrade.partly => bridge.TraceSessionDelta.partly,
+    TraceSessionGrade.got => bridge.TraceSessionDelta.got,
   };
 }

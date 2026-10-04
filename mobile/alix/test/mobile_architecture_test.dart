@@ -41,7 +41,7 @@ void main() {
     expect(metrics, hasLength(allSources.length - generated.length));
     expect(metrics, contains('lib/review_screen.dart'));
     expect(metrics, contains('lib/picker_screen.dart'));
-    expect(metrics, contains('lib/walk_screen.dart'));
+    expect(metrics, contains('lib/trace_screen.dart'));
   });
 }
 

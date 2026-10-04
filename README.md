@@ -136,7 +136,7 @@ Each links to its chapter in the manual:
   notes, key points). → [Generating decks](docs/book/src/11-generating-decks.md)
 - **An AI exam** that grades open questions against the source and gates unlocks.
   → [The AI exam](docs/book/src/12-the-ai-exam.md)
-- **Traces**: predict-and-verify walks along one path through real source.
+- **Traces**: predict-and-verify traces along one path through real source.
   → [Trace decks](docs/book/src/13-trace-decks.md)
 - **Workspaces and generated curricula**: group decks with shared settings, or
   turn a source (including a repo) into an ordered workspace of decks and traces.

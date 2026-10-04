@@ -54,7 +54,7 @@ class ExamScreen extends StatefulWidget {
 
   /// The support dir the "Re-pair" action reopens the pairing sheet
   /// against on a 401 (see `_expirePairingAndPop`); the caller (review or
-  /// walk screen) resolves this once and hands it down.
+  /// trace screen) resolves this once and hands it down.
   final Directory support;
 
   /// Builds the pairing sheet's own probe client, the same way the caller
@@ -71,7 +71,7 @@ class ExamScreen extends StatefulWidget {
   final int Function(String cardsText, BigInt nowMs) applyRemediation;
 
   /// Records a FAILED trace exam so a re-sit waits out the cooldown; the
-  /// phone owns this write (a closure over the walk session's
+  /// phone owns this write (a closure over the trace session's
   /// `applyExamFailed`). Null for fact-deck exams, which never call it: a
   /// fact-deck fail remediates instead of persisting a cooldown-triggering
   /// failure.
@@ -465,7 +465,7 @@ class _ExamScreenState extends State<ExamScreen> {
         ],
         if (!passed && exam.isTrace) ...[
           const SizedBox(height: 12),
-          Text('Walk the trace again before re-sitting.', style: TextStyle(color: tokens.dim)),
+          Text('Trace it again before re-sitting.', style: TextStyle(color: tokens.dim)),
         ],
       ],
     );

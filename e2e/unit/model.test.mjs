@@ -9,11 +9,11 @@ import {
 } from "../../web/alix/review/model.js";
 
 test("applying a new card resets only card scoped client state", () => {
-  const walk = { kind: "walk", phase: "reveal", current: 2 };
+  const trace = { kind: "trace", phase: "reveal", current: 2 };
   const model = {
     ...createModel({ getItem: () => "1" }),
     state: { kind: "review", study_revision: 4 },
-    walk,
+    trace,
     revealed: 3,
     citationView: true,
     feedback: { passed: false },
@@ -28,7 +28,7 @@ test("applying a new card resets only card scoped client state", () => {
 
   assert.notEqual(next, model);
   assert.equal(next.state, dto);
-  assert.equal(next.walk, walk);
+  assert.equal(next.trace, trace);
   assert.equal(next.revealed, 0);
   assert.equal(next.citationView, false);
   assert.equal(next.feedback, null);
@@ -44,14 +44,14 @@ test("picker refresh preserves no stale study state", () => {
     ...createModel({ getItem: () => null }),
     state: { kind: "review", phase: "review" },
     browsing: { cards: [{}], index: 0 },
-    walk: { kind: "walk", phase: "predict" },
+    trace: { kind: "trace", phase: "predict" },
   };
 
   const next = enterPicker(model);
 
   assert.equal(next.state, null);
   assert.equal(next.browsing, null);
-  assert.equal(next.walk, null);
+  assert.equal(next.trace, null);
   assert.equal(currentScreen(next), "picker");
 });
 
@@ -59,6 +59,6 @@ test("screen selection uses explicit dto discriminants", () => {
   const base = createModel({ getItem: () => null });
   assert.equal(currentScreen({ ...base, state: { kind: "review", phase: "review" } }), "study");
   assert.equal(currentScreen({ ...base, state: { kind: "review", phase: "done" } }), "summary");
-  assert.equal(currentScreen({ ...base, walk: { kind: "walk", phase: "predict" } }), "walk");
-  assert.equal(currentScreen({ ...base, walk: { phase: "predict" } }), "picker");
+  assert.equal(currentScreen({ ...base, trace: { kind: "trace", phase: "predict" } }), "trace");
+  assert.equal(currentScreen({ ...base, trace: { phase: "predict" } }), "picker");
 });

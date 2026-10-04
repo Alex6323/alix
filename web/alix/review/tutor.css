@@ -1,7 +1,7 @@
   /* ── ask tutor ── */
   .ask-panel { width: var(--card-w); max-width: 92vw; display: flex; flex-direction: column; gap: 12px; animation: deal 0.3s both; }
   /* mono eyebrow header ("ASK TUTOR · card-scoped"), same idiom as the exam's
-     "QUESTION n/N" and the walk's "checkpoint n/N"; model/effort readout
+     "QUESTION n/N" and the trace's "checkpoint n/N"; model/effort readout
      shares the row, right-aligned, since it's secondary to the scope label. */
   .ask-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .ask-eyebrow { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--bolt); }

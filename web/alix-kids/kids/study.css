@@ -156,7 +156,7 @@
   color: var(--accent); font-family: inherit; font-weight: 700; font-size: 16px;
   box-shadow: 0 4px 12px rgba(180, 110, 60, 0.16); cursor: pointer;
 }
-/* A trace deck a kid can't walk yet → a gentle bow-out; and the retrospective
+/* A trace deck a kid can't trace yet → a gentle bow-out; and the retrospective
    Done screen (no score/streak/XP -- just the honest count + two exits). */
 .notready, .done {
   min-height: 100%; display: flex; flex-direction: column; align-items: center;

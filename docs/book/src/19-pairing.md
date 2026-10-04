@@ -102,11 +102,11 @@ Once paired, review gains things it doesn't have offline:
   creates land in the phone's own progress store, exactly like an offline
   grade, matching the rule above: the server computes, the phone keeps.
 
-A [trace deck](13-trace-decks.md) reaches the exam differently: its **walk**
+A [trace deck](13-trace-decks.md) reaches the exam differently: its **trace**
 (predict, reveal, self-grade) runs entirely on-device, no pairing needed.
-Only once paired does the walk's done screen offer "Take the exam" for the
+Only once paired does the trace's done screen offer "Take the exam" for the
 trace's compression question, graded on the desktop the same way a fact
-deck's exam is; a fail is re-walked rather than turned into remediation
+deck's exam is; a fail is retraced rather than turned into remediation
 cards, since a trace is a path, not a card pile.
 
 The Settings page also gains a **Generate deck** row: give it a URL and
@@ -117,7 +117,7 @@ the same liveness rule as the two chips: the row
 appears only while the phone has confirmed the paired desktop is reachable
 and new enough, and is simply absent otherwise.
 
-The Ask chip, the Take the exam chip, and the walk's own exam offer all
+The Ask chip, the Take the exam chip, and the trace's own exam offer all
 depend on the phone having confirmed the paired desktop is reachable and
 running at least version 0.6.0; there is no retry chrome for a dead or
 too-old server, the chip or offer simply is not there.

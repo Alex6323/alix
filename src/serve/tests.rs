@@ -24,7 +24,7 @@ use crate::{
     scheduler::{Fsrs, Grade},
     session::{CardTier, Cell, Session, now_ms},
     store::Store,
-    trace::{Delta, Walk},
+    trace::{Delta, TraceSession},
 };
 
 #[test]
@@ -628,7 +628,7 @@ fn adult_asset_manifest_matches_the_exact_composition_order() {
             "tutor.css",
             "exam.css",
             "augment.css",
-            "walk.css",
+            "trace.css",
         ]
     );
     assert_eq!(serde_json::json!(REVIEW_CSS_SOURCES), manifest["css"]);
@@ -2495,7 +2495,7 @@ fn exam_due_reports_the_decks_name_not_its_routing_id() {
     assert_eq!(vec!["d.md".to_string()], dto.exam_due);
 }
 
-fn walk_deck(dir: &Path) -> crate::trace::Trace {
+fn trace_deck(dir: &Path) -> crate::trace::Trace {
     std::fs::write(dir.join("source.txt"), "first\nsecond\nthird\n").unwrap();
     let path = dir.join("t.md");
     std::fs::write(
@@ -2519,15 +2519,15 @@ fn walk_deck(dir: &Path) -> crate::trace::Trace {
 }
 
 #[test]
-fn walk_dto_tracks_phase_excerpt_and_rail() {
+fn trace_dto_tracks_phase_excerpt_and_rail() {
     let dir = tempfile::tempdir().unwrap();
-    let trace = walk_deck(dir.path());
+    let trace = trace_deck(dir.path());
     let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    let walk = Walk::new(trace);
-    let mut w = Walking::new(walk);
+    let session = TraceSession::new(trace);
+    let mut w = Tracing::new(session);
 
-    let d = walk_dto(&w);
-    assert_eq!("walk", d.kind);
+    let d = trace_dto(&w);
+    assert_eq!("trace", d.kind);
     assert_eq!("predict", d.phase);
     assert_eq!(1, d.current);
     assert_eq!(2, d.total);
@@ -2551,8 +2551,8 @@ fn walk_dto_tracks_phase_excerpt_and_rail() {
     assert!(d.excerpt.is_none());
     assert!(d.path[0].current && d.path[0].delta.is_none());
 
-    w.walk.predict("my guess".to_string());
-    let d = walk_dto(&w);
+    w.session.predict("my guess".to_string());
+    let d = trace_dto(&w);
     assert_eq!("reveal", d.phase);
     assert_eq!(Some("my guess".to_string()), d.prediction);
     let ex = d.excerpt.expect("reveal reads the source");
@@ -2575,16 +2575,16 @@ fn walk_dto_tracks_phase_excerpt_and_rail() {
             .is_some_and(|runs| runs.iter().any(|run| run.code && run.text == "read"))
     );
 
-    w.walk.grade(&mut store, Delta::Passed, 1000);
-    let d = walk_dto(&w);
+    w.session.grade(&mut store, Delta::Passed, 1000);
+    let d = trace_dto(&w);
     assert_eq!("predict", d.phase);
     assert_eq!(2, d.current);
     assert_eq!(Some("passed"), d.path[0].delta);
     assert!(d.path[1].current);
 
-    w.walk.predict(String::new());
-    w.walk.grade(&mut store, Delta::Failed, 1001);
-    let d = walk_dto(&w);
+    w.session.predict(String::new());
+    w.session.grade(&mut store, Delta::Failed, 1001);
+    let d = trace_dto(&w);
     assert_eq!("done", d.phase);
     let s = d.summary.expect("done has a summary");
     assert_eq!((1, 0, 1), (s.passed, s.partly, s.failed));
@@ -2592,13 +2592,13 @@ fn walk_dto_tracks_phase_excerpt_and_rail() {
 }
 
 #[test]
-fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
+fn trace_ask_condense_appends_a_note_to_the_checkpoint() {
     let dir = tempfile::tempdir().unwrap();
-    let trace = walk_deck(dir.path());
+    let trace = trace_deck(dir.path());
     let deck_path = trace.deck_path.clone();
-    let walk = Walk::new(trace);
-    let mut w = Walking::new(walk);
-    w.walk.predict("guess".to_string());
+    let session = TraceSession::new(trace);
+    let mut w = Tracing::new(session);
+    w.session.predict("guess".to_string());
 
     let card = w.checkpoint_card().expect("a checkpoint card");
     assert_eq!(
@@ -2606,7 +2606,7 @@ fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
         card.only_note()
     );
     let (tx, rx) = std::sync::mpsc::channel();
-    w.ask.subject = w.walk.checkpoint().map(|c| c.card_id.clone());
+    w.ask.subject = w.session.checkpoint().map(|c| c.card_id.clone());
     w.ask.pending = Some(Pending {
         rx,
         job: ask::AskJob::default(),
@@ -2635,11 +2635,11 @@ fn walk_ask_condense_appends_a_note_to_the_checkpoint() {
 
 #[cfg(unix)]
 #[test]
-fn a_frozen_walk_checkpoint_with_a_live_local_source_needs_no_fallback_warning() {
+fn a_frozen_trace_checkpoint_with_a_live_local_source_needs_no_fallback_warning() {
     let _lock = crate::testutil::exec_lock();
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("alix.toml"), "").unwrap();
-    let initial = walk_deck(dir.path());
+    let initial = trace_deck(dir.path());
     std::fs::create_dir(dir.path().join("decks")).unwrap();
     let deck_path = dir.path().join("decks/t.md");
     std::fs::rename(&initial.deck_path, &deck_path).unwrap();
@@ -2653,22 +2653,22 @@ fn a_frozen_walk_checkpoint_with_a_live_local_source_needs_no_fallback_warning()
             .first()
             .is_some_and(|checkpoint| trace.frozen_block(checkpoint).is_some())
     );
-    let mut walking = Walking::new(Walk::new(trace));
+    let mut tracing = Tracing::new(TraceSession::new(trace));
     let cli = crate::testutil::fake_reply(dir.path(), "answer");
     let mut cfg = crate::testutil::ask_config(&cli);
     cfg.source_access = true;
 
-    assert!(walking.start_ask(&cfg, Audience::Adult, Some("why?".to_string())));
-    assert_eq!(None, walking.ask_dto(None, None).status);
+    assert!(tracing.start_ask(&cfg, Audience::Adult, Some("why?".to_string())));
+    assert_eq!(None, tracing.ask_dto(None, None).status);
 }
 
 #[cfg(unix)]
 #[test]
-fn a_frozen_walk_checkpoint_without_reachable_source_warns_about_the_fallback() {
+fn a_frozen_trace_checkpoint_without_reachable_source_warns_about_the_fallback() {
     let _lock = crate::testutil::exec_lock();
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("alix.toml"), "").unwrap();
-    let initial = walk_deck(dir.path());
+    let initial = trace_deck(dir.path());
     std::fs::create_dir(dir.path().join("decks")).unwrap();
     let deck_path = dir.path().join("decks/t.md");
     std::fs::rename(&initial.deck_path, &deck_path).unwrap();
@@ -2682,14 +2682,14 @@ fn a_frozen_walk_checkpoint_without_reachable_source_warns_about_the_fallback() 
             .first()
             .is_some_and(|checkpoint| trace.frozen_block(checkpoint).is_some())
     );
-    let mut walking = Walking::new(Walk::new(trace));
+    let mut tracing = Tracing::new(TraceSession::new(trace));
     let cli = crate::testutil::fake_reply(dir.path(), "answer");
     let cfg = crate::testutil::ask_config(&cli);
 
-    assert!(walking.start_ask(&cfg, Audience::Adult, Some("why?".to_string())));
+    assert!(tracing.start_ask(&cfg, Audience::Adult, Some("why?".to_string())));
     assert_eq!(
         Some(ask::FROZEN_ONLY_WARNING.to_string()),
-        walking.ask_dto(None, None).status
+        tracing.ask_dto(None, None).status
     );
 }
 

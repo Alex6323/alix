@@ -355,7 +355,7 @@ async function settleAnimations(page) {
 // `ready` is a CSS selector unique to the screen this shot claims to show —
 // required, not optional. Its own bug class (shot 4: the exam genuinely ran
 // and finished server-side, but the screenshot was taken after a page
-// *reload*, which only round-trips StateDto — exam/walk progress is
+// *reload*, which only round-trips StateDto — exam/trace progress is
 // client-side-only JS state, so the reload silently rendered the picker
 // underneath instead) is exactly why this is enforced here, in one place,
 // rather than left to each shot function to remember. A screen mismatch
@@ -834,13 +834,13 @@ async function shot5(page, out) {
   return true;
 }
 
-// ---- shot 6: trace walk checkpoint -----------------------------------------
+// ---- shot 6: trace checkpoint -----------------------------------------
 
 async function shot6(page, out) {
-  log("== shot 6: trace walk ==");
+  log("== shot 6: trace ==");
   await setTheme(page, DEMO_BASE, DEFAULT_THEME);
   await api(DEMO_BASE, "POST", "/api/deselect", {}).catch(() => {});
-  // A walk isn't resumable across a hard reload the way a review session is
+  // A trace isn't resumable across a hard reload the way a review session is
   // (GET /api/state only round-trips StateDto) — launch it through the real
   // picker click flow instead, same as a user would.
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
@@ -866,7 +866,7 @@ async function shot6(page, out) {
     await page.waitForTimeout(400);
   }
   if (!(await page.locator(".source-excerpt").count())) {
-    log("FAILED shot 6: no .source-excerpt rendered — walk did not reach the reveal phase");
+    log("FAILED shot 6: no .source-excerpt rendered — trace did not reach the reveal phase");
     return false;
   }
   await shot(page, out, ".source-excerpt");

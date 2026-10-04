@@ -114,15 +114,15 @@ where it is rather than fixed:
       `kids-math.spec.ts`), select-all interaction with consecutive-card
       keyboard focus on the adult side (`adult-multiple-choice.spec.ts`,
       `kids-multiple-choice.spec.ts`), live and stale source excerpts
-      (`adult-source-excerpt.spec.ts`), the inline trace walk
-      (`adult-walk-inline.spec.ts`), section context (`kids-review.spec.ts`),
+      (`adult-source-excerpt.spec.ts`), the inline trace
+      (`adult-trace-inline.spec.ts`), section context (`kids-review.spec.ts`),
       the adult context-pill layout, and the sub-card graduation lock
       (`adult-review.spec.ts`).
     * `source-fact.rs`, `source-stale.rs`, and `trace-source.txt`: the live
       source files those decks cite; `source-stale.rs` deliberately drifts
       from its deck's frozen excerpt.
     * `assets/deck-…/`: the frozen, content-addressed excerpt objects for the
-      two source-citing decks, so the walk and excerpt views work offline.
+      two source-citing decks, so the trace and excerpt views work offline.
     * `augment/deck-00000000000000000000000008.json` (and its sibling
       `…07.json` for `math.md`): the **frozen**, deck-owned multiple-choice
       distractor cache for `wild.md`, generated once with a real Claude call:

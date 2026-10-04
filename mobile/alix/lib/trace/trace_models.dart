@@ -1,30 +1,30 @@
 import 'package:alix_mobile/shared/inline_models.dart';
 
-enum WalkPhaseModel { predict, reveal, done }
+enum TraceSessionPhaseModel { predict, reveal, done }
 
-enum WalkGrade { missed, partly, got }
+enum TraceSessionGrade { missed, partly, got }
 
-class WalkLineModel {
-  const WalkLineModel({required this.number, required this.text});
+class TraceSessionLineModel {
+  const TraceSessionLineModel({required this.number, required this.text});
 
   final int number;
   final String text;
 }
 
-class WalkExcerptModel {
-  WalkExcerptModel({
+class TraceSessionExcerptModel {
+  TraceSessionExcerptModel({
     required this.path,
-    required Iterable<WalkLineModel> lines,
+    required Iterable<TraceSessionLineModel> lines,
     required this.truncated,
   }) : lines = List.unmodifiable(lines);
 
   final String path;
-  final List<WalkLineModel> lines;
+  final List<TraceSessionLineModel> lines;
   final bool truncated;
 }
 
-class WalkSummaryModel {
-  WalkSummaryModel({
+class TraceSessionSummaryModel {
+  TraceSessionSummaryModel({
     required this.passed,
     required this.partly,
     required this.failed,
@@ -39,8 +39,8 @@ class WalkSummaryModel {
   final int total;
 }
 
-class WalkStateModel {
-  WalkStateModel({
+class TraceSessionStateModel {
+  TraceSessionStateModel({
     required this.phase,
     required this.description,
     required Iterable<InlineRunModel> descriptionRuns,
@@ -69,7 +69,7 @@ class WalkStateModel {
        pointRuns = _freezeNested(pointRuns),
        noteRuns = noteRuns == null ? null : List.unmodifiable(noteRuns);
 
-  final WalkPhaseModel phase;
+  final TraceSessionPhaseModel phase;
   final String description;
   final List<InlineRunModel> descriptionRuns;
   final String? source;
@@ -81,19 +81,19 @@ class WalkStateModel {
   final List<List<InlineRunModel>> givenRuns;
   final String? locator;
   final String? prediction;
-  final WalkExcerptModel? excerpt;
+  final TraceSessionExcerptModel? excerpt;
   final String? excerptError;
   final List<String> points;
   final List<List<InlineRunModel>> pointRuns;
   final String? note;
   final List<InlineRunModel>? noteRuns;
-  final WalkSummaryModel? summary;
+  final TraceSessionSummaryModel? summary;
   final String? saveError;
 
   static const _unchanged = Object();
 
-  WalkStateModel copyWith({
-    WalkPhaseModel? phase,
+  TraceSessionStateModel copyWith({
+    TraceSessionPhaseModel? phase,
     String? description,
     Iterable<InlineRunModel>? descriptionRuns,
     Object? source = _unchanged,
@@ -114,7 +114,7 @@ class WalkStateModel {
     Object? summary = _unchanged,
     Object? saveError = _unchanged,
   }) {
-    return WalkStateModel(
+    return TraceSessionStateModel(
       phase: phase ?? this.phase,
       description: description ?? this.description,
       descriptionRuns: descriptionRuns ?? this.descriptionRuns,
@@ -135,7 +135,7 @@ class WalkStateModel {
           : prediction as String?,
       excerpt: identical(excerpt, _unchanged)
           ? this.excerpt
-          : excerpt as WalkExcerptModel?,
+          : excerpt as TraceSessionExcerptModel?,
       excerptError: identical(excerptError, _unchanged)
           ? this.excerptError
           : excerptError as String?,
@@ -147,7 +147,7 @@ class WalkStateModel {
           : noteRuns as Iterable<InlineRunModel>?,
       summary: identical(summary, _unchanged)
           ? this.summary
-          : summary as WalkSummaryModel?,
+          : summary as TraceSessionSummaryModel?,
       saveError: identical(saveError, _unchanged)
           ? this.saveError
           : saveError as String?,

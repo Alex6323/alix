@@ -1,14 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:alix_mobile/walk/walk_controller.dart';
-import 'package:alix_mobile/walk/walk_models.dart';
-import 'package:alix_mobile/walk/walk_port.dart';
+import 'package:alix_mobile/trace/trace_controller.dart';
+import 'package:alix_mobile/trace/trace_models.dart';
+import 'package:alix_mobile/trace/trace_port.dart';
 
 void main() {
   test('named transitions own server liveness, prediction, and grading', () {
-    final port = _FakeWalkPort(_state(WalkPhaseModel.predict));
-    final controller = WalkController(
-      factory: _FakeWalkFactory([port]),
+    final port = _FakeTraceSessionPort(_state(TraceSessionPhaseModel.predict));
+    final controller = TraceSessionController(
+      factory: _FakeTraceSessionFactory([port]),
       deckPath: '/decks/trace.md',
       rootDir: '/decks',
       device: 'phone',
@@ -18,24 +18,24 @@ void main() {
 
     controller.setServerLive(true);
     controller.predict('my prediction');
-    controller.grade(WalkGrade.got);
+    controller.grade(TraceSessionGrade.got);
 
     expect(controller.serverLive, isTrue);
     expect(port.predictions, ['my prediction']);
-    expect(port.grades, [WalkGrade.got]);
-    expect(controller.state.phase, WalkPhaseModel.done);
+    expect(port.grades, [TraceSessionGrade.got]);
+    expect(controller.state.phase, TraceSessionPhaseModel.done);
     expect(notifications, 3);
   });
 
   test(
     'restart reports an open failure and can replace it with a new port',
     () {
-      final recovered = _FakeWalkPort(_state(WalkPhaseModel.predict));
-      final factory = _FakeWalkFactory([
-        const WalkOpenFailure('not a trace'),
+      final recovered = _FakeTraceSessionPort(_state(TraceSessionPhaseModel.predict));
+      final factory = _FakeTraceSessionFactory([
+        const TraceSessionOpenFailure('not a trace'),
         recovered,
       ]);
-      final controller = WalkController(
+      final controller = TraceSessionController(
         factory: factory,
         deckPath: '/decks/facts.md',
         rootDir: '/decks',
@@ -47,15 +47,15 @@ void main() {
       controller.restart();
 
       expect(controller.openError, isNull);
-      expect(controller.state.phase, WalkPhaseModel.predict);
+      expect(controller.state.phase, TraceSessionPhaseModel.predict);
       expect(factory.opens, 2);
       expect(notifications, 1);
     },
   );
 }
 
-WalkStateModel _state(WalkPhaseModel phase) {
-  return WalkStateModel(
+TraceSessionStateModel _state(TraceSessionPhaseModel phase) {
+  return TraceSessionStateModel(
     phase: phase,
     description: 'how it works',
     descriptionRuns: const [],
@@ -68,46 +68,46 @@ WalkStateModel _state(WalkPhaseModel phase) {
   );
 }
 
-class _FakeWalkFactory implements WalkPortFactory {
-  _FakeWalkFactory(this.results);
+class _FakeTraceSessionFactory implements TraceSessionPortFactory {
+  _FakeTraceSessionFactory(this.results);
 
   final List<Object> results;
   int opens = 0;
 
   @override
-  WalkPort open({
+  TraceSessionPort open({
     required String deckPath,
     required String rootDir,
     String? device,
   }) {
     final result = results[opens++];
-    if (result case final WalkOpenFailure failure) throw failure;
-    return result as WalkPort;
+    if (result case final TraceSessionOpenFailure failure) throw failure;
+    return result as TraceSessionPort;
   }
 }
 
-class _FakeWalkPort implements WalkPort {
-  _FakeWalkPort(this._state);
+class _FakeTraceSessionPort implements TraceSessionPort {
+  _FakeTraceSessionPort(this._state);
 
-  WalkStateModel _state;
+  TraceSessionStateModel _state;
   final List<String> predictions = [];
-  final List<WalkGrade> grades = [];
+  final List<TraceSessionGrade> grades = [];
 
   @override
-  WalkStateModel get state => _state;
+  TraceSessionStateModel get state => _state;
 
   @override
   void predict(String text) {
     predictions.add(text);
-    _state = _state.copyWith(phase: WalkPhaseModel.reveal, prediction: text);
+    _state = _state.copyWith(phase: TraceSessionPhaseModel.reveal, prediction: text);
   }
 
   @override
-  WalkStateModel grade(WalkGrade grade) {
+  TraceSessionStateModel grade(TraceSessionGrade grade) {
     grades.add(grade);
     _state = _state.copyWith(
-      phase: WalkPhaseModel.done,
-      summary: WalkSummaryModel(
+      phase: TraceSessionPhaseModel.done,
+      summary: TraceSessionSummaryModel(
         passed: 1,
         partly: 0,
         failed: 0,

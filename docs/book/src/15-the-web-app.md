@@ -19,7 +19,7 @@ Run `alix` and the page opens the **deck-selection
 screen**. **Up / down** move between
 decks; a **search box in the header** filters the list (focus it with **`/`**).
 Focus a deck and **Learn** it with **Enter** (a facts deck opens a
-review, a [trace](13-trace-decks.md) opens a walk) one deck per session. **Browse**
+review, a [trace deck](13-trace-decks.md) opens a trace) one deck per session. **Browse**
 on **`b`** opens a read-only, in-page read-through instead: step the cards with
 Prev/Next, Esc to leave. Focusing any deck opens an inline **focus drawer**
 beneath it: it shows the deck's frontmatter `description:`, if any, and
@@ -165,7 +165,7 @@ dimmed page, `c`, or Escape closes it, and focus returns to the title.
 A dim **"N left"** count in the header shows how many cards the session still
 holds; it can tick up when a card you missed cools back in for its retry. The
 **☰ menu** is context-aware: during review it holds **Ask Tutor** and,
-when available, **Context**; a trace walk holds **Ask Tutor**. On the deck
+when available, **Context**; a trace holds **Ask Tutor**. On the deck
 picker, the library actions above plus **keyboard
 shortcuts** and **about**, with **Theme…** and **Draw
 answers** (a per-device toggle, see below) in both. The ⟳ button (also key
@@ -175,7 +175,7 @@ re-fetches workspace icon images, so a regenerated emblem shows without a
 reload.
 
 The AI features come along too: the [tutor](10-tutor.md), the
-[AI exam](12-the-ai-exam.md), and [trace walks](13-trace-decks.md) all have a web
+[AI exam](12-the-ai-exam.md), and [traces](13-trace-decks.md) all have a web
 surface, each running its model call on a background thread while the page polls,
 so the single-threaded server never blocks.
 
@@ -201,11 +201,11 @@ the grown-up app can keep the look they grew
 attached to), plus crowd-favourite editor/slide palettes
 (GitHub, Dracula, Nord, Solarized, Gruvbox, Catppuccin, Tokyo Night, Monokai, One
 Dark, Ayu, Rosé Pine, Everforest). Open the **Theme…** popover from the ☰ menu (a
-small bar button on the trace walk): a grid grouped Light / Dark / Kids that **previews
+small bar button on the trace): a grid grouped Light / Dark / Kids that **previews
 on a sample card as you hover** and re-themes the whole app when you click one,
 remembering your choice in the browser (kept in `localStorage`, not the config).
 The palette lives in a shared `theme.css` the
-server hosts, so every screen (review, browse, and trace walks) themes together.
+server hosts, so every screen (review, browse, and traces) themes together.
 
 ## Kids mode
 

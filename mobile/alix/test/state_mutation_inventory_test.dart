@@ -57,26 +57,26 @@ void main() {
       reason:
           'begin, complete, progress, and fail own every generation mutation',
     );
-    expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
+    expect(_linesContaining('lib/trace_screen.dart', 'setState('), isEmpty);
     expect(
-      _linesContaining('lib/walk/walk_controller.dart', 'notifyListeners();'),
+      _linesContaining('lib/trace/trace_controller.dart', 'notifyListeners();'),
       [43, 50, 55, 60],
       reason:
           'setServerLive, predict, grade, and restart are the four named '
-          'WalkController mutations',
+          'TraceSessionController mutations',
     );
     expect(
       [
         ..._sites('lib/review_screen.dart', 'ListenableBuilder('),
         ..._sites('lib/picker_screen.dart', 'ListenableBuilder('),
         ..._sites('lib/picker/generate_sheet.dart', 'ListenableBuilder('),
-        ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
+        ..._sites('lib/trace_screen.dart', 'ListenableBuilder('),
       ],
       [
         'lib/review_screen.dart:378',
         'lib/picker_screen.dart:626',
         'lib/picker/generate_sheet.dart:42',
-        'lib/walk_screen.dart:192',
+        'lib/trace_screen.dart:192',
       ],
       reason:
           'sync wiring added imports, fields, and methods above build() in '
@@ -85,7 +85,7 @@ void main() {
           'and the skip-introduction switch added a field to both, moving '
           'their single ListenableBuilder site; the tutor conversation '
           'ownership added an import, four fields, and three methods to '
-          'review_screen.dart; generate_sheet.dart and walk_screen.dart are '
+          'review_screen.dart; generate_sheet.dart and trace_screen.dart are '
           'unchanged',
     );
   });
@@ -95,7 +95,7 @@ void main() {
       'lib/review_screen.dart',
       'lib/picker_screen.dart',
       'lib/picker/generate_controller.dart',
-      'lib/walk_screen.dart',
+      'lib/trace_screen.dart',
     ];
     expect(
       [for (final path in paths) ..._sites(path, 'Timer(')],

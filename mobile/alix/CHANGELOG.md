@@ -17,6 +17,13 @@ Release notes, so a release without its section fails loud.
   clear; a stylus locks out touch so a resting palm cannot draw; the
   sketch survives a rotation and stays on screen beside the answer.
 
+### Changed
+
+- A trace deck's session is called a trace, not a walk: the done screen
+  reads "TRACE COMPLETE", "Trace finished.", "Trace again", and "Trace it
+  again before re-sitting", and leaving mid-way asks "Leave the trace?" with
+  "Keep tracing".
+
 ### Fixed
 
 - A tutor note taken on a fill-in-the-blank card landed on the block's

@@ -20,7 +20,7 @@ test("trace checkpoints render authored inline code", async ({ page }) => {
 
   await page.locator(".wfield").fill("it grows first");
   await Promise.all([
-    page.waitForResponse((response) => response.url().includes("/api/walk/predict")),
+    page.waitForResponse((response) => response.url().includes("/api/trace/predict")),
     page.getByRole("button", { name: "Reveal" }).click(),
   ]);
 

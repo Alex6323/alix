@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/shared/inline_runs.dart';
 import 'package:alix_mobile/theme.dart';
-import 'package:alix_mobile/walk/walk_models.dart';
-import 'package:alix_mobile/walk/walk_widgets.dart';
+import 'package:alix_mobile/trace/trace_models.dart';
+import 'package:alix_mobile/trace/trace_widgets.dart';
 
 const _mono = 'IBM Plex Mono';
 
-class WalkSummaryView extends StatelessWidget {
-  const WalkSummaryView({
+class TraceSessionSummaryView extends StatelessWidget {
+  const TraceSessionSummaryView({
     super.key,
     required this.state,
     required this.examAvailable,
@@ -18,7 +18,7 @@ class WalkSummaryView extends StatelessWidget {
     required this.onRestart,
   });
 
-  final WalkStateModel state;
+  final TraceSessionStateModel state;
   final bool examAvailable;
   final int? cooldownMs;
   final VoidCallback onOpenExam;
@@ -29,7 +29,7 @@ class WalkSummaryView extends StatelessWidget {
     final tokens = Theme.of(context).alix;
     final summary =
         state.summary ??
-        WalkSummaryModel(
+        TraceSessionSummaryModel(
           passed: 0,
           partly: 0,
           failed: 0,
@@ -43,7 +43,7 @@ class WalkSummaryView extends StatelessWidget {
         children: [
           const SizedBox(height: 12),
           Text(
-            'WALK COMPLETE',
+            'TRACE COMPLETE',
             style: TextStyle(
               fontFamily: _mono,
               color: tokens.bolt,
@@ -56,7 +56,7 @@ class WalkSummaryView extends StatelessWidget {
             runs: state.description.isEmpty
                 ? [
                     const InlineRunModel(
-                      text: 'Trace walked.',
+                      text: 'Trace finished.',
                       bold: false,
                       italic: false,
                       code: false,
@@ -108,22 +108,22 @@ class WalkSummaryView extends StatelessWidget {
             ),
           const SizedBox(height: 24),
           if (examAvailable) ...[
-            WalkChip(
+            TraceSessionChip(
               label: 'Take the exam',
-              kind: WalkChipKind.primary,
+              kind: TraceSessionChipKind.primary,
               onTap: onOpenExam,
             ),
             const SizedBox(height: 12),
           ],
-          WalkChip(
-            label: 'Walk again',
-            kind: examAvailable ? WalkChipKind.base : WalkChipKind.primary,
+          TraceSessionChip(
+            label: 'Trace again',
+            kind: examAvailable ? TraceSessionChipKind.base : TraceSessionChipKind.primary,
             onTap: onRestart,
           ),
           if (cooldownMs case final cooldown?) ...[
             const SizedBox(height: 12),
             Text(
-              'Walk the trace again before re-sitting; '
+              'Trace it again before re-sitting; '
               '${_humanizeCooldown(cooldown)} left.',
               style: TextStyle(color: tokens.dim, fontSize: 13),
             ),

@@ -4,7 +4,7 @@
 > flow may still change.
 
 Cards drill *facts* — the nodes of what you know. A **trace** drills the
-*connections between them* — the edges — by walking a **path** through a real
+*connections between them* — the edges — by tracing a **path** through a real
 source and making you **predict each hop before it's revealed**. Where the
 [AI exam](12-the-ai-exam.md) verifies a *set* of independent answers, a trace
 verifies you can follow one chain of reasoning, and the gap between your
@@ -16,7 +16,7 @@ build that chain yourself.
 
 ## What a trace looks like
 
-A trace is a deck with a `trace:` (a path description — what it walks, and the
+A trace is a deck with a `trace:` (a path description — what it traces, and the
 thing that marks the deck a trace) and a `source:` (the path's origin), then a
 sequence of **checkpoint** cards. Each checkpoint is an `explain`-style card — an
 open *predict* prompt and the key points a good prediction should hit — plus a
@@ -53,7 +53,7 @@ The `<!-- at: -->` locator's `at:` field is a single contiguous range
 `file:start-end` (just line numbers when `source:` is one file; a range-less
 path or URL cites the whole source, the form frozen URL sources use), never
 comma-separated, since a stitched excerpt makes disjoint code look adjacent. Its
-`fingerprint: xxh64-...` field fingerprints the displayed lines. A live walk
+`fingerprint: xxh64-...` field fingerprints the displayed lines. A live trace
 reveals the source only while that fingerprint matches, so a shifted numeric
 range cannot silently show unrelated lines. When a
 tight excerpt leans on a
@@ -112,11 +112,11 @@ derivation — to an outcome. If the checkpoints are independent facts hanging o
 one thing, you've written a *set*, which is what cards and the exam already do;
 choose a subject with a real sequence instead.
 
-## Walking it
+## Tracing it
 
 Pick the trace in the [web picker](15-the-web-app.md), or on the
-[mobile app](18-the-mobile-app.md) (the walk runs fully offline there too):
-a trace opens as a **walk**: a checkpoint-by-checkpoint
+[mobile app](18-the-mobile-app.md) (the trace runs fully offline there too):
+a trace deck opens as a **trace**: a checkpoint-by-checkpoint
 descent (the hop list rides the wire but is not yet rendered as a rail) with each checkpoint's source shown in a line-numbered excerpt. It goes
 hop by hop:
 
@@ -124,12 +124,12 @@ hop by hop:
 2. **Reveal** — `alix` shows the real excerpt from the source, then the key points
    and note.
 3. **Gap** — you judge yourself **Missed it / Partly / Got it** (the same three
-   grades review uses). The walk is self-judged and offline on every client. A
+   grades review uses). The trace is self-judged and offline on every client. A
    failed or partly hop is a **weak edge** that resurfaces sooner: a failed one
    resets, a partly shortens its next interval (FSRS *Hard*), while a passed hop
    advances and fades. Each checkpoint is an ordinary card underneath, so this
    is the normal per-card SRS.
-4. **Done** — after the last hop the walk is complete. That's the *drill*; the
+4. **Done** — after the last hop the trace is complete. That's the *drill*; the
    *verification* (what masters the trace) is its separate **exam**, below.
 
 ## The exam — the compression
@@ -140,17 +140,17 @@ that compression against the path's checkpoints (AI-graded, exactly like a
 [fact deck's exam](12-the-ai-exam.md)) and
 **passing masters the trace**, which unlocks its dependents. So the symmetry is:
 
-- walking the checkpoints (predict → verify each edge) is the **drill**;
+- tracing the checkpoints (predict → verify each edge) is the **drill**;
 - the compression is the **exam**.
 
-You reach it in the browser: the **capstone** offered at the end of a walk
+You reach it in the browser: the **capstone** offered at the end of a trace
 (`Take the exam?`), or the picker's
 **"Take exam"** button. A [paired phone](19-pairing.md) offers the same
-capstone from its own walk. Like a fact deck, you can sit it **early to test
+capstone from its own trace. Like a fact deck, you can sit it **early to test
 out** — gated only by `requires:` (a trace's sourced prerequisites must be
 mastered first).
 
-A **failed** trace exam is **re-walked**, not turned into remediation cards (a
+A **failed** trace exam is **retraced**, not turned into remediation cards (a
 trace is a path, not a card pile) — the weak checkpoints already resurface sooner
 through their own SRS. After a fail the exam **cools down** for a while before you
 can re-sit it, so the graded feedback can't simply be pasted back into the one
@@ -196,7 +196,7 @@ apply only unique exact rebases. Changed and ambiguous excerpts remain
 untouched. Frozen assets do not move, but doctor still verifies their
 captured text and separately reports live-source drift.
 
-A trace deck degrades gracefully — even outside a walk it's a valid deck of
+A trace deck degrades gracefully — even when it is not being traced it's a valid deck of
 `explain` cards. See `docs/examples/workspace-showcase/decks/ownership-move.md`
 for a complete trace, frozen evidence from The Rust Book's ownership
-chapter, so it walks offline.
+chapter, so it traces offline.

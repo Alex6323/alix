@@ -288,7 +288,7 @@ void main() {
 
   testWidgets(
       'trace fail: applyFailed exactly once (no double-apply on a duplicate results poll), '
-      'applyPassed never, a re-walk hint renders with no remediate affordance', (tester) async {
+      'applyPassed never, a retrace hint renders with no remediate affordance', (tester) async {
     // Same double-in-flight-poll shape as the applyPassed guard test above:
     // two ticks resolve to the same terminal trace-fail results DTO, proving
     // this is a genuine one-shot guard, not just "it happens to poll once".
@@ -310,7 +310,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.text('Not yet.'), findsOneWidget);
-    expect(find.text('Walk the trace again before re-sitting.'), findsOneWidget);
+    expect(find.text('Trace it again before re-sitting.'), findsOneWidget);
     expect(find.text('Turn the gaps into cards'), findsNothing);
 
     gate1.complete(traceResultsFailed);
@@ -348,7 +348,7 @@ void main() {
 
     expect(find.text('Not yet.'), findsOneWidget);
     expect(find.text('Turn the gaps into cards'), findsOneWidget);
-    expect(find.text('Walk the trace again before re-sitting.'), findsNothing);
+    expect(find.text('Trace it again before re-sitting.'), findsNothing);
   });
 
   testWidgets('first-poll-null: a slow start recovers once the sitting is ready', (tester) async {

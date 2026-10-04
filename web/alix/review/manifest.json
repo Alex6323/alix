@@ -8,7 +8,7 @@
     "tutor.css",
     "exam.css",
     "augment.css",
-    "walk.css"
+    "trace.css"
   ],
   "javascript": [
     "contracts.js",
@@ -19,7 +19,7 @@
     "study.js",
     "tutor.js",
     "exam.js",
-    "walk.js",
+    "trace.js",
     "augment.js",
     "sheets.js",
     "app.js"

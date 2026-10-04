@@ -1,35 +1,35 @@
 import 'package:flutter/foundation.dart';
 
-import 'package:alix_mobile/walk/walk_models.dart';
-import 'package:alix_mobile/walk/walk_port.dart';
+import 'package:alix_mobile/trace/trace_models.dart';
+import 'package:alix_mobile/trace/trace_port.dart';
 
-class WalkController extends ChangeNotifier {
-  factory WalkController({
-    required WalkPortFactory factory,
+class TraceSessionController extends ChangeNotifier {
+  factory TraceSessionController({
+    required TraceSessionPortFactory factory,
     required String deckPath,
     required String rootDir,
     String? device,
   }) {
-    return WalkController._(factory, deckPath, rootDir, device);
+    return TraceSessionController._(factory, deckPath, rootDir, device);
   }
 
-  WalkController._(this._factory, this._deckPath, this._rootDir, this._device) {
+  TraceSessionController._(this._factory, this._deckPath, this._rootDir, this._device) {
     _open();
   }
 
-  final WalkPortFactory _factory;
+  final TraceSessionPortFactory _factory;
   final String _deckPath;
   final String _rootDir;
   final String? _device;
 
-  WalkPort? _port;
-  WalkStateModel? _state;
+  TraceSessionPort? _port;
+  TraceSessionStateModel? _state;
   String? _openError;
   bool _serverLive = false;
 
-  WalkStateModel get state {
+  TraceSessionStateModel get state {
     final state = _state;
-    if (state == null) throw StateError('walk session is not open');
+    if (state == null) throw StateError('trace session is not open');
     return state;
   }
 
@@ -50,7 +50,7 @@ class WalkController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void grade(WalkGrade grade) {
+  void grade(TraceSessionGrade grade) {
     _state = _requirePort().grade(grade);
     notifyListeners();
   }
@@ -66,9 +66,9 @@ class WalkController extends ChangeNotifier {
 
   void applyExamFailed(int nowMs) => _requirePort().applyExamFailed(nowMs);
 
-  WalkPort _requirePort() {
+  TraceSessionPort _requirePort() {
     final port = _port;
-    if (port == null) throw StateError('walk session is not open');
+    if (port == null) throw StateError('trace session is not open');
     return port;
   }
 
@@ -82,7 +82,7 @@ class WalkController extends ChangeNotifier {
       _port = port;
       _state = port.state;
       _openError = null;
-    } on WalkOpenFailure catch (error) {
+    } on TraceSessionOpenFailure catch (error) {
       _port = null;
       _state = null;
       _openError = error.message;

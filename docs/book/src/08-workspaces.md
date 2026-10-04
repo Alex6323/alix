@@ -289,7 +289,7 @@ each deck nests under the prerequisite that gates it, foundations at the roots
 (the [next chapter](09-dependencies.md)). A trace member carries a `trace`
 badge (facts decks are unbadged), and the drill-in is a single-launch list:
 `Enter` on a facts deck
-reviews it, `Enter` on a trace **walks** it. Typing a filter flattens the tree
+reviews it, `Enter` on a trace **traces** it. Typing a filter flattens the tree
 to a plain search.
 
 In the **web** picker, a workspace can show a small **emblem** in place of the
@@ -302,7 +302,7 @@ the topic automatically, unless you pass `--icon <file>`.
 
 `alix <dir>` serves a workspace directly: the picker opens drilled into that
 view, scoped to the folder and its own store, routing each
-member to the right experience (a facts deck to a review, a trace to a walk) and
+member to the right experience (a facts deck to a review, a trace deck to a trace) and
 returning you to the picker when you finish one. (A session is one deck file, so
 a whole workspace is never reviewed at once; open it and pick a member.)
 

@@ -1,4 +1,4 @@
-export function createWalk({
+export function createTraceSession({
   api,
   fetchApi,
   post,
@@ -64,20 +64,20 @@ export function createWalk({
   }
 
   function predict(text) {
-    return api("/api/walk/predict", post({ text })).then(applyNext);
+    return api("/api/trace/predict", post({ text })).then(applyNext);
   }
 
   function grade(delta) {
-    return api("/api/walk/grade", post({ delta })).then(applyNext);
+    return api("/api/trace/grade", post({ delta })).then(applyNext);
   }
 
   function restart() {
-    return api("/api/walk/restart", post({})).then(applyNext);
+    return api("/api/trace/restart", post({})).then(applyNext);
   }
 
   function takeExam() {
     const deck = sessionStorage.getItem("alix.lastDeck") || "";
-    return fetchApi("/api/walk/leave", post({})).catch(() => {}).finally(() => {
+    return fetchApi("/api/trace/leave", post({})).catch(() => {}).finally(() => {
       replace(null);
       if (deck) examStart(deck);
       else api("/api/state").then(applyStudy);
@@ -85,7 +85,7 @@ export function createWalk({
   }
 
   function leave() {
-    return api("/api/walk/leave", post({})).then((state) => {
+    return api("/api/trace/leave", post({})).then((state) => {
       replace(null);
       applyStudy(state);
       return state;
@@ -112,7 +112,7 @@ export function createWalk({
 
   function renderLeaveConfirm() {
     legend.innerHTML = "";
-    legend.appendChild(el("span", "leave-walk-msg", "Leave the walk before finishing the path?"));
+    legend.appendChild(el("span", "leave-trace-msg", "Leave the trace before finishing the path?"));
     chip("Leave anyway", "again", leave, "enter");
     chip("Stay", "primary", cancelLeave, "esc");
   }
@@ -128,7 +128,7 @@ export function createWalk({
   }
 
   function addPrompt(question, text, runs) {
-    question.appendChild(el("div", "walk-eyebrow", `checkpoint ${data.current} / ${data.total}`));
+    question.appendChild(el("div", "trace-eyebrow", `checkpoint ${data.current} / ${data.total}`));
     const front = el("div", `front-text${(text || "").length > 110 ? " long" : ""}`);
     appendRunsOrText(front, text, runs);
     question.appendChild(front);
@@ -143,7 +143,7 @@ export function createWalk({
     histEl.textContent = "";
     scoreEl.innerHTML = "";
     menuWrap.style.display = current.phase === "done" ? "none" : "";
-    setMenuContext("walk");
+    setMenuContext("trace");
 
     if (confirmingLeave) {
       renderLeaveConfirm();
@@ -259,9 +259,9 @@ export function createWalk({
   function renderDone() {
     const summary = data.summary || { passed: 0, partly: 0, failed: 0, weak: [], total: 0 };
     const wrap = el("div", "summary");
-    wrap.appendChild(el("div", "lede", "walk complete · the drill is done"));
+    wrap.appendChild(el("div", "lede", "trace complete · the drill is done"));
     const description = el("h2");
-    appendRunsOrText(description, data.description || "Trace walked.", data.description_runs);
+    appendRunsOrText(description, data.description || "Trace finished.", data.description_runs);
     wrap.appendChild(description);
     const row = (key, value, cls) => {
       const line = el("div", "row");
@@ -284,7 +284,7 @@ export function createWalk({
     ));
     stage.appendChild(wrap);
     chip("Take the exam", "primary", takeExam, "↵");
-    chip("Walk again", "", restart, "");
+    chip("Trace again", "", restart, "");
   }
 
   function handleKey(event) {

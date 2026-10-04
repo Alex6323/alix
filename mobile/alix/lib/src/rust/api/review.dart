@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'review.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `save_store`, `walk_excerpt`, `walk_state`
+// These functions are ignored because they are not marked as `pub`: `save_store`, `trace_excerpt`, `trace_state`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 Grade keypointGrade({required int covered, required int total}) => RustLib
@@ -75,8 +75,8 @@ abstract class ReviewSession implements RustOpaqueInterface {
   TutorCard? tutorCard();
 }
 
-// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<WalkSession>>
-abstract class WalkSession implements RustOpaqueInterface {
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<TraceSession>>
+abstract class TraceSession implements RustOpaqueInterface {
   void applyExamFailed({required BigInt nowMs});
 
   void applyExamPassed({required BigInt nowMs});
@@ -85,14 +85,14 @@ abstract class WalkSession implements RustOpaqueInterface {
 
   BigInt? examCooldownMs({required BigInt nowMs});
 
-  WalkState grade({required WalkDelta delta, BigInt? nowMs});
+  TraceSessionState grade({required TraceSessionDelta delta, BigInt? nowMs});
 
-  static WalkSession open({
+  static TraceSession open({
     required String deckPath,
     required String rootDir,
     BigInt? nowMs,
     String? device,
-  }) => RustLib.instance.api.crateApiReviewWalkSessionOpen(
+  }) => RustLib.instance.api.crateApiReviewTraceSessionOpen(
     deckPath: deckPath,
     rootDir: rootDir,
     nowMs: nowMs,
@@ -101,7 +101,7 @@ abstract class WalkSession implements RustOpaqueInterface {
 
   void predict({required String text});
 
-  WalkState state();
+  TraceSessionState state();
 }
 
 @freezed
@@ -716,6 +716,182 @@ class ReviewState {
           loadWarnings == other.loadWarnings;
 }
 
+enum TraceSessionDelta { missed, partly, got }
+
+class TraceSessionExcerpt {
+  final String path;
+  final List<TraceSessionLine> lines;
+  final bool truncated;
+
+  const TraceSessionExcerpt({
+    required this.path,
+    required this.lines,
+    required this.truncated,
+  });
+
+  @override
+  int get hashCode => path.hashCode ^ lines.hashCode ^ truncated.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TraceSessionExcerpt &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          lines == other.lines &&
+          truncated == other.truncated;
+}
+
+class TraceSessionLine {
+  final int n;
+  final String text;
+
+  const TraceSessionLine({required this.n, required this.text});
+
+  @override
+  int get hashCode => n.hashCode ^ text.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TraceSessionLine &&
+          runtimeType == other.runtimeType &&
+          n == other.n &&
+          text == other.text;
+}
+
+enum TraceSessionPhase { predict, reveal, done }
+
+class TraceSessionState {
+  final TraceSessionPhase phase;
+  final String description;
+  final List<InlineRun> descriptionRuns;
+  final String? source;
+  final int total;
+  final int current;
+  final String? prompt;
+  final List<InlineRun>? promptRuns;
+  final List<String> givens;
+  final List<List<InlineRun>> givenRuns;
+  final String? locator;
+  final String? prediction;
+  final TraceSessionExcerpt? excerpt;
+  final String? excerptError;
+  final List<String> points;
+  final List<List<InlineRun>> pointRuns;
+  final String? note;
+  final List<InlineRun>? noteRuns;
+  final TraceSessionSummary? summary;
+  final String? saveError;
+
+  const TraceSessionState({
+    required this.phase,
+    required this.description,
+    required this.descriptionRuns,
+    this.source,
+    required this.total,
+    required this.current,
+    this.prompt,
+    this.promptRuns,
+    required this.givens,
+    required this.givenRuns,
+    this.locator,
+    this.prediction,
+    this.excerpt,
+    this.excerptError,
+    required this.points,
+    required this.pointRuns,
+    this.note,
+    this.noteRuns,
+    this.summary,
+    this.saveError,
+  });
+
+  @override
+  int get hashCode =>
+      phase.hashCode ^
+      description.hashCode ^
+      descriptionRuns.hashCode ^
+      source.hashCode ^
+      total.hashCode ^
+      current.hashCode ^
+      prompt.hashCode ^
+      promptRuns.hashCode ^
+      givens.hashCode ^
+      givenRuns.hashCode ^
+      locator.hashCode ^
+      prediction.hashCode ^
+      excerpt.hashCode ^
+      excerptError.hashCode ^
+      points.hashCode ^
+      pointRuns.hashCode ^
+      note.hashCode ^
+      noteRuns.hashCode ^
+      summary.hashCode ^
+      saveError.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TraceSessionState &&
+          runtimeType == other.runtimeType &&
+          phase == other.phase &&
+          description == other.description &&
+          descriptionRuns == other.descriptionRuns &&
+          source == other.source &&
+          total == other.total &&
+          current == other.current &&
+          prompt == other.prompt &&
+          promptRuns == other.promptRuns &&
+          givens == other.givens &&
+          givenRuns == other.givenRuns &&
+          locator == other.locator &&
+          prediction == other.prediction &&
+          excerpt == other.excerpt &&
+          excerptError == other.excerptError &&
+          points == other.points &&
+          pointRuns == other.pointRuns &&
+          note == other.note &&
+          noteRuns == other.noteRuns &&
+          summary == other.summary &&
+          saveError == other.saveError;
+}
+
+class TraceSessionSummary {
+  final int passed;
+  final int partly;
+  final int failed;
+  final Uint32List weak;
+  final int total;
+
+  const TraceSessionSummary({
+    required this.passed,
+    required this.partly,
+    required this.failed,
+    required this.weak,
+    required this.total,
+  });
+
+  @override
+  int get hashCode =>
+      passed.hashCode ^
+      partly.hashCode ^
+      failed.hashCode ^
+      weak.hashCode ^
+      total.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TraceSessionSummary &&
+          runtimeType == other.runtimeType &&
+          passed == other.passed &&
+          partly == other.partly &&
+          failed == other.failed &&
+          weak == other.weak &&
+          total == other.total;
+}
+
 class TutorCard {
   final String id;
   final String deckId;
@@ -781,180 +957,4 @@ class TypedResult {
           input == other.input &&
           expected == other.expected &&
           passed == other.passed;
-}
-
-enum WalkDelta { missed, partly, got }
-
-class WalkExcerpt {
-  final String path;
-  final List<WalkLine> lines;
-  final bool truncated;
-
-  const WalkExcerpt({
-    required this.path,
-    required this.lines,
-    required this.truncated,
-  });
-
-  @override
-  int get hashCode => path.hashCode ^ lines.hashCode ^ truncated.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is WalkExcerpt &&
-          runtimeType == other.runtimeType &&
-          path == other.path &&
-          lines == other.lines &&
-          truncated == other.truncated;
-}
-
-class WalkLine {
-  final int n;
-  final String text;
-
-  const WalkLine({required this.n, required this.text});
-
-  @override
-  int get hashCode => n.hashCode ^ text.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is WalkLine &&
-          runtimeType == other.runtimeType &&
-          n == other.n &&
-          text == other.text;
-}
-
-enum WalkPhase { predict, reveal, done }
-
-class WalkState {
-  final WalkPhase phase;
-  final String description;
-  final List<InlineRun> descriptionRuns;
-  final String? source;
-  final int total;
-  final int current;
-  final String? prompt;
-  final List<InlineRun>? promptRuns;
-  final List<String> givens;
-  final List<List<InlineRun>> givenRuns;
-  final String? locator;
-  final String? prediction;
-  final WalkExcerpt? excerpt;
-  final String? excerptError;
-  final List<String> points;
-  final List<List<InlineRun>> pointRuns;
-  final String? note;
-  final List<InlineRun>? noteRuns;
-  final WalkSummary? summary;
-  final String? saveError;
-
-  const WalkState({
-    required this.phase,
-    required this.description,
-    required this.descriptionRuns,
-    this.source,
-    required this.total,
-    required this.current,
-    this.prompt,
-    this.promptRuns,
-    required this.givens,
-    required this.givenRuns,
-    this.locator,
-    this.prediction,
-    this.excerpt,
-    this.excerptError,
-    required this.points,
-    required this.pointRuns,
-    this.note,
-    this.noteRuns,
-    this.summary,
-    this.saveError,
-  });
-
-  @override
-  int get hashCode =>
-      phase.hashCode ^
-      description.hashCode ^
-      descriptionRuns.hashCode ^
-      source.hashCode ^
-      total.hashCode ^
-      current.hashCode ^
-      prompt.hashCode ^
-      promptRuns.hashCode ^
-      givens.hashCode ^
-      givenRuns.hashCode ^
-      locator.hashCode ^
-      prediction.hashCode ^
-      excerpt.hashCode ^
-      excerptError.hashCode ^
-      points.hashCode ^
-      pointRuns.hashCode ^
-      note.hashCode ^
-      noteRuns.hashCode ^
-      summary.hashCode ^
-      saveError.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is WalkState &&
-          runtimeType == other.runtimeType &&
-          phase == other.phase &&
-          description == other.description &&
-          descriptionRuns == other.descriptionRuns &&
-          source == other.source &&
-          total == other.total &&
-          current == other.current &&
-          prompt == other.prompt &&
-          promptRuns == other.promptRuns &&
-          givens == other.givens &&
-          givenRuns == other.givenRuns &&
-          locator == other.locator &&
-          prediction == other.prediction &&
-          excerpt == other.excerpt &&
-          excerptError == other.excerptError &&
-          points == other.points &&
-          pointRuns == other.pointRuns &&
-          note == other.note &&
-          noteRuns == other.noteRuns &&
-          summary == other.summary &&
-          saveError == other.saveError;
-}
-
-class WalkSummary {
-  final int passed;
-  final int partly;
-  final int failed;
-  final Uint32List weak;
-  final int total;
-
-  const WalkSummary({
-    required this.passed,
-    required this.partly,
-    required this.failed,
-    required this.weak,
-    required this.total,
-  });
-
-  @override
-  int get hashCode =>
-      passed.hashCode ^
-      partly.hashCode ^
-      failed.hashCode ^
-      weak.hashCode ^
-      total.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is WalkSummary &&
-          runtimeType == other.runtimeType &&
-          passed == other.passed &&
-          partly == other.partly &&
-          failed == other.failed &&
-          weak == other.weak &&
-          total == other.total;
 }

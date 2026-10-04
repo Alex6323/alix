@@ -7,7 +7,7 @@
   @keyframes pulse { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }
   @keyframes dotFade { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }  /* reduced-motion: opacity pulse, no scale */
   .exam-error { border: 1px solid var(--again); border-left-width: 3px; border-radius: 10px; padding: 9px 12px; color: var(--again); font-size: 0.88rem; background: color-mix(in srgb, var(--again) 8%, transparent); }
-  /* the "QUESTION n / N" progress line reads as a cyan mono eyebrow (matches the walk's checkpoint eyebrow). */
+  /* the "QUESTION n / N" progress line reads as a cyan mono eyebrow (matches the trace's checkpoint eyebrow). */
   .exam-progress { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--bolt); }
   .exam-q { font-size: clamp(1.1rem, 3.4vw, 1.4rem); line-height: 1.4; color: var(--ink); }
   .exam-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 120px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: inherit; }

@@ -37,7 +37,7 @@ impl Delta {
     }
 
     /// A `Partial` schedules as FSRS `Hard` (a weak pass, resurfaces sooner); a
-    /// `Failed` schedules as `Again` but never derails the walk.
+    /// `Failed` schedules as `Again` but never derails the trace.
     pub fn grade(self) -> Grade {
         match self {
             Delta::Passed => Grade::Pass,
@@ -161,7 +161,7 @@ impl Trace {
             let Some(locator) = cp.locator.as_deref() else {
                 issues.push(LocatorIssue {
                     checkpoint: i,
-                    message: "no `at:` locator, so a walk can't reveal its source".to_string(),
+                    message: "no `at:` locator, so a trace can't reveal its source".to_string(),
                 });
                 continue;
             };
@@ -228,12 +228,12 @@ pub struct LocatorIssue {
 pub enum Phase {
     Predict,
     Reveal,
-    /// Every checkpoint walked; verification is the trace's separate
+    /// Every checkpoint traced; verification is the trace's separate
     /// AI-graded exam, not an ungraded compression step here.
     Done,
 }
 
-pub struct Walk {
+pub struct TraceSession {
     trace: Trace,
     current: usize,
     phase: Phase,
@@ -241,10 +241,10 @@ pub struct Walk {
     deltas: Vec<Option<Delta>>,
 }
 
-impl Walk {
-    pub fn new(trace: Trace) -> Walk {
+impl TraceSession {
+    pub fn new(trace: Trace) -> TraceSession {
         let n = trace.checkpoints.len();
-        Walk {
+        TraceSession {
             trace,
             current: 0,
             phase: Phase::Predict,
@@ -517,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn walking_a_trace_drills_but_does_not_master_it() {
+    fn tracing_a_trace_drills_but_does_not_master_it() {
         use crate::{deck::DeckState, store::Store};
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "src.rs", "a\nb\nc\n");
@@ -544,10 +544,10 @@ mod tests {
         let card0 = Trace::from_deck(&deck).unwrap().checkpoints[0]
             .card_id
             .clone();
-        let mut walk = Walk::new(Trace::from_deck(&deck).unwrap());
-        walk.predict("p".to_string());
-        walk.grade(&mut store, Delta::Passed, 1);
-        assert_eq!(Phase::Done, walk.phase());
+        let mut session = TraceSession::new(Trace::from_deck(&deck).unwrap());
+        session.predict("p".to_string());
+        session.grade(&mut store, Delta::Passed, 1);
+        assert_eq!(Phase::Done, session.phase());
         if let Some(f) = store.get_or_insert(&card0).recall.as_mut() {
             f.state = 2; // Review state (graduated)
         }
@@ -605,7 +605,7 @@ mod tests {
     }
 
     #[test]
-    fn compression_rubric_preserves_every_checkpoint_point_in_walk_order() {
+    fn compression_rubric_preserves_every_checkpoint_point_in_trace_order() {
         let dir = tempfile::tempdir().unwrap();
         let trace = Trace::from_deck(&trace_deck(dir.path())).unwrap();
 
@@ -855,7 +855,7 @@ mod tests {
         assert!(issues[0].message.contains("only 3"));
     }
 
-    /// A range whose end runs past EOF is silently clamped at walk time, so
+    /// A range whose end runs past EOF is silently clamped at trace time, so
     /// `check` flags it too.
     #[test]
     fn lint_locators_flags_a_clamped_end() {
@@ -916,48 +916,48 @@ mod tests {
     }
 
     #[test]
-    fn walk_runs_predict_reveal_grade_to_done() {
+    fn trace_runs_predict_reveal_grade_to_done() {
         let dir = tempfile::tempdir().unwrap();
         let deck = trace_deck(dir.path());
         let trace = Trace::from_deck(&deck).unwrap();
         let card0 = trace.checkpoints[0].card_id.clone();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let mut walk = Walk::new(trace);
+        let mut session = TraceSession::new(trace);
 
-        assert_eq!(Phase::Predict, walk.phase());
-        assert_eq!(2, walk.total());
+        assert_eq!(Phase::Predict, session.phase());
+        assert_eq!(2, session.total());
 
-        walk.predict("my guess".to_string());
-        assert_eq!(Phase::Reveal, walk.phase());
-        assert_eq!(Some("my guess"), walk.prediction(0));
-        walk.grade(&mut store, Delta::Passed, 1000);
-        assert_eq!(Phase::Predict, walk.phase());
-        assert_eq!(1, walk.current_index());
+        session.predict("my guess".to_string());
+        assert_eq!(Phase::Reveal, session.phase());
+        assert_eq!(Some("my guess"), session.prediction(0));
+        session.grade(&mut store, Delta::Passed, 1000);
+        assert_eq!(Phase::Predict, session.phase());
+        assert_eq!(1, session.current_index());
         assert!(store.get(&card0).unwrap().recall.is_some());
 
-        let card1 = walk.checkpoint().unwrap().card_id.clone();
-        walk.predict(String::new());
-        walk.grade(&mut store, Delta::Failed, 1001);
-        assert_eq!(Phase::Done, walk.phase());
+        let card1 = session.checkpoint().unwrap().card_id.clone();
+        session.predict(String::new());
+        session.grade(&mut store, Delta::Failed, 1001);
+        assert_eq!(Phase::Done, session.phase());
         assert_eq!(0, store.get(&card1).unwrap().streak);
 
-        let summary = walk.summary();
+        let summary = session.summary();
         assert_eq!(1, summary.passed);
         assert_eq!(1, summary.failed);
         assert_eq!(vec![1], summary.weak);
     }
 
     #[test]
-    fn a_trace_walk_grade_creates_an_entry_with_records() {
+    fn a_trace_grade_creates_an_entry_with_records() {
         let dir = tempfile::tempdir().unwrap();
         let deck = trace_deck(dir.path());
         let trace = Trace::from_deck(&deck).unwrap();
         let card0 = trace.checkpoints[0].card_id.clone();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         assert!(store.get(&card0).is_none(), "no entry before the grade");
-        let mut walk = Walk::new(trace);
-        walk.predict("guess".to_string());
-        walk.grade(&mut store, Delta::Passed, 1000);
+        let mut session = TraceSession::new(trace);
+        session.predict("guess".to_string());
+        session.grade(&mut store, Delta::Passed, 1000);
         assert!(store.get(&card0).is_some(), "the grade created the entry");
     }
 
@@ -967,14 +967,14 @@ mod tests {
         let deck = trace_deck(dir.path());
         let trace = Trace::from_deck(&deck).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let mut walk = Walk::new(trace);
-        let card0 = walk.checkpoint().unwrap().card_id.clone();
-        walk.predict("guess".to_string());
-        walk.grade(&mut store, Delta::Partial, 1000);
+        let mut session = TraceSession::new(trace);
+        let card0 = session.checkpoint().unwrap().card_id.clone();
+        session.predict("guess".to_string());
+        session.grade(&mut store, Delta::Partial, 1000);
         let state = store.get(&card0).unwrap();
         assert!(state.recall.is_some());
         assert_eq!(1, state.total_passes);
-        assert_eq!(1, walk.summary().partly);
+        assert_eq!(1, session.summary().partly);
     }
 
     #[test]
@@ -983,10 +983,10 @@ mod tests {
         let deck = trace_deck(dir.path());
         let trace = Trace::from_deck(&deck).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let mut walk = Walk::new(trace);
-        walk.grade(&mut store, Delta::Passed, 1000);
-        assert_eq!(Phase::Predict, walk.phase());
-        assert_eq!(0, walk.current_index());
+        let mut session = TraceSession::new(trace);
+        session.grade(&mut store, Delta::Passed, 1000);
+        assert_eq!(Phase::Predict, session.phase());
+        assert_eq!(0, session.current_index());
         assert!(store.is_empty());
     }
 

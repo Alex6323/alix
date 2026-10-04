@@ -9,14 +9,14 @@ import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
-import 'package:alix_mobile/walk_screen.dart';
+import 'package:alix_mobile/trace_screen.dart';
 
 import 'support/deck_fixture.dart';
 import 'support/picker_listing.dart';
 
 const traceDeck = '''
 ---
-trace: Parser walk
+trace: Parser trace
 source: source.txt
 ---
 ## A `ReadingCloze` block just ended. What is handed to `parse_cloze_cards`?
@@ -43,7 +43,7 @@ void main() {
   setUpAll(() async => RustLib.init());
 
   testWidgets(
-    'the picker marks a trace deck and opens it as an on-device walk, never a review',
+    'the picker marks a trace deck and opens it as an on-device trace, never a review',
     (tester) async {
       final root = traceRoot();
       addTearDown(() => root.deleteSync(recursive: true));
@@ -60,10 +60,10 @@ void main() {
       );
       await settlePicker(tester);
 
-      expect(find.text('Parser Walk'), findsOneWidget);
+      expect(find.text('Parser Trace'), findsOneWidget);
       expect(find.text('trace'), findsOneWidget, reason: 'the row is marked');
 
-      await tester.tap(find.text('Parser Walk'));
+      await tester.tap(find.text('Parser Trace'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(
@@ -72,9 +72,9 @@ void main() {
         reason: 'a trace deck must not open a review session',
       );
       expect(
-        find.byType(WalkScreen),
+        find.byType(TraceSessionScreen),
         findsOneWidget,
-        reason: 'it walks instead of refusing',
+        reason: 'it traces instead of refusing',
       );
     },
   );

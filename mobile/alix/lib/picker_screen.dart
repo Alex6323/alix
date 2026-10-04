@@ -27,7 +27,7 @@ import 'package:alix_mobile/sync/sync_models.dart';
 import 'package:alix_mobile/sync/sync_port.dart';
 import 'package:alix_mobile/sync/sync_sheet.dart';
 import 'package:alix_mobile/theme.dart';
-import 'package:alix_mobile/walk_screen.dart';
+import 'package:alix_mobile/trace_screen.dart';
 
 class PickerScreen extends StatefulWidget {
   const PickerScreen({
@@ -452,11 +452,11 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.reload();
   }
 
-  Future<void> _openWalk(PickerEntry entry, {required String root}) async {
+  Future<void> _openTraceSession(PickerEntry entry, {required String root}) async {
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => WalkScreen(
+        builder: (_) => TraceSessionScreen(
           deckPath: entry.path,
           rootDir: root,
           device: widget.device,
@@ -549,7 +549,7 @@ class _PickerScreenState extends State<PickerScreen> {
     if (entry.isWorkspace) {
       _drillInto(entry, root: root, isPaired: isPaired);
     } else if (entry.isTrace) {
-      _openWalk(entry, root: root);
+      _openTraceSession(entry, root: root);
     } else {
       _openDeck(entry, root: root, isPaired: isPaired);
     }

@@ -460,7 +460,7 @@ struct GenerateDeckArgs {
     into: Option<PathBuf>,
 
     /// Author a trace over the source instead of facts cards: a short
-    /// predict-and-verify walk over its shape, written as a trace deck.
+    /// predict-and-verify trace over its shape, written as a trace deck.
     #[arg(long)]
     trace: bool,
 

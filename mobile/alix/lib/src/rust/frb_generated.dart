@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1331836520;
+  int get rustContentHash => -76734181;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -158,42 +158,44 @@ abstract class RustLibApi extends BaseApi {
     required ReviewSession that,
   });
 
-  void crateApiReviewWalkSessionApplyExamFailed({
-    required WalkSession that,
+  void crateApiReviewTraceSessionApplyExamFailed({
+    required TraceSession that,
     required BigInt nowMs,
   });
 
-  void crateApiReviewWalkSessionApplyExamPassed({
-    required WalkSession that,
+  void crateApiReviewTraceSessionApplyExamPassed({
+    required TraceSession that,
     required BigInt nowMs,
   });
 
-  bool crateApiReviewWalkSessionDeckHasExam({required WalkSession that});
+  bool crateApiReviewTraceSessionDeckHasExam({required TraceSession that});
 
-  BigInt? crateApiReviewWalkSessionExamCooldownMs({
-    required WalkSession that,
+  BigInt? crateApiReviewTraceSessionExamCooldownMs({
+    required TraceSession that,
     required BigInt nowMs,
   });
 
-  WalkState crateApiReviewWalkSessionGrade({
-    required WalkSession that,
-    required WalkDelta delta,
+  TraceSessionState crateApiReviewTraceSessionGrade({
+    required TraceSession that,
+    required TraceSessionDelta delta,
     BigInt? nowMs,
   });
 
-  WalkSession crateApiReviewWalkSessionOpen({
+  TraceSession crateApiReviewTraceSessionOpen({
     required String deckPath,
     required String rootDir,
     BigInt? nowMs,
     String? device,
   });
 
-  void crateApiReviewWalkSessionPredict({
-    required WalkSession that,
+  void crateApiReviewTraceSessionPredict({
+    required TraceSession that,
     required String text,
   });
 
-  WalkState crateApiReviewWalkSessionState({required WalkSession that});
+  TraceSessionState crateApiReviewTraceSessionState({
+    required TraceSession that,
+  });
 
   String crateApiGenerateApplyGeneratedDeck({
     required String decksDir,
@@ -297,12 +299,12 @@ abstract class RustLibApi extends BaseApi {
   get rust_arc_decrement_strong_count_ReviewSessionPtr;
 
   RustArcIncrementStrongCountFnType
-  get rust_arc_increment_strong_count_WalkSession;
+  get rust_arc_increment_strong_count_TraceSession;
 
   RustArcDecrementStrongCountFnType
-  get rust_arc_decrement_strong_count_WalkSession;
+  get rust_arc_decrement_strong_count_TraceSession;
 
-  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_WalkSessionPtr;
+  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_TraceSessionPtr;
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -804,15 +806,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  void crateApiReviewWalkSessionApplyExamFailed({
-    required WalkSession that,
+  void crateApiReviewTraceSessionApplyExamFailed({
+    required TraceSession that,
     required BigInt nowMs,
   }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
             that,
             serializer,
           );
@@ -823,29 +825,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_unit,
           decodeErrorData: sse_decode_AnyhowException,
         ),
-        constMeta: kCrateApiReviewWalkSessionApplyExamFailedConstMeta,
+        constMeta: kCrateApiReviewTraceSessionApplyExamFailedConstMeta,
         argValues: [that, nowMs],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReviewWalkSessionApplyExamFailedConstMeta =>
+  TaskConstMeta get kCrateApiReviewTraceSessionApplyExamFailedConstMeta =>
       const TaskConstMeta(
-        debugName: "WalkSession_apply_exam_failed",
+        debugName: "TraceSession_apply_exam_failed",
         argNames: ["that", "nowMs"],
       );
 
   @override
-  void crateApiReviewWalkSessionApplyExamPassed({
-    required WalkSession that,
+  void crateApiReviewTraceSessionApplyExamPassed({
+    required TraceSession that,
     required BigInt nowMs,
   }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
             that,
             serializer,
           );
@@ -856,26 +858,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_unit,
           decodeErrorData: sse_decode_AnyhowException,
         ),
-        constMeta: kCrateApiReviewWalkSessionApplyExamPassedConstMeta,
+        constMeta: kCrateApiReviewTraceSessionApplyExamPassedConstMeta,
         argValues: [that, nowMs],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReviewWalkSessionApplyExamPassedConstMeta =>
+  TaskConstMeta get kCrateApiReviewTraceSessionApplyExamPassedConstMeta =>
       const TaskConstMeta(
-        debugName: "WalkSession_apply_exam_passed",
+        debugName: "TraceSession_apply_exam_passed",
         argNames: ["that", "nowMs"],
       );
 
   @override
-  bool crateApiReviewWalkSessionDeckHasExam({required WalkSession that}) {
+  bool crateApiReviewTraceSessionDeckHasExam({required TraceSession that}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
             that,
             serializer,
           );
@@ -885,29 +887,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_bool,
           decodeErrorData: null,
         ),
-        constMeta: kCrateApiReviewWalkSessionDeckHasExamConstMeta,
+        constMeta: kCrateApiReviewTraceSessionDeckHasExamConstMeta,
         argValues: [that],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReviewWalkSessionDeckHasExamConstMeta =>
+  TaskConstMeta get kCrateApiReviewTraceSessionDeckHasExamConstMeta =>
       const TaskConstMeta(
-        debugName: "WalkSession_deck_has_exam",
+        debugName: "TraceSession_deck_has_exam",
         argNames: ["that"],
       );
 
   @override
-  BigInt? crateApiReviewWalkSessionExamCooldownMs({
-    required WalkSession that,
+  BigInt? crateApiReviewTraceSessionExamCooldownMs({
+    required TraceSession that,
     required BigInt nowMs,
   }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
             that,
             serializer,
           );
@@ -918,56 +920,56 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_opt_box_autoadd_u_64,
           decodeErrorData: null,
         ),
-        constMeta: kCrateApiReviewWalkSessionExamCooldownMsConstMeta,
+        constMeta: kCrateApiReviewTraceSessionExamCooldownMsConstMeta,
         argValues: [that, nowMs],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReviewWalkSessionExamCooldownMsConstMeta =>
+  TaskConstMeta get kCrateApiReviewTraceSessionExamCooldownMsConstMeta =>
       const TaskConstMeta(
-        debugName: "WalkSession_exam_cooldown_ms",
+        debugName: "TraceSession_exam_cooldown_ms",
         argNames: ["that", "nowMs"],
       );
 
   @override
-  WalkState crateApiReviewWalkSessionGrade({
-    required WalkSession that,
-    required WalkDelta delta,
+  TraceSessionState crateApiReviewTraceSessionGrade({
+    required TraceSession that,
+    required TraceSessionDelta delta,
     BigInt? nowMs,
   }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
             that,
             serializer,
           );
-          sse_encode_walk_delta(delta, serializer);
+          sse_encode_trace_session_delta(delta, serializer);
           sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_walk_state,
+          decodeSuccessData: sse_decode_trace_session_state,
           decodeErrorData: sse_decode_AnyhowException,
         ),
-        constMeta: kCrateApiReviewWalkSessionGradeConstMeta,
+        constMeta: kCrateApiReviewTraceSessionGradeConstMeta,
         argValues: [that, delta, nowMs],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReviewWalkSessionGradeConstMeta =>
+  TaskConstMeta get kCrateApiReviewTraceSessionGradeConstMeta =>
       const TaskConstMeta(
-        debugName: "WalkSession_grade",
+        debugName: "TraceSession_grade",
         argNames: ["that", "delta", "nowMs"],
       );
 
   @override
-  WalkSession crateApiReviewWalkSessionOpen({
+  TraceSession crateApiReviewTraceSessionOpen({
     required String deckPath,
     required String rootDir,
     BigInt? nowMs,
@@ -985,32 +987,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData:
-              sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession,
+              sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession,
           decodeErrorData: sse_decode_AnyhowException,
         ),
-        constMeta: kCrateApiReviewWalkSessionOpenConstMeta,
+        constMeta: kCrateApiReviewTraceSessionOpenConstMeta,
         argValues: [deckPath, rootDir, nowMs, device],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReviewWalkSessionOpenConstMeta =>
+  TaskConstMeta get kCrateApiReviewTraceSessionOpenConstMeta =>
       const TaskConstMeta(
-        debugName: "WalkSession_open",
+        debugName: "TraceSession_open",
         argNames: ["deckPath", "rootDir", "nowMs", "device"],
       );
 
   @override
-  void crateApiReviewWalkSessionPredict({
-    required WalkSession that,
+  void crateApiReviewTraceSessionPredict({
+    required TraceSession that,
     required String text,
   }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
             that,
             serializer,
           );
@@ -1021,44 +1023,46 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_unit,
           decodeErrorData: null,
         ),
-        constMeta: kCrateApiReviewWalkSessionPredictConstMeta,
+        constMeta: kCrateApiReviewTraceSessionPredictConstMeta,
         argValues: [that, text],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReviewWalkSessionPredictConstMeta =>
+  TaskConstMeta get kCrateApiReviewTraceSessionPredictConstMeta =>
       const TaskConstMeta(
-        debugName: "WalkSession_predict",
+        debugName: "TraceSession_predict",
         argNames: ["that", "text"],
       );
 
   @override
-  WalkState crateApiReviewWalkSessionState({required WalkSession that}) {
+  TraceSessionState crateApiReviewTraceSessionState({
+    required TraceSession that,
+  }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
             that,
             serializer,
           );
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 22)!;
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_walk_state,
+          decodeSuccessData: sse_decode_trace_session_state,
           decodeErrorData: null,
         ),
-        constMeta: kCrateApiReviewWalkSessionStateConstMeta,
+        constMeta: kCrateApiReviewTraceSessionStateConstMeta,
         argValues: [that],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReviewWalkSessionStateConstMeta =>
-      const TaskConstMeta(debugName: "WalkSession_state", argNames: ["that"]);
+  TaskConstMeta get kCrateApiReviewTraceSessionStateConstMeta =>
+      const TaskConstMeta(debugName: "TraceSession_state", argNames: ["that"]);
 
   @override
   String crateApiGenerateApplyGeneratedDeck({
@@ -1739,12 +1743,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerReviewSession;
 
   RustArcIncrementStrongCountFnType
-  get rust_arc_increment_strong_count_WalkSession => wire
-      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession;
+  get rust_arc_increment_strong_count_TraceSession => wire
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession;
 
   RustArcDecrementStrongCountFnType
-  get rust_arc_decrement_strong_count_WalkSession => wire
-      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession;
+  get rust_arc_decrement_strong_count_TraceSession => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession;
 
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw) {
@@ -1762,12 +1766,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  WalkSession
-  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+  TraceSession
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return WalkSessionImpl.frbInternalDcoDecode(raw as List<dynamic>);
+    return TraceSessionImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
@@ -1780,12 +1784,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  WalkSession
-  dco_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+  TraceSession
+  dco_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return WalkSessionImpl.frbInternalDcoDecode(raw as List<dynamic>);
+    return TraceSessionImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
@@ -1798,12 +1802,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  WalkSession
-  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+  TraceSession
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return WalkSessionImpl.frbInternalDcoDecode(raw as List<dynamic>);
+    return TraceSessionImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
@@ -1816,12 +1820,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  WalkSession
-  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+  TraceSession
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return WalkSessionImpl.frbInternalDcoDecode(raw as List<dynamic>);
+    return TraceSessionImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
@@ -1967,6 +1971,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TraceSessionExcerpt dco_decode_box_autoadd_trace_session_excerpt(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_trace_session_excerpt(raw);
+  }
+
+  @protected
+  TraceSessionSummary dco_decode_box_autoadd_trace_session_summary(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_trace_session_summary(raw);
+  }
+
+  @protected
   TutorCard dco_decode_box_autoadd_tutor_card(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_tutor_card(raw);
@@ -1976,18 +1996,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BigInt dco_decode_box_autoadd_u_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_u_64(raw);
-  }
-
-  @protected
-  WalkExcerpt dco_decode_box_autoadd_walk_excerpt(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_walk_excerpt(raw);
-  }
-
-  @protected
-  WalkSummary dco_decode_box_autoadd_walk_summary(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_walk_summary(raw);
   }
 
   @protected
@@ -2367,15 +2375,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<TypedResult> dco_decode_list_typed_result(dynamic raw) {
+  List<TraceSessionLine> dco_decode_list_trace_session_line(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>).map(dco_decode_typed_result).toList();
+    return (raw as List<dynamic>).map(dco_decode_trace_session_line).toList();
   }
 
   @protected
-  List<WalkLine> dco_decode_list_walk_line(dynamic raw) {
+  List<TypedResult> dco_decode_list_typed_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>).map(dco_decode_walk_line).toList();
+    return (raw as List<dynamic>).map(dco_decode_typed_result).toList();
   }
 
   @protected
@@ -2551,6 +2559,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TraceSessionExcerpt? dco_decode_opt_box_autoadd_trace_session_excerpt(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_trace_session_excerpt(raw);
+  }
+
+  @protected
+  TraceSessionSummary? dco_decode_opt_box_autoadd_trace_session_summary(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_trace_session_summary(raw);
+  }
+
+  @protected
   TutorCard? dco_decode_opt_box_autoadd_tutor_card(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_tutor_card(raw);
@@ -2560,18 +2588,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_64(raw);
-  }
-
-  @protected
-  WalkExcerpt? dco_decode_opt_box_autoadd_walk_excerpt(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw == null ? null : dco_decode_box_autoadd_walk_excerpt(raw);
-  }
-
-  @protected
-  WalkSummary? dco_decode_opt_box_autoadd_walk_summary(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw == null ? null : dco_decode_box_autoadd_walk_summary(raw);
   }
 
   @protected
@@ -2825,6 +2841,88 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TraceSessionDelta dco_decode_trace_session_delta(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return TraceSessionDelta.values[raw as int];
+  }
+
+  @protected
+  TraceSessionExcerpt dco_decode_trace_session_excerpt(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return TraceSessionExcerpt(
+      path: dco_decode_String(arr[0]),
+      lines: dco_decode_list_trace_session_line(arr[1]),
+      truncated: dco_decode_bool(arr[2]),
+    );
+  }
+
+  @protected
+  TraceSessionLine dco_decode_trace_session_line(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return TraceSessionLine(
+      n: dco_decode_u_32(arr[0]),
+      text: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  TraceSessionPhase dco_decode_trace_session_phase(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return TraceSessionPhase.values[raw as int];
+  }
+
+  @protected
+  TraceSessionState dco_decode_trace_session_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 20)
+      throw Exception('unexpected arr length: expect 20 but see ${arr.length}');
+    return TraceSessionState(
+      phase: dco_decode_trace_session_phase(arr[0]),
+      description: dco_decode_String(arr[1]),
+      descriptionRuns: dco_decode_list_inline_run(arr[2]),
+      source: dco_decode_opt_String(arr[3]),
+      total: dco_decode_u_32(arr[4]),
+      current: dco_decode_u_32(arr[5]),
+      prompt: dco_decode_opt_String(arr[6]),
+      promptRuns: dco_decode_opt_list_inline_run(arr[7]),
+      givens: dco_decode_list_String(arr[8]),
+      givenRuns: dco_decode_list_list_inline_run(arr[9]),
+      locator: dco_decode_opt_String(arr[10]),
+      prediction: dco_decode_opt_String(arr[11]),
+      excerpt: dco_decode_opt_box_autoadd_trace_session_excerpt(arr[12]),
+      excerptError: dco_decode_opt_String(arr[13]),
+      points: dco_decode_list_String(arr[14]),
+      pointRuns: dco_decode_list_list_inline_run(arr[15]),
+      note: dco_decode_opt_String(arr[16]),
+      noteRuns: dco_decode_opt_list_inline_run(arr[17]),
+      summary: dco_decode_opt_box_autoadd_trace_session_summary(arr[18]),
+      saveError: dco_decode_opt_String(arr[19]),
+    );
+  }
+
+  @protected
+  TraceSessionSummary dco_decode_trace_session_summary(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return TraceSessionSummary(
+      passed: dco_decode_u_32(arr[0]),
+      partly: dco_decode_u_32(arr[1]),
+      failed: dco_decode_u_32(arr[2]),
+      weak: dco_decode_list_prim_u_32_strict(arr[3]),
+      total: dco_decode_u_32(arr[4]),
+    );
+  }
+
+  @protected
   TutorCard dco_decode_tutor_card(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -2885,88 +2983,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  WalkDelta dco_decode_walk_delta(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return WalkDelta.values[raw as int];
-  }
-
-  @protected
-  WalkExcerpt dco_decode_walk_excerpt(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
-    return WalkExcerpt(
-      path: dco_decode_String(arr[0]),
-      lines: dco_decode_list_walk_line(arr[1]),
-      truncated: dco_decode_bool(arr[2]),
-    );
-  }
-
-  @protected
-  WalkLine dco_decode_walk_line(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return WalkLine(
-      n: dco_decode_u_32(arr[0]),
-      text: dco_decode_String(arr[1]),
-    );
-  }
-
-  @protected
-  WalkPhase dco_decode_walk_phase(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return WalkPhase.values[raw as int];
-  }
-
-  @protected
-  WalkState dco_decode_walk_state(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 20)
-      throw Exception('unexpected arr length: expect 20 but see ${arr.length}');
-    return WalkState(
-      phase: dco_decode_walk_phase(arr[0]),
-      description: dco_decode_String(arr[1]),
-      descriptionRuns: dco_decode_list_inline_run(arr[2]),
-      source: dco_decode_opt_String(arr[3]),
-      total: dco_decode_u_32(arr[4]),
-      current: dco_decode_u_32(arr[5]),
-      prompt: dco_decode_opt_String(arr[6]),
-      promptRuns: dco_decode_opt_list_inline_run(arr[7]),
-      givens: dco_decode_list_String(arr[8]),
-      givenRuns: dco_decode_list_list_inline_run(arr[9]),
-      locator: dco_decode_opt_String(arr[10]),
-      prediction: dco_decode_opt_String(arr[11]),
-      excerpt: dco_decode_opt_box_autoadd_walk_excerpt(arr[12]),
-      excerptError: dco_decode_opt_String(arr[13]),
-      points: dco_decode_list_String(arr[14]),
-      pointRuns: dco_decode_list_list_inline_run(arr[15]),
-      note: dco_decode_opt_String(arr[16]),
-      noteRuns: dco_decode_opt_list_inline_run(arr[17]),
-      summary: dco_decode_opt_box_autoadd_walk_summary(arr[18]),
-      saveError: dco_decode_opt_String(arr[19]),
-    );
-  }
-
-  @protected
-  WalkSummary dco_decode_walk_summary(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
-    return WalkSummary(
-      passed: dco_decode_u_32(arr[0]),
-      partly: dco_decode_u_32(arr[1]),
-      failed: dco_decode_u_32(arr[2]),
-      weak: dco_decode_list_prim_u_32_strict(arr[3]),
-      total: dco_decode_u_32(arr[4]),
-    );
-  }
-
-  @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_String(deserializer);
@@ -2986,12 +3002,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  WalkSession
-  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+  TraceSession
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return WalkSessionImpl.frbInternalSseDecode(
+    return TraceSessionImpl.frbInternalSseDecode(
       sse_decode_usize(deserializer),
       sse_decode_i_32(deserializer),
     );
@@ -3010,12 +3026,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  WalkSession
-  sse_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+  TraceSession
+  sse_decode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return WalkSessionImpl.frbInternalSseDecode(
+    return TraceSessionImpl.frbInternalSseDecode(
       sse_decode_usize(deserializer),
       sse_decode_i_32(deserializer),
     );
@@ -3034,12 +3050,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  WalkSession
-  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+  TraceSession
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return WalkSessionImpl.frbInternalSseDecode(
+    return TraceSessionImpl.frbInternalSseDecode(
       sse_decode_usize(deserializer),
       sse_decode_i_32(deserializer),
     );
@@ -3058,12 +3074,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  WalkSession
-  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
+  TraceSession
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return WalkSessionImpl.frbInternalSseDecode(
+    return TraceSessionImpl.frbInternalSseDecode(
       sse_decode_usize(deserializer),
       sse_decode_i_32(deserializer),
     );
@@ -3237,6 +3253,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TraceSessionExcerpt sse_decode_box_autoadd_trace_session_excerpt(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_trace_session_excerpt(deserializer));
+  }
+
+  @protected
+  TraceSessionSummary sse_decode_box_autoadd_trace_session_summary(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_trace_session_summary(deserializer));
+  }
+
+  @protected
   TutorCard sse_decode_box_autoadd_tutor_card(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_tutor_card(deserializer));
@@ -3246,22 +3278,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_u_64(deserializer));
-  }
-
-  @protected
-  WalkExcerpt sse_decode_box_autoadd_walk_excerpt(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_walk_excerpt(deserializer));
-  }
-
-  @protected
-  WalkSummary sse_decode_box_autoadd_walk_summary(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_walk_summary(deserializer));
   }
 
   @protected
@@ -3806,6 +3822,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<TraceSessionLine> sse_decode_list_trace_session_line(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <TraceSessionLine>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_trace_session_line(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<TypedResult> sse_decode_list_typed_result(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -3813,18 +3843,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <TypedResult>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_typed_result(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
-  List<WalkLine> sse_decode_list_walk_line(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <WalkLine>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_walk_line(deserializer));
     }
     return ans_;
   }
@@ -4092,6 +4110,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TraceSessionExcerpt? sse_decode_opt_box_autoadd_trace_session_excerpt(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_trace_session_excerpt(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  TraceSessionSummary? sse_decode_opt_box_autoadd_trace_session_summary(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_trace_session_summary(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   TutorCard? sse_decode_opt_box_autoadd_tutor_card(
     SseDeserializer deserializer,
   ) {
@@ -4110,32 +4154,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_u_64(deserializer));
-    } else {
-      return null;
-    }
-  }
-
-  @protected
-  WalkExcerpt? sse_decode_opt_box_autoadd_walk_excerpt(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    if (sse_decode_bool(deserializer)) {
-      return (sse_decode_box_autoadd_walk_excerpt(deserializer));
-    } else {
-      return null;
-    }
-  }
-
-  @protected
-  WalkSummary? sse_decode_opt_box_autoadd_walk_summary(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    if (sse_decode_bool(deserializer)) {
-      return (sse_decode_box_autoadd_walk_summary(deserializer));
     } else {
       return null;
     }
@@ -4464,6 +4482,119 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TraceSessionDelta sse_decode_trace_session_delta(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return TraceSessionDelta.values[inner];
+  }
+
+  @protected
+  TraceSessionExcerpt sse_decode_trace_session_excerpt(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_path = sse_decode_String(deserializer);
+    var var_lines = sse_decode_list_trace_session_line(deserializer);
+    var var_truncated = sse_decode_bool(deserializer);
+    return TraceSessionExcerpt(
+      path: var_path,
+      lines: var_lines,
+      truncated: var_truncated,
+    );
+  }
+
+  @protected
+  TraceSessionLine sse_decode_trace_session_line(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_n = sse_decode_u_32(deserializer);
+    var var_text = sse_decode_String(deserializer);
+    return TraceSessionLine(n: var_n, text: var_text);
+  }
+
+  @protected
+  TraceSessionPhase sse_decode_trace_session_phase(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return TraceSessionPhase.values[inner];
+  }
+
+  @protected
+  TraceSessionState sse_decode_trace_session_state(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_phase = sse_decode_trace_session_phase(deserializer);
+    var var_description = sse_decode_String(deserializer);
+    var var_descriptionRuns = sse_decode_list_inline_run(deserializer);
+    var var_source = sse_decode_opt_String(deserializer);
+    var var_total = sse_decode_u_32(deserializer);
+    var var_current = sse_decode_u_32(deserializer);
+    var var_prompt = sse_decode_opt_String(deserializer);
+    var var_promptRuns = sse_decode_opt_list_inline_run(deserializer);
+    var var_givens = sse_decode_list_String(deserializer);
+    var var_givenRuns = sse_decode_list_list_inline_run(deserializer);
+    var var_locator = sse_decode_opt_String(deserializer);
+    var var_prediction = sse_decode_opt_String(deserializer);
+    var var_excerpt = sse_decode_opt_box_autoadd_trace_session_excerpt(
+      deserializer,
+    );
+    var var_excerptError = sse_decode_opt_String(deserializer);
+    var var_points = sse_decode_list_String(deserializer);
+    var var_pointRuns = sse_decode_list_list_inline_run(deserializer);
+    var var_note = sse_decode_opt_String(deserializer);
+    var var_noteRuns = sse_decode_opt_list_inline_run(deserializer);
+    var var_summary = sse_decode_opt_box_autoadd_trace_session_summary(
+      deserializer,
+    );
+    var var_saveError = sse_decode_opt_String(deserializer);
+    return TraceSessionState(
+      phase: var_phase,
+      description: var_description,
+      descriptionRuns: var_descriptionRuns,
+      source: var_source,
+      total: var_total,
+      current: var_current,
+      prompt: var_prompt,
+      promptRuns: var_promptRuns,
+      givens: var_givens,
+      givenRuns: var_givenRuns,
+      locator: var_locator,
+      prediction: var_prediction,
+      excerpt: var_excerpt,
+      excerptError: var_excerptError,
+      points: var_points,
+      pointRuns: var_pointRuns,
+      note: var_note,
+      noteRuns: var_noteRuns,
+      summary: var_summary,
+      saveError: var_saveError,
+    );
+  }
+
+  @protected
+  TraceSessionSummary sse_decode_trace_session_summary(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_passed = sse_decode_u_32(deserializer);
+    var var_partly = sse_decode_u_32(deserializer);
+    var var_failed = sse_decode_u_32(deserializer);
+    var var_weak = sse_decode_list_prim_u_32_strict(deserializer);
+    var var_total = sse_decode_u_32(deserializer);
+    return TraceSessionSummary(
+      passed: var_passed,
+      partly: var_partly,
+      failed: var_failed,
+      weak: var_weak,
+      total: var_total,
+    );
+  }
+
+  @protected
   TutorCard sse_decode_tutor_card(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_id = sse_decode_String(deserializer);
@@ -4527,105 +4658,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  WalkDelta sse_decode_walk_delta(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var inner = sse_decode_i_32(deserializer);
-    return WalkDelta.values[inner];
-  }
-
-  @protected
-  WalkExcerpt sse_decode_walk_excerpt(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_path = sse_decode_String(deserializer);
-    var var_lines = sse_decode_list_walk_line(deserializer);
-    var var_truncated = sse_decode_bool(deserializer);
-    return WalkExcerpt(
-      path: var_path,
-      lines: var_lines,
-      truncated: var_truncated,
-    );
-  }
-
-  @protected
-  WalkLine sse_decode_walk_line(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_n = sse_decode_u_32(deserializer);
-    var var_text = sse_decode_String(deserializer);
-    return WalkLine(n: var_n, text: var_text);
-  }
-
-  @protected
-  WalkPhase sse_decode_walk_phase(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var inner = sse_decode_i_32(deserializer);
-    return WalkPhase.values[inner];
-  }
-
-  @protected
-  WalkState sse_decode_walk_state(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_phase = sse_decode_walk_phase(deserializer);
-    var var_description = sse_decode_String(deserializer);
-    var var_descriptionRuns = sse_decode_list_inline_run(deserializer);
-    var var_source = sse_decode_opt_String(deserializer);
-    var var_total = sse_decode_u_32(deserializer);
-    var var_current = sse_decode_u_32(deserializer);
-    var var_prompt = sse_decode_opt_String(deserializer);
-    var var_promptRuns = sse_decode_opt_list_inline_run(deserializer);
-    var var_givens = sse_decode_list_String(deserializer);
-    var var_givenRuns = sse_decode_list_list_inline_run(deserializer);
-    var var_locator = sse_decode_opt_String(deserializer);
-    var var_prediction = sse_decode_opt_String(deserializer);
-    var var_excerpt = sse_decode_opt_box_autoadd_walk_excerpt(deserializer);
-    var var_excerptError = sse_decode_opt_String(deserializer);
-    var var_points = sse_decode_list_String(deserializer);
-    var var_pointRuns = sse_decode_list_list_inline_run(deserializer);
-    var var_note = sse_decode_opt_String(deserializer);
-    var var_noteRuns = sse_decode_opt_list_inline_run(deserializer);
-    var var_summary = sse_decode_opt_box_autoadd_walk_summary(deserializer);
-    var var_saveError = sse_decode_opt_String(deserializer);
-    return WalkState(
-      phase: var_phase,
-      description: var_description,
-      descriptionRuns: var_descriptionRuns,
-      source: var_source,
-      total: var_total,
-      current: var_current,
-      prompt: var_prompt,
-      promptRuns: var_promptRuns,
-      givens: var_givens,
-      givenRuns: var_givenRuns,
-      locator: var_locator,
-      prediction: var_prediction,
-      excerpt: var_excerpt,
-      excerptError: var_excerptError,
-      points: var_points,
-      pointRuns: var_pointRuns,
-      note: var_note,
-      noteRuns: var_noteRuns,
-      summary: var_summary,
-      saveError: var_saveError,
-    );
-  }
-
-  @protected
-  WalkSummary sse_decode_walk_summary(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_passed = sse_decode_u_32(deserializer);
-    var var_partly = sse_decode_u_32(deserializer);
-    var var_failed = sse_decode_u_32(deserializer);
-    var var_weak = sse_decode_list_prim_u_32_strict(deserializer);
-    var var_total = sse_decode_u_32(deserializer);
-    return WalkSummary(
-      passed: var_passed,
-      partly: var_partly,
-      failed: var_failed,
-      weak: var_weak,
-      total: var_total,
-    );
-  }
-
-  @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
     SseSerializer serializer,
@@ -4649,13 +4681,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
-  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
-    WalkSession self,
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
+    TraceSession self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_usize(
-      (self as WalkSessionImpl).frbInternalSseEncode(move: true),
+      (self as TraceSessionImpl).frbInternalSseEncode(move: true),
       serializer,
     );
   }
@@ -4675,13 +4707,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
-  sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
-    WalkSession self,
+  sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
+    TraceSession self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_usize(
-      (self as WalkSessionImpl).frbInternalSseEncode(move: false),
+      (self as TraceSessionImpl).frbInternalSseEncode(move: false),
       serializer,
     );
   }
@@ -4701,13 +4733,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
-  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
-    WalkSession self,
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
+    TraceSession self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_usize(
-      (self as WalkSessionImpl).frbInternalSseEncode(move: false),
+      (self as TraceSessionImpl).frbInternalSseEncode(move: false),
       serializer,
     );
   }
@@ -4727,13 +4759,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
-  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerWalkSession(
-    WalkSession self,
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTraceSession(
+    TraceSession self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_usize(
-      (self as WalkSessionImpl).frbInternalSseEncode(move: null),
+      (self as TraceSessionImpl).frbInternalSseEncode(move: null),
       serializer,
     );
   }
@@ -4924,6 +4956,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_trace_session_excerpt(
+    TraceSessionExcerpt self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_trace_session_excerpt(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_trace_session_summary(
+    TraceSessionSummary self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_trace_session_summary(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_tutor_card(
     TutorCard self,
     SseSerializer serializer,
@@ -4936,24 +4986,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_64(self, serializer);
-  }
-
-  @protected
-  void sse_encode_box_autoadd_walk_excerpt(
-    WalkExcerpt self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_walk_excerpt(self, serializer);
-  }
-
-  @protected
-  void sse_encode_box_autoadd_walk_summary(
-    WalkSummary self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_walk_summary(self, serializer);
   }
 
   @protected
@@ -5408,6 +5440,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_trace_session_line(
+    List<TraceSessionLine> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_trace_session_line(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_typed_result(
     List<TypedResult> self,
     SseSerializer serializer,
@@ -5416,18 +5460,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_typed_result(item, serializer);
-    }
-  }
-
-  @protected
-  void sse_encode_list_walk_line(
-    List<WalkLine> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_walk_line(item, serializer);
     }
   }
 
@@ -5674,6 +5706,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_trace_session_excerpt(
+    TraceSessionExcerpt? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_trace_session_excerpt(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_trace_session_summary(
+    TraceSessionSummary? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_trace_session_summary(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_tutor_card(
     TutorCard? self,
     SseSerializer serializer,
@@ -5693,32 +5751,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_u_64(self, serializer);
-    }
-  }
-
-  @protected
-  void sse_encode_opt_box_autoadd_walk_excerpt(
-    WalkExcerpt? self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    sse_encode_bool(self != null, serializer);
-    if (self != null) {
-      sse_encode_box_autoadd_walk_excerpt(self, serializer);
-    }
-  }
-
-  @protected
-  void sse_encode_opt_box_autoadd_walk_summary(
-    WalkSummary? self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    sse_encode_bool(self != null, serializer);
-    if (self != null) {
-      sse_encode_box_autoadd_walk_summary(self, serializer);
     }
   }
 
@@ -5968,6 +6000,86 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_trace_session_delta(
+    TraceSessionDelta self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_trace_session_excerpt(
+    TraceSessionExcerpt self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.path, serializer);
+    sse_encode_list_trace_session_line(self.lines, serializer);
+    sse_encode_bool(self.truncated, serializer);
+  }
+
+  @protected
+  void sse_encode_trace_session_line(
+    TraceSessionLine self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.n, serializer);
+    sse_encode_String(self.text, serializer);
+  }
+
+  @protected
+  void sse_encode_trace_session_phase(
+    TraceSessionPhase self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_trace_session_state(
+    TraceSessionState self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_trace_session_phase(self.phase, serializer);
+    sse_encode_String(self.description, serializer);
+    sse_encode_list_inline_run(self.descriptionRuns, serializer);
+    sse_encode_opt_String(self.source, serializer);
+    sse_encode_u_32(self.total, serializer);
+    sse_encode_u_32(self.current, serializer);
+    sse_encode_opt_String(self.prompt, serializer);
+    sse_encode_opt_list_inline_run(self.promptRuns, serializer);
+    sse_encode_list_String(self.givens, serializer);
+    sse_encode_list_list_inline_run(self.givenRuns, serializer);
+    sse_encode_opt_String(self.locator, serializer);
+    sse_encode_opt_String(self.prediction, serializer);
+    sse_encode_opt_box_autoadd_trace_session_excerpt(self.excerpt, serializer);
+    sse_encode_opt_String(self.excerptError, serializer);
+    sse_encode_list_String(self.points, serializer);
+    sse_encode_list_list_inline_run(self.pointRuns, serializer);
+    sse_encode_opt_String(self.note, serializer);
+    sse_encode_opt_list_inline_run(self.noteRuns, serializer);
+    sse_encode_opt_box_autoadd_trace_session_summary(self.summary, serializer);
+    sse_encode_opt_String(self.saveError, serializer);
+  }
+
+  @protected
+  void sse_encode_trace_session_summary(
+    TraceSessionSummary self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.passed, serializer);
+    sse_encode_u_32(self.partly, serializer);
+    sse_encode_u_32(self.failed, serializer);
+    sse_encode_list_prim_u_32_strict(self.weak, serializer);
+    sse_encode_u_32(self.total, serializer);
+  }
+
+  @protected
   void sse_encode_tutor_card(TutorCard self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.id, serializer);
@@ -6014,68 +6126,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_usize(BigInt self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putBigUint64(self);
-  }
-
-  @protected
-  void sse_encode_walk_delta(WalkDelta self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.index, serializer);
-  }
-
-  @protected
-  void sse_encode_walk_excerpt(WalkExcerpt self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.path, serializer);
-    sse_encode_list_walk_line(self.lines, serializer);
-    sse_encode_bool(self.truncated, serializer);
-  }
-
-  @protected
-  void sse_encode_walk_line(WalkLine self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_u_32(self.n, serializer);
-    sse_encode_String(self.text, serializer);
-  }
-
-  @protected
-  void sse_encode_walk_phase(WalkPhase self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.index, serializer);
-  }
-
-  @protected
-  void sse_encode_walk_state(WalkState self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_walk_phase(self.phase, serializer);
-    sse_encode_String(self.description, serializer);
-    sse_encode_list_inline_run(self.descriptionRuns, serializer);
-    sse_encode_opt_String(self.source, serializer);
-    sse_encode_u_32(self.total, serializer);
-    sse_encode_u_32(self.current, serializer);
-    sse_encode_opt_String(self.prompt, serializer);
-    sse_encode_opt_list_inline_run(self.promptRuns, serializer);
-    sse_encode_list_String(self.givens, serializer);
-    sse_encode_list_list_inline_run(self.givenRuns, serializer);
-    sse_encode_opt_String(self.locator, serializer);
-    sse_encode_opt_String(self.prediction, serializer);
-    sse_encode_opt_box_autoadd_walk_excerpt(self.excerpt, serializer);
-    sse_encode_opt_String(self.excerptError, serializer);
-    sse_encode_list_String(self.points, serializer);
-    sse_encode_list_list_inline_run(self.pointRuns, serializer);
-    sse_encode_opt_String(self.note, serializer);
-    sse_encode_opt_list_inline_run(self.noteRuns, serializer);
-    sse_encode_opt_box_autoadd_walk_summary(self.summary, serializer);
-    sse_encode_opt_String(self.saveError, serializer);
-  }
-
-  @protected
-  void sse_encode_walk_summary(WalkSummary self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_u_32(self.passed, serializer);
-    sse_encode_u_32(self.partly, serializer);
-    sse_encode_u_32(self.failed, serializer);
-    sse_encode_list_prim_u_32_strict(self.weak, serializer);
-    sse_encode_u_32(self.total, serializer);
   }
 }
 
@@ -6159,44 +6209,46 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
 }
 
 @sealed
-class WalkSessionImpl extends RustOpaque implements WalkSession {
+class TraceSessionImpl extends RustOpaque implements TraceSession {
   // Not to be used by end users
-  WalkSessionImpl.frbInternalDcoDecode(List<dynamic> wire)
+  TraceSessionImpl.frbInternalDcoDecode(List<dynamic> wire)
     : super.frbInternalDcoDecode(wire, _kStaticData);
 
   // Not to be used by end users
-  WalkSessionImpl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
+  TraceSessionImpl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
     : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
 
   static final _kStaticData = RustArcStaticData(
     rustArcIncrementStrongCount:
-        RustLib.instance.api.rust_arc_increment_strong_count_WalkSession,
+        RustLib.instance.api.rust_arc_increment_strong_count_TraceSession,
     rustArcDecrementStrongCount:
-        RustLib.instance.api.rust_arc_decrement_strong_count_WalkSession,
+        RustLib.instance.api.rust_arc_decrement_strong_count_TraceSession,
     rustArcDecrementStrongCountPtr:
-        RustLib.instance.api.rust_arc_decrement_strong_count_WalkSessionPtr,
+        RustLib.instance.api.rust_arc_decrement_strong_count_TraceSessionPtr,
   );
 
   void applyExamFailed({required BigInt nowMs}) => RustLib.instance.api
-      .crateApiReviewWalkSessionApplyExamFailed(that: this, nowMs: nowMs);
+      .crateApiReviewTraceSessionApplyExamFailed(that: this, nowMs: nowMs);
 
   void applyExamPassed({required BigInt nowMs}) => RustLib.instance.api
-      .crateApiReviewWalkSessionApplyExamPassed(that: this, nowMs: nowMs);
+      .crateApiReviewTraceSessionApplyExamPassed(that: this, nowMs: nowMs);
 
   bool deckHasExam() =>
-      RustLib.instance.api.crateApiReviewWalkSessionDeckHasExam(that: this);
+      RustLib.instance.api.crateApiReviewTraceSessionDeckHasExam(that: this);
 
   BigInt? examCooldownMs({required BigInt nowMs}) => RustLib.instance.api
-      .crateApiReviewWalkSessionExamCooldownMs(that: this, nowMs: nowMs);
+      .crateApiReviewTraceSessionExamCooldownMs(that: this, nowMs: nowMs);
 
-  WalkState grade({required WalkDelta delta, BigInt? nowMs}) => RustLib
-      .instance
-      .api
-      .crateApiReviewWalkSessionGrade(that: this, delta: delta, nowMs: nowMs);
+  TraceSessionState grade({required TraceSessionDelta delta, BigInt? nowMs}) =>
+      RustLib.instance.api.crateApiReviewTraceSessionGrade(
+        that: this,
+        delta: delta,
+        nowMs: nowMs,
+      );
 
   void predict({required String text}) => RustLib.instance.api
-      .crateApiReviewWalkSessionPredict(that: this, text: text);
+      .crateApiReviewTraceSessionPredict(that: this, text: text);
 
-  WalkState state() =>
-      RustLib.instance.api.crateApiReviewWalkSessionState(that: this);
+  TraceSessionState state() =>
+      RustLib.instance.api.crateApiReviewTraceSessionState(that: this);
 }

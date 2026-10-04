@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Confirms abandoning an unfinished session. Returns true to leave, false to
-/// stay. Shared by the review and walk screens so both deck kinds — fact and
+/// stay. Shared by the review and trace screens so both deck kinds — fact and
 /// trace — guard a stray back-swipe identically.
 Future<bool> confirmLeaveSession(
   BuildContext context, {
@@ -31,7 +31,7 @@ Future<bool> confirmLeaveSession(
 
 /// Wraps a session screen so a back gesture or the AppBar back is intercepted
 /// while the session is unfinished, asking [confirm] before popping; a
-/// `finished` screen pops immediately. Both session screens (review, walk) use
+/// `finished` screen pops immediately. Both session screens (review, trace) use
 /// this one widget, so the leave guard can't silently go missing on one deck
 /// kind the way it did before.
 class LeaveGuard extends StatelessWidget {

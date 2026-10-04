@@ -429,14 +429,14 @@ its answer rests on several disjoint source ranges:
 Each locator remains one contiguous range; separate directives never imply
 that disjoint code is adjacent. On reveal a `</>` marker appears on the answer:
 **click the answer** (or press `s`) to swap it for the same editor-style source
-panels used by trace walks, and back. Multiple excerpts are stacked in authored
+panels used by traces, and back. Multiple excerpts are stacked in authored
 order inside the one scrollable answer region. For a live citation, alix shows
 the lines only when their fingerprint still matches. A moved, changed, deleted,
 ambiguous, or unfingerprinted excerpt shows a warning instead of unrelated
 lines, without hiding the other citations. Short evidence keeps the answer's
 centered vertical alignment; long evidence aligns to the top and scrolls.
 
-This is the same machinery trace walks use to reveal source, brought to ordinary
+This is the same machinery traces use to reveal source, brought to ordinary
 fact cards. Like every directive, `<!-- at: -->` is not part of a card's identity:
 adding a citation never resets its progress.
 

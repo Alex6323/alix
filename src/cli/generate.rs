@@ -63,7 +63,7 @@ pub(crate) fn deck_cmd(args: GenerateDeckArgs) -> Result<()> {
         if args.plan {
             return trace_suggest(&args.source, args.common.yes, &config);
         }
-        return generate_trace_walk(&args, &config, &spec);
+        return generate_trace(&args, &config, &spec);
     }
 
     generate_single_deck(&args, &config, &spec)
@@ -456,7 +456,7 @@ fn trace_build(
         let report = library::replace_deck(dir, name, &new_text, &mut store)?;
         println!(
             "Rebuilt {}: {} checkpoints, wiped progress for {} card(s). Review them \
-             and their `at:` locators, then walk it from the picker.",
+             and their `at:` locators, then trace it from the picker.",
             deck_path.display(),
             report.minted,
             report.wiped_cards
@@ -475,7 +475,7 @@ fn trace_build(
         .unwrap_or(0);
     println!(
         "Wrote {n} checkpoints to {}. Review them and their `at:` locators, \
-         then walk it from the picker: run `alix` and pick it.",
+         then trace it from the picker: run `alix` and pick it.",
         deck_path.display()
     );
     Ok(())
@@ -496,7 +496,7 @@ fn trace_suggest(source: &str, yes: bool, config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn generate_trace_walk(
+fn generate_trace(
     args: &GenerateDeckArgs,
     config: &Config,
     spec: &generate::GenerationSpec,
@@ -518,10 +518,10 @@ fn generate_trace_walk(
 
     preflight_source(&source, config.ask.preflight_threshold, args.common.yes)?;
     eprintln!(
-        "Exploring {source} to build an explore walk (one pass — this can take a \
+        "Exploring {source} to build an explore trace (one pass — this can take a \
          minute)…"
     );
-    let checkpoints = alix::explore::walk(&source, spec, &config.trace, &config.ask)?;
+    let checkpoints = alix::explore::trace(&source, spec, &config.trace, &config.ask)?;
 
     let name = Path::new(&source)
         .file_name()
@@ -553,7 +553,7 @@ fn generate_trace_walk(
         let mut store = store_for(std::slice::from_ref(&out))?;
         let report = library::replace_deck(&out_dir, &name, &deck_text, &mut store)?;
         println!(
-            "Rebuilt the explore walk at {}: {} checkpoints, wiped progress for {} card(s).",
+            "Rebuilt the explore trace at {}: {} checkpoints, wiped progress for {} card(s).",
             out.display(),
             report.minted,
             report.wiped_cards
@@ -562,10 +562,10 @@ fn generate_trace_walk(
     }
     let placed = library::place_deck(&out_dir, &name, &deck_text)?;
     if let Some(e) = &placed.parse_error {
-        eprintln!("warning: the explore walk does not parse yet: {e}");
+        eprintln!("warning: the explore trace does not parse yet: {e}");
     }
     println!(
-        "Wrote the explore walk to {} — walk it from the picker: run `alix` and \
+        "Wrote the explore trace to {} — trace it from the picker: run `alix` and \
          pick it.",
         placed.path.display()
     );

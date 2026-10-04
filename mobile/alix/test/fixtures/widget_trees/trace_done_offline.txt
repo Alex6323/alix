@@ -8,7 +8,7 @@ Scaffold
               Padding(EdgeInsets.all(24.0))
                 Column
                   SizedBox(width=null, height=12.0)
-                  Text("WALK COMPLETE")
+                  Text("TRACE COMPLETE")
                   SizedBox(width=null, height=14.0)
                   Text("how it works")
                   SizedBox(width=null, height=18.0)
@@ -37,7 +37,7 @@ Scaffold
                     CustomPaint
                       InkWell(tap=true, longPress=false)
                         Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
-                          Text("Walk again")
+                          Text("Trace again")
     ConstrainedBox
       AppBar
         Material

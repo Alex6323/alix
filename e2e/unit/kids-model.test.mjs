@@ -41,7 +41,7 @@ test("kids screen selection uses dto kind and phase", () => {
     "done",
   );
   assert.equal(
-    kidsStudyScreen({ ...model, state: { kind: "walk", phase: "predict" } }),
+    kidsStudyScreen({ ...model, state: { kind: "trace", phase: "predict" } }),
     "review",
   );
 });

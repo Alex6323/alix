@@ -287,7 +287,7 @@ pub fn run_review(
             writes: 0,
             browsing: None,
             examining: None,
-            walking: None,
+            tracing: None,
             augmenting: None,
         },
     );
@@ -779,7 +779,7 @@ pub fn run_review(
                                 catalog.record_recent(paths);
                             }
                             match dto {
-                                SelectedDto::Walk(dto) => respond_json(request, &dto),
+                                SelectedDto::Trace(dto) => respond_json(request, &dto),
                                 SelectedDto::Review(dto) => respond_json(request, &dto),
                             }
                         }
@@ -1538,71 +1538,71 @@ pub fn run_review(
                     respond_status(request, 500)
                 }
             },
-            (Method::Get, "/api/walk") => match study.walk_poll() {
+            (Method::Get, "/api/trace") => match study.trace_poll() {
                 None => respond_status(request, 503),
                 Some(None) => respond_status(request, 409),
                 Some(Some(dto)) => respond_json(request, &dto),
             },
-            (Method::Post, "/api/walk/predict") => {
+            (Method::Post, "/api/trace/predict") => {
                 #[derive(Deserialize)]
                 struct Body {
                     text: String,
                 }
                 let body: Option<Body> = json_body::<Body>(&mut request);
                 let Some(b) = body else {
-                    match study.walk_poll() {
+                    match study.trace_poll() {
                         None => respond_status(request, 503),
                         Some(None) => respond_status(request, 409),
                         Some(Some(dto)) => respond_json(request, &dto),
                     }
                     continue;
                 };
-                match study.walk_predict(b.text) {
+                match study.trace_predict(b.text) {
                     None => respond_status(request, 503),
                     Some(None) => respond_status(request, 409),
                     Some(Some(dto)) => respond_json(request, &dto),
                 }
             }
-            (Method::Post, "/api/walk/grade") => {
+            (Method::Post, "/api/trace/grade") => {
                 let self_delta = read_delta(&mut request);
-                match study.walk_grade(self_delta) {
+                match study.trace_grade(self_delta) {
                     None => respond_status(request, 503),
-                    Some(WalkGradeReply::NoWalk) => respond_status(request, 409),
-                    Some(WalkGradeReply::NoDelta) => respond_status(request, 400),
-                    Some(WalkGradeReply::Dto(dto)) => respond_json(request, &dto),
+                    Some(TraceSessionGradeReply::NoSession) => respond_status(request, 409),
+                    Some(TraceSessionGradeReply::NoDelta) => respond_status(request, 400),
+                    Some(TraceSessionGradeReply::Dto(dto)) => respond_json(request, &dto),
                 }
             }
-            (Method::Post, "/api/walk/restart") => match study.walk_restart() {
+            (Method::Post, "/api/trace/restart") => match study.trace_restart() {
                 None => respond_status(request, 503),
                 Some(None) => respond_status(request, 409),
                 Some(Some(dto)) => respond_json(request, &dto),
             },
-            (Method::Post, "/api/walk/ask") => {
+            (Method::Post, "/api/trace/ask") => {
                 #[derive(Deserialize)]
                 struct Body {
                     question: String,
                 }
                 let body: Option<Body> = json_body::<Body>(&mut request);
                 let question = body.map(|b| b.question).filter(|q| !q.trim().is_empty());
-                match study.walk_ask(WalkAskAction::Question(question), ask_cfg.clone()) {
+                match study.trace_ask(TraceSessionAskAction::Question(question), ask_cfg.clone()) {
                     None => respond_status(request, 503),
                     Some(None) => respond_status(request, 409),
                     Some(Some(dto)) => respond_json(request, &dto),
                 }
             }
-            (Method::Post, "/api/walk/ask/note") => {
-                match study.walk_ask(WalkAskAction::Note, ask_cfg.clone()) {
+            (Method::Post, "/api/trace/ask/note") => {
+                match study.trace_ask(TraceSessionAskAction::Note, ask_cfg.clone()) {
                     None => respond_status(request, 503),
                     Some(None) => respond_status(request, 409),
                     Some(Some(dto)) => respond_json(request, &dto),
                 }
             }
-            (Method::Get, "/api/walk/ask") => match study.walk_ask_poll() {
+            (Method::Get, "/api/trace/ask") => match study.trace_ask_poll() {
                 None => respond_status(request, 503),
                 Some(None) => respond_status(request, 409),
                 Some(Some(dto)) => respond_json(request, &dto),
             },
-            (Method::Post, "/api/walk/leave") => match study.walk_leave() {
+            (Method::Post, "/api/trace/leave") => match study.trace_leave() {
                 None => respond_status(request, 503),
                 Some(Transition::Done(dto)) => respond_json(request, &dto),
                 Some(Transition::Rejected) | Some(Transition::FlushFailed) => {

@@ -1,8 +1,8 @@
-  /* ── trace-walk (in-page mode) ──────────────────────────────────────
+  /* ── trace (in-page mode) ──────────────────────────────────────
      The card shell and chip/legend/score come from the review styles above.
-     Only walk-unique pieces live here: the excerpt panel, key-points list,
+     Only trace-unique pieces live here: the excerpt panel, key-points list,
      prediction block, compose box, and done-summary extras. */
-  .walk-eyebrow { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bolt); }
+  .trace-eyebrow { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bolt); }
   /* givens: off-screen symbols the question leans on */
   .givens { display: flex; flex-wrap: wrap; gap: 6px; }
   .given { font-family: var(--mono); font-size: 0.76rem; color: var(--bolt-hi); background: color-mix(in srgb, var(--bolt) 8%, transparent); border: 1px solid color-mix(in srgb, var(--bolt) 22%, transparent); border-radius: 7px; padding: 3px 9px; }
@@ -11,7 +11,7 @@
   .predicted .wlbl { display: block; margin-bottom: 4px; }
   .predicted p { margin: 0; color: var(--ink); opacity: 0.8; line-height: 1.45; white-space: pre-wrap; }
   .predicted.empty p { font-style: italic; opacity: 0.5; }
-  /* shared small label used in walk regions */
+  /* shared small label used in trace regions */
   .wlbl { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
   /* the reveal: the real source (the oracle), in an editor-style excerpt */
   .reveal-head { display: flex; align-items: baseline; gap: 10px; }
@@ -38,9 +38,9 @@
   .wfield { flex: 1 1 auto; width: 100%; resize: none; min-height: 120px; padding: 14px 16px; border-radius: 13px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: 1.02rem/1.5 var(--sans); outline: none; }
   .wfield:focus { border-color: var(--bolt); }
   .wlede { flex: none; color: var(--dim); font-size: 0.9rem; line-height: 1.5; }
-  /* walk's done summary compression block */
+  /* trace's done summary compression block */
   .summary .compression { margin-top: 18px; border-left: 3px solid var(--bolt); padding: 4px 0 4px 14px; }
   .summary .compression .wlbl { display: block; color: var(--bolt); margin-bottom: 6px; }
   .summary .compression p { margin: 0; line-height: 1.55; white-space: pre-wrap; color: var(--ink); }
-  /* leave-confirmation message, colored for the walk context */
-  .leave-walk-msg { color: var(--dim); font-size: 0.9rem; margin-right: auto; }
+  /* leave-confirmation message, colored for the trace context */
+  .leave-trace-msg { color: var(--dim); font-size: 0.9rem; margin-right: auto; }

@@ -10,11 +10,11 @@ test.beforeEach(async ({ page, request }) => {
   await openApp(page);
 });
 
-// A failed tutor request inside a walk falls back to `study.load()`, which
-// fetches `/api/state`. During a walk that endpoint answers with the review
-// snapshot (`kind:"review"`, `phase:"select"`), never the walk, so applying it
-// must not be read as evidence that the walk ended.
-test("a failed tutor request during a walk does not eject the learner to the picker", async ({ page }) => {
+// A failed tutor request inside a trace falls back to `study.load()`, which
+// fetches `/api/state`. During a trace that endpoint answers with the review
+// snapshot (`kind:"review"`, `phase:"select"`), never the trace, so applying it
+// must not be read as evidence that the trace ended.
+test("a failed tutor request during a trace does not eject the learner to the picker", async ({ page }) => {
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "Inline Trace").click();
   await Promise.all([
@@ -24,7 +24,7 @@ test("a failed tutor request during a walk does not eject the learner to the pic
 
   await page.locator(".wfield").fill("it grows first");
   await Promise.all([
-    page.waitForResponse((response) => response.url().includes("/api/walk/predict")),
+    page.waitForResponse((response) => response.url().includes("/api/trace/predict")),
     page.getByRole("button", { name: "Reveal" }).click(),
   ]);
   await expect(page.locator(".wpoints .wpt code")).toHaveText("reserve");
@@ -34,7 +34,7 @@ test("a failed tutor request during a walk does not eject the learner to the pic
 
   // The tutor question fails the way a restarted server or a dropped
   // connection makes it fail: the POST never answers.
-  await page.route("**/api/walk/ask", (route) =>
+  await page.route("**/api/trace/ask", (route) =>
     route.request().method() === "POST" ? route.abort() : route.continue(),
   );
   await page.locator(".ask-input").fill("why reserve first?");
@@ -42,7 +42,7 @@ test("a failed tutor request during a walk does not eject the learner to the pic
   await page.waitForResponse((response) => response.url().includes("/api/state"));
   await page.waitForTimeout(400);
 
-  // The trace the learner was walking is still the current subject, and the
+  // The trace the learner was tracing is still the current subject, and the
   // deck picker has not taken over the screen.
   expect(await page.locator(".deckrow").count()).toBe(0);
   await expect(page.locator("#deck")).toHaveText("How push grows a Vec");

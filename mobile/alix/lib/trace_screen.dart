@@ -4,22 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
-import 'package:alix_mobile/bridge/walk_bridge.dart';
+import 'package:alix_mobile/bridge/trace_bridge.dart';
 import 'package:alix_mobile/exam_screen.dart';
 import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
-import 'package:alix_mobile/walk/walk_controller.dart';
-import 'package:alix_mobile/walk/walk_models.dart';
-import 'package:alix_mobile/walk/walk_view.dart';
+import 'package:alix_mobile/trace/trace_controller.dart';
+import 'package:alix_mobile/trace/trace_models.dart';
+import 'package:alix_mobile/trace/trace_view.dart';
 
-/// The on-device trace walk route.
+/// The on-device trace route.
 ///
 /// The screen owns Flutter lifecycle, navigation, pairing, and exam handoff.
-/// Bridge-backed session state and named transitions live in [WalkController],
-/// while the rendered tree lives below [WalkView].
-class WalkScreen extends StatefulWidget {
-  const WalkScreen({
+/// Bridge-backed session state and named transitions live in [TraceSessionController],
+/// while the rendered tree lives below [TraceSessionView].
+class TraceSessionScreen extends StatefulWidget {
+  const TraceSessionScreen({
     super.key,
     required this.deckPath,
     required this.rootDir,
@@ -41,11 +41,11 @@ class WalkScreen extends StatefulWidget {
   final ServerClient Function(ServerConfig)? buildClient;
 
   @override
-  State<WalkScreen> createState() => _WalkScreenState();
+  State<TraceSessionScreen> createState() => _TraceSessionScreenState();
 }
 
-class _WalkScreenState extends State<WalkScreen> {
-  late final WalkController _controller;
+class _TraceSessionScreenState extends State<TraceSessionScreen> {
+  late final TraceSessionController _controller;
   final TextEditingController _predict = TextEditingController();
 
   ServerClient? _client;
@@ -54,8 +54,8 @@ class _WalkScreenState extends State<WalkScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = WalkController(
-      factory: const WalkBridgeFactory(),
+    _controller = TraceSessionController(
+      factory: const TraceSessionBridgeFactory(),
       deckPath: widget.deckPath,
       rootDir: widget.rootDir,
       device: widget.device,
@@ -120,7 +120,7 @@ class _WalkScreenState extends State<WalkScreen> {
   void _bailToCaller() {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    final message = _controller.openError ?? 'this deck cannot be walked';
+    final message = _controller.openError ?? 'this deck cannot be traced';
     Navigator.of(context).maybePop();
     messenger.showSnackBar(SnackBar(content: Text(message)));
   }
@@ -178,9 +178,9 @@ class _WalkScreenState extends State<WalkScreen> {
     final state = _controller.state;
     return confirmLeaveSession(
       context,
-      title: 'Leave the walk?',
+      title: 'Leave the trace?',
       body: "You're on checkpoint ${state.current} of ${state.total}.",
-      stayLabel: 'Keep walking',
+      stayLabel: 'Keep tracing',
     );
   }
 
@@ -196,11 +196,11 @@ class _WalkScreenState extends State<WalkScreen> {
           return const SizedBox.shrink();
         }
         final state = _controller.state;
-        final done = state.phase == WalkPhaseModel.done;
+        final done = state.phase == TraceSessionPhaseModel.done;
         final cooldown = done && _client != null
             ? _controller.examCooldownMs(DateTime.now().millisecondsSinceEpoch)
             : null;
-        return WalkView(
+        return TraceSessionView(
           state: state,
           predictionController: _predict,
           examAvailable: _controller.serverLive && cooldown == null,

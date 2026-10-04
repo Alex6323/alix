@@ -69,7 +69,7 @@ This is the tool's high-water mark: name what you want to understand, and `alix`
 assembles a dependency-ordered curriculum of facts and traces — gated by
 [mastery](12-the-ai-exam.md) — that you climb.
 
-## The explore walk — `--trace`
+## The explore trace — `--trace`
 
 Before you even know what to trace, `alix deck generate <source> --trace` builds a
 short **tour of the source's shape**, written as a trace deck: you predict what
@@ -77,5 +77,5 @@ kind of program it is (from the manifest), its domain nouns (from the module
 list), how it's driven (the entry point), its spine (the central file), and
 finally the first paths worth tracing — each hop revealing the real lines. It's
 written to a file (`-o`, default `explore.md`; `--into` places it inside a
-workspace), and you walk it from the [web picker](15-the-web-app.md): run `alix`
+workspace), and you trace it from the [web picker](15-the-web-app.md): run `alix`
 and pick it.

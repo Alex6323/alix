@@ -2,7 +2,7 @@ use std::{collections::HashSet, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use super::{Browsing, Examining, Reviewing, Walking, catalog::img_key};
+use super::{Browsing, Examining, Reviewing, Tracing, catalog::img_key};
 use crate::{
     answer::{Input, Mode, mode_name},
     augment::AugmentCache,
@@ -609,7 +609,7 @@ pub(super) struct ExamDto {
     pub(super) grades: Vec<ExamGradeDto>,
     pub(super) passed: Option<bool>,
     pub(super) gaps: Vec<String>,
-    /// A trace deck is re-walked on fail, never remediated (fact decks only).
+    /// A trace deck is retraced on fail, never remediated (fact decks only).
     pub(super) can_remediate: bool,
     pub(super) remediated_count: Option<usize>,
     pub(super) is_trace: bool,
@@ -887,7 +887,7 @@ pub(super) struct SummaryDto {
 }
 
 #[derive(Serialize)]
-pub(super) struct WalkDto {
+pub(super) struct TraceSessionDto {
     pub(super) kind: &'static str,
     pub(super) phase: &'static str,
     pub(super) description: String,
@@ -911,7 +911,7 @@ pub(super) struct WalkDto {
     pub(super) summary: Option<SummaryDto>,
 }
 
-pub(super) fn walk_phase_name(phase: Phase) -> &'static str {
+pub(super) fn trace_phase_name(phase: Phase) -> &'static str {
     match phase {
         Phase::Predict => "predict",
         Phase::Reveal => "reveal",
@@ -942,10 +942,10 @@ pub(super) fn excerpt_dto(excerpt: &Excerpt) -> ExcerptDto {
     }
 }
 
-pub(super) fn walk_dto(w: &Walking) -> WalkDto {
-    let walk = &w.walk;
-    let trace = walk.trace();
-    let phase = walk.phase();
+pub(super) fn trace_dto(w: &Tracing) -> TraceSessionDto {
+    let session = &w.session;
+    let trace = session.trace();
+    let phase = session.phase();
     let on_a_hop = matches!(phase, Phase::Predict | Phase::Reveal);
     let mut projector = DisplayProjector::default();
 
@@ -955,19 +955,19 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
         .enumerate()
         .map(|(i, c)| HopDto {
             prompt: c.prompt.clone(),
-            delta: walk.delta(i).map(delta_name),
-            current: on_a_hop && i == walk.current_index(),
+            delta: session.delta(i).map(delta_name),
+            current: on_a_hop && i == session.current_index(),
         })
         .collect();
 
-    let mut dto = WalkDto {
-        kind: "walk",
-        phase: walk_phase_name(phase),
+    let mut dto = TraceSessionDto {
+        kind: "trace",
+        phase: trace_phase_name(phase),
         description: trace.description.clone(),
         description_runs: projector.project(&trace.description),
         source: trace.source.clone(),
-        total: walk.total(),
-        current: walk.current_index() + 1,
+        total: session.total(),
+        current: session.current_index() + 1,
         path,
         prompt: None,
         prompt_runs: None,
@@ -986,7 +986,7 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
 
     match phase {
         Phase::Predict => {
-            if let Some(c) = walk.checkpoint() {
+            if let Some(c) = session.checkpoint() {
                 dto.prompt = Some(c.prompt.clone());
                 dto.prompt_runs = Some(projector.project(&c.prompt));
                 dto.givens = c.givens.clone();
@@ -999,7 +999,7 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
             }
         }
         Phase::Reveal => {
-            if let Some(c) = walk.checkpoint() {
+            if let Some(c) = session.checkpoint() {
                 dto.prompt = Some(c.prompt.clone());
                 dto.prompt_runs = Some(projector.project(&c.prompt));
                 dto.givens = c.givens.clone();
@@ -1036,19 +1036,19 @@ pub(super) fn walk_dto(w: &Walking) -> WalkDto {
                     Err(e) => dto.excerpt_error = Some(format!("{e:#}")),
                 }
             }
-            dto.prediction = walk
-                .prediction(walk.current_index())
+            dto.prediction = session
+                .prediction(session.current_index())
                 .map(str::to_string)
                 .filter(|p| !p.is_empty());
         }
         Phase::Done => {
-            let s = walk.summary();
+            let s = session.summary();
             dto.summary = Some(SummaryDto {
                 passed: s.passed,
                 partly: s.partly,
                 failed: s.failed,
                 weak: s.weak.iter().map(|i| i + 1).collect(),
-                total: walk.total(),
+                total: session.total(),
             });
         }
     }

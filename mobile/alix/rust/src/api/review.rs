@@ -12,7 +12,7 @@ pub use alix::{
     card::Badge,
     review::{CardView, CheckFeedback, ChoiceFeedback, CropView, ImageView, MultiChoiceFeedback, NoteView, RegionRole, RegionView, ReviewState},
     session::RecognizeGap,
-    trace::Phase as WalkPhase,
+    trace::Phase as TraceSessionPhase,
 };
 use anyhow::{Result, bail};
 
@@ -258,8 +258,8 @@ pub struct _CheckFeedback {
     pub passed: bool,
 }
 
-#[flutter_rust_bridge::frb(mirror(WalkPhase))]
-pub enum _WalkPhase {
+#[flutter_rust_bridge::frb(mirror(TraceSessionPhase))]
+pub enum _TraceSessionPhase {
     Predict,
     Reveal,
     Done,
@@ -293,28 +293,28 @@ impl From<alix::scheduler::Grade> for Grade {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WalkDelta {
+pub enum TraceSessionDelta {
     Missed,
     Partly,
     Got,
 }
 
-impl From<WalkDelta> for alix::trace::Delta {
-    fn from(d: WalkDelta) -> Self {
+impl From<TraceSessionDelta> for alix::trace::Delta {
+    fn from(d: TraceSessionDelta) -> Self {
         match d {
-            WalkDelta::Missed => alix::trace::Delta::Failed,
-            WalkDelta::Partly => alix::trace::Delta::Partial,
-            WalkDelta::Got => alix::trace::Delta::Passed,
+            TraceSessionDelta::Missed => alix::trace::Delta::Failed,
+            TraceSessionDelta::Partly => alix::trace::Delta::Partial,
+            TraceSessionDelta::Got => alix::trace::Delta::Passed,
         }
     }
 }
 
-impl From<alix::trace::Delta> for WalkDelta {
+impl From<alix::trace::Delta> for TraceSessionDelta {
     fn from(d: alix::trace::Delta) -> Self {
         match d {
-            alix::trace::Delta::Failed => WalkDelta::Missed,
-            alix::trace::Delta::Partial => WalkDelta::Partly,
-            alix::trace::Delta::Passed => WalkDelta::Got,
+            alix::trace::Delta::Failed => TraceSessionDelta::Missed,
+            alix::trace::Delta::Partial => TraceSessionDelta::Partly,
+            alix::trace::Delta::Passed => TraceSessionDelta::Got,
         }
     }
 }
@@ -425,7 +425,7 @@ impl ReviewSession {
         let selected = alix::assemble::select(vec![deck], &mut store, &cfg, &opts)?;
         let build = match selected {
             alix::assemble::Selected::Review(build) => build,
-            alix::assemble::Selected::Walk(_) => {
+            alix::assemble::Selected::Trace(_) => {
                 bail!("milestone 2 reviews a facts deck, not a trace")
             }
         };
@@ -631,20 +631,20 @@ impl ReviewSession {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WalkLine {
+pub struct TraceSessionLine {
     pub n: u32,
     pub text: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WalkExcerpt {
+pub struct TraceSessionExcerpt {
     pub path: String,
-    pub lines: Vec<WalkLine>,
+    pub lines: Vec<TraceSessionLine>,
     pub truncated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WalkSummary {
+pub struct TraceSessionSummary {
     pub passed: u32,
     pub partly: u32,
     pub failed: u32,
@@ -653,8 +653,8 @@ pub struct WalkSummary {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WalkState {
-    pub phase: WalkPhase,
+pub struct TraceSessionState {
+    pub phase: TraceSessionPhase,
     pub description: String,
     pub description_runs: Vec<InlineRun>,
     pub source: Option<String>,
@@ -666,23 +666,23 @@ pub struct WalkState {
     pub given_runs: Vec<Vec<InlineRun>>,
     pub locator: Option<String>,
     pub prediction: Option<String>,
-    pub excerpt: Option<WalkExcerpt>,
+    pub excerpt: Option<TraceSessionExcerpt>,
     pub excerpt_error: Option<String>,
     pub points: Vec<String>,
     pub point_runs: Vec<Vec<InlineRun>>,
     pub note: Option<String>,
     pub note_runs: Option<Vec<InlineRun>>,
-    pub summary: Option<WalkSummary>,
+    pub summary: Option<TraceSessionSummary>,
     pub save_error: Option<String>,
 }
 
-fn walk_excerpt(excerpt: &alix::source::Excerpt) -> WalkExcerpt {
-    WalkExcerpt {
+fn trace_excerpt(excerpt: &alix::source::Excerpt) -> TraceSessionExcerpt {
+    TraceSessionExcerpt {
         path: excerpt.path.display().to_string(),
         lines: excerpt
             .lines
             .iter()
-            .map(|(n, text)| WalkLine {
+            .map(|(n, text)| TraceSessionLine {
                 n: *n as u32,
                 text: text.clone(),
             })
@@ -691,18 +691,18 @@ fn walk_excerpt(excerpt: &alix::source::Excerpt) -> WalkExcerpt {
     }
 }
 
-fn walk_state(walk: &alix::trace::Walk) -> WalkState {
-    let trace = walk.trace();
-    let phase = walk.phase();
+fn trace_state(session: &alix::trace::TraceSession) -> TraceSessionState {
+    let trace = session.trace();
+    let phase = session.phase();
     let mut projector = alix::inline::DisplayProjector::default();
 
-    let mut state = WalkState {
+    let mut state = TraceSessionState {
         phase,
         description: trace.description.clone(),
         description_runs: projector.project(&trace.description),
         source: trace.source.clone(),
-        total: walk.total() as u32,
-        current: walk.current_index() as u32 + 1,
+        total: session.total() as u32,
+        current: session.current_index() as u32 + 1,
         prompt: None,
         prompt_runs: None,
         givens: Vec::new(),
@@ -720,8 +720,8 @@ fn walk_state(walk: &alix::trace::Walk) -> WalkState {
     };
 
     match phase {
-        WalkPhase::Predict => {
-            if let Some(c) = walk.checkpoint() {
+        TraceSessionPhase::Predict => {
+            if let Some(c) = session.checkpoint() {
                 state.prompt = Some(c.prompt.clone());
                 state.prompt_runs = Some(projector.project(&c.prompt));
                 state.givens = c.givens.clone();
@@ -733,8 +733,8 @@ fn walk_state(walk: &alix::trace::Walk) -> WalkState {
                 state.locator = c.locator.clone();
             }
         }
-        WalkPhase::Reveal => {
-            if let Some(c) = walk.checkpoint() {
+        TraceSessionPhase::Reveal => {
+            if let Some(c) = session.checkpoint() {
                 state.prompt = Some(c.prompt.clone());
                 state.prompt_runs = Some(projector.project(&c.prompt));
                 state.givens = c.givens.clone();
@@ -761,24 +761,24 @@ fn walk_state(walk: &alix::trace::Walk) -> WalkState {
                         if let Some(label) = label {
                             state.locator = Some(label);
                         }
-                        state.excerpt = Some(walk_excerpt(&ex.capped_for_display()));
+                        state.excerpt = Some(trace_excerpt(&ex.capped_for_display()));
                     }
                     Err(e) => state.excerpt_error = Some(format!("{e:#}")),
                 }
             }
-            state.prediction = walk
-                .prediction(walk.current_index())
+            state.prediction = session
+                .prediction(session.current_index())
                 .map(str::to_string)
                 .filter(|p| !p.is_empty());
         }
-        WalkPhase::Done => {
-            let s = walk.summary();
-            state.summary = Some(WalkSummary {
+        TraceSessionPhase::Done => {
+            let s = session.summary();
+            state.summary = Some(TraceSessionSummary {
                 passed: s.passed as u32,
                 partly: s.partly as u32,
                 failed: s.failed as u32,
                 weak: s.weak.iter().map(|i| *i as u32 + 1).collect(),
-                total: walk.total() as u32,
+                total: session.total() as u32,
             });
         }
     }
@@ -786,27 +786,27 @@ fn walk_state(walk: &alix::trace::Walk) -> WalkState {
     state
 }
 
-pub struct WalkSession {
-    walk: alix::trace::Walk,
+pub struct TraceSession {
+    session: alix::trace::TraceSession,
     store: alix::store::Store,
     // The stable deck id: deck-level store state (mastery, exam cooldown) is
     // keyed by this, captured off the loaded Deck rather than re-derived.
     deck_token: String,
-    #[expect(dead_code)] // no walk-side remediation flow yet to dedup against
+    #[expect(dead_code)] // no trace-side remediation flow yet to dedup against
     deck_fingerprints: HashSet<u64>,
     has_exam: bool,
     // See ReviewSession::save_error: same non-fatal per-grade semantics.
     save_error: Option<String>,
 }
 
-impl WalkSession {
+impl TraceSession {
     #[flutter_rust_bridge::frb(sync)]
     pub fn open(
         deck_path: String,
         root_dir: String,
         now_ms: Option<u64>,
         device: Option<String>,
-    ) -> Result<WalkSession> {
+    ) -> Result<TraceSession> {
         let deck = PathBuf::from(deck_path);
         let loaded = alix::deck::Deck::load(&deck)?;
         let deck_token = loaded.deck_token.clone().unwrap_or_default();
@@ -835,13 +835,13 @@ impl WalkSession {
         };
         let selected = alix::assemble::select(vec![deck], &mut store, &cfg, &opts)?;
         let build = match selected {
-            alix::assemble::Selected::Walk(build) => build,
+            alix::assemble::Selected::Trace(build) => build,
             alix::assemble::Selected::Review(_) => {
-                bail!("this deck is a card review, not a trace walk")
+                bail!("this deck is a card review, not a trace")
             }
         };
-        Ok(WalkSession {
-            walk: build.walk,
+        Ok(TraceSession {
+            session: build.session,
             store,
             deck_token,
             deck_fingerprints,
@@ -851,21 +851,21 @@ impl WalkSession {
     }
 
     #[flutter_rust_bridge::frb(sync)]
-    pub fn state(&self) -> WalkState {
-        let mut state = walk_state(&self.walk);
+    pub fn state(&self) -> TraceSessionState {
+        let mut state = trace_state(&self.session);
         state.save_error = self.save_error.clone();
         state
     }
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn predict(&mut self, text: String) {
-        self.walk.predict(text);
+        self.session.predict(text);
     }
 
     #[flutter_rust_bridge::frb(sync)]
-    pub fn grade(&mut self, delta: WalkDelta, now_ms: Option<u64>) -> Result<WalkState> {
+    pub fn grade(&mut self, delta: TraceSessionDelta, now_ms: Option<u64>) -> Result<TraceSessionState> {
         let now = now_ms.unwrap_or_else(alix::time::now_ms);
-        self.walk.grade(&mut self.store, delta.into(), now);
+        self.session.grade(&mut self.store, delta.into(), now);
         match self.store.save() {
             Ok(()) => self.save_error = None,
             Err(e) => self.save_error = Some(format!("{e:#}")),
@@ -1983,11 +1983,11 @@ mod tests {
     }
 
     #[test]
-    fn walking_a_trace_predicts_reveals_a_real_excerpt_and_tallies_the_summary() {
+    fn tracing_a_trace_predicts_reveals_a_real_excerpt_and_tallies_the_summary() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let deck = trace_fixture(root);
-        let mut s = WalkSession::open(
+        let mut s = TraceSession::open(
             deck.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             Some(T0),
@@ -1996,7 +1996,7 @@ mod tests {
         .unwrap();
 
         let state = s.state();
-        assert_eq!(state.phase, WalkPhase::Predict);
+        assert_eq!(state.phase, TraceSessionPhase::Predict);
         assert_eq!(state.description, "how `it` works");
         assert!(
             state
@@ -2023,14 +2023,14 @@ mod tests {
 
         s.predict("guess1".to_string());
         let state = s.state();
-        assert_eq!(state.phase, WalkPhase::Reveal);
+        assert_eq!(state.phase, TraceSessionPhase::Reveal);
         assert_eq!(state.prediction.as_deref(), Some("guess1"));
         assert!(state.excerpt_error.is_none());
         let excerpt = state.excerpt.expect("a real in-folder source resolves");
         assert!(excerpt.path.ends_with("source.txt"), "{}", excerpt.path);
         assert_eq!(
             excerpt.lines,
-            vec![WalkLine {
+            vec![TraceSessionLine {
                 n: 1,
                 text: "first".to_string()
             }]
@@ -2048,32 +2048,32 @@ mod tests {
                 .is_some_and(|runs| runs.iter().any(|run| run.code && run.text == "read"))
         );
 
-        let state = s.grade(WalkDelta::Got, Some(T0)).unwrap();
-        assert_eq!(state.phase, WalkPhase::Predict);
+        let state = s.grade(TraceSessionDelta::Got, Some(T0)).unwrap();
+        assert_eq!(state.phase, TraceSessionPhase::Predict);
         assert_eq!(state.current, 2);
         assert_eq!(state.prompt.as_deref(), Some("Predict the second hop"));
 
         s.predict("guess2".to_string());
         let state = s.state();
-        assert_eq!(state.phase, WalkPhase::Reveal);
+        assert_eq!(state.phase, TraceSessionPhase::Reveal);
         let excerpt = state.excerpt.expect("a real in-folder source resolves");
         assert_eq!(
             excerpt.lines,
             vec![
-                WalkLine {
+                TraceSessionLine {
                     n: 2,
                     text: "second".to_string()
                 },
-                WalkLine {
+                TraceSessionLine {
                     n: 3,
                     text: "third".to_string()
                 },
             ]
         );
 
-        let state = s.grade(WalkDelta::Partly, Some(T0)).unwrap();
-        assert_eq!(state.phase, WalkPhase::Done);
-        let summary = state.summary.expect("the done screen tallies the walk");
+        let state = s.grade(TraceSessionDelta::Partly, Some(T0)).unwrap();
+        assert_eq!(state.phase, TraceSessionPhase::Done);
+        let summary = state.summary.expect("the done screen tallies the trace");
         assert_eq!(summary.passed, 1);
         assert_eq!(summary.partly, 1);
         assert_eq!(summary.failed, 0);
@@ -2082,7 +2082,7 @@ mod tests {
     }
 
     #[test]
-    fn walk_excerpt_resolves_an_in_folder_source_inside_a_workspace_member() {
+    fn trace_excerpt_resolves_an_in_folder_source_inside_a_workspace_member() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let ws = root.join("box");
@@ -2093,7 +2093,7 @@ mod tests {
         write(
             &deck_path,
             "---\n\
-             trace: a member walk\n\
+             trace: a member trace\n\
              source: source.txt\n\
              ---\n\
              ## Predict\n\
@@ -2103,7 +2103,7 @@ mod tests {
         alix::assets::initialize(&deck_path).unwrap();
         alix::source::stamp_citations(&deck_path).unwrap();
 
-        let mut s = WalkSession::open(
+        let mut s = TraceSession::open(
             deck_path.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             Some(T0),
@@ -2112,13 +2112,13 @@ mod tests {
         .unwrap();
         s.predict("guess".to_string());
         let state = s.state();
-        assert_eq!(state.phase, WalkPhase::Reveal);
+        assert_eq!(state.phase, TraceSessionPhase::Reveal);
         assert!(state.excerpt_error.is_none());
         let excerpt = state.excerpt.expect("the member's own source resolves");
         assert!(excerpt.path.ends_with("source.txt"), "{}", excerpt.path);
         assert_eq!(
             excerpt.lines,
-            vec![WalkLine {
+            vec![TraceSessionLine {
                 n: 2,
                 text: "beta".to_string()
             }]
@@ -2126,7 +2126,7 @@ mod tests {
     }
 
     #[test]
-    fn walk_excerpt_error_is_honest_for_a_url_or_absent_source() {
+    fn trace_excerpt_error_is_honest_for_a_url_or_absent_source() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
 
@@ -2141,7 +2141,7 @@ mod tests {
              the answer\n\
              <!-- at: 1 -->\n",
         );
-        let mut s = WalkSession::open(
+        let mut s = TraceSession::open(
             no_source.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             Some(T0),
@@ -2150,7 +2150,7 @@ mod tests {
         .unwrap();
         s.predict("guess".to_string());
         let state = s.state();
-        assert_eq!(state.phase, WalkPhase::Reveal);
+        assert_eq!(state.phase, TraceSessionPhase::Reveal);
         assert!(state.excerpt.is_none(), "no panic, just an honest fallback");
         assert!(state.excerpt_error.is_some());
 
@@ -2166,7 +2166,7 @@ mod tests {
              the answer\n\
              <!-- at: 1 -->\n",
         );
-        let mut s = WalkSession::open(
+        let mut s = TraceSession::open(
             url_source.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             Some(T0),
@@ -2175,7 +2175,7 @@ mod tests {
         .unwrap();
         s.predict("guess".to_string());
         let state = s.state();
-        assert_eq!(state.phase, WalkPhase::Reveal);
+        assert_eq!(state.phase, TraceSessionPhase::Reveal);
         assert!(state.excerpt.is_none(), "no panic, just an honest fallback");
         assert!(state.excerpt_error.is_some());
     }
@@ -2186,7 +2186,7 @@ mod tests {
         let root = dir.path();
         let deck = trace_fixture(root);
         let deck_id = alix::deck::Deck::load(&deck).unwrap().deck_token.unwrap();
-        let mut s = WalkSession::open(
+        let mut s = TraceSession::open(
             deck.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             Some(T0),
@@ -2226,7 +2226,7 @@ mod tests {
     }
 
     #[test]
-    fn walk_and_review_open_refuse_each_others_deck_kind() {
+    fn trace_and_review_open_refuse_each_others_deck_kind() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let trace = trace_fixture(root);
@@ -2235,15 +2235,15 @@ mod tests {
 
         // `.err()` (not `.unwrap_err()`): the opaque session handles carry no
         // `Debug` impl, which `unwrap_err`'s panic message would require.
-        let err = WalkSession::open(
+        let err = TraceSession::open(
             facts.to_string_lossy().into_owned(),
             root.to_string_lossy().into_owned(),
             Some(T0),
             None,
         )
         .err()
-        .expect("a facts deck is not a trace walk");
-        assert!(format!("{err:#}").contains("not a trace walk"), "{err}");
+        .expect("a facts deck is not a trace");
+        assert!(format!("{err:#}").contains("not a trace"), "{err}");
 
         let err = ReviewSession::open(
             trace.to_string_lossy().into_owned(),
