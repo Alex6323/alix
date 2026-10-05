@@ -52,6 +52,29 @@ names the damaged file; fix or remove it (`alix reset <deck>` removes an
 unparseable document after confirming) and the row heals on the next
 listing.
 
+## Walking a deck
+
+A **walk** reads a deck once, card by card, with an attempt before each
+answer and no grading. It is meant for material you want to go through rather
+than drill: preparing a talk or a code review, or re-reading a deck now and
+then. Start it from the focused deck's **Depth…** menu with **Walk** (key
+`w` while the menu is open). It is not offered for a trace deck.
+
+Each item shows its front first. A card with authored choices is answered by
+picking (the pick shows right or wrong); every other item is a flip: try to
+recall it, then **Reveal** (`space`). **Next** (`space` again) moves on.
+Each direction of a two-way card and each blank of a cloze is its own item.
+The section's context sheet opens by itself the first time a walk reaches
+that section, and the tutor is available once an answer shows.
+
+Moving past an answer records that the item was walked; nothing else about
+the attempt is kept. A walk starts with the items never walked, then the ones
+walked longest ago, so leaving early and coming back continues where you
+stopped, and later walks rotate through the deck. At the end, **Next walk**
+(`r`) starts the next pass. While some items have never been walked, the Walk
+entry shows how many, as "N new". Walking counts for the drill too: the drill
+grades a walked card at first sight instead of introducing it.
+
 ## Library actions
 
 The picker's **☰ menu** carries six actions that used to be terminal-only:

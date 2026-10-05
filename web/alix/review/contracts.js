@@ -12,6 +12,12 @@ export function isTraceSessionState(value) {
   return isRecord(value) && value.kind === "trace" && typeof value.phase === "string";
 }
 
+export function isWalkState(value) {
+  return isRecord(value)
+    && value.kind === "walk"
+    && ["front", "answer", "done"].includes(value.phase);
+}
+
 export function isStudyState(value) {
   return isReviewState(value) || isTraceSessionState(value);
 }
@@ -34,7 +40,13 @@ export function validatorFor(path) {
     case "/api/exam/close":
     case "/api/augment/close":
     case "/api/trace/leave":
+    case "/api/walk/leave":
       return isStudyState;
+    case "/api/walk":
+    case "/api/walk/reveal":
+    case "/api/walk/next":
+    case "/api/walk/restart":
+      return isWalkState;
     case "/api/trace":
     case "/api/trace/predict":
     case "/api/trace/grade":

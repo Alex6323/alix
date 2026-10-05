@@ -67,6 +67,7 @@ study = createStudy({
   api,
   post,
   storage: localStorage,
+  sessionStorage,
   lastDeck: () => sessionStorage.getItem("alix.lastDeck"),
   openAugment: (deck) => augment.open(deck),
   model: { create: createModel, applyStudyState, enterPicker, currentScreen },
@@ -135,6 +136,7 @@ const picker = createPicker({
   applyStudy: study.apply,
   openTraceSession: (next) => trace.open(next),
   openBrowse: study.openBrowse,
+  openWalk: study.openWalk,
   startExam: (deck) => exam.start(deck),
   openAugment: (deck) => augment.open(deck),
   notice,
@@ -207,6 +209,7 @@ const tutor = createTutor({
   },
   study: {
     state: study.state,
+    isWalking: study.isWalking,
     replaceState: study.replaceState,
     load: study.load,
   },
@@ -435,8 +438,8 @@ function setMenuContext(ctx) {
   // Ask Tutor is the one .m-review item that also makes sense mid-trace; the
   // rest (Remove card, Promote) are per-deck-card actions a trace checkpoint
   // doesn't have, so they get their own narrower checks below.
-  document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = (ctx === "review" || ctx === "trace") ? "" : "none"; });
-  document.getElementById("mContext").style.display = ctx === "review" && study && study.hasSection() ? "" : "none";
+  document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = (ctx === "review" || ctx === "trace" || ctx === "walk") ? "" : "none"; });
+  document.getElementById("mContext").style.display = (ctx === "review" || ctx === "walk") && study && study.hasSection() ? "" : "none";
   document.getElementById("mRemove").style.display = ctx === "review" ? "" : "none";
   // (a remediation card) — narrower than the other .m-review items, so it
   // gets its own check on top of the context toggle.

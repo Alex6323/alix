@@ -11,6 +11,7 @@ export function createPicker({
   applyStudy,
   openTraceSession,
   openBrowse,
+  openWalk,
   startExam,
   openAugment,
   notice,
@@ -230,8 +231,9 @@ export function createPicker({
     // introduction cooldown is exactly when it is wanted. The menu itself
     // then offers only the cram tick-box until it is on (each depth chip
     // keeps its own honest gate), and the plain Learn button stays dead.
+    const canWalk = (it) => it.state !== "error" && !it.is_trace;
     const canOpenDepths = (it, gated) =>
-      canStart(it, gated) || (it.state !== "error" && !!it.crammable);
+      canStart(it, gated) || (it.state !== "error" && !!it.crammable) || canWalk(it);
     // Recognize is pick-only: it can only run on a deck with cached choice
     // distractors (`can_recognize`) — an un-augmented deck greys it out even under
     // cram (which re-serves recognized cards). Recall/Reconstruct are never gated
@@ -279,6 +281,13 @@ export function createPicker({
       lastWorkspace = wsName || null;
       const sel = drawerSel.deck === it.name ? drawerSel : {};
       select(it.name, sel.topology, sel.region, depth, cramOn);
+    }
+
+    function launchWalk(it, wsName) {
+      if (!canWalk(it)) return;
+      lastWorkspace = wsName || null;
+      rememberLaunch(it.name);
+      openWalk(it.name).catch(() => notice("could not start the walk: the server log has details"));
     }
 
     // The workspace's emblem if it has one, else the chevron. An SVG renders as a
@@ -503,6 +512,13 @@ export function createPicker({
             b.addEventListener("click", () => { depthMenuOpen = false; launchDepth(it, f._wsName, f._gated, d); });
             legend.appendChild(b);
           }
+          const walk = el("button", "chip walk", "Walk");
+          if (it.never_walked > 0) walk.appendChild(el("span", "walk-new", `${it.never_walked} new`));
+          walk.appendChild(el("span", "k", "w"));
+          walk.disabled = !canWalk(it);
+          walk.addEventListener("mousedown", e => e.preventDefault());
+          walk.addEventListener("click", () => { depthMenuOpen = false; launchWalk(it, f._wsName); });
+          legend.appendChild(walk);
           // The cram tick-box: include cards that aren't due (a due card still
           // grades as a normal review; an early pass only re-anchors).
           const cram = el("button", "chip" + (cramOn ? " primary" : ""), (cramOn ? "☑" : "☐") + " cram");
@@ -917,6 +933,10 @@ export function createPicker({
             e.preventDefault(); e.stopPropagation();
             depthMenuOpen = false;
             launchDepth(f._item, f._wsName, f._gated, d);
+          } else if (e.key === "w" && !e.ctrlKey && f && f._item && canWalk(f._item)) {
+            e.preventDefault(); e.stopPropagation();
+            depthMenuOpen = false;
+            launchWalk(f._item, f._wsName);
           } else if (hit(e, keys.cram)) {
             e.preventDefault(); e.stopPropagation(); cramOn = !cramOn; syncPrimary();
           } else if (e.key === "Escape" || hit(e, keys.depth)) {

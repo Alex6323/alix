@@ -66,7 +66,9 @@ export function createTutor({
   }
 
   function endpoint(suffix = "") {
-    return trace.isOpen() ? `/api/trace/ask${suffix}` : `/api/ask${suffix}`;
+    if (trace.isOpen()) return `/api/trace/ask${suffix}`;
+    if (study.isWalking()) return `/api/walk/ask${suffix}`;
+    return `/api/ask${suffix}`;
   }
 
   function show() {
@@ -100,7 +102,7 @@ export function createTutor({
       }).catch(() => rerender());
     }
     if (!trace.isOpen() && needsStateRefresh) {
-      return api("/api/state").then((next) => {
+      return api(study.isWalking() ? "/api/walk" : "/api/state").then((next) => {
         study.replaceState(next);
         rerender();
         return true;
@@ -139,7 +141,7 @@ export function createTutor({
   }
 
   function draftCard() {
-    if (!canDistill()) return Promise.resolve(data);
+    if (!canDistill() || study.isWalking()) return Promise.resolve(data);
     return api("/api/ask/card/draft", post({})).then((next) => {
       data = next;
       if (open) sync();
@@ -381,7 +383,7 @@ export function createTutor({
     const sendButton = chip("Send", "primary", () => send(input.value), "shift+enter");
     sendButton.disabled = data.thinking;
     chip("Make this a note", "distill", saveNote, label(keys().make_note)).disabled = !canDistill();
-    if (!trace.isOpen()) {
+    if (!trace.isOpen() && !study.isWalking()) {
       chip("Make this a card", "distill", draftCard, label(keys().make_card)).disabled = !canDistill();
     }
     chip("Close", "", close, "esc");

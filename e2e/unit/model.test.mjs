@@ -61,4 +61,11 @@ test("screen selection uses explicit dto discriminants", () => {
   assert.equal(currentScreen({ ...base, state: { kind: "review", phase: "done" } }), "summary");
   assert.equal(currentScreen({ ...base, trace: { kind: "trace", phase: "predict" } }), "trace");
   assert.equal(currentScreen({ ...base, trace: { phase: "predict" } }), "picker");
+  for (const [phase, screen] of [["front", "walk"], ["answer", "walk"], ["done", "walk-done"]]) {
+    assert.equal(
+      currentScreen({ ...base, state: { kind: "walk", phase } }),
+      screen,
+      `walk phase ${phase} maps to ${screen}`,
+    );
+  }
 });

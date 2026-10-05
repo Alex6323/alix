@@ -55,6 +55,7 @@ export function enterPicker(model) {
 export function currentScreen(model) {
   if (model.trace?.kind === "trace") return "trace";
   if (model.browsing) return "browse";
+  if (model.state?.kind === "walk") return model.state.phase === "done" ? "walk-done" : "walk";
   if (model.state?.kind !== "review") return "picker";
   if (model.state.phase === "done") return "summary";
   if (model.state.phase === "review") return "study";

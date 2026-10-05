@@ -19,6 +19,7 @@ export function createStudy({
   api,
   post,
   storage,
+  sessionStorage,
   lastDeck,
   openAugment,
   model,
@@ -124,15 +125,75 @@ export function createStudy({
     if (next) browseKeys = next;
   }
 
-  function load() { return api("/api/state").then(s => { if (s.phase === "browse") { browsing = { cards: s.cards, label: s.label, i: 0 }; state = s; rerender(); } else apply(s); }); }
+  function load() {
+    const resumeWalk = walkMarked();
+    return api("/api/state").then(s => {
+      if (s.phase === "browse") { browsing = { cards: s.cards, label: s.label, i: 0 }; state = s; rerender(); }
+      else if (s.phase === "select" && resumeWalk) return api("/api/walk").then(apply, () => apply(s));
+      else apply(s);
+    });
+  }
   // A rejected mutation (a stale revision after a lost reply, or a transport
   // failure) refetches the state, so the next click carries a fresh echo
   // instead of silently doing nothing forever.
   function grade(g)  { api("/api/grade", post({ grade: g })).then(apply).catch(() => load()); }
   function skip()    { api("/api/skip", post({})).then(apply).catch(() => load()); }
   function introduce() { api("/api/introduce", post({})).then(apply).catch(() => load()); }
-  function remove()  { api("/api/remove", post({})).then(apply).catch(() => load()); }
+  function remove()  { if (isWalking()) return; api("/api/remove", post({})).then(apply).catch(() => load()); }
   function restart() { api("/api/restart", post({})).then(apply).catch(() => load()); }
+
+  const WALK_MARKER = "alix.walk";
+  function isWalking() { return !!(state && state.kind === "walk"); }
+  function walkMarked() {
+    try { return !!(sessionStorage && sessionStorage.getItem(WALK_MARKER)); } catch (error) { return false; }
+  }
+  function markWalk(on) {
+    try {
+      if (!sessionStorage) return;
+      if (on) sessionStorage.setItem(WALK_MARKER, "1");
+      else sessionStorage.removeItem(WALK_MARKER);
+    } catch (error) {}
+  }
+  function openWalk(deck) {
+    autoOpenedSection = null;
+    return api("/api/walk", post({ deck })).then(apply);
+  }
+  function walkReveal() {
+    api("/api/walk/reveal", post({})).then(w => {
+      replaceState(w);
+      revealed = Math.max(1, stepCount());
+      fillBottom();
+      renderLegend();
+    }).catch(() => load());
+  }
+  function walkDrawReveal() {
+    drawSnapshot = drawCanvasEl ? drawCanvasEl.toDataURL() : null;
+    api("/api/walk/reveal", post({})).then(w => {
+      replaceState(w);
+      revealed = Math.max(1, stepCount());
+      rerender();
+    }).catch(() => load());
+  }
+  function walkChoose(body) {
+    api("/api/walk/choose", post(body))
+      .then(f => api("/api/walk").then(w => {
+        replaceState(w);
+        feedback = f;
+        fillBottom();
+        renderLegend();
+      }))
+      .catch(() => load());
+  }
+  function walkNext() { api("/api/walk/next", post({})).then(apply).catch(() => load()); }
+  function nextWalk() {
+    autoOpenedSection = null;
+    api("/api/walk/restart", post({})).then(apply).catch(() => load());
+  }
+  function leaveWalk() {
+    autoOpenedSection = null;
+    closeMenu();
+    api("/api/walk/leave", post({})).then(apply).catch(() => load());
+  }
 
   // One heatmap cell's fill: the lib's per-card tier, colored by the CSS
   // class of the same name.
@@ -223,6 +284,8 @@ export function createStudy({
     drawSnapshot = clientModel.drawSnapshot;
     drawTool = clientModel.drawTool;
     drawCanvasEl = clientModel.drawCanvas;
+    markWalk(isWalking());
+    if (isWalking() && state.phase === "answer") revealed = Math.max(1, stepCount());
     rerender();
   }
   function hasKeypoints() { return isExplain() && state.keypoints && state.keypoints.length > 0; }
@@ -265,6 +328,7 @@ export function createStudy({
   // override when correct, a plain "Continue" (grades failed) when wrong — so a
   // miss shows the right answer before the card moves on, same as any other check.
   function choose(i) {
+    if (isWalking()) { walkChoose({ index: i }); return; }
     // An introduction-card pick reveals its answer feedback: same encounter rule.
     api("/api/choose", post({ index: i, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(f => {
       feedback = f;
@@ -284,6 +348,7 @@ export function createStudy({
   function submitMultiChoice() {
     if (!selectedChoices.size) return;
     const indices = Array.from(selectedChoices).sort((a, b) => a - b);
+    if (isWalking()) { walkChoose({ indices }); return; }
     api("/api/choose", post({ indices, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(f => {
       feedback = f;
       fillBottom();
@@ -342,6 +407,7 @@ export function createStudy({
   }
 
   function isAnswered() {
+    if (isWalking()) return !!state.card && state.phase === "answer";
     if (!state || state.phase !== "review" || !state.card) return false;
     if (feedback) return true;
     return !isChoice() && !isInput() && fullyRevealed();
@@ -376,7 +442,7 @@ export function createStudy({
     const c = state.card;
     const hasNote = c.note && c.note.length > 0;
     const { card, q } = buildCardShell({
-      pile: state.remaining,
+      pile: isWalking() ? state.total - state.position : state.remaining,
       cardId: "card",
       ansId: "ansRegion",
       withNote: hasNote,
@@ -539,6 +605,8 @@ export function createStudy({
       // Source view: all cited excerpts take the answer's place in authored order.
       renderSourceCitations(a, citations);
       setNote(true);
+    } else if (isWalking()) {
+      fillWalk(a);
     } else if (isIntroducing()) {
       if (effectiveDraw()) {
         // Attempt-first, ungraded: draw your answer, then reveal it to compare.
@@ -628,6 +696,18 @@ export function createStudy({
     a.classList.toggle("has-body", !!a.querySelector(
       ".reveal, .options, .inputs, .source-excerpt, .kp-list, .explain-answer, img.card-img, .cite-err"));
     updateFade(a);
+  }
+
+  function fillWalk(a) {
+    if (feedback) { renderChoiceFeedback(a); setNote(true); }
+    else if (state.phase === "answer") {
+      if (drawSnapshot) renderDrawComparison(a, fillAnswer);
+      else fillAnswer(a);
+      setNote(true);
+    }
+    else if (isChoice()) { renderChoices(a); setNote(false); }
+    else if (effectiveDraw()) { renderDrawCanvas(a); setNote(false); }
+    else setNote(false);
   }
 
   function hasSection() {
@@ -1515,6 +1595,7 @@ export function createStudy({
   function renderLegend() {
     legend.innerHTML = "";
     clearLegendSides();
+    if (isWalking()) { renderWalkLegend(); return; }
     if (feedback) {
       if (isIntroducing()) {
         chip("Seen", "primary", introduce, label(keys.reveal)); // a pick acknowledges, never grades
@@ -1615,6 +1696,34 @@ export function createStudy({
       chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
     }
     chip("Leave", "", leaveSession, "esc", legendLeft); // pinned bottom-left; return to the deck picker
+  }
+
+  function renderWalkLegend() {
+    if (state.phase === "answer") {
+      chip("Next", "primary", walkNext, label(keys.reveal));
+      chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
+    } else if (isMultiChoice()) {
+      chip("Submit", "primary", submitMultiChoice, "enter").disabled = selectedChoices.size === 0;
+    } else if (!isChoice()) {
+      chip("Reveal", "primary", effectiveDraw() ? walkDrawReveal : walkReveal, label(keys.reveal));
+    }
+    chip("Leave", "", leaveWalk, "esc", legendLeft);
+  }
+
+  function renderWalkDone() {
+    const wrap = el("div", "summary");
+    const walked = state.total > 0;
+    wrap.appendChild(el("div", "lede", walked ? "walk complete" : "nothing to walk"));
+    wrap.appendChild(el("h2", null, walked ? "End of the deck." : "This deck has no cards."));
+    if (walked) {
+      const row = el("div", "row");
+      row.appendChild(el("span", null, "walked"));
+      row.appendChild(el("b", null, `${state.total}`));
+      wrap.appendChild(row);
+    }
+    stage.appendChild(wrap);
+    chip("Next walk", "primary", nextWalk, label(keys.restart));
+    chip("Leave", "", leaveWalk, "esc");
   }
 
   // Terse, approximate phrase for when the next scheduled card comes due, shown
@@ -1828,10 +1937,12 @@ export function createStudy({
     histEl.textContent = "";
     if (state.phase === "review") {
       histEl.appendChild(el("span", "left-token", `${state.remaining} left`));
+    } else if (isWalking() && state.phase !== "done") {
+      histEl.appendChild(el("span", "left-token", `${state.total - state.position} left`));
     }
     scoreEl.innerHTML = "";
     menuWrap.style.display = state.phase === "done" ? "none" : "";
-    setMenuContext("review");
+    setMenuContext(isWalking() ? "walk" : "review");
   }
 
   function render() {
@@ -1840,9 +1951,12 @@ export function createStudy({
       return;
     }
     prepareSurface();
-    if (screen() === "summary") {
+    const current = screen();
+    if (current === "summary") {
       renderSummary();
       startDuePoll();
+    } else if (current === "walk-done") {
+      renderWalkDone();
     } else {
       renderCard();
       autoOpenSection();
@@ -1866,6 +1980,7 @@ export function createStudy({
         if (e.key === "Escape" || hit(e, keys.context)) closeSection();
         return;
       }
+      if (isWalking()) { handleWalkKey(e); return; }
       // While the leave prompt is up: Enter confirms leaving, Esc stays; other keys
       // are inert (so a stray Esc can never blow through the guard).
       if (confirmingLeave) {
@@ -1913,22 +2028,7 @@ export function createStudy({
         if (isIntroChoice()) {
           if (!feedback) {
             if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
-            if (hit(e, keys.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
-            if (hit(e, keys.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }
-            if (isMultiChoice()) {
-              if (e.key === " " && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); toggleChoice(choiceFocus); return; }
-              if (e.key === "Enter") { e.preventDefault(); submitMultiChoice(); return; }
-              if (e.key >= "1" && e.key <= "9") {
-                const i = +e.key - 1;
-                if (i < state.choices.length) { e.preventDefault(); toggleChoice(i); }
-              }
-              return;
-            }
-            if (e.key === "Enter" && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); choose(choiceFocus); return; }
-            if (e.key >= "1" && e.key <= "9") {
-              const i = +e.key - 1;
-              if (i < state.choices.length) { e.preventDefault(); choose(i); }
-            }
+            handleChoiceKey(e);
           } else if (hit(e, keys.reveal) || e.key === "Enter" || e.key === " ") {
             e.preventDefault(); introduce();
           }
@@ -1995,22 +2095,7 @@ export function createStudy({
       if (hit(e, keys.remove)) { e.preventDefault(); remove(); return; }
       if (isChoice()) {
         if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
-        if (hit(e, keys.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
-        if (hit(e, keys.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }
-        if (isMultiChoice()) {
-          if (e.key === " " && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); toggleChoice(choiceFocus); return; }
-          if (e.key === "Enter") { e.preventDefault(); submitMultiChoice(); return; }
-          if (e.key >= "1" && e.key <= "9") {
-            const i = +e.key - 1;
-            if (i < state.choices.length) { e.preventDefault(); toggleChoice(i); }
-          }
-          return;
-        }
-        if (e.key === "Enter" && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); choose(choiceFocus); return; }
-        if (e.key >= "1" && e.key <= "9") {
-          const i = +e.key - 1;
-          if (i < state.choices.length) { e.preventDefault(); choose(i); }
-        }
+        handleChoiceKey(e);
         return;
       }
       if (!fullyRevealed()) {
@@ -2039,6 +2124,48 @@ export function createStudy({
     return true;
   }
 
+  function handleChoiceKey(e) {
+    if (hit(e, keys.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
+    if (hit(e, keys.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }
+    if (isMultiChoice()) {
+      if (e.key === " " && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); toggleChoice(choiceFocus); return; }
+      if (e.key === "Enter") { e.preventDefault(); submitMultiChoice(); return; }
+      if (e.key >= "1" && e.key <= "9") {
+        const i = +e.key - 1;
+        if (i < state.choices.length) { e.preventDefault(); toggleChoice(i); }
+      }
+      return;
+    }
+    if (e.key === "Enter" && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); choose(choiceFocus); return; }
+    if (e.key >= "1" && e.key <= "9") {
+      const i = +e.key - 1;
+      if (i < state.choices.length) { e.preventDefault(); choose(i); }
+    }
+  }
+
+  function handleWalkKey(e) {
+    if (e.key === "Escape") { e.preventDefault(); leaveWalk(); return; }
+    if (state.phase === "done") {
+      if (e.key === "Enter" || hit(e, keys.restart)) { e.preventDefault(); nextWalk(); }
+      return;
+    }
+    if (hasSection() && hit(e, keys.context)) { e.preventDefault(); openSection(); return; }
+    if (state.phase === "answer") {
+      if ((state.card.citations || []).length && !e.ctrlKey && e.key.toLowerCase() === "s") {
+        e.preventDefault(); toggleCitation(); return;
+      }
+      if (hit(e, keys.ask)) { e.preventDefault(); openTutor(); return; }
+      if (hit(e, keys.reveal) || e.key === "Enter") { e.preventDefault(); walkNext(); }
+      return;
+    }
+    if (isChoice()) { handleChoiceKey(e); return; }
+    if (hit(e, keys.reveal)) {
+      e.preventDefault();
+      if (effectiveDraw()) walkDrawReveal();
+      else walkReveal();
+    }
+  }
+
   function syncDrawMenu() {
     const authored = effectiveDraw() && state.input === "draw";
     ui.drawState.textContent = (authored || drawToggle) ? "on" : "off";
@@ -2062,10 +2189,12 @@ export function createStudy({
     hasSection,
     isAnswered,
     isBrowsing,
+    isWalking,
     keys: () => keys,
     load,
     openSection,
     openBrowse,
+    openWalk,
     prepareRender,
     prepareSurface,
     remove,

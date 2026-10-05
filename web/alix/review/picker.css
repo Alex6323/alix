@@ -96,6 +96,13 @@
   .legend-side { display: flex; align-items: center; gap: 8px; min-width: 0; }
   #legendLeft { grid-column: 1; justify-self: start; }
   #legendRight { grid-column: 3; justify-self: end; }
+  @media (max-width: 640px) {
+    .legend { grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; padding-left: 14px; padding-right: 14px; }
+    .legend .keys .chip { white-space: nowrap; }
+    .legend:has(.keys > .chip:nth-child(4)) { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+    .legend:has(.keys > .chip:nth-child(4)) :is(.keys, .legend-side) { display: contents; }
+    .legend:has(.keys > .chip:nth-child(4)) .score:empty { display: none; }
+  }
   .legend .score { font-family: var(--mono); font-size: 0.82rem; color: var(--dim); font-variant-numeric: tabular-nums; }
   .legend .score b { color: var(--good); font-weight: 600; }
   .legend .score s { color: var(--again); text-decoration: none; font-weight: 600; }
@@ -142,6 +149,7 @@
   .chip.primary .depth-tag { opacity: 0.65; font-size: 0.82em; max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* the ▾ beside Learn that opens the depth menu — same chip, tighter padding. */
   .chip.split { padding-left: 10px; padding-right: 10px; }
+  .chip .walk-new { color: var(--dim); font-weight: 400; font-size: 0.82em; max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* a quiet link-style chip ("I guessed") — no border/fill, so it reads as the
      lesser of the two options next to the primary "Next". */
   .chip.quiet { border-color: transparent; background: none; color: var(--dim); font-weight: 400; }

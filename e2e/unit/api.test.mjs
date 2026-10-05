@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ApiError, createApiClient } from "../../web/alix/review/api.js";
+import { validatorFor } from "../../web/alix/review/contracts.js";
 
 function storage(initial = {}) {
   const values = new Map(Object.entries(initial));
@@ -93,4 +94,16 @@ test("api clears a rejected pairing token once", async () => {
   assert.equal(calls, 2);
   assert.equal(saved.getItem("alix.token"), null);
   assert.equal(unauthorized, 1);
+});
+
+test("every walk route validates the shape it returns", () => {
+  const walk = { kind: "walk", phase: "front" };
+  const picker = { kind: "review", phase: "select" };
+  for (const route of ["/api/walk", "/api/walk/reveal", "/api/walk/next", "/api/walk/restart"]) {
+    const validate = validatorFor(route);
+    assert.equal(validate(walk), true, `${route} accepts a WalkDto`);
+    assert.equal(validate(picker), false, `${route} rejects a StateDto`);
+    assert.equal(validate({ kind: "walk", phase: "review" }), false, `${route} rejects an unknown walk phase`);
+  }
+  assert.equal(validatorFor("/api/walk/leave")(picker), true, "leave returns the picker StateDto");
 });

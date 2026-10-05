@@ -57,6 +57,7 @@ test("tutor owns its transcript and chooses the trace endpoint explicitly", asyn
     },
     study: {
       state: () => ({ card: null }),
+      isWalking: () => false,
       replaceState: () => {},
       load: () => Promise.resolve(),
     },
@@ -87,4 +88,49 @@ test("tutor owns its transcript and chooses the trace endpoint explicitly", asyn
 
   assert.equal(tutor.isOpen(), false);
   assert.equal(calls.length, 0);
+});
+
+test("during a walk the tutor asks the walk endpoint and drafts no card", async () => {
+  const calls = [];
+  const replaced = [];
+  const transcript = {
+    transcript: [],
+    thinking: false,
+    can_distill: true,
+    status: null,
+    error: null,
+  };
+  const walk = { kind: "walk", phase: "answer", card: null };
+  const tutor = createTutor({
+    api: async (path, options) => {
+      calls.push(path);
+      return path === "/api/walk" ? walk : transcript;
+    },
+    post: (body) => ({ method: "POST", body }),
+    rerender: () => {},
+    updateBusy: () => {},
+    timers: { setInterval: () => 1, clearInterval: () => {} },
+    trace: { isOpen: () => false, replace: () => {} },
+    study: {
+      state: () => ({ card: null }),
+      isWalking: () => true,
+      replaceState: (next) => replaced.push(next),
+      load: () => Promise.resolve(),
+    },
+    ui: { document: { querySelector: () => null } },
+  });
+
+  await tutor.show();
+  assert.equal(calls[0], "/api/walk/ask", "step: open; calls: " + calls.join(","));
+
+  await tutor.draftCard();
+  assert.equal(calls.length, 1, "step: draft; a walk has no card-draft route; calls: " + calls.join(","));
+
+  await tutor.saveNote();
+  assert.equal(calls[1], "/api/walk/ask/note", "step: note; calls: " + calls.join(","));
+
+  tutor.data().transcript.length = 0;
+  await tutor.close();
+  assert.equal(calls.at(-1), "/api/walk", "step: close refreshes the walk, not the drill state; calls: " + calls.join(","));
+  assert.deepEqual(replaced, [walk], "step: close; the refreshed walk replaces the state");
 });

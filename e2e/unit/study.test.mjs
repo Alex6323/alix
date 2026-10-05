@@ -261,3 +261,17 @@ test("the Recall chip carries the sitting's scope so a re-select cannot widen it
     depth: "recall",
   });
 });
+
+test("a finished walk offers Next walk, which restarts the walk", async () => {
+  const done = { kind: "walk", phase: "done", label: "Facts", card: null, position: 2, total: 2 };
+  const run = summaryHarness(done, done);
+  const labels = run.chips.map((c) => c.textContent);
+  assert.deepEqual(labels, ["Next walk", "Leave"], `done-screen chips: ${labels.join(", ")}`);
+  assert.equal(run.chips[0].cls, "primary", "Next walk is the primary action");
+  assert.equal(run.rows().length, 1, "one walked row");
+  assert.deepEqual(run.rows()[0], { label: "walked", value: "2" });
+
+  run.chips[0].onClick();
+  await Promise.resolve();
+  assert.deepEqual(run.calls, ["/api/walk/restart"], `calls: ${run.calls.join(", ")}`);
+});

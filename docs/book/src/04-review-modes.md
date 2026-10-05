@@ -48,7 +48,8 @@ Every review session runs at one of three independent depths, picked when you
 start it with the web picker's split **Depth…** button, whose small ▾ opens a menu
 of the three (on the keyboard: `v`, then `1`/`2`/`3`; `Esc` cancels; rebindable in
 [`[keys.picker]`](16-configuration.md)). The menu also carries the **cram**
-tick-box (`c`); see [Cramming](05-scheduling.md). Plain **Learn** reuses the
+tick-box (`c`); see [Cramming](05-scheduling.md), and **Walk** (`w`), an
+ungraded read-through ([Walking a deck](15-the-web-app.md#walking-a-deck)). Plain **Learn** reuses the
 deck's own last-used depth, remembered per deck. The first time you ever open a
 deck, that default is Recognize only when every card has a genuine
 multiple-choice pick ready to go: authored choice options (an invoked task
