@@ -1056,7 +1056,14 @@ pub fn deck_tiers(
     now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> Vec<CardTier> {
-    card_tiers(&stamped_ids(cards), store, now_ms, retire_after_days)
+    cards
+        .iter()
+        .map(|card| {
+            card.id().map_or(CardTier::Unseen, |id| {
+                card_tier(store, &id, now_ms, retire_after_days)
+            })
+        })
+        .collect()
 }
 
 fn stamped_ids(cards: &[Card]) -> Vec<String> {
@@ -3981,7 +3988,7 @@ mod tests {
     }
 
     #[test]
-    fn deck_cells_follow_file_order_skip_unstamped_cards_and_carry_the_lock() {
+    fn deck_cells_skip_unstamped_cards_while_deck_tiers_keeps_one_per_card() {
         let (mut store, _dir) = empty_store();
         let mut deck = cards(3);
         deck.insert(1, {
@@ -4014,9 +4021,14 @@ mod tests {
             "one cell per stamped card, in file order"
         );
         assert_eq!(
-            cells.iter().map(|c| c.tier).collect::<Vec<_>>(),
+            vec![
+                CardTier::Unseen,
+                CardTier::Unseen,
+                CardTier::Learning,
+                CardTier::Unseen,
+            ],
             deck_tiers(&deck, &store, 1_000, CAP),
-            "deck_tiers is deck_cells without the lock"
+            "deck_tiers keeps one tier per card, an unstamped card unseen"
         );
     }
 

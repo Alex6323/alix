@@ -3094,7 +3094,12 @@ mod tests {
             &workspace::store_path(&root.join("ws")),
             &root.join("ws/decks/m.md"),
         );
-        let decks = [root.join("loose.md"), root.join("ws/decks/m.md")];
+        write(&root.join("raw.md"), "## a\n1\n\n## b\n2\n");
+        let decks = [
+            root.join("loose.md"),
+            root.join("ws/decks/m.md"),
+            root.join("raw.md"),
+        ];
 
         let strips = deck_strips(root, &decks, &ReviewConfig::default(), T0 + 1_000);
 
@@ -3103,9 +3108,13 @@ mod tests {
             .map(|s| (s.path.as_path(), s.card_count, s.tiers.len()))
             .collect();
         assert_eq!(
-            vec![(decks[0].as_path(), 3, 3), (decks[1].as_path(), 2, 2)],
+            vec![
+                (decks[0].as_path(), 3, 3),
+                (decks[1].as_path(), 2, 2),
+                (decks[2].as_path(), 2, 2),
+            ],
             shape,
-            "one strip per requested deck, in request order: (path, card_count, cells)"
+            "one strip per requested deck, in request order, one cell per card even unstamped: (path, card_count, cells)"
         );
         assert_eq!(
             vec!["unseen"; 3],
