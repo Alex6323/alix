@@ -37,7 +37,6 @@ class PickerEntry {
     required this.due,
     required this.canRecognize,
     required this.isTrace,
-    required this.lastDepth,
     required this.mastered,
     required this.examDue,
     required this.hasExam,
@@ -55,7 +54,6 @@ class PickerEntry {
   final bool due;
   final bool canRecognize;
   final bool isTrace;
-  final PickerDepth lastDepth;
   final bool mastered;
   final bool examDue;
   final bool hasExam;

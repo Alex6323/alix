@@ -405,48 +405,24 @@ class _PickerScreenState extends State<PickerScreen> {
     PickerEntry entry, {
     required String root,
     required bool isPaired,
-    PickerDepth? depth,
-    bool cram = false,
-    bool skipIntroduction = false,
+    required PickerLaunch launch,
   }) async {
-    if (!mounted) return;
-    final syncController = _syncController;
-    if (isPaired && syncController != null) {
-      final deckId = deckIdForPath(
-        entries: syncController.pairedEntries,
-        rootDir: root,
-        path: entry.path,
-      );
-      final matches = deckId == null
-          ? const <SyncPendingConflict>[]
-          : syncController.pendingConflicts.where((c) => c.deckId == deckId);
-      if (matches.isNotEmpty) {
-        await _openConflictChoice(matches.first);
-        return;
-      }
-    }
-    if (depth == null &&
-        entry.lastDepth == PickerDepth.recognize &&
-        !entry.canRecognize) {
-      depth = PickerDepth.recall;
-    }
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ReviewScreen(
           deckPath: entry.path,
           rootDir: root,
-          depth: switch (depth) {
+          depth: switch (launch.depth) {
             PickerDepth.recognize => ReviewDepth.recognize,
             PickerDepth.recall => ReviewDepth.recall,
             PickerDepth.reconstruct => ReviewDepth.reconstruct,
-            null => null,
           },
-          cram: cram,
-          skipIntroduction: skipIntroduction,
+          cram: launch.cram,
+          skipIntroduction: launch.skipIntroduction,
           device: widget.device,
           supportDir: widget.supportDir,
           buildClient: widget.buildClient,
-          syncController: isPaired ? syncController : null,
+          syncController: isPaired ? _syncController : null,
         ),
       ),
     );
@@ -483,24 +459,38 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.reload();
   }
 
-  Future<void> _rePickDepth(
+  Future<void> _openLaunchSheet(
     PickerEntry entry, {
     required String root,
     required bool isPaired,
   }) async {
+    final syncController = _syncController;
+    if (isPaired && syncController != null) {
+      final deckId = deckIdForPath(
+        entries: syncController.pairedEntries,
+        rootDir: root,
+        path: entry.path,
+      );
+      final matches = deckId == null
+          ? const <SyncPendingConflict>[]
+          : syncController.pendingConflicts.where((c) => c.deckId == deckId);
+      if (matches.isNotEmpty) {
+        await _openConflictChoice(matches.first);
+        return;
+      }
+    }
+    if (!mounted) return;
     var walk = false;
-    final choice = await showModalBottomSheet<PickerLaunch>(
+    final launch = await showModalBottomSheet<PickerLaunch>(
       context: context,
+      isScrollControlled: true,
       builder: (sheet) => PickerDepthSheet(
-        selected: entry.lastDepth,
         canRecognize: entry.canRecognize,
         onChoose: (launch) => Navigator.of(sheet).pop(launch),
-        onWalk: entry.isTrace
-            ? null
-            : () {
-                walk = true;
-                Navigator.of(sheet).pop();
-              },
+        onWalk: () {
+          walk = true;
+          Navigator.of(sheet).pop();
+        },
       ),
     );
     if (!mounted) return;
@@ -508,15 +498,8 @@ class _PickerScreenState extends State<PickerScreen> {
       await _openWalk(entry, root: root);
       return;
     }
-    if (choice == null) return;
-    await _openDeck(
-      entry,
-      root: root,
-      isPaired: isPaired,
-      depth: choice.depth,
-      cram: choice.cram,
-      skipIntroduction: choice.skipIntroduction,
-    );
+    if (launch == null) return;
+    await _openDeck(entry, root: root, isPaired: isPaired, launch: launch);
   }
 
   String _ymd(DateTime value) =>
@@ -579,32 +562,7 @@ class _PickerScreenState extends State<PickerScreen> {
     } else if (entry.isTrace) {
       _openTraceSession(entry, root: root);
     } else {
-      _openDeck(entry, root: root, isPaired: isPaired);
-    }
-  }
-
-  void _longPressEntry(PickerEntry entry) => _longPressEntryIn(
-    entry,
-    root: widget.root,
-    isPaired: widget.isPairedSubtree,
-  );
-
-  void _longPressPairedEntry(PickerEntry entry) {
-    final pairedDir = _pairedDir;
-    if (pairedDir == null) return;
-    _longPressEntryIn(entry, root: pairedDir, isPaired: true);
-  }
-
-  void _longPressEntryIn(
-    PickerEntry entry, {
-    required String root,
-    required bool isPaired,
-  }) {
-    if (entry.progressError && !entry.isWorkspace) return;
-    if (entry.isWorkspace) {
-      _deadlineSheet(entry);
-    } else if (!entry.isTrace) {
-      _rePickDepth(entry, root: root, isPaired: isPaired);
+      _openLaunchSheet(entry, root: root, isPaired: isPaired);
     }
   }
 
@@ -678,7 +636,7 @@ class _PickerScreenState extends State<PickerScreen> {
               : const SizedBox(width: 56),
           title: widget.title,
           onOpenEntry: _openEntry,
-          onLongPressEntry: _longPressEntry,
+          onLongPressEntry: _deadlineSheet,
           onOpenMastered: _openMastered,
           onAddTutorial: _addTutorial,
           syncStatus: syncController?.statusLine,
@@ -688,9 +646,7 @@ class _PickerScreenState extends State<PickerScreen> {
               ? _controller.pairedRootEntries
               : const [],
           onOpenPairedEntry: isPairedRootScreen ? _openPairedEntry : null,
-          onLongPressPairedEntry: isPairedRootScreen
-              ? _longPressPairedEntry
-              : null,
+          onLongPressPairedEntry: isPairedRootScreen ? _deadlineSheet : null,
           onSyncAll: syncController != null && isPairedRootScreen
               ? _syncAll
               : null,

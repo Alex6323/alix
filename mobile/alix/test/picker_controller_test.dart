@@ -155,7 +155,6 @@ PickerEntry _entry(String title, {bool mastered = false}) {
     due: true,
     canRecognize: true,
     isTrace: false,
-    lastDepth: PickerDepth.recall,
     mastered: mastered,
     examDue: false,
     hasExam: false,

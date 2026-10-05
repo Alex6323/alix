@@ -248,7 +248,7 @@ void main() {
       await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
 
-      await tester.longPress(find.text('Deck'));
+      await tester.tap(find.text('Deck'));
       await tester.pumpAndSettle();
       await expectWidgetTree(
         tester,

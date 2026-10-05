@@ -516,13 +516,11 @@ typedef PickerLaunch = ({
 class PickerDepthSheet extends StatefulWidget {
   const PickerDepthSheet({
     super.key,
-    this.selected,
     required this.canRecognize,
     required this.onChoose,
     this.onWalk,
   });
 
-  final PickerDepth? selected;
   final bool canRecognize;
   final ValueChanged<PickerLaunch> onChoose;
   final VoidCallback? onWalk;
@@ -542,13 +540,13 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
     // window, so the sheet scrolls instead of clipping its last launch.
     return SafeArea(
       child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SwitchListTile(
               value: _cram,
               onChanged: (on) => setState(() => _cram = on),
-              secondary: const SizedBox(width: 22),
               title: const Text('Cram'),
               subtitle: Text(
                 _cram
@@ -559,11 +557,10 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
             SwitchListTile(
               value: _skipIntroduction,
               onChanged: (on) => setState(() => _skipIntroduction = on),
-              secondary: const SizedBox(width: 22),
               title: const Text('Skip introduction'),
               subtitle: const Text('new cards are graded at first sight'),
             ),
-            const Divider(height: 1),
+            const SizedBox(height: 8),
             for (final (depth, label, hint) in [
               (
                 PickerDepth.recognize,
@@ -579,36 +576,91 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                 'type or rebuild the answer',
               ),
             ])
-              ListTile(
-                enabled: canRecognize || depth != PickerDepth.recognize,
-                leading: SizedBox(
-                  width: 22,
-                  child: depth == widget.selected
-                      ? Icon(
-                          Icons.check,
-                          size: 18,
-                          color: Theme.of(context).alix.bolt,
-                        )
-                      : null,
-                ),
-                title: Text(label),
-                subtitle: Text(hint),
-                onTap: () => widget.onChoose((
-                  depth: depth,
-                  cram: _cram,
-                  skipIntroduction: _skipIntroduction,
-                )),
+              _PickerLaunchRow(
+                label: label,
+                hint: hint,
+                onTap: canRecognize || depth != PickerDepth.recognize
+                    ? () => widget.onChoose((
+                        depth: depth,
+                        cram: _cram,
+                        skipIntroduction: _skipIntroduction,
+                      ))
+                    : null,
               ),
             if (widget.onWalk case final onWalk?) ...[
-              const Divider(height: 1),
-              ListTile(
-                leading: const SizedBox(width: 22),
-                title: const Text('Walk'),
-                subtitle: const Text('read every card once, no grading'),
+              const SizedBox(height: 8),
+              _PickerLaunchRow(
+                label: 'Walk',
+                hint: 'read every card once, no grading',
                 onTap: onWalk,
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PickerLaunchRow extends StatelessWidget {
+  const _PickerLaunchRow({
+    required this.label,
+    required this.hint,
+    required this.onTap,
+  });
+
+  final String label;
+  final String hint;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = theme.alix;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Opacity(
+        opacity: onTap == null ? 0.5 : 1,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(11),
+            onTap: onTap,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 54),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              decoration: BoxDecoration(
+                border: Border.all(color: tokens.line),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          hint,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: tokens.dim),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, size: 22, color: tokens.dim),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

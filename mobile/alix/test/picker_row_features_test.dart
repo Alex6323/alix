@@ -1,5 +1,5 @@
 // T5.1a widget tests: the picker row's per-row interaction/visual changes
-// (depth remembering, workspace icons, the exam-due marker). Driven against
+// (the launch sheet, workspace icons, the exam-due marker). Driven against
 // the REAL embedded core, mirroring bridge_test.dart's own fixtures/pattern
 // (RustLib.init in setUpAll; real deck files on disk; backdating instead of
 // sleeping for anything that needs the introduction cooldown behind it).
@@ -12,10 +12,12 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/picker/tree_guides.dart';
+import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
+import 'package:alix_mobile/trace_screen.dart';
 
 import 'support/deck_fixture.dart';
 import 'support/picker_listing.dart';
@@ -50,96 +52,153 @@ void main() {
     return dir;
   }
 
-  group('item 10: depth remembering', () {
+  group('item 10: the launch sheet', () {
     /// A deck introduced and backdated ten minutes (past the 5-min introduction
     /// cooldown), so a real "now" open serves it as a genuine due review
-    /// rather than the introduction flow, where tap vs. long-press cannot show
+    /// rather than the introduction flow, where the picked depth cannot show
     /// through (a new card looks the same at any depth).
     Directory dueDeckRoot() {
       final root = tempRoot('alix-picker-depth-');
       final deck = '${root.path}/d.md';
-      writeTestDeck(deck, '---\ntitle: D\n---\n## capital of testland?\nTestville\n');
-      final backdated =
-          BigInt.from(DateTime.now().millisecondsSinceEpoch - 600000);
-      ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: backdated)
-          .introduce(nowMs: backdated);
+      writeTestDeck(
+        deck,
+        '---\ntitle: D\n---\n## capital of testland?\nTestville\n',
+      );
+      final backdated = BigInt.from(
+        DateTime.now().millisecondsSinceEpoch - 600000,
+      );
+      ReviewSession.open(
+        deckPath: deck,
+        rootDir: root.path,
+        nowMs: backdated,
+      ).introduce(nowMs: backdated);
       return root;
     }
 
-    testWidgets('tap opens directly at the remembered depth, no sheet',
-        (tester) async {
-      final root = dueDeckRoot();
-      await tester.pumpWidget(MaterialApp(
-        theme: alixDark(),
-        home: PickerScreen(root: root.path),
-      ));
+    Future<void> pumpPicker(WidgetTester tester, Directory root) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: alixDark(),
+          home: PickerScreen(root: root.path),
+        ),
+      );
       await settlePicker(tester);
+    }
+
+    testWidgets(
+      'a tap on a deck row opens the launch sheet, and the picked depth '
+      'opens the review',
+      (tester) async {
+        await pumpPicker(tester, dueDeckRoot());
+
+        await tester.tap(find.text('D'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byType(ReviewScreen),
+          findsNothing,
+          reason: 'the tap opens the sheet, not a session',
+        );
+        for (final launch in ['Recognize', 'Recall', 'Reconstruct', 'Walk']) {
+          expect(
+            find.text(launch),
+            findsOneWidget,
+            reason: 'sheet offers $launch',
+          );
+        }
+
+        await tester.tap(find.text('Reconstruct'));
+        await tester.pumpAndSettle();
+
+        final screen = tester.widget<ReviewScreen>(find.byType(ReviewScreen));
+        expect(screen.depth, ReviewDepth.reconstruct);
+        expect(
+          find.widgetWithText(InkWell, 'Submit'),
+          findsOneWidget,
+          reason: 'Reconstruct on a one-line answer is a typed check',
+        );
+      },
+    );
+
+    testWidgets('the launch sheet marks no depth as the last one used', (
+      tester,
+    ) async {
+      await pumpPicker(tester, dueDeckRoot());
 
       await tester.tap(find.text('D'));
       await tester.pumpAndSettle();
 
-      // No depth sheet ever showed: the review screen opened straight into
-      // the card, at the default (Recall) depth's flip mode.
-      expect(find.text('Recognize'), findsNothing);
-      expect(find.text('Reconstruct'), findsNothing);
-      expect(find.byType(ReviewScreen), findsOneWidget);
-      expect(find.widgetWithText(InkWell, 'Reveal'), findsOneWidget);
-      // Locks the literal null depth passed on tap (not just the resulting
-      // flip, which Recall's fallback default would also produce if the tap
-      // path wrongly coerced to Depth.recall).
-      expect(tester.widget<ReviewScreen>(find.byType(ReviewScreen)).depth, isNull);
-    });
-
-    testWidgets(
-        'long-press shows the sheet with the remembered depth highlighted, and opens with the pick',
-        (tester) async {
-      final root = dueDeckRoot();
-      await tester.pumpWidget(MaterialApp(
-        theme: alixDark(),
-        home: PickerScreen(root: root.path),
-      ));
-      await settlePicker(tester);
-
-      await tester.longPress(find.text('D'));
-      await tester.pumpAndSettle();
-
       expect(find.text('Recall'), findsOneWidget);
-      expect(find.text('Recognize'), findsOneWidget);
-      expect(find.text('Reconstruct'), findsOneWidget);
-
-      // Never reviewed before, so the remembered depth is the fallback
-      // default (Recall): the check mark sits on that tile only.
-      final recallTile = find.ancestor(
-          of: find.text('Recall'), matching: find.byType(ListTile));
-      final recognizeTile = find.ancestor(
-          of: find.text('Recognize'), matching: find.byType(ListTile));
-      expect(
-          find.descendant(of: recallTile, matching: find.byIcon(Icons.check)),
-          findsOneWidget);
-      expect(
-          find.descendant(
-              of: recognizeTile, matching: find.byIcon(Icons.check)),
-          findsNothing);
-
-      await tester.tap(find.text('Reconstruct'));
-      await tester.pumpAndSettle();
-
-      // Reconstruct + a single-line answer is a typed check, not a flip:
-      // proof the picked depth (not the remembered default) is what opened.
-      expect(find.byType(ReviewScreen), findsOneWidget);
-      expect(find.widgetWithText(InkWell, 'Submit'), findsOneWidget);
+      expect(find.byIcon(Icons.check), findsNothing);
     });
 
-    testWidgets('the cram switch followed by a depth opens a crammed session',
-        (tester) async {
+    testWidgets('every row kind answers tap and long-press with its own '
+        'destination', (tester) async {
       final root = dueDeckRoot();
-      await tester.pumpWidget(MaterialApp(
-        theme: alixDark(),
-        home: PickerScreen(root: root.path),
-      ));
-      await settlePicker(tester);
+      Directory('${root.path}/ws/decks').createSync(recursive: true);
+      File('${root.path}/ws/alix.toml').writeAsStringSync('title = "Ws"\n');
+      writeTestDeck('${root.path}/ws/decks/m.md', '## q\na\n');
+      File('${root.path}/source.txt').writeAsStringSync('alpha\nbeta\n');
+      writeTestDeck(
+        '${root.path}/t.md',
+        '---\n'
+            'trace: a picker-launched trace\n'
+            'source: source.txt\n'
+            'title: T\n'
+            '---\n'
+            '## Predict\n'
+            'it reads line one\n'
+            '<!-- at: 1 -->\n',
+      );
+      final launchSheet = find.text('Reconstruct');
+      final deadlineSheet = find.text('Ready by…');
+      final drilledIn = find.byType(PickerScreen, skipOffstage: false);
+      final trace = find.byType(TraceSessionScreen);
+      final cases = <(String, String, Finder?)>[
+        ('D', 'tap', launchSheet),
+        ('D', 'long-press', null),
+        ('Ws', 'tap', drilledIn),
+        ('Ws', 'long-press', deadlineSheet),
+        ('T', 'tap', trace),
+        ('T', 'long-press', trace),
+      ];
 
-      await tester.longPress(find.text('D'));
+      for (final (row, gesture, destination) in cases) {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await pumpPicker(tester, root);
+        final target = find.text(row);
+        if (gesture == 'tap') {
+          await tester.tap(target);
+        } else {
+          await tester.longPress(target);
+        }
+        await tester.pumpAndSettle();
+
+        final step = '$gesture on $row';
+        expect(
+          find.byType(ReviewScreen),
+          findsNothing,
+          reason: '$step opens no review',
+        );
+        if (destination == drilledIn) {
+          expect(drilledIn, findsNWidgets(2), reason: '$step drills in');
+        } else if (destination != null) {
+          expect(destination, findsOneWidget, reason: '$step reaches it');
+        } else {
+          for (final elsewhere in [launchSheet, deadlineSheet, trace]) {
+            expect(elsewhere, findsNothing, reason: '$step opens nothing');
+          }
+          expect(drilledIn, findsOneWidget, reason: '$step stays put');
+        }
+      }
+    });
+
+    testWidgets('the cram switch followed by a depth opens a crammed session', (
+      tester,
+    ) async {
+      await pumpPicker(tester, dueDeckRoot());
+
+      await tester.tap(find.text('D'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Cram'));
       await tester.pumpAndSettle();
@@ -154,14 +213,9 @@ void main() {
 
     testWidgets('the skip-introduction switch followed by a depth opens a '
         'session that skips it', (tester) async {
-      final root = dueDeckRoot();
-      await tester.pumpWidget(MaterialApp(
-        theme: alixDark(),
-        home: PickerScreen(root: root.path),
-      ));
-      await settlePicker(tester);
+      await pumpPicker(tester, dueDeckRoot());
 
-      await tester.longPress(find.text('D'));
+      await tester.tap(find.text('D'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Skip introduction'));
       await tester.pumpAndSettle();
@@ -174,28 +228,27 @@ void main() {
     });
 
     testWidgets(
-        'the cram switch does not outlive a dismissed sheet: a later tap is '
-        'a plain session', (tester) async {
-      final root = dueDeckRoot();
-      await tester.pumpWidget(MaterialApp(
-        theme: alixDark(),
-        home: PickerScreen(root: root.path),
-      ));
-      await settlePicker(tester);
+      'the cram switch does not outlive a dismissed sheet: the next launch '
+      'is a plain session',
+      (tester) async {
+        await pumpPicker(tester, dueDeckRoot());
 
-      await tester.longPress(find.text('D'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Cram'));
-      await tester.pumpAndSettle();
-      await tester.tapAt(const Offset(10, 10));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('D'));
-      await tester.pumpAndSettle();
+        await tester.tap(find.text('D'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Cram'));
+        await tester.pumpAndSettle();
+        await tester.tapAt(const Offset(10, 10));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('D'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Recall'));
+        await tester.pumpAndSettle();
 
-      final screen = tester.widget<ReviewScreen>(find.byType(ReviewScreen));
-      expect(screen.cram, isFalse);
-      expect(screen.skipIntroduction, isFalse);
-    });
+        final screen = tester.widget<ReviewScreen>(find.byType(ReviewScreen));
+        expect(screen.cram, isFalse);
+        expect(screen.skipIntroduction, isFalse);
+      },
+    );
   });
 
   group('item 11: workspace icons', () {
@@ -409,6 +462,8 @@ void main() {
       // Still openable, to re-review or cram.
       await tester.tap(find.text('Mastered Z'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Recall'));
+      await tester.pumpAndSettle();
       expect(find.byType(ReviewScreen), findsOneWidget);
     });
 
@@ -513,6 +568,8 @@ void main() {
       // A locked member is still tappable: browse is allowed, the core
       // enforces the lock at session start, not the picker.
       await tester.tap(find.text('Mid'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Recall'));
       await tester.pumpAndSettle();
       expect(find.byType(ReviewScreen), findsOneWidget);
     });

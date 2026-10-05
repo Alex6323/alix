@@ -3,7 +3,6 @@ import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/picker_port.dart';
 import 'package:alix_mobile/src/rust/api/generate.dart' as generate_bridge;
 import 'package:alix_mobile/src/rust/api/listing.dart' as listing_bridge;
-import 'package:alix_mobile/src/rust/api/review.dart' as review_bridge;
 import 'package:alix_mobile/src/rust/api/simple.dart' as simple_bridge;
 
 class PickerBridge implements PickerPort {
@@ -89,7 +88,6 @@ PickerEntry _entry(listing_bridge.DeckEntry entry) {
     due: entry.due,
     canRecognize: entry.canRecognize,
     isTrace: entry.isTrace,
-    lastDepth: _depth(entry.lastDepth),
     mastered: entry.mastered,
     examDue: entry.examDue,
     hasExam: entry.hasExam,
@@ -109,12 +107,4 @@ PickerDeadline _deadline(listing_bridge.Deadline deadline) {
     ready: deadline.ready,
     total: deadline.total,
   );
-}
-
-PickerDepth _depth(review_bridge.Depth depth) {
-  return switch (depth) {
-    review_bridge.Depth.recognize => PickerDepth.recognize,
-    review_bridge.Depth.recall => PickerDepth.recall,
-    review_bridge.Depth.reconstruct => PickerDepth.reconstruct,
-  };
 }

@@ -37,13 +37,13 @@ the first answer arrives. A deck read once stays parsed in memory for as
 long as the app runs, so coming back to the list after a review does not
 read every deck again; a deck whose file changed on disk is read fresh.
 
-Tapping a deck opens it at the depth it was last reviewed at. **Long-press a
-deck row** to choose the depth for this session instead. The same sheet
+**Tapping a deck** opens the launch sheet: pick the depth for this session,
+and the review starts there. A long-press on a deck does nothing. The sheet
 opens with a **Cram** switch above the depths. Switch it on, then pick a
 depth: that one session also serves cards that are not due yet, under exactly
 the rules the web app applies (see [Cramming](05-scheduling.md#cramming)).
 Cram belongs to the launch and is never saved, so the switch is off again the
-next time the sheet opens, and a plain tap on the deck never crams.
+next time the sheet opens.
 
 Below Cram sits **Skip introduction**. Switched on, that one session grades
 every new card on first sight instead of showing it first, waiting for the
@@ -55,9 +55,9 @@ the launch and is off again the next time the sheet opens.
 
 The last row of the sheet is **Walk**: an ungraded read-through of the deck,
 the same walk the web app runs (see
-[Walking a deck](15-the-web-app.md#walking-a-deck)). It is not offered for a
-trace deck. Each item shows its front; pick an authored choice or **Reveal**,
-then **Next**. The section sheet opens by itself the first time each walk
+[Walking a deck](15-the-web-app.md#walking-a-deck)). Tapping a trace deck
+opens the trace itself, never this sheet. Each item shows its front; pick an
+authored choice or **Reveal**, then **Next**. The section sheet opens by itself the first time each walk
 reaches a section, **Ask** reaches the tutor once an answer shows (when paired
 with a desktop that can run it), and the done screen's **Next walk** starts
 the next pass.

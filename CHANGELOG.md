@@ -12,12 +12,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (never-walked items first, then the least recently walked), picking authored
   choices and flipping everything else, with the tutor available on each item.
   Moving past an answer records `walked_ms`.
-- The phone can walk a deck: **Walk** in a deck's long-press launch sheet.
+
+- The phone can walk a deck: **Walk** in a deck's launch sheet.
+
 - The web picker can start a walk: **Walk** in a deck's Depth… menu (key `w`).
+
 - `[review] short_term = false` turns off FSRS's same-day learning steps: a
   card's first correct recall graduates it onto a day-scale interval, so a deck
   loads in one pass per card. A miss before that pass schedules the card a day
   or so out without graduating it. The default stays on.
+
 - A paired phone's tutor is grounded like the desktop's when its stable deck
   and card ids match: it receives the assembled card, every note layer, links,
   frozen evidence, and the same allowed live source root. An unmatched or
@@ -100,17 +104,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- On the phone, tapping a deck opens the launch sheet (depth, Cram, Skip
+  introduction, Walk) instead of starting a review at the last depth, and a
+  long-press on a deck does nothing. The sheet no longer marks the last depth
+  used, and its launches are framed rows like the deck list's.
+
 - The phone's review bar names the deck instead of the check mode, a new card
   no longer shows a `new` tag or a hint line, and a cram session's summary
   marks **New session** as cram.
+
 - Browsing a deck no longer adds it to the recent decks; a browse leaves no
   trace.
+
 - A card introduced and left ungraded no longer comes back as due in a later
   sitting: due now means scheduled, so it waits for a new-card slot and is
   graded at first sight. `alix stats` no longer counts it as due.
+
 - A card the tutor adds to a deck, and a remediation card from a failed
   exam, is new: the drill introduces it like any other new card instead of
   treating it as already seen.
+
 - A trace deck's session is now called a trace, not a walk. The web API
   routes moved from `/api/walk` and `/api/walk/{predict,grade,restart,leave,ask,
   ask/note}` to the same paths under `/api/trace`, and the session payload's
@@ -300,6 +313,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A trace deck's checkpoints are scheduled with the configured `[review]`
   settings (`retention`, `short_term`, a workspace deadline); they had used
   the built-in defaults.
+
 - A card cannot retire before it graduates, preserving the published
   `retired <= graduated` count invariant; `retire_after` also rejects a
   zero-day duration instead of hiding a deck's Learning cards.

@@ -222,6 +222,8 @@ void main() {
       // ---------------------------------------------------------------
       await tester.tap(find.text('Greek'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Recall'));
+      await tester.pumpAndSettle();
       expect(
         find.text('capital of greece?'),
         findsOneWidget,
@@ -279,7 +281,7 @@ void main() {
       // Step 4b: the phone moves too, at Reconstruct depth. Its summary
       // push is refused (409) and the choice sheet names both sides.
       // ---------------------------------------------------------------
-      await tester.longPress(find.text('Greek'));
+      await tester.tap(find.text('Greek'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Reconstruct'));
       await tester.pumpAndSettle();

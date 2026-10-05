@@ -55,6 +55,8 @@ void main() {
 
     await tester.tap(find.text('Greek'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Recall'));
+    await tester.pumpAndSettle();
 
     expect(find.text('capital of greece?'), findsOneWidget);
     await tester.tap(find.text('Reveal'));

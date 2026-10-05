@@ -10,7 +10,6 @@ Widget _sheet(ValueChanged<PickerLaunch> onChoose, {VoidCallback? onWalk}) {
     theme: alixDark(),
     home: Scaffold(
       body: PickerDepthSheet(
-        selected: PickerDepth.recall,
         canRecognize: true,
         onChoose: onChoose,
         onWalk: onWalk,
@@ -109,7 +108,7 @@ void main() {
     var walks = 0;
     await tester.pumpWidget(_sheet(choices.add, onWalk: () => walks++));
 
-    final walk = find.widgetWithText(ListTile, 'Walk');
+    final walk = find.widgetWithText(InkWell, 'Walk');
     expect(walk, findsOneWidget, reason: 'the row is offered');
     expect(
       find.descendant(
@@ -134,5 +133,30 @@ void main() {
   ) async {
     await tester.pumpWidget(_sheet((_) {}));
     expect(find.text('Walk'), findsNothing);
+  });
+
+  testWidgets('every launch is a bordered row with a chevron, like the '
+      "picker's deck rows", (tester) async {
+    await tester.pumpWidget(_sheet((_) {}, onWalk: () {}));
+
+    for (final launch in ['Recognize', 'Recall', 'Reconstruct', 'Walk']) {
+      final row = find.widgetWithText(InkWell, launch);
+      expect(row, findsOneWidget, reason: '$launch is one tappable row');
+      final framed = find.descendant(
+        of: row,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Container &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration! as BoxDecoration).border != null,
+        ),
+      );
+      expect(framed, findsOneWidget, reason: '$launch carries a border');
+      expect(
+        find.descendant(of: row, matching: find.byIcon(Icons.chevron_right)),
+        findsOneWidget,
+        reason: '$launch shows a chevron',
+      );
+    }
   });
 }

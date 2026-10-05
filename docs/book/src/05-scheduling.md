@@ -107,7 +107,7 @@ and the sitting's *introduced* count stays at zero. This is for a pass over
 a deck you already know (a cram, a re-read), where the introduction step is
 friction; a deck you are meeting for the first time loses the guess-first
 encounter and its section sheets. On the phone it is the **Skip introduction**
-switch in the sheet a long-press on a deck row opens; over the API it is
+switch in the sheet a tap on a deck row opens; over the API it is
 `skip_introduction` on `/api/select`.
 
 ## Session depths: Recognize, Recall, Reconstruct
@@ -199,7 +199,7 @@ depth (the sitting stays bounded by `max_session`; at Recognize the pick-only
 filter still applies, so only cards with something to pick from appear).
 It's a per-launch tick-box in the picker's Depth… menu (key `c` while the
 menu is open); plain **Learn** never crams. On the phone it is the **Cram**
-switch in the sheet a long-press on a deck row opens.
+switch in the sheet a tap on a deck row opens.
 
 Cram changes **which cards are queued, never how a due card is graded**: a
 card that was genuinely due grades exactly like a normal review: full

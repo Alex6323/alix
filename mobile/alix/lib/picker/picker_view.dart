@@ -105,12 +105,7 @@ class PickerView extends StatelessWidget {
               PickerDeckRow(
                 entry: entry,
                 onTap: () => onOpenEntry(entry),
-                onLongPress:
-                    (!entry.isWorkspace && !entry.isTrace) ||
-                        (entry.tree.isNotEmpty && !entry.isTrace) ||
-                        entry.isWorkspace
-                    ? () => onLongPressEntry(entry)
-                    : null,
+                onLongPress: _longPress(entry, onLongPressEntry),
               ),
             if (mastered.isNotEmpty)
               PickerMasteredAffordance(
@@ -143,12 +138,7 @@ class PickerView extends StatelessWidget {
               PickerDeckRow(
                 entry: entry,
                 onTap: () => onOpenPairedEntry?.call(entry),
-                onLongPress:
-                    (!entry.isWorkspace && !entry.isTrace) ||
-                        (entry.tree.isNotEmpty && !entry.isTrace) ||
-                        entry.isWorkspace
-                    ? () => onLongPressPairedEntry?.call(entry)
-                    : null,
+                onLongPress: _longPress(entry, onLongPressPairedEntry),
               ),
             for (final entry in availableEntries)
               PickerAvailableEntryRow(
@@ -159,5 +149,15 @@ class PickerView extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  VoidCallback? _longPress(
+    PickerEntry entry,
+    ValueChanged<PickerEntry>? onWorkspace,
+  ) {
+    if (entry.isWorkspace) return () => onWorkspace?.call(entry);
+    if (entry.isTrace) return null;
+    // Claimed so the gesture arena does not resolve it as a tap.
+    return () {};
   }
 }
