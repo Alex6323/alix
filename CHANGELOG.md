@@ -293,6 +293,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opening a review, a browse, or a walk now ends a running augment session,
+  and closing an augment session that is no longer open answers 409 instead
+  of tearing down the session that replaced it.
+
 - A trace deck's checkpoints are scheduled with the configured `[review]`
   settings (`retention`, `short_term`, a workspace deadline); they had used
   the built-in defaults.

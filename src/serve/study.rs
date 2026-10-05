@@ -446,7 +446,7 @@ pub(super) enum StudyCommand {
         topology: Option<String>,
         reply: Reply<Option<AugmentDto>>,
     },
-    AugmentClose(Reply<Transition<StateDto>>),
+    AugmentClose(Reply<Option<Transition<StateDto>>>),
     ImagePath {
         key: String,
         reply: Reply<ImageSource>,
@@ -630,7 +630,7 @@ impl StudyHandle {
             reply,
         })
     }
-    pub(super) fn augment_close(&self) -> Option<Transition<StateDto>> {
+    pub(super) fn augment_close(&self) -> Option<Option<Transition<StateDto>>> {
         self.call(StudyCommand::AugmentClose)
     }
     pub(super) fn store_path(&self) -> Option<PathBuf> {
@@ -1114,9 +1114,10 @@ impl StudyState {
                 let _ = reply.send(dto);
             }
             StudyCommand::AugmentClose(reply) => {
-                let out = if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error)
-                {
-                    Transition::FlushFailed
+                let out = if self.augmenting.is_none() {
+                    None
+                } else if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
+                    Some(Transition::FlushFailed)
                 } else {
                     self.augmenting = None;
                     self.walking = None;
@@ -1126,7 +1127,7 @@ impl StudyState {
                         self.install_store(s);
                         self.writes = self.writes.wrapping_add(1);
                     }
-                    Transition::Done(self.review_dto())
+                    Some(Transition::Done(self.review_dto()))
                 };
                 let _ = reply.send(out);
             }
@@ -1548,6 +1549,7 @@ impl StudyState {
                 self.reviewing = None;
                 self.walking = None;
                 self.examining = None;
+                self.augmenting = None;
                 self.revision += 1;
                 Transition::Done((SelectedDto::Trace(Box::new(dto)), None))
             }
@@ -1561,6 +1563,7 @@ impl StudyState {
                 self.reviewing = Some(r);
                 self.tracing = None;
                 self.walking = None;
+                self.augmenting = None;
                 self.revision += 1;
                 Transition::Done((SelectedDto::Review(Box::new(self.review_dto())), record))
             }
@@ -1592,6 +1595,7 @@ impl StudyState {
                 self.tracing = None;
                 self.walking = None;
                 self.examining = None;
+                self.augmenting = None;
                 self.revision += 1;
                 Transition::Done(browse_payload(self.browsing.as_ref()))
             }
@@ -1627,6 +1631,7 @@ impl StudyState {
                 self.tracing = None;
                 self.browsing = None;
                 self.examining = None;
+                self.augmenting = None;
                 self.revision += 1;
                 Transition::Done(dto)
             }

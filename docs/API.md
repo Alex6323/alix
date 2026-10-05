@@ -217,7 +217,8 @@ entry carrying its own optional guidance steer (poll `GET /api/augment` while
 `busy`); the `AugmentDto` reports batch progress via `queued`, `done`, and
 `failed` as the targets run one at a time.
 `POST /api/augment/remove {target, topology?}` deletes cached content;
-`POST /api/augment/close` → `StateDto`. Target names are an open set
+`POST /api/augment/close` → `StateDto` (409 when no augment session is open;
+opening a review, browse, or walk ends one). Target names are an open set
 (currently include `choices`, `notes`, `questions`, `keypoints`, `format`, `topology`, `icon`).
 
 ### 4.5 Ask (the tutor)
@@ -688,7 +689,7 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 | POST | `/api/augment/generate` | `{targets: [{target, with?}]}` | `AugmentDto` | 409 |
 | GET | `/api/augment` | – | `AugmentDto` (poll) | 409 |
 | POST | `/api/augment/remove` | `{target, topology?}` | `AugmentDto` | 409 |
-| POST | `/api/augment/close` | – | `StateDto` | – |
+| POST | `/api/augment/close` | – | `StateDto` | 409 |
 
 ### Trace
 

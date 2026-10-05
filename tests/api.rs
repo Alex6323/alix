@@ -7325,7 +7325,6 @@ fn law_every_other_session_transition_ends_a_running_walk() {
         ("/api/exam/start", r#"{"deck":"trace.md"}"#),
         ("/api/exam/close", "{}"),
         ("/api/augment/open", r#"{"deck":"sample.md"}"#),
-        ("/api/augment/close", "{}"),
         ("/api/trace/leave", "{}"),
         ("/api/reset", r#"{"deck":"sample.md"}"#),
         ("/api/walk/leave", "{}"),
@@ -7340,6 +7339,30 @@ fn law_every_other_session_transition_ends_a_running_walk() {
             "{path} {body}: (walk open, transition, walk poll) statuses"
         );
     }
+}
+
+#[test]
+fn opening_a_walk_ends_an_active_augment_session() {
+    let (base, _guard) = spawn_full_server_fixture(None, write_walk_deck, |_| {});
+
+    assert_eq!(
+        200,
+        post_json(&base, "/api/augment/open", r#"{"deck":"sample.md"}"#).status,
+        "the augment session opens"
+    );
+    assert_eq!(
+        200,
+        post_json(&base, "/api/walk", r#"{"deck":"walk.md"}"#).status,
+        "the walk replaces it"
+    );
+    let augment_after_walk = http(&base, "GET", "/api/augment", &[], &[]).status;
+    let stale_close = post_json(&base, "/api/augment/close", "{}").status;
+    let walk_after_close = http(&base, "GET", "/api/walk", &[], &[]).status;
+    assert_eq!(
+        (409, 409, 200),
+        (augment_after_walk, stale_close, walk_after_close),
+        "opening a walk must end augment, and a stale augment close must not end the walk"
+    );
 }
 
 #[test]
@@ -9394,4 +9417,31 @@ fn every_pull_carries_its_content_length_whatever_its_size() {
         );
     }
     drop(guard);
+}
+
+#[test]
+fn law_opening_any_picker_session_ends_an_active_augment_session() {
+    let openers = [
+        ("select", "/api/select", r#"{"deck":"walk.md"}"#),
+        ("browse", "/api/browse", r#"{"deck":"walk.md"}"#),
+        ("walk", "/api/walk", r#"{"deck":"walk.md"}"#),
+    ];
+    for (name, route, body) in openers {
+        let (base, _guard) = spawn_full_server_fixture(None, write_walk_deck, |_| {});
+        assert_eq!(
+            200,
+            post_json(&base, "/api/augment/open", r#"{"deck":"sample.md"}"#).status,
+            "{name}: the augment session opens"
+        );
+        assert_eq!(
+            200,
+            post_json(&base, route, body).status,
+            "{name}: the session opens over it"
+        );
+        assert_eq!(
+            409,
+            http(&base, "GET", "/api/augment", &[], &[]).status,
+            "{name}: opening it ends the augment session"
+        );
+    }
 }

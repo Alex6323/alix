@@ -1531,8 +1531,9 @@ pub fn run_review(
             }
             (Method::Post, "/api/augment/close") => match study.augment_close() {
                 None => respond_status(request, 503),
-                Some(Transition::Done(dto)) => respond_json(request, &dto),
-                Some(Transition::Rejected) | Some(Transition::FlushFailed) => {
+                Some(None) => respond_status(request, 409),
+                Some(Some(Transition::Done(dto))) => respond_json(request, &dto),
+                Some(Some(Transition::Rejected)) | Some(Some(Transition::FlushFailed)) => {
                     respond_status(request, 500)
                 }
             },
