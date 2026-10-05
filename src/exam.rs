@@ -625,7 +625,6 @@ impl Sitting {
                     &self.deck_token,
                     &self.deck_fingerprints,
                     &cards,
-                    now_ms,
                     retire_after_days,
                 ) {
                     Ok(n) => self.remediated_count = Some(n),

@@ -145,11 +145,8 @@ class ReviewBridgePort implements ReviewPort {
   }
 
   @override
-  int applyRemediation({required String cardsText, required int nowMs}) {
-    return _session.applyRemediation(
-      cardsText: cardsText,
-      nowMs: BigInt.from(nowMs),
-    );
+  int applyRemediation({required String cardsText}) {
+    return _session.applyRemediation(cardsText: cardsText);
   }
 }
 

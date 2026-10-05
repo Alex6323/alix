@@ -68,7 +68,7 @@ class ExamScreen extends StatefulWidget {
   /// Turns a failed sitting's remediation deck-text into phone-store
   /// personal cards (a closure over `applyRemediation`), returning how many
   /// were created or revived.
-  final int Function(String cardsText, BigInt nowMs) applyRemediation;
+  final int Function(String cardsText) applyRemediation;
 
   /// Records a FAILED trace exam so a re-sit waits out the cooldown; the
   /// phone owns this write (a closure over the trace session's
@@ -210,7 +210,7 @@ class _ExamScreenState extends State<ExamScreen> {
       _remediationApplied = true;
       // `cards` is non-null per the `remediated`-phase contract; an empty
       // fallback only guards the nullable type, never a real reply.
-      final count = widget.applyRemediation(dto.cards ?? '', widget.nowMs());
+      final count = widget.applyRemediation(dto.cards ?? '');
       _snack('$count new cards to drill.');
     }
     setState(() {

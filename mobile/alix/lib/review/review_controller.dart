@@ -225,8 +225,8 @@ class ReviewController extends ChangeNotifier {
 
   void applyExamPassed(int nowMs) => _requirePort().applyExamPassed(nowMs);
 
-  int applyRemediation({required String cardsText, required int nowMs}) {
-    return _requirePort().applyRemediation(cardsText: cardsText, nowMs: nowMs);
+  int applyRemediation({required String cardsText}) {
+    return _requirePort().applyRemediation(cardsText: cardsText);
   }
 
   ReviewPort _requirePort() {

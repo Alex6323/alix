@@ -313,7 +313,7 @@ class _FakeReviewPort implements ReviewPort {
   void applyExamPassed(int nowMs) {}
 
   @override
-  int applyRemediation({required String cardsText, required int nowMs}) => 0;
+  int applyRemediation({required String cardsText}) => 0;
 
   @override
   String mintTutorCard({required String front, required List<String> back}) =>

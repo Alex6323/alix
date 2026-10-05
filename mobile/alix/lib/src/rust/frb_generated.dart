@@ -96,7 +96,6 @@ abstract class RustLibApi extends BaseApi {
   int crateApiReviewReviewSessionApplyRemediation({
     required ReviewSession that,
     required String cardsText,
-    required BigInt nowMs,
   });
 
   CheckFeedback? crateApiReviewReviewSessionCheck({
@@ -386,7 +385,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int crateApiReviewReviewSessionApplyRemediation({
     required ReviewSession that,
     required String cardsText,
-    required BigInt nowMs,
   }) {
     return handler.executeSync(
       SyncTask(
@@ -397,7 +395,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_String(cardsText, serializer);
-          sse_encode_u_64(nowMs, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
         },
         codec: SseCodec(
@@ -405,7 +402,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiReviewReviewSessionApplyRemediationConstMeta,
-        argValues: [that, cardsText, nowMs],
+        argValues: [that, cardsText],
         apiImpl: this,
       ),
     );
@@ -414,7 +411,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiReviewReviewSessionApplyRemediationConstMeta =>
       const TaskConstMeta(
         debugName: "ReviewSession_apply_remediation",
-        argNames: ["that", "cardsText", "nowMs"],
+        argNames: ["that", "cardsText"],
       );
 
   @override
@@ -6155,11 +6152,10 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
   void applyExamPassed({required BigInt nowMs}) => RustLib.instance.api
       .crateApiReviewReviewSessionApplyExamPassed(that: this, nowMs: nowMs);
 
-  int applyRemediation({required String cardsText, required BigInt nowMs}) =>
+  int applyRemediation({required String cardsText}) =>
       RustLib.instance.api.crateApiReviewReviewSessionApplyRemediation(
         that: this,
         cardsText: cardsText,
-        nowMs: nowMs,
       );
 
   CheckFeedback? check({required List<String> lines}) => RustLib.instance.api

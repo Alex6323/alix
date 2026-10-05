@@ -33,7 +33,7 @@ void main() {
     WidgetTester tester, {
     required ServerClient client,
     List<BigInt> passedCalls = const [],
-    List<(String, BigInt)> remediationCalls = const [],
+    List<String> remediationCalls = const [],
     int remediationCountReply = 1,
     // Left null by default, matching review_screen.dart's real fact-deck
     // wiring (which never passes applyFailed): pass a list here only for
@@ -47,8 +47,8 @@ void main() {
         support: tempSupport(),
         buildClient: (_) => client,
         applyPassed: (nowMs) => passedCalls.add(nowMs),
-        applyRemediation: (cardsText, nowMs) {
-          remediationCalls.add((cardsText, nowMs));
+        applyRemediation: (cardsText) {
+          remediationCalls.add(cardsText);
           return remediationCountReply;
         },
         applyFailed: failedCalls == null ? null : (nowMs) => failedCalls.add(nowMs),
@@ -384,7 +384,7 @@ void main() {
                 support: tempSupport(),
                 buildClient: (_) => client,
                 applyPassed: (_) {},
-                applyRemediation: (_, _) => 0,
+                applyRemediation: (_) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,
               ),
@@ -445,7 +445,7 @@ void main() {
       examGetReplies: [resultsFailed, remediating, remediated],
       examRemediateReplies: const [true],
     );
-    final remediationCalls = <(String, BigInt)>[];
+    final remediationCalls = <String>[];
     await pumpExam(
       tester,
       client: client,
@@ -465,7 +465,7 @@ void main() {
     expect(find.text('Done.'), findsOneWidget);
 
     expect(remediationCalls, hasLength(1));
-    expect(remediationCalls.single.$1, '## q?\na\n');
+    expect(remediationCalls.single, '## q?\na\n');
     expect(find.text('3 new cards to drill.'), findsOneWidget);
   });
 
@@ -484,7 +484,7 @@ void main() {
                 support: tempSupport(),
                 buildClient: (_) => client,
                 applyPassed: (_) {},
-                applyRemediation: (_, _) => 0,
+                applyRemediation: (_) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,
               ),
@@ -516,7 +516,7 @@ void main() {
                 support: tempSupport(),
                 buildClient: (_) => client,
                 applyPassed: (_) {},
-                applyRemediation: (_, _) => 0,
+                applyRemediation: (_) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,
               ),

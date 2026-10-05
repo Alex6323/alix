@@ -1501,7 +1501,6 @@ pub fn store_remediation_cards(
     deck_id: &str,
     deck_fingerprints: &std::collections::HashSet<u64>,
     cards_text: &str,
-    now_ms: u64,
     retire_after_days: Option<u32>,
 ) -> AnyResult<usize> {
     let Some(deck_path) = deck_path else {
@@ -1543,7 +1542,7 @@ pub fn store_remediation_cards(
                 let Some(id) = card.id() else {
                     continue;
                 };
-                store.get_or_insert(&id).introduced_ms = Some(now_ms);
+                store.get_or_insert(&id);
                 created_or_revived += 1;
             }
         } else if existing
@@ -2718,7 +2717,6 @@ mod tests {
             &deck,
             "d.md",
             "## Why does X happen?\nbecause Y\n",
-            200,
             None,
         )
         .unwrap();
@@ -2894,7 +2892,6 @@ mod tests {
         deck: &Path,
         subject: &str,
         cards_text: &str,
-        now_ms: u64,
         retire_after_days: Option<u32>,
     ) -> AnyResult<usize> {
         store_remediation_cards(
@@ -2903,7 +2900,6 @@ mod tests {
             subject,
             &std::collections::HashSet::new(),
             cards_text,
-            now_ms,
             retire_after_days,
         )
     }
@@ -2915,9 +2911,9 @@ mod tests {
         let deck = dir.path().join("d.md");
         let text = "## Why does X happen?\nbecause of Y\n";
 
-        let first = store_remediation(&mut store, &deck, "d.md", text, 1_000, None).unwrap();
+        let first = store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
         assert_eq!(1, first, "the first failure creates the gap card");
-        let second = store_remediation(&mut store, &deck, "d.md", text, 2_000, None).unwrap();
+        let second = store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
         assert_eq!(
             0, second,
             "the same gap again is a content dupe, not a new card"
@@ -2933,9 +2929,9 @@ mod tests {
         let lunate = "## Which bone sits in the center?\nThe lunate sits in the center\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n";
         let hamate = "## Which bone sits in the center?\nThe hamate sits in the center\n<!-- blank: span hidden=\"hamate\" b:a1b2c3 -->\n";
 
-        let first = store_remediation(&mut store, &deck, "d.md", lunate, 1_000, None).unwrap();
+        let first = store_remediation(&mut store, &deck, "d.md", lunate, None).unwrap();
         assert_eq!(1, first, "the first missed fact becomes a region card");
-        let second = store_remediation(&mut store, &deck, "d.md", hamate, 2_000, None).unwrap();
+        let second = store_remediation(&mut store, &deck, "d.md", hamate, None).unwrap();
         assert_eq!(
             1, second,
             "a different answer in the same sentence shape is a distinct gap"
@@ -2950,7 +2946,7 @@ mod tests {
         let deck = dir.path().join("d.md");
         let text = "## Recall how a String is laid out in memory.\nA String stores a pointer, length and capacity on the stack.\n<!-- blank: span hidden=\"pointer\" -->\n<!-- blank: span hidden=\"length\" -->\n";
 
-        let created = store_remediation(&mut store, &deck, "d.md", text, 1_000, None).unwrap();
+        let created = store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
         assert_eq!(2, created, "each generated span schedules as its own card");
         let ids = sidecar_ids(&deck, "d.md");
         assert_eq!(
@@ -2963,9 +2959,13 @@ mod tests {
                 store.get(id).is_some(),
                 "the id scheduled in memory is the id reparsed from disk: {id}"
             );
+            assert!(
+                store.progress(id).is_none(),
+                "an exam-written gap card is new: the drill introduces it: {id}"
+            );
         }
 
-        let rerun = store_remediation(&mut store, &deck, "d.md", text, 2_000, None).unwrap();
+        let rerun = store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
         assert_eq!(
             0, rerun,
             "fresh stamps do not defeat dedup: the block key masks the spans"
@@ -2992,7 +2992,6 @@ mod tests {
             "d.md",
             &deck_fingerprints,
             "## Capital of France?\nParis\n",
-            1_000,
             None,
         )
         .unwrap();
@@ -3014,7 +3013,7 @@ mod tests {
         let deck = dir.path().join("d.md");
         let text = "## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" b:a1b2c3 -->\n<!-- blank: span hidden=\"be\" occurrence=2 b:d4e5f6 -->\n";
 
-        let n = store_remediation(&mut store, &deck, "d.md", text, 1_000, None).unwrap();
+        let n = store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
         assert_eq!(2, n, "both span cards should be created, not deduped");
         let holes = sidecar_cards(&deck, "d.md");
         assert_eq!(2, holes.len());
@@ -3041,7 +3040,7 @@ mod tests {
         let text = "## Complete the quote\nTo be or not to bee\n<!-- blank: span hidden=\"be\" b:a1b2c3 -->\n<!-- blank: span hidden=\"bee\" b:d4e5f6 -->\n";
         let cap = Some(30u32);
 
-        let created = store_remediation(&mut store, &deck, "d.md", text, 1_000, cap).unwrap();
+        let created = store_remediation(&mut store, &deck, "d.md", text, cap).unwrap();
         assert_eq!(2, created, "both holes created on the first failure");
         let ids = sidecar_ids(&deck, "d.md");
         assert_eq!(2, ids.len());
@@ -3060,7 +3059,7 @@ mod tests {
             );
         }
 
-        let revived = store_remediation(&mut store, &deck, "d.md", text, 2_000, cap).unwrap();
+        let revived = store_remediation(&mut store, &deck, "d.md", text, cap).unwrap();
         assert_eq!(2, revived, "every retired hole revives, not just hole 0");
         for id in &ids {
             assert!(
@@ -3095,7 +3094,6 @@ mod tests {
             "d.md",
             &deck_fingerprints,
             cloze,
-            1_000,
             None,
         )
         .unwrap();
@@ -3117,7 +3115,7 @@ mod tests {
             std::fs::write(&deck, "## existing\nanswer\n<!-- id: card-ex1 -->\n").unwrap();
             let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
-            let created = store_remediation(&mut store, &deck, "d.md", text, 1_000, None).unwrap();
+            let created = store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
             let ids = sidecar_ids(&deck, "d.md");
             assert_eq!(created, ids.len(), "{text}");
 
@@ -3139,7 +3137,7 @@ mod tests {
         let text =
             "## Why does X?\npoint one\n<!-- reveal: line -->\n\n## fact card\nplain answer\n";
 
-        store_remediation(&mut store, &deck, "d.md", text, 1_000, None).unwrap();
+        store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
         let synthesized = sidecar_cards(&deck, "d.md");
         let lined = synthesized
             .iter()

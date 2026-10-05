@@ -64,9 +64,9 @@ responsive while it thinks.
 
 Those remediation cards land in the deck's
 [personal file](03-the-deck-format.md#your-personal-file) (`<deck>.local.md`),
-never in the authored deck. They drill like any other card (a first pass one
-introduction cooldown later, then FSRS schedules them) and count toward the deck's
-*due* total but not toward its card count. Regenerating the same gap won't
+never in the authored deck. They start as new cards: the drill introduces them,
+then FSRS schedules them like any other card. Once scheduled they count toward
+the deck's *due* total but not toward its card count. Regenerating the same gap won't
 duplicate it; once a card's interval reaches the retirement cap it's archived,
 and re-failing the gap brings it back. Because they are plain Markdown blocks
 in a file you own, you can read, edit, or delete them yourself.

@@ -178,7 +178,6 @@ fn wire__crate__api__review__ReviewSession_apply_remediation_impl(
                 flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>,
             >>::sse_decode(&mut deserializer);
             let api_cards_text = <String>::sse_decode(&mut deserializer);
-            let api_now_ms = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
@@ -199,7 +198,6 @@ fn wire__crate__api__review__ReviewSession_apply_remediation_impl(
                     let output_ok = crate::api::review::ReviewSession::apply_remediation(
                         &mut *api_that_guard,
                         api_cards_text,
-                        api_now_ms,
                     )?;
                     Ok(output_ok)
                 })(),

@@ -614,14 +614,13 @@ impl ReviewSession {
     // No accessor yet reads a session's resolved `retire_after` cap back out
     // of `Session`, so this passes None: no retire cap applied on the phone.
     #[flutter_rust_bridge::frb(sync)]
-    pub fn apply_remediation(&mut self, cards_text: String, now_ms: u64) -> Result<u32> {
+    pub fn apply_remediation(&mut self, cards_text: String) -> Result<u32> {
         let count = alix::store::store_remediation_cards(
             &mut self.store,
             Some(&self.deck_path),
             &self.deck_token,
             &self.deck_fingerprints,
             &cards_text,
-            now_ms,
             None,
         )?;
         Ok(count as u32)
@@ -1684,7 +1683,7 @@ mod tests {
             .unwrap();
         let remediation =
             "## capital of france?\nParis\n\n## capital of germany?\nBerlin\n".to_string();
-        let created = s.apply_remediation(remediation.clone(), LATER).unwrap();
+        let created = s.apply_remediation(remediation.clone()).unwrap();
         assert_eq!(created, 1, "the Paris block already matches a deck card");
 
         let personal = alix::personal::read(&root.join("d.md"), &deck_id);
@@ -1706,7 +1705,7 @@ mod tests {
             "and it carries a schedule"
         );
 
-        let created_again = s.apply_remediation(remediation, LATER).unwrap();
+        let created_again = s.apply_remediation(remediation).unwrap();
         assert_eq!(
             created_again, 0,
             "an active dupe is left alone, no schedule reset"

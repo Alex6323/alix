@@ -319,10 +319,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
           support: support,
           buildClient: widget.buildClient ?? HttpServerClient.new,
           applyPassed: (nowMs) => _controller.applyExamPassed(nowMs.toInt()),
-          applyRemediation: (cardsText, nowMs) => _controller.applyRemediation(
-            cardsText: cardsText,
-            nowMs: nowMs.toInt(),
-          ),
+          applyRemediation: (cardsText) =>
+              _controller.applyRemediation(cardsText: cardsText),
           nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
         ),
       ),

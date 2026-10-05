@@ -38,7 +38,7 @@ abstract interface class ReviewPort {
 
   void applyExamPassed(int nowMs);
 
-  int applyRemediation({required String cardsText, required int nowMs});
+  int applyRemediation({required String cardsText});
 }
 
 class ReviewOpenFailure implements Exception {

@@ -30,7 +30,7 @@ abstract class ReviewSession implements RustOpaqueInterface {
 
   void applyExamPassed({required BigInt nowMs});
 
-  int applyRemediation({required String cardsText, required BigInt nowMs});
+  int applyRemediation({required String cardsText});
 
   CheckFeedback? check({required List<String> lines});
 

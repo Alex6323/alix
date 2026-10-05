@@ -167,7 +167,7 @@ class _TraceSessionScreenState extends State<TraceSessionScreen> {
           buildClient: widget.buildClient ?? HttpServerClient.new,
           applyPassed: (nowMs) => _controller.applyExamPassed(nowMs.toInt()),
           applyFailed: (nowMs) => _controller.applyExamFailed(nowMs.toInt()),
-          applyRemediation: (_, _) => 0,
+          applyRemediation: (_) => 0,
           nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
         ),
       ),
