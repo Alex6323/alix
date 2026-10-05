@@ -39,7 +39,8 @@ class ReviewBridgePort implements ReviewPort {
   final bridge.ReviewSession _session;
 
   @override
-  ReviewStateModel get state => _stateFromBridge(_session.state());
+  ReviewStateModel get state =>
+      _stateFromBridge(_session.state(), _session.label());
 
   @override
   ReviewTutorCardModel? get tutorCard {
@@ -115,11 +116,15 @@ class ReviewBridgePort implements ReviewPort {
   }
 
   @override
-  ReviewStateModel introduce() => _stateFromBridge(_session.introduce());
+  ReviewStateModel introduce() =>
+      _stateFromBridge(_session.introduce(), _session.label());
 
   @override
   ReviewStateModel grade(ReviewGrade grade) {
-    return _stateFromBridge(_session.grade(grade: _gradeToBridge(grade)));
+    return _stateFromBridge(
+      _session.grade(grade: _gradeToBridge(grade)),
+      _session.label(),
+    );
   }
 
   @override
@@ -155,7 +160,7 @@ ReviewInput reviewInputFromBridge(bridge.Input input) => switch (input) {
   bridge.Input.draw => ReviewInput.draw,
 };
 
-ReviewStateModel _stateFromBridge(bridge.ReviewState state) {
+ReviewStateModel _stateFromBridge(bridge.ReviewState state, String label) {
   return ReviewStateModel(
     card: state.card == null ? null : reviewCardFromBridge(state.card!),
     mode: reviewModeFromBridge(state.mode),
@@ -185,6 +190,7 @@ ReviewStateModel _stateFromBridge(bridge.ReviewState state) {
     newLeft: state.newLeft,
     saveError: state.saveError,
     loadWarnings: state.loadWarnings,
+    label: label,
   );
 }
 

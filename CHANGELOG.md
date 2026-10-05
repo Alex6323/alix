@@ -100,6 +100,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The phone's review bar names the deck instead of the check mode, a new card
+  no longer shows a `new` tag or a hint line, and a cram session's summary
+  marks **New session** as cram.
 - Browsing a deck no longer adds it to the recent decks; a browse leaves no
   trace.
 - A card introduced and left ungraded no longer comes back as due in a later

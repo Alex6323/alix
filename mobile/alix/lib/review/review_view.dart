@@ -83,6 +83,7 @@ class ReviewView extends StatelessWidget {
     required this.tutorCard,
     required this.verdictGrade,
     required this.examAvailable,
+    required this.cram,
     required this.nowMs,
     required this.confirmLeave,
     required this.onChoose,
@@ -125,6 +126,7 @@ class ReviewView extends StatelessWidget {
   final ReviewTutorCardModel? tutorCard;
   final ReviewGrade verdictGrade;
   final bool examAvailable;
+  final bool cram;
   final int nowMs;
   final Future<bool> Function(BuildContext context) confirmLeave;
   final ValueChanged<int> onChoose;
@@ -151,9 +153,16 @@ class ReviewView extends StatelessWidget {
       child: Scaffold(
         appBar: alixAppBar(
           context,
-          title: card == null
-              ? const SizedBox.shrink()
-              : ReviewModeTag(label: reviewModeLabel(state)),
+          title: Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Text(
+              state.label,
+              key: const ValueKey('review-title'),
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           actions: [
             if (!state.finished)
               Padding(
@@ -186,6 +195,7 @@ class ReviewView extends StatelessWidget {
                         state: state,
                         nowMs: nowMs,
                         examAvailable: examAvailable,
+                        cram: cram,
                         onRestart: onRestart,
                         onOpenExam: onOpenExam,
                       )

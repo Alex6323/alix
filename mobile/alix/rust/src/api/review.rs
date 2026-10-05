@@ -372,6 +372,7 @@ pub struct ReviewSession {
     store: alix::store::Store,
     augment: alix::augment::AugmentCache,
     topology_name: Option<String>,
+    label: String,
     deck_path: PathBuf,
     // The stable deck id: deck-level store state (mastery, personal-card
     // association) is keyed by this, captured off the loaded Deck rather
@@ -443,6 +444,7 @@ impl ReviewSession {
             store,
             augment: build.augment,
             topology_name: build.topology_name,
+            label: build.label,
             deck_path,
             deck_token,
             deck_fingerprints,
@@ -458,6 +460,11 @@ impl ReviewSession {
         state.save_error = self.save_error.clone();
         state.load_warnings = self.load_warnings.clone();
         state
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn label(&self) -> String {
+        self.label.clone()
     }
 
     fn save_store(&mut self) {
@@ -1157,6 +1164,27 @@ mod tests {
             None,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn the_label_names_the_deck_by_its_title_or_its_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let titled = root.join("titled.md");
+        let plain = root.join("plain.md");
+        write_deck(
+            &titled,
+            "---\ntitle: Capitals of Europe\n---\n## capital of italy?\nRome\n",
+        );
+        write_deck(&plain, "## capital of italy?\nRome\n");
+        assert_eq!(
+            ("Capitals of Europe", "plain"),
+            (
+                opened_fresh(&titled, root).label().as_str(),
+                opened_fresh(&plain, root).label().as_str()
+            ),
+            "the title wins, the file stem stands in"
+        );
     }
 
     fn reopened_store(root: &Path, deck: &str) -> alix::store::Store {

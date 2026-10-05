@@ -12,6 +12,7 @@ class ReviewSummaryView extends StatelessWidget {
     required this.state,
     required this.nowMs,
     required this.examAvailable,
+    required this.cram,
     required this.onRestart,
     required this.onOpenExam,
   });
@@ -19,6 +20,7 @@ class ReviewSummaryView extends StatelessWidget {
   final ReviewStateModel state;
   final int nowMs;
   final bool examAvailable;
+  final bool cram;
   final VoidCallback onRestart;
   final VoidCallback onOpenExam;
 
@@ -95,6 +97,18 @@ class ReviewSummaryView extends StatelessWidget {
                 : ReviewChipKind.base,
             onTap: state.canRestart ? onRestart : null,
           ),
+          if (cram) ...[
+            const SizedBox(height: 6),
+            Text(
+              'cram',
+              key: const ValueKey('new-session-cram'),
+              style: TextStyle(
+                fontFamily: _mono,
+                fontSize: 12,
+                color: tokens.dim,
+              ),
+            ),
+          ],
           if (examAvailable) ...[
             const SizedBox(height: 12),
             ReviewChip(

@@ -75,6 +75,10 @@ first card you ever meet from a section opens that sheet by itself, once;
 swipe it away and the pill stays as the way back in. Every later card from
 the section, in this sitting or any later one, shows the pill only.
 
+The bar at the top names the deck, cut to one line, and counts the cards
+left. **New session** on the summary starts the next sitting with the same
+launch settings; after a cram launch it carries a small "cram" caption.
+
 ## Syncing with the desktop
 
 Once paired (see [Pairing a device](19-pairing.md)), a pulled entry's row

@@ -390,6 +390,7 @@ class ReviewStateModel {
     required this.newLeft,
     this.saveError,
     Iterable<String> loadWarnings = const [],
+    this.label = '',
   }) : choices = choices == null ? null : List.unmodifiable(choices),
        choiceRuns = choiceRuns == null ? null : _freezeRunLines(choiceRuns),
        keypoints = keypoints == null ? null : List.unmodifiable(keypoints),
@@ -425,6 +426,7 @@ class ReviewStateModel {
   final int newLeft;
   final String? saveError;
   final List<String> loadWarnings;
+  final String label;
 }
 
 List<List<InlineRunModel>> _freezeRunLines(

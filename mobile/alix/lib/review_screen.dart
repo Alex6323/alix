@@ -410,6 +410,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           verdictGrade: explain ? _controller.verdictGrade : ReviewGrade.pass,
           examAvailable:
               card == null && _controller.serverLive && _controller.deckHasExam,
+          cram: _controller.cram,
           nowMs: nowMs,
           confirmLeave: _confirmLeave,
           onChoose: _controller.choose,

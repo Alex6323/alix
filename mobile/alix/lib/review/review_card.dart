@@ -78,54 +78,6 @@ Color badgeColour(ReviewBadge badge, Brightness brightness) {
   };
 }
 
-/// Names the check in force, which the chosen depth decides, not the deck.
-String reviewModeLabel(ReviewStateModel state) {
-  if (state.introducing) return 'new';
-  if (state.choices?.isNotEmpty ?? false) {
-    return state.choicesMultiple == true ? 'select all' : 'choice';
-  }
-  return switch (state.mode) {
-    ReviewMode.typeLine => 'typing · line',
-    ReviewMode.typing => 'typing',
-    ReviewMode.explain => 'explain',
-    ReviewMode.lineByLine => 'line',
-    ReviewMode.choice => 'choice',
-    ReviewMode.flip => 'flip',
-  };
-}
-
-class ReviewModeTag extends StatelessWidget {
-  const ReviewModeTag({super.key, required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).alix;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-        decoration: BoxDecoration(
-          border: Border.all(color: tokens.line),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(
-          label.toUpperCase(),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontFamily: monoFontFamily,
-            fontSize: 10.5,
-            letterSpacing: 1.7,
-            color: tokens.faint,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class ReviewCardView extends StatelessWidget {
   const ReviewCardView({
     super.key,
@@ -295,18 +247,6 @@ class ReviewCardView extends StatelessWidget {
             const SizedBox(height: 12),
             _cardImage(context, image, answered),
           ],
-        if (state.introducing && !_hasChoices && !revealed) ...[
-          const SizedBox(height: 18),
-          Text(
-            'new card: try to recall it, then reveal.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: tokens.dim,
-              fontSize: 13,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
         if (answered && card.note.isNotEmpty)
           _note(context, card, tokens),
       ],

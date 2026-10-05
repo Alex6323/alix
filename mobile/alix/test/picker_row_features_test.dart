@@ -83,9 +83,9 @@ void main() {
       expect(find.text('Recognize'), findsNothing);
       expect(find.text('Reconstruct'), findsNothing);
       expect(find.byType(ReviewScreen), findsOneWidget);
-      expect(find.text('FLIP'), findsOneWidget);
+      expect(find.widgetWithText(InkWell, 'Reveal'), findsOneWidget);
       // Locks the literal null depth passed on tap (not just the resulting
-      // FLIP, which Recall's fallback default would also produce if the tap
+      // flip, which Recall's fallback default would also produce if the tap
       // path wrongly coerced to Depth.recall).
       expect(tester.widget<ReviewScreen>(find.byType(ReviewScreen)).depth, isNull);
     });
@@ -127,7 +127,7 @@ void main() {
       // Reconstruct + a single-line answer is a typed check, not a flip:
       // proof the picked depth (not the remembered default) is what opened.
       expect(find.byType(ReviewScreen), findsOneWidget);
-      expect(find.text('TYPING'), findsOneWidget);
+      expect(find.widgetWithText(InkWell, 'Submit'), findsOneWidget);
     });
 
     testWidgets('the cram switch followed by a depth opens a crammed session',

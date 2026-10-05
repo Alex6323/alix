@@ -84,6 +84,7 @@ class ReviewController extends ChangeNotifier {
   bool get isDrawing => state.input == ReviewInput.draw;
   bool get attemptOpen => _attemptOpen;
   bool get serverLive => _serverLive;
+  bool get cram => _cram;
   ReviewTutorCardModel? get tutorCard => _requirePort().tutorCard;
   bool get deckHasExam => _requirePort().deckHasExam;
 

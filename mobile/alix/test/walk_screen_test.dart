@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:alix_mobile/review/review_card.dart' show ReviewModeTag;
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/walk_screen.dart';
@@ -144,11 +143,6 @@ void main() {
         (paragraph.maxLines, paragraph.didExceedMaxLines),
         (1, true),
         reason: '$step: the long title is cut to one line, not wrapped',
-      );
-      expect(
-        find.byType(ReviewModeTag),
-        findsNothing,
-        reason: '$step: no mode tag',
       );
       if (step == 'front') await tap(tester, 'Reveal');
       if (step == 'answer') await tap(tester, 'Next');
