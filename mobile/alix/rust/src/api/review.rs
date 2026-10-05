@@ -552,7 +552,6 @@ impl ReviewSession {
         &mut self,
         front: String,
         back: Vec<String>,
-        now_ms: u64,
     ) -> Result<String> {
         if self.session.current().is_none() {
             bail!("no card is current to mint a tutor card against");
@@ -570,7 +569,6 @@ impl ReviewSession {
             &self.deck_token,
             &front,
             &back,
-            now_ms,
             &deck_fingerprints,
         )?;
         self.store.save()?;
@@ -1382,7 +1380,6 @@ mod tests {
         let dup = s.mint_tutor_card(
             "capital of france?".to_string(),
             vec!["Paris".to_string()],
-            LATER,
         );
         assert!(
             dup.is_err(),
@@ -1397,7 +1394,6 @@ mod tests {
             .mint_tutor_card(
                 "capital of spain?".to_string(),
                 vec!["Madrid".to_string()],
-                LATER,
             )
             .expect("fresh content mints");
         let personal = alix::personal::read(&root.join("d.md"), "d.md");
@@ -1788,7 +1784,6 @@ mod tests {
         s.mint_tutor_card(
             alix_test_support::MINTED_FRONT.to_string(),
             vec![alix_test_support::MINTED_BACK.to_string()],
-            LATER,
         )
         .expect("fresh content mints");
 
@@ -1811,7 +1806,7 @@ mod tests {
 
         let mut s = opened_after_introduction(&deck, root, None);
         let minted = s
-            .mint_tutor_card("mine?".to_string(), vec!["my answer".to_string()], LATER)
+            .mint_tutor_card("mine?".to_string(), vec!["my answer".to_string()])
             .expect("fresh content mints");
         let id = s.tutor_card().expect("a card is current").id;
         s.apply_card_note(id, vec!["mine to remember".to_string()])

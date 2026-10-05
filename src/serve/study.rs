@@ -1729,14 +1729,12 @@ impl StudyState {
             .iter()
             .map(|c| c.block_fingerprint)
             .collect();
-        let now = now_ms();
         match store::mint_tutor_card(
             &mut self.store,
             &deck_path,
             &deck_id,
             &req.front,
             &req.back,
-            now,
             &deck_fingerprints,
         ) {
             Ok(id) => {

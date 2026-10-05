@@ -586,7 +586,6 @@ fn wire__crate__api__review__ReviewSession_mint_tutor_card_impl(
             >>::sse_decode(&mut deserializer);
             let api_front = <String>::sse_decode(&mut deserializer);
             let api_back = <Vec<String>>::sse_decode(&mut deserializer);
-            let api_now_ms = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
@@ -608,7 +607,6 @@ fn wire__crate__api__review__ReviewSession_mint_tutor_card_impl(
                         &mut *api_that_guard,
                         api_front,
                         api_back,
-                        api_now_ms,
                     )?;
                     Ok(output_ok)
                 })(),

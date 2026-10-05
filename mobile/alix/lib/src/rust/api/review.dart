@@ -46,11 +46,7 @@ abstract class ReviewSession implements RustOpaqueInterface {
 
   ReviewState introduce({BigInt? nowMs});
 
-  String mintTutorCard({
-    required String front,
-    required List<String> back,
-    required BigInt nowMs,
-  });
+  String mintTutorCard({required String front, required List<String> back});
 
   static ReviewSession open({
     required String deckPath,

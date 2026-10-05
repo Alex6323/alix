@@ -213,12 +213,8 @@ class ReviewController extends ChangeNotifier {
 
   ReviewCrumbModel? crumb(int nowMs) => _requirePort().crumb(nowMs);
 
-  String mintTutorCard({
-    required String front,
-    required List<String> back,
-    required int nowMs,
-  }) {
-    return _requirePort().mintTutorCard(front: front, back: back, nowMs: nowMs);
+  String mintTutorCard({required String front, required List<String> back}) {
+    return _requirePort().mintTutorCard(front: front, back: back);
   }
 
   void applyCardNote({required String id, required List<String> notes}) {

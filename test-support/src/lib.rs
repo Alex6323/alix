@@ -178,9 +178,9 @@ pub fn after_note() -> Effects {
 }
 
 /// Minting a card the learner keeps: it lands in the personal file as an
-/// ordinary card block, introduced at creation (writing it IS meeting it).
-/// The card the learner was viewing leaves no entry: presentation writes
-/// nothing (ADR 0035).
+/// ordinary card block, still new: the tutor wrote it, so the drill
+/// introduces it. The card the learner was viewing leaves no entry:
+/// presentation writes nothing (ADR 0035).
 pub fn after_mint() -> Effects {
     Effects {
         deck: DECK.to_string(),
@@ -190,7 +190,7 @@ pub fn after_mint() -> Effects {
         )),
         scheduled: vec![MINTED.to_string()],
         reviews: vec![(MINTED.to_string(), 0, 0)],
-        introduced: vec![MINTED.to_string()],
+        introduced: Vec::new(),
     }
 }
 

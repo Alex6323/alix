@@ -136,7 +136,6 @@ abstract class RustLibApi extends BaseApi {
     required ReviewSession that,
     required String front,
     required List<String> back,
-    required BigInt nowMs,
   });
 
   ReviewSession crateApiReviewReviewSessionOpen({
@@ -652,7 +651,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required ReviewSession that,
     required String front,
     required List<String> back,
-    required BigInt nowMs,
   }) {
     return handler.executeSync(
       SyncTask(
@@ -664,7 +662,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
           sse_encode_String(front, serializer);
           sse_encode_list_String(back, serializer);
-          sse_encode_u_64(nowMs, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
         },
         codec: SseCodec(
@@ -672,7 +669,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiReviewReviewSessionMintTutorCardConstMeta,
-        argValues: [that, front, back, nowMs],
+        argValues: [that, front, back],
         apiImpl: this,
       ),
     );
@@ -681,7 +678,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiReviewReviewSessionMintTutorCardConstMeta =>
       const TaskConstMeta(
         debugName: "ReviewSession_mint_tutor_card",
-        argNames: ["that", "front", "back", "nowMs"],
+        argNames: ["that", "front", "back"],
       );
 
   @override
@@ -6190,16 +6187,12 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
   ReviewState introduce({BigInt? nowMs}) => RustLib.instance.api
       .crateApiReviewReviewSessionIntroduce(that: this, nowMs: nowMs);
 
-  String mintTutorCard({
-    required String front,
-    required List<String> back,
-    required BigInt nowMs,
-  }) => RustLib.instance.api.crateApiReviewReviewSessionMintTutorCard(
-    that: this,
-    front: front,
-    back: back,
-    nowMs: nowMs,
-  );
+  String mintTutorCard({required String front, required List<String> back}) =>
+      RustLib.instance.api.crateApiReviewReviewSessionMintTutorCard(
+        that: this,
+        front: front,
+        back: back,
+      );
 
   ReviewState state({BigInt? nowMs}) => RustLib.instance.api
       .crateApiReviewReviewSessionState(that: this, nowMs: nowMs);

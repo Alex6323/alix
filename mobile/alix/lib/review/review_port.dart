@@ -32,11 +32,7 @@ abstract interface class ReviewPort {
 
   ReviewGrade keypointGrade({required int covered, required int total});
 
-  String mintTutorCard({
-    required String front,
-    required List<String> back,
-    required int nowMs,
-  });
+  String mintTutorCard({required String front, required List<String> back});
 
   void applyCardNote({required String id, required List<String> notes});
 

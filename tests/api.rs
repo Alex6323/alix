@@ -7238,9 +7238,8 @@ fn ask_card_draft_create_round_trips_a_learner_card_into_the_session() {
     // Drillable, not just stored: cram-reselect (the same determinism idiom
     // `post_api_restart_rebuilds_the_queue_and_resets_session_stats` uses)
     // pulls every non-retired card into the queue regardless of due date. The
-    // minted card is engaged (`mint_tutor_card` seeds its entry) but never
-    // graded, so it rides the new share beside the two fixture cards and is
-    // graded at first sight when the sitting reaches it.
+    // minted card is new, so it rides the new share beside the two fixture
+    // cards and the drill introduces it like any other new card.
     let resp = post_json(&base, "/api/select", r#"{"deck":"sample.md","cram":true}"#);
     assert_eq!(200, resp.status);
     let mut body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -7262,8 +7261,8 @@ fn ask_card_draft_create_round_trips_a_learner_card_into_the_session() {
         body = serde_json::from_slice(&resp.body).unwrap();
     }
     assert_eq!(
-        false, body["introducing"],
-        "the minted card is graded at first sight: {body}"
+        true, body["introducing"],
+        "the drill introduces a tutor-written card: {body}"
     );
 
     // And it's what `/api/state` reports too, not just the last response.

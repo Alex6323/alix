@@ -139,9 +139,9 @@ Once you're satisfied, click **Add** to land it as a new card on the current dec
 
 The card goes into the deck's [personal file](03-the-deck-format.md#your-personal-file)
 (`<deck>.local.md`), not the deck itself, so the authored `.md` is left
-byte-identical. It joins your sessions from then on and is drilled and scheduled
-like any other card. It is a plain Markdown block in a file you can open and
-edit.
+byte-identical. It joins your sessions from then on as a new card: the drill
+introduces it, then grades and schedules it like any other card. It is a plain
+Markdown block in a file you can open and edit.
 
 This is an **adult-review feature only**; it's not available in the kids interface.
 If the tutor's draft can't be parsed as a valid front/back pair, `alix` reports the

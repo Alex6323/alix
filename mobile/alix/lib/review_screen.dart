@@ -241,11 +241,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
       ),
       client: client,
       slot: _tutorSlot,
-      mint: (front, back) async => _controller.mintTutorCard(
-        front: front,
-        back: back,
-        nowMs: DateTime.now().millisecondsSinceEpoch,
-      ),
+      mint: (front, back) async =>
+          _controller.mintTutorCard(front: front, back: back),
       onNote: (notes) => _controller.applyCardNote(id: tutor.id, notes: notes),
       onMessage: _tutorMessage,
     );

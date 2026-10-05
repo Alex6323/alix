@@ -130,16 +130,8 @@ class ReviewBridgePort implements ReviewPort {
   }
 
   @override
-  String mintTutorCard({
-    required String front,
-    required List<String> back,
-    required int nowMs,
-  }) {
-    return _session.mintTutorCard(
-      front: front,
-      back: back,
-      nowMs: BigInt.from(nowMs),
-    );
+  String mintTutorCard({required String front, required List<String> back}) {
+    return _session.mintTutorCard(front: front, back: back);
   }
 
   @override

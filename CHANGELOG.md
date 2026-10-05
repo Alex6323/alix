@@ -99,6 +99,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A card introduced and left ungraded no longer comes back as due in a later
   sitting: due now means scheduled, so it waits for a new-card slot and is
   graded at first sight. `alix stats` no longer counts it as due.
+- A card the tutor adds to a deck is new: the drill introduces it like any
+  other new card instead of treating it as already seen.
 - A trace deck's session is now called a trace, not a walk. The web API
   routes moved from `/api/walk` and `/api/walk/{predict,grade,restart,leave,ask,
   ask/note}` to the same paths under `/api/trace`, and the session payload's

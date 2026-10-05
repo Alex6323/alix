@@ -1370,7 +1370,6 @@ pub fn mint_tutor_card(
     deck_id: &str,
     front: &str,
     back: &[String],
-    now_ms: u64,
     deck_fingerprints: &std::collections::HashSet<u64>,
 ) -> Result<String, MintError> {
     let front = front.trim();
@@ -1418,7 +1417,7 @@ pub fn mint_tutor_card(
     }
     crate::personal::append_cards(deck_path, deck_id, &text)
         .map_err(|e| MintError::Malformed(e.to_string()))?;
-    store.get_or_insert(&id).introduced_ms = Some(now_ms);
+    store.get_or_insert(&id);
     Ok(id)
 }
 
@@ -2677,7 +2676,6 @@ mod tests {
             "geo.md",
             "capital of france",
             &["Paris".to_string()],
-            100,
             &HashSet::new(),
         )
         .unwrap();
@@ -2690,6 +2688,10 @@ mod tests {
         assert!(
             store.get(&id).is_some(),
             "and the store carries only its schedule"
+        );
+        assert!(
+            store.progress(&id).is_none(),
+            "a tutor-written card is new: the drill introduces it"
         );
     }
 
@@ -2705,7 +2707,6 @@ mod tests {
             "geo.md",
             "capital of italy?",
             &["Rome".to_string()],
-            100,
             &HashSet::new(),
         )
         .unwrap();
@@ -2738,7 +2739,6 @@ mod tests {
             "geo.md",
             "capital of spain?",
             &["Madrid".to_string()],
-            100,
             &empty,
         )
         .unwrap();
@@ -2748,7 +2748,6 @@ mod tests {
             "geo.md",
             "capital of spain?",
             &["Madrid".to_string()],
-            200,
             &empty,
         )
         .unwrap_err();
@@ -2774,7 +2773,6 @@ mod tests {
             "geo.md",
             "capital of france?",
             &["Paris".to_string()],
-            100,
             &deck_fingerprints,
         )
         .unwrap_err();
@@ -2796,16 +2794,8 @@ mod tests {
             ("  ", vec!["Paris".to_string()]),
             ("capital?", vec!["  ".to_string()]),
         ] {
-            let err = mint_tutor_card(
-                &mut store,
-                &deck,
-                "geo.md",
-                front,
-                &back,
-                100,
-                &HashSet::new(),
-            )
-            .unwrap_err();
+            let err = mint_tutor_card(&mut store, &deck, "geo.md", front, &back, &HashSet::new())
+                .unwrap_err();
             let MintError::Malformed(message) = err else {
                 panic!("an empty side must be malformed: {err:?}");
             };
@@ -2825,7 +2815,6 @@ mod tests {
             "geo.md",
             "capital?",
             &["Paris\n% direction: reverse".to_string()],
-            100,
             &HashSet::new(),
         )
         .unwrap_err();
