@@ -40,6 +40,24 @@ Future<MembersScreen> listMembers({
   profile: profile,
 );
 
+Future<List<DeckStrip>> deckStrips({
+  required String root,
+  required List<String> decks,
+  BigInt? nowMs,
+}) => RustLib.instance.api.crateApiListingDeckStrips(
+  root: root,
+  decks: decks,
+  nowMs: nowMs,
+);
+
+Future<List<SearchEntry>> listSearchable({
+  required List<String> roots,
+  BigInt? nowMs,
+}) => RustLib.instance.api.crateApiListingListSearchable(
+  roots: roots,
+  nowMs: nowMs,
+);
+
 class Deadline {
   final String date;
   final PlatformInt64 daysLeft;
@@ -147,6 +165,30 @@ class DeckEntry {
           deadline == other.deadline;
 }
 
+class DeckStrip {
+  final String path;
+  final int cardCount;
+  final List<String> tiers;
+
+  const DeckStrip({
+    required this.path,
+    required this.cardCount,
+    required this.tiers,
+  });
+
+  @override
+  int get hashCode => path.hashCode ^ cardCount.hashCode ^ tiers.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DeckStrip &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          cardCount == other.cardCount &&
+          tiers == other.tiers;
+}
+
 class MembersScreen {
   final List<DeckEntry> entries;
   final Deadline? deadline;
@@ -242,4 +284,22 @@ class RootScreen {
           runtimeType == other.runtimeType &&
           entries == other.entries &&
           profile == other.profile;
+}
+
+class SearchEntry {
+  final String root;
+  final DeckEntry entry;
+
+  const SearchEntry({required this.root, required this.entry});
+
+  @override
+  int get hashCode => root.hashCode ^ entry.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SearchEntry &&
+          runtimeType == other.runtimeType &&
+          root == other.root &&
+          entry == other.entry;
 }

@@ -214,6 +214,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DeckEntry dco_decode_deck_entry(dynamic raw);
 
   @protected
+  DeckStrip dco_decode_deck_strip(dynamic raw);
+
+  @protected
   Depth dco_decode_depth(dynamic raw);
 
   @protected
@@ -254,6 +257,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeckEntry> dco_decode_list_deck_entry(dynamic raw);
+
+  @protected
+  List<DeckStrip> dco_decode_list_deck_strip(dynamic raw);
 
   @protected
   List<ImageView> dco_decode_list_image_view(dynamic raw);
@@ -299,6 +305,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RenamedEntry> dco_decode_list_renamed_entry(dynamic raw);
+
+  @protected
+  List<SearchEntry> dco_decode_list_search_entry(dynamic raw);
 
   @protected
   List<TraceSessionLine> dco_decode_list_trace_session_line(dynamic raw);
@@ -440,6 +449,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RootScreen dco_decode_root_screen(dynamic raw);
+
+  @protected
+  SearchEntry dco_decode_search_entry(dynamic raw);
 
   @protected
   TraceSessionDelta dco_decode_trace_session_delta(dynamic raw);
@@ -684,6 +696,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DeckEntry sse_decode_deck_entry(SseDeserializer deserializer);
 
   @protected
+  DeckStrip sse_decode_deck_strip(SseDeserializer deserializer);
+
+  @protected
   Depth sse_decode_depth(SseDeserializer deserializer);
 
   @protected
@@ -726,6 +741,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeckEntry> sse_decode_list_deck_entry(SseDeserializer deserializer);
+
+  @protected
+  List<DeckStrip> sse_decode_list_deck_strip(SseDeserializer deserializer);
 
   @protected
   List<ImageView> sse_decode_list_image_view(SseDeserializer deserializer);
@@ -783,6 +801,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RenamedEntry> sse_decode_list_renamed_entry(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<SearchEntry> sse_decode_list_search_entry(SseDeserializer deserializer);
 
   @protected
   List<TraceSessionLine> sse_decode_list_trace_session_line(
@@ -948,6 +969,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RootScreen sse_decode_root_screen(SseDeserializer deserializer);
+
+  @protected
+  SearchEntry sse_decode_search_entry(SseDeserializer deserializer);
 
   @protected
   TraceSessionDelta sse_decode_trace_session_delta(
@@ -1248,6 +1272,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_deck_entry(DeckEntry self, SseSerializer serializer);
 
   @protected
+  void sse_encode_deck_strip(DeckStrip self, SseSerializer serializer);
+
+  @protected
   void sse_encode_depth(Depth self, SseSerializer serializer);
 
   @protected
@@ -1301,6 +1328,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_deck_entry(
     List<DeckEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_deck_strip(
+    List<DeckStrip> self,
     SseSerializer serializer,
   );
 
@@ -1388,6 +1421,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_renamed_entry(
     List<RenamedEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_search_entry(
+    List<SearchEntry> self,
     SseSerializer serializer,
   );
 
@@ -1600,6 +1639,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_root_screen(RootScreen self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_search_entry(SearchEntry self, SseSerializer serializer);
 
   @protected
   void sse_encode_trace_session_delta(

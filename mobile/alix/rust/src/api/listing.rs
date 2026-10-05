@@ -184,6 +184,61 @@ pub fn list_members(
     }
 }
 
+pub struct DeckStrip {
+    pub path: String,
+    pub card_count: u32,
+    pub tiers: Vec<String>,
+}
+
+pub fn deck_strips(root: String, decks: Vec<String>, now_ms: Option<u64>) -> Vec<DeckStrip> {
+    let now = now_ms.unwrap_or_else(alix::time::now_ms);
+    let decks: Vec<std::path::PathBuf> = decks.into_iter().map(Into::into).collect();
+    with_listing_cache(|cache| {
+        alix::listing::deck_strips_with(
+            Path::new(&root),
+            &decks,
+            &alix::config::ReviewConfig::default(),
+            now,
+            cache,
+        )
+    })
+    .into_iter()
+    .map(|strip| DeckStrip {
+        path: strip.path.to_string_lossy().into_owned(),
+        card_count: u32::try_from(strip.card_count).unwrap_or(u32::MAX),
+        tiers: strip
+            .tiers
+            .into_iter()
+            .map(|tier| tier.wire_name().to_string())
+            .collect(),
+    })
+    .collect()
+}
+
+pub struct SearchEntry {
+    pub root: String,
+    pub entry: DeckEntry,
+}
+
+pub fn list_searchable(roots: Vec<String>, now_ms: Option<u64>) -> Vec<SearchEntry> {
+    let now = now_ms.unwrap_or_else(alix::time::now_ms);
+    let roots: Vec<std::path::PathBuf> = roots.into_iter().map(Into::into).collect();
+    with_listing_cache(|cache| {
+        alix::listing::list_searchable_with(
+            &roots,
+            &alix::config::ReviewConfig::default(),
+            now,
+            cache,
+        )
+    })
+    .into_iter()
+    .map(|found| SearchEntry {
+        root: found.root.to_string_lossy().into_owned(),
+        entry: DeckEntry::from(found.row),
+    })
+    .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -524,5 +579,51 @@ mod tests {
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0), false).entries;
         let row = rows.iter().find(|r| r.title == "d").expect("listed");
         assert_eq!(alix::depth::Depth::Reconstruct, row.last_depth);
+    }
+
+    #[test]
+    fn deck_strips_cross_the_boundary_with_count_and_tier_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_deck(root.join("d.md"), "## a\n1\n\n## b\n2\n");
+        let path = root.join("d.md").to_string_lossy().into_owned();
+
+        let strips = deck_strips(
+            root.to_string_lossy().into_owned(),
+            vec![path.clone(), root.join("gone.md").to_string_lossy().into_owned()],
+            Some(T0),
+        );
+
+        let shape: Vec<(&str, u32, Vec<&str>)> = strips
+            .iter()
+            .map(|s| (s.path.as_str(), s.card_count, s.tiers.iter().map(String::as_str).collect()))
+            .collect();
+        assert_eq!(vec![(path.as_str(), 2, vec!["unseen", "unseen"])], shape);
+    }
+
+    #[test]
+    fn list_searchable_crosses_the_boundary_with_each_rows_root() {
+        let phone = tempfile::tempdir().unwrap();
+        let paired = tempfile::tempdir().unwrap();
+        write_deck(phone.path().join("mine.md"), "## q\na\n");
+        std::fs::create_dir_all(paired.path().join("ws/decks")).unwrap();
+        write(&paired.path().join("ws/alix.toml"), "title = \"Desk\"\n");
+        write_deck(paired.path().join("ws/decks/member.md"), "## q\na\n");
+        let roots = [phone.path(), paired.path()].map(|p| p.to_string_lossy().into_owned());
+
+        let rows = list_searchable(roots.to_vec(), Some(T0));
+
+        let shape: Vec<(&str, &str)> = rows
+            .iter()
+            .map(|r| (r.root.as_str(), r.entry.title.as_str()))
+            .collect();
+        assert_eq!(
+            vec![
+                (roots[0].as_str(), "mine"),
+                (roots[1].as_str(), "Desk"),
+                (roots[1].as_str(), "member"),
+            ],
+            shape
+        );
     }
 }
