@@ -462,24 +462,23 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.reload();
   }
 
-  Future<bool> _resolvedConflictFirst(
+  SyncPendingConflict? _pendingConflictFor(
     PickerEntry entry, {
     required String root,
     required bool isPaired,
-  }) async {
+  }) {
     final syncController = _syncController;
-    if (!isPaired || syncController == null) return false;
+    if (!isPaired || syncController == null) return null;
     final deckId = deckIdForPath(
       entries: syncController.pairedEntries,
       rootDir: root,
       path: entry.path,
     );
-    final matches = deckId == null
-        ? const <SyncPendingConflict>[]
-        : syncController.pendingConflicts.where((c) => c.deckId == deckId);
-    if (matches.isEmpty) return false;
-    await _openConflictChoice(matches.first);
-    return true;
+    if (deckId == null) return null;
+    for (final conflict in syncController.pendingConflicts) {
+      if (conflict.deckId == deckId) return conflict;
+    }
+    return null;
   }
 
   Future<void> _openLaunchSheet(
@@ -487,7 +486,9 @@ class _PickerScreenState extends State<PickerScreen> {
     required String root,
     required bool isPaired,
   }) async {
-    if (await _resolvedConflictFirst(entry, root: root, isPaired: isPaired)) {
+    final conflict = _pendingConflictFor(entry, root: root, isPaired: isPaired);
+    if (conflict != null) {
+      await _openConflictChoice(conflict);
       return;
     }
     if (!mounted) return;
@@ -505,7 +506,13 @@ class _PickerScreenState extends State<PickerScreen> {
       ),
     );
     if (!mounted) return;
-    if (await _resolvedConflictFirst(entry, root: root, isPaired: isPaired)) {
+    final lateConflict = _pendingConflictFor(
+      entry,
+      root: root,
+      isPaired: isPaired,
+    );
+    if (lateConflict != null) {
+      await _openConflictChoice(lateConflict);
       return;
     }
     if (walk) {
@@ -574,7 +581,16 @@ class _PickerScreenState extends State<PickerScreen> {
     if (entry.isWorkspace) {
       _drillInto(entry, root: root, isPaired: isPaired);
     } else if (entry.isTrace) {
-      _openTraceSession(entry, root: root);
+      final conflict = _pendingConflictFor(
+        entry,
+        root: root,
+        isPaired: isPaired,
+      );
+      if (conflict != null) {
+        _openConflictChoice(conflict);
+      } else {
+        _openTraceSession(entry, root: root);
+      }
     } else {
       _openLaunchSheet(entry, root: root, isPaired: isPaired);
     }

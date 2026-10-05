@@ -306,6 +306,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On the phone, tapping a paired trace deck that has an unresolved sync
+  conflict opens the conflict choice instead of the trace session, so grading
+  no longer writes progress on the unresolved side.
+
 - Opening a review, a browse, or a walk now ends a running augment session,
   and closing an augment session that is no longer open answers 409 instead
   of tearing down the session that replaced it.
