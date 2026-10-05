@@ -935,8 +935,8 @@ fn grade_compression_prompt(
     strictness: Strictness,
 ) -> String {
     let mut prompt = String::from(
-        "You are grading the final exam of a guided predict-and-verify walk \
-         through a source (a \"trace\"). The learner walked the path hop by hop; \
+        "You are grading the final exam of a trace, a guided predict-and-verify \
+         path through a source. The learner traced the path hop by hop; \
          now, from memory, they RETRACE THE WHOLE PATH in a sentence or two. This \
          compression IS the exam: it verifies they can RE-DERIVE the path (the \
          steps and how they connect), not merely recognize each step.\n\n\
@@ -2369,6 +2369,21 @@ mod tests {
         assert!(p.contains("you press a key and it saves"));
         assert!(p.contains("RE-DERIVE"));
         assert!(p.contains("\"verdict\""));
+    }
+
+    #[test]
+    fn grade_compression_prompt_does_not_call_a_trace_a_walk() {
+        let prompt = grade_compression_prompt(
+            "path",
+            &["point".to_string()],
+            "answer",
+            Strictness::Balanced,
+        );
+
+        assert!(
+            !prompt.to_ascii_lowercase().contains("walk"),
+            "the renamed trace-session vocabulary must reach its exam prompt:\n{prompt}"
+        );
     }
 
     #[test]

@@ -2,7 +2,8 @@
 //!
 //! These run the REAL `grade_prompt` through every calibrated backend CLI
 //! against the hand-labeled probes in `alix::calibrate` (the single source
-//! `alix doctor --grading` also runs), to catch the one failure mode the
+//! `alix doctor --grading` also runs), and the trace exam's
+//! `grade_compression` against the trace probes defined here, to catch the one failure mode the
 //! deterministic tests structurally cannot: a *lenient* grader. "mastered" is
 //! only as honest as this stays. Each backend grades at its CLI-default model
 //! plus, where one is named, a weakest "floor" row (a floor model, or a floor
@@ -29,8 +30,8 @@ use alix::{
     backend::backend_for,
     calibrate::{PROBES, ProbeKind},
     card::Card,
-    config::{AskConfig, Audience, BackendKind, ExamConfig},
-    exam::{ExamQuestion, Verdict, grade_answers},
+    config::{AskConfig, Audience, BackendKind, ExamConfig, Strictness},
+    exam::{ExamQuestion, Verdict, grade_answers, grade_compression},
     render::ContentUnit,
 };
 
@@ -72,6 +73,50 @@ fn assert_probe(name: &str) {
         .iter()
         .find(|p| p.name == name)
         .unwrap_or_else(|| panic!("no probe named {name:?} in alix::calibrate::PROBES"));
+    for (kind, ask, requested) in calibrated_rows() {
+        let q = ExamQuestion {
+            prompt: p.question.to_string(),
+            points: p.points.iter().map(|x| x.to_string()).collect(),
+        };
+        let result = grade_answers(
+                &[q],
+                &[p.answer.to_string()],
+                p.strictness,
+                &ExamConfig::default(),
+                &ask,
+            )
+            .unwrap_or_else(|e| {
+                panic!(
+                    "{name} on {} ({requested}): grade call failed. Is the `{}` CLI installed and logged in? {e:#}",
+                    kind.name(),
+                    ask.command
+                )
+            });
+        let v = result.grades[0].verdict;
+        println!(
+            "calibrate: probe={name} backend={} requested={requested} observed={} verdict={v:?}",
+            kind.name(),
+            observed_model(kind.name()).unwrap_or_else(|| "unreported".to_string())
+        );
+        match p.kind {
+            ProbeKind::Fairness => assert_eq!(
+                Verdict::Pass,
+                v,
+                "{name} on {} ({requested}): a correct answer was not passed",
+                kind.name()
+            ),
+            ProbeKind::Safety => assert_ne!(
+                Verdict::Pass,
+                v,
+                "{name} on {} ({requested}): an answer that must not pass was passed",
+                kind.name()
+            ),
+        }
+    }
+}
+
+fn calibrated_rows() -> Vec<(BackendKind, AskConfig, String)> {
+    let mut out = Vec::new();
     for (kind, model_floor, effort_floor) in CALIBRATED {
         let mut rows: Vec<(Option<&str>, Option<&str>)> = vec![(None, None)];
         if model_floor.is_some() {
@@ -81,10 +126,6 @@ fn assert_probe(name: &str) {
             rows.push((None, effort_floor));
         }
         for (model, effort) in rows {
-            let q = ExamQuestion {
-                prompt: p.question.to_string(),
-                points: p.points.iter().map(|x| x.to_string()).collect(),
-            };
             let mut ask = AskConfig {
                 backend: kind,
                 model: model.map(str::to_string),
@@ -100,42 +141,75 @@ fn assert_probe(name: &str) {
                 (None, Some(e)) => format!("effort-{e}"),
                 (None, None) => "cli-default".to_string(),
             };
-            let result = grade_answers(
-                &[q],
-                &[p.answer.to_string()],
-                p.strictness,
-                &ExamConfig::default(),
-                &ask,
-            )
-            .unwrap_or_else(|e| {
-                panic!(
-                    "{name} on {} ({requested}): grade call failed. Is the `{}` CLI installed and logged in? {e:#}",
-                    kind.name(),
-                    ask.command
-                )
-            });
-            let v = result.grades[0].verdict;
-            println!(
-                "calibrate: probe={name} backend={} requested={requested} observed={} verdict={v:?}",
-                kind.name(),
-                observed_model(kind.name()).unwrap_or_else(|| "unreported".to_string())
-            );
-            match p.kind {
-                ProbeKind::Fairness => assert_eq!(
-                    Verdict::Pass,
-                    v,
-                    "{name} on {} ({requested}): a correct answer was not passed",
-                    kind.name()
-                ),
-                ProbeKind::Safety => assert_ne!(
-                    Verdict::Pass,
-                    v,
-                    "{name} on {} ({requested}): an answer that must not pass was passed",
-                    kind.name()
-                ),
-            }
+            out.push((kind, ask, requested));
         }
     }
+    out
+}
+
+const TRACE_DESCRIPTION: &str = "How does an incoming HTTP request reach the code that answers it?";
+const TRACE_POINTS: &[&str] = &[
+    "the listener accepts the TCP connection",
+    "the raw bytes are parsed into a request with a method and a path",
+    "the router matches the method and path to one handler",
+    "the handler's response is serialized and written back on the same connection",
+];
+
+fn assert_compression(name: &str, compression: &str, must_pass: bool) {
+    let points: Vec<String> = TRACE_POINTS.iter().map(|p| p.to_string()).collect();
+    let mut wrong = Vec::new();
+    for (kind, ask, requested) in calibrated_rows() {
+        let result = grade_compression(
+            TRACE_DESCRIPTION,
+            &points,
+            compression,
+            Strictness::Balanced,
+            &ExamConfig::default(),
+            &ask,
+        )
+        .unwrap_or_else(|e| {
+            panic!(
+                "{name} on {} ({requested}): compression grade call failed: {e:#}",
+                kind.name()
+            )
+        });
+        let v = result.grades[0].verdict;
+        println!(
+            "calibrate: probe={name} backend={} requested={requested} observed={} verdict={v:?}",
+            kind.name(),
+            observed_model(kind.name()).unwrap_or_else(|| "unreported".to_string())
+        );
+        if (v == Verdict::Pass) != must_pass {
+            wrong.push(format!("{} ({requested}): {v:?}", kind.name()));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{name}: wrong verdict on {}",
+        wrong.join(", ")
+    );
+}
+
+#[test]
+#[ignore = "real backend CLIs; run with `make calibrate`"]
+fn a_faithful_retrace_passes_the_trace_exam() {
+    assert_compression(
+        "trace_faithful",
+        "The listener accepts the connection, its bytes are parsed into a request \
+         with a method and path, the router uses those to pick the one handler, and \
+         that handler's response is serialized and written back on the connection.",
+        true,
+    );
+}
+
+#[test]
+#[ignore = "real backend CLIs; run with `make calibrate`"]
+fn a_retrace_with_no_mechanism_does_not_pass_the_trace_exam() {
+    assert_compression(
+        "trace_hollow",
+        "The server gets the request, the right code runs, and the answer goes back.",
+        false,
+    );
 }
 
 fn assert_tutor_formats_code(kind: BackendKind) {
