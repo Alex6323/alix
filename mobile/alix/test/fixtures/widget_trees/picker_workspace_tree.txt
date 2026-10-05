@@ -10,18 +10,20 @@ Scaffold
               Container
                 ConstrainedBox
                   Padding(EdgeInsets(17.0, 12.0, 17.0, 12.0))
-                    Row
-                      Container
-                        ConstrainedBox
-                          Padding(EdgeInsets.zero)
-                            Align
-                              Icon(f3f6)
-                                SizedBox(width=17.0, height=17.0)
-                                  Center
-                      SizedBox(width=12.0, height=null)
-                      Expanded
-                        Column
-                          Text("Base")
+                    Column
+                      Row
+                        Expanded
+                          Column
+                            Text("Base")
+                      Padding(EdgeInsets(0.0, 4.0, 0.0, 0.0))
+                        SizedBox(width=null, height=14.0)
+                          Row
+                            Expanded
+                              SizedBox(width=null, height=3.0) key=[<'picker-strip-bar'>]
+                                CustomPaint
+                            SizedBox(width=8.0, height=null)
+                            SizedBox(width=32.0, height=null) key=[<'picker-strip-count'>]
+                              Text("1")
       Opacity(0.50)
         Material
           InkWell(tap=true, longPress=true)
@@ -33,9 +35,19 @@ Scaffold
                       CustomPaint
                   Expanded
                     Padding(EdgeInsets(8.0, 12.0, 16.0, 12.0))
-                      Row
-                        Expanded
-                          Text("Mid")
+                      Column
+                        Row
+                          Expanded
+                            Text("Mid")
+                        Padding(EdgeInsets(0.0, 4.0, 0.0, 0.0))
+                          SizedBox(width=null, height=14.0)
+                            Row
+                              Expanded
+                                SizedBox(width=null, height=3.0) key=[<'picker-strip-bar'>]
+                                  CustomPaint
+                              SizedBox(width=8.0, height=null)
+                              SizedBox(width=32.0, height=null) key=[<'picker-strip-count'>]
+                                Text("1")
       Opacity(0.50)
         Material
           InkWell(tap=true, longPress=true)
@@ -47,9 +59,19 @@ Scaffold
                       CustomPaint
                   Expanded
                     Padding(EdgeInsets(8.0, 12.0, 16.0, 12.0))
-                      Row
-                        Expanded
-                          Text("Tip")
+                      Column
+                        Row
+                          Expanded
+                            Text("Tip")
+                        Padding(EdgeInsets(0.0, 4.0, 0.0, 0.0))
+                          SizedBox(width=null, height=14.0)
+                            Row
+                              Expanded
+                                SizedBox(width=null, height=3.0) key=[<'picker-strip-bar'>]
+                                  CustomPaint
+                              SizedBox(width=8.0, height=null)
+                              SizedBox(width=32.0, height=null) key=[<'picker-strip-count'>]
+                                Text("1")
     ConstrainedBox
       AppBar
         Material

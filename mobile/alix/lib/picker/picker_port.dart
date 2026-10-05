@@ -9,6 +9,13 @@ abstract interface class PickerPort {
     required bool profile,
   });
 
+  Future<Map<String, PickerStrip>> deckStrips({
+    required String root,
+    required List<String> decks,
+  });
+
+  Future<List<PickerSearchHit>> listSearchable(List<String> roots);
+
   void setWorkspaceDeadline({required String dir, required String? date});
 
   Future<void> addTutorialDeck(String root);

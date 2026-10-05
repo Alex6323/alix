@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:alix_mobile/picker/picker_models.dart';
@@ -41,7 +43,27 @@ class PickerController extends ChangeNotifier {
   Future<void>? _inFlight;
   bool _reloadWanted = false;
 
+  final Map<String, PickerStrip> _strips = {};
+  bool _searchOpen = false;
+  String _query = '';
+  List<PickerSearchHit>? _searchable;
+  bool _searchLoading = false;
+
   List<PickerEntry> get entries => _entries;
+
+  PickerStrip? stripFor(String path) => _strips[path];
+
+  bool get searchOpen => _searchOpen;
+  bool get isSearching => _query.trim().isNotEmpty;
+
+  List<PickerSearchHit>? get searchHits {
+    final searchable = _searchable;
+    if (searchable == null) return null;
+    return [
+      for (final hit in searchable)
+        if (pickerMatches(hit.entry.title, _query)) hit,
+    ];
+  }
 
   /// True until the first listing has answered; the view shows nothing in
   /// place of the list rather than the empty hint.
@@ -84,6 +106,63 @@ class PickerController extends ChangeNotifier {
     });
   }
 
+  void openSearch() {
+    if (_searchOpen) return;
+    _searchOpen = true;
+    _loadSearchable();
+    _notifyIfLive();
+  }
+
+  void closeSearch() {
+    _searchOpen = false;
+    _query = '';
+    _notifyIfLive();
+  }
+
+  void setQuery(String query) {
+    if (_query == query) return;
+    _query = query;
+    _notifyIfLive();
+  }
+
+  void _loadSearchable() {
+    if (_searchLoading) return;
+    _searchLoading = true;
+    final roots = [_root, ?_pairedRootDir];
+    unawaited(
+      _port.listSearchable(roots).then((hits) {
+        _searchLoading = false;
+        _searchable = List.unmodifiable(hits);
+        for (final root in roots) {
+          _requestStrips(root, [
+            for (final hit in hits)
+              if (hit.root == root) hit.entry,
+          ]);
+        }
+        _notifyIfLive();
+      }),
+    );
+  }
+
+  void _requestStrips(String root, Iterable<PickerEntry> entries) {
+    final decks = [
+      for (final entry in entries)
+        if (!entry.isWorkspace) entry.path,
+    ];
+    if (decks.isEmpty) return;
+    unawaited(
+      _port.deckStrips(root: root, decks: decks).then((strips) {
+        if (strips.isEmpty) return;
+        _strips.addAll(strips);
+        _notifyIfLive();
+      }),
+    );
+  }
+
+  void _notifyIfLive() {
+    if (!_disposed) notifyListeners();
+  }
+
   void clearDeadline(String dir) {
     _port.setWorkspaceDeadline(dir: dir, date: null);
     reload();
@@ -104,6 +183,7 @@ class PickerController extends ChangeNotifier {
     if (fixed != null) {
       _entries = fixed;
       _notify();
+      _requestStrips(_root, fixed);
       return;
     }
     final dir = _dir;
@@ -115,6 +195,8 @@ class PickerController extends ChangeNotifier {
         )).entries,
       );
       _notify();
+      _requestStrips(_root, _entries);
+      if (_searchOpen) _loadSearchable();
       final pairedRootDir = _pairedRootDir;
       if (pairedRootDir == null) {
         _pairedRootEntries = const [];
@@ -127,6 +209,7 @@ class PickerController extends ChangeNotifier {
         )).entries,
       );
       _notify();
+      _requestStrips(pairedRootDir, _pairedRootEntries);
       return;
     }
     final listing = await _timed(
@@ -136,11 +219,12 @@ class PickerController extends ChangeNotifier {
     _entries = List.unmodifiable(listing.entries);
     _deadline = listing.deadline;
     _notify();
+    _requestStrips(_root, _entries);
   }
 
   void _notify() {
     _listedOnce = true;
-    if (!_disposed) notifyListeners();
+    _notifyIfLive();
   }
 
   @override
@@ -167,4 +251,9 @@ class PickerController extends ChangeNotifier {
     );
     return listing;
   }
+}
+
+bool pickerMatches(String label, String query) {
+  final needle = query.trim().toLowerCase();
+  return needle.isEmpty || label.toLowerCase().contains(needle);
 }

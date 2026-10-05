@@ -1,10 +1,12 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/tree_guides.dart';
+import 'package:alix_mobile/shared/tier_colors.dart';
 import 'package:alix_mobile/sync/sync_models.dart' show humanBytes;
 import 'package:alix_mobile/sync_client.dart' show SyncEntry;
 import 'package:alix_mobile/theme.dart';
@@ -144,21 +146,28 @@ class PickerDeckRow extends StatelessWidget {
     required this.entry,
     required this.onTap,
     this.onLongPress,
+    this.strip,
+    this.flat = false,
   });
 
   final PickerEntry entry;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+  final PickerStrip? strip;
+
+  final bool flat;
 
   @override
   Widget build(BuildContext context) {
-    if (entry.tree.isNotEmpty) {
+    if (entry.tree.isNotEmpty && !flat) {
       return _PickerMemberRow(
         entry: entry,
+        strip: strip,
         onTap: onTap,
         onLongPress: onLongPress,
       );
     }
+    final hasAvatar = entry.isWorkspace || entry.icon != null;
     final theme = Theme.of(context);
     final tokens = theme.alix;
     return Padding(
@@ -178,37 +187,53 @@ class PickerDeckRow extends StatelessWidget {
                 border: Border.all(color: tokens.line),
                 borderRadius: BorderRadius.circular(11),
               ),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _PickerAvatar(entry: entry),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          entry.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (entry.deadline case final deadline?)
-                          Text(
-                            pickerDeadlineChipText(deadline),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontFamily: 'IBM Plex Mono',
-                              fontSize: 11,
-                              color: pickerDeadlineTint(deadline, tokens),
-                            ),
-                          ),
+                  Row(
+                    children: [
+                      if (hasAvatar) ...[
+                        _PickerAvatar(entry: entry),
+                        const SizedBox(width: 12),
                       ],
-                    ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              entry.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (entry.deadline case final deadline?)
+                              Text(
+                                pickerDeadlineChipText(deadline),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'IBM Plex Mono',
+                                  fontSize: 11,
+                                  color: pickerDeadlineTint(deadline, tokens),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      ...pickerTrailingMarker(theme, entry),
+                    ],
                   ),
-                  ...pickerTrailingMarker(theme, entry),
+                  if (!entry.isWorkspace)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        top: 4,
+                        left: hasAvatar ? _PickerAvatar.size + 12 : 0,
+                      ),
+                      child: PickerTierStrip(strip: strip),
+                    ),
                 ],
               ),
             ),
@@ -222,11 +247,13 @@ class PickerDeckRow extends StatelessWidget {
 class _PickerMemberRow extends StatelessWidget {
   const _PickerMemberRow({
     required this.entry,
+    required this.strip,
     required this.onTap,
     this.onLongPress,
   });
 
   final PickerEntry entry;
+  final PickerStrip? strip;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
@@ -254,19 +281,29 @@ class _PickerMemberRow extends StatelessWidget {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(8, 12, 16, 12),
-                      child: Row(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              entry.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  entry.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
-                            ),
+                              ...pickerTrailingMarker(theme, entry),
+                            ],
                           ),
-                          ...pickerTrailingMarker(theme, entry),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: PickerTierStrip(strip: strip),
+                          ),
                         ],
                       ),
                     ),
@@ -855,15 +892,14 @@ List<Widget> pickerTrailingMarker(ThemeData theme, PickerEntry entry) {
   return const [];
 }
 
-/// A workspace's own icon; failing that a disc carrying its initial, and for
-/// a deck a disc carrying the card glyph, so the two kinds are told apart at
-/// the same left edge.
+/// A declared icon; failing that, for a workspace, a disc carrying its
+/// initial.
 class _PickerAvatar extends StatelessWidget {
   const _PickerAvatar({required this.entry});
 
   final PickerEntry entry;
 
-  static const _size = 32.0;
+  static const size = 32.0;
 
   @override
   Widget build(BuildContext context) {
@@ -871,27 +907,25 @@ class _PickerAvatar extends StatelessWidget {
     final path = entry.icon;
     if (path == null) {
       return Container(
-        width: _size,
-        height: _size,
+        width: size,
+        height: size,
         alignment: Alignment.center,
         decoration: BoxDecoration(color: tokens.line, shape: BoxShape.circle),
-        child: entry.isWorkspace
-            ? Text(
-                _initial(entry.title),
-                style: TextStyle(
-                  fontFamily: 'IBM Plex Mono',
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: tokens.dim,
-                ),
-              )
-            : Icon(Icons.style_outlined, size: 17, color: tokens.dim),
+        child: Text(
+          _initial(entry.title),
+          style: TextStyle(
+            fontFamily: 'IBM Plex Mono',
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: tokens.dim,
+          ),
+        ),
       );
     }
     return ClipOval(
       child: SizedBox(
-        width: _size,
-        height: _size,
+        width: size,
+        height: size,
         child: path.toLowerCase().endsWith('.svg')
             ? SvgPicture.file(
                 File(path),
@@ -908,4 +942,161 @@ String _initial(String title) {
   final trimmed = title.trim();
   if (trimmed.isEmpty) return '·';
   return String.fromCharCode(trimmed.runes.first).toUpperCase();
+}
+
+class PickerTierStrip extends StatelessWidget {
+  const PickerTierStrip({super.key, required this.strip});
+
+  final PickerStrip? strip;
+
+  static const double height = 14;
+  static const double barHeight = 3;
+  static const double countWidth = 32;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = theme.alix;
+    final strip = this.strip;
+    return SizedBox(
+      height: height,
+      child: Row(
+        children: [
+          Expanded(
+            child: SizedBox(
+              key: const ValueKey('picker-strip-bar'),
+              height: barHeight,
+              child: strip == null
+                  ? null
+                  : CustomPaint(
+                      painter: _TierStripPainter([
+                        for (final tier in strip.tiers)
+                          tierColor(
+                            tier,
+                            ink: theme.colorScheme.onSurface,
+                            tokens: tokens,
+                          ),
+                      ]),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            key: const ValueKey('picker-strip-count'),
+            width: countWidth,
+            child: strip == null
+                ? null
+                : Text(
+                    '${strip.cardCount}',
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.clip,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontFamily: 'IBM Plex Mono',
+                      fontSize: 11,
+                      height: 1.2,
+                      color: tokens.dim,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TierStripPainter extends CustomPainter {
+  _TierStripPainter(this.colors);
+
+  final List<Color> colors;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (colors.isEmpty) return;
+    final step = size.width / colors.length;
+    final gap = step >= 3 ? 1.0 : 0.0;
+    final paint = Paint();
+    for (final (index, color) in colors.indexed) {
+      paint.color = color;
+      canvas.drawRect(
+        Rect.fromLTWH(index * step, 0, step - gap, size.height),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TierStripPainter old) => !listEquals(old.colors, colors);
+}
+
+class PickerSearchField extends StatefulWidget {
+  const PickerSearchField({
+    super.key,
+    required this.onChanged,
+    required this.onClose,
+  });
+
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClose;
+
+  @override
+  State<PickerSearchField> createState() => _PickerSearchFieldState();
+}
+
+class _PickerSearchFieldState extends State<PickerSearchField> {
+  final _text = TextEditingController();
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).alix;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TextField(
+        key: const ValueKey('picker-search-field'),
+        controller: _text,
+        autofocus: true,
+        maxLines: 1,
+        textInputAction: TextInputAction.search,
+        onChanged: widget.onChanged,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'Search decks',
+          prefixIcon: Icon(Icons.search, size: 20, color: tokens.dim),
+          suffixIcon: IconButton(
+            icon: Icon(Icons.close, size: 20, color: tokens.dim),
+            tooltip: 'Close search',
+            onPressed: widget.onClose,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(11),
+            borderSide: BorderSide(color: tokens.line),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(11),
+            borderSide: BorderSide(color: tokens.line),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PickerSearchEmpty extends StatelessWidget {
+  const PickerSearchEmpty({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      'No decks match.',
+      style: theme.textTheme.bodyMedium?.copyWith(color: theme.alix.dim),
+    );
+  }
 }

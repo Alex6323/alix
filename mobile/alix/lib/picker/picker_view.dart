@@ -29,6 +29,14 @@ class PickerView extends StatelessWidget {
     this.onLongPressPairedEntry,
     this.availableEntries = const [],
     this.onPullAvailable,
+    this.stripFor,
+    this.onOpenSearch,
+    this.searchOpen = false,
+    this.isSearching = false,
+    this.searchHits,
+    this.onQueryChanged,
+    this.onCloseSearch,
+    this.onOpenSearchHit,
   });
 
   final List<PickerEntry> entries;
@@ -69,6 +77,17 @@ class PickerView extends StatelessWidget {
   final List<SyncEntry> availableEntries;
   final ValueChanged<String>? onPullAvailable;
 
+  final PickerStrip? Function(String path)? stripFor;
+
+  final VoidCallback? onOpenSearch;
+  final bool searchOpen;
+  final bool isSearching;
+
+  final List<PickerSearchHit>? searchHits;
+  final ValueChanged<String>? onQueryChanged;
+  final VoidCallback? onCloseSearch;
+  final ValueChanged<PickerSearchHit>? onOpenSearchHit;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -85,70 +104,110 @@ class PickerView extends StatelessWidget {
         context,
         leading: leading,
         title: barTitle == null ? null : PickerTitle(text: barTitle),
+        actions: [
+          if (onOpenSearch case final open?)
+            IconButton(
+              icon: const Icon(Icons.search),
+              tooltip: 'Search',
+              onPressed: searchOpen ? onCloseSearch : open,
+            ),
+        ],
       ),
       body: ListView(
         // The first row sits off the bar by the same 6 that separates rows
         // from each other, so the bar reads as one more edge in the rhythm.
         padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
         children: [
-          if (deadline case final value? when !isRoot)
-            PickerDeadlineLede(deadline: value),
-          if (isLoading)
-            const SizedBox.shrink()
-          else if (entries.isEmpty)
-            PickerEmptyHint(
-              atRoot: isRoot && !isMasteredView,
-              onAddTutorial: onAddTutorial,
-            )
-          else ...[
-            for (final entry in active)
-              PickerDeckRow(
-                entry: entry,
-                onTap: () => onOpenEntry(entry),
-                onLongPress: _longPress(entry, onLongPressEntry),
-              ),
-            if (mastered.isNotEmpty)
-              PickerMasteredAffordance(
-                count: mastered.length,
-                onTap: () => onOpenMastered(mastered),
-              ),
-          ],
-          if (pairedLabel case final label?) ...[
-            const SizedBox(height: 8),
-            PickerPairedHeading(
-              label: label,
-              onSyncAll: onSyncAll,
-              busy: syncBusy,
+          if (searchOpen)
+            PickerSearchField(
+              onChanged: (query) => onQueryChanged?.call(query),
+              onClose: () => onCloseSearch?.call(),
             ),
-            if (syncStatus case final status?)
-              InkWell(
-                key: const Key('sync-status'),
-                onTap: onOpenSyncReport,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(2, 0, 2, 10),
-                  child: Text(
-                    status,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: theme.alix.dim),
-                  ),
-                ),
-              ),
-            for (final entry in pairedEntries)
-              PickerDeckRow(
-                entry: entry,
-                onTap: () => onOpenPairedEntry?.call(entry),
-                onLongPress: _longPress(entry, onLongPressPairedEntry),
-              ),
-            for (final entry in availableEntries)
-              PickerAvailableEntryRow(
-                entry: entry,
-                onTap: () => onPullAvailable?.call(entry.name),
-              ),
-          ],
+          if (isSearching)
+            ..._searchResults()
+          else
+            ..._listing(theme, active, mastered),
         ],
       ),
     );
+  }
+
+  List<Widget> _searchResults() {
+    final hits = searchHits;
+    if (hits == null) return const [];
+    if (hits.isEmpty) return const [PickerSearchEmpty()];
+    return [
+      for (final hit in hits)
+        PickerDeckRow(
+          entry: hit.entry,
+          strip: stripFor?.call(hit.entry.path),
+          flat: true,
+          onTap: () => onOpenSearchHit?.call(hit),
+          onLongPress: _longPress(hit.entry, null),
+        ),
+    ];
+  }
+
+  List<Widget> _listing(
+    ThemeData theme,
+    List<PickerEntry> active,
+    List<PickerEntry> mastered,
+  ) {
+    return [
+      if (deadline case final value? when !isRoot)
+        PickerDeadlineLede(deadline: value),
+      if (isLoading)
+        const SizedBox.shrink()
+      else if (entries.isEmpty)
+        PickerEmptyHint(
+          atRoot: isRoot && !isMasteredView,
+          onAddTutorial: onAddTutorial,
+        )
+      else ...[
+        for (final entry in active)
+          PickerDeckRow(
+            entry: entry,
+            strip: stripFor?.call(entry.path),
+            onTap: () => onOpenEntry(entry),
+            onLongPress: _longPress(entry, onLongPressEntry),
+          ),
+        if (mastered.isNotEmpty)
+          PickerMasteredAffordance(
+            count: mastered.length,
+            onTap: () => onOpenMastered(mastered),
+          ),
+      ],
+      if (pairedLabel case final label?) ...[
+        const SizedBox(height: 8),
+        PickerPairedHeading(label: label, onSyncAll: onSyncAll, busy: syncBusy),
+        if (syncStatus case final status?)
+          InkWell(
+            key: const Key('sync-status'),
+            onTap: onOpenSyncReport,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(2, 0, 2, 10),
+              child: Text(
+                status,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: theme.alix.dim),
+              ),
+            ),
+          ),
+        for (final entry in pairedEntries)
+          PickerDeckRow(
+            entry: entry,
+            strip: stripFor?.call(entry.path),
+            onTap: () => onOpenPairedEntry?.call(entry),
+            onLongPress: _longPress(entry, onLongPressPairedEntry),
+          ),
+        for (final entry in availableEntries)
+          PickerAvailableEntryRow(
+            entry: entry,
+            onTap: () => onPullAvailable?.call(entry.name),
+          ),
+      ],
+    ];
   }
 
   VoidCallback? _longPress(

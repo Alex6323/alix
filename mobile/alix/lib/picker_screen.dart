@@ -570,6 +570,12 @@ class _PickerScreenState extends State<PickerScreen> {
     _openEntryIn(entry, root: pairedDir, isPaired: true);
   }
 
+  void _openSearchHit(PickerSearchHit hit) => _openEntryIn(
+    hit.entry,
+    root: hit.root,
+    isPaired: hit.root == _pairedDir,
+  );
+
   void _openEntryIn(
     PickerEntry entry, {
     required String root,
@@ -687,6 +693,14 @@ class _PickerScreenState extends State<PickerScreen> {
           onPullAvailable: syncController != null && isPairedRootScreen
               ? _pullAvailable
               : null,
+          stripFor: _controller.stripFor,
+          onOpenSearch: isPairedRootScreen ? _controller.openSearch : null,
+          searchOpen: _controller.searchOpen,
+          isSearching: _controller.isSearching,
+          searchHits: _controller.searchHits,
+          onQueryChanged: _controller.setQuery,
+          onCloseSearch: _controller.closeSearch,
+          onOpenSearchHit: _openSearchHit,
         );
       },
     );

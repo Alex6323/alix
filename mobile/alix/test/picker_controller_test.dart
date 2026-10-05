@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -145,13 +147,92 @@ void main() {
       expect(notifications, 1);
     },
   );
+  test(
+    'rows publish before their strips, which fill in when the core answers',
+    () async {
+      final port = _FakePickerPort(
+        rootEntries: [_entry('deck'), _entry('ws', isWorkspace: true)],
+      )..stripReply = Completer();
+      final controller = PickerController(port: port, root: '/decks');
+      await pumpEventQueue();
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+
+      expect(
+        controller.entries.map((e) => e.title),
+        ['deck', 'ws'],
+        reason: 'the listing publishes without waiting on the strips',
+      );
+      expect(controller.isLoading, isFalse, reason: 'listed before strips');
+      expect(controller.stripFor('/decks/deck.md'), isNull);
+      expect(
+        [for (final (root, decks) in port.stripRequests) '$root: $decks'],
+        ['/decks: [/decks/deck.md]'],
+        reason: 'one request per listing, never for a workspace row',
+      );
+
+      port.stripReply!.complete({
+        '/decks/deck.md': const PickerStrip(
+          cardCount: 2,
+          tiers: ['seen', 'unseen'],
+        ),
+      });
+      await pumpEventQueue();
+
+      expect(controller.stripFor('/decks/deck.md')?.cardCount, 2);
+      expect(notifications, 1, reason: 'the strip answer repaints once');
+    },
+  );
+
+  test(
+    'search lists every root once and keeps exactly the matching rows',
+    () async {
+      final port = _FakePickerPort(rootEntries: [_entry('own')]);
+      final controller = PickerController(port: port, root: '/decks');
+      controller.setPairedRoot('/paired');
+      await pumpEventQueue();
+      const labels = ['Rust Basics', 'rusty Nails', 'Go', 'TRUST me', 'Ruby'];
+      port.searchable = [
+        for (final (index, label) in labels.indexed)
+          PickerSearchHit(
+            root: index.isEven ? '/decks' : '/paired',
+            entry: _entry(label),
+          ),
+      ];
+
+      controller.openSearch();
+      await pumpEventQueue();
+      expect(port.searchRoots, [
+        ['/decks', '/paired'],
+      ]);
+
+      for (final query in ['rust', ' RUST ', 'u', 'zzz', 'Go']) {
+        controller.setQuery(query);
+        final needle = query.trim().toLowerCase();
+        expect(
+          controller.searchHits!.map((hit) => hit.entry.title),
+          [
+            for (final label in labels)
+              if (label.toLowerCase().contains(needle)) label,
+          ],
+          reason: 'query "$query"',
+        );
+      }
+      controller.closeSearch();
+      expect(controller.isSearching, isFalse);
+    },
+  );
 }
 
-PickerEntry _entry(String title, {bool mastered = false}) {
+PickerEntry _entry(
+  String title, {
+  bool mastered = false,
+  bool isWorkspace = false,
+}) {
   return PickerEntry(
     title: title,
-    path: '/decks/$title.md',
-    isWorkspace: false,
+    path: isWorkspace ? '/decks/$title' : '/decks/$title.md',
+    isWorkspace: isWorkspace,
     due: true,
     canRecognize: true,
     isTrace: false,
@@ -180,6 +261,25 @@ class _FakePickerPort implements PickerPort {
   int listRootCalls = 0;
   final List<(String, String?)> deadlineWrites = [];
   final List<String> tutorialRoots = [];
+  final List<(String, List<String>)> stripRequests = [];
+  Completer<Map<String, PickerStrip>>? stripReply;
+  List<PickerSearchHit> searchable = const [];
+  final List<List<String>> searchRoots = [];
+
+  @override
+  Future<Map<String, PickerStrip>> deckStrips({
+    required String root,
+    required List<String> decks,
+  }) {
+    stripRequests.add((root, decks));
+    return stripReply?.future ?? Future.value(const {});
+  }
+
+  @override
+  Future<List<PickerSearchHit>> listSearchable(List<String> roots) async {
+    searchRoots.add(roots);
+    return searchable;
+  }
 
   @override
   Future<PickerListing> listRoot(String root, {required bool profile}) async {

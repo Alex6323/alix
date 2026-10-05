@@ -43,9 +43,10 @@ void main() {
         'lib/picker/picker_controller.dart',
         'notifyListeners();',
       ),
-      [61, 143],
+      [83, 163],
       reason:
-          'setServerReachable and reload own every picker listing mutation; '
+          'setServerReachable and _notifyIfLive own every picker mutation; '
+          'listing, strip, and search transitions notify through it, and '
           'deadline, tutorial, and setPairedRoot transitions reload',
     );
     expect(
@@ -84,7 +85,7 @@ void main() {
       ],
       [
         'lib/review_screen.dart:373',
-        'lib/picker_screen.dart:642',
+        'lib/picker_screen.dart:648',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:192',
         'lib/walk_screen.dart:202',

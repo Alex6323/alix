@@ -36,6 +36,27 @@ class PickerBridge implements PickerPort {
     );
   }
 
+  @override
+  Future<Map<String, PickerStrip>> deckStrips({
+    required String root,
+    required List<String> decks,
+  }) async {
+    final strips = await listing_bridge.deckStrips(root: root, decks: decks);
+    return {
+      for (final strip in strips)
+        strip.path: PickerStrip(cardCount: strip.cardCount, tiers: strip.tiers),
+    };
+  }
+
+  @override
+  Future<List<PickerSearchHit>> listSearchable(List<String> roots) async {
+    final hits = await listing_bridge.listSearchable(roots: roots);
+    return [
+      for (final hit in hits)
+        PickerSearchHit(root: hit.root, entry: _entry(hit.entry)),
+    ];
+  }
+
   PickerProfile? _profile(listing_bridge.OpenProfile? profile) {
     if (profile == null) return null;
     return PickerProfile(

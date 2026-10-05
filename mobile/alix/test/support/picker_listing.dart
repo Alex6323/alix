@@ -5,9 +5,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/picker/picker_view.dart';
+import 'package:alix_mobile/picker/picker_widgets.dart' show PickerTierStrip;
 
-/// Waits for every picker on screen to finish its first listing, or for
-/// [until] to hold when a test needs a later relisting's answer instead.
+/// Waits for every picker on screen to finish its first listing (and, with
+/// [strips], for every row's strip to fill), or for [until] to hold when a
+/// test needs a later relisting's answer instead.
 ///
 /// The listing is an async bridge call answered from a native thread; the
 /// fake test zone never delivers that answer on a pump, so this polls inside
@@ -17,12 +19,16 @@ import 'package:alix_mobile/picker/picker_view.dart';
 Future<void> settlePicker(
   WidgetTester tester, {
   bool Function()? until,
+  bool strips = false,
 }) async {
   await tester.runAsync(() async {
     final deadline = DateTime.now().add(const Duration(seconds: 5));
     while (DateTime.now().isBefore(deadline)) {
       await tester.pump(const Duration(milliseconds: 50));
-      if (until?.call() ?? _everyPickerListed()) return;
+      if (until?.call() ??
+          (_everyPickerListed() && (!strips || _everyStripFilled()))) {
+        return;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
     fail('a picker never finished its listing');
@@ -53,6 +59,11 @@ bool _everyPickerListed() {
   );
   return pickers.evaluate().isNotEmpty && loading.evaluate().isEmpty;
 }
+
+bool _everyStripFilled() => find
+    .byType(PickerTierStrip, skipOffstage: false)
+    .evaluate()
+    .every((element) => (element.widget as PickerTierStrip).strip != null);
 
 const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 

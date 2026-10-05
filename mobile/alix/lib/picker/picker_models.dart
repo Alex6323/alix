@@ -64,3 +64,17 @@ class PickerEntry {
   final String tree;
   final PickerDeadline? deadline;
 }
+
+class PickerStrip {
+  const PickerStrip({required this.cardCount, required this.tiers});
+
+  final int cardCount;
+  final List<String> tiers;
+}
+
+class PickerSearchHit {
+  const PickerSearchHit({required this.root, required this.entry});
+
+  final String root;
+  final PickerEntry entry;
+}

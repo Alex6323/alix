@@ -63,7 +63,7 @@ void main() {
         ),
       ),
     );
-    await settlePicker(tester);
+    await settlePicker(tester, strips: true);
   }
 
   Future<void> openSettings(WidgetTester tester) async {
@@ -146,6 +146,7 @@ void main() {
 
       await tester.tap(find.text('Mastered · 1'));
       await tester.pumpAndSettle();
+      await settlePicker(tester, strips: true);
       await expectWidgetTree(
         tester,
         'picker_mastered_window',

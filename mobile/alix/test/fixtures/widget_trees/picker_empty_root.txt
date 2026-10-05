@@ -27,4 +27,18 @@ Scaffold
                   SizedBox(width=56.0, height=null)
                 SizedBox(width=null, height=null)
                   Text("Alix")
+                Padding(EdgeInsets.zero)
+                  Row
+                    IconButton(enabled=true, tooltip="Search")
+                      _IconButtonM3(enabled=true)
+                        ConstrainedBox
+                          Material
+                            CustomPaint
+                              Tooltip("Search")
+                                InkWell(tap=true, longPress=false)
+                                  Padding(EdgeInsets.all(8.0))
+                                    Align
+                                      Icon(e567)
+                                        SizedBox(width=24.0, height=24.0)
+                                          Center
     Stack

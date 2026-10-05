@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/review/review_models.dart';
+import 'package:alix_mobile/shared/tier_colors.dart';
 import 'package:alix_mobile/theme.dart';
 
 const _sans = 'IBM Plex Sans';
@@ -83,18 +84,8 @@ class CrumbStrip extends StatelessWidget {
     );
   }
 
-  static const Color _retired = Color(0xFFA48FD8);
-
   Widget _cell(String tier, Color ink, AlixTokens tokens) {
-    final Color fill = switch (tier) {
-      'seen' => ink.withValues(alpha: 0.55),
-      'learning' => ink.withValues(alpha: 0.85),
-      'learned-strong' => tokens.good,
-      'learned-fading' => tokens.warn,
-      'learned-weak' => tokens.again,
-      'retired' => _retired,
-      _ => ink.withValues(alpha: 0.22),
-    };
+    final fill = tierColor(tier, ink: ink, tokens: tokens);
     return Container(
       width: 5,
       height: 3,
