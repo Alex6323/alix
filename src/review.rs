@@ -544,11 +544,11 @@ pub fn current_question(
         if session.depth() != Depth::Recognize && !introducing {
             return None;
         }
-        return choice::build_authored_multi(card, seed, &card.authored_distractors);
+        return authored_question(card, seed);
     }
     if session.depth() == Depth::Recognize {
         if !card.authored_distractors.is_empty() {
-            return choice::build_authored(card, seed, &card.authored_distractors);
+            return authored_question(card, seed);
         }
         if let Some(ai) = augment.distractors(&id, card.content_fingerprint)
             && let Some(question) = choice::build(card, seed, ai)
@@ -561,12 +561,19 @@ pub fn current_question(
     // is already engaged in the store but keeps its introduction question.
     if session.introducing(store) {
         if !card.authored_distractors.is_empty() {
-            return choice::build_authored(card, seed, &card.authored_distractors);
+            return authored_question(card, seed);
         }
         let ai = augment.distractors(&id, card.content_fingerprint);
         return choice::recognition_question(card, seed, ai);
     }
     None
+}
+
+pub fn authored_question(card: &Card, seed: u64) -> Option<ChoiceQuestion> {
+    if card.multiple_choice {
+        return choice::build_authored_multi(card, seed, &card.authored_distractors);
+    }
+    choice::build_authored(card, seed, &card.authored_distractors)
 }
 
 pub fn choose(
@@ -575,7 +582,19 @@ pub fn choose(
     augment: &AugmentCache,
     chosen: usize,
 ) -> Option<ChoiceFeedback> {
-    let question = current_question(session, store, augment)?;
+    choice_feedback(&current_question(session, store, augment)?, chosen)
+}
+
+pub fn choose_multi(
+    session: &Session,
+    store: &Store,
+    augment: &AugmentCache,
+    chosen: &[usize],
+) -> Option<MultiChoiceFeedback> {
+    multi_choice_feedback(&current_question(session, store, augment)?, chosen)
+}
+
+pub fn choice_feedback(question: &ChoiceQuestion, chosen: usize) -> Option<ChoiceFeedback> {
     if question.multiple {
         return None;
     }
@@ -586,13 +605,10 @@ pub fn choose(
     })
 }
 
-pub fn choose_multi(
-    session: &Session,
-    store: &Store,
-    augment: &AugmentCache,
+pub fn multi_choice_feedback(
+    question: &ChoiceQuestion,
     chosen: &[usize],
 ) -> Option<MultiChoiceFeedback> {
-    let question = current_question(session, store, augment)?;
     if !question.multiple {
         return None;
     }
@@ -602,11 +618,10 @@ pub fn choose_multi(
     if set.iter().any(|&index| index >= question.options.len()) {
         return None;
     }
-    let passed = set == question.correct_set;
     Some(MultiChoiceFeedback {
+        passed: set == question.correct_set,
         chosen: set,
-        correct: question.correct_set,
-        passed,
+        correct: question.correct_set.clone(),
     })
 }
 

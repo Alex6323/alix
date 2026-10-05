@@ -22,6 +22,7 @@ use crate::{
     store::Store,
     time::now_ms,
     trace::{Trace, TraceSession},
+    walk::WalkSession,
     workspace,
 };
 
@@ -660,6 +661,22 @@ pub fn select(
         region_name: region_sel.map(str::to_string),
         augment,
     }))
+}
+
+pub fn walk(path: &Path, store: &Store, cfg: &AssembleConfig, now_ms: u64) -> Result<WalkSession> {
+    if !selectable(path) {
+        bail!(
+            "`{}` is a folder; serve it (`alix {}`) and pick a deck inside it",
+            path.display(),
+            path.display()
+        );
+    }
+    if path.is_file() {
+        stamp_for_session(path)?;
+        resolve_duplicates_at_open(path);
+    }
+    let TutorDeck { cards, .. } = tutor_deck(path, cfg)?;
+    Ok(WalkSession::new(cards, store, now_ms))
 }
 
 pub fn browse(paths: Vec<PathBuf>, _instance: Option<&Path>) -> Result<CardsBuild> {
@@ -1987,6 +2004,52 @@ it reads line two\n\
             panic!("a fact deck must review");
         };
         assert_eq!(2, build.session.initial_size);
+    }
+
+    #[test]
+    fn law_a_walk_serves_exactly_the_items_the_drill_assembles() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rust.md");
+        write_initialized(
+            &path,
+            "## both ways\nthe other way\n<!-- direction: both -->\n<!-- id: card-q1 -->\n\n\
+             ## cloze\none and two\n<!-- blank: span hidden=\"one\" b:a1b2c3 -->\n\
+             <!-- blank: span hidden=\"two\" b:d4e5f6 -->\n<!-- id: card-q2 -->\n\n\
+             ## Parent\nparent answer\n<!-- id: card-q3 -->\n\n\
+             ### Child\nchild answer\n<!-- id: card-q4 -->\n",
+        );
+        let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
+        write_personal_card(&mut store, &path, "deck-rust");
+
+        let walk = walk(&path, &store, &test_config(), 0).unwrap();
+        let Selected::Review(build) = select(
+            vec![path],
+            &mut store,
+            &test_config(),
+            &SelectOptions {
+                depth: Some(Depth::Recall),
+                ..Default::default()
+            },
+        )
+        .unwrap() else {
+            panic!("a fact deck must review");
+        };
+        let ids = |cards: &[Card]| {
+            let mut ids: Vec<String> = cards.iter().filter_map(Card::id).collect();
+            ids.sort();
+            ids
+        };
+        let drilled = ids(build.session.cards());
+        assert_eq!(
+            7,
+            drilled.len(),
+            "two directions, two blanks, parent, child and the personal card: {drilled:?}"
+        );
+        assert_eq!(
+            (drilled.clone(), drilled.len()),
+            (ids(walk.cards()), walk.total()),
+            "the walk serves every drill item once, locked and personal ones included"
+        );
     }
 
     #[test]

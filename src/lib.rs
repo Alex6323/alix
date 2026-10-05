@@ -87,6 +87,7 @@ pub mod trace;
 #[cfg(feature = "full")]
 pub mod trace_ai;
 pub mod tutorial;
+pub mod walk;
 pub mod workspace;
 #[cfg(feature = "full")]
 pub mod workspace_update;

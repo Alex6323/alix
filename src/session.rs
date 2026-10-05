@@ -745,7 +745,7 @@ fn floor_passed(floors: &HashMap<String, u64>, id: &str, cooldown_ms: u64, now_m
 // Round-robin the given cards by sibling group so every group's first entry
 // precedes any group's second: a capped take then spans distinct facts instead
 // of being eaten by one many-hole cloze. Group order follows first appearance.
-fn round_robin_siblings(order: Vec<usize>, cards: &[Card]) -> Vec<usize> {
+pub(crate) fn round_robin_siblings(order: Vec<usize>, cards: &[Card]) -> Vec<usize> {
     let mut groups: Vec<Vec<usize>> = Vec::new();
     let mut index: HashMap<(&str, usize), usize> = HashMap::new();
     for i in order {
@@ -907,7 +907,7 @@ fn sibling_group(card: &Card) -> (&str, usize) {
     (card.deck_id.as_ref(), card.line)
 }
 
-fn separate_siblings(order: Vec<usize>, cards: &[Card]) -> VecDeque<usize> {
+pub(crate) fn separate_siblings(order: Vec<usize>, cards: &[Card]) -> VecDeque<usize> {
     let mut remaining: VecDeque<usize> = order.into();
     let mut queue = VecDeque::with_capacity(remaining.len());
     let mut last: Option<usize> = None;
