@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The phone's deck list shows a strip of card tiers under each deck and
+  workspace member, one cell per card like the web drawer's heatmap, with the
+  deck's card count at its end. Strips fill in after the list appears. A search
+  field in the top bar finds decks, workspaces, and workspace members across
+  the phone's own decks and the pulled desktop copy. Deck rows no longer show
+  a placeholder icon.
+
 - Walk sessions on the server: `/api/walk` reads a deck once in rotation
   (never-walked items first, then the least recently walked), picking authored
   choices and flipping everything else, with the tutor available on each item.

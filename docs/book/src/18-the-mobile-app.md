@@ -37,6 +37,21 @@ the first answer arrives. A deck read once stays parsed in memory for as
 long as the app runs, so coming back to the list after a review does not
 read every deck again; a deck whose file changed on disk is read fresh.
 
+Each deck row, at the top level and inside a workspace, carries a thin strip
+under its title with one cell per card in file order, colored by that card's
+learning tier: the same signal as the web picker's deck drawer heatmap. The
+number at the strip's end is the deck's card count. A workspace row has no
+strip. Rows appear as soon as the list is read; the strips fill in a moment
+later, so a large deck never holds the list back. A deck has no icon unless it
+declares one; a workspace shows its own icon or its initial.
+
+The **search** button in the top bar opens a search field over everything on
+the phone: its own decks and workspaces, the pulled desktop copy, and every
+deck inside a workspace. A row matches when its name contains the query,
+ignoring case. While a query is active the matching rows are listed flat,
+without the workspace tree, and "No decks match." shows when nothing does.
+Tapping a result opens it exactly as tapping it in the list would.
+
 **Tapping a deck** opens the launch sheet: pick the depth for this session,
 and the review starts there. A long-press on a deck does nothing. The sheet
 opens with a **Cram** switch above the depths. Switch it on, then pick a
