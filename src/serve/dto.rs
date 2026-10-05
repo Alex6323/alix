@@ -1347,11 +1347,10 @@ pub(super) fn deck_drawer_dto(
     // any) re-groups the same signal into named regions below. The learned
     // bands are pinned to Recall retrievability: a deck-wide signal, not
     // per-session.
-    let ids: Vec<String> = deck.cards.iter().filter_map(|c| c.id()).collect();
     let locked = crate::session::LockGraph::build(&deck.cards)
         .evaluate(store)
         .locked_ids(&deck.cards);
-    let heatmap = crate::session::card_cells(&ids, &locked, store, now, retire_after_days);
+    let heatmap = crate::session::deck_cells(&deck.cards, &locked, store, now, retire_after_days);
     let topologies = augment
         .topologies_for(&deck_tokens)
         .into_iter()

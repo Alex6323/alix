@@ -1034,6 +1034,35 @@ pub fn card_cells(
         .collect()
 }
 
+pub fn deck_cells(
+    cards: &[Card],
+    locked: &HashSet<String>,
+    store: &Store,
+    now_ms: u64,
+    retire_after_days: Option<u32>,
+) -> Vec<Cell> {
+    card_cells(
+        &stamped_ids(cards),
+        locked,
+        store,
+        now_ms,
+        retire_after_days,
+    )
+}
+
+pub fn deck_tiers(
+    cards: &[Card],
+    store: &Store,
+    now_ms: u64,
+    retire_after_days: Option<u32>,
+) -> Vec<CardTier> {
+    card_tiers(&stamped_ids(cards), store, now_ms, retire_after_days)
+}
+
+fn stamped_ids(cards: &[Card]) -> Vec<String> {
+    cards.iter().filter_map(Card::id).collect()
+}
+
 pub fn card_tiers(
     card_ids: &[String],
     store: &Store,
@@ -3949,6 +3978,46 @@ mod tests {
             card_tiers(&ids, &store, 1_000, CAP)
         );
         assert!(card_tiers(&[], &store, 0, CAP).is_empty());
+    }
+
+    #[test]
+    fn deck_cells_follow_file_order_skip_unstamped_cards_and_carry_the_lock() {
+        let (mut store, _dir) = empty_store();
+        let mut deck = cards(3);
+        deck.insert(1, {
+            let mut unstamped = card("deck.md", 9);
+            unstamped.token = None;
+            unstamped
+        });
+        let learning = deck[2].id().unwrap();
+        store
+            .get_or_insert(&learning)
+            .record_review(1_000, Grade::Pass, Depth::Recall, false);
+        let locked: HashSet<String> = [deck[3].id().unwrap()].into_iter().collect();
+        let cells = deck_cells(&deck, &locked, &store, 1_000, CAP);
+        assert_eq!(
+            vec![
+                Cell {
+                    tier: CardTier::Unseen,
+                    locked: false
+                },
+                Cell {
+                    tier: CardTier::Learning,
+                    locked: false
+                },
+                Cell {
+                    tier: CardTier::Unseen,
+                    locked: true
+                },
+            ],
+            cells,
+            "one cell per stamped card, in file order"
+        );
+        assert_eq!(
+            cells.iter().map(|c| c.tier).collect::<Vec<_>>(),
+            deck_tiers(&deck, &store, 1_000, CAP),
+            "deck_tiers is deck_cells without the lock"
+        );
     }
 
     #[test]

@@ -260,6 +260,103 @@ fn deadline_for(
     })
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeckStrip {
+    pub path: PathBuf,
+    pub card_count: usize,
+    pub tiers: Vec<session::CardTier>,
+}
+
+pub fn deck_strips(
+    root: &Path,
+    decks: &[PathBuf],
+    review: &ReviewConfig,
+    now_ms: u64,
+) -> Vec<DeckStrip> {
+    deck_strips_with(root, decks, review, now_ms, &mut DeckCache::default())
+}
+
+pub fn deck_strips_with(
+    root: &Path,
+    decks: &[PathBuf],
+    review: &ReviewConfig,
+    now_ms: u64,
+    cache: &mut DeckCache,
+) -> Vec<DeckStrip> {
+    let mut stores: HashMap<PathBuf, (Option<Store>, ProgressHealth)> = HashMap::new();
+    decks
+        .iter()
+        .filter_map(|path| {
+            let deck = cache.load(path).ok()?;
+            let (store, health) = stores
+                .entry(listing_store_path(root, path))
+                .or_insert_with_key(|store_path| open_listing_store(store_path));
+            if health.error_for(Some(&deck)) {
+                return None;
+            }
+            Some(DeckStrip {
+                path: path.clone(),
+                card_count: deck.cards.len(),
+                tiers: session::deck_tiers(
+                    &deck.cards,
+                    store.as_ref()?,
+                    now_ms,
+                    review.retire_after_days,
+                ),
+            })
+        })
+        .collect()
+}
+
+fn listing_store_path(root: &Path, deck: &Path) -> PathBuf {
+    let dir = workspace::content_root(deck);
+    if workspace::is_workspace(&dir) {
+        workspace::store_path(&dir)
+    } else {
+        workspace::root_store_path(root)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchableRow {
+    pub root: PathBuf,
+    pub row: DeckSummary,
+}
+
+pub fn list_searchable(
+    roots: &[PathBuf],
+    review: &ReviewConfig,
+    now_ms: u64,
+) -> Vec<SearchableRow> {
+    list_searchable_with(roots, review, now_ms, &mut DeckCache::default())
+}
+
+pub fn list_searchable_with(
+    roots: &[PathBuf],
+    review: &ReviewConfig,
+    now_ms: u64,
+    cache: &mut DeckCache,
+) -> Vec<SearchableRow> {
+    let mut out = Vec::new();
+    for root in roots {
+        for row in list_root_with(root, review, now_ms, cache) {
+            let members = row
+                .is_workspace
+                .then(|| list_members_with(root, &row.path, review, now_ms, cache).rows)
+                .unwrap_or_default();
+            out.push(SearchableRow {
+                root: root.clone(),
+                row,
+            });
+            out.extend(members.into_iter().map(|row| SearchableRow {
+                root: root.clone(),
+                row,
+            }));
+        }
+    }
+    out
+}
+
 pub fn sync_conflicts_under(root: &Path) -> Vec<PathBuf> {
     let mut out = store::sync_conflicts(&workspace::root_store_path(root));
     out.extend(crate::augment::sync_conflicts(root));
@@ -2972,6 +3069,195 @@ mod tests {
             deck_title(&dir.path().join("missing.md")),
             None,
             "missing file"
+        );
+    }
+
+    fn tier_names(tiers: &[session::CardTier]) -> Vec<&'static str> {
+        tiers.iter().map(|t| t.wire_name()).collect()
+    }
+
+    #[test]
+    fn a_deck_strip_counts_every_card_and_reads_tiers_from_the_decks_own_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("loose.md"),
+            "## a\n1\n<!-- id: card-qla -->\n\n## b\n2\n<!-- id: card-qlb -->\n\n## c\n3\n<!-- id: card-qlc -->\n",
+        );
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
+        write(&root.join("ws/alix.toml"), "");
+        write(
+            &root.join("ws/decks/m.md"),
+            "## a\n1\n<!-- id: card-qma -->\n\n## b\n2\n<!-- id: card-qmb -->\n",
+        );
+        settle(
+            &workspace::store_path(&root.join("ws")),
+            &root.join("ws/decks/m.md"),
+        );
+        let decks = [root.join("loose.md"), root.join("ws/decks/m.md")];
+
+        let strips = deck_strips(root, &decks, &ReviewConfig::default(), T0 + 1_000);
+
+        let shape: Vec<(&Path, usize, usize)> = strips
+            .iter()
+            .map(|s| (s.path.as_path(), s.card_count, s.tiers.len()))
+            .collect();
+        assert_eq!(
+            vec![(decks[0].as_path(), 3, 3), (decks[1].as_path(), 2, 2)],
+            shape,
+            "one strip per requested deck, in request order: (path, card_count, cells)"
+        );
+        assert_eq!(
+            vec!["unseen"; 3],
+            tier_names(&strips[0].tiers),
+            "the loose deck has no progress in the root store"
+        );
+        assert!(
+            strips[1]
+                .tiers
+                .iter()
+                .all(|t| *t != session::CardTier::Unseen),
+            "the member reads the workspace store it was settled in: {:?}",
+            tier_names(&strips[1].tiers)
+        );
+        for strip in &strips {
+            let deck = Deck::load(&strip.path).unwrap();
+            let store =
+                crate::state::open_aggregate_store_tolerant(&listing_store_path(root, &strip.path))
+                    .unwrap();
+            assert_eq!(
+                session::deck_tiers(&deck.cards, &store, T0 + 1_000, None),
+                strip.tiers,
+                "{}: the strip is the deck's tier cells, the drawer's signal",
+                strip.path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn a_deck_strip_is_omitted_for_an_unreadable_deck_or_progress_document() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("ok.md"), "## q\na\n<!-- id: card-qok -->\n");
+        let missing = root.join("missing.md");
+
+        let strips = deck_strips(
+            root,
+            &[missing, root.join("ok.md")],
+            &ReviewConfig::default(),
+            T0,
+        );
+        let paths: Vec<&Path> = strips.iter().map(|s| s.path.as_path()).collect();
+        assert_eq!(vec![root.join("ok.md").as_path()], paths);
+
+        let blocked = tempfile::tempdir().unwrap();
+        let blocked_root = blocked.path();
+        write(
+            &blocked_root.join("d.md"),
+            "## q\na\n<!-- id: card-qd -->\n",
+        );
+        let progress = workspace::root_store_path(blocked_root).join(".alix/progress");
+        std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
+        std::fs::write(progress, "not a directory").unwrap();
+        assert!(
+            deck_strips(
+                blocked_root,
+                &[blocked_root.join("d.md")],
+                &ReviewConfig::default(),
+                T0
+            )
+            .is_empty(),
+            "an unreadable progress store makes no tier claim"
+        );
+    }
+
+    fn strip_root(decks: usize) -> (tempfile::TempDir, Vec<PathBuf>) {
+        let dir = tempfile::tempdir().unwrap();
+        let paths: Vec<PathBuf> = (0..decks)
+            .map(|i| {
+                let path = dir.path().join(format!("d{i}.md"));
+                write(&path, &format!("## q{i}\na\n<!-- id: card-qd{i} -->\n"));
+                path
+            })
+            .collect();
+        settle(&workspace::root_store_path(dir.path()), &paths[0]);
+        (dir, paths)
+    }
+
+    #[test]
+    fn law_deck_strips_parse_each_deck_once_and_scale_linearly() {
+        let review = ReviewConfig::default();
+        let at = |decks: usize| {
+            let (dir, paths) = strip_root(decks);
+            let mut cache = DeckCache::default();
+            let (strips, first) = crate::profile::collect(|| {
+                deck_strips_with(dir.path(), &paths, &review, T0, &mut cache)
+            });
+            let (_, repeat) = crate::profile::collect(|| {
+                deck_strips_with(dir.path(), &paths, &review, T0, &mut cache)
+            });
+            assert_eq!(decks, strips.len(), "{decks} decks: every deck strips");
+            assert_eq!(
+                (decks as u64, 0),
+                (first.decks_loaded, repeat.decks_loaded),
+                "{decks} decks: (first call parses each deck once, a cached repeat parses none)"
+            );
+            first
+        };
+        let (small, double, large) = (at(8), at(16), at(80));
+        for counter in crate::profile::ALL_COUNTERS {
+            let (s, d, l) = (small.get(counter), double.get(counter), large.get(counter));
+            assert_eq!(
+                l as i128 - s as i128,
+                9 * (d as i128 - s as i128),
+                "{counter:?} at 8, 16, 80 decks reads {s}, {d}, {l}; affine means (80) - (8) == 9 x ((16) - (8))"
+            );
+        }
+        assert_eq!(
+            (small.store_documents_read, large.store_documents_read),
+            (1, 1),
+            "(8 decks, 80 decks): the one progress document is read once per call, not once per deck"
+        );
+    }
+
+    #[test]
+    fn searchable_rows_cover_every_roots_decks_workspaces_and_members() {
+        let phone = tempfile::tempdir().unwrap();
+        let paired = tempfile::tempdir().unwrap();
+        for (root, tag) in [(phone.path(), "phone"), (paired.path(), "desk")] {
+            write(
+                &root.join(format!("{tag}-loose.md")),
+                &format!("## q\na\n<!-- id: card-q{tag}l -->\n"),
+            );
+            std::fs::create_dir_all(root.join("ws/decks")).unwrap();
+            write(
+                &root.join("ws/alix.toml"),
+                &format!("title = \"{tag} ws\"\n"),
+            );
+            write(
+                &root.join(format!("ws/decks/{tag}-member.md")),
+                &format!("## q\na\n<!-- id: card-q{tag}m -->\n"),
+            );
+        }
+        let roots = [phone.path().to_path_buf(), paired.path().to_path_buf()];
+
+        let rows = list_searchable(&roots, &ReviewConfig::default(), T0);
+
+        let shape: Vec<(&Path, &str, bool)> = rows
+            .iter()
+            .map(|r| (r.root.as_path(), r.row.title.as_str(), r.row.is_workspace))
+            .collect();
+        assert_eq!(
+            vec![
+                (phone.path(), "phone-loose", false),
+                (phone.path(), "phone ws", true),
+                (phone.path(), "phone-member", false),
+                (paired.path(), "desk-loose", false),
+                (paired.path(), "desk ws", true),
+                (paired.path(), "desk-member", false),
+            ],
+            shape,
+            "each root's own rows, every workspace followed by its members: (root, title, is_workspace)"
         );
     }
 }
