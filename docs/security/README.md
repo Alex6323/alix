@@ -246,7 +246,8 @@ A paired or localhost API client can invoke irreversible library removal with
 the server process's filesystem authority. Client input names only a catalog
 row; the Catalog owner resolves it to a validated loose deck, workspace member,
 or manifested workspace, and rejects ambiguous names and plain folders. The
-Study owner flushes progress first and refuses removal during an active session.
+Study owner flushes progress first and refuses removal during an active session,
+a walk included.
 Responses expose only semantic artifact labels and do not persist exact failing
 paths in the local log. The adult web app's type-the-name step protects against an
 accidental click, not a malicious token holder. Treat a pairing token as
@@ -319,7 +320,9 @@ configuration instead of reusing the tutor's. The grounding call that turns a
 declared source into a working directory plus read tools,
 `ask::with_source_root`, is reached only from a local or paired tutor's ask
 path, so no other derived configuration acquires source grounding by that
-route. Deck
+route. The walk's tutor (`/api/walk/ask`) is such a local path: it grounds the
+walked item exactly as review's tutor does, from the deck's declared source and
+the same source-access setting (`src/serve/jobs.rs`). Deck
 generation, trace generation, a workspace source refresh, exam grading, and
 workspace icon drawing additionally force the source-access flag off rather
 than inheriting it (`src/generate.rs`, `src/trace_ai.rs`,

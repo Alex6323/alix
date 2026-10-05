@@ -7056,6 +7056,410 @@ fn get_api_trace_with_no_active_trace_yields_409() {
     assert_eq!(409, resp.status);
 }
 
+// ── Walk (one pass over a deck, no drill) ────────────────────────────────
+
+const WALK_DECK: &str = "---\nformat-version: 1\nid: \"deck-walk\"\n---\n\
+# Capitals\n\nEvery country has one.\n\n\
+## capital of France\n- [x] Paris\n- [ ] Rome\n- [ ] Berlin\n<!-- choices: single -->\n<!-- id: card-w1 -->\n\n\
+## 2 + 2\n4\n<!-- id: card-w2 -->\n";
+
+fn write_walk_deck(dir: &Path) {
+    std::fs::write(dir.join("walk.md"), WALK_DECK).unwrap();
+}
+
+fn json_of(resp: &HttpResp) -> serde_json::Value {
+    serde_json::from_slice(&resp.body).unwrap_or_default()
+}
+
+fn walked_ms(dir: &Path, card: &str) -> Option<u64> {
+    open_deck_store(dir, "walk.md")
+        .get(card)
+        .and_then(|state| state.walked_ms)
+}
+
+fn walk_row(base: &str) -> serde_json::Value {
+    let body = json_of(&http(base, "GET", "/api/decks", &[], &[]));
+    body["recent"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["name"] == "walk.md"))
+        .cloned()
+        .unwrap_or_else(|| panic!("no walk.md row: {body}"))
+}
+
+fn correct_index(dto: &serde_json::Value) -> usize {
+    dto["choices"]
+        .as_array()
+        .and_then(|choices| choices.iter().position(|choice| choice == "Paris"))
+        .unwrap_or_else(|| panic!("the pick offers Paris: {dto}"))
+}
+
+#[test]
+fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_other_sessions() {
+    let (base, guard) = spawn_full_server_fixture(
+        None,
+        |dir| {
+            write_walk_deck(dir);
+            write_animals_workspace(dir);
+        },
+        |_| {},
+    );
+
+    // listing before any walk
+    assert_eq!(
+        2,
+        walk_row(&base)["never_walked"],
+        "listing: both items are new to a walk"
+    );
+    let body = json_of(&http(&base, "GET", "/api/decks", &[], &[]));
+    let members = body["workspaces"][0]["members"].clone();
+    assert_eq!(
+        vec![1, 1],
+        members
+            .as_array()
+            .map(|rows| rows
+                .iter()
+                .map(|m| m["never_walked"].as_u64().unwrap_or(9))
+                .collect::<Vec<_>>())
+            .unwrap_or_default(),
+        "listing: each workspace member row carries its own count: {members}"
+    );
+
+    // open
+    let resp = post_json(&base, "/api/walk", r#"{"deck":"walk.md"}"#);
+    let dto = json_of(&resp);
+    assert_eq!(
+        (200, "walk", "front", "card-w1", "choice", true, 0, 2),
+        (
+            resp.status,
+            dto["kind"].as_str().unwrap_or_default(),
+            dto["phase"].as_str().unwrap_or_default(),
+            dto["card"]["id"].as_str().unwrap_or_default(),
+            dto["mode"].as_str().unwrap_or_default(),
+            dto["section_first"] == true,
+            dto["position"].as_u64().unwrap_or(9),
+            dto["total"].as_u64().unwrap_or(9),
+        ),
+        "open: the pick leads and opens its section: {dto}"
+    );
+    assert_eq!(
+        3,
+        dto["choices"].as_array().map_or(0, Vec::len),
+        "open: the authored options are offered: {dto}"
+    );
+
+    // a pick item opens only through a pick, and next on the front writes nothing
+    let revealed = json_of(&post_json(&base, "/api/walk/reveal", "{}"));
+    let nexted = json_of(&post_json(&base, "/api/walk/next", "{}"));
+    assert_eq!(
+        (("front", 0), ("front", 0), None),
+        (
+            (
+                revealed["phase"].as_str().unwrap_or_default(),
+                revealed["position"].as_u64().unwrap_or(9)
+            ),
+            (
+                nexted["phase"].as_str().unwrap_or_default(),
+                nexted["position"].as_u64().unwrap_or(9)
+            ),
+            walked_ms(guard.dir(), "card-w1"),
+        ),
+        "pick item: reveal and next on the front change nothing: {revealed} {nexted}"
+    );
+
+    // choose
+    let index = correct_index(&dto);
+    let resp = post_json(
+        &base,
+        "/api/walk/choose",
+        &format!(r#"{{"index":{index}}}"#),
+    );
+    let feedback = json_of(&resp);
+    assert_eq!(
+        (200, true, index as u64),
+        (
+            resp.status,
+            feedback["passed"] == true,
+            feedback["correct"].as_u64().unwrap_or(9)
+        ),
+        "choose: the correct pick passes: {feedback}"
+    );
+    let polled = json_of(&http(&base, "GET", "/api/walk", &[], &[]));
+    let again = post_json(&base, "/api/walk/choose", r#"{"index":0}"#).status;
+    let shapeless = post_json(&base, "/api/walk/choose", r#"{"index":0,"indices":[0]}"#).status;
+    assert_eq!(
+        ("answer", 400, 400),
+        (
+            polled["phase"].as_str().unwrap_or_default(),
+            again,
+            shapeless
+        ),
+        "choose: the answer opens, a second pick and a two-shape body are 400: {polled}"
+    );
+
+    // next writes walked_ms and saves
+    let dto = json_of(&post_json(&base, "/api/walk/next", "{}"));
+    let w1 = open_deck_store(guard.dir(), "walk.md")
+        .get("card-w1")
+        .cloned();
+    assert_eq!(
+        ("front", "card-w2", "flip", false, 1),
+        (
+            dto["phase"].as_str().unwrap_or_default(),
+            dto["card"]["id"].as_str().unwrap_or_default(),
+            dto["mode"].as_str().unwrap_or_default(),
+            dto["section_first"] == true,
+            dto["position"].as_u64().unwrap_or(9),
+        ),
+        "next: the flip follows within the same section: {dto}"
+    );
+    assert!(
+        w1.as_ref().is_some_and(|state| state.walked_ms.is_some()
+            && state.introduced_ms.is_none()
+            && state.recall.is_none()
+            && state.recognize.is_none()),
+        "next: card-w1 is on disk with walked_ms and nothing else: {w1:?}"
+    );
+    assert_eq!(
+        1,
+        walk_row(&base)["never_walked"],
+        "next: the listing counts one item left"
+    );
+
+    // restart mid-walk continues where it stopped
+    let dto = json_of(&post_json(&base, "/api/walk/restart", "{}"));
+    assert_eq!(
+        ("front", "card-w2", true, 0, 2),
+        (
+            dto["phase"].as_str().unwrap_or_default(),
+            dto["card"]["id"].as_str().unwrap_or_default(),
+            dto["section_first"] == true,
+            dto["position"].as_u64().unwrap_or(9),
+            dto["total"].as_u64().unwrap_or(9),
+        ),
+        "restart: the never-walked item leads and the section opens again: {dto}"
+    );
+
+    // a flip item takes no pick, reveals, then next walks it
+    let picked = post_json(&base, "/api/walk/choose", r#"{"index":0}"#).status;
+    let revealed = json_of(&post_json(&base, "/api/walk/reveal", "{}"));
+    assert_eq!(
+        (400, "answer"),
+        (picked, revealed["phase"].as_str().unwrap_or_default()),
+        "flip item: a pick is 400 and reveal opens the answer: {revealed}"
+    );
+    let dto = json_of(&post_json(&base, "/api/walk/next", "{}"));
+    assert_eq!(
+        ("card-w1", true),
+        (
+            dto["card"]["id"].as_str().unwrap_or_default(),
+            walked_ms(guard.dir(), "card-w2").is_some()
+        ),
+        "flip next: card-w2 is walked and the earlier walked item follows: {dto}"
+    );
+
+    // done
+    let index = correct_index(&dto);
+    post_json(
+        &base,
+        "/api/walk/choose",
+        &format!(r#"{{"index":{index}}}"#),
+    );
+    let done = json_of(&post_json(&base, "/api/walk/next", "{}"));
+    let stamps = (
+        walked_ms(guard.dir(), "card-w1"),
+        walked_ms(guard.dir(), "card-w2"),
+    );
+    let after = json_of(&post_json(&base, "/api/walk/next", "{}"));
+    assert_eq!(
+        (("done", 2, true), stamps, 0),
+        (
+            (
+                done["phase"].as_str().unwrap_or_default(),
+                done["position"].as_u64().unwrap_or(9),
+                done["card"].is_null()
+            ),
+            (
+                walked_ms(guard.dir(), "card-w1"),
+                walked_ms(guard.dir(), "card-w2")
+            ),
+            walk_row(&base)["never_walked"].as_u64().unwrap_or(9),
+        ),
+        "done: one pass ends, next past the end writes nothing: {done} {after}"
+    );
+
+    // a trace deck and an unknown deck are refused
+    assert_eq!(
+        (400, 400),
+        (
+            post_json(&base, "/api/walk", r#"{"deck":"trace.md"}"#).status,
+            post_json(&base, "/api/walk", r#"{"deck":"nope.md"}"#).status
+        ),
+        "refusals: a trace deck and an unknown deck are 400"
+    );
+    assert_eq!(
+        200,
+        http(&base, "GET", "/api/walk", &[], &[]).status,
+        "refusals: a refused open leaves the running walk in place"
+    );
+
+    // opening a walk ends a review, and opening a review ends the walk
+    assert_eq!(
+        200,
+        select_fixture(&base).status,
+        "select: the review opens"
+    );
+    assert_eq!(
+        (409, 409, 409),
+        (
+            http(&base, "GET", "/api/walk", &[], &[]).status,
+            post_json(&base, "/api/walk/next", "{}").status,
+            http(&base, "GET", "/api/walk/ask", &[], &[]).status
+        ),
+        "select: every walk route answers 409 once a review replaced the walk"
+    );
+    assert_eq!(
+        200,
+        post_json(&base, "/api/walk", r#"{"deck":"walk.md"}"#).status,
+        "reopen: the walk opens again"
+    );
+    assert_eq!(
+        409,
+        post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#).status,
+        "reopen: the review is gone, so a grade is 409"
+    );
+    assert_eq!(
+        (409, true),
+        (
+            post_json(&base, "/api/library/remove", r#"{"name":"walk.md"}"#).status,
+            guard.dir().join("walk.md").exists()
+        ),
+        "removal: a running walk is a session, so removal is refused"
+    );
+    let left = json_of(&post_json(&base, "/api/walk/leave", "{}"));
+    assert_eq!(
+        (("review", "select"), 409),
+        (
+            (
+                left["kind"].as_str().unwrap_or_default(),
+                left["phase"].as_str().unwrap_or_default()
+            ),
+            http(&base, "GET", "/api/walk", &[], &[]).status
+        ),
+        "leave: the picker state returns and the walk is gone: {left}"
+    );
+}
+
+#[test]
+fn law_every_other_session_transition_ends_a_running_walk() {
+    let (base, _guard) = spawn_full_server_fixture(None, write_walk_deck, |_| {});
+    let transitions = [
+        ("/api/select", r#"{"deck":"sample.md"}"#),
+        ("/api/select", r#"{"deck":"trace.md"}"#),
+        ("/api/browse", r#"{"deck":"sample.md"}"#),
+        ("/api/deselect", "{}"),
+        ("/api/exam/start", r#"{"deck":"trace.md"}"#),
+        ("/api/exam/close", "{}"),
+        ("/api/augment/open", r#"{"deck":"sample.md"}"#),
+        ("/api/augment/close", "{}"),
+        ("/api/trace/leave", "{}"),
+        ("/api/reset", r#"{"deck":"sample.md"}"#),
+        ("/api/walk/leave", "{}"),
+    ];
+    for (path, body) in transitions {
+        let opened = post_json(&base, "/api/walk", r#"{"deck":"walk.md"}"#).status;
+        let status = post_json(&base, path, body).status;
+        let walk = http(&base, "GET", "/api/walk", &[], &[]).status;
+        assert_eq!(
+            (200, 200, 409),
+            (opened, status, walk),
+            "{path} {body}: (walk open, transition, walk poll) statuses"
+        );
+    }
+}
+
+#[test]
+fn a_walked_items_image_is_served_while_walking() {
+    const GIF: &[u8] = b"GIF89a\x01\0\x01\0";
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| {
+        std::fs::write(dir.join("pixel.gif"), GIF).unwrap();
+        std::fs::write(
+            dir.join("image.md"),
+            "---\nformat-version: 1\nid: \"deck-image\"\n---\n\
+             ## Pixel\n![pixel](pixel.gif)\n<!-- id: card-pixel -->\n",
+        )
+        .unwrap();
+    });
+
+    let walk = json_of(&post_json(&base, "/api/walk", r#"{"deck":"image.md"}"#));
+    let src = walk["card"]["images_back"][0]["src"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the walked item's image has a URL: {walk}"));
+    let image = http(&base, "GET", src, &[], &[]);
+    assert_eq!(
+        (200, GIF),
+        (image.status, image.body.as_slice()),
+        "{src}: the image route serves the walked item's image"
+    );
+}
+
+#[test]
+fn walk_ask_question_then_note_addresses_the_current_item() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let count = scripts.path().join("calls");
+    let prompts = scripts.path().join("prompts");
+    let fake = scripts.path().join("fake-walk-tutor");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >> {prompts}\necho x >> {count}\nif [ \"$(wc -l < {count})\" -gt 1 ]; then echo '- Paris sits on the Seine'; else echo 'a walk answer'; fi\n",
+            count = count.display(),
+            prompts = prompts.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_walk_deck, |_| {});
+    assert_eq!(
+        409,
+        post_json(&base, "/api/walk/ask", r#"{"question":"why?"}"#).status,
+        "no walk: the tutor mirror is 409"
+    );
+    post_json(&base, "/api/walk", r#"{"deck":"walk.md"}"#);
+
+    let resp = post_json(&base, "/api/walk/ask", r#"{"question":"why?"}"#);
+    assert_eq!(200, resp.status, "ask: the question starts");
+    let body = poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
+    let prompt = std::fs::read_to_string(&prompts).unwrap_or_default();
+    assert_eq!(
+        (1, true),
+        (
+            body["transcript"].as_array().map_or(0, Vec::len),
+            prompt.contains("capital of France")
+        ),
+        "ask: one exchange about the current item: {body} prompt: {prompt}"
+    );
+
+    let resp = post_json(&base, "/api/walk/ask/note", "{}");
+    assert_eq!(200, resp.status, "note: the condense starts");
+    poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
+    let deck = std::fs::read_to_string(guard.dir().join("walk.md")).unwrap();
+    let sidecar = std::fs::read_to_string(guard.dir().join("walk.local.md")).unwrap_or_default();
+    let walk = json_of(&http(&base, "GET", "/api/walk", &[], &[]));
+    assert_eq!(
+        (false, true, true, true),
+        (
+            deck.contains("Paris sits on the Seine"),
+            sidecar.contains("Paris sits on the Seine"),
+            sidecar.contains("<!-- note: card-w1"),
+            walk["card"]["note"]
+                .to_string()
+                .contains("Paris sits on the Seine")
+        ),
+        "note: the sidecar carries it for card-w1, the authored deck does not, and the served item shows it: {sidecar} {walk}"
+    );
+}
+
 // ── Share / Receive (the "wormhole not installed" error phase) ───────────
 //
 // `wormhole` is installed on this dev machine but absent in CI, so a test

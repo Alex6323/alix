@@ -1,0 +1,74 @@
+{
+  "card": {
+    "answer_steps": [
+      {
+        "back_from": 0,
+        "back_to": 1,
+        "kind": "line"
+      }
+    ],
+    "back": [
+      "Paris"
+    ],
+    "back_runs": [
+      [
+        {
+          "text": "Paris"
+        }
+      ]
+    ],
+    "back_units": [
+      {
+        "kind": "sentence",
+        "runs": [
+          {
+            "text": "Paris"
+          }
+        ],
+        "text": "Paris"
+      }
+    ],
+    "citations": [],
+    "context": [],
+    "context_leads": false,
+    "context_runs": [],
+    "context_units": [],
+    "crumb": null,
+    "front": "capital of France",
+    "front_runs": [
+      {
+        "text": "capital of France"
+      }
+    ],
+    "id": "card-9w2c7xkq4m",
+    "images": [],
+    "images_back": [],
+    "note": [],
+    "reshaped": false
+  },
+  "choice_runs": [
+    [
+      {
+        "text": "Rome"
+      }
+    ],
+    [
+      {
+        "text": "Paris"
+      }
+    ]
+  ],
+  "choices": [
+    "Rome",
+    "Paris"
+  ],
+  "choices_multiple": null,
+  "input": "type",
+  "kind": "walk",
+  "label": "Geography",
+  "mode": "choice",
+  "phase": "front",
+  "position": 0,
+  "section_first": true,
+  "total": 3
+}

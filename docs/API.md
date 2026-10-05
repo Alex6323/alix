@@ -88,8 +88,8 @@ so is every client.
   for every 500 (as does `GET /api/version`). These bodies let a client
   explain the refusal without exposing a host path.
   `400` is overloaded (malformed body, unknown deck name, store failure —
-  per-endpoint meaning in §5). `409` = "no active session/exam/trace of the
-  kind this endpoint needs". `401` = bad/missing token. `403` = an adult-only
+  per-endpoint meaning in §5). `409` = "no active session/exam/trace/walk of
+  the kind this endpoint needs". `401` = bad/missing token. `403` = an adult-only
   endpoint (§4.5) called while `[serve] audience = "kids"`. `404` = unknown
   route or image. `503` = a background owner thread is gone and the server is
   draining; the request was fine, so it is the one error worth retrying as-is.
@@ -225,7 +225,9 @@ entry carrying its own optional guidance steer (poll `GET /api/augment` while
 `POST /api/ask {question}` starts a call; poll `GET /api/ask` while
 `thinking`; the growing `transcript` carries the whole exchange.
 `POST /api/ask/note` condenses the exchange into a deck note. The trace has its
-own mirror: `/api/trace/ask`, `/api/trace/ask/note`, `GET /api/trace/ask`.
+own mirror: `/api/trace/ask`, `/api/trace/ask/note`, `GET /api/trace/ask`, and
+so does the walk (§4.13): `/api/walk/ask`, `/api/walk/ask/note`,
+`GET /api/walk/ask`, always about the walk's current item.
 Frozen excerpts are always supplied as evidence. When no usable live
 `source:` (deck or workspace) is available, `status` carries a deterministic
 warning that the tutor has only the frozen evidence rather than the full
@@ -520,6 +522,39 @@ flush its own progress before the comparison.
 | 500 | `SyncFailureDto`; root identity, catalog, desktop-progress flush, current-document, backup, or atomic-write failure. |
 | 503 | The catalog or study owner is unavailable. |
 
+### 4.13 The walk
+
+A walk reads one fact deck once, item by item, without drilling it: no
+grade, no schedule, no introduction. `POST /api/walk {deck}` opens it and
+returns a `WalkDto` (`kind: "walk"`). The items are the ones a review of the
+deck would serve, every direction and every cloze blank its own item, locked
+and personal cards included. Items never walked come first, then the least
+recently walked; ties keep deck order, and a card's sibling items are spread
+apart within their section. So a walk that is left early continues where it
+stopped the next time it opens.
+
+Each item cycles `phase` `"front"` → `"answer"` *(closed, with `"done"`)*.
+An item whose card has authored choices (`mode: "choice"`) is answered with
+`POST /api/walk/choose {index}`, or `{indices}` when `choices_multiple` is
+set, which returns the same `ChooseFeedbackDto` / `MultiChooseFeedbackDto`
+as `/api/choose` and opens the answer. Every other item (`mode: "flip"`) is
+opened with `POST /api/walk/reveal`. A pick on a flip item, a second pick, or
+a body with both or neither shape is a 400; a reveal on a choice item changes
+nothing. Nothing about the attempt is recorded.
+
+`POST /api/walk/next` moves past an open answer: it records the item's
+`walked_ms` in the deck's progress document and saves it before replying,
+the only write a walk makes. On the front it changes nothing. After the last
+item the phase is `"done"`; `POST /api/walk/restart` starts the next walk
+from the store, and `POST /api/walk/leave` returns the picker `StateDto`.
+`section_first` is true on the first item of each section in every walk, so
+a client presents that section by itself as it does in review.
+
+A walk is a session like a review or a trace: opening one ends any of those,
+and opening any other session (select, browse, exam, augment, reset,
+deselect) ends the walk. A walk does not use `X-Alix-Study-Revision`.
+`GET /api/state` does not report a walk; poll `GET /api/walk`.
+
 ## 5. Endpoint reference
 
 Statuses: all endpoints can additionally return 401 (token) — omitted below.
@@ -667,6 +702,21 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 | GET | `/api/trace/ask` | – | `AskDto` | 409 |
 | POST | `/api/trace/ask/note` | – | `AskDto` | 409 |
 | POST | `/api/trace/leave` | – | `StateDto` | 409 |
+
+### Walk
+
+| Method | Path | Body | Response | Errors |
+|---|---|---|---|---|
+| POST | `/api/walk` | `{deck}` | `WalkDto` | 400 bad body / unknown deck / folder / trace deck / unreadable progress / load failure; 500 progress flush failure |
+| GET | `/api/walk` | – | `WalkDto` (poll) | 409 not walking |
+| POST | `/api/walk/choose` | `{index}` or `{indices}` | `ChooseFeedbackDto` \| `MultiChooseFeedbackDto` | 400 bad body / not on the front / not a choice item / shape mismatch; 409 |
+| POST | `/api/walk/reveal` | – | `WalkDto` | 409 |
+| POST | `/api/walk/next` | – | `WalkDto` | 409 |
+| POST | `/api/walk/restart` | – | `WalkDto` | 409 |
+| POST | `/api/walk/ask` | `{question}` | `AskDto` (empty question: 200, no call started) | 409 |
+| GET | `/api/walk/ask` | – | `AskDto` | 409 |
+| POST | `/api/walk/ask/note` | – | `AskDto` | 409 |
+| POST | `/api/walk/leave` | – | `StateDto` | 500 progress flush failure |
 
 ### Remote (paired clients) (since 0.6.0)
 
@@ -989,6 +1039,7 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `badge_depth` | string? | Highest badged depth (`recognize`\|`recall`\|`reconstruct`). |
 | `badge_dotted` | bool | The badge lapsed (render dotted) *(presentational)*. |
 | `new_cards` | bool | Fresh material since badging. |
+| `never_walked` | number | How many of the deck's walk items (directions, blanks, and personal cards each count) have never been walked; a walk row shows "N new" while it is nonzero. 0 on group rows, trace decks, and `error` rows. |
 | `crammable` | bool | The row has at least one card a cram could serve: an authored **or personal** card that has not retired, with a readable progress document (a session serves both, so both count). Independent of due-ness: it stays true while every depth sits in a cooldown, which is when a cram is wanted. Gate the depth control on `reviewable || crammable`, and each depth chip on its own `reviewable_*` unless cram is on. Group rows report `false` (they are not selectable). |
 | `last_depth` | string | The deck's remembered session depth (default `recall`). |
 | `deadline` | DeadlineDto? | A workspace's "ready by" target ({#deadlines}). Present only on a workspace row whose `alix.local.toml` sets one; `null` on every deck/folder row and on a workspace with none set. **Additive**: clients must tolerate its absence/null, same as any other optional field here. |
@@ -1393,6 +1444,24 @@ attempted and failed; one target's error doesn't stop the rest from running).
 | `note` | string? | |
 | `note_runs` | [InlineRun]? | Display projection of `note`; null with it. |
 | `summary` | SummaryDto? | Present at `done`. |
+
+### WalkDto
+
+| Key | Type | Meaning |
+|---|---|---|
+| `kind` | string | Always `"walk"`. |
+| `phase` | string | `front` \| `answer` \| `done` *(closed)*. |
+| `card` | CardDto? | The current item, rendered as review renders it (answer included; a client shows it once `phase` is `answer`). Null at `done`. |
+| `choices` | [string]? | The authored options of a choice item, in a stable order for the whole walk; null on a flip item and at `done`. The correct index is sent only in the choose reply. |
+| `choices_multiple` | bool? | `true` on a select-all item: submit `indices`. Null otherwise. |
+| `choice_runs` | [[InlineRun]]? | Display projection of `choices`, in index lockstep; null with it. |
+| `section_first` | bool | True on the first item of each nonempty section in this walk: present the section by itself. |
+| `mode` | string | `choice` \| `flip`. |
+| `input` | string | `type` \| `draw`, as on `StateDto`. |
+| `position` | number | How many items this walk has passed: the 0-based index of the current item, equal to `total` at `done`. |
+| `total` | number | Items in this walk. |
+| `label` | string | The deck's display name *(presentational)*. |
+| `save_error` | string? | Absent while saving works; set as on `StateDto` once a `next` could not be saved. |
 
 ### HopDto
 

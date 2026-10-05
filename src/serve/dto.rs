@@ -2,10 +2,11 @@ use std::{collections::HashSet, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use super::{Browsing, Examining, Reviewing, Tracing, catalog::img_key};
+use super::{Browsing, Examining, Reviewing, Tracing, Walking, catalog::img_key};
 use crate::{
     answer::{Input, Mode, mode_name},
     augment::AugmentCache,
+    card::Card,
     config::{AskConfig, Bindings, BrowseBindings, Key, KeyPattern, PickerKeys, Strictness},
     deck::{self, Deck, DeckState},
     depth::{Depth, depth_name},
@@ -14,9 +15,10 @@ use crate::{
     render::ContentUnit,
     review::{self, CardView},
     session::{Cell, now_ms},
-    source::{Excerpt, relabel_for_display},
+    source::{Excerpt, SourceBase, relabel_for_display},
     store::Store,
     trace::{Delta, Phase},
+    walk,
 };
 
 #[derive(Debug, Serialize)]
@@ -159,6 +161,24 @@ pub(super) struct StateDto {
 }
 
 #[derive(Debug, Serialize)]
+pub(super) struct WalkDto {
+    pub(super) kind: &'static str,
+    pub(super) phase: &'static str,
+    pub(super) card: Option<CardDto>,
+    pub(super) choices: Option<Vec<String>>,
+    pub(super) choices_multiple: Option<bool>,
+    pub(super) choice_runs: Option<Vec<Vec<InlineRun>>>,
+    pub(super) section_first: bool,
+    pub(super) mode: &'static str,
+    pub(super) input: &'static str,
+    pub(super) position: usize,
+    pub(super) total: usize,
+    pub(super) label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) save_error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub(super) struct BrowseDto {
     pub(super) phase: &'static str,
     pub(super) label: String,
@@ -205,6 +225,7 @@ pub(super) struct DeckItemDto {
     pub(super) badge_depth: Option<&'static str>,
     pub(super) badge_dotted: bool,
     pub(super) new_cards: bool,
+    pub(super) never_walked: usize,
     pub(super) crammable: bool,
     pub(super) last_depth: &'static str,
     pub(super) deadline: Option<DeadlineDto>,
@@ -241,6 +262,7 @@ pub(super) struct MemberDto {
     pub(super) badge_depth: Option<&'static str>,
     pub(super) badge_dotted: bool,
     pub(super) new_cards: bool,
+    pub(super) never_walked: usize,
     pub(super) crammable: bool,
     pub(super) last_depth: &'static str,
 }
@@ -1187,38 +1209,7 @@ pub(super) fn review_state(
                     .collect(),
             });
         }
-        dto.citations = c
-            .citations
-            .iter()
-            .map(|citation| {
-                let mut resolved = CitationDto {
-                    locator: citation.locator.clone(),
-                    excerpt: None,
-                    error: None,
-                };
-                if let Some(base) = r.source_bases.get(&*c.deck_id) {
-                    match base.checked_excerpt(citation) {
-                        Ok(ex) => {
-                            // Repoint a frozen excerpt's asset path at the real
-                            // `at:` source path, so the citation reads
-                            // `store.rs:36-66`, not the asset object's path.
-                            let ex = if citation.asset.is_some() {
-                                let (ex, label) = relabel_for_display(ex, &citation.locator);
-                                if let Some(label) = label {
-                                    resolved.locator = label;
-                                }
-                                ex
-                            } else {
-                                ex
-                            };
-                            resolved.excerpt = Some(excerpt_dto(&ex.capped_for_display()));
-                        }
-                        Err(e) => resolved.error = Some(format!("{e:#}")),
-                    }
-                }
-                resolved
-            })
-            .collect();
+        dto.citations = resolved_citations(c, r.source_bases.get(&*c.deck_id));
         dto
     });
     StateDto {
@@ -1256,6 +1247,84 @@ pub(super) fn review_state(
         region: r.region_name.clone(),
         save_error: save_error.map(str::to_string),
         load_warnings: r.load_warnings.clone(),
+    }
+}
+
+fn resolved_citations(card: &Card, base: Option<&SourceBase>) -> Vec<CitationDto> {
+    card.citations
+        .iter()
+        .map(|citation| {
+            let mut resolved = CitationDto {
+                locator: citation.locator.clone(),
+                excerpt: None,
+                error: None,
+            };
+            if let Some(base) = base {
+                match base.checked_excerpt(citation) {
+                    Ok(ex) => {
+                        // Repoint a frozen excerpt's asset path at the real
+                        // `at:` source path, so the citation reads
+                        // `store.rs:36-66`, not the asset object's path.
+                        let ex = if citation.asset.is_some() {
+                            let (ex, label) = relabel_for_display(ex, &citation.locator);
+                            if let Some(label) = label {
+                                resolved.locator = label;
+                            }
+                            ex
+                        } else {
+                            ex
+                        };
+                        resolved.excerpt = Some(excerpt_dto(&ex.capped_for_display()));
+                    }
+                    Err(e) => resolved.error = Some(format!("{e:#}")),
+                }
+            }
+            resolved
+        })
+        .collect()
+}
+
+pub(super) fn walk_phase_name(phase: walk::Phase) -> &'static str {
+    match phase {
+        walk::Phase::Front => "front",
+        walk::Phase::Answer => "answer",
+        walk::Phase::Done => "done",
+    }
+}
+
+pub(super) fn walk_dto(w: &Walking, save_error: Option<&str>) -> WalkDto {
+    let session = &w.session;
+    let card = session.current();
+    let question = session.question();
+    let mut projector = DisplayProjector::default();
+    let card_dto = card.map(|c| {
+        let mut dto = card_dto(CardView::project(c, &mut projector), c.id());
+        dto.citations = resolved_citations(c, Some(&w.info.source_base));
+        dto
+    });
+    let choice_runs = question.as_ref().map(|q| {
+        q.options
+            .iter()
+            .map(|option| projector.project(option))
+            .collect()
+    });
+    WalkDto {
+        kind: "walk",
+        phase: walk_phase_name(session.phase()),
+        card: card_dto,
+        choices_multiple: question
+            .as_ref()
+            .is_some_and(|q| q.multiple)
+            .then_some(true),
+        choices: question.map(|q| q.options),
+        choice_runs,
+        section_first: session.section_first(),
+        mode: mode_name(session.mode()),
+        input: input_name(card.and_then(|c| c.input).unwrap_or_default()),
+        position: session.position(),
+        total: session.total(),
+        label: w.label.clone(),
+        save_error: save_error.map(str::to_string),
     }
 }
 

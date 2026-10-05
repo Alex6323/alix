@@ -58,6 +58,7 @@ pub(super) struct StudyState {
     pub(super) browsing: Option<Browsing>,
     pub(super) examining: Option<Examining>,
     pub(super) tracing: Option<Tracing>,
+    pub(super) walking: Option<Walking>,
     // Owned here (not by Jobs yet) because opening an augment session
     // replaces the active store, and the store has exactly one owner.
     pub(super) augmenting: Option<Augmenting>,
@@ -224,6 +225,16 @@ pub(super) enum RemovalOutcome {
     },
 }
 
+pub(super) enum WalkChoice {
+    Single(usize),
+    Multiple(Vec<usize>),
+}
+
+pub(super) enum WalkChoiceFeedback {
+    Single(review::ChoiceFeedback),
+    Multiple(review::MultiChoiceFeedback),
+}
+
 pub(super) enum TraceSessionGradeReply {
     Dto(Box<TraceSessionDto>),
     NoSession,
@@ -387,6 +398,25 @@ pub(super) enum StudyCommand {
     },
     TraceAskPoll(Reply<Option<AskDto>>),
     TraceLeave(Reply<Transition<StateDto>>),
+    WalkOpen {
+        path: PathBuf,
+        reply: Reply<Transition<WalkDto>>,
+    },
+    WalkPoll(Reply<Option<WalkDto>>),
+    WalkChoose {
+        choice: WalkChoice,
+        reply: Reply<Feedback<WalkChoiceFeedback>>,
+    },
+    WalkReveal(Reply<Option<WalkDto>>),
+    WalkNext(Reply<Option<WalkDto>>),
+    WalkRestart(Reply<Option<WalkDto>>),
+    WalkLeave(Reply<Transition<StateDto>>),
+    WalkAsk {
+        action: Option<AskAction>,
+        ask_cfg: crate::config::AskConfig,
+        reply: Reply<Option<AskDto>>,
+    },
+    WalkAskPoll(Reply<Option<AskDto>>),
     TutorStart {
         action: Option<AskAction>,
         ask_cfg: crate::config::AskConfig,
@@ -676,6 +706,41 @@ impl StudyHandle {
     pub(super) fn trace_leave(&self) -> Option<Transition<StateDto>> {
         self.call(StudyCommand::TraceLeave)
     }
+    pub(super) fn walk_open(&self, path: PathBuf) -> Option<Transition<WalkDto>> {
+        self.call(|reply| StudyCommand::WalkOpen { path, reply })
+    }
+    pub(super) fn walk_poll(&self) -> Option<Option<WalkDto>> {
+        self.call(StudyCommand::WalkPoll)
+    }
+    pub(super) fn walk_choose(&self, choice: WalkChoice) -> Option<Feedback<WalkChoiceFeedback>> {
+        self.call(|reply| StudyCommand::WalkChoose { choice, reply })
+    }
+    pub(super) fn walk_reveal(&self) -> Option<Option<WalkDto>> {
+        self.call(StudyCommand::WalkReveal)
+    }
+    pub(super) fn walk_next(&self) -> Option<Option<WalkDto>> {
+        self.call(StudyCommand::WalkNext)
+    }
+    pub(super) fn walk_restart(&self) -> Option<Option<WalkDto>> {
+        self.call(StudyCommand::WalkRestart)
+    }
+    pub(super) fn walk_leave(&self) -> Option<Transition<StateDto>> {
+        self.call(StudyCommand::WalkLeave)
+    }
+    pub(super) fn walk_ask(
+        &self,
+        action: Option<AskAction>,
+        ask_cfg: crate::config::AskConfig,
+    ) -> Option<Option<AskDto>> {
+        self.call(|reply| StudyCommand::WalkAsk {
+            action,
+            ask_cfg,
+            reply,
+        })
+    }
+    pub(super) fn walk_ask_poll(&self) -> Option<Option<AskDto>> {
+        self.call(StudyCommand::WalkAskPoll)
+    }
     pub(super) fn image_path(&self, key: String) -> Option<ImageSource> {
         self.call(|reply| StudyCommand::ImagePath { key, reply })
     }
@@ -853,6 +918,7 @@ impl StudyState {
                 } else {
                     self.reviewing = None;
                     self.tracing = None;
+                    self.walking = None;
                     self.browsing = None;
                     if let Ok(s) =
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
@@ -1053,6 +1119,7 @@ impl StudyState {
                     Transition::FlushFailed
                 } else {
                     self.augmenting = None;
+                    self.walking = None;
                     if let Ok(s) =
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
                     {
@@ -1147,6 +1214,7 @@ impl StudyState {
                     Transition::FlushFailed
                 } else {
                     self.examining = None;
+                    self.walking = None;
                     if let Ok(s) =
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
                     {
@@ -1227,6 +1295,7 @@ impl StudyState {
                     Transition::FlushFailed
                 } else {
                     self.tracing = None;
+                    self.walking = None;
                     if let Ok(s) =
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
                     {
@@ -1237,11 +1306,102 @@ impl StudyState {
                 };
                 let _ = reply.send(out);
             }
+            StudyCommand::WalkOpen { path, reply } => {
+                let _ = reply.send(self.walk_open(path));
+            }
+            StudyCommand::WalkPoll(reply) => {
+                let dto = self
+                    .walking
+                    .as_ref()
+                    .map(|w| walk_dto(w, self.save_error.as_deref()));
+                let _ = reply.send(dto);
+            }
+            StudyCommand::WalkChoose { choice, reply } => {
+                let out = match (self.walking.as_mut(), choice) {
+                    (None, _) => Feedback::NoSession,
+                    (Some(w), WalkChoice::Single(index)) => match w.session.choose(index) {
+                        Some(f) => Feedback::Ok(WalkChoiceFeedback::Single(f)),
+                        None => Feedback::Bad,
+                    },
+                    (Some(w), WalkChoice::Multiple(indices)) => {
+                        match w.session.choose_multi(&indices) {
+                            Some(f) => Feedback::Ok(WalkChoiceFeedback::Multiple(f)),
+                            None => Feedback::Bad,
+                        }
+                    }
+                };
+                let _ = reply.send(out);
+            }
+            StudyCommand::WalkReveal(reply) => {
+                let dto = self.walking.as_mut().map(|w| {
+                    w.session.reveal();
+                    walk_dto(w, self.save_error.as_deref())
+                });
+                let _ = reply.send(dto);
+            }
+            StudyCommand::WalkNext(reply) => {
+                let dto = self.walking.as_mut().map(|w| {
+                    let before = w.session.position();
+                    w.session.next(&mut self.store, now_ms());
+                    if w.session.position() != before {
+                        flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
+                        self.writes = self.writes.wrapping_add(1);
+                    }
+                    walk_dto(w, self.save_error.as_deref())
+                });
+                let _ = reply.send(dto);
+            }
+            StudyCommand::WalkRestart(reply) => {
+                let dto = self.walking.as_mut().map(|w| {
+                    w.restart(&self.store);
+                    walk_dto(w, self.save_error.as_deref())
+                });
+                let _ = reply.send(dto);
+            }
+            StudyCommand::WalkLeave(reply) => {
+                let out = if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error)
+                {
+                    Transition::FlushFailed
+                } else {
+                    self.walking = None;
+                    if let Ok(s) =
+                        assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
+                    {
+                        self.install_store(s);
+                        self.writes = self.writes.wrapping_add(1);
+                    }
+                    Transition::Done(self.review_dto())
+                };
+                let _ = reply.send(out);
+            }
+            StudyCommand::WalkAsk {
+                action,
+                ask_cfg,
+                reply,
+            } => {
+                let audience = self.config.audience;
+                let dto = self.walking.as_mut().map(|w| {
+                    if let Some(action) = action {
+                        w.start_ask(&ask_cfg, audience, action);
+                    }
+                    w.ask_dto(None, None)
+                });
+                let _ = reply.send(dto);
+            }
+            StudyCommand::WalkAskPoll(reply) => {
+                let dto = self.walking.as_mut().map(|w| {
+                    let (status, error) = w.poll_ask();
+                    w.ask_dto(status, error)
+                });
+                let _ = reply.send(dto);
+            }
             StudyCommand::ImagePath { key, reply } => {
                 let out = if let Some(r) = &self.reviewing {
                     ImageSource::Active(r.images.get(&key).cloned())
                 } else if let Some(b) = &self.browsing {
                     ImageSource::Active(b.images.get(&key).cloned())
+                } else if let Some(w) = &self.walking {
+                    ImageSource::Active(w.images.get(&key).cloned())
                 } else {
                     ImageSource::NoActive
                 };
@@ -1354,6 +1514,7 @@ impl StudyState {
             self.install_store(s);
             self.writes = self.writes.wrapping_add(1);
         }
+        self.walking = None;
         let aug = Augmenting::open(name, cards, deck_tokens, cache, workspace_dir);
         let dto = aug.dto();
         self.augmenting = Some(aug);
@@ -1385,6 +1546,7 @@ impl StudyState {
                 let dto = trace_dto(&w);
                 self.tracing = Some(w);
                 self.reviewing = None;
+                self.walking = None;
                 self.examining = None;
                 self.revision += 1;
                 Transition::Done((SelectedDto::Trace(Box::new(dto)), None))
@@ -1398,6 +1560,7 @@ impl StudyState {
                 r.rotate_variant();
                 self.reviewing = Some(r);
                 self.tracing = None;
+                self.walking = None;
                 self.revision += 1;
                 Transition::Done((SelectedDto::Review(Box::new(self.review_dto())), record))
             }
@@ -1427,12 +1590,48 @@ impl StudyState {
                 self.browsing = Some(Browsing::new(b));
                 self.reviewing = None;
                 self.tracing = None;
+                self.walking = None;
                 self.examining = None;
                 self.revision += 1;
                 Transition::Done(browse_payload(self.browsing.as_ref()))
             }
             Err(e) => {
                 eprintln!("warning: could not load the selected decks: {e}");
+                Transition::Rejected
+            }
+        }
+    }
+
+    fn walk_open(&mut self, path: PathBuf) -> Transition<WalkDto> {
+        if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
+            return Transition::FlushFailed;
+        }
+        let candidate = match assemble::store_for(
+            std::slice::from_ref(&path),
+            self.config.cfg.instance_store.as_deref(),
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("warning: could not open the progress store: {e}");
+                return Transition::Rejected;
+            }
+        };
+        match assemble::walk(&path, &candidate, &self.config.cfg, now_ms()) {
+            Ok(build) => {
+                self.install_store(candidate);
+                self.writes = self.writes.wrapping_add(1);
+                let walking = Walking::new(build);
+                let dto = walk_dto(&walking, self.save_error.as_deref());
+                self.walking = Some(walking);
+                self.reviewing = None;
+                self.tracing = None;
+                self.browsing = None;
+                self.examining = None;
+                self.revision += 1;
+                Transition::Done(dto)
+            }
+            Err(e) => {
+                eprintln!("warning: could not walk the selected deck: {e:#}");
                 Transition::Rejected
             }
         }
@@ -1573,6 +1772,7 @@ impl StudyState {
             && self.browsing.is_none()
             && self.examining.is_none()
             && self.tracing.is_none()
+            && self.walking.is_none()
             && self.augmenting.is_none()
     }
 
@@ -1632,6 +1832,7 @@ impl StudyState {
             self.install_store(s);
             self.writes = self.writes.wrapping_add(1);
         }
+        self.walking = None;
         // Projections prefer a retained snapshot over disk, so every snapshot
         // covering the store this reset just rewrote must go, or listings
         // keep serving the pre-reset records. A member reset rewrites one
@@ -1815,6 +2016,7 @@ impl StudyState {
                 };
                 self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);
+                self.walking = None;
                 let dto = exam_dto(&ex);
                 self.examining = Some(ex);
                 Transition::Done(Box::new(dto))
@@ -1908,6 +2110,7 @@ mod tests {
                 browsing: None,
                 examining: None,
                 tracing: None,
+                walking: None,
                 augmenting: None,
             },
             deck_id,
@@ -1963,6 +2166,7 @@ mod tests {
             browsing: None,
             examining: None,
             tracing: None,
+            walking: None,
             augmenting: None,
         };
         let catalog = crate::sync::SyncCatalog::load(
@@ -2110,6 +2314,7 @@ mod tests {
             browsing: None,
             examining: None,
             tracing: None,
+            walking: None,
             augmenting: None,
         };
         let snapshot =

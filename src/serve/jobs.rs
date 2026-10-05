@@ -28,6 +28,7 @@ use crate::{
     share,
     source::SourceBase,
     trace::{self, TraceSession},
+    walk::WalkSession,
 };
 
 pub(super) fn can_fetch_url_sources(cfg: &AskConfig) -> bool {
@@ -1607,6 +1608,88 @@ impl Tracing {
                 .ok_or_else(|| "the trace is on no checkpoint to attach a note to".to_string())?;
             crate::personal::append_note(&deck_path, &card.deck_id, &card_id, notes)
                 .map_err(|e| e.to_string())
+        })
+    }
+
+    pub(super) fn ask_dto(&self, status: Option<String>, error: Option<String>) -> AskDto {
+        self.ask.dto(status, error)
+    }
+}
+
+pub(super) struct Walking {
+    pub(super) session: WalkSession,
+    pub(super) label: String,
+    pub(super) images: HashMap<String, PathBuf>,
+    pub(super) info: crate::session::DeckInfo,
+    pub(super) ask: Ask,
+}
+
+impl Walking {
+    pub(super) fn new(build: crate::assemble::WalkBuild) -> Self {
+        let images = collect_images(build.session.cards());
+        Self {
+            session: build.session,
+            label: build.label,
+            images,
+            info: build.info,
+            ask: Ask::new(),
+        }
+    }
+
+    pub(super) fn restart(&mut self, store: &crate::store::Store) {
+        self.session.restart(store, now_ms());
+        self.ask = Ask::new();
+    }
+
+    pub(super) fn start_ask(
+        &mut self,
+        cfg: &AskConfig,
+        audience: Audience,
+        action: AskAction,
+    ) -> bool {
+        let Some(card) = self.session.current().cloned() else {
+            return false;
+        };
+        let info = TutorInfo {
+            links: self.info.links.clone(),
+            sources: self.info.source_layers.clone(),
+            root: self
+                .info
+                .source_access
+                .then(|| self.info.base_root.clone())
+                .flatten(),
+            source_base: Some(self.info.source_base.clone()),
+        };
+        let (context_data, has_source_context) = tutor_context_for(&card, info, cfg);
+        let context = context_data.context();
+        self.ask.start(
+            cfg,
+            audience,
+            &card,
+            card.id(),
+            &context,
+            has_source_context,
+            action,
+        )
+    }
+
+    pub(super) fn poll_ask(&mut self) -> (Option<String>, Option<String>) {
+        self.ask.align(self.session.current().and_then(Card::id));
+        let Self {
+            ask, session, info, ..
+        } = self;
+        ask.poll(|card, notes| {
+            let card_id = card
+                .id()
+                .ok_or_else(|| "the card carries no id to attach a note to".to_string())?;
+            crate::personal::append_note(&info.path, &card.deck_id, &card_id, notes)
+                .map_err(|e| e.to_string())?;
+            if let Some(current) = session.current_mut()
+                && current.id() == card.id()
+            {
+                current.append_note(notes);
+            }
+            Ok(())
         })
     }
 

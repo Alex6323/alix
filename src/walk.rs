@@ -69,6 +69,10 @@ impl WalkSession {
         self.order.get(self.position).map(|&i| &self.cards[i])
     }
 
+    pub fn current_mut(&mut self) -> Option<&mut Card> {
+        self.order.get(self.position).map(|&i| &mut self.cards[i])
+    }
+
     pub fn section_first(&self) -> bool {
         self.section_first
     }
@@ -132,6 +136,13 @@ impl WalkSession {
         self.phase = Phase::Front;
         self.section_first = !section.is_empty() && self.shown_sections.insert(section);
     }
+}
+
+pub fn never_walked(cards: &[Card], store: &Store) -> usize {
+    cards
+        .iter()
+        .filter(|card| last_walked(card, store).is_none())
+        .count()
 }
 
 fn walk_order(cards: &[Card], store: &Store) -> Vec<usize> {
@@ -541,6 +552,43 @@ mod tests {
                 "{depth:?}: no badge is recorded"
             );
         }
+    }
+
+    #[test]
+    fn law_never_walked_counts_every_item_without_walked_ms_whatever_else_it_carries() {
+        let cards: Vec<Card> = (0..5).map(|line| card(line, &[])).collect();
+        let mut unstamped = card(9, &[]);
+        unstamped.token = None;
+        let (mut store, _dir) = store();
+        store.get_or_insert(&id(&cards[0])).walked_ms = Some(5);
+        store.get_or_insert(&id(&cards[1])).introduced_ms = Some(5);
+        Fsrs::default().apply(
+            store.get_or_insert(&id(&cards[2])),
+            Depth::Recall,
+            Grade::Pass,
+            5,
+            false,
+        );
+        store.get_or_insert(&id(&cards[3])).walked_ms = Some(7);
+        let mut all = cards.clone();
+        all.push(unstamped);
+        assert_eq!(
+            4,
+            never_walked(&all, &store),
+            "cards 1, 2 and 4 have no walked_ms (introduced, graded, untouched) and the unstamped card counts too"
+        );
+        assert_eq!(0, never_walked(&[], &store), "an empty deck has none");
+        let mut walk = WalkSession::new(cards.clone(), &store, 0);
+        let mut at = 10;
+        while walk.phase() != Phase::Done {
+            step(&mut walk, &mut store, at);
+            at += 1;
+        }
+        assert_eq!(
+            0,
+            never_walked(&cards, &store),
+            "one full walk leaves nothing never walked"
+        );
     }
 
     #[test]

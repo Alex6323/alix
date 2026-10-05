@@ -531,6 +531,7 @@ pub struct DeckStatus {
     pub badge_depth: Option<Depth>,
     pub badge_dotted: bool,
     pub new_cards: bool,
+    pub never_walked: usize,
     pub crammable: bool,
     pub progress_error: bool,
 }
@@ -669,6 +670,12 @@ pub fn deck_status(
         badge_depth: badge_depth.filter(|_| !progress_error),
         badge_dotted: badge_dotted && !progress_error,
         new_cards: new_cards && !progress_error,
+        never_walked: if deck.is_trace() || progress_error {
+            0
+        } else {
+            crate::walk::never_walked(&deck.cards, store)
+                + crate::walk::never_walked(&personal, store)
+        },
         crammable: deck
             .cards
             .iter()
@@ -1152,6 +1159,10 @@ mod tests {
         assert!(
             !status.new_cards,
             "a fabricated 'new' reading is still a progress claim"
+        );
+        assert_eq!(
+            0, status.never_walked,
+            "a fabricated never-walked count is a progress claim too"
         );
         assert!(status.badge.is_empty());
         assert!(status.badge_depth.is_none());
@@ -2633,6 +2644,7 @@ mod tests {
             badge_depth: None,
             badge_dotted: false,
             new_cards: false,
+            never_walked: 0,
             crammable: false,
             progress_error: false,
         };
@@ -2935,6 +2947,76 @@ mod tests {
         assert_eq!(None, status.badge_depth);
         assert!(!status.badge_dotted);
     }
+    #[test]
+    fn never_walked_counts_the_items_a_walk_serves_personal_ones_included() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rust.md");
+        std::fs::write(
+            &deck_path,
+            "---\nformat-version: 1\nid: \"deck-rust\"\n---\n\
+             ## both ways\nthe other way\n<!-- direction: both -->\n<!-- id: card-q1 -->\n\n\
+             ## cloze\none and two\n<!-- blank: span hidden=\"one\" b:a1b2c3 -->\n\
+             <!-- blank: span hidden=\"two\" b:d4e5f6 -->\n<!-- id: card-q2 -->\n\n\
+             ## Parent\nparent answer\n<!-- id: card-q3 -->\n\n\
+             ### Child\nchild answer\n<!-- id: card-q4 -->\n",
+        )
+        .unwrap();
+        crate::personal::append_cards(
+            &deck_path,
+            "deck-rust",
+            "## mine\nmy answer\n<!-- id: card-mine1 -->\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let mut store = Store::open(dir.path().join("deck1.json")).unwrap();
+        let status = |store: &Store| {
+            deck_status(
+                &deck,
+                store,
+                &no_augment(),
+                None,
+                true,
+                ReviewConfig::default(),
+            )
+        };
+        assert_eq!(
+            7,
+            status(&store).never_walked,
+            "two directions, two blanks, a parent, its locked child and the personal card"
+        );
+
+        store.get_or_insert("card-q1-r").walked_ms = Some(5);
+        store.get_or_insert("card-mine1").walked_ms = Some(5);
+        store.get_or_insert("card-q3").introduced_ms = Some(5);
+        assert_eq!(
+            5,
+            status(&store).never_walked,
+            "walking the reverse direction and the personal card counts them; an introduction does not"
+        );
+
+        let trace_path = dir.path().join("trace.md");
+        std::fs::write(
+            &trace_path,
+            "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\n---\n\
+             ## Predict the hop\nit reads\n<!-- id: card-t1 -->\n",
+        )
+        .unwrap();
+        let trace = Deck::load(&trace_path).unwrap();
+        assert_eq!(
+            0,
+            deck_status(
+                &trace,
+                &store,
+                &no_augment(),
+                None,
+                true,
+                ReviewConfig::default()
+            )
+            .never_walked,
+            "a trace deck has its own session and no walk"
+        );
+    }
+
     #[test]
     fn a_listing_scan_ignores_deck_like_prose_without_writing() {
         let dir = tempfile::tempdir().unwrap();

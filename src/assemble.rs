@@ -110,6 +110,12 @@ pub struct TutorDeck {
     authored_len: usize,
 }
 
+pub struct WalkBuild {
+    pub session: WalkSession,
+    pub info: DeckInfo,
+    pub label: String,
+}
+
 pub struct TraceSessionBuild {
     pub session: TraceSession,
 }
@@ -663,7 +669,7 @@ pub fn select(
     }))
 }
 
-pub fn walk(path: &Path, store: &Store, cfg: &AssembleConfig, now_ms: u64) -> Result<WalkSession> {
+pub fn walk(path: &Path, store: &Store, cfg: &AssembleConfig, now_ms: u64) -> Result<WalkBuild> {
     if !selectable(path) {
         bail!(
             "`{}` is a folder; serve it (`alix {}`) and pick a deck inside it",
@@ -671,12 +677,21 @@ pub fn walk(path: &Path, store: &Store, cfg: &AssembleConfig, now_ms: u64) -> Re
             path.display()
         );
     }
+    if lone_trace_deck(&[path.to_path_buf()]).is_some() {
+        bail!("a trace deck has its own session; select it to trace");
+    }
     if path.is_file() {
         stamp_for_session(path)?;
         resolve_duplicates_at_open(path);
     }
-    let TutorDeck { cards, .. } = tutor_deck(path, cfg)?;
-    Ok(WalkSession::new(cards, store, now_ms))
+    let TutorDeck {
+        cards, info, label, ..
+    } = tutor_deck(path, cfg)?;
+    Ok(WalkBuild {
+        session: WalkSession::new(cards, store, now_ms),
+        info,
+        label,
+    })
 }
 
 pub fn browse(paths: Vec<PathBuf>, _instance: Option<&Path>) -> Result<CardsBuild> {
@@ -2021,7 +2036,7 @@ it reads line two\n\
         let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
         write_personal_card(&mut store, &path, "deck-rust");
 
-        let walk = walk(&path, &store, &test_config(), 0).unwrap();
+        let walk = walk(&path, &store, &test_config(), 0).unwrap().session;
         let Selected::Review(build) = select(
             vec![path],
             &mut store,
@@ -2049,6 +2064,49 @@ it reads line two\n\
             (drilled.clone(), drilled.len()),
             (ids(walk.cards()), walk.total()),
             "the walk serves every drill item once, locked and personal ones included"
+        );
+    }
+
+    #[test]
+    fn a_trace_deck_does_not_walk_and_a_fact_deck_carries_its_tutor_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let trace = dir.path().join("trace.md");
+        std::fs::write(
+            &trace,
+            "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\n---\n\
+             ## Predict the hop\nit reads\n<!-- id: card-t1 -->\n",
+        )
+        .unwrap();
+        let store = store_for(std::slice::from_ref(&trace), None).unwrap();
+        let refused = walk(&trace, &store, &test_config(), 0)
+            .err()
+            .map(|error| error.to_string());
+        assert_eq!(
+            Some("a trace deck has its own session; select it to trace".to_string()),
+            refused,
+            "a trace deck is refused, not walked"
+        );
+
+        let fact = dir.path().join("rust.md");
+        std::fs::write(
+            &fact,
+            "---\nformat-version: 1\nid: \"deck-rust\"\nsource: https://example.org\n---\n\
+             ## q\na\n<!-- id: card-q1 -->\n",
+        )
+        .unwrap();
+        let build = walk(&fact, &store, &test_config(), 0).unwrap();
+        assert_eq!(
+            (
+                1,
+                Some("deck-rust".to_string()),
+                vec!["https://example.org".to_string()]
+            ),
+            (
+                build.session.total(),
+                build.info.deck_token.clone(),
+                build.info.source_layers.own.clone()
+            ),
+            "the walk carries the deck's identity and sources for the tutor"
         );
     }
 

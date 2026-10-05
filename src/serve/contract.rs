@@ -684,6 +684,107 @@ fn tracesessiondto_done_phase_wire_shape() {
 }
 
 #[test]
+fn walkdto_front_phase_wire_shape() {
+    let cards =
+        crate::parser::parse_str("t", "## capital of France\nParis\n").expect("the fixture parses");
+    let dto = WalkDto {
+        kind: "walk",
+        phase: "front",
+        card: Some(card_dto(
+            crate::review::CardView::from(&cards[0]),
+            Some("card-9w2c7xkq4m".to_string()),
+        )),
+        choices: Some(vec!["Rome".to_string(), "Paris".to_string()]),
+        choices_multiple: None,
+        choice_runs: Some(vec![
+            crate::inline::parse_inline("Rome"),
+            crate::inline::parse_inline("Paris"),
+        ]),
+        section_first: true,
+        mode: "choice",
+        input: "type",
+        position: 0,
+        total: 3,
+        label: "Geography".to_string(),
+        save_error: None,
+    };
+    pin(
+        "WalkDto.front",
+        &dto,
+        json!({
+            "kind": "walk",
+            "phase": "front",
+            "card": {
+                "id": "card-9w2c7xkq4m",
+                "front": "capital of France",
+                "front_runs": [{"text": "capital of France"}],
+                "context": [],
+                "context_leads": false,
+                "context_runs": [],
+                "context_units": [],
+                "back": ["Paris"],
+                "back_runs": [[{"text": "Paris"}]],
+                "back_units": [{"kind": "sentence", "text": "Paris", "runs": [{"text": "Paris"}]}],
+                "answer_steps": [{"kind": "line", "back_from": 0, "back_to": 1}],
+                "reshaped": false,
+                "note": [],
+                "images": [],
+                "images_back": [],
+                "citations": [],
+                "crumb": null
+            },
+            "choices": ["Rome", "Paris"],
+            "choices_multiple": null,
+            "choice_runs": [[{"text": "Rome"}], [{"text": "Paris"}]],
+            "section_first": true,
+            "mode": "choice",
+            "input": "type",
+            "position": 0,
+            "total": 3,
+            "label": "Geography"
+        }),
+    );
+}
+
+#[test]
+fn walkdto_done_phase_wire_shape() {
+    let dto = WalkDto {
+        kind: "walk",
+        phase: "done",
+        card: None,
+        choices: None,
+        choices_multiple: None,
+        choice_runs: None,
+        section_first: false,
+        mode: "flip",
+        input: "type",
+        position: 3,
+        total: 3,
+        label: "Geography".to_string(),
+        save_error: Some("progress could not be saved".to_string()),
+    };
+    pin(
+        "WalkDto.done",
+        &dto,
+        json!({
+            "kind": "walk",
+            "phase": "done",
+            "card": null,
+            "choices": null,
+            "choices_multiple": null,
+            "choice_runs": null,
+            "section_first": false,
+            "mode": "flip",
+            "input": "type",
+            "position": 3,
+            "total": 3,
+            "label": "Geography",
+            "save_error": "progress could not be saved"
+        }),
+    );
+}
+
+#[test]
 fn examdto_results_phase_wire_shape() {
     let dto = ExamDto {
         phase: "results",
@@ -1461,6 +1562,7 @@ fn decklistdto_wire_shape() {
                 badge_depth: None,
                 badge_dotted: false,
                 new_cards: false,
+                never_walked: 0,
                 crammable: true,
                 last_depth: "recall",
             }],
@@ -1471,6 +1573,7 @@ fn decklistdto_wire_shape() {
             badge_depth: Some("recall"),
             badge_dotted: true,
             new_cards: true,
+            never_walked: 0,
             crammable: true,
             last_depth: "recall",
             deadline: Some(DeadlineDto {
@@ -1507,6 +1610,7 @@ fn decklistdto_wire_shape() {
             badge_depth: None,
             badge_dotted: false,
             new_cards: true,
+            never_walked: 4,
             crammable: true,
             last_depth: "recall",
             // A loose deck row never carries a deadline: that's a workspace
@@ -1560,6 +1664,7 @@ fn decklistdto_wire_shape() {
                     "badge_depth": null,
                     "badge_dotted": false,
                     "new_cards": false,
+                    "never_walked": 0,
                     "crammable": true,
                     "last_depth": "recall"
                 }],
@@ -1570,6 +1675,7 @@ fn decklistdto_wire_shape() {
                 "badge_depth": "recall",
                 "badge_dotted": true,
                 "new_cards": true,
+                "never_walked": 0,
                 "crammable": true,
                 "last_depth": "recall",
                 "deadline": {
@@ -1606,6 +1712,7 @@ fn decklistdto_wire_shape() {
                 "badge_depth": null,
                 "badge_dotted": false,
                 "new_cards": true,
+                "never_walked": 4,
                 "crammable": true,
                 "last_depth": "recall",
                 "deadline": null

@@ -288,6 +288,7 @@ pub fn run_review(
             browsing: None,
             examining: None,
             tracing: None,
+            walking: None,
             augmenting: None,
         },
     );
@@ -1605,6 +1606,105 @@ pub fn run_review(
                 Some(Transition::Rejected) | Some(Transition::FlushFailed) => {
                     respond_status(request, 500)
                 }
+            },
+            (Method::Post, "/api/walk") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    deck: String,
+                }
+                let path = json_body::<Body>(&mut request)
+                    .and_then(|body| catalog.resolve_path(body.deck).flatten());
+                let Some(path) = path else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.walk_open(path.clone()) {
+                    None => respond_status(request, 503),
+                    Some(Transition::Rejected) => respond_status(request, 400),
+                    Some(Transition::FlushFailed) => respond_status(request, 500),
+                    Some(Transition::Done(dto)) => {
+                        catalog.record_recent(vec![path]);
+                        respond_json(request, &dto);
+                    }
+                }
+            }
+            (Method::Get, "/api/walk") => match study.walk_poll() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/walk/choose") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    index: Option<usize>,
+                    indices: Option<Vec<usize>>,
+                }
+                let choice = match json_body::<Body>(&mut request).map(|b| (b.index, b.indices)) {
+                    Some((Some(index), None)) => WalkChoice::Single(index),
+                    Some((None, Some(indices))) => WalkChoice::Multiple(indices),
+                    _ => {
+                        respond_status(request, 400);
+                        continue;
+                    }
+                };
+                match study.walk_choose(choice) {
+                    None => respond_status(request, 503),
+                    Some(Feedback::NoSession) => respond_status(request, 409),
+                    Some(Feedback::Bad) => respond_status(request, 400),
+                    Some(Feedback::Ok(WalkChoiceFeedback::Single(f))) => respond_json(request, &f),
+                    Some(Feedback::Ok(WalkChoiceFeedback::Multiple(f))) => {
+                        respond_json(request, &f)
+                    }
+                }
+            }
+            (Method::Post, "/api/walk/reveal") => match study.walk_reveal() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/walk/next") => match study.walk_next() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/walk/restart") => match study.walk_restart() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
+            },
+            (Method::Post, "/api/walk/leave") => match study.walk_leave() {
+                None => respond_status(request, 503),
+                Some(Transition::Done(dto)) => respond_json(request, &dto),
+                Some(Transition::Rejected) | Some(Transition::FlushFailed) => {
+                    respond_status(request, 500)
+                }
+            },
+            (Method::Post, "/api/walk/ask") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    question: String,
+                }
+                let action = json_body::<Body>(&mut request)
+                    .map(|b| b.question)
+                    .filter(|q| !q.trim().is_empty())
+                    .map(AskAction::Question);
+                match study.walk_ask(action, ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                }
+            }
+            (Method::Post, "/api/walk/ask/note") => {
+                match study.walk_ask(Some(AskAction::Condense), ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                }
+            }
+            (Method::Get, "/api/walk/ask") => match study.walk_ask_poll() {
+                None => respond_status(request, 503),
+                Some(None) => respond_status(request, 409),
+                Some(Some(dto)) => respond_json(request, &dto),
             },
             (Method::Post, "/api/remote/ask") => {
                 let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {

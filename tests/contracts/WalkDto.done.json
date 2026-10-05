@@ -1,0 +1,15 @@
+{
+  "card": null,
+  "choice_runs": null,
+  "choices": null,
+  "choices_multiple": null,
+  "input": "type",
+  "kind": "walk",
+  "label": "Geography",
+  "mode": "flip",
+  "phase": "done",
+  "position": 3,
+  "save_error": "progress could not be saved",
+  "section_first": false,
+  "total": 3
+}
