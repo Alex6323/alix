@@ -340,10 +340,11 @@ pub fn list_searchable_with(
     let mut out = Vec::new();
     for root in roots {
         for row in list_root_with(root, review, now_ms, cache) {
-            let members = row
-                .is_workspace
-                .then(|| list_members_with(root, &row.path, review, now_ms, cache).rows)
-                .unwrap_or_default();
+            let members = if row.is_workspace {
+                list_members_with(root, &row.path, review, now_ms, cache).rows
+            } else {
+                Vec::new()
+            };
             out.push(SearchableRow {
                 root: root.clone(),
                 row,
