@@ -513,7 +513,6 @@ export function createPicker({
             legend.appendChild(b);
           }
           const walk = el("button", "chip walk", "Walk");
-          if (it.never_walked > 0) walk.appendChild(el("span", "walk-new", `${it.never_walked} new`));
           walk.appendChild(el("span", "k", "w"));
           walk.disabled = !canWalk(it);
           walk.addEventListener("mousedown", e => e.preventDefault());

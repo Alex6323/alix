@@ -61,7 +61,7 @@ test("a one-section deck walks twice, rotating, with the section sheet each walk
 
   // Walk 1: the never-walked items in deck order, so the choice item leads.
   const walk = await openWalkMenu(page);
-  await expect(walk.locator(".walk-new"), "fresh deck: every item is new").toHaveText("2 new");
+  await expect(walk.locator("span"), "fresh deck: no hint").toHaveCount(1);
   await Promise.all([
     page.waitForResponse((r) => r.url().endsWith("/api/walk") && r.request().method() === "POST" && r.ok()),
     walk.click(),
@@ -89,7 +89,7 @@ test("a one-section deck walks twice, rotating, with the section sheet each walk
   ]);
   await expect(adultDeckRow(page, "Tide pools")).toBeVisible();
   const again = await openWalkMenu(page);
-  await expect(again.locator(".walk-new"), "after walking the choice item").toHaveText("1 new");
+  await expect(again.locator("span"), "after walking the choice item: no hint").toHaveCount(1);
 
   // Walk 2 continues with the never-walked flip item and shows the sheet again.
   await again.click();
@@ -133,7 +133,7 @@ test("a one-section deck walks twice, rotating, with the section sheet each walk
   await adultDeckRow(page, "Walk Tour").click();
   const walked = await openWalkMenu(page);
   await expect(walked).toBeVisible();
-  await expect(walked.locator(".walk-new"), "every item walked: no hint").toHaveCount(0);
+  await expect(walked.locator("span"), "every item walked: no hint").toHaveCount(1);
 });
 
 test("at phone width the Depth menu footer chips never overlap", async ({ page }) => {

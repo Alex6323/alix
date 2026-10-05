@@ -512,7 +512,6 @@ mod tests {
             badge_depth: None,
             badge_dotted: false,
             new_cards: false,
-            never_walked: 0,
             crammable: false,
             progress_error: false,
         }

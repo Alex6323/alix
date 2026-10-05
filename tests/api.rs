@@ -7077,15 +7077,6 @@ fn walked_ms(dir: &Path, card: &str) -> Option<u64> {
         .and_then(|state| state.walked_ms)
 }
 
-fn walk_row(base: &str) -> serde_json::Value {
-    let body = json_of(&http(base, "GET", "/api/decks", &[], &[]));
-    body["recent"]
-        .as_array()
-        .and_then(|rows| rows.iter().find(|row| row["name"] == "walk.md"))
-        .cloned()
-        .unwrap_or_else(|| panic!("no walk.md row: {body}"))
-}
-
 fn correct_index(dto: &serde_json::Value) -> usize {
     dto["choices"]
         .as_array()
@@ -7102,26 +7093,6 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
             write_animals_workspace(dir);
         },
         |_| {},
-    );
-
-    // listing before any walk
-    assert_eq!(
-        2,
-        walk_row(&base)["never_walked"],
-        "listing: both items are new to a walk"
-    );
-    let body = json_of(&http(&base, "GET", "/api/decks", &[], &[]));
-    let members = body["workspaces"][0]["members"].clone();
-    assert_eq!(
-        vec![1, 1],
-        members
-            .as_array()
-            .map(|rows| rows
-                .iter()
-                .map(|m| m["never_walked"].as_u64().unwrap_or(9))
-                .collect::<Vec<_>>())
-            .unwrap_or_default(),
-        "listing: each workspace member row carries its own count: {members}"
     );
 
     // open
@@ -7219,11 +7190,6 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
             && state.recognize.is_none()),
         "next: card-w1 is on disk with walked_ms and nothing else: {w1:?}"
     );
-    assert_eq!(
-        1,
-        walk_row(&base)["never_walked"],
-        "next: the listing counts one item left"
-    );
 
     // restart mid-walk continues where it stopped
     let dto = json_of(&post_json(&base, "/api/walk/restart", "{}"));
@@ -7271,7 +7237,7 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
     );
     let after = json_of(&post_json(&base, "/api/walk/next", "{}"));
     assert_eq!(
-        (("done", 2, true), stamps, 0),
+        (("done", 2, true), stamps),
         (
             (
                 done["phase"].as_str().unwrap_or_default(),
@@ -7282,7 +7248,6 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
                 walked_ms(guard.dir(), "card-w1"),
                 walked_ms(guard.dir(), "card-w2")
             ),
-            walk_row(&base)["never_walked"].as_u64().unwrap_or(9),
         ),
         "done: one pass ends, next past the end writes nothing: {done} {after}"
     );

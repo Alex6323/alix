@@ -1562,7 +1562,6 @@ fn decklistdto_wire_shape() {
                 badge_depth: None,
                 badge_dotted: false,
                 new_cards: false,
-                never_walked: 0,
                 crammable: true,
                 last_depth: "recall",
             }],
@@ -1573,7 +1572,6 @@ fn decklistdto_wire_shape() {
             badge_depth: Some("recall"),
             badge_dotted: true,
             new_cards: true,
-            never_walked: 0,
             crammable: true,
             last_depth: "recall",
             deadline: Some(DeadlineDto {
@@ -1610,7 +1608,6 @@ fn decklistdto_wire_shape() {
             badge_depth: None,
             badge_dotted: false,
             new_cards: true,
-            never_walked: 4,
             crammable: true,
             last_depth: "recall",
             // A loose deck row never carries a deadline: that's a workspace
@@ -1664,7 +1661,6 @@ fn decklistdto_wire_shape() {
                     "badge_depth": null,
                     "badge_dotted": false,
                     "new_cards": false,
-                    "never_walked": 0,
                     "crammable": true,
                     "last_depth": "recall"
                 }],
@@ -1675,7 +1671,6 @@ fn decklistdto_wire_shape() {
                 "badge_depth": "recall",
                 "badge_dotted": true,
                 "new_cards": true,
-                "never_walked": 0,
                 "crammable": true,
                 "last_depth": "recall",
                 "deadline": {
@@ -1712,7 +1707,6 @@ fn decklistdto_wire_shape() {
                 "badge_depth": null,
                 "badge_dotted": false,
                 "new_cards": true,
-                "never_walked": 4,
                 "crammable": true,
                 "last_depth": "recall",
                 "deadline": null

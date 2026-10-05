@@ -1039,7 +1039,6 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `badge_depth` | string? | Highest badged depth (`recognize`\|`recall`\|`reconstruct`). |
 | `badge_dotted` | bool | The badge lapsed (render dotted) *(presentational)*. |
 | `new_cards` | bool | Fresh material since badging. |
-| `never_walked` | number | How many of the deck's walk items (directions, blanks, and personal cards each count) have never been walked; a walk row shows "N new" while it is nonzero. 0 on group rows, trace decks, and `error` rows. |
 | `crammable` | bool | The row has at least one card a cram could serve: an authored **or personal** card that has not retired, with a readable progress document (a session serves both, so both count). Independent of due-ness: it stays true while every depth sits in a cooldown, which is when a cram is wanted. Gate the depth control on `reviewable || crammable`, and each depth chip on its own `reviewable_*` unless cram is on. Group rows report `false` (they are not selectable). |
 | `last_depth` | string | The deck's remembered session depth (default `recall`). |
 | `deadline` | DeadlineDto? | A workspace's "ready by" target ({#deadlines}). Present only on a workspace row whose `alix.local.toml` sets one; `null` on every deck/folder row and on a workspace with none set. **Additive**: clients must tolerate its absence/null, same as any other optional field here. |

@@ -11,11 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Walk sessions on the server: `/api/walk` reads a deck once in rotation
   (never-walked items first, then the least recently walked), picking authored
   choices and flipping everything else, with the tutor available on each item.
-  Moving past an answer records `walked_ms`. Deck and member rows carry a
-  `never_walked` count.
+  Moving past an answer records `walked_ms`.
 - The phone can walk a deck: **Walk** in a deck's long-press launch sheet.
-- The web picker can start a walk: **Walk** in a deck's Depth… menu (key `w`),
-  showing "N new" while some items have never been walked.
+- The web picker can start a walk: **Walk** in a deck's Depth… menu (key `w`).
 - `[review] short_term = false` turns off FSRS's same-day learning steps: a
   card's first correct recall graduates it onto a day-scale interval, so a deck
   loads in one pass per card. A miss before that pass schedules the card a day

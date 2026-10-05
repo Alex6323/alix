@@ -138,23 +138,16 @@ impl WalkSession {
     }
 }
 
-pub fn never_walked(cards: &[Card], store: &Store) -> usize {
-    cards
-        .iter()
-        .filter(|card| last_walked(card, store).is_none())
-        .count()
-}
-
 fn walk_order(cards: &[Card], store: &Store) -> Vec<usize> {
     let mut order: Vec<usize> = (0..cards.len())
         .filter(|&i| cards[i].id().is_some())
         .collect();
     order.sort_by_cached_key(|&i| last_walked(&cards[i], store));
-    let never_walked = order
+    let unwalked = order
         .iter()
         .take_while(|&&i| last_walked(&cards[i], store).is_none())
         .count();
-    let walked = order.split_off(never_walked);
+    let walked = order.split_off(unwalked);
     let mut spaced = Vec::with_capacity(order.len() + walked.len());
     for run in order.chunk_by(|&a, &b| cards[a].section_context == cards[b].section_context) {
         let run = session::round_robin_siblings(run.to_vec(), cards);
@@ -240,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn law_never_walked_items_lead_then_the_oldest_walked_with_ties_in_deck_order() {
+    fn law_unwalked_items_lead_then_the_oldest_walked_with_ties_in_deck_order() {
         let cases: [[Option<u64>; 6]; 5] = [
             [None; 6],
             [Some(5), Some(4), Some(3), Some(2), Some(1), Some(0)],
@@ -277,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    fn law_sibling_spacing_never_puts_a_walked_item_before_a_never_walked_one() {
+    fn law_sibling_spacing_never_puts_a_walked_item_before_an_unwalked_one() {
         let section = ["# One"];
         let a = card(1, &section);
         let b = card(2, &section);
@@ -552,43 +545,6 @@ mod tests {
                 "{depth:?}: no badge is recorded"
             );
         }
-    }
-
-    #[test]
-    fn law_never_walked_counts_every_item_without_walked_ms_whatever_else_it_carries() {
-        let cards: Vec<Card> = (0..5).map(|line| card(line, &[])).collect();
-        let mut unstamped = card(9, &[]);
-        unstamped.token = None;
-        let (mut store, _dir) = store();
-        store.get_or_insert(&id(&cards[0])).walked_ms = Some(5);
-        store.get_or_insert(&id(&cards[1])).introduced_ms = Some(5);
-        Fsrs::default().apply(
-            store.get_or_insert(&id(&cards[2])),
-            Depth::Recall,
-            Grade::Pass,
-            5,
-            false,
-        );
-        store.get_or_insert(&id(&cards[3])).walked_ms = Some(7);
-        let mut all = cards.clone();
-        all.push(unstamped);
-        assert_eq!(
-            4,
-            never_walked(&all, &store),
-            "cards 1, 2 and 4 have no walked_ms (introduced, graded, untouched) and the unstamped card counts too"
-        );
-        assert_eq!(0, never_walked(&[], &store), "an empty deck has none");
-        let mut walk = WalkSession::new(cards.clone(), &store, 0);
-        let mut at = 10;
-        while walk.phase() != Phase::Done {
-            step(&mut walk, &mut store, at);
-            at += 1;
-        }
-        assert_eq!(
-            0,
-            never_walked(&cards, &store),
-            "one full walk leaves nothing never walked"
-        );
     }
 
     #[test]

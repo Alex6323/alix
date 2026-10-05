@@ -71,8 +71,7 @@ Moving past an answer records that the item was walked; nothing else about
 the attempt is kept. A walk starts with the items never walked, then the ones
 walked longest ago, so leaving early and coming back continues where you
 stopped, and later walks rotate through the deck. At the end, **Next walk**
-(`r`) starts the next pass. While some items have never been walked, the Walk
-entry shows how many, as "N new". Walking counts for the drill too: the drill
+(`r`) starts the next pass. Walking counts for the drill too: the drill
 grades a walked card at first sight instead of introducing it.
 
 ## Library actions

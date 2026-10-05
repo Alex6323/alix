@@ -149,7 +149,6 @@
   .chip.primary .depth-tag { opacity: 0.65; font-size: 0.82em; max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* the ▾ beside Learn that opens the depth menu — same chip, tighter padding. */
   .chip.split { padding-left: 10px; padding-right: 10px; }
-  .chip .walk-new { color: var(--dim); font-weight: 400; font-size: 0.82em; max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* a quiet link-style chip ("I guessed") — no border/fill, so it reads as the
      lesser of the two options next to the primary "Next". */
   .chip.quiet { border-color: transparent; background: none; color: var(--dim); font-weight: 400; }
