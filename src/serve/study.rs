@@ -288,7 +288,7 @@ pub(super) enum StudyCommand {
     },
     Browse {
         paths: Vec<PathBuf>,
-        reply: Reply<Transition<(BrowseDto, Vec<PathBuf>)>>,
+        reply: Reply<Transition<BrowseDto>>,
     },
     DeckDrawer {
         path: PathBuf,
@@ -456,10 +456,7 @@ impl StudyHandle {
     ) -> Option<Transition<(SelectedDto, Option<Vec<PathBuf>>)>> {
         self.call(|reply| StudyCommand::Select { paths, opts, reply })
     }
-    pub(super) fn browse(
-        &self,
-        paths: Vec<PathBuf>,
-    ) -> Option<Transition<(BrowseDto, Vec<PathBuf>)>> {
+    pub(super) fn browse(&self, paths: Vec<PathBuf>) -> Option<Transition<BrowseDto>> {
         self.call(|reply| StudyCommand::Browse { paths, reply })
     }
     pub(super) fn deck_drawer(&self, path: PathBuf) -> Option<DeckDrawerDto> {
@@ -1411,7 +1408,7 @@ impl StudyState {
         }
     }
 
-    fn browse(&mut self, paths: Vec<PathBuf>) -> Transition<(BrowseDto, Vec<PathBuf>)> {
+    fn browse(&mut self, paths: Vec<PathBuf>) -> Transition<BrowseDto> {
         if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
             return Transition::FlushFailed;
         }
@@ -1423,7 +1420,6 @@ impl StudyState {
                 return Transition::Rejected;
             }
         };
-        let recorded_paths = paths.clone();
         match assemble::browse(paths, self.config.cfg.instance_store.as_deref()) {
             Ok(b) => {
                 self.install_store(candidate);
@@ -1433,7 +1429,7 @@ impl StudyState {
                 self.tracing = None;
                 self.examining = None;
                 self.revision += 1;
-                Transition::Done((browse_payload(self.browsing.as_ref()), recorded_paths))
+                Transition::Done(browse_payload(self.browsing.as_ref()))
             }
             Err(e) => {
                 eprintln!("warning: could not load the selected decks: {e}");

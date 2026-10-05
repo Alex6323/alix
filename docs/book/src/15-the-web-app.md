@@ -21,7 +21,8 @@ decks; a **search box in the header** filters the list (focus it with **`/`**).
 Focus a deck and **Learn** it with **Enter** (a facts deck opens a
 review, a [trace deck](13-trace-decks.md) opens a trace) one deck per session. **Browse**
 on **`b`** opens a read-only, in-page read-through instead: step the cards with
-Prev/Next, Esc to leave. Focusing any deck opens an inline **focus drawer**
+Prev/Next, Esc to leave. A browse leaves no trace: it records no progress and
+does not add the deck to your recent decks. Focusing any deck opens an inline **focus drawer**
 beneath it: it shows the deck's frontmatter `description:`, if any, and
 a per-card **tier heatmap**: neutral for an untouched card, grey for one merely
 **seen** (met: acknowledged, or answered and got wrong), white once **learning**

@@ -2164,6 +2164,21 @@ fn selecting_a_workspace_member_records_it_in_recent() {
     );
 }
 
+#[test]
+fn browsing_a_workspace_member_leaves_recent_untouched() {
+    let (base, guard) = spawn_test_server_fixture(None, write_animals_workspace);
+    let browsed = post_json(&base, "/api/browse", r#"{"deck":"animals/one.md"}"#);
+    assert_eq!(200, browsed.status, "browse");
+
+    let response = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, response.status, "listing barrier");
+    let recent = std::fs::read_to_string(recent_path(guard.dir())).unwrap_or_default();
+    assert!(
+        !recent.contains("one.md"),
+        "a browse must not record the deck in recent; recent.json: {recent}"
+    );
+}
+
 /// `/api/remote/ask`'s 400 guard, both polarities: an empty question is
 /// refused whatever the card holds, an all-empty card is refused with a real
 /// question, and an empty front with a non-empty back passes (the card is

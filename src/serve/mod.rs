@@ -799,10 +799,7 @@ pub fn run_review(
                         None => respond_status(request, 503),
                         Some(Transition::Rejected) => respond_status(request, 400),
                         Some(Transition::FlushFailed) => respond_status(request, 500),
-                        Some(Transition::Done((dto, record))) => {
-                            catalog.record_recent(record);
-                            respond_json(request, &dto);
-                        }
+                        Some(Transition::Done(dto)) => respond_json(request, &dto),
                     },
                     None => respond_status(request, 400),
                 }
