@@ -65,18 +65,29 @@ void main() {
           'setServerLive, predict, grade, and restart are the four named '
           'TraceSessionController mutations',
     );
+    expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
+    expect(
+      _linesContaining('lib/walk/walk_controller.dart', 'notifyListeners();'),
+      [56, 63, 68, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 131],
+      reason:
+          'setServerLive, choose, toggleChoice, submitChoices, reveal, next, '
+          'nextWalk, the six sketch transitions, and applyCardNote own every '
+          'WalkController mutation',
+    );
     expect(
       [
         ..._sites('lib/review_screen.dart', 'ListenableBuilder('),
         ..._sites('lib/picker_screen.dart', 'ListenableBuilder('),
         ..._sites('lib/picker/generate_sheet.dart', 'ListenableBuilder('),
         ..._sites('lib/trace_screen.dart', 'ListenableBuilder('),
+        ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
         'lib/review_screen.dart:373',
-        'lib/picker_screen.dart:626',
+        'lib/picker_screen.dart:654',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:192',
+        'lib/walk_screen.dart:202',
       ],
       reason:
           'sync wiring added imports, fields, and methods above build() in '
@@ -85,8 +96,9 @@ void main() {
           'and the skip-introduction switch added a field to both, moving '
           'their single ListenableBuilder site; the tutor conversation '
           'ownership added an import, four fields, and three methods to '
-          'review_screen.dart; generate_sheet.dart and trace_screen.dart are '
-          'unchanged',
+          'review_screen.dart; the walk launch added an import and a method '
+          'to picker_screen.dart; generate_sheet.dart and trace_screen.dart '
+          'are unchanged',
     );
   });
 

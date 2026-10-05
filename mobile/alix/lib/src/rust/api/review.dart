@@ -100,6 +100,39 @@ abstract class TraceSession implements RustOpaqueInterface {
   TraceSessionState state();
 }
 
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<WalkSession>>
+abstract class WalkSession implements RustOpaqueInterface {
+  void applyCardNote({required String id, required List<String> notes});
+
+  ChoiceFeedback? choose({required int chosen});
+
+  MultiChoiceFeedback? chooseMulti({required List<int> chosen});
+
+  String mintTutorCard({required String front, required List<String> back});
+
+  WalkState next({BigInt? nowMs});
+
+  static WalkSession open({
+    required String deckPath,
+    required String rootDir,
+    BigInt? nowMs,
+    String? device,
+  }) => RustLib.instance.api.crateApiReviewWalkSessionOpen(
+    deckPath: deckPath,
+    rootDir: rootDir,
+    nowMs: nowMs,
+    device: device,
+  );
+
+  WalkState restart({BigInt? nowMs});
+
+  WalkState reveal();
+
+  WalkState state();
+
+  TutorCard? tutorCard();
+}
+
 @freezed
 sealed class AnswerStep with _$AnswerStep {
   const AnswerStep._();
@@ -953,4 +986,69 @@ class TypedResult {
           input == other.input &&
           expected == other.expected &&
           passed == other.passed;
+}
+
+enum WalkPhase { front, answer, done }
+
+class WalkState {
+  final WalkPhase phase;
+  final CardView? card;
+  final Mode mode;
+  final Input input;
+  final List<String>? choices;
+  final bool? choicesMultiple;
+  final List<List<InlineRun>>? choiceRuns;
+  final bool sectionFirst;
+  final int position;
+  final int total;
+  final String label;
+  final String? saveError;
+
+  const WalkState({
+    required this.phase,
+    this.card,
+    required this.mode,
+    required this.input,
+    this.choices,
+    this.choicesMultiple,
+    this.choiceRuns,
+    required this.sectionFirst,
+    required this.position,
+    required this.total,
+    required this.label,
+    this.saveError,
+  });
+
+  @override
+  int get hashCode =>
+      phase.hashCode ^
+      card.hashCode ^
+      mode.hashCode ^
+      input.hashCode ^
+      choices.hashCode ^
+      choicesMultiple.hashCode ^
+      choiceRuns.hashCode ^
+      sectionFirst.hashCode ^
+      position.hashCode ^
+      total.hashCode ^
+      label.hashCode ^
+      saveError.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WalkState &&
+          runtimeType == other.runtimeType &&
+          phase == other.phase &&
+          card == other.card &&
+          mode == other.mode &&
+          input == other.input &&
+          choices == other.choices &&
+          choicesMultiple == other.choicesMultiple &&
+          choiceRuns == other.choiceRuns &&
+          sectionFirst == other.sectionFirst &&
+          position == other.position &&
+          total == other.total &&
+          label == other.label &&
+          saveError == other.saveError;
 }

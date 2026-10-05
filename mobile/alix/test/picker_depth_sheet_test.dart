@@ -5,7 +5,7 @@ import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/picker_widgets.dart';
 import 'package:alix_mobile/theme.dart';
 
-Widget _sheet(ValueChanged<PickerLaunch> onChoose) {
+Widget _sheet(ValueChanged<PickerLaunch> onChoose, {VoidCallback? onWalk}) {
   return MaterialApp(
     theme: alixDark(),
     home: Scaffold(
@@ -13,6 +13,7 @@ Widget _sheet(ValueChanged<PickerLaunch> onChoose) {
         selected: PickerDepth.recall,
         canRecognize: true,
         onChoose: onChoose,
+        onWalk: onWalk,
       ),
     ),
   );
@@ -100,5 +101,38 @@ void main() {
     expect(choices, [
       (depth: PickerDepth.recall, cram: false, skipIntroduction: false),
     ]);
+  });
+
+  testWidgets('the Walk row sits below the depths, describes itself, and launches a '
+      'walk without a depth', (tester) async {
+    final choices = <PickerLaunch>[];
+    var walks = 0;
+    await tester.pumpWidget(_sheet(choices.add, onWalk: () => walks++));
+
+    final walk = find.widgetWithText(ListTile, 'Walk');
+    expect(walk, findsOneWidget, reason: 'the row is offered');
+    expect(
+      find.descendant(
+        of: walk,
+        matching: find.text('read every card once, no grading'),
+      ),
+      findsOneWidget,
+      reason: 'the row says what a walk is, like its siblings',
+    );
+    expect(
+      tester.getTopLeft(walk).dy,
+      greaterThan(tester.getTopLeft(find.text('Reconstruct')).dy),
+      reason: 'the walk sits below the depth launches',
+    );
+    await tester.tap(walk);
+
+    expect((walks, choices.length), (1, 0), reason: 'one walk, no depth');
+  });
+
+  testWidgets('without a walk launcher the sheet has no Walk row', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sheet((_) {}));
+    expect(find.text('Walk'), findsNothing);
   });
 }

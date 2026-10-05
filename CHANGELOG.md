@@ -12,7 +12,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (never-walked items first, then the least recently walked), picking authored
   choices and flipping everything else, with the tutor available on each item.
   Moving past an answer records `walked_ms`. Deck and member rows carry a
-  `never_walked` count. The phone screen is not built yet.
+  `never_walked` count.
+- The phone can walk a deck: **Walk** in a deck's long-press launch sheet.
 - The web picker can start a walk: **Walk** in a deck's Depth… menu (key `w`),
   showing "N new" while some items have never been walked.
 - `[review] short_term = false` turns off FSRS's same-day learning steps: a

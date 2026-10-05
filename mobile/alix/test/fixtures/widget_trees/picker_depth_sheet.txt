@@ -127,3 +127,19 @@ CustomPaint
                               SizedBox(width=22.0, height=null)
                               Text("Reconstruct")
                               Text("type or rebuild the answer")
+                    Divider
+                      SizedBox(width=null, height=1.0)
+                        Center
+                          Container
+                            Padding(EdgeInsets.zero)
+                              ConstrainedBox
+                                Padding(EdgeInsets(0.0, 0.0, 0.0, 1.0))
+                                  ConstrainedBox
+                    ListTile(enabled=true, tap=true)
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
+                          SafeArea
+                            Padding(EdgeInsets(16.0, 0.0, 24.0, 0.0))
+                              SizedBox(width=22.0, height=null)
+                              Text("Walk")
+                              Text("read every card once, no grading")

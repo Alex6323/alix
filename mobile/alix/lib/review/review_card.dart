@@ -163,6 +163,7 @@ class ReviewCardView extends StatelessWidget {
     required this.onGrade,
     required this.onOpenTutor,
     required this.onOpenSection,
+    this.onWalkNext,
   });
 
   final ReviewStateModel state;
@@ -201,6 +202,7 @@ class ReviewCardView extends StatelessWidget {
   final ValueChanged<ReviewGrade> onGrade;
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
   final ValueChanged<ReviewCardModel> onOpenSection;
+  final VoidCallback? onWalkNext;
 
   bool get _hasChoices => state.choices?.isNotEmpty ?? false;
   bool get _isMulti => state.choicesMultiple == true;
@@ -1286,6 +1288,11 @@ class ReviewCardView extends StatelessWidget {
   }
 
   List<Widget> _modeChips(ReviewCardModel card) {
+    if (onWalkNext case final next? when _attempted(card)) {
+      return [
+        ReviewChip(label: 'Next', kind: ReviewChipKind.primary, onTap: next),
+      ];
+    }
     if (state.introducing) {
       if (_hasChoices) {
         if (_isMulti) {

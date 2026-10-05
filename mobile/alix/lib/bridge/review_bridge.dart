@@ -150,17 +150,17 @@ class ReviewBridgePort implements ReviewPort {
   }
 }
 
-ReviewInput _inputFromBridge(bridge.Input input) => switch (input) {
+ReviewInput reviewInputFromBridge(bridge.Input input) => switch (input) {
   bridge.Input.type => ReviewInput.type,
   bridge.Input.draw => ReviewInput.draw,
 };
 
 ReviewStateModel _stateFromBridge(bridge.ReviewState state) {
   return ReviewStateModel(
-    card: state.card == null ? null : _cardFromBridge(state.card!),
-    mode: _modeFromBridge(state.mode),
+    card: state.card == null ? null : reviewCardFromBridge(state.card!),
+    mode: reviewModeFromBridge(state.mode),
     depth: _depthFromBridge(state.depth),
-    input: _inputFromBridge(state.input),
+    input: reviewInputFromBridge(state.input),
     introducing: state.introducing,
     sectionFirst: state.sectionFirst,
     choices: state.choices,
@@ -188,7 +188,7 @@ ReviewStateModel _stateFromBridge(bridge.ReviewState state) {
   );
 }
 
-ReviewCardModel _cardFromBridge(bridge.CardView card) {
+ReviewCardModel reviewCardFromBridge(bridge.CardView card) {
   return ReviewCardModel(
     front: card.front,
     frontRuns: inlineRunsFromBridge(card.frontRuns),
@@ -359,7 +359,7 @@ ReviewDepth _depthFromBridge(bridge.Depth depth) {
   };
 }
 
-ReviewMode _modeFromBridge(bridge.Mode mode) {
+ReviewMode reviewModeFromBridge(bridge.Mode mode) {
   return switch (mode) {
     bridge.Mode.flip => ReviewMode.flip,
     bridge.Mode.typing => ReviewMode.typing,

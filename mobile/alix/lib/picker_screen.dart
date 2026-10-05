@@ -28,6 +28,7 @@ import 'package:alix_mobile/sync/sync_port.dart';
 import 'package:alix_mobile/sync/sync_sheet.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/trace_screen.dart';
+import 'package:alix_mobile/walk_screen.dart';
 
 class PickerScreen extends StatefulWidget {
   const PickerScreen({
@@ -467,20 +468,47 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.reload();
   }
 
+  Future<void> _openWalk(PickerEntry entry, {required String root}) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WalkScreen(
+          deckPath: entry.path,
+          rootDir: root,
+          device: widget.device,
+          supportDir: widget.supportDir,
+          buildClient: widget.buildClient,
+        ),
+      ),
+    );
+    _controller.reload();
+  }
+
   Future<void> _rePickDepth(
     PickerEntry entry, {
     required String root,
     required bool isPaired,
   }) async {
+    var walk = false;
     final choice = await showModalBottomSheet<PickerLaunch>(
       context: context,
       builder: (sheet) => PickerDepthSheet(
         selected: entry.lastDepth,
         canRecognize: entry.canRecognize,
         onChoose: (launch) => Navigator.of(sheet).pop(launch),
+        onWalk: entry.isTrace
+            ? null
+            : () {
+                walk = true;
+                Navigator.of(sheet).pop();
+              },
       ),
     );
-    if (choice == null || !mounted) return;
+    if (!mounted) return;
+    if (walk) {
+      await _openWalk(entry, root: root);
+      return;
+    }
+    if (choice == null) return;
     await _openDeck(
       entry,
       root: root,

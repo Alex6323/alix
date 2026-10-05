@@ -13,6 +13,7 @@ pub use alix::{
     review::{CardView, CheckFeedback, ChoiceFeedback, CropView, ImageView, MultiChoiceFeedback, NoteView, RegionRole, RegionView, ReviewState},
     session::RecognizeGap,
     trace::Phase as TraceSessionPhase,
+    walk::Phase as WalkPhase,
 };
 use anyhow::{Result, bail};
 
@@ -262,6 +263,13 @@ pub struct _CheckFeedback {
 pub enum _TraceSessionPhase {
     Predict,
     Reveal,
+    Done,
+}
+
+#[flutter_rust_bridge::frb(mirror(WalkPhase))]
+pub enum _WalkPhase {
+    Front,
+    Answer,
     Done,
 }
 
@@ -896,6 +904,200 @@ impl TraceSession {
     pub fn apply_exam_failed(&mut self, now_ms: u64) -> Result<()> {
         self.store.set_exam_failed(&self.deck_token, now_ms);
         self.store.save()?;
+        Ok(())
+    }
+}
+
+pub struct WalkState {
+    pub phase: WalkPhase,
+    pub card: Option<CardView>,
+    pub mode: Mode,
+    pub input: Input,
+    pub choices: Option<Vec<String>>,
+    pub choices_multiple: Option<bool>,
+    pub choice_runs: Option<Vec<Vec<InlineRun>>>,
+    pub section_first: bool,
+    pub position: u32,
+    pub total: u32,
+    pub label: String,
+    pub save_error: Option<String>,
+}
+
+pub struct WalkSession {
+    session: alix::walk::WalkSession,
+    label: String,
+    store: alix::store::Store,
+    deck_path: PathBuf,
+    deck_token: String,
+    save_error: Option<String>,
+}
+
+impl WalkSession {
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn open(
+        deck_path: String,
+        root_dir: String,
+        now_ms: Option<u64>,
+        device: Option<String>,
+    ) -> Result<WalkSession> {
+        let deck = PathBuf::from(deck_path);
+        let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
+        let mut store = alix::assemble::store_for(std::slice::from_ref(&deck), Some(&root_store))?;
+        if device.is_some() {
+            store.device = device;
+        }
+        let cfg = alix::assemble::AssembleConfig {
+            review: alix::config::ReviewConfig::default(),
+            ask: alix::config::AskConfig::default(),
+            pacing: alix::assemble::Pacing {
+                max_session: 10,
+                new_cards_percent: 30,
+            },
+            instance_store: None,
+        };
+        let now = now_ms.unwrap_or_else(alix::time::now_ms);
+        let build = alix::assemble::walk(&deck, &store, &cfg, now)?;
+        let deck_token = build.info.deck_token.unwrap_or_default();
+        Ok(WalkSession {
+            session: build.session,
+            label: build.label,
+            store,
+            deck_path: deck,
+            deck_token,
+            save_error: None,
+        })
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn state(&self) -> WalkState {
+        let card = self.session.current();
+        let question = self.session.question();
+        let mut projector = alix::inline::DisplayProjector::default();
+        let card_view = card.map(|c| CardView::project(c, &mut projector));
+        let choice_runs = question.as_ref().map(|q| {
+            q.options
+                .iter()
+                .map(|option| projector.project(option))
+                .collect()
+        });
+        WalkState {
+            phase: self.session.phase(),
+            card: card_view,
+            mode: self.session.mode(),
+            input: card.and_then(|c| c.input).unwrap_or_default(),
+            choices_multiple: question
+                .as_ref()
+                .is_some_and(|q| q.multiple)
+                .then_some(true),
+            choices: question.map(|q| q.options),
+            choice_runs,
+            section_first: self.session.section_first(),
+            position: self.session.position() as u32,
+            total: self.session.total() as u32,
+            label: self.label.clone(),
+            save_error: self.save_error.clone(),
+        }
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn choose(&mut self, chosen: u32) -> Option<ChoiceFeedback> {
+        self.session.choose(chosen as usize)
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn choose_multi(&mut self, chosen: Vec<u32>) -> Option<MultiChoiceFeedback> {
+        let indices: Vec<usize> = chosen.iter().map(|&index| index as usize).collect();
+        self.session.choose_multi(&indices)
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn reveal(&mut self) -> WalkState {
+        self.session.reveal();
+        self.state()
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn next(&mut self, now_ms: Option<u64>) -> WalkState {
+        let now = now_ms.unwrap_or_else(alix::time::now_ms);
+        let before = self.session.position();
+        self.session.next(&mut self.store, now);
+        if self.session.position() != before {
+            match self.store.save() {
+                Ok(()) => self.save_error = None,
+                Err(e) => self.save_error = Some(format!("{e:#}")),
+            }
+        }
+        self.state()
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn restart(&mut self, now_ms: Option<u64>) -> WalkState {
+        let now = now_ms.unwrap_or_else(alix::time::now_ms);
+        self.session.restart(&self.store, now);
+        self.state()
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn tutor_card(&self) -> Option<TutorCard> {
+        let card = self.session.current()?;
+        Some(TutorCard {
+            id: card.id()?,
+            deck_id: card.deck_id.to_string(),
+            subject: card.subject.to_string(),
+            front: card.front.clone(),
+            back: card.back.clone(),
+            at: card
+                .citations
+                .first()
+                .map(|citation| citation.locator.clone()),
+            line: card.line,
+        })
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn mint_tutor_card(&mut self, front: String, back: Vec<String>) -> Result<String> {
+        if self.session.current().is_none() {
+            bail!("no card is current to mint a tutor card against");
+        }
+        let deck_fingerprints: HashSet<u64> = self
+            .session
+            .cards()
+            .iter()
+            .map(|c| c.content_fingerprint)
+            .collect();
+        let id = alix::store::mint_tutor_card(
+            &mut self.store,
+            &self.deck_path,
+            &self.deck_token,
+            &front,
+            &back,
+            &deck_fingerprints,
+        )?;
+        self.store.save()?;
+        Ok(id)
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn apply_card_note(&mut self, id: String, notes: Vec<String>) -> Result<()> {
+        if notes.is_empty() {
+            return Ok(());
+        }
+        if !self
+            .session
+            .cards()
+            .iter()
+            .any(|card| card.id().as_deref() == Some(id.as_str()))
+        {
+            bail!("no card in the walk carries the id `{id}` to attach a note to");
+        }
+        alix::personal::append_note(&self.deck_path, &self.deck_token, &id, &notes)?;
+        if let Some(cur) = self
+            .session
+            .current_mut()
+            .filter(|cur| cur.id().as_deref() == Some(id.as_str()))
+        {
+            cur.append_note(&notes);
+        }
         Ok(())
     }
 }
@@ -2288,5 +2490,163 @@ mod tests {
         .err()
         .expect("a trace deck is not a card review");
         assert!(format!("{err:#}").contains("not a trace"), "{err}");
+    }
+
+    fn opened_walk(deck: &Path, root: &Path) -> WalkSession {
+        WalkSession::open(
+            deck.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(T0),
+            None,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn law_a_walk_serves_each_item_once_and_stamps_walked_ms_on_next_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = root.join("walk.md");
+        write_deck(
+            &deck,
+            "# Capitals\nWhere the government sits.\n\n\
+             ## capital of france?\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices: single -->\n\n\
+             ## capital of italy?\nRome\n\n\
+             ## even numbers\n- [x] 2\n- [x] 4\n- [ ] 3\n<!-- choices: multiple -->\n",
+        );
+        let mut walk = opened_walk(&deck, root);
+        let first = walk.state();
+        assert_eq!(
+            (WalkPhase::Front, 0, 3, true),
+            (first.phase, first.position, first.total, first.section_first),
+            "open: the first item of the section is on its front"
+        );
+        assert_eq!("walk", first.label, "open: the label names the deck");
+        let mut served = Vec::new();
+        for step in 0..3u64 {
+            let state = walk.state();
+            let id = walk.tutor_card().expect("an item is current").id;
+            let label = format!("step {step} ({id})");
+            assert_eq!(WalkPhase::Front, state.phase, "{label}: starts on the front");
+            assert_eq!(step as u32, state.position, "{label}: position");
+            assert_eq!(
+                (step == 0),
+                state.section_first,
+                "{label}: only the section's first item opens its sheet"
+            );
+            let at = LATER + step;
+            let unchanged = walk.next(Some(at));
+            assert_eq!(
+                (WalkPhase::Front, step as u32),
+                (unchanged.phase, unchanged.position),
+                "{label}: next on the front does nothing"
+            );
+            assert_eq!(
+                None,
+                reopened_store(root, "walk.md").get(&id).and_then(|s| s.walked_ms),
+                "{label}: nothing is stamped before the answer is open"
+            );
+            let answered = match (&state.choices, state.choices_multiple) {
+                (Some(options), Some(true)) => {
+                    assert_eq!(Mode::Choice, state.mode, "{label}: a select-all card picks");
+                    let correct: Vec<u32> = options
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, o)| *o == "2" || *o == "4")
+                        .map(|(i, _)| i as u32)
+                        .collect();
+                    assert_eq!(
+                        Some(true),
+                        walk.choose_multi(correct).map(|f| f.passed),
+                        "{label}: the correct set passes"
+                    );
+                    walk.state()
+                }
+                (Some(options), _) => {
+                    assert_eq!(Mode::Choice, state.mode, "{label}: an authored choice picks");
+                    let paris = options.iter().position(|o| o == "Paris").unwrap() as u32;
+                    assert_eq!(
+                        Some(true),
+                        walk.choose(paris).map(|f| f.passed),
+                        "{label}: the correct pick passes"
+                    );
+                    walk.state()
+                }
+                (None, _) => {
+                    assert_eq!(Mode::Flip, state.mode, "{label}: everything else flips");
+                    assert_eq!(None, walk.choose(0).map(|f| f.passed), "{label}: a flip takes no pick");
+                    walk.reveal()
+                }
+            };
+            assert_eq!(WalkPhase::Answer, answered.phase, "{label}: the attempt opens the answer");
+            walk.next(Some(at));
+            assert_eq!(
+                Some(at),
+                reopened_store(root, "walk.md").get(&id).and_then(|s| s.walked_ms),
+                "{label}: next past the answer saves walked_ms"
+            );
+            served.push(id);
+        }
+        let done = walk.state();
+        assert!(
+            done.phase == WalkPhase::Done && done.card.is_none() && done.position == 3,
+            "after {served:?} the walk is done"
+        );
+        let mut unique = served.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(3, unique.len(), "each item was served once: {served:?}");
+
+        let again = walk.restart(Some(LATER + 10));
+        assert_eq!(
+            (WalkPhase::Front, 0, true),
+            (again.phase, again.position, again.section_first),
+            "restart: the next walk starts on its first item and meets the section again"
+        );
+        assert_eq!(
+            Some(served[0].clone()),
+            walk.tutor_card().map(|t| t.id),
+            "restart: the least recently walked item leads"
+        );
+    }
+
+    #[test]
+    fn a_walk_note_lands_on_the_current_item_and_a_trace_deck_cannot_be_walked() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = root.join("walk.md");
+        write_deck(&deck, "## capital of italy?\nRome\n");
+        let mut walk = opened_walk(&deck, root);
+        let id = walk.tutor_card().expect("an item is current").id;
+        walk.apply_card_note(id, vec!["the eternal city".to_string()])
+            .unwrap();
+        let notes: Vec<String> = walk
+            .state()
+            .card
+            .unwrap()
+            .note
+            .iter()
+            .flat_map(|note| note.units.iter())
+            .filter_map(|unit| match unit {
+                ContentUnit::Sentence { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            vec!["the eternal city".to_string()],
+            notes,
+            "the note shows on the current item"
+        );
+
+        let trace = trace_fixture(root);
+        let err = WalkSession::open(
+            trace.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(T0),
+            None,
+        )
+        .err()
+        .expect("a trace deck has its own session");
+        assert!(format!("{err:#}").contains("trace"), "{err}");
     }
 }

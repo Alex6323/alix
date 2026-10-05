@@ -53,6 +53,15 @@ switches are independent: a cram over a deck you already know usually wants
 both, a first pass over new material wants neither. Like Cram, it belongs to
 the launch and is off again the next time the sheet opens.
 
+The last row of the sheet is **Walk**: an ungraded read-through of the deck,
+the same walk the web app runs (see
+[Walking a deck](15-the-web-app.md#walking-a-deck)). It is not offered for a
+trace deck. Each item shows its front; pick an authored choice or **Reveal**,
+then **Next**. The section sheet opens by itself the first time each walk
+reaches a section, **Ask** reaches the tutor once an answer shows (when paired
+with a desktop that can run it), and the done screen's **Next walk** starts
+the next pass.
+
 ## Reviewing
 
 The review screen is the web app's loop on a phone: reveal, then grade, or

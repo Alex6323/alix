@@ -519,11 +519,13 @@ class PickerDepthSheet extends StatefulWidget {
     this.selected,
     required this.canRecognize,
     required this.onChoose,
+    this.onWalk,
   });
 
   final PickerDepth? selected;
   final bool canRecognize;
   final ValueChanged<PickerLaunch> onChoose;
+  final VoidCallback? onWalk;
 
   @override
   State<PickerDepthSheet> createState() => _PickerDepthSheetState();
@@ -597,6 +599,15 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                   skipIntroduction: _skipIntroduction,
                 )),
               ),
+            if (widget.onWalk case final onWalk?) ...[
+              const Divider(height: 1),
+              ListTile(
+                leading: const SizedBox(width: 22),
+                title: const Text('Walk'),
+                subtitle: const Text('read every card once, no grading'),
+                onTap: onWalk,
+              ),
+            ],
           ],
         ),
       ),
