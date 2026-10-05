@@ -429,7 +429,10 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.reload();
   }
 
-  Future<void> _openTraceSession(PickerEntry entry, {required String root}) async {
+  Future<void> _openTraceSession(
+    PickerEntry entry, {
+    required String root,
+  }) async {
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -459,25 +462,33 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.reload();
   }
 
-  Future<void> _openLaunchSheet(
+  Future<bool> _resolvedConflictFirst(
     PickerEntry entry, {
     required String root,
     required bool isPaired,
   }) async {
     final syncController = _syncController;
-    if (isPaired && syncController != null) {
-      final deckId = deckIdForPath(
-        entries: syncController.pairedEntries,
-        rootDir: root,
-        path: entry.path,
-      );
-      final matches = deckId == null
-          ? const <SyncPendingConflict>[]
-          : syncController.pendingConflicts.where((c) => c.deckId == deckId);
-      if (matches.isNotEmpty) {
-        await _openConflictChoice(matches.first);
-        return;
-      }
+    if (!isPaired || syncController == null) return false;
+    final deckId = deckIdForPath(
+      entries: syncController.pairedEntries,
+      rootDir: root,
+      path: entry.path,
+    );
+    final matches = deckId == null
+        ? const <SyncPendingConflict>[]
+        : syncController.pendingConflicts.where((c) => c.deckId == deckId);
+    if (matches.isEmpty) return false;
+    await _openConflictChoice(matches.first);
+    return true;
+  }
+
+  Future<void> _openLaunchSheet(
+    PickerEntry entry, {
+    required String root,
+    required bool isPaired,
+  }) async {
+    if (await _resolvedConflictFirst(entry, root: root, isPaired: isPaired)) {
+      return;
     }
     if (!mounted) return;
     var walk = false;
@@ -494,6 +505,9 @@ class _PickerScreenState extends State<PickerScreen> {
       ),
     );
     if (!mounted) return;
+    if (await _resolvedConflictFirst(entry, root: root, isPaired: isPaired)) {
+      return;
+    }
     if (walk) {
       await _openWalk(entry, root: root);
       return;
