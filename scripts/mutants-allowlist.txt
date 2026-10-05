@@ -71,7 +71,7 @@
 # UNOBSERVABLE. When `add_due` is zero the operators are identical; when it is
 # positive, due filled its share and new is short of its share, so the final
 # `min` adds zero regardless of the value left in `leftover`. Line-pinned.
-src/session.rs:740: replace -= with += in split_slots
+src/session.rs:789: replace -= with += in split_slots
 
 # EQUIVALENT. dependency_forest_by passes this value to visit_node with
 # `is_root` true. Both reads of `is_last` first branch on `is_root`, fixing the
