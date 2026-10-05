@@ -7238,22 +7238,35 @@ fn ask_card_draft_create_round_trips_a_learner_card_into_the_session() {
     // Drillable, not just stored: cram-reselect (the same determinism idiom
     // `post_api_restart_rebuilds_the_queue_and_resets_session_stats` uses)
     // pulls every non-retired card into the queue regardless of due date. The
-    // newly minted personal card already has a store entry (`mint_tutor_card`
-    // seeds one), so `build_queue` sorts it into the "due" group, ahead of
-    // the two never-graded fixture cards in "fresh": it's the first card the
-    // reselected session serves.
+    // minted card is engaged (`mint_tutor_card` seeds its entry) but never
+    // graded, so it rides the new share beside the two fixture cards and is
+    // graded at first sight when the sitting reaches it.
     let resp = post_json(&base, "/api/select", r#"{"deck":"sample.md","cram":true}"#);
     assert_eq!(200, resp.status);
-    let select_body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!(3, select_body["remaining"], "body: {select_body}");
+    let mut body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(3, body["remaining"], "body: {body}");
+    let mut steps = 0;
+    while body["card"]["front"] != "edited term?" {
+        steps += 1;
+        assert!(
+            steps <= 2,
+            "the minted card is served within the sitting: {body}"
+        );
+        let route = if body["introducing"] == true {
+            "/api/introduce"
+        } else {
+            "/api/grade"
+        };
+        let resp = post_gated(&base, route, r#"{"grade":"passed"}"#);
+        assert_eq!(200, resp.status, "step {steps} via {route}");
+        body = serde_json::from_slice(&resp.body).unwrap();
+    }
     assert_eq!(
-        "edited term?", select_body["card"]["front"],
-        "body: {select_body}"
+        false, body["introducing"],
+        "the minted card is graded at first sight: {body}"
     );
 
-    // And it's what `/api/state` reports too, not just the `/api/select`
-    // response (the same double-check `get_api_state_reflects_the_active_session_after_select`
-    // makes for the fixture's own first card).
+    // And it's what `/api/state` reports too, not just the last response.
     let state = http(&base, "GET", "/api/state", &[], &[]);
     let state_body: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
     assert_eq!(

@@ -96,6 +96,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Browsing a deck no longer adds it to the recent decks; a browse leaves no
   trace.
+- A card introduced and left ungraded no longer comes back as due in a later
+  sitting: due now means scheduled, so it waits for a new-card slot and is
+  graded at first sight. `alix stats` no longer counts it as due.
 - A trace deck's session is now called a trace, not a walk. The web API
   routes moved from `/api/walk` and `/api/walk/{predict,grade,restart,leave,ask,
   ask/note}` to the same paths under `/api/trace`, and the session payload's

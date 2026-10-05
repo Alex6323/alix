@@ -248,7 +248,7 @@ impl Session {
             .filter_map(|c| c.id())
             .filter(|id| match store.progress(id) {
                 None => true,
-                Some(state) => self.scheduler.is_due(state, Depth::Recall, now_ms),
+                Some(state) => self.scheduler.is_servable(state, Depth::Recall, now_ms),
             })
             .count();
         Some(RecognizeGap {
@@ -309,7 +309,7 @@ impl Session {
     }
 
     /// The uncapped backlog split `(due_left, new_left)` at `now_ms`: how many
-    /// due (or, for Recognize, met-but-unrecognized) and never-met cards remain
+    /// due (or, for Recognize, met-but-unrecognized) and new cards remain
     /// beyond what this sitting already drilled. Feeds the done-summary so a
     /// heavy day knows to chain another sitting.
     pub fn remaining_split(&self, store: &Store, now_ms: u64) -> (usize, usize) {
@@ -328,9 +328,14 @@ impl Session {
                 continue;
             }
             match store.progress(&id) {
-                Some(state) => {
+                Some(state) if state.scheduled() => {
                     if self.options.cram || self.scheduler.is_due(state, depth, now_ms) {
                         due_left += 1;
+                    }
+                }
+                Some(state) => {
+                    if self.options.cram || self.scheduler.is_servable(state, depth, now_ms) {
+                        new_left += 1;
                     }
                 }
                 None => new_left += 1,
@@ -798,7 +803,8 @@ fn build_queue(
     let depth = options.depth;
     let cooldown = scheduler.introduction_cooldown_ms();
 
-    // Partition into the due pool and the never-met pool, dropping retired cards
+    // Partition into the due pool and the new pool (never met, or met but never
+    // graded, which is not due: due means scheduled), dropping retired cards
     // and any still cooling behind a floor so their slots pass to the next
     // servable cards rather than seeding an unservable sitting.
     let mut due: Vec<usize> = Vec::new();
@@ -814,10 +820,14 @@ fn build_queue(
             continue;
         }
         match store.progress(&id) {
-            Some(state) => {
-                let eligible = options.cram || scheduler.is_due(state, depth, now_ms);
-                if eligible {
+            Some(state) if state.scheduled() => {
+                if options.cram || scheduler.is_due(state, depth, now_ms) {
                     due.push(i);
+                }
+            }
+            Some(state) => {
+                if options.cram || scheduler.is_servable(state, depth, now_ms) {
+                    new_pool.push(i);
                 }
             }
             None => new_pool.push(i),
@@ -947,7 +957,9 @@ pub fn count_due_soon(
         .filter(|card| !is_retired(card, store, retire_after_days))
         .filter(|card| {
             card.id()
-                .and_then(|id| store.get(&id).map(|s| scheduler.due_at(s, depth)))
+                .and_then(|id| store.get(&id))
+                .filter(|s| s.scheduled())
+                .map(|s| scheduler.due_at(s, depth))
                 .is_some_and(|due| due > now_ms && due <= now_ms + window_ms)
         })
         .count()
@@ -1188,8 +1200,8 @@ impl Locks {
     }
 }
 
-/// The one answer to "may this card be served in a sitting?": due at this
-/// depth AND not gated behind an ungraduated parent. Every queue, count and
+/// The one answer to "may this card be served in a sitting?": due or new at
+/// this depth AND not gated behind an ungraduated parent. Every queue, count and
 /// status reader goes through it, so a locked card can never be counted due
 /// by one reader and withheld by another.
 pub fn eligible_for_session(
@@ -1223,7 +1235,7 @@ fn due_at_depth(
         return true;
     };
     match store.progress(&id) {
-        Some(state) => scheduler.is_due(state, depth, now_ms),
+        Some(state) => scheduler.is_servable(state, depth, now_ms),
         None => true,
     }
 }
@@ -1681,7 +1693,7 @@ mod tests {
         // 8 due (met, overdue) + 8 never-met; cap 10, 30% new → 3 new + 7 due.
         let all = cards(16);
         for c in &all[..8] {
-            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
+            store.get_or_insert(&c.id().unwrap()).recall = Some(mature_fsrs(0));
         }
         let now = 2 * 604_800_000;
         let session = Session::new(
@@ -1751,7 +1763,7 @@ mod tests {
         // then the split reports what a chained sitting would still find.
         let all = cards(16);
         for c in &all[..8] {
-            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
+            store.get_or_insert(&c.id().unwrap()).recall = Some(mature_fsrs(0));
         }
         let now = 2 * 604_800_000;
         let mut session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
@@ -1780,7 +1792,7 @@ mod tests {
         // 20 due + 5 never-met, cap 10: ceil(10*10/100)=1, so at least 1 new.
         let all = cards(25);
         for c in &all[..20] {
-            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
+            store.get_or_insert(&c.id().unwrap()).recall = Some(mature_fsrs(0));
         }
         let now = 2 * 604_800_000;
         let session = Session::new(
@@ -1815,6 +1827,128 @@ mod tests {
         let now = 2 * 604_800_000;
         let session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
         assert_eq!(10, session.initial_size, "no new pool: due fills the cap");
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Engagement {
+        Introduced,
+        Walked,
+    }
+
+    fn engage(store: &mut Store, id: &str, how: Engagement, at_ms: u64) {
+        let state = store.get_or_insert(id);
+        match how {
+            Engagement::Introduced => state.introduced_ms = Some(at_ms),
+            Engagement::Walked => state.walked_ms = Some(at_ms),
+        }
+    }
+
+    #[test]
+    fn law_an_engaged_ungraded_card_takes_a_new_slot_never_a_due_slot() {
+        let now = 2 * 604_800_000;
+        for how in [Engagement::Introduced, Engagement::Walked] {
+            for (cap, percent) in [(2, 50), (3, 0), (5, 30), (1, 100)] {
+                let (mut store, _dir) = empty_store();
+                let all = cards(5);
+                for c in &all[..4] {
+                    store.get_or_insert(&c.id().unwrap()).recall = Some(mature_fsrs(1));
+                }
+                let ungraded = all[4].id().unwrap();
+                engage(&mut store, &ungraded, how, 0);
+                let session = Session::new(
+                    all.clone(),
+                    &mut store,
+                    sched(),
+                    SessionOptions {
+                        max_session: cap,
+                        new_cards_percent: percent,
+                        ..Default::default()
+                    },
+                    now,
+                );
+                let (take_due, take_new) = split_slots(4, 1, cap, percent);
+                let rostered = session.roster.contains(&4);
+                assert_eq!(
+                    take_new == 1,
+                    rostered,
+                    "{how:?} cap={cap} percent={percent}: the ungraded card rides the new share"
+                );
+                assert_eq!(
+                    take_due + take_new,
+                    session.initial_size,
+                    "{how:?} cap={cap} percent={percent}: four scheduled cards fill the due share"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn law_a_walked_card_is_graded_at_first_sight_once_the_settle_gap_passes() {
+        let walked_at = 1_000_000;
+        let gap = DEFAULT_INTRODUCTION_COOLDOWN_MS;
+        for (now, served) in [(walked_at + gap - 1, false), (walked_at + gap, true)] {
+            let (mut store, _dir) = empty_store();
+            let all = cards(1);
+            let id = all[0].id().unwrap();
+            engage(&mut store, &id, Engagement::Walked, walked_at);
+            assert!(
+                store.progress(&id).is_some(),
+                "now={now}: a walked card is engaged"
+            );
+            let session = Session::new(all, &mut store, sched(), SessionOptions::default(), now);
+            assert_eq!(
+                served,
+                session.current().is_some(),
+                "now={now}: served only from walked_ms plus the settle gap"
+            );
+            if served {
+                assert!(
+                    !session.current_fresh(&store) && !session.introducing(&store),
+                    "now={now}: a walked card is graded at first sight, never introduced"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_deck_walked_through_and_never_graded_is_drilled_through_the_new_share() {
+        let (mut store, _dir) = empty_store();
+        let all = cards(6);
+        for c in &all {
+            engage(&mut store, &c.id().unwrap(), Engagement::Walked, 0);
+        }
+        let now = 2 * 604_800_000;
+        assert!(
+            has_eligible(&all, &store, sched().as_ref(), Depth::Recall, now, None),
+            "a walked deck still reads as drillable"
+        );
+        let mut session = Session::new(
+            all,
+            &mut store,
+            sched(),
+            SessionOptions {
+                max_session: 4,
+                new_cards_percent: 25,
+                ..Default::default()
+            },
+            now,
+        );
+        assert_eq!(
+            (0, 6),
+            session.remaining_split(&store, now),
+            "nothing walked is due; all six wait in the new share"
+        );
+        assert_eq!(4, session.initial_size, "the new share backfills the cap");
+        let mut graded = 0;
+        while session.current().is_some() {
+            assert!(
+                !session.introducing(&store),
+                "graded {graded}: a walked card is never introduced"
+            );
+            session.grade(&mut store, Grade::Pass, now);
+            graded += 1;
+        }
+        assert_eq!(4, graded, "every rostered walked card is graded");
     }
 
     #[test]
@@ -2632,7 +2766,7 @@ mod tests {
         let (mut store, _dir) = empty_store();
         let all = cards(10);
         for c in &all[7..] {
-            store.get_or_insert(&c.id().unwrap()).introduced_ms = Some(0);
+            store.get_or_insert(&c.id().unwrap()).recall = Some(mature_fsrs(0));
         }
         let session = Session::new(
             all.clone(),
@@ -5107,6 +5241,33 @@ mod tests {
             Some(DEFAULT_RETIRE_AFTER_DAYS),
         );
         assert_eq!(2, count, "exactly `in window` and `at edge`");
+    }
+
+    #[test]
+    fn law_count_due_soon_counts_schedules_never_settle_gaps() {
+        let gap = DEFAULT_INTRODUCTION_COOLDOWN_MS;
+        for (label, scheduled, expected) in [("graded", true, 1), ("introduced only", false, 0)] {
+            let (mut store, _dir) = empty_store();
+            let all = cards(1);
+            let state = store.get_or_insert(&all[0].id().unwrap());
+            state.introduced_ms = Some(0);
+            if scheduled {
+                state.recall = Some(mature_fsrs(gap));
+            }
+            assert_eq!(
+                expected,
+                count_due_soon(
+                    &all,
+                    &store,
+                    sched().as_ref(),
+                    Depth::Recall,
+                    0,
+                    2 * gap,
+                    None
+                ),
+                "{label}: the settle gap ends inside the window"
+            );
+        }
     }
 
     const PARENT_ID: &str = "card-9w2c7x4k1m8q3z5t0v6b2n4d8f";

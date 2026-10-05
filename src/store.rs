@@ -86,6 +86,8 @@ pub struct CardState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub introduced_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walked_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recall: Option<FsrsState>,
     // Depth states are independent on purpose: no cross-crediting between
     // depths (a pass propagates credit downward; the states never merge).
@@ -111,6 +113,7 @@ impl CardState {
     pub fn new() -> Self {
         Self {
             introduced_ms: None,
+            walked_ms: None,
             recall: None,
             reconstruct: None,
             recognize: None,
@@ -135,10 +138,13 @@ impl CardState {
 
     pub fn engaged(&self) -> bool {
         self.introduced_ms.is_some()
-            || self.recognize.is_some()
-            || self.recall.is_some()
-            || self.reconstruct.is_some()
+            || self.walked_ms.is_some()
+            || self.scheduled()
             || self.total_reviews > 0
+    }
+
+    pub fn scheduled(&self) -> bool {
+        self.recognize.is_some() || self.recall.is_some() || self.reconstruct.is_some()
     }
 
     pub fn schedule(&self, depth: Depth) -> Option<&FsrsState> {

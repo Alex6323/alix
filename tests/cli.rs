@@ -1341,6 +1341,48 @@ fn stats_aggregates_authored_and_personal_due_windows_and_review_totals() {
 }
 
 #[test]
+fn stats_never_counts_an_introduced_or_walked_but_ungraded_card_as_due() {
+    let dir = TempDir::new().unwrap();
+    let deck_text = "---\nformat-version: 1\nid: deck-statsengaged\n---\n\
+## Q1\nA1\n<!-- id: card-engaged1 -->\n\n\
+## Q2\nA2\n<!-- id: card-engaged2 -->\n";
+    let deck = write(dir.path(), "engaged-stats.md", deck_text);
+    let parsed = alix::deck::Deck::load(&deck).unwrap();
+    let mut store = deck_store(&deck);
+    let ids: Vec<String> = parsed.cards.iter().map(|c| c.id().unwrap()).collect();
+    store.get_or_insert(&ids[0]).introduced_ms = Some(0);
+    store.get_or_insert(&ids[1]).walked_ms = Some(0);
+    for (id, walked) in [("card-personalintro", false), ("card-personalwalk", true)] {
+        alix::personal::append_cards(
+            Path::new(&deck),
+            "deck-statsengaged",
+            &format!("## personal\nanswer\n<!-- id: {id} -->\n"),
+        )
+        .unwrap();
+        let state = store.get_or_insert(id);
+        if walked {
+            state.walked_ms = Some(0);
+        } else {
+            state.introduced_ms = Some(0);
+        }
+    }
+    store.save().unwrap();
+
+    let out = alix(&["stats", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let result = stdout(&out);
+    for exact in [
+        "  state:   in progress",
+        "  due:     0 now, 0 within 24h",
+        "  due now (recognize):   0",
+        "  due now (recall):      0",
+        "  due now (reconstruct): 0",
+    ] {
+        assert!(result.contains(exact), "missing {exact:?}: {result}");
+    }
+}
+
+#[test]
 fn stats_reserves_mastered_for_a_recorded_mastery_marker() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);

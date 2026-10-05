@@ -65,9 +65,11 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
         let mut passes = 0u32;
         for card in &deck.cards {
             if let Some(state) = card.id().and_then(|id| store.progress(&id)) {
-                // Retired cards don't count as due, but still count toward
-                // the review totals below.
-                if !alix::session::is_retired(card, &store, review.retire_after_days) {
+                // Retired and never-graded cards don't count as due, but still
+                // count toward the review totals below.
+                if state.scheduled()
+                    && !alix::session::is_retired(card, &store, review.retire_after_days)
+                {
                     let due = scheduler.due_at(state, Depth::Recall);
                     if due <= now {
                         due_now += 1;
@@ -89,14 +91,12 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
         // Personal cards count toward "due" (now and within 24h), never toward
         // the card count below: they aren't deck content.
         let personal = alix::personal::read(&deck.path, &deck.subject).cards;
-        due_now += alix::session::count_eligible(
-            &personal,
-            &store,
-            &scheduler,
-            Depth::Recall,
-            now,
-            review.retire_after_days,
-        );
+        due_now += personal
+            .iter()
+            .filter(|card| !alix::session::is_retired(card, &store, review.retire_after_days))
+            .filter_map(|card| card.id().and_then(|id| store.progress(&id)))
+            .filter(|state| scheduler.is_due(state, Depth::Recall, now))
+            .count();
         // Derived, not independently counted, so the two figures can't diverge.
         let due_now_recall = due_now;
         due_24h += alix::session::count_due_soon(

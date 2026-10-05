@@ -88,8 +88,15 @@ proportionally, so chain another sitting when a deadline is near. Both keys live
 in `[review]` (see [Configuration](16-configuration.md); a workspace can
 override them in its `alix.local.toml`), and `--session N` overrides
 `max_session` for one launch. This holds at every depth, Recognize included: a
-Recognize sitting splits the same cap between never-met cards and cards due
-at Recognize.
+Recognize sitting splits the same cap between new cards and cards due at
+Recognize.
+
+Due means scheduled: a card is due only once a grade has given it a schedule
+and that date has come. A card you met but never graded (introduced, then left
+before its graded quiz came back) has no schedule, so in a later sitting it
+counts as new and waits for a slot in the new-card share, once its settle gap
+has passed. When it comes up it is graded at first sight, without a second
+introduction.
 This is the first step of a card's life: *introduce*, then let its depth(s)
 schedule it.
 

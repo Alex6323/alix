@@ -51,6 +51,12 @@ pub trait Scheduler: Send + Sync {
     fn reanchor(&self, state: &mut CardState, depth: Depth, now_ms: u64);
 
     fn is_due(&self, state: &CardState, depth: Depth, now_ms: u64) -> bool {
+        state.scheduled() && self.is_servable(state, depth, now_ms)
+    }
+
+    /// Unlike `is_due`, also true for an engaged card with no schedule once
+    /// its settle gap has passed: such a card is drilled from the new share.
+    fn is_servable(&self, state: &CardState, depth: Depth, now_ms: u64) -> bool {
         self.due_at(state, depth) <= now_ms
     }
 
@@ -269,18 +275,13 @@ impl Scheduler for Fsrs {
             Some(s) => s.due_ms,
             // Established at another depth: due now, skipping the introduction
             // warm-up (its own schedule is created lazily on the first grade).
-            None if state.recognize.is_some()
-                || state.recall.is_some()
-                || state.reconstruct.is_some() =>
-            {
-                0
-            }
-            // Anchor the warm-up on the introduction. An entry with no
-            // timestamp and no schedule cannot arise through the session (the
-            // Seen press writes before departure), so the epoch fallback is
-            // unreachable rather than a serving hazard.
+            None if state.scheduled() => 0,
+            // The settle gap runs from the later of the introduction and the
+            // walk. Only an unengaged entry has neither; the store's
+            // `progress` view hides it, so it never reaches a queue.
             None => state
                 .introduced_ms
+                .max(state.walked_ms)
                 .unwrap_or_default()
                 .saturating_add(self.introduction_cooldown_ms),
         }
@@ -386,6 +387,94 @@ mod tests {
             1_000 + DEFAULT_INTRODUCTION_COOLDOWN_MS,
             sched.due_at(&fresh, Depth::Reconstruct)
         );
+    }
+
+    #[test]
+    fn law_due_means_a_schedule_exists_and_its_date_has_come() {
+        let sched = Fsrs::default();
+        let settled = |introduced: Option<u64>, walked: Option<u64>| CardState {
+            introduced_ms: introduced,
+            walked_ms: walked,
+            ..CardState::new()
+        };
+        let mut graded = CardState::introduced_at(0);
+        sched.apply(&mut graded, Depth::Recall, Grade::Pass, 0, false);
+        let graded_due = sched.due_at(&graded, Depth::Recall);
+        for (label, state, depth, now, due) in [
+            (
+                "introduced only",
+                settled(Some(0), None),
+                Depth::Recall,
+                u64::MAX,
+                false,
+            ),
+            (
+                "walked only",
+                settled(None, Some(0)),
+                Depth::Recall,
+                u64::MAX,
+                false,
+            ),
+            (
+                "introduced and walked",
+                settled(Some(0), Some(0)),
+                Depth::Recognize,
+                u64::MAX,
+                false,
+            ),
+            (
+                "graded, before its date",
+                graded.clone(),
+                Depth::Recall,
+                graded_due - 1,
+                false,
+            ),
+            (
+                "graded, on its date",
+                graded.clone(),
+                Depth::Recall,
+                graded_due,
+                true,
+            ),
+            (
+                "scheduled at another depth",
+                graded.clone(),
+                Depth::Reconstruct,
+                0,
+                true,
+            ),
+        ] {
+            assert_eq!(
+                due,
+                sched.is_due(&state, depth, now),
+                "{label} at {depth:?}, now={now}"
+            );
+        }
+    }
+
+    #[test]
+    fn law_the_settle_gap_anchors_on_the_later_of_introduction_and_walk() {
+        let sched = Fsrs::default();
+        let gap = DEFAULT_INTRODUCTION_COOLDOWN_MS;
+        for (introduced, walked, anchor) in [
+            (Some(1_000), None, 1_000),
+            (None, Some(2_000), 2_000),
+            (Some(1_000), Some(2_000), 2_000),
+            (Some(3_000), Some(2_000), 3_000),
+        ] {
+            let state = CardState {
+                introduced_ms: introduced,
+                walked_ms: walked,
+                ..CardState::new()
+            };
+            for depth in [Depth::Recognize, Depth::Recall, Depth::Reconstruct] {
+                assert_eq!(
+                    anchor + gap,
+                    sched.due_at(&state, depth),
+                    "introduced={introduced:?} walked={walked:?} at {depth:?}"
+                );
+            }
+        }
     }
 
     #[test]
