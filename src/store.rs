@@ -2686,7 +2686,7 @@ mod tests {
         );
         assert!(
             store.get(&id).is_some(),
-            "and the store carries only its schedule"
+            "and the store holds an empty entry for it"
         );
         assert!(
             store.progress(&id).is_none(),
@@ -2940,14 +2940,14 @@ mod tests {
     }
 
     #[test]
-    fn an_unstamped_span_remediation_is_stamped_and_scheduled() {
+    fn an_unstamped_span_remediation_is_stamped_and_stored() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         let deck = dir.path().join("d.md");
         let text = "## Recall how a String is laid out in memory.\nA String stores a pointer, length and capacity on the stack.\n<!-- blank: span hidden=\"pointer\" -->\n<!-- blank: span hidden=\"length\" -->\n";
 
         let created = store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
-        assert_eq!(2, created, "each generated span schedules as its own card");
+        assert_eq!(2, created, "each generated span is stored as its own card");
         let ids = sidecar_ids(&deck, "d.md");
         assert_eq!(
             2,
@@ -2957,7 +2957,7 @@ mod tests {
         for id in &ids {
             assert!(
                 store.get(id).is_some(),
-                "the id scheduled in memory is the id reparsed from disk: {id}"
+                "the id stored in memory is the id reparsed from disk: {id}"
             );
             assert!(
                 store.progress(id).is_none(),
