@@ -43,7 +43,7 @@ NO_OPS = {"true", "false", ":", "exit", "echo", "printf", "cd"}
 SHELL_KEYWORDS = {"if", "then", "else", "elif", "fi", "for", "do", "done", "while", "!"}
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 MAKE_MESSAGE = re.compile(r"make(\[\d+\])?: ")
-COMMENT = re.compile(r"(^|\s)#.*")
+COMMENT = re.compile(r"(?:^|(?<=[\s;&|()]))#.*")
 FILE_REDIRECTION = re.compile(r">>?\s*(?!/dev/null\b)[^\s&>]")
 
 

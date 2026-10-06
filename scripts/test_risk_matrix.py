@@ -399,6 +399,16 @@ class RiskMatrixGuardTests(unittest.TestCase):
             makefile.replace(live, "test:\n\t@# no evidence\n"),
         )
 
+    def test_a_shell_comment_after_a_semicolon_is_not_a_real_command(self):
+        matrix = complete_matrix()
+        makefile = self.fixture_makefile(matrix)
+        live = "test:\n\t@./evidence test\n"
+        self.assert_invalid(
+            matrix,
+            "command runs nothing: make test",
+            makefile.replace(live, "test:\n\t@true;# no evidence\n"),
+        )
+
     def test_printf_redirection_is_real_work(self):
         matrix = complete_matrix()
         makefile = self.fixture_makefile(matrix)
