@@ -78,8 +78,8 @@ src/session.rs:789: replace -= with += in split_slots
 # connector to empty and the child ancestor to empty; descendants calculate
 # their own lastness. No output can observe either mutation for any input.
 # Line-pinned.
-src/listing.rs:745: replace == with != in dependency_forest_by
-src/listing.rs:745: replace + with * in dependency_forest_by
+src/listing.rs:843: replace == with != in dependency_forest_by
+src/listing.rs:843: replace + with * in dependency_forest_by
 
 # EQUIVALENT, provably. Both sites mask the target bit to zero before
 # setting it: `(b[6] & 0x0f) | 0x40` and `(b[8] & 0x3f) | 0x80`. After the
