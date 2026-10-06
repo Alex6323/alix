@@ -395,6 +395,13 @@ class ReadsRecipeCommands(unittest.TestCase):
             "env followed only by assignments still runs cargo test",
         )
 
+    def test_an_invalid_shell_assignment_does_not_gate_the_crate(self):
+        command = gate.commands("1=not-an-assignment cargo test")[0]
+        self.assertFalse(
+            gate.is_whole_crate_test(command),
+            "the shell rejects the malformed assignment before running cargo",
+        )
+
     def test_any_env_option_makes_the_command_unreadable(self):
         for line in (
             "env -- cargo test",

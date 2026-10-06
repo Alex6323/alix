@@ -238,7 +238,7 @@ def cargo_test_words(command: list[str]) -> list[str] | None:
 
 
 def is_assignment(token: str) -> bool:
-    return "=" in token and not token.startswith("-")
+    return bool(re.match(r"[A-Za-z_][A-Za-z0-9_]*=", token))
 
 
 def without_environment(command: list[str]) -> list[str]:
