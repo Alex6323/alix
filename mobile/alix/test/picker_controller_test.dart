@@ -336,6 +336,46 @@ void main() {
     },
   );
 
+  test(
+    'a relisting still in flight does not publish the stale search first',
+    () async {
+      final first = Completer<List<PickerSearchHit>>();
+      final second = Completer<List<PickerSearchHit>>();
+      final relisting = Completer<PickerListing>();
+      final port = _FakePickerPort(rootEntries: [_entry('own')])
+        ..searchReplies.addAll([first, second]);
+      final controller = PickerController(port: port, root: '/decks');
+      await pumpEventQueue();
+
+      controller.openSearch();
+      await pumpEventQueue();
+      port.rootReply = relisting;
+      controller.reload();
+      await pumpEventQueue();
+
+      first.complete([
+        PickerSearchHit(root: '/decks', entry: _entry('stale')),
+      ]);
+      await pumpEventQueue();
+
+      expect(
+        controller.searchHits,
+        isNull,
+        reason: 'a relisting invalidates the old search when it starts',
+      );
+
+      relisting.complete(
+        PickerListing(entries: [_entry('refreshed')]),
+      );
+      await pumpEventQueue();
+      second.complete([
+        PickerSearchHit(root: '/decks', entry: _entry('fresh')),
+      ]);
+      await pumpEventQueue();
+      expect(controller.searchHits!.single.entry.title, 'fresh');
+    },
+  );
+
   test('a strip answer from the stale search cannot overwrite the refreshed '
       'search strip', () async {
     final firstSearch = Completer<List<PickerSearchHit>>();
@@ -506,6 +546,7 @@ class _FakePickerPort implements PickerPort {
   PickerDeadline? deadline;
   PickerProfile? profile;
   int listRootCalls = 0;
+  Completer<PickerListing>? rootReply;
   final List<(String, String?)> deadlineWrites = [];
   final List<String> tutorialRoots = [];
   final List<(String, List<String>)> stripRequests = [];
@@ -545,6 +586,8 @@ class _FakePickerPort implements PickerPort {
   @override
   Future<PickerListing> listRoot(String root, {required bool profile}) async {
     listRootCalls++;
+    final reply = rootReply;
+    if (reply != null) return reply.future;
     return PickerListing(entries: rootEntries, profile: this.profile);
   }
 

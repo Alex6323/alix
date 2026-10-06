@@ -228,6 +228,7 @@ class PickerController extends ChangeNotifier {
     }
     final dir = _dir;
     if (dir == null) {
+      if (_searchOpen) _loadSearchable();
       _entries = List.unmodifiable(
         (await _timed(
           'root',
@@ -236,7 +237,6 @@ class PickerController extends ChangeNotifier {
       );
       _notify();
       _requestStrips(_root, _entries);
-      if (_searchOpen) _loadSearchable();
       final pairedRootDir = _pairedRootDir;
       if (pairedRootDir == null) {
         _pairedRootEntries = const [];
