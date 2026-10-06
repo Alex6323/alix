@@ -13,7 +13,7 @@ CAPTURE = REPO_ROOT / "e2e" / "shots" / "capture.cjs"
 SHOTS_TABLE = re.compile(r"const SHOTS = \[(.*?)\];", re.S)
 SHOT_ROW = re.compile(r'\[\d+, "([^"]+)", shot\d+\]')
 SITE_PAGE = REPO_ROOT / "site" / "index.html"
-PAGE_SHOT = re.compile(r'src="img/(shot-[^"]+\.webp)"')
+PAGE_SHOT = re.compile(r"""src=["']img/(shot-[^"']+\.webp)["']""")
 README = REPO_ROOT / "README.md"
 README_SHOT = re.compile(r"/img/((?:[^\s)\"/]+/)*shot-[^\s)\"/]+\.webp)")
 MEDIA_BUDGET_BYTES = 3 * 1024 * 1024 // 2
@@ -48,9 +48,15 @@ def main() -> int:
 
     referenced = referenced_shots()
     repeated = sorted({name for name in referenced if referenced.count(name) > 1})
-    unregistered_in_readme = sorted(readme_shots() - expected)
+    readme = readme_shots()
+    unregistered_in_readme = sorted(readme - expected)
+    escaped = sorted(
+        name for name in shot_names | expected | set(referenced) | readme if "%" in name
+    )
 
     errors = []
+    if escaped:
+        errors.append(f"a screenshot path contains a percent escape: {', '.join(escaped)}")
     if repeated:
         errors.append(f"the landing page repeats a screenshot: {', '.join(repeated)}")
     if set(referenced) != expected:

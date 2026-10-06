@@ -75,6 +75,38 @@ class SiteMediaTests(unittest.TestCase):
         self.assertEqual(1, result.returncode, result.stdout)
         self.assertIn(f"old/{SHOT}", result.stderr)
 
+    def test_a_percent_encoded_url_cannot_stand_for_a_literal_media_path(self):
+        encoded = "shot-%31-verify.webp"
+
+        def change(root):
+            (root / "site" / "img" / SHOT).rename(
+                root / "site" / "img" / encoded
+            )
+            (root / "site" / "index.html").write_text(
+                f'<img src="img/{encoded}" alt="">\n', encoding="utf-8"
+            )
+            (root / "README.md").write_text(
+                f"![shot](https://alix.study/img/{encoded})\n", encoding="utf-8"
+            )
+            (root / "e2e" / "shots" / "capture.cjs").write_text(
+                f'const SHOTS = [\n  [1, "{encoded}", shot1],\n];\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(1, result.returncode, result.stdout)
+
+    def test_a_single_quoted_page_reference_is_the_same_served_path(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                f"<img src='img/{SHOT}' alt=''>\n", encoding="utf-8"
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
