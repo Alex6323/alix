@@ -1628,7 +1628,7 @@ export function createStudy({
         }
       } else if (isIntroChoice()) {
         if (isMultiChoice()) {
-          const submit = chip("Submit", "primary", submitMultiChoice, "enter");
+          const submit = chip("Submit", "primary", submitMultiChoice, label(keys.submit));
           submit.disabled = selectedChoices.size === 0;
         }
         chip("Skip", "", skip, label(keys.skip));            // options are tappable
@@ -1647,7 +1647,7 @@ export function createStudy({
       chip("Skip", "", skip, label(keys.skip));
     } else if (isChoice()) {
       if (isMultiChoice()) {
-        const submit = chip("Submit", "primary", submitMultiChoice, "enter");
+        const submit = chip("Submit", "primary", submitMultiChoice, label(keys.submit));
         submit.disabled = selectedChoices.size === 0;
       }
       chip("Skip", "", skip, label(keys.skip));
@@ -1695,7 +1695,7 @@ export function createStudy({
       chip("Next", "primary", walkNext, label(keys.cont));
       chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
     } else if (isMultiChoice()) {
-      chip("Submit", "primary", submitMultiChoice, "enter").disabled = selectedChoices.size === 0;
+      chip("Submit", "primary", submitMultiChoice, label(keys.submit)).disabled = selectedChoices.size === 0;
     } else if (!isChoice()) {
       chip("Reveal", "primary", effectiveDraw() ? walkDrawReveal : walkReveal, label(keys.reveal));
     }
@@ -2113,7 +2113,7 @@ export function createStudy({
     if (hit(e, keys.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }
     if (isMultiChoice()) {
       if (e.key === " " && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); toggleChoice(choiceFocus); return; }
-      if (e.key === "Enter") { e.preventDefault(); submitMultiChoice(); return; }
+      if (hit(e, keys.submit)) { e.preventDefault(); submitMultiChoice(); return; }
       if (e.key >= "1" && e.key <= "9") {
         const i = +e.key - 1;
         if (i < state.choices.length) { e.preventDefault(); toggleChoice(i); }

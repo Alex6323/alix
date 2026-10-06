@@ -1221,7 +1221,7 @@ pub fn default_config_toml() -> &'static str {
 # partly = ["2", "p"]           # self-graded: grade as partly (FSRS Hard, still a pass)
 # passed = ["3", "n"]           # self-graded: grade as passed (advance)
 # reveal = ["space", "enter"]   # flip mode: show the answer
-# submit = ["enter"]            # typing / typeline mode: submit the answer
+# submit = ["enter"]            # submit a typed answer, a line, or a multi-choice selection
 # skip = ["ctrl-s"]             # requeue the current card without grading
 # remove = ["ctrl-x"]           # delete the card from the deck file
 # continue = ["space", "enter"] # move on from an answered card

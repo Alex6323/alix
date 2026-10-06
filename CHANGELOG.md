@@ -116,7 +116,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   still works), and review and browse `quit` lose `ctrl-c`.
 
 - The web app now honors the `submit`, `continue`, and `quit` review bindings
-  (a typed answer, moving on from an answered card or a walked answer, and
+  (a typed answer or a multiple-choice selection, moving on from an answered
+  card or a walked answer, and
   leaving a session, walk, or trace), and their buttons show the configured
   key. `continue` now defaults to `space`, then `enter`. Browse `quit` is
   rebindable in the web app; Backspace always leaves too. The picker's search

@@ -296,7 +296,17 @@ function keyHarness(state, keys, browseKeys) {
     startExam: () => {},
     closeMenu: () => {},
     timers: {},
-    ui: { hit, hitOutsideField, label },
+    ui: {
+      hit,
+      hitOutsideField,
+      label,
+      chip: () => ({ disabled: false }),
+      clearLegendSides: () => {},
+      document: { getElementById: () => null },
+      legend: { innerHTML: "" },
+      legendLeft: {},
+      legendRight: {},
+    },
   });
   study.setKeys(keys);
   if (browseKeys) study.setBrowseKeys(browseKeys);
@@ -341,6 +351,31 @@ test("the continue key moves past a walked answer and Enter alone does not", () 
 
   run.press("z");
   assert.deepEqual(run.calls, ["/api/walk/next"], "z continues");
+});
+
+test("the submit key sends a selected multi-choice answer and Enter alone does not", () => {
+  const choice = {
+    kind: "review",
+    phase: "review",
+    label: "Facts",
+    mode: "choice",
+    card: { id: "card-1" },
+    choices: ["one", "two"],
+    choices_multiple: true,
+  };
+  const rebound = keyHarness(choice, { submit: plain("z") });
+  rebound.press("1");
+  rebound.press("z");
+
+  const legacy = keyHarness(choice, { submit: plain("z") });
+  legacy.press("1");
+  legacy.press("Enter");
+
+  assert.deepEqual(
+    { rebound: rebound.calls, legacyEnter: legacy.calls },
+    { rebound: ["/api/choose"], legacyEnter: [] },
+    "the rebound key alone submits",
+  );
 });
 
 test("a rebound browse quit leaves the browser and Backspace always does", async () => {

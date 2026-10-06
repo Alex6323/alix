@@ -24,7 +24,7 @@ Keys are a single character (`"j"`), a special name (`"space"`, `"enter"`, `"tab
 `"esc"`, `"backspace"`), or either with a `ctrl-` prefix (`"ctrl-s"`). An
 empty list (`make_note = []`) leaves an action without a key; its button still
 works. The rebindable `[keys.review]` actions are `failed`, `partly`, `passed`,
-`reveal`, `submit` (default `enter`, submits a typed answer or line), `skip`,
+`reveal`, `submit` (default `enter`, submits a typed answer, a line, or a multiple-choice selection), `skip`,
 `remove` (default `ctrl-x`, deletes the card from the deck file), `ask` (default
 `?`), `context` (default `c`, open the card's section drawer), `continue`
 (default `space`/`enter`, moves on from an answered card or a walked answer),
