@@ -302,7 +302,7 @@ function keyHarness(state, keys, browseKeys) {
       label,
       chip: () => ({ disabled: false }),
       clearLegendSides: () => {},
-      document: { getElementById: () => null },
+      document: { getElementById: () => null, querySelectorAll: () => [] },
       legend: { innerHTML: "" },
       legendLeft: {},
       legendRight: {},
@@ -393,6 +393,23 @@ test("a Space submit binding sends a selected multi-choice answer", () => {
   run.press(" ");
 
   assert.deepEqual(run.calls, ["/api/choose"], "Space submits the selection");
+});
+
+test("the advertised submit binding wins over choice navigation", () => {
+  const choice = {
+    kind: "review",
+    phase: "review",
+    label: "Facts",
+    mode: "choice",
+    card: { id: "card-1" },
+    choices: ["one", "two"],
+    choices_multiple: true,
+  };
+  const run = keyHarness(choice, { submit: plain("k"), up: plain("k") });
+  run.press("1");
+  run.press("k");
+
+  assert.deepEqual(run.calls, ["/api/choose"], "the key shown on Submit submits");
 });
 
 test("a rebound browse quit leaves the browser and Backspace always does", async () => {
