@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 import sys
+from itertools import dropwhile
 from pathlib import Path
 
 
@@ -38,6 +39,10 @@ EVIDENCE_KEYS = {"kind", "command", "cadence"}
 STATES = {"covered", "partial", "gap"}
 CADENCES = {"per-change", "per-push", "nightly", "release", "manual"}
 TARGET = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+NO_OPS = {"true", "false", ":", "exit", "echo", "printf", "cd"}
+SHELL_KEYWORDS = {"if", "then", "else", "elif", "fi", "for", "do", "done", "while", "!"}
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+MAKE_MESSAGE = re.compile(r"make(\[\d+\])?: ")
 
 
 def exact_keys(value, allowed, required, where, problems):
@@ -199,7 +204,24 @@ def validate_commands(commands, makefile):
         )
         if result.returncode != 0:
             problems.append(f"command does not resolve: {command}")
+        elif not runs_something(result.stdout):
+            problems.append(f"command runs nothing: {command}")
     return problems
+
+
+def runs_something(dry_run):
+    for line in dry_run.splitlines():
+        if MAKE_MESSAGE.match(line):
+            continue
+        for segment in re.split(r"&&|\|\||;|\|", line.rstrip("\\")):
+            words = list(dropwhile(is_preamble, segment.split()))
+            if words and words[0] not in NO_OPS:
+                return True
+    return False
+
+
+def is_preamble(word):
+    return word in SHELL_KEYWORDS or bool(ASSIGNMENT.match(word))
 
 
 def arguments():

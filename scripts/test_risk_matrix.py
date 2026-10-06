@@ -1,10 +1,12 @@
 import copy
 import json
+import os
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -185,7 +187,9 @@ class RiskMatrixGuardTests(unittest.TestCase):
             for row in matrix["risk_classes"]
             for evidence in row["primary_evidence"]
         }
-        return "\n".join(f"{target}:\n\t@true\n" for target in sorted(targets))
+        return "\n".join(
+            f"{target}:\n\t@./evidence {target}\n" for target in sorted(targets)
+        )
 
     def test_the_complete_matrix_passes(self):
         matrix = complete_matrix()
@@ -358,6 +362,32 @@ class RiskMatrixGuardTests(unittest.TestCase):
                     renamed,
                     existing_paths=(target,),
                 )
+
+    def test_a_named_target_whose_recipe_runs_nothing_turns_the_guard_red(self):
+        matrix = complete_matrix()
+        makefile = self.fixture_makefile(matrix)
+        live = "test:\n\t@./evidence test\n"
+        self.assertIn(live, makefile, "the fixture names `make test`")
+        for recipe in ("false", "@true", ":", "exit 0", "echo ok", "@echo a; true"):
+            with self.subTest(recipe=recipe):
+                self.assert_invalid(
+                    matrix,
+                    "command runs nothing: make test",
+                    makefile.replace(live, f"test:\n\t{recipe}\n"),
+                )
+        for level in ("0", "1"):
+            with self.subTest(recipe="none", makelevel=level):
+                with mock.patch.dict(os.environ, {"MAKELEVEL": level}):
+                    self.assert_invalid(
+                        matrix,
+                        "command runs nothing: make test",
+                        makefile.replace(live, "test:\n"),
+                    )
+        with self.subTest(recipe="no-op then evidence"):
+            result = self.run_guard(
+                matrix, makefile.replace(live, "test:\n\t@echo a\n\t./evidence\n")
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
