@@ -113,7 +113,10 @@ phone-only. A member the desktop deleted stays on the phone while its
 progress is not yet pushed, listed as kept, so nothing you reviewed is
 lost before it reached the desktop. A conflicting deck, one whose progress changed on both sides
 since the last sync, stops review of that deck and asks: keep the phone's
-progress or take the desktop's, naming what each choice discards. An entry
+progress or take the desktop's, naming what each choice discards. A
+conflict that a background sync records while a review or a trace is
+running does not interrupt it: the choice opens when that session ends,
+whether you finish it or leave early. An entry
 the desktop no longer serves stays on the phone, reviewable, listed as
 orphaned, with a Remove action once you're done with it.
 

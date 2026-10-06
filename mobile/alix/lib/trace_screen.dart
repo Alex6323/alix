@@ -9,6 +9,8 @@ import 'package:alix_mobile/exam_screen.dart';
 import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
+import 'package:alix_mobile/sync/sync_controller.dart';
+import 'package:alix_mobile/sync/sync_sheet.dart';
 import 'package:alix_mobile/trace/trace_controller.dart';
 import 'package:alix_mobile/trace/trace_models.dart';
 import 'package:alix_mobile/trace/trace_view.dart';
@@ -26,6 +28,7 @@ class TraceSessionScreen extends StatefulWidget {
     this.device,
     this.supportDir,
     this.buildClient,
+    this.syncController,
   });
 
   final String deckPath;
@@ -40,6 +43,9 @@ class TraceSessionScreen extends StatefulWidget {
   /// Builds the exam handoff's client. Tests inject a fake.
   final ServerClient Function(ServerConfig)? buildClient;
 
+  /// Non-null only when [rootDir] is the active paired root.
+  final SyncController? syncController;
+
   @override
   State<TraceSessionScreen> createState() => _TraceSessionScreenState();
 }
@@ -50,6 +56,7 @@ class _TraceSessionScreenState extends State<TraceSessionScreen> {
 
   ServerClient? _client;
   Directory? _support;
+  bool _endChecked = false;
 
   @override
   void initState() {
@@ -64,12 +71,35 @@ class _TraceSessionScreenState extends State<TraceSessionScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _bailToCaller());
     } else {
       _probeServer();
+      _controller.addListener(_checkConflictAtDone);
     }
+  }
+
+  void _checkConflictAtDone() {
+    if (_endChecked ||
+        _controller.openError != null ||
+        _controller.state.phase != TraceSessionPhaseModel.done) {
+      return;
+    }
+    _endChecked = true;
+    _showEndConflict();
+  }
+
+  Future<void> _showEndConflict() async {
+    final syncController = widget.syncController;
+    if (syncController == null || !mounted) return;
+    await showSessionEndConflict(
+      context,
+      syncController: syncController,
+      rootDir: widget.rootDir,
+      deckPath: widget.deckPath,
+    );
   }
 
   @override
   void dispose() {
     _predict.dispose();
+    _controller.removeListener(_checkConflictAtDone);
     _controller.dispose();
     _client?.close();
     super.dispose();
@@ -126,6 +156,7 @@ class _TraceSessionScreenState extends State<TraceSessionScreen> {
   }
 
   void _restart() {
+    _endChecked = false;
     _controller.restart();
     if (_controller.openError != null) {
       _bailToCaller();
@@ -174,14 +205,16 @@ class _TraceSessionScreenState extends State<TraceSessionScreen> {
     );
   }
 
-  Future<bool> _confirmLeave(BuildContext context) {
+  Future<bool> _confirmLeave(BuildContext context) async {
     final state = _controller.state;
-    return confirmLeaveSession(
+    final leave = await confirmLeaveSession(
       context,
       title: 'Leave the trace?',
       body: "You're on checkpoint ${state.current} of ${state.total}.",
       stayLabel: 'Keep tracing',
     );
+    if (leave) await _showEndConflict();
+    return leave;
   }
 
   @override

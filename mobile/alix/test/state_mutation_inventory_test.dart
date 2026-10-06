@@ -84,10 +84,10 @@ void main() {
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
-        'lib/review_screen.dart:373',
-        'lib/picker_screen.dart:648',
+        'lib/review_screen.dart:369',
+        'lib/picker_screen.dart:650',
         'lib/picker/generate_sheet.dart:42',
-        'lib/trace_screen.dart:192',
+        'lib/trace_screen.dart:225',
         'lib/walk_screen.dart:202',
       ],
       reason:
@@ -98,8 +98,9 @@ void main() {
           'their single ListenableBuilder site; the tutor conversation '
           'ownership added an import, four fields, and three methods to '
           'review_screen.dart; the walk launch added an import and a method '
-          'to picker_screen.dart; generate_sheet.dart and trace_screen.dart '
-          'are unchanged',
+          'to picker_screen.dart; the session-end conflict check added '
+          'imports, a field, and methods to trace_screen.dart; '
+          'generate_sheet.dart is unchanged',
     );
   });
 

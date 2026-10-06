@@ -313,6 +313,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On the phone, a sync conflict that a background sync records during a trace
+  on a paired deck now opens the conflict choice when the trace ends, finished
+  or left early, so progress graded on the unresolved side is resolved before
+  it is pushed. A review left early now asks the same way; a finished review
+  already did.
+
 - On the phone, tapping a paired trace deck that has an unresolved sync
   conflict opens the conflict choice instead of the trace session, so grading
   no longer writes progress on the unresolved side.

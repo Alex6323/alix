@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:alix_mobile/sync/sync_controller.dart';
 import 'package:alix_mobile/sync/sync_models.dart';
 
 /// Shows [conflict] alone, with no report section: the review summary's
@@ -24,6 +25,31 @@ Future<void> showConflictChoiceSheet(
       onRemoveOrphan: (_) {},
     ),
   );
+}
+
+/// Shows the conflict choice for [deckPath] when one is pending; the review
+/// and trace screens call it once their session ends, finished or left.
+Future<void> showSessionEndConflict(
+  BuildContext context, {
+  required SyncController syncController,
+  required String rootDir,
+  required String deckPath,
+}) async {
+  final deckId = deckIdForPath(
+    entries: syncController.pairedEntries,
+    rootDir: rootDir,
+    path: deckPath,
+  );
+  if (deckId == null) return;
+  for (final conflict in syncController.pendingConflicts) {
+    if (conflict.deckId != deckId) continue;
+    return showConflictChoiceSheet(
+      context,
+      conflict: conflict,
+      onResolve: (deckId, keepPhone) =>
+          syncController.resolve(deckId, keepPhone: keepPhone),
+    );
+  }
 }
 
 /// The sync report sheet: the non-empty categories from the last cycle,

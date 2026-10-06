@@ -103,8 +103,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   /// Fires once, the first time the summary renders (`state.card` turns
-  /// null), pushing this deck's local progress silently; a 409 opens the
-  /// same conflict choice the sync report sheet uses.
+  /// null), pushing this deck's local progress silently, then opens the
+  /// conflict choice if the deck has one pending.
   void _maybePushSummary() {
     if (_summaryPushed || _controller.state.card != null) return;
     final syncController = widget.syncController;
@@ -118,27 +118,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
     _summaryPushed = true;
     syncController
         .pushOne(deckId)
-        .then((_) {
-          if (!mounted) return;
-          final conflicts = syncController.pendingConflicts.where(
-            (c) => c.deckId == deckId,
-          );
-          if (conflicts.isNotEmpty) _showConflictSheet(conflicts.first);
-        })
+        .then((_) => _showEndConflict())
         // Silent on failure, matching the doc comment above: an unexpected
         // error here must not become an unhandled Future error (a crash
         // report the user never sees a symptom for).
         .catchError((_) {});
   }
 
-  void _showConflictSheet(SyncPendingConflict conflict) {
+  Future<void> _showEndConflict() async {
     final syncController = widget.syncController;
     if (syncController == null || !mounted) return;
-    showConflictChoiceSheet(
+    await showSessionEndConflict(
       context,
-      conflict: conflict,
-      onResolve: (deckId, keepPhone) =>
-          syncController.resolve(deckId, keepPhone: keepPhone),
+      syncController: syncController,
+      rootDir: widget.rootDir,
+      deckPath: widget.deckPath,
     );
   }
 
@@ -354,15 +348,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
     if (_controller.openError == null) _resetInputs();
   }
 
-  Future<bool> _confirmLeave(BuildContext context) {
+  Future<bool> _confirmLeave(BuildContext context) async {
     final remaining = _controller.state.remaining;
-    return confirmLeaveSession(
+    final leave = await confirmLeaveSession(
       context,
       title: 'Leave the review?',
       body:
           '$remaining card${remaining == 1 ? '' : 's'} still due in this session.',
       stayLabel: 'Keep reviewing',
     );
+    if (leave) await _showEndConflict();
+    return leave;
   }
 
   @override

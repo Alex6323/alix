@@ -432,6 +432,7 @@ class _PickerScreenState extends State<PickerScreen> {
   Future<void> _openTraceSession(
     PickerEntry entry, {
     required String root,
+    required bool isPaired,
   }) async {
     if (!mounted) return;
     await Navigator.of(context).push(
@@ -441,6 +442,7 @@ class _PickerScreenState extends State<PickerScreen> {
           rootDir: root,
           device: widget.device,
           buildClient: widget.buildClient,
+          syncController: isPaired ? _syncController : null,
         ),
       ),
     );
@@ -595,7 +597,7 @@ class _PickerScreenState extends State<PickerScreen> {
       if (conflict != null) {
         _openConflictChoice(conflict);
       } else {
-        _openTraceSession(entry, root: root);
+        _openTraceSession(entry, root: root, isPaired: isPaired);
       }
     } else {
       _openLaunchSheet(entry, root: root, isPaired: isPaired);
