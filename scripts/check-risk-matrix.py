@@ -39,7 +39,7 @@ EVIDENCE_KEYS = {"kind", "command", "cadence"}
 STATES = {"covered", "partial", "gap"}
 CADENCES = {"per-change", "per-push", "nightly", "release", "manual"}
 TARGET = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
-NO_OPS = {"true", "false", ":", "exit", "echo", "printf", "cd"}
+NO_OPS = {"true", "false", ":", "exit", "echo", "printf", "cd", "test", "["}
 SHELL_KEYWORDS = {"if", "then", "else", "elif", "fi", "for", "do", "done", "while", "!"}
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 MAKE_MESSAGE = re.compile(r"make(\[\d+\])?: ")
