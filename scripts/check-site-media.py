@@ -16,6 +16,7 @@ SHOT_ROW = re.compile(r'\[\d+, "([^"]+)", shot\d+\]')
 SITE_PAGE = REPO_ROOT / "site" / "index.html"
 PAGE_SHOT = re.compile(r"img/(shot-[^/]+\.webp)")
 TEXT_ONLY_TAGS = {"textarea", "title"}
+FOREIGN_ROOTS = {"svg", "math"}
 README = REPO_ROOT / "README.md"
 README_SHOT = re.compile(r"/img/((?:[^\s)\"/]+/)*shot-[^\s)\"/]+\.webp)")
 MEDIA_BUDGET_BYTES = 3 * 1024 * 1024 // 2
@@ -36,13 +37,20 @@ class ShotSources(HTMLParser):
         self.picture: list[str] | None = None
         self.picture_has_img = False
         self.templates = 0
+        self.foreign = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if self.text_only:
             return
+        if self.foreign:
+            self.foreign += tag in FOREIGN_ROOTS
+            return
         if tag == "template":
             self.templates += 1
         if self.templates:
+            return
+        if tag in FOREIGN_ROOTS:
+            self.foreign = 1
             return
         if tag in TEXT_ONLY_TAGS:
             self.text_only = tag
@@ -69,12 +77,16 @@ class ShotSources(HTMLParser):
             self.picture_has_img = True
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        self.handle_starttag(tag, attrs)
+        if not self.foreign and tag not in FOREIGN_ROOTS:
+            self.handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag: str) -> None:
         if self.text_only:
             if tag == self.text_only:
                 self.text_only = None
+            return
+        if self.foreign:
+            self.foreign -= tag in FOREIGN_ROOTS
             return
         if tag == "template" and self.templates:
             self.templates -= 1

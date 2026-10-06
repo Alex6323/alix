@@ -240,6 +240,28 @@ class SiteMediaTests(unittest.TestCase):
 
         self.assertEqual(1, result.returncode, result.stdout)
 
+    def test_a_self_closing_svg_title_does_not_hide_a_later_image(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                f'<svg aria-hidden="true"><title/></svg><img src="img/{SHOT}">\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_a_self_closing_svg_does_not_hide_a_later_image(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                f'<svg aria-hidden="true"/><img src="img/{SHOT}">\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
     def test_a_shot_prefixed_subdirectory_is_not_a_served_media_path(self):
         nested = f"shot-old/{SHOT}"
 
