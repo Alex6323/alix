@@ -45,7 +45,7 @@ SHELL_KEYWORDS = {"if", "then", "else", "elif", "fi", "for", "do", "done", "whil
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 MAKE_MESSAGE = re.compile(r"make(\[\d+\])?: ")
 SEPARATORS = {"&&", "||", ";", ";;", "|", "|&", "&", "(", ")"}
-FILE_WRITES = {">", ">>", ">|", "&>", "&>>"}
+FILE_WRITES = {">", ">>", ">|", "&>", "&>>", "<>"}
 
 
 def exact_keys(value, allowed, required, where, problems):
@@ -222,7 +222,11 @@ def runs_something(dry_run):
             return True
         for segment in segments(tokens):
             words = list(dropwhile(is_preamble, segment))
-            if words and (words[0].strip("'\"") not in NO_OPS or writes_file(segment)):
+            if words and (
+                words[0].strip("'\"") not in NO_OPS
+                or writes_file(segment)
+                or substitutes_command(segment)
+            ):
                 return True
     return False
 
@@ -242,6 +246,10 @@ def segments(tokens):
         else:
             segment.append(token)
     yield segment
+
+
+def substitutes_command(segment):
+    return any("$(" in token or "`" in token for token in segment)
 
 
 def writes_file(segment):

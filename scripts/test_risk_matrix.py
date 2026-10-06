@@ -449,6 +449,19 @@ class RiskMatrixGuardTests(unittest.TestCase):
             makefile.replace(live, "test:\n\t@printf '&'\n"),
         )
 
+    def test_a_double_quoted_command_substitution_is_real_work(self):
+        matrix = complete_matrix()
+        makefile = self.fixture_makefile(matrix)
+        live = "test:\n\t@./evidence test\n"
+        result = self.run_guard(
+            matrix,
+            makefile.replace(
+                live,
+                "test:\n\t@printf '%s\\n' \"$$(./evidence test)\"\n",
+            ),
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
     def test_printf_redirection_is_real_work(self):
         matrix = complete_matrix()
         makefile = self.fixture_makefile(matrix)
@@ -458,6 +471,19 @@ class RiskMatrixGuardTests(unittest.TestCase):
             makefile.replace(
                 live,
                 "test:\n\t@printf evidence > evidence-receipt.txt\n",
+            ),
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_printf_read_write_redirection_is_real_work(self):
+        matrix = complete_matrix()
+        makefile = self.fixture_makefile(matrix)
+        live = "test:\n\t@./evidence test\n"
+        result = self.run_guard(
+            matrix,
+            makefile.replace(
+                live,
+                "test:\n\t@printf evidence 1<> evidence-receipt.txt\n",
             ),
         )
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
