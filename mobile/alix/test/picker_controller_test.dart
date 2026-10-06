@@ -302,6 +302,40 @@ void main() {
     },
   );
 
+  test(
+    'a queued relisting refresh does not publish the stale search first',
+    () async {
+      final first = Completer<List<PickerSearchHit>>();
+      final second = Completer<List<PickerSearchHit>>();
+      final port = _FakePickerPort(rootEntries: [_entry('own')])
+        ..searchReplies.addAll([first, second]);
+      final controller = PickerController(port: port, root: '/decks');
+      await pumpEventQueue();
+
+      controller.openSearch();
+      await pumpEventQueue();
+      controller.reload();
+      await pumpEventQueue();
+
+      first.complete([
+        PickerSearchHit(root: '/decks', entry: _entry('stale')),
+      ]);
+      await pumpEventQueue();
+
+      expect(
+        controller.searchHits,
+        isNull,
+        reason: 'the answer invalidated by the relisting must not be published',
+      );
+
+      second.complete([
+        PickerSearchHit(root: '/decks', entry: _entry('fresh')),
+      ]);
+      await pumpEventQueue();
+      expect(controller.searchHits!.single.entry.title, 'fresh');
+    },
+  );
+
   test('a strip answer from the stale search cannot overwrite the refreshed '
       'search strip', () async {
     final firstSearch = Completer<List<PickerSearchHit>>();
@@ -316,12 +350,13 @@ void main() {
 
     controller.openSearch();
     await pumpEventQueue();
-    controller.reload();
-    await pumpEventQueue();
-
     firstSearch.complete([
       PickerSearchHit(root: '/decks', entry: _entry('deck')),
     ]);
+    await pumpEventQueue();
+
+    controller.closeSearch();
+    controller.openSearch();
     await pumpEventQueue();
     secondSearch.complete([
       PickerSearchHit(root: '/decks', entry: _entry('deck')),

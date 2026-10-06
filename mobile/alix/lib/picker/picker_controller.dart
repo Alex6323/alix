@@ -148,10 +148,7 @@ class PickerController extends ChangeNotifier {
       hits = null;
     }
     _searchLoading = false;
-    if (hits != null &&
-        searchGeneration == _searchGeneration &&
-        _searchOpen &&
-        !_disposed) {
+    if (hits != null && !_searchWanted && _searchOpen && !_disposed) {
       _searchable = List.unmodifiable(hits);
       for (final root in roots) {
         _requestStrips(root, [
