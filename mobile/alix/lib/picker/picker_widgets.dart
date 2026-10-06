@@ -625,7 +625,11 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                     : null,
               ),
             if (widget.onWalk case final onWalk?) ...[
-              const SizedBox(height: 8),
+              Divider(
+                height: 16,
+                thickness: 1,
+                color: Theme.of(context).alix.line,
+              ),
               _PickerLaunchRow(
                 label: 'Walk',
                 hint: 'read every card once, no grading',

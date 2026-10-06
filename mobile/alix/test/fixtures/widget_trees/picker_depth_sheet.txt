@@ -154,7 +154,14 @@ CustomPaint
                                       Icon(e15f)
                                         SizedBox(width=22.0, height=22.0)
                                           Center
-                      SizedBox(width=null, height=8.0)
+                      Divider
+                        SizedBox(width=null, height=16.0)
+                          Center
+                            Container
+                              Padding(EdgeInsets.zero)
+                                ConstrainedBox
+                                  Padding(EdgeInsets(0.0, 0.0, 0.0, 1.0))
+                                    ConstrainedBox
                       Padding(EdgeInsets(0.0, 0.0, 0.0, 6.0))
                         Opacity(1.00)
                           Material

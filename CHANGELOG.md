@@ -20,7 +20,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   choices and flipping everything else, with the tutor available on each item.
   Moving past an answer records `walked_ms`.
 
-- The phone can walk a deck: **Walk** in a deck's launch sheet.
+- The phone can walk a deck: **Walk** in a deck's launch sheet, set off by a
+  hairline because Cram and Skip introduction do not apply to it.
 
 - The web picker can start a walk: **Walk** in a deck's Depth… menu (key `w`).
 

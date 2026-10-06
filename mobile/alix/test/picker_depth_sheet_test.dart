@@ -128,11 +128,32 @@ void main() {
     expect((walks, choices.length), (1, 0), reason: 'one walk, no depth');
   });
 
+  testWidgets('a hairline separates the walk from the switches and depths it '
+      'ignores', (tester) async {
+    await tester.pumpWidget(_sheet((_) {}, onWalk: () {}));
+
+    final divider = find.byType(Divider);
+    expect(divider, findsOneWidget, reason: 'one separator in the sheet');
+    final line = tester.getCenter(divider).dy;
+    expect(
+      (
+        line >
+            tester
+                .getBottomLeft(find.widgetWithText(InkWell, 'Reconstruct'))
+                .dy,
+        line < tester.getTopLeft(find.widgetWithText(InkWell, 'Walk')).dy,
+      ),
+      (true, true),
+      reason: 'separator at y=$line lies between Reconstruct and Walk',
+    );
+  });
+
   testWidgets('without a walk launcher the sheet has no Walk row', (
     tester,
   ) async {
     await tester.pumpWidget(_sheet((_) {}));
     expect(find.text('Walk'), findsNothing);
+    expect(find.byType(Divider), findsNothing, reason: 'nothing to separate');
   });
 
   testWidgets('every launch is a bordered row with a chevron, like the '
