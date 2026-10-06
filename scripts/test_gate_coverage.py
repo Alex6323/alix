@@ -194,6 +194,59 @@ class ReadsRecipeCommands(unittest.TestCase):
                     f"`{line}` selects only part of the root suite",
                 )
 
+    def test_a_name_filtered_run_is_not_a_whole_crate_test(self):
+        rows = [
+            ("cargo test parser", False),
+            ("cargo test -- parser", False),
+            ("cargo test -- --skip slow", False),
+            ("cargo test -- --ignored", False),
+            ("cargo test -- --exact parser::tests::one", False),
+            ("cargo nextest run parser", False),
+            ("cargo test -j 1", True),
+            ("cargo test --features full --jobs 1", True),
+            ("cargo test -- --test-threads=1 --nocapture", True),
+            ("cargo test -- --test-threads 1", True),
+        ]
+        for line, expected in rows:
+            with self.subTest(line=line):
+                self.assertEqual(
+                    expected,
+                    gate.is_whole_crate_test(gate.commands(line)[0]),
+                    f"`{line}` was read as whole-crate={not expected}",
+                )
+
+    def test_a_name_filtered_manifest_run_does_not_gate_its_crate(self):
+        rows = [
+            ("cargo test --locked --manifest-path test-support/Cargo.toml", 0),
+            ("cargo test --locked --manifest-path test-support/Cargo.toml parse", 1),
+        ]
+        for recipe, expected in rows:
+            with self.subTest(recipe=recipe):
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    (root / "test-support").mkdir()
+                    (root / ".github" / "workflows").mkdir(parents=True)
+                    (root / "Cargo.toml").write_text("[package]\nname='root'\n")
+                    (root / "test-support" / "Cargo.toml").write_text(
+                        "[package]\nname='support'\n"
+                    )
+                    (root / "Makefile").write_text(
+                        f"check: test\n\ntest:\n\tcargo test\n\t{recipe}\n"
+                    )
+                    with mock.patch.multiple(
+                        gate,
+                        REPO_ROOT=root,
+                        MAKEFILE=root / "Makefile",
+                        WORKFLOWS=root / ".github" / "workflows",
+                        LOCAL_GATES=("check",),
+                        CI_ONLY={},
+                    ):
+                        self.assertEqual(
+                            expected,
+                            run_guard(),
+                            f"`{recipe}` was read as gating={not expected}",
+                        )
+
 
 class ReadsWorkflowExecution(unittest.TestCase):
     def test_only_executed_text_is_extracted(self):

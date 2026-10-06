@@ -79,7 +79,34 @@ SELECTION_FLAGS = {
     "--package",
     "--exclude",
     "--manifest-path",
+    "-E",
+    "--filterset",
 }
+CARGO_VALUE_FLAGS = {
+    "-p",
+    "--package",
+    "--exclude",
+    "--test",
+    "--bench",
+    "--example",
+    "--bin",
+    "-F",
+    "--features",
+    "-j",
+    "--jobs",
+    "--target",
+    "--target-dir",
+    "--manifest-path",
+    "--profile",
+    "--color",
+    "--message-format",
+    "--config",
+    "-Z",
+    "-E",
+    "--filterset",
+}
+HARNESS_SELECTION_FLAGS = {"--skip", "--exact", "--ignored"}
+HARNESS_VALUE_FLAGS = {"--test-threads", "--color", "--format", "--logfile"}
 
 # A unit `make check` and `make preflight` deliberately do not run. Each needs
 # the workflow marker that proves something else does; a stale exception whose
@@ -183,13 +210,55 @@ def names_path(command: list[str], unit: str) -> bool:
 
 def is_whole_crate_test(command: list[str]) -> bool:
     """`cargo test` over the whole root crate, which a narrowed run is not."""
+    words = cargo_test_words(command)
+    if words is None:
+        return False
+    if any(token.split("=")[0] in SELECTION_FLAGS for token in command):
+        return False
+    return not filters_by_name(words)
+
+
+def cargo_test_words(command: list[str]) -> list[str] | None:
+    """The arguments after `cargo test` or `cargo nextest run`, else None."""
     words = [token for token in command if "=" not in token or token.startswith("-")]
     if not words or words[0] != "cargo":
-        return False
+        return None
     subcommands = [token for token in words[1:] if not token.startswith("-")]
     if not subcommands or subcommands[0] not in {"test", "nextest"}:
+        return None
+    rest = words[words.index(subcommands[0]) + 1 :]
+    if subcommands[0] == "nextest" and rest[:1] == ["run"]:
+        rest = rest[1:]
+    return rest
+
+
+def filters_by_name(arguments: list[str]) -> bool:
+    """A test-name filter, or a harness flag that runs only some tests."""
+    split = arguments.index("--") if "--" in arguments else len(arguments)
+    cargo_side, harness_side = arguments[:split], arguments[split + 1 :]
+    return has_positional(cargo_side, CARGO_VALUE_FLAGS) or (
+        has_positional(harness_side, HARNESS_VALUE_FLAGS)
+        or any(token.split("=")[0] in HARNESS_SELECTION_FLAGS for token in harness_side)
+    )
+
+
+def has_positional(arguments: list[str], value_flags: set[str]) -> bool:
+    skip_next = False
+    for token in arguments:
+        if skip_next:
+            skip_next = False
+        elif token.startswith("-"):
+            skip_next = token in value_flags
+        else:
+            return True
+    return False
+
+
+def gates_unit(command: list[str], unit: str) -> bool:
+    if not names_path(command, unit):
         return False
-    return not any(token.split("=")[0] in SELECTION_FLAGS for token in command)
+    words = cargo_test_words(command)
+    return words is None or not filters_by_name(words)
 
 
 def units() -> list[str]:
@@ -338,7 +407,7 @@ def main() -> int:
                 continue
             ungated.append(f"{unit} (no bare `cargo test` reachable from a local gate)")
             continue
-        if any(names_path(command, unit) for command in recipes):
+        if any(gates_unit(command, unit) for command in recipes):
             continue
         if unit in CI_ONLY:
             reason, marker = CI_ONLY[unit]
