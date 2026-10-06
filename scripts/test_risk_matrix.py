@@ -462,6 +462,21 @@ class RiskMatrixGuardTests(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
+    def test_non_command_dollar_syntax_does_not_invent_a_command(self):
+        matrix = complete_matrix()
+        makefile = self.fixture_makefile(matrix)
+        live = "test:\n\t@./evidence test\n"
+        for recipe in (
+            "printf '%s\\n' '$$(./evidence test)'",
+            'printf \'%s\\n\' "$$((1 + 1))"',
+        ):
+            with self.subTest(recipe=recipe):
+                self.assert_invalid(
+                    matrix,
+                    "command runs nothing: make test",
+                    makefile.replace(live, f"test:\n\t@{recipe}\n"),
+                )
+
     def test_printf_redirection_is_real_work(self):
         matrix = complete_matrix()
         makefile = self.fixture_makefile(matrix)

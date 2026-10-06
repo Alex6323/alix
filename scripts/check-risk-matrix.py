@@ -45,6 +45,7 @@ SHELL_KEYWORDS = {"if", "then", "else", "elif", "fi", "for", "do", "done", "whil
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 MAKE_MESSAGE = re.compile(r"make(\[\d+\])?: ")
 SEPARATORS = {"&&", "||", ";", ";;", "|", "|&", "&", "(", ")"}
+COMMAND_SUBSTITUTION = re.compile(r"\$\((?!\()|`")
 FILE_WRITES = {">", ">>", ">|", "&>", "&>>", "<>"}
 
 
@@ -249,7 +250,9 @@ def segments(tokens):
 
 
 def substitutes_command(segment):
-    return any("$(" in token or "`" in token for token in segment)
+    return any(
+        not token.startswith("'") and COMMAND_SUBSTITUTION.search(token) for token in segment
+    )
 
 
 def writes_file(segment):
