@@ -44,6 +44,7 @@ SHELL_KEYWORDS = {"if", "then", "else", "elif", "fi", "for", "do", "done", "whil
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 MAKE_MESSAGE = re.compile(r"make(\[\d+\])?: ")
 COMMENT = re.compile(r"(?:^|(?<=[\s;&|()]))#.*")
+SEPARATOR = re.compile(r"&&|\|\||;|\||\(|\)|(?<![<>])&(?!>)")
 FILE_REDIRECTION = re.compile(r">>?\s*(?!/dev/null\b)[^\s&>]")
 
 
@@ -216,7 +217,7 @@ def runs_something(dry_run):
         if MAKE_MESSAGE.match(line):
             continue
         code = COMMENT.sub("", line.rstrip("\\"))
-        for segment in re.split(r"&&|\|\||;|\||\(|\)", code):
+        for segment in SEPARATOR.split(code):
             words = list(dropwhile(is_preamble, segment.split()))
             if words and (words[0] not in NO_OPS or FILE_REDIRECTION.search(segment)):
                 return True

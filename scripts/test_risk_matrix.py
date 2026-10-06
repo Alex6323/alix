@@ -429,6 +429,16 @@ class RiskMatrixGuardTests(unittest.TestCase):
             makefile.replace(live, "test:\n\t@(test -f Makefile)\n"),
         )
 
+    def test_a_command_after_a_background_separator_is_real_work(self):
+        matrix = complete_matrix()
+        makefile = self.fixture_makefile(matrix)
+        live = "test:\n\t@./evidence test\n"
+        result = self.run_guard(
+            matrix,
+            makefile.replace(live, "test:\n\t@true & ./evidence test\n"),
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
     def test_printf_redirection_is_real_work(self):
         matrix = complete_matrix()
         makefile = self.fixture_makefile(matrix)
