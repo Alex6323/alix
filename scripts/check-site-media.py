@@ -33,7 +33,8 @@ class ShotSources(HTMLParser):
         super().__init__()
         self.shots: list[str] = []
         self.text_only: str | None = None
-        self.pictures = 0
+        self.picture: list[str] | None = None
+        self.picture_has_img = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if self.text_only:
@@ -41,28 +42,33 @@ class ShotSources(HTMLParser):
         if tag in TEXT_ONLY_TAGS:
             self.text_only = tag
         if tag == "picture":
-            self.pictures += 1
+            self.picture = []
+            self.picture_has_img = False
         if tag == "img":
             names = {"src", "srcset"}
-        elif tag == "source" and self.pictures:
+        elif tag == "source" and self.picture is not None and not self.picture_has_img:
             names = {"srcset"}
         else:
             return
-        element_shots: list[str] = []
+        image = self.picture if self.picture is not None else []
         for name, value in attrs:
             if name not in names:
                 continue
             for url in attribute_urls(name, value or ""):
                 shot = PAGE_SHOT.fullmatch(url)
-                if shot and shot.group(1) not in element_shots:
-                    element_shots.append(shot.group(1))
-        self.shots.extend(element_shots)
+                if shot and shot.group(1) not in image:
+                    image.append(shot.group(1))
+        if self.picture is None:
+            self.shots.extend(image)
+        elif tag == "img":
+            self.picture_has_img = True
 
     def handle_endtag(self, tag: str) -> None:
         if tag == self.text_only:
             self.text_only = None
-        if tag == "picture" and self.pictures:
-            self.pictures -= 1
+        if tag == "picture" and self.picture is not None:
+            self.shots.extend(self.picture)
+            self.picture = None
 
 
 def attribute_urls(name: str, value: str) -> list[str]:

@@ -170,6 +170,30 @@ class SiteMediaTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
+    def test_a_picture_source_and_img_can_reference_the_same_shot(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                f'<picture><source srcset="img/{SHOT}" type="image/webp">'
+                f'<img src="img/{SHOT}" alt=""></picture>\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_a_picture_source_after_the_img_is_not_served(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                '<picture><img src="img/fallback.png" alt="">'
+                f'<source srcset="img/{SHOT}" type="image/webp"></picture>\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(1, result.returncode, result.stdout)
+
     def test_a_shot_prefixed_subdirectory_is_not_a_served_media_path(self):
         nested = f"shot-old/{SHOT}"
 
