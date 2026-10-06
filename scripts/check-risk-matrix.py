@@ -43,6 +43,8 @@ NO_OPS = {"true", "false", ":", "exit", "echo", "printf", "cd"}
 SHELL_KEYWORDS = {"if", "then", "else", "elif", "fi", "for", "do", "done", "while", "!"}
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 MAKE_MESSAGE = re.compile(r"make(\[\d+\])?: ")
+COMMENT = re.compile(r"(^|\s)#.*")
+FILE_REDIRECTION = re.compile(r">>?\s*(?!/dev/null\b)[^\s&>]")
 
 
 def exact_keys(value, allowed, required, where, problems):
@@ -213,9 +215,10 @@ def runs_something(dry_run):
     for line in dry_run.splitlines():
         if MAKE_MESSAGE.match(line):
             continue
-        for segment in re.split(r"&&|\|\||;|\|", line.rstrip("\\")):
+        code = COMMENT.sub("", line.rstrip("\\"))
+        for segment in re.split(r"&&|\|\||;|\|", code):
             words = list(dropwhile(is_preamble, segment.split()))
-            if words and words[0] not in NO_OPS:
+            if words and (words[0] not in NO_OPS or FILE_REDIRECTION.search(segment)):
                 return True
     return False
 

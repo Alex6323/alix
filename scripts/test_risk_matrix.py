@@ -389,6 +389,29 @@ class RiskMatrixGuardTests(unittest.TestCase):
             )
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
+    def test_a_shell_comment_is_not_a_real_command(self):
+        matrix = complete_matrix()
+        makefile = self.fixture_makefile(matrix)
+        live = "test:\n\t@./evidence test\n"
+        self.assert_invalid(
+            matrix,
+            "command runs nothing: make test",
+            makefile.replace(live, "test:\n\t@# no evidence\n"),
+        )
+
+    def test_printf_redirection_is_real_work(self):
+        matrix = complete_matrix()
+        makefile = self.fixture_makefile(matrix)
+        live = "test:\n\t@./evidence test\n"
+        result = self.run_guard(
+            matrix,
+            makefile.replace(
+                live,
+                "test:\n\t@printf evidence > evidence-receipt.txt\n",
+            ),
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
