@@ -63,9 +63,6 @@ CARGO_SUBDIRS = {"tests", "benches", "examples"}
 # These units are the deliberate exception, where a schedule is the point.
 SCHEDULED = {"fuzz/Cargo.toml"}
 MAIN = "main"
-# `env` options after which env still runs the command; any other option fails closed.
-ENV_FLAGS = {"-i", "--ignore-environment", "-", "-v", "--debug"}
-ENV_VALUE_FLAGS = {"-u", "--unset", "-C", "--chdir"}
 # Cargo flags that pick another crate; a root-crate claim carries none.
 CRATE_FLAGS = {"-p", "--package", "--manifest-path"}
 # cargo and nextest flags that never narrow a passing run; any other flag selects.
@@ -248,21 +245,10 @@ def without_environment(command: list[str]) -> list[str]:
     words = list(itertools.dropwhile(is_assignment, command))
     if words[:1] != ["env"]:
         return words
-    index = 1
-    while index < len(words):
-        token = words[index]
-        if token == "--":
-            index += 1
-            break
-        if token in ENV_VALUE_FLAGS:
-            index += 2
-        elif token in ENV_FLAGS or token.split("=")[0] in ENV_VALUE_FLAGS or is_assignment(token):
-            index += 1
-        elif token.startswith("-"):
-            return []
-        else:
-            break
-    return list(itertools.dropwhile(is_assignment, words[index:]))
+    rest = list(itertools.dropwhile(is_assignment, words[1:]))
+    if rest[:1] and rest[0].startswith("-"):
+        return []
+    return rest
 
 
 def runs_part(arguments: list[str]) -> bool:

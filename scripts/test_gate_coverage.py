@@ -388,12 +388,28 @@ class ReadsRecipeCommands(unittest.TestCase):
             "compact `-pPACKAGE` still selects one package",
         )
 
-    def test_env_option_terminator_before_cargo_keeps_a_whole_crate_test(self):
-        command = gate.commands("env -- cargo test")[0]
+    def test_env_with_only_assignments_keeps_a_whole_crate_test(self):
+        command = gate.commands("env RUSTFLAGS=-Dwarnings cargo test")[0]
         self.assertTrue(
             gate.is_whole_crate_test(command),
-            "the env option terminator does not change the cargo command",
+            "env followed only by assignments still runs cargo test",
         )
+
+    def test_any_env_option_makes_the_command_unreadable(self):
+        for line in (
+            "env -- cargo test",
+            "env --unset= cargo test",
+            "env -uUNUSED cargo test",
+            "env -C. cargo test",
+            "env -iv cargo test",
+            "env --help cargo test",
+        ):
+            with self.subTest(line=line):
+                command = gate.commands(line)[0]
+                self.assertFalse(
+                    gate.is_whole_crate_test(command),
+                    f"an env option was read through instead of failing closed: {line}",
+                )
 
     def test_a_toolchain_qualified_whole_crate_test_is_accepted(self):
         command = gate.commands("cargo +stable test")[0]
