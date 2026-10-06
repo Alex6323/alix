@@ -633,6 +633,7 @@ impl ReviewSession {
     // of `Session`, so this passes None: no retire cap applied on the phone.
     #[flutter_rust_bridge::frb(sync)]
     pub fn apply_remediation(&mut self, cards_text: String) -> Result<u32> {
+        self.store = reopen_store(&self.store, &self.deck_path, &self.root_store)?;
         let count = alix::store::store_remediation_cards(
             &mut self.store,
             Some(&self.deck_path),
@@ -924,6 +925,7 @@ impl TraceSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn apply_exam_failed(&mut self, now_ms: u64) -> Result<()> {
+        self.store = reopen_store(&self.store, &self.deck_path, &self.root_store)?;
         self.store.set_exam_failed(&self.deck_token, now_ms);
         self.store.save()?;
         Ok(())

@@ -429,6 +429,83 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'failing the exam after taking desktop on a finished trace keeps the '
+    'desktop card progress',
+    (tester) async {
+      final client = FakeServerClient(
+        versionReply: '0.8.0',
+        examGetReplies: [_failedExam(isTrace: true)],
+      );
+      final syncController = await openSession(
+        tester,
+        deckId: 'trace-1',
+        deckPath: 'decks/trace.md',
+        rowTitle: 'Trace',
+        examClient: client,
+        directTrace: true,
+      );
+      await tester.enterText(find.byType(TextField), 'a guess');
+      await tester.tap(find.text('Reveal'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Got it'));
+      await tester.pumpAndSettle();
+      expect(find.text('TRACE COMPLETE'), findsOneWidget);
+
+      await resolveAndExpectPicker(tester, syncController);
+      expect(_cards(syncController.workspace), isEmpty);
+      await tester.tap(find.text('Take the exam'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Not yet.'), findsOneWidget);
+      expect(
+        _cards(syncController.workspace),
+        isEmpty,
+        reason: 'exam cooldown must not restore the discarded phone trace',
+      );
+    },
+  );
+
+  testWidgets(
+    'remediating after taking desktop on a finished review keeps only the '
+    'new remediation card',
+    (tester) async {
+      final client = FakeServerClient(
+        versionReply: '0.8.0',
+        examGetReplies: [_failedExam(isTrace: false), _remediatedExam],
+      );
+      final syncController = await openSession(
+        tester,
+        deckId: 'deck-1',
+        deckPath: 'decks/deck.md',
+        rowTitle: 'Deck',
+        examClient: client,
+      );
+      await tester.tap(find.text('Reveal'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Seen'));
+      await tester.pumpAndSettle();
+      expect(find.text('SESSION COMPLETE'), findsOneWidget);
+
+      await resolveAndExpectPicker(tester, syncController);
+      expect(_cards(syncController.workspace), isEmpty);
+      await tester.tap(find.text('Take the exam'));
+      await tester.pumpAndSettle();
+      expect(find.text('Not yet.'), findsOneWidget);
+      await tester.tap(find.text('Turn the gaps into cards'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Done.'), findsOneWidget);
+      expect(
+        _cards(syncController.workspace),
+        hasLength(1),
+        reason:
+            'remediation may add its new card but must not restore the '
+            'discarded phone review',
+      );
+    },
+  );
 }
 
 RemoteExam _passedExam({required bool isTrace}) => RemoteExam(
@@ -441,6 +518,33 @@ RemoteExam _passedExam({required bool isTrace}) => RemoteExam(
   gaps: const [],
   canRemediate: false,
   isTrace: isTrace,
+  thinking: false,
+);
+
+RemoteExam _failedExam({required bool isTrace}) => RemoteExam(
+  phase: 'results',
+  deck: 'ws/deck.md',
+  strictness: 'balanced',
+  questions: const ['What did the card explain?'],
+  passed: false,
+  grades: const [],
+  gaps: const ['the tested idea'],
+  canRemediate: !isTrace,
+  isTrace: isTrace,
+  thinking: false,
+);
+
+const _remediatedExam = RemoteExam(
+  phase: 'remediated',
+  deck: 'ws/deck.md',
+  strictness: 'balanced',
+  questions: ['What did the card explain?'],
+  passed: false,
+  grades: [],
+  gaps: ['the tested idea'],
+  canRemediate: false,
+  cards: '## remediation question?\nremediation answer\n',
+  isTrace: false,
   thinking: false,
 );
 

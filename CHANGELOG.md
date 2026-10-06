@@ -332,6 +332,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   review or trace and then passing the deck's exam no longer writes the
   session's older progress back over the desktop's.
 
+- On the phone, failing a trace exam or creating review-exam remediation cards
+  after taking the desktop's side of an end-of-session sync conflict no longer
+  restores the phone progress that the learner discarded.
+
 - On the phone, a sync conflict that a background sync records during a trace
   on a paired deck now opens the conflict choice when the trace ends, finished
   or left early, so progress graded on the unresolved side is resolved before
