@@ -123,6 +123,35 @@ class GuardsTheExceptionList(unittest.TestCase):
                     "running a crate's binary does not run that crate's tests",
                 )
 
+    def test_an_env_wrapped_cargo_run_does_not_gate_that_crate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tools" / "gfm-harness").mkdir(parents=True)
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / "Cargo.toml").write_text("[package]\nname='root'\n")
+            (root / "tools" / "gfm-harness" / "Cargo.toml").write_text(
+                "[package]\nname='gfm-harness'\n"
+            )
+            (root / "Makefile").write_text(
+                "check:\n"
+                "\tcargo test\n"
+                "\tenv TMPDIR=$(HOME)/tmp cargo run --locked "
+                "--manifest-path tools/gfm-harness/Cargo.toml -- --digest corpus\n"
+            )
+            with mock.patch.multiple(
+                gate,
+                REPO_ROOT=root,
+                MAKEFILE=root / "Makefile",
+                WORKFLOWS=root / ".github" / "workflows",
+                LOCAL_GATES=("check",),
+                CI_ONLY={},
+            ):
+                self.assertEqual(
+                    1,
+                    run_guard(),
+                    "wrapping cargo in env does not turn cargo run into a test",
+                )
+
     def test_a_workflow_comment_does_not_prove_a_ci_only_suite_runs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -299,6 +328,13 @@ class ReadsRecipeCommands(unittest.TestCase):
         self.assertTrue(
             gate.is_whole_crate_test(command),
             "compact `-j1` changes concurrency, not test selection",
+        )
+
+    def test_compact_package_syntax_is_not_a_whole_crate_test(self):
+        command = gate.commands("cargo test -palix-test-support")[0]
+        self.assertFalse(
+            gate.is_whole_crate_test(command),
+            "compact `-pPACKAGE` still selects one package",
         )
 
     def test_a_toolchain_qualified_whole_crate_test_is_accepted(self):
