@@ -7,6 +7,23 @@ export function overflowHints({ scrollTop, clientHeight, scrollHeight }, toleran
   };
 }
 
+// Does a keydown match one of a binding list (from the config)?
+export function hit(e, binds) {
+  return (binds || []).some(b => b.ctrl === e.ctrlKey && e.key.toLowerCase() === b.k.toLowerCase());
+}
+export function hitOutsideField(e, binds) {
+  const typing = !!e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName) && !e.ctrlKey && e.key.length === 1;
+  return !typing && hit(e, binds);
+}
+// A short label for the first binding of an action, for the chip key-hints.
+export function label(binds) {
+  if (!binds || !binds.length) return "";
+  const b = binds[0];
+  const name = b.k === " " ? "space" : b.k === "Enter" ? "enter"
+    : b.k === "Escape" ? "esc" : b.k === "Backspace" ? "bksp" : b.k;
+  return (b.ctrl ? "ctrl-" : "") + name;
+}
+
 export function el(tag, cls, text) {
   const node = document.createElement(tag);
   if (cls) node.className = cls;

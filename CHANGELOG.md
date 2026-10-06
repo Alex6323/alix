@@ -111,6 +111,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Default key bindings no longer claim browser or system shortcuts: the tutor's
+  `make_note` has no default key (was `ctrl-n`; the **Make this a note** button
+  still works), and review and browse `quit` lose `ctrl-c`.
+
+- The web app now honors the `submit`, `continue`, and `quit` review bindings
+  (a typed answer, moving on from an answered card or a walked answer, and
+  leaving a session, walk, or trace), and their buttons show the configured
+  key. `continue` now defaults to `space`, then `enter`. Browse `quit` is
+  rebindable in the web app; Backspace always leaves too. The picker's search
+  placeholder and shortcuts sheet show the configured picker keys, and the
+  trace screen spells its fixed keys as `shift+enter` and `enter`.
+
 - On the phone, tapping a deck opens the launch sheet (depth, Cram, Skip
   introduction, Walk) instead of starting a review at the last depth, and a
   long-press on a deck does nothing. The sheet no longer marks the last depth
@@ -312,6 +324,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Pre-1.0: re-pair once after upgrading.
 
 ### Fixed
+
+- The manual said a card removed mid-session is deleted from the deck file when
+  the session ends; it is deleted right away.
 
 - On the phone, taking the desktop's side of a sync conflict at the end of a
   review or trace and then passing the deck's exam no longer writes the

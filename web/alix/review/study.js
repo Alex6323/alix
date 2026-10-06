@@ -56,6 +56,7 @@ export function createStudy({
     headerBreadcrumb,
     histEl,
     hit,
+    hitOutsideField,
     label,
     legend,
     legendLeft,
@@ -95,10 +96,7 @@ export function createStudy({
   let summaryReady = false;
   let browsing = null;
   let keys = {};
-  let browseKeys = {
-    next: [{ k: "l", ctrl: false }],
-    prev: [{ k: "h", ctrl: false }],
-  };
+  let browseKeys = {};
 
   function currentState() {
     return state;
@@ -122,7 +120,7 @@ export function createStudy({
   }
 
   function setBrowseKeys(next) {
-    if (next) browseKeys = next;
+    browseKeys = next;
   }
 
   function load() {
@@ -373,8 +371,6 @@ export function createStudy({
       rerender();
     });
   }
-  // The "Check" legend chip and the field's own Enter both submit the current
-  // (next-unchecked) line's typed value.
   function submitCurrentTypeLine() {
     const inp = doc.querySelector("#ansRegion input.field");
     submitTypeLine(inp ? inp.value : "");
@@ -514,10 +510,6 @@ export function createStudy({
     renderLegend();
   }
 
-  // Read-only browse: step through every card in a deck — front, the revealed
-  // answer (with the format reshape's bullets + notes), no grading. An in-page
-  // overlay reached from the picker's Browse action or `alix browse --serve`;
-  // there is no separate /browse page.
   function renderBrowse() {
     headerBreadcrumb();
     deckEl.textContent = browsing.label;
@@ -567,7 +559,7 @@ export function createStudy({
 
     chip("Prev", "", () => browseGo(-1), label(browseKeys.prev)).disabled = browsing.i === 0;
     chip("Next", "primary", () => browseGo(1), label(browseKeys.next)).disabled = browsing.i >= browsing.cards.length - 1;
-    chip("Leave", "", closeBrowse, "esc");
+    chip("Leave", "", closeBrowse, label(browseKeys.quit));
   }
 
   function appendRegionToggle(parent, className, title, icon, key, action) {
@@ -1065,14 +1057,14 @@ export function createStudy({
     }
   }
 
-  // Typing: an input per gradeable step, submitted with Enter or the chip. A
-  // quotation or a table is answer content the learner reads, never a field.
+  // Typing: an input per gradeable step. A quotation or a table is answer
+  // content the learner reads, never a field.
   function renderInput(a) {
     const wrap = el("div", "inputs");
     gradeableSteps().forEach(() => {
       const inp = el("input", "field");
       inp.type = "text"; inp.autocomplete = "off"; inp.spellcheck = false;
-      inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submitCheck(); } });
+      inp.addEventListener("keydown", e => { if (hit(e, keys.submit)) { e.preventDefault(); submitCheck(); } });
       wrap.appendChild(inp);
     });
     a.appendChild(wrap);
@@ -1110,7 +1102,7 @@ export function createStudy({
     const inputs = el("div", "inputs");
     const inp = el("input", "field");
     inp.type = "text"; inp.autocomplete = "off"; inp.spellcheck = false;
-    inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submitTypeLine(inp.value); } });
+    inp.addEventListener("keydown", e => { if (hit(e, keys.submit)) { e.preventDefault(); submitTypeLine(inp.value); } });
     inputs.appendChild(inp);
     a.appendChild(inputs);
     inp.focus();
@@ -1598,7 +1590,7 @@ export function createStudy({
     if (isWalking()) { renderWalkLegend(); return; }
     if (feedback) {
       if (isIntroducing()) {
-        chip("Seen", "primary", introduce, label(keys.reveal)); // a pick acknowledges, never grades
+        chip("Seen", "primary", introduce, label(keys.cont)); // a pick acknowledges, never grades
         chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight); // answer is showing: tutor allowed
       } else if (isRecognizeMc()) {
         if (feedback.passed) {
@@ -1606,7 +1598,7 @@ export function createStudy({
           // override (also bound to the failed key) lets an honest guess demote
           // itself instead — both map to /api/grade, never an auto-continue, so
           // the learner always has the last word.
-          chip("Next", "primary", () => grade("passed"), label(keys.reveal));
+          chip("Next", "primary", () => grade("passed"), label(keys.cont));
           chip("I guessed", "quiet", () => grade("failed"), label(keys.failed));
           chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
         } else {
@@ -1614,7 +1606,7 @@ export function createStudy({
           // (renderChoiceFeedback) — Continue is the only action, and it grades
           // the miss (there's no guess left to walk back). Ask tutor is offered
           // here too: "why is the highlighted option right, not the one I picked?"
-          chip("Continue", "primary", () => grade("failed"), label(keys.reveal));
+          chip("Continue", "primary", () => grade("failed"), label(keys.cont));
           chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
         }
       } else {
@@ -1631,7 +1623,7 @@ export function createStudy({
           chip("Reveal", "primary", drawReveal, label(keys.reveal)); // reveal freezes your attempt
           chip("Skip", "", skip, label(keys.skip));
         } else {
-          chip("Seen", "primary", introduce, label(keys.reveal));      // ungraded acknowledgment
+          chip("Seen", "primary", introduce, label(keys.cont));      // ungraded acknowledgment
           chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
         }
       } else if (isIntroChoice()) {
@@ -1644,7 +1636,7 @@ export function createStudy({
         chip("Reveal next", "primary", reveal, label(keys.reveal));
         chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
       } else if (revealed > 0) {
-        chip("Seen", "primary", introduce, label(keys.reveal)); // hide⟷show is the corner `h` toggle, not a footer button
+        chip("Seen", "primary", introduce, label(keys.cont)); // hide⟷show is the corner `h` toggle, not a footer button
         chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
       } else {
         chip("Reveal", "primary", reveal, label(keys.reveal));
@@ -1660,10 +1652,10 @@ export function createStudy({
       }
       chip("Skip", "", skip, label(keys.skip));
     } else if (isInput()) {
-      chip("Submit", "primary", submitCheck, "enter");
+      chip("Submit", "primary", submitCheck, label(keys.submit));
       chip("Skip", "", skip, label(keys.skip));
     } else if (isTypeLine()) {
-      chip("Check", "primary", submitCurrentTypeLine, "enter");
+      chip("Check", "primary", submitCurrentTypeLine, label(keys.submit));
       chip("Skip", "", skip, label(keys.skip));
     } else if (isExplain() && !fullyRevealed()) {
       chip("Reveal", "primary", explainReveal, "shift+enter");
@@ -1695,19 +1687,19 @@ export function createStudy({
       chip("Got it", "passed", () => grade("passed"), label(keys.passed));
       chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
     }
-    chip("Leave", "", leaveSession, "esc", legendLeft); // pinned bottom-left; return to the deck picker
+    chip("Leave", "", leaveSession, label(keys.quit), legendLeft); // pinned bottom-left; return to the deck picker
   }
 
   function renderWalkLegend() {
     if (state.phase === "answer") {
-      chip("Next", "primary", walkNext, label(keys.reveal));
+      chip("Next", "primary", walkNext, label(keys.cont));
       chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
     } else if (isMultiChoice()) {
       chip("Submit", "primary", submitMultiChoice, "enter").disabled = selectedChoices.size === 0;
     } else if (!isChoice()) {
       chip("Reveal", "primary", effectiveDraw() ? walkDrawReveal : walkReveal, label(keys.reveal));
     }
-    chip("Leave", "", leaveWalk, "esc", legendLeft);
+    chip("Leave", "", leaveWalk, label(keys.quit), legendLeft);
   }
 
   function renderWalkDone() {
@@ -1723,7 +1715,7 @@ export function createStudy({
     }
     stage.appendChild(wrap);
     chip("Next walk", "primary", nextWalk, label(keys.restart));
-    chip("Leave", "", leaveWalk, "esc");
+    chip("Leave", "", leaveWalk, label(keys.quit));
   }
 
   // Terse, approximate phrase for when the next scheduled card comes due, shown
@@ -1854,7 +1846,7 @@ export function createStudy({
       newSession.disabled = !state.can_restart && !summaryReady;
     };
     summaryPaint();
-    chip("Leave", "", deselect, "esc");
+    chip("Leave", "", deselect, label(keys.quit));
   }
 
   function reveal() {
@@ -1965,10 +1957,8 @@ export function createStudy({
 
   function handleKey(event) {
     const e = event;
-      // The browse overlay: step cards (configurable next/prev + arrows/space/g/G),
-      // Esc/Backspace leaves. Read-only — no grading.
       if (browsing) {
-        if (e.key === "Escape" || e.key === "Backspace") { e.preventDefault(); closeBrowse(); return; }
+        if (hit(e, browseKeys.quit) || e.key === "Backspace") { e.preventDefault(); closeBrowse(); return; }
         if (e.key === "ArrowRight" || e.key === " " || hit(e, browseKeys.next)) { e.preventDefault(); browseGo(1); return; }
         if (e.key === "ArrowLeft" || hit(e, browseKeys.prev)) { e.preventDefault(); browseGo(-1); return; }
         if (e.key === "g" || e.key === "Home") { e.preventDefault(); browsing.i = 0; rerender(); return; }
@@ -1988,8 +1978,7 @@ export function createStudy({
         else if (e.key === "Escape") { e.preventDefault(); cancelLeave(); }
         return;
       }
-      // Esc returns to the deck picker (with a confirm when the session isn't done).
-      if (e.key === "Escape") { e.preventDefault(); leaveSession(); return; }
+      if (hitOutsideField(e, keys.quit)) { e.preventDefault(); leaveSession(); return; }
       if (state.phase === "done") {
         // Enter takes the primary action (the exam when one is due, else the
         // pointed exit of a drained sitting, else an enabled New session).
@@ -2020,7 +2009,7 @@ export function createStudy({
           if (revealed === 0) {
             if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
             if (hit(e, keys.reveal)) { e.preventDefault(); drawReveal(); return; }
-          } else if (hit(e, keys.reveal) || e.key === "Enter" || e.key === " ") {
+          } else if (hit(e, keys.cont)) {
             e.preventDefault(); introduce();
           }
           return;
@@ -2029,22 +2018,21 @@ export function createStudy({
           if (!feedback) {
             if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
             handleChoiceKey(e);
-          } else if (hit(e, keys.reveal) || e.key === "Enter" || e.key === " ") {
+          } else if (hit(e, keys.cont)) {
             e.preventDefault(); introduce();
           }
           return;
         }
         // `h` toggles the answer hidden ⟷ shown, both directions on one key (the
-        // source⟷answer swap's principle). Space reveals every ordered line before
-        // it acknowledges the completed introduction with "Seen".
+        // source⟷answer swap's principle).
         if (e.key.toLowerCase() === "h" && !e.ctrlKey) { e.preventDefault(); introToggle(); return; }
         if (revealed === 0) {
           if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
           if (hit(e, keys.reveal)) { e.preventDefault(); reveal(); return; }
-        } else if (hit(e, keys.reveal) || e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          if (state.mode === "line" && !fullyRevealed()) reveal();
-          else introduce();
+        } else if (state.mode === "line" && !fullyRevealed()) {
+          if (hit(e, keys.reveal)) { e.preventDefault(); reveal(); }
+        } else if (hit(e, keys.cont)) {
+          e.preventDefault(); introduce();
         }
         return;
       }
@@ -2052,12 +2040,8 @@ export function createStudy({
         if (hit(e, keys.ask)) { e.preventDefault(); openTutor(); return; }
         if (hit(e, keys.remove)) { e.preventDefault(); remove(); return; }
         if (isRecognizeMc()) {
-          // Correct pick: reveal/Enter takes the primary "Next" (passed), and the
-          // failed key is the quiet "I guessed" override (demote to failed). Wrong
-          // pick: reveal/Enter is "Continue", which just grades the miss — there's
-          // no guess to walk back on a pick that was already wrong.
           if (feedback.passed && hit(e, keys.failed)) { e.preventDefault(); grade("failed"); return; }
-          if (hit(e, keys.reveal) || e.key === "Enter") { e.preventDefault(); grade(feedback.passed ? "passed" : "failed"); }
+          if (hit(e, keys.cont)) { e.preventDefault(); grade(feedback.passed ? "passed" : "failed"); }
           return;
         }
         // A typed check's (or TypeLine's closing) result: the learner grades it,
@@ -2068,7 +2052,7 @@ export function createStudy({
         return;
       }
       // While typing in a field, only Ctrl shortcuts act so plain keys stay text;
-      // Enter (submit / check-line) is handled by the field itself.
+      // the submit key is handled by the field itself.
       if (isInput() || isTypeLine()) {
         if (e.ctrlKey && hit(e, keys.remove)) { e.preventDefault(); remove(); }
         else if (e.ctrlKey && hit(e, keys.skip)) { e.preventDefault(); skip(); }
@@ -2144,7 +2128,7 @@ export function createStudy({
   }
 
   function handleWalkKey(e) {
-    if (e.key === "Escape") { e.preventDefault(); leaveWalk(); return; }
+    if (hitOutsideField(e, keys.quit)) { e.preventDefault(); leaveWalk(); return; }
     if (state.phase === "done") {
       if (e.key === "Enter" || hit(e, keys.restart)) { e.preventDefault(); nextWalk(); }
       return;
@@ -2155,7 +2139,7 @@ export function createStudy({
         e.preventDefault(); toggleCitation(); return;
       }
       if (hit(e, keys.ask)) { e.preventDefault(); openTutor(); return; }
-      if (hit(e, keys.reveal) || e.key === "Enter") { e.preventDefault(); walkNext(); }
+      if (hit(e, keys.cont)) { e.preventDefault(); walkNext(); }
       return;
     }
     if (isChoice()) { handleChoiceKey(e); return; }

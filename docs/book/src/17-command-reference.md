@@ -184,8 +184,8 @@ The rest of the AI-and-deck surface:
 - `alix workspace deadline <dir> [<date>|clear]`: show, set, or clear a
   workspace's personal "ready by" date (`--config <path>`); no argument prints
   the current one. Workspace-only, see [Workspaces](08-workspaces.md).
-- Tutor: the Ask button (or `?`) in a session, `Ctrl-N` to save a note
-  ([the tutor](10-tutor.md)).
+- Tutor: the Ask button (or `?`) in a session, **Make this a note** to save a
+  note ([the tutor](10-tutor.md)).
 
 The agentic `generate` runs measure the source size before running and prompt
 for confirmation when it's large. Pass `--yes` to skip the prompts in

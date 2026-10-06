@@ -4,6 +4,7 @@ export function createSheets({
   post,
   withToken,
   focusedRowName,
+  pickerKeys,
   notice,
   refreshPicker,
   timers,
@@ -13,6 +14,7 @@ export function createSheets({
     document: doc,
     el,
     FileReader: FileReaderCtor,
+    label,
     Option: OptionCtor,
   } = ui;
   let open = false;
@@ -409,15 +411,18 @@ export function createSheets({
   }
 
   function openShortcuts() {
+    const keys = pickerKeys();
+    const kbd = (binds) => "<kbd>" + label(binds).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</kbd>";
     show(
       '<h2>Picker shortcuts</h2><div class="sheet-keys">' +
-      '<kbd>/</kbd><span>filter the list</span>' +
+      kbd(keys.filter) + '<span>filter the list</span>' +
       '<kbd>↑ ↓</kbd><span>move</span>' +
       '<kbd>enter</kbd><span>open / start</span>' +
-      '<kbd>v</kbd><span>choose a depth, then <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> (<kbd>c</kbd> crams)</span>' +
+      kbd(keys.depth) + '<span>choose a depth, then ' + kbd(keys.recognize) + ' ' + kbd(keys.recall) + ' ' +
+      kbd(keys.reconstruct) + ' (' + kbd(keys.cram) + ' crams)</span>' +
       '<kbd>b</kbd><span>browse the deck</span>' +
       '<kbd>x</kbd><span>take the exam</span>' +
-      '<kbd>m</kbd><span>mastered decks</span>' +
+      kbd(keys.mastered) + '<span>mastered decks</span>' +
       '<kbd>g / G</kbd><span>top / bottom</span>' +
       '<kbd>← →</kbd><span>step regions (in the focus drawer)</span>' +
       '<kbd>r</kbd><span>refresh the deck list</span>' +

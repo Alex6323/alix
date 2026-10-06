@@ -18,6 +18,7 @@ export function createTraceSession({
     headerBreadcrumb,
     histEl,
     hit,
+    hitOutsideField,
     keys,
     label,
     legend,
@@ -165,7 +166,7 @@ export function createTraceSession({
       "Leave",
       "",
       backToDecks,
-      "esc",
+      label(keys().quit),
       current.phase === "done" ? undefined : legendLeft,
     );
   }
@@ -198,7 +199,7 @@ export function createTraceSession({
       "The gap between your guess and the truth is the learning.  ·  Enter for a new line, Shift+Enter to reveal.",
     ));
     a.appendChild(compose);
-    chip("Reveal", "primary", () => submitPredict(input), "⇧↵");
+    chip("Reveal", "primary", () => submitPredict(input), "shift+enter");
     setTimeout(() => input.focus(), 0);
   }
 
@@ -253,7 +254,7 @@ export function createTraceSession({
     deltas.forEach((delta) => {
       chip(delta.label, delta.cls, () => grade(delta.delta), label(delta.keys()));
     });
-    chip("Ask tutor", "ask", tutor.open, label(keys().ask) || "?", legendRight);
+    chip("Ask tutor", "ask", tutor.open, label(keys().ask), legendRight);
   }
 
   function renderDone() {
@@ -283,7 +284,7 @@ export function createTraceSession({
       "Verify it: retrace the whole path in the exam to master this trace.",
     ));
     stage.appendChild(wrap);
-    chip("Take the exam", "primary", takeExam, "↵");
+    chip("Take the exam", "primary", takeExam, "enter");
     chip("Trace again", "", restart, "");
   }
 
@@ -306,14 +307,14 @@ export function createTraceSession({
       }
       return true;
     }
-    if (event.key === "Escape") {
+    if (hitOutsideField(event, keys().quit)) {
       event.preventDefault();
       backToDecks();
       return true;
     }
     if (event.target && /^(TEXTAREA|INPUT)$/.test(event.target.tagName)) return true;
     if (data.phase === "reveal") {
-      if (event.key === "?" || hit(event, keys().ask)) {
+      if (hit(event, keys().ask)) {
         event.preventDefault();
         tutor.open();
         return true;

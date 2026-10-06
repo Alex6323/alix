@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createTraceSession } from "../../web/alix/review/trace.js";
+import { hit, hitOutsideField } from "../../web/alix/review/dom.js";
 
 test("trace owns prediction grade and leave transitions", async () => {
   const calls = [];
@@ -50,4 +51,34 @@ test("trace owns prediction grade and leave transitions", async () => {
   assert.equal(trace.isOpen(), false);
   assert.deepEqual(applied, [picker]);
   assert.equal(renders, 3);
+});
+
+test("a rebound quit leaves a finished trace on its key and Escape no longer does", () => {
+  const calls = [];
+  const trace = createTraceSession({
+    api: async (path) => {
+      calls.push(path);
+      return { kind: "review", phase: "select" };
+    },
+    fetchApi: async () => ({ ok: true }),
+    post: (body) => ({ method: "POST", body }),
+    rerender: () => {},
+    applyStudy: () => {},
+    sessionStorage: { getItem: () => null },
+    examStart: () => {},
+    tutor: { isOpen: () => false },
+    ui: { hit, hitOutsideField, keys: () => ({ quit: [{ k: "q", ctrl: false }] }) },
+  });
+  trace.open({ kind: "trace", phase: "done" });
+  const press = (key, target = { tagName: "BODY" }) =>
+    trace.handleKey({ key, ctrlKey: false, target, preventDefault() {} });
+
+  press("Escape");
+  assert.deepEqual(calls, [], "Escape is not the quit key any more");
+
+  press("q", { tagName: "TEXTAREA" });
+  assert.deepEqual(calls, [], "q typed into the prediction stays text");
+
+  press("q");
+  assert.deepEqual(calls, ["/api/trace/leave"], "q leaves");
 });

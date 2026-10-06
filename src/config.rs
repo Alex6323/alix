@@ -104,13 +104,13 @@ impl Default for Bindings {
             submit: keys(&["enter"]),
             skip: keys(&["ctrl-s"]),
             remove: keys(&["ctrl-x"]),
-            cont: keys(&["enter", "space"]),
+            cont: keys(&["space", "enter"]),
             restart: keys(&["r"]),
             ask: keys(&["?"]),
             context: keys(&["c"]),
-            make_note: keys(&["ctrl-n"]),
+            make_note: keys(&[]),
             make_card: keys(&["ctrl-d"]),
-            quit: keys(&["esc", "ctrl-c"]),
+            quit: keys(&["esc"]),
         }
     }
 }
@@ -172,7 +172,7 @@ impl Default for BrowseBindings {
             next: keys(&["l", "n", "space"]),
             prev: keys(&["h", "p"]),
             remove: keys(&["x"]),
-            quit: keys(&["q", "esc", "ctrl-c"]),
+            quit: keys(&["q", "esc"]),
         }
     }
 }
@@ -1204,7 +1204,8 @@ pub fn default_config_toml() -> &'static str {
 #
 # Keys are written as a single character ("j"), a special key name
 # ("space", "enter", "tab", "esc", "backspace"), or either with a "ctrl-"
-# prefix ("ctrl-s"). The first key of each list is shown in the footer.
+# prefix ("ctrl-s"). The first key of each list is shown in the footer. An
+# empty list leaves the action without a key; its button still works.
 #
 # Note: while you are typing an answer (typing and typeline mode), plain
 # character bindings are ignored so they cannot shadow text input; use
@@ -1220,16 +1221,16 @@ pub fn default_config_toml() -> &'static str {
 # partly = ["2", "p"]           # self-graded: grade as partly (FSRS Hard, still a pass)
 # passed = ["3", "n"]           # self-graded: grade as passed (advance)
 # reveal = ["space", "enter"]   # flip mode: show the answer
-# submit = ["enter"]            # typeline mode: submit the current line
+# submit = ["enter"]            # typing / typeline mode: submit the answer
 # skip = ["ctrl-s"]             # requeue the current card without grading
-# remove = ["ctrl-x"]           # mark the card for removal from the deck file
-# continue = ["enter", "space"] # leave the feedback screen
+# remove = ["ctrl-x"]           # delete the card from the deck file
+# continue = ["space", "enter"] # move on from an answered card
 # restart = ["r"]               # start a new session from the summary screen
 # ask = ["?"]                   # ask the tutor about an answered card
 # context = ["c"]               # swap the question for the card's section
-# make_note = ["ctrl-n"]        # ask view: condense the conversation into a note
+# make_note = []                # ask view: condense the conversation into a note
 # make_card = ["ctrl-d"]        # ask view: distill the conversation into a card
-# quit = ["esc", "ctrl-c"]      # quit the session
+# quit = ["esc"]                # leave the session
 
 # Navigation keys for the deck picker (Vim-style by default). The arrow keys,
 # Enter (open) and Esc (back) always work regardless of these; jumping to the
@@ -1249,12 +1250,12 @@ pub fn default_config_toml() -> &'static str {
 
 # Key bindings for the read-only Browse overlay (b in the picker). Jumping to the first
 # and last card is fixed to g / G / Home / End, and the arrow keys always
-# move next/previous; these three are configurable:
+# move next/previous; these are configurable:
 [keys.browse]
 # next = ["l", "n", "space"]    # next card
 # prev = ["h", "p"]             # previous card
 # remove = ["x"]                # mark the card for removal from the deck file
-# quit = ["q", "esc", "ctrl-c"] # leave the browser
+# quit = ["q", "esc"]           # leave the browser (Backspace always leaves too)
 
 # Settings for the tutor integration. Questions are sent to the
 # command below together with the card as context.
@@ -1769,11 +1770,94 @@ mod tests {
     }
 
     #[test]
+    fn no_default_binding_claims_a_browser_or_system_shortcut() {
+        let reserved: Vec<KeyPattern> = ["ctrl-n", "ctrl-t", "ctrl-w", "ctrl-c", "ctrl-v"]
+            .iter()
+            .map(|s| parse_key(s).unwrap())
+            .collect();
+        let Bindings {
+            failed,
+            partly,
+            passed,
+            up,
+            down,
+            reveal,
+            submit,
+            skip,
+            remove,
+            cont,
+            restart,
+            ask,
+            context,
+            make_note,
+            make_card,
+            quit,
+        } = Bindings::default();
+        let PickerKeys {
+            up: picker_up,
+            down: picker_down,
+            open,
+            back,
+            filter,
+            mastered,
+            depth,
+            recognize,
+            recall,
+            reconstruct,
+            cram,
+        } = PickerKeys::default();
+        let BrowseBindings {
+            next,
+            prev,
+            remove: browse_remove,
+            quit: browse_quit,
+        } = BrowseBindings::default();
+        let defaults = [
+            ("review.failed", failed),
+            ("review.partly", partly),
+            ("review.passed", passed),
+            ("review.up", up),
+            ("review.down", down),
+            ("review.reveal", reveal),
+            ("review.submit", submit),
+            ("review.skip", skip),
+            ("review.remove", remove),
+            ("review.continue", cont),
+            ("review.restart", restart),
+            ("review.ask", ask),
+            ("review.context", context),
+            ("review.make_note", make_note),
+            ("review.make_card", make_card),
+            ("review.quit", quit),
+            ("picker.up", picker_up),
+            ("picker.down", picker_down),
+            ("picker.open", open),
+            ("picker.back", back),
+            ("picker.filter", filter),
+            ("picker.mastered", mastered),
+            ("picker.depth", depth),
+            ("picker.recognize", recognize),
+            ("picker.recall", recall),
+            ("picker.reconstruct", reconstruct),
+            ("picker.cram", cram),
+            ("browse.next", next),
+            ("browse.prev", prev),
+            ("browse.remove", browse_remove),
+            ("browse.quit", browse_quit),
+        ];
+        for (action, keys) in &defaults {
+            for key in keys {
+                assert!(
+                    !reserved.contains(key),
+                    "{action} defaults to {key}, which the browser or the system reserves"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn tutor_distill_keys_default_and_can_be_rebound() {
-        assert_eq!(
-            vec![parse_key("ctrl-n").unwrap()],
-            Bindings::default().make_note
-        );
+        assert_eq!(Vec::<KeyPattern>::new(), Bindings::default().make_note);
         assert_eq!(
             vec![parse_key("ctrl-d").unwrap()],
             Bindings::default().make_card

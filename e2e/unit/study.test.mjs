@@ -8,6 +8,7 @@ import {
   enterPicker,
 } from "../../web/alix/review/model.js";
 import { createStudy, modeTag } from "../../web/alix/review/study.js";
+import { hit, hitOutsideField, label } from "../../web/alix/review/dom.js";
 
 function harness() {
   const traces = [];
@@ -274,4 +275,82 @@ test("a finished walk offers Next walk, which restarts the walk", async () => {
   run.chips[0].onClick();
   await Promise.resolve();
   assert.deepEqual(run.calls, ["/api/walk/restart"], `calls: ${run.calls.join(", ")}`);
+});
+
+function keyHarness(state, keys, browseKeys) {
+  const calls = [];
+  const study = createStudy({
+    api: (path) => {
+      calls.push(path);
+      return path === "/api/browse"
+        ? Promise.resolve({ cards: [{}, {}], label: "Facts" })
+        : new Promise(() => {});
+    },
+    post: (body) => ({ method: "POST", body }),
+    storage: { getItem: () => null, setItem: () => {} },
+    model: { create: createModel, applyStudyState, currentScreen, enterPicker },
+    rerender: () => {},
+    traceData: () => null,
+    replaceTraceSession: () => {},
+    openTutor: () => {},
+    startExam: () => {},
+    closeMenu: () => {},
+    timers: {},
+    ui: { hit, hitOutsideField, label },
+  });
+  study.setKeys(keys);
+  if (browseKeys) study.setBrowseKeys(browseKeys);
+  study.apply(state);
+  const press = (key, target = { tagName: "BODY" }) =>
+    study.handleKey({ key, ctrlKey: false, target, preventDefault() {} });
+  return { calls, press, study };
+}
+
+const plain = (k) => [{ k, ctrl: false }];
+
+test("a rebound quit leaves the session on its key and Escape no longer does", () => {
+  const run = keyHarness({ kind: "review", phase: "done", label: "Facts", card: null }, { quit: plain("q") });
+
+  run.press("Escape");
+  assert.deepEqual(run.calls, [], "Escape is not the quit key any more");
+
+  run.press("q");
+  assert.deepEqual(run.calls, ["/api/deselect"], "q leaves");
+});
+
+test("a plain-character quit key typed into an answer field stays text", () => {
+  const typing = {
+    kind: "review",
+    phase: "review",
+    label: "Facts",
+    mode: "typing",
+    card: { id: "card-1", answer_steps: [{ kind: "line" }] },
+  };
+  const run = keyHarness(typing, { quit: plain("q") });
+
+  run.press("q", { tagName: "INPUT" });
+  assert.deepEqual(run.calls, [], `q in a field left the session: ${run.calls.join(", ")}`);
+});
+
+test("the continue key moves past a walked answer and Enter alone does not", () => {
+  const answer = { kind: "walk", phase: "answer", label: "Facts", card: { id: "card-1" }, position: 1, total: 2 };
+  const run = keyHarness(answer, { reveal: plain(" "), cont: plain("z") });
+
+  run.press("Enter");
+  assert.deepEqual(run.calls, [], "Enter is not bound to continue here");
+
+  run.press("z");
+  assert.deepEqual(run.calls, ["/api/walk/next"], "z continues");
+});
+
+test("a rebound browse quit leaves the browser and Backspace always does", async () => {
+  const picker = { kind: "review", phase: "select", label: "picker", card: null };
+  const browse = { next: plain("l"), prev: plain("h"), quit: plain("q") };
+  for (const [key, leaves] of [["Escape", false], ["q", true], ["Backspace", true]]) {
+    const run = keyHarness(picker, {}, browse);
+    await run.study.openBrowse({ name: "deck.md" });
+
+    run.press(key);
+    assert.equal(run.calls.includes("/api/deselect"), leaves, `${key} leaves browse: ${leaves}`);
+  }
 });

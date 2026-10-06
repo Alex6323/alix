@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { label } from "../../web/alix/review/dom.js";
 import { createSheets } from "../../web/alix/review/sheets.js";
 
-function harness() {
+function harness(pickerKeys = {}) {
   const calls = [];
   const reportLink = {};
   const sheet = {
@@ -25,6 +26,7 @@ function harness() {
     post: (body) => ({ method: "POST", body }),
     withToken: (path) => "token:" + path,
     focusedRowName: () => null,
+    pickerKeys: () => pickerKeys,
     notice: () => {},
     refreshPicker: () => {},
     timers: { setInterval: () => 1, clearInterval: () => {} },
@@ -34,6 +36,7 @@ function harness() {
         getElementById: (id) => nodes[id],
       },
       FileReader: class {},
+      label,
       Option: class {},
     },
   });
@@ -284,4 +287,27 @@ test("a raced active session leaves library removal ready to retry", async () =>
   assert.match(run.nodes.removeStatus.textContent, /study session is active/);
   assert.equal(run.nodes.removeGo.textContent, "Try again");
   assert.equal(run.nodes.removeGo.disabled, false);
+});
+
+test("the picker shortcuts sheet names the configured keys", () => {
+  const key = (k, ctrl = false) => [{ k, ctrl }];
+  const run = harness({
+    filter: key("f", true),
+    depth: key("d"),
+    recognize: key("a"),
+    recall: key("s"),
+    reconstruct: key("<"),
+    cram: key("z"),
+    mastered: key("w"),
+  });
+
+  run.sheets.openShortcuts();
+  const html = run.panel.innerHTML;
+
+  for (const shown of ["ctrl-f", "d", "a", "s", "&lt;", "z", "w"]) {
+    assert.ok(html.includes(`<kbd>${shown}</kbd>`), `the sheet shows ${shown}: ${html}`);
+  }
+  for (const literal of ["/", "v", "1", "2", "3", "c", "m"]) {
+    assert.ok(!html.includes(`<kbd>${literal}</kbd>`), `the sheet still hard-codes ${literal}`);
+  }
 });

@@ -109,6 +109,7 @@ study = createStudy({
     headerBreadcrumb,
     histEl,
     hit,
+    hitOutsideField,
     label,
     legend,
     legendLeft,
@@ -256,6 +257,7 @@ const trace = createTraceSession({
     headerBreadcrumb,
     histEl,
     hit,
+    hitOutsideField,
     keys: () => study.keys(),
     label,
     legend,
@@ -306,6 +308,7 @@ const sheets = createSheets({
   post,
   withToken,
   focusedRowName: picker.focusedRowName,
+  pickerKeys: picker.keys,
   notice,
   refreshPicker: picker.render,
   timers: {
@@ -316,6 +319,7 @@ const sheets = createSheets({
     document,
     el,
     FileReader: window.FileReader,
+    label,
     Option: window.Option,
   },
 });
@@ -332,19 +336,6 @@ function notice(msg) {
   n.classList.add("show");
   clearTimeout(n._t);
   n._t = setTimeout(() => n.classList.remove("show"), 4000);
-}
-
-// Does a keydown match one of a binding list (from the config)?
-function hit(e, binds) {
-  return (binds || []).some(b => b.ctrl === e.ctrlKey && e.key.toLowerCase() === b.k.toLowerCase());
-}
-// A short label for the first binding of an action, for the chip key-hints.
-function label(binds) {
-  if (!binds || !binds.length) return "";
-  const b = binds[0];
-  const name = b.k === " " ? "space" : b.k === "Enter" ? "enter"
-    : b.k === "Escape" ? "esc" : b.k === "Backspace" ? "bksp" : b.k;
-  return (b.ctrl ? "ctrl-" : "") + name;
 }
 
 function render() {
@@ -473,7 +464,7 @@ function boot() {
     api("/api/keys"),
     api("/api/picker-keys").catch(() => ({})),
     api("/api/ask-info").catch(() => null),
-    api("/api/browse-keys").catch(() => null),
+    api("/api/browse-keys"),
   ])).then(([k, pk, ai, bk]) => {
     study.setKeys(k);
     tutor.setInfo(ai);

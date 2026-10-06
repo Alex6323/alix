@@ -43,16 +43,17 @@ Ask is available wherever you serve, including over `--lan`, but the request
 runs the model CLI on the host machine, so, like `--lan` in general, only
 enable it on a network you trust.
 
-## Saving what you learn: `Ctrl-N`
+## Saving what you learn: Make this a note
 
-When an exchange clears something up, press `Ctrl-N`: the tutor extracts up
+When an exchange clears something up, press **Make this a note**: the tutor extracts up
 to three key points from the exchanges since the last note, one short line
 each, and appends them, addressed to the card, to the deck's personal sidecar
 (`<deck>.local.md`); the deck file itself is untouched. It does not repeat
 what the card's existing notes already say, and saves nothing when those
 notes cover every new point. Notes aren't part of the card's identity, so its
-progress is untouched: you just keep the insight. (In the web panel, **Make
-this a note** does the same.)
+progress is untouched: you just keep the insight. The action has no default
+key; bind one with `make_note` in `[keys.review]` (see
+[Configuration](16-configuration.md)).
 
 **Make this a note** and **Make this a card** stay disabled until the tutor
 has answered something newer than the last note or card made from the

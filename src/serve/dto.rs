@@ -494,6 +494,9 @@ pub(super) struct ReviewKeys {
     context: Vec<KeyDto>,
     make_note: Vec<KeyDto>,
     make_card: Vec<KeyDto>,
+    submit: Vec<KeyDto>,
+    cont: Vec<KeyDto>,
+    quit: Vec<KeyDto>,
 }
 
 impl ReviewKeys {
@@ -512,56 +515,9 @@ impl ReviewKeys {
             context: key_list(&b.context),
             make_note: key_list(&b.make_note),
             make_card: key_list(&b.make_card),
-        }
-    }
-}
-
-#[cfg(test)]
-mod review_keys_parity {
-    /// Every review binding reaches the clients. `ReviewKeys` is hand-written
-    /// beside `Bindings`, so a binding added to one and forgotten in the other
-    /// is silent: the config accepts a key the web client never receives.
-    /// Deliberate exclusions are listed, so dropping one is a decision.
-    #[test]
-    fn every_binding_is_either_served_or_deliberately_withheld() {
-        // `Bindings` fields are `pub`, `ReviewKeys` fields are private, so the
-        // scrape keys on the `name: Type,` shape both share.
-        let fields = |source: &str, marker: &str| -> Vec<String> {
-            let at = source
-                .find(marker)
-                .expect("the struct moved or was renamed");
-            let body = &source[at..];
-            let end = body.find("\n}").expect("the struct closes");
-            body[..end]
-                .lines()
-                .skip(1)
-                .map(|line| line.trim().trim_start_matches("pub "))
-                .filter(|line| line.ends_with(',') && !line.starts_with("//"))
-                .filter_map(|line| line.split_once(": "))
-                .map(|(name, _)| name.to_string())
-                .collect()
-        };
-        let bindings = fields(include_str!("../config.rs"), "pub struct Bindings {");
-        let served: Vec<String> = fields(include_str!("dto.rs"), "struct ReviewKeys {")
-            .into_iter()
-            .collect();
-        // Terminal-only actions: the browser has its own affordances for
-        // these and never binds them.
-        let withheld = ["submit", "cont", "quit"];
-
-        assert!(bindings.len() > 10, "the scrape found {bindings:?}");
-        for name in &bindings {
-            assert!(
-                served.contains(name) || withheld.contains(&name.as_str()),
-                "binding `{name}` is neither served in ReviewKeys nor listed as \
-                 deliberately withheld"
-            );
-        }
-        for name in &served {
-            assert!(
-                bindings.contains(name),
-                "ReviewKeys serves `{name}`, which is not a binding"
-            );
+            submit: key_list(&b.submit),
+            cont: key_list(&b.cont),
+            quit: key_list(&b.quit),
         }
     }
 }
@@ -604,6 +560,7 @@ pub(super) struct BrowseKeys {
     next: Vec<KeyDto>,
     prev: Vec<KeyDto>,
     remove: Vec<KeyDto>,
+    quit: Vec<KeyDto>,
 }
 
 impl BrowseKeys {
@@ -612,7 +569,60 @@ impl BrowseKeys {
             next: key_list(&b.next),
             prev: key_list(&b.prev),
             remove: key_list(&b.remove),
+            quit: key_list(&b.quit),
         }
+    }
+}
+
+#[cfg(test)]
+mod key_parity {
+    /// The DTOs are hand-written beside the binding structs, so a binding
+    /// added to one and forgotten in the other is silent: the config accepts a
+    /// key the web client never receives.
+    fn assert_every_binding_is_served(bindings_marker: &str, served_marker: &str) {
+        // Binding fields are `pub`, DTO fields are private, so the scrape keys
+        // on the `name: Type,` shape both share.
+        let fields = |source: &str, marker: &str| -> Vec<String> {
+            let at = source
+                .find(marker)
+                .expect("the struct moved or was renamed");
+            let body = &source[at..];
+            let end = body.find("\n}").expect("the struct closes");
+            body[..end]
+                .lines()
+                .skip(1)
+                .map(|line| line.trim().trim_start_matches("pub "))
+                .filter(|line| line.ends_with(',') && !line.starts_with("//"))
+                .filter_map(|line| line.split_once(": "))
+                .map(|(name, _)| name.to_string())
+                .collect()
+        };
+        let bindings = fields(include_str!("../config.rs"), bindings_marker);
+        let served = fields(include_str!("dto.rs"), served_marker);
+
+        assert!(bindings.len() > 2, "the scrape found {bindings:?}");
+        for name in &bindings {
+            assert!(
+                served.contains(name),
+                "binding `{name}` of {bindings_marker:?} is not served in {served_marker:?}"
+            );
+        }
+        for name in &served {
+            assert!(
+                bindings.contains(name),
+                "{served_marker:?} serves `{name}`, which is not a binding"
+            );
+        }
+    }
+
+    #[test]
+    fn every_review_binding_is_served() {
+        assert_every_binding_is_served("pub struct Bindings {", "struct ReviewKeys {");
+    }
+
+    #[test]
+    fn every_browse_binding_is_served() {
+        assert_every_binding_is_served("pub struct BrowseBindings {", "struct BrowseKeys {");
     }
 }
 

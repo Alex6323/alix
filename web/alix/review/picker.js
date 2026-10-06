@@ -460,7 +460,7 @@ export function createPicker({
         filter.type = "text"; filter.autocomplete = "off";
         wrap.appendChild(filter);
       }
-      filter.placeholder = opts.filterPlaceholder || "Search  ·  / or Ctrl-F";
+      filter.placeholder = `Search  ·  ${label(keys.filter)}`;
 
       const lists = el("div", "lists");
       const sectionEls = [];
@@ -996,7 +996,6 @@ export function createPicker({
       if (folders.length) sections.push({ title: "Folders", rows: folders.map(openRow) });
       renderList({
         headerFilter: true,
-        filterPlaceholder: "Search  ·  /",
         sections, back: null, allowMastered: true,
       });
     }
@@ -1009,7 +1008,6 @@ export function createPicker({
       const back = () => { lastWorkspace = null; sessionStorage.setItem("alix.lastDeck", grp.name); renderTop(); };
       renderList({
         headerFilter: true,
-        filterPlaceholder: "Search  ·  /",
         lede: grp.label || grp.name,
         ledeDesc: grp.description || null,
         deadline: grp.deadline || null,
@@ -1023,7 +1021,6 @@ export function createPicker({
     function renderMastered() {
       renderList({
         headerFilter: true,
-        filterPlaceholder: "Search  ·  /",
         lede: "mastered \u{1F389} (reopen a deck to cram or re-examine)",
         sections: [{ title: null, rows: mastered.map(d => deckRow({ ...d, tree: "" }, false, null, true, false)) }],
         back: renderTop, allowMastered: false,
@@ -1057,6 +1054,7 @@ export function createPicker({
     rememberLaunch,
     render,
     refresh,
+    keys: () => keys,
     select,
     setKeys,
   };
