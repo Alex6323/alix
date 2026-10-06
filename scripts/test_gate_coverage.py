@@ -94,6 +94,35 @@ class GuardsTheExceptionList(unittest.TestCase):
                     "a crate-specific command must not stand in for root cargo test",
                 )
 
+    def test_a_cargo_run_naming_a_manifest_does_not_gate_that_crate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tools" / "gfm-harness").mkdir(parents=True)
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / "Cargo.toml").write_text("[package]\nname='root'\n")
+            (root / "tools" / "gfm-harness" / "Cargo.toml").write_text(
+                "[package]\nname='gfm-harness'\n"
+            )
+            (root / "Makefile").write_text(
+                "check:\n"
+                "\tcargo test\n"
+                "\tTMPDIR=$(HOME)/tmp cargo run --locked "
+                "--manifest-path tools/gfm-harness/Cargo.toml -- --digest corpus\n"
+            )
+            with mock.patch.multiple(
+                gate,
+                REPO_ROOT=root,
+                MAKEFILE=root / "Makefile",
+                WORKFLOWS=root / ".github" / "workflows",
+                LOCAL_GATES=("check",),
+                CI_ONLY={},
+            ):
+                self.assertEqual(
+                    1,
+                    run_guard(),
+                    "running a crate's binary does not run that crate's tests",
+                )
+
     def test_a_workflow_comment_does_not_prove_a_ci_only_suite_runs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -264,6 +293,13 @@ class ReadsRecipeCommands(unittest.TestCase):
                     gate.is_whole_crate_test(gate.commands(line)[0]),
                     f"`{line}` was read as whole-crate={not expected}",
                 )
+
+    def test_compact_jobs_syntax_is_a_whole_crate_test(self):
+        command = gate.commands("cargo test -j1")[0]
+        self.assertTrue(
+            gate.is_whole_crate_test(command),
+            "compact `-j1` changes concurrency, not test selection",
+        )
 
     def test_a_toolchain_qualified_whole_crate_test_is_accepted(self):
         command = gate.commands("cargo +stable test")[0]

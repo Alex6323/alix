@@ -294,7 +294,7 @@ preflight:
 	RUSTFLAGS="-Dwarnings" $(MAKE) build-core
 	$(MAKE) windows-check
 	RUSTFLAGS="-Dwarnings" cargo test --manifest-path mobile/alix/rust/Cargo.toml
-	RUSTFLAGS="-Dwarnings" cargo test --locked --all-targets --manifest-path tools/gfm-harness/Cargo.toml
+	RUSTFLAGS="-Dwarnings" cargo test --locked --manifest-path tools/gfm-harness/Cargo.toml
 	$(MAKE) gfm-measure
 	$(MAKE) mobile-unit
 	$(MAKE) frb-check

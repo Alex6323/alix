@@ -223,7 +223,7 @@ def is_whole_crate_test(command: list[str]) -> bool:
 
 def cargo_test_words(command: list[str]) -> list[str] | None:
     """The arguments after `cargo test` or `cargo nextest run`, else None."""
-    words = list(itertools.dropwhile(lambda token: "=" in token and not token.startswith("-"), command))
+    words = list(itertools.dropwhile(is_environment, command))
     if not words or words[0] != "cargo":
         return None
     if words[1:2] and words[1].startswith("+"):
@@ -237,6 +237,14 @@ def cargo_test_words(command: list[str]) -> list[str] | None:
     return rest
 
 
+def is_environment(token: str) -> bool:
+    return "=" in token and not token.startswith("-")
+
+
+def is_cargo(command: list[str]) -> bool:
+    return next(itertools.dropwhile(is_environment, command), None) == "cargo"
+
+
 def runs_part(arguments: list[str]) -> bool:
     split = arguments.index("--") if "--" in arguments else len(arguments)
     cargo_side, harness_side = arguments[:split], arguments[split + 1 :]
@@ -248,7 +256,8 @@ def runs_part(arguments: list[str]) -> bool:
 def narrows(arguments: list[str], flags: set[str], value_flags: set[str]) -> bool:
     skip_next = False
     for token in arguments:
-        name = "-Z" if token.startswith("-Z") else token.split("=")[0]
+        attached = not token.startswith("--") and token[:2] in value_flags
+        name = token[:2] if attached else token.split("=")[0]
         if skip_next:
             skip_next = False
         elif name in value_flags:
@@ -262,7 +271,9 @@ def gates_unit(command: list[str], unit: str) -> bool:
     if not names_path(command, unit):
         return False
     words = cargo_test_words(command)
-    return words is None or not runs_part(words)
+    if words is None:
+        return not is_cargo(command)
+    return not runs_part(words)
 
 
 def units() -> list[str]:
