@@ -215,6 +215,23 @@ class ReadsRecipeCommands(unittest.TestCase):
                     f"`{line}` was read as whole-crate={not expected}",
                 )
 
+    def test_excluding_should_panic_tests_is_not_a_whole_crate_test(self):
+        command = gate.commands(
+            "RUSTUP_TOOLCHAIN=nightly cargo test -- "
+            "-Zunstable-options --exclude-should-panic"
+        )[0]
+        self.assertFalse(
+            gate.is_whole_crate_test(command),
+            "excluding every should-panic test leaves a planted defect ungated",
+        )
+
+    def test_a_toolchain_qualified_whole_crate_test_is_accepted(self):
+        command = gate.commands("cargo +stable test")[0]
+        self.assertTrue(
+            gate.is_whole_crate_test(command),
+            "an ordinary cargo toolchain selector does not narrow the suite",
+        )
+
     def test_a_name_filtered_manifest_run_does_not_gate_its_crate(self):
         rows = [
             ("cargo test --locked --manifest-path test-support/Cargo.toml", 0),

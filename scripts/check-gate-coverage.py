@@ -105,8 +105,28 @@ CARGO_VALUE_FLAGS = {
     "-E",
     "--filterset",
 }
-HARNESS_SELECTION_FLAGS = {"--skip", "--exact", "--ignored"}
-HARNESS_VALUE_FLAGS = {"--test-threads", "--color", "--format", "--logfile"}
+# libtest flags that never narrow a passing run; any other harness word filters.
+HARNESS_FLAGS = {
+    "--include-ignored",
+    "--force-run-in-process",
+    "--fail-fast",
+    "--nocapture",
+    "--no-capture",
+    "-q",
+    "--quiet",
+    "--show-output",
+    "--report-time",
+    "--ensure-time",
+    "--shuffle",
+}
+HARNESS_VALUE_FLAGS = {
+    "--test-threads",
+    "--color",
+    "--format",
+    "--logfile",
+    "--shuffle-seed",
+    "-Z",
+}
 
 # A unit `make check` and `make preflight` deliberately do not run. Each needs
 # the workflow marker that proves something else does; a stale exception whose
@@ -223,6 +243,8 @@ def cargo_test_words(command: list[str]) -> list[str] | None:
     words = [token for token in command if "=" not in token or token.startswith("-")]
     if not words or words[0] != "cargo":
         return None
+    if words[1:2] and words[1].startswith("+"):
+        words = [words[0], *words[2:]]
     subcommands = [token for token in words[1:] if not token.startswith("-")]
     if not subcommands or subcommands[0] not in {"test", "nextest"}:
         return None
@@ -236,10 +258,20 @@ def filters_by_name(arguments: list[str]) -> bool:
     """A test-name filter, or a harness flag that runs only some tests."""
     split = arguments.index("--") if "--" in arguments else len(arguments)
     cargo_side, harness_side = arguments[:split], arguments[split + 1 :]
-    return has_positional(cargo_side, CARGO_VALUE_FLAGS) or (
-        has_positional(harness_side, HARNESS_VALUE_FLAGS)
-        or any(token.split("=")[0] in HARNESS_SELECTION_FLAGS for token in harness_side)
-    )
+    return has_positional(cargo_side, CARGO_VALUE_FLAGS) or narrows_harness(harness_side)
+
+
+def narrows_harness(arguments: list[str]) -> bool:
+    skip_next = False
+    for token in arguments:
+        name = "-Z" if token.startswith("-Z") else token.split("=")[0]
+        if skip_next:
+            skip_next = False
+        elif name in HARNESS_VALUE_FLAGS:
+            skip_next = token == name
+        elif token not in HARNESS_FLAGS:
+            return True
+    return False
 
 
 def has_positional(arguments: list[str], value_flags: set[str]) -> bool:
