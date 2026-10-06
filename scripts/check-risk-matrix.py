@@ -4,6 +4,7 @@
 import argparse
 import json
 import re
+import shlex
 import subprocess
 import sys
 from itertools import dropwhile
@@ -43,9 +44,8 @@ NO_OPS = {"true", "false", ":", "exit", "echo", "printf", "cd", "test", "["}
 SHELL_KEYWORDS = {"if", "then", "else", "elif", "fi", "for", "do", "done", "while", "!", "{", "}"}
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 MAKE_MESSAGE = re.compile(r"make(\[\d+\])?: ")
-COMMENT = re.compile(r"(?:^|(?<=[\s;&|()]))#.*")
-SEPARATOR = re.compile(r"&&|\|\||;|\||\(|\)|(?<![<>])&(?!>)")
-FILE_REDIRECTION = re.compile(r">>?\s*(?!/dev/null\b)[^\s&>]")
+SEPARATORS = {"&&", "||", ";", ";;", "|", "|&", "&", "(", ")"}
+FILE_WRITES = {">", ">>", ">|", "&>", "&>>"}
 
 
 def exact_keys(value, allowed, required, where, problems):
@@ -216,12 +216,39 @@ def runs_something(dry_run):
     for line in dry_run.splitlines():
         if MAKE_MESSAGE.match(line):
             continue
-        code = COMMENT.sub("", line.rstrip("\\"))
-        for segment in SEPARATOR.split(code):
-            words = list(dropwhile(is_preamble, segment.split()))
-            if words and (words[0] not in NO_OPS or FILE_REDIRECTION.search(segment)):
+        try:
+            tokens = shell_tokens(line.rstrip("\\"))
+        except ValueError:
+            return True
+        for segment in segments(tokens):
+            words = list(dropwhile(is_preamble, segment))
+            if words and (words[0].strip("'\"") not in NO_OPS or writes_file(segment)):
                 return True
     return False
+
+
+def shell_tokens(line):
+    lexer = shlex.shlex(line, posix=False, punctuation_chars=True)
+    lexer.whitespace_split = True
+    return list(lexer)
+
+
+def segments(tokens):
+    segment = []
+    for token in tokens:
+        if token in SEPARATORS:
+            yield segment
+            segment = []
+        else:
+            segment.append(token)
+    yield segment
+
+
+def writes_file(segment):
+    return any(
+        token in FILE_WRITES and target != "/dev/null"
+        for token, target in zip(segment, segment[1:])
+    )
 
 
 def is_preamble(word):

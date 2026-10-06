@@ -439,6 +439,16 @@ class RiskMatrixGuardTests(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
+    def test_a_quoted_ampersand_does_not_invent_a_command(self):
+        matrix = complete_matrix()
+        makefile = self.fixture_makefile(matrix)
+        live = "test:\n\t@./evidence test\n"
+        self.assert_invalid(
+            matrix,
+            "command runs nothing: make test",
+            makefile.replace(live, "test:\n\t@printf '&'\n"),
+        )
+
     def test_printf_redirection_is_real_work(self):
         matrix = complete_matrix()
         makefile = self.fixture_makefile(matrix)
