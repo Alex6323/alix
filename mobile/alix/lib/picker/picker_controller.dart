@@ -48,6 +48,8 @@ class PickerController extends ChangeNotifier {
   String _query = '';
   List<PickerSearchHit>? _searchable;
   bool _searchLoading = false;
+  bool _searchWanted = false;
+  int _listingGeneration = 0;
 
   List<PickerEntry> get entries => _entries;
 
@@ -126,7 +128,10 @@ class PickerController extends ChangeNotifier {
   }
 
   void _loadSearchable() {
-    if (_searchLoading) return;
+    if (_searchLoading) {
+      _searchWanted = true;
+      return;
+    }
     _searchLoading = true;
     final roots = [_root, ?_pairedRootDir];
     unawaited(
@@ -140,6 +145,9 @@ class PickerController extends ChangeNotifier {
           ]);
         }
         _notifyIfLive();
+        if (!_searchWanted) return;
+        _searchWanted = false;
+        _loadSearchable();
       }),
     );
   }
@@ -150,9 +158,10 @@ class PickerController extends ChangeNotifier {
         if (!entry.isWorkspace) entry.path,
     ];
     if (decks.isEmpty) return;
+    final generation = _listingGeneration;
     unawaited(
       _port.deckStrips(root: root, decks: decks).then((strips) {
-        if (strips.isEmpty) return;
+        if (generation != _listingGeneration || strips.isEmpty) return;
         _strips.addAll(strips);
         _notifyIfLive();
       }),
@@ -179,6 +188,7 @@ class PickerController extends ChangeNotifier {
   }
 
   Future<void> _load() async {
+    _listingGeneration++;
     final fixed = _masteredEntries;
     if (fixed != null) {
       _entries = fixed;

@@ -185,6 +185,45 @@ void main() {
   );
 
   test(
+    'an older strip answer cannot overwrite the latest relisting',
+    () async {
+      final first = Completer<Map<String, PickerStrip>>();
+      final second = Completer<Map<String, PickerStrip>>();
+      final port = _FakePickerPort(rootEntries: [_entry('deck')])
+        ..stripReplies.addAll([first, second]);
+      final controller = PickerController(port: port, root: '/decks');
+      await pumpEventQueue();
+
+      controller.reload();
+      await pumpEventQueue();
+      expect(port.stripRequests, hasLength(2));
+
+      second.complete({
+        '/decks/deck.md': const PickerStrip(
+          cardCount: 2,
+          tiers: ['seen', 'unseen'],
+        ),
+      });
+      await pumpEventQueue();
+      expect(controller.stripFor('/decks/deck.md')?.cardCount, 2);
+
+      first.complete({
+        '/decks/deck.md': const PickerStrip(
+          cardCount: 1,
+          tiers: ['seen'],
+        ),
+      });
+      await pumpEventQueue();
+
+      expect(
+        controller.stripFor('/decks/deck.md')?.cardCount,
+        2,
+        reason: 'a late answer for the old listing must be ignored',
+      );
+    },
+  );
+
+  test(
     'search lists every root once and keeps exactly the matching rows',
     () async {
       final port = _FakePickerPort(rootEntries: [_entry('own')]);
@@ -220,6 +259,46 @@ void main() {
       }
       controller.closeSearch();
       expect(controller.isSearching, isFalse);
+    },
+  );
+
+  test(
+    'a relisting queues a search refresh while the old search is in flight',
+    () async {
+      final first = Completer<List<PickerSearchHit>>();
+      final second = Completer<List<PickerSearchHit>>();
+      final port = _FakePickerPort(rootEntries: [_entry('own')])
+        ..searchReplies.addAll([first, second]);
+      final controller = PickerController(port: port, root: '/decks');
+      await pumpEventQueue();
+
+      controller.openSearch();
+      await pumpEventQueue();
+      expect(port.searchRoots, [
+        ['/decks'],
+      ]);
+
+      port.rootEntries = [_entry('refreshed')];
+      controller.reload();
+      await pumpEventQueue();
+      first.complete([
+        PickerSearchHit(root: '/decks', entry: _entry('stale')),
+      ]);
+      await pumpEventQueue();
+
+      expect(
+        port.searchRoots,
+        [
+          ['/decks'],
+          ['/decks'],
+        ],
+        reason: 'the relisting refresh must not be dropped',
+      );
+      second.complete([
+        PickerSearchHit(root: '/decks', entry: _entry('fresh')),
+      ]);
+      await pumpEventQueue();
+      expect(controller.searchHits!.single.entry.title, 'fresh');
     },
   );
 }
@@ -263,8 +342,10 @@ class _FakePickerPort implements PickerPort {
   final List<String> tutorialRoots = [];
   final List<(String, List<String>)> stripRequests = [];
   Completer<Map<String, PickerStrip>>? stripReply;
+  final List<Completer<Map<String, PickerStrip>>> stripReplies = [];
   List<PickerSearchHit> searchable = const [];
   final List<List<String>> searchRoots = [];
+  final List<Completer<List<PickerSearchHit>>> searchReplies = [];
 
   @override
   Future<Map<String, PickerStrip>> deckStrips({
@@ -272,12 +353,14 @@ class _FakePickerPort implements PickerPort {
     required List<String> decks,
   }) {
     stripRequests.add((root, decks));
+    if (stripReplies.isNotEmpty) return stripReplies.removeAt(0).future;
     return stripReply?.future ?? Future.value(const {});
   }
 
   @override
   Future<List<PickerSearchHit>> listSearchable(List<String> roots) async {
     searchRoots.add(roots);
+    if (searchReplies.isNotEmpty) return searchReplies.removeAt(0).future;
     return searchable;
   }
 
