@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -48,6 +49,25 @@ void main() {
           'it reads line one\n'
           '<!-- at: 1 -->\n',
     );
+    writeTestDeck(
+      '${workspace.path}/decks/two.md',
+      '---\ntitle: Two\n---\n## q1\na1\n\n## q2\na2\n',
+    );
+    writeTestDeck(
+      '${workspace.path}/decks/trace2.md',
+      '---\n'
+          'trace: a two-hop paired trace\n'
+          'source: source.txt\n'
+          'title: Trace2\n'
+          '---\n'
+          '## Predict one\n'
+          'it reads line one\n'
+          '<!-- at: 1 -->\n'
+          '\n'
+          '## Predict two\n'
+          'it reads line two\n'
+          '<!-- at: 2 -->\n',
+    );
     return (root: root, workspace: workspace, support: support);
   }
 
@@ -56,11 +76,13 @@ void main() {
     required String deckId,
     required String deckPath,
     required String rowTitle,
+    bool review = false,
   }) async {
     final fixture = workspace();
     final syncController = _MidSessionConflictController(
       deckId: deckId,
       deckPath: deckPath,
+      workspace: fixture.workspace,
     );
     addTearDown(syncController.dispose);
     await tester.pumpWidget(
@@ -79,7 +101,7 @@ void main() {
     await settlePicker(tester);
     await tester.tap(find.text(rowTitle));
     await tester.pumpAndSettle();
-    if (rowTitle == 'Deck') {
+    if (rowTitle == 'Deck' || review) {
       await tester.tap(find.text('Recall'));
       await tester.pumpAndSettle();
     }
@@ -192,16 +214,150 @@ void main() {
       expect(find.byType(TraceSessionScreen), findsNothing);
     },
   );
+
+  Future<void> expectDesktopKept(
+    WidgetTester tester,
+    _MidSessionConflictController syncController,
+    String step,
+  ) async {
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(ReviewScreen), findsNothing, reason: step);
+    expect(find.byType(TraceSessionScreen), findsNothing, reason: step);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    final desktop = syncController.pulledDesktop;
+    expect(desktop, isNotNull, reason: '$step: the desktop side was pulled');
+    expect(
+      progressDocument(syncController.workspace).readAsStringSync(),
+      desktop,
+      reason:
+          '$step: the closed session must not write its stale progress '
+          'over the pulled desktop document',
+    );
+  }
+
+  testWidgets(
+    'taking the desktop side after leaving a review early keeps the pulled '
+    'progress once the review closes',
+    (tester) async {
+      final syncController = await openSession(
+        tester,
+        deckId: 'two-1',
+        deckPath: 'decks/two.md',
+        rowTitle: 'Two',
+        review: true,
+      );
+      await tester.tap(find.text('Reveal'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Seen'));
+      await tester.pumpAndSettle();
+      expect(find.text('SESSION COMPLETE'), findsNothing);
+
+      await leaveEarly(tester);
+      await resolveAndExpectPicker(tester, syncController);
+      await expectDesktopKept(tester, syncController, 'review left early');
+    },
+  );
+
+  testWidgets(
+    'taking the desktop side on a finished review summary keeps the pulled '
+    'progress once the review closes',
+    (tester) async {
+      final syncController = await openSession(
+        tester,
+        deckId: 'deck-1',
+        deckPath: 'decks/deck.md',
+        rowTitle: 'Deck',
+      );
+      await tester.tap(find.text('Reveal'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Seen'));
+      await tester.pumpAndSettle();
+      expect(find.text('SESSION COMPLETE'), findsOneWidget);
+
+      await resolveAndExpectPicker(tester, syncController);
+      await expectDesktopKept(tester, syncController, 'review finished');
+    },
+  );
+
+  testWidgets(
+    'taking the desktop side after leaving a trace early keeps the pulled '
+    'progress once the trace closes',
+    (tester) async {
+      final syncController = await openSession(
+        tester,
+        deckId: 'trace2-1',
+        deckPath: 'decks/trace2.md',
+        rowTitle: 'Trace2',
+      );
+      await tester.enterText(find.byType(TextField), 'a guess');
+      await tester.tap(find.text('Reveal'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Got it'));
+      await tester.pumpAndSettle();
+      expect(find.text('TRACE COMPLETE'), findsNothing);
+
+      await leaveEarly(tester);
+      await resolveAndExpectPicker(tester, syncController);
+      await expectDesktopKept(tester, syncController, 'trace left early');
+    },
+  );
+
+  testWidgets(
+    'taking the desktop side on a finished trace keeps the pulled progress '
+    'once the trace closes',
+    (tester) async {
+      final syncController = await openSession(
+        tester,
+        deckId: 'trace-1',
+        deckPath: 'decks/trace.md',
+        rowTitle: 'Trace',
+      );
+      await tester.enterText(find.byType(TextField), 'a guess');
+      await tester.tap(find.text('Reveal'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Got it'));
+      await tester.pumpAndSettle();
+      expect(find.text('TRACE COMPLETE'), findsOneWidget);
+
+      await resolveAndExpectPicker(tester, syncController);
+      await expectDesktopKept(tester, syncController, 'trace finished');
+    },
+  );
+}
+
+File progressDocument(Directory workspace) {
+  final documents = Directory('${workspace.path}/.alix/progress')
+      .listSync()
+      .whereType<File>()
+      .where((f) => f.path.endsWith('.json'))
+      .where((f) => !f.uri.pathSegments.last.startsWith('recent'))
+      .toList();
+  expect(documents, hasLength(1), reason: 'one deck progress document');
+  return documents.single;
+}
+
+String desktopVersionOf(String phoneDocument) {
+  final json = jsonDecode(phoneDocument) as Map<String, dynamic>;
+  json['cards'] = <String, dynamic>{};
+  return jsonEncode(json);
 }
 
 class _MidSessionConflictController extends ChangeNotifier
     implements SyncController {
-  _MidSessionConflictController({required this.deckId, required this.deckPath});
+  _MidSessionConflictController({
+    required this.deckId,
+    required this.deckPath,
+    required this.workspace,
+  });
 
   final String deckId;
   final String deckPath;
+  final Directory workspace;
   bool conflicted = false;
   int resolved = 0;
+  String? pulledDesktop;
 
   void publish() {
     conflicted = true;
@@ -268,6 +424,13 @@ class _MidSessionConflictController extends ChangeNotifier
   @override
   Future<void> resolve(String deckId, {required bool keepPhone}) async {
     resolved++;
+    if (!keepPhone &&
+        Directory('${workspace.path}/.alix/progress').existsSync()) {
+      final document = progressDocument(workspace);
+      final desktop = desktopVersionOf(document.readAsStringSync());
+      document.writeAsStringSync(desktop);
+      pulledDesktop = desktop;
+    }
     conflicted = false;
     notifyListeners();
   }
