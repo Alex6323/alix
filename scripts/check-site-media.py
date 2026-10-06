@@ -67,7 +67,8 @@ class ShotSources(HTMLParser):
         if tag == self.text_only:
             self.text_only = None
         if tag == "picture" and self.picture is not None:
-            self.shots.extend(self.picture)
+            if self.picture_has_img:
+                self.shots.extend(self.picture)
             self.picture = None
 
 
