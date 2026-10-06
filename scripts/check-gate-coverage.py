@@ -63,49 +63,30 @@ CARGO_SUBDIRS = {"tests", "benches", "examples"}
 # These units are the deliberate exception, where a schedule is the point.
 SCHEDULED = {"fuzz/Cargo.toml"}
 MAIN = "main"
-# A cargo command carrying any of these runs part of the crate, not the crate.
-SELECTION_FLAGS = {
-    "--lib",
-    "--bin",
-    "--bins",
-    "--test",
-    "--tests",
-    "--bench",
-    "--benches",
-    "--example",
-    "--examples",
-    "--doc",
-    "--doctests",
-    "-p",
-    "--package",
-    "--exclude",
-    "--manifest-path",
-    "-E",
-    "--filterset",
-    "--no-run",
+# Cargo flags that pick another crate; a root-crate claim carries none.
+CRATE_FLAGS = {"-p", "--package", "--manifest-path"}
+# cargo and nextest flags that never narrow a passing run; any other flag selects.
+CARGO_FLAGS = {
+    "--locked",
+    "--frozen",
+    "--offline",
+    "--no-fail-fast",
+    "-q",
+    "--quiet",
+    "-v",
+    "--verbose",
 }
 CARGO_VALUE_FLAGS = {
     "-p",
     "--package",
-    "--exclude",
-    "--test",
-    "--bench",
-    "--example",
-    "--bin",
+    "--manifest-path",
     "-F",
     "--features",
     "-j",
     "--jobs",
-    "--target",
     "--target-dir",
-    "--manifest-path",
-    "--profile",
     "--color",
     "--message-format",
-    "--config",
-    "-Z",
-    "-E",
-    "--filterset",
 }
 # libtest flags that never narrow a passing run; any other harness word filters.
 HARNESS_FLAGS = {
@@ -235,9 +216,9 @@ def is_whole_crate_test(command: list[str]) -> bool:
     words = cargo_test_words(command)
     if words is None:
         return False
-    if any(token.split("=")[0] in SELECTION_FLAGS for token in command):
+    if any(token.split("=")[0] in CRATE_FLAGS for token in words):
         return False
-    return not filters_by_name(words)
+    return not runs_part(words)
 
 
 def cargo_test_words(command: list[str]) -> list[str] | None:
@@ -256,34 +237,23 @@ def cargo_test_words(command: list[str]) -> list[str] | None:
     return rest
 
 
-def filters_by_name(arguments: list[str]) -> bool:
-    """A test-name filter, or a harness flag that runs only some tests."""
+def runs_part(arguments: list[str]) -> bool:
     split = arguments.index("--") if "--" in arguments else len(arguments)
     cargo_side, harness_side = arguments[:split], arguments[split + 1 :]
-    return has_positional(cargo_side, CARGO_VALUE_FLAGS) or narrows_harness(harness_side)
+    return narrows(cargo_side, CARGO_FLAGS, CARGO_VALUE_FLAGS) or narrows(
+        harness_side, HARNESS_FLAGS, HARNESS_VALUE_FLAGS
+    )
 
 
-def narrows_harness(arguments: list[str]) -> bool:
+def narrows(arguments: list[str], flags: set[str], value_flags: set[str]) -> bool:
     skip_next = False
     for token in arguments:
         name = "-Z" if token.startswith("-Z") else token.split("=")[0]
         if skip_next:
             skip_next = False
-        elif name in HARNESS_VALUE_FLAGS:
+        elif name in value_flags:
             skip_next = token == name
-        elif token not in HARNESS_FLAGS:
-            return True
-    return False
-
-
-def has_positional(arguments: list[str], value_flags: set[str]) -> bool:
-    skip_next = False
-    for token in arguments:
-        if skip_next:
-            skip_next = False
-        elif token.startswith("-"):
-            skip_next = token in value_flags
-        else:
+        elif token not in flags:
             return True
     return False
 
@@ -292,7 +262,7 @@ def gates_unit(command: list[str], unit: str) -> bool:
     if not names_path(command, unit):
         return False
     words = cargo_test_words(command)
-    return words is None or not filters_by_name(words)
+    return words is None or not runs_part(words)
 
 
 def units() -> list[str]:

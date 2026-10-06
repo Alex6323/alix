@@ -239,6 +239,32 @@ class ReadsRecipeCommands(unittest.TestCase):
             "compiling the test binaries without running them gates no tests",
         )
 
+    def test_a_nextest_partition_is_not_a_whole_crate_test(self):
+        command = gate.commands(
+            "cargo nextest run --partition=count:999999/999999 --no-tests=pass"
+        )[0]
+        self.assertFalse(
+            gate.is_whole_crate_test(command),
+            "one nextest partition is only part of the crate's tests",
+        )
+
+    def test_an_unlisted_cargo_flag_is_not_a_whole_crate_test(self):
+        rows = [
+            ("cargo nextest run --run-ignored only", False),
+            ("cargo nextest run --profile ci", False),
+            ("cargo test --all-targets", False),
+            ("cargo test --release", False),
+            ("cargo test --locked --no-fail-fast -q", True),
+            ("cargo test --color=always --target-dir target/x", True),
+        ]
+        for line, expected in rows:
+            with self.subTest(line=line):
+                self.assertEqual(
+                    expected,
+                    gate.is_whole_crate_test(gate.commands(line)[0]),
+                    f"`{line}` was read as whole-crate={not expected}",
+                )
+
     def test_a_toolchain_qualified_whole_crate_test_is_accepted(self):
         command = gate.commands("cargo +stable test")[0]
         self.assertTrue(
