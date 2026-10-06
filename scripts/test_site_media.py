@@ -147,6 +147,50 @@ class SiteMediaTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
+    def test_an_img_string_inside_a_textarea_is_not_a_served_page_reference(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                f'<textarea><img src="img/{SHOT}" alt=""></textarea>\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(1, result.returncode, result.stdout)
+
+    def test_a_picture_source_srcset_is_a_served_page_reference(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                f'<picture><source srcset="img/{SHOT}" type="image/webp">'
+                '<img src="img/fallback.png" alt=""></picture>\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_a_shot_prefixed_subdirectory_is_not_a_served_media_path(self):
+        nested = f"shot-old/{SHOT}"
+
+        def change(root):
+            (root / "site" / "img" / "shot-old").mkdir()
+            (root / "site" / "img" / SHOT).rename(root / "site" / "img" / nested)
+            (root / "site" / "index.html").write_text(
+                f'<img src="img/{nested}" alt="">\n', encoding="utf-8"
+            )
+            (root / "README.md").write_text(
+                f"![shot](https://alix.study/img/{nested})\n", encoding="utf-8"
+            )
+            (root / "e2e" / "shots" / "capture.cjs").write_text(
+                f'const SHOTS = [\n  [1, "{nested}", shot1],\n];\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(1, result.returncode, result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

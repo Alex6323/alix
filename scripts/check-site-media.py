@@ -14,7 +14,8 @@ CAPTURE = REPO_ROOT / "e2e" / "shots" / "capture.cjs"
 SHOTS_TABLE = re.compile(r"const SHOTS = \[(.*?)\];", re.S)
 SHOT_ROW = re.compile(r'\[\d+, "([^"]+)", shot\d+\]')
 SITE_PAGE = REPO_ROOT / "site" / "index.html"
-PAGE_SHOT = re.compile(r"img/(shot-.+\.webp)")
+PAGE_SHOT = re.compile(r"img/(shot-[^/]+\.webp)")
+TEXT_ONLY_TAGS = {"textarea", "title"}
 README = REPO_ROOT / "README.md"
 README_SHOT = re.compile(r"/img/((?:[^\s)\"/]+/)*shot-[^\s)\"/]+\.webp)")
 MEDIA_BUDGET_BYTES = 3 * 1024 * 1024 // 2
@@ -31,12 +32,30 @@ class ShotSources(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.shots: list[str] = []
+        self.text_only: str | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.text_only:
+            return
+        if tag in TEXT_ONLY_TAGS:
+            self.text_only = tag
         for name, value in attrs:
-            shot = PAGE_SHOT.fullmatch(value or "") if name == "src" else None
-            if shot:
-                self.shots.append(shot.group(1))
+            for url in attribute_urls(name, value or ""):
+                shot = PAGE_SHOT.fullmatch(url)
+                if shot:
+                    self.shots.append(shot.group(1))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == self.text_only:
+            self.text_only = None
+
+
+def attribute_urls(name: str, value: str) -> list[str]:
+    if name == "src":
+        return [value]
+    if name == "srcset":
+        return [candidate.split()[0] for candidate in value.split(",") if candidate.split()]
+    return []
 
 
 def referenced_shots() -> list[str]:
