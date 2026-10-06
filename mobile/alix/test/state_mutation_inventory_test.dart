@@ -43,7 +43,7 @@ void main() {
         'lib/picker/picker_controller.dart',
         'notifyListeners();',
       ),
-      [86, 202],
+      [86, 208],
       reason:
           'setServerReachable and _notifyIfLive own every picker mutation; '
           'listing, strip, and search transitions notify through it, and '

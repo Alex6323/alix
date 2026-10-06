@@ -376,6 +376,45 @@ void main() {
     },
   );
 
+  test(
+    'a reload queued behind a listing invalidates the open search immediately',
+    () async {
+      final first = Completer<List<PickerSearchHit>>();
+      final second = Completer<List<PickerSearchHit>>();
+      final relisting = Completer<PickerListing>();
+      final port = _FakePickerPort(rootEntries: [_entry('own')])
+        ..searchReplies.addAll([first, second]);
+      final controller = PickerController(port: port, root: '/decks');
+      await pumpEventQueue();
+
+      port.rootReply = relisting;
+      controller.reload();
+      await pumpEventQueue();
+      controller.openSearch();
+      await pumpEventQueue();
+      controller.reload();
+
+      first.complete([
+        PickerSearchHit(root: '/decks', entry: _entry('stale')),
+      ]);
+      await pumpEventQueue();
+
+      expect(
+        controller.searchHits,
+        isNull,
+        reason: 'a known queued reload invalidates the old search at once',
+      );
+
+      relisting.complete(PickerListing(entries: [_entry('refreshed')]));
+      await pumpEventQueue();
+      second.complete([
+        PickerSearchHit(root: '/decks', entry: _entry('fresh')),
+      ]);
+      await pumpEventQueue();
+      expect(controller.searchHits!.single.entry.title, 'fresh');
+    },
+  );
+
   test('a strip answer from the stale search cannot overwrite the refreshed '
       'search strip', () async {
     final firstSearch = Completer<List<PickerSearchHit>>();

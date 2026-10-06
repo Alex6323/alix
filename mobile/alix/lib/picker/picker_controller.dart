@@ -98,6 +98,7 @@ class PickerController extends ChangeNotifier {
   void reload() {
     if (_inFlight != null) {
       _reloadWanted = true;
+      if (_searchLoading) _searchGeneration++;
       return;
     }
     _inFlight = _load().whenComplete(() {
@@ -148,7 +149,12 @@ class PickerController extends ChangeNotifier {
       hits = null;
     }
     _searchLoading = false;
-    if (hits != null && !_searchWanted && _searchOpen && !_disposed) {
+    final current = searchGeneration == _searchGeneration;
+    if (hits != null &&
+        current &&
+        !_searchWanted &&
+        _searchOpen &&
+        !_disposed) {
       _searchable = List.unmodifiable(hits);
       for (final root in roots) {
         _requestStrips(root, [
