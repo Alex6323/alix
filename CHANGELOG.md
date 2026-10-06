@@ -313,6 +313,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On the phone, taking the desktop's side of a sync conflict at the end of a
+  review or trace and then passing the deck's exam no longer writes the
+  session's older progress back over the desktop's.
+
 - On the phone, a sync conflict that a background sync records during a trace
   on a paired deck now opens the conflict choice when the trace ends, finished
   or left early, so progress graded on the unresolved side is resolved before

@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/review_screen.dart';
+import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/sync/sync_controller.dart';
 import 'package:alix_mobile/sync/sync_models.dart';
@@ -14,6 +16,7 @@ import 'package:alix_mobile/sync_client.dart';
 import 'package:alix_mobile/trace_screen.dart';
 
 import 'support/deck_fixture.dart';
+import 'support/fake_server_client.dart';
 import 'support/picker_listing.dart';
 
 void main() {
@@ -33,7 +36,7 @@ void main() {
     File('${workspace.path}/alix.toml').writeAsStringSync('title = "Ws"\n');
     writeTestDeck(
       '${workspace.path}/decks/deck.md',
-      '---\ntitle: Deck\n---\n## q\na\n',
+      '---\ntitle: Deck\nsource: source.txt\n---\n## q\na\n',
     );
     File(
       '${workspace.path}/decks/source.txt',
@@ -77,33 +80,62 @@ void main() {
     required String deckPath,
     required String rowTitle,
     bool review = false,
+    FakeServerClient? examClient,
+    bool directTrace = false,
   }) async {
     final fixture = workspace();
+    if (examClient != null) {
+      await savePairing(
+        const ServerConfig(
+          host: '127.0.0.1',
+          port: 7777,
+          token: 'session-end-test',
+          rootId: 'root-test0000000000000000000000',
+        ),
+        support: fixture.support,
+      );
+    }
     final syncController = _MidSessionConflictController(
       deckId: deckId,
       deckPath: deckPath,
       workspace: fixture.workspace,
     );
     addTearDown(syncController.dispose);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PickerScreen(
-          root: fixture.root.path,
-          dir: fixture.workspace.path,
-          title: 'Ws',
-          supportDir: fixture.support,
-          syncController: syncController,
-          isPairedSubtree: true,
-          isPushedRoute: true,
+    if (directTrace) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TraceSessionScreen(
+            deckPath: '${fixture.workspace.path}/$deckPath',
+            rootDir: fixture.root.path,
+            supportDir: fixture.support,
+            buildClient: (_) => examClient!,
+            syncController: syncController,
+          ),
         ),
-      ),
-    );
-    await settlePicker(tester);
-    await tester.tap(find.text(rowTitle));
-    await tester.pumpAndSettle();
-    if (rowTitle == 'Deck' || review) {
-      await tester.tap(find.text('Recall'));
+      );
       await tester.pumpAndSettle();
+    } else {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PickerScreen(
+            root: fixture.root.path,
+            dir: fixture.workspace.path,
+            title: 'Ws',
+            supportDir: fixture.support,
+            buildClient: examClient == null ? null : (_) => examClient,
+            syncController: syncController,
+            isPairedSubtree: true,
+            isPushedRoute: true,
+          ),
+        ),
+      );
+      await settlePicker(tester);
+      await tester.tap(find.text(rowTitle));
+      await tester.pumpAndSettle();
+      if (rowTitle == 'Deck' || review) {
+        await tester.tap(find.text('Recall'));
+        await tester.pumpAndSettle();
+      }
     }
     syncController.publish();
     await tester.pumpAndSettle();
@@ -325,6 +357,96 @@ void main() {
       await expectDesktopKept(tester, syncController, 'trace finished');
     },
   );
+
+  testWidgets(
+    'passing the exam after taking desktop on a finished review keeps the '
+    'desktop card progress',
+    (tester) async {
+      final client = FakeServerClient(
+        versionReply: '0.8.0',
+        examGetReplies: [_passedExam(isTrace: false)],
+      );
+      final syncController = await openSession(
+        tester,
+        deckId: 'deck-1',
+        deckPath: 'decks/deck.md',
+        rowTitle: 'Deck',
+        examClient: client,
+      );
+      await tester.tap(find.text('Reveal'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Seen'));
+      await tester.pumpAndSettle();
+      expect(find.text('SESSION COMPLETE'), findsOneWidget);
+
+      await resolveAndExpectPicker(tester, syncController);
+      expect(_cards(syncController.workspace), isEmpty);
+      await tester.tap(find.text('Take the exam'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Passed.'), findsOneWidget);
+      expect(
+        _cards(syncController.workspace),
+        isEmpty,
+        reason: 'exam mastery must not restore the discarded phone reviews',
+      );
+    },
+  );
+
+  testWidgets(
+    'passing the exam after taking desktop on a finished trace keeps the '
+    'desktop card progress',
+    (tester) async {
+      final client = FakeServerClient(
+        versionReply: '0.8.0',
+        examGetReplies: [_passedExam(isTrace: true)],
+      );
+      final syncController = await openSession(
+        tester,
+        deckId: 'trace-1',
+        deckPath: 'decks/trace.md',
+        rowTitle: 'Trace',
+        examClient: client,
+        directTrace: true,
+      );
+      await tester.enterText(find.byType(TextField), 'a guess');
+      await tester.tap(find.text('Reveal'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Got it'));
+      await tester.pumpAndSettle();
+      expect(find.text('TRACE COMPLETE'), findsOneWidget);
+
+      await resolveAndExpectPicker(tester, syncController);
+      expect(_cards(syncController.workspace), isEmpty);
+      await tester.tap(find.text('Take the exam'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Passed.'), findsOneWidget);
+      expect(
+        _cards(syncController.workspace),
+        isEmpty,
+        reason: 'exam mastery must not restore the discarded phone trace',
+      );
+    },
+  );
+}
+
+RemoteExam _passedExam({required bool isTrace}) => RemoteExam(
+  phase: 'results',
+  deck: 'ws/deck.md',
+  strictness: 'balanced',
+  questions: const [],
+  passed: true,
+  grades: const [],
+  gaps: const [],
+  canRemediate: false,
+  isTrace: isTrace,
+  thinking: false,
+);
+
+Map<String, dynamic> _cards(Directory workspace) {
+  final json = jsonDecode(progressDocument(workspace).readAsStringSync());
+  return (json as Map<String, dynamic>)['cards'] as Map<String, dynamic>;
 }
 
 File progressDocument(Directory workspace) {

@@ -374,6 +374,7 @@ pub struct ReviewSession {
     topology_name: Option<String>,
     label: String,
     deck_path: PathBuf,
+    root_store: PathBuf,
     // The stable deck id: deck-level store state (mastery, personal-card
     // association) is keyed by this, captured off the loaded Deck rather
     // than re-derived from deck_path by hand.
@@ -446,6 +447,7 @@ impl ReviewSession {
             topology_name: build.topology_name,
             label: build.label,
             deck_path,
+            root_store,
             deck_token,
             deck_fingerprints,
             has_exam,
@@ -621,6 +623,7 @@ impl ReviewSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn apply_exam_passed(&mut self, now_ms: u64) -> Result<()> {
+        self.store = reopen_store(&self.store, &self.deck_path, &self.root_store)?;
         self.store.set_deck_mastered(&self.deck_token, now_ms);
         self.store.save()?;
         Ok(())
@@ -798,9 +801,17 @@ fn trace_state(session: &alix::trace::TraceSession) -> TraceSessionState {
     state
 }
 
+fn reopen_store(stale: &alix::store::Store, deck_path: &Path, root_store: &Path) -> Result<alix::store::Store> {
+    let mut store = alix::assemble::store_for(&[deck_path.to_path_buf()], Some(root_store))?;
+    store.device = stale.device.clone();
+    Ok(store)
+}
+
 pub struct TraceSession {
     session: alix::trace::TraceSession,
     store: alix::store::Store,
+    deck_path: PathBuf,
+    root_store: PathBuf,
     // The stable deck id: deck-level store state (mastery, exam cooldown) is
     // keyed by this, captured off the loaded Deck rather than re-derived.
     deck_token: String,
@@ -825,6 +836,7 @@ impl TraceSession {
         let deck_fingerprints: HashSet<u64> =
             loaded.cards.iter().map(|c| c.content_fingerprint).collect();
         let has_exam = loaded.has_exam();
+        let deck_path = deck.clone();
 
         let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
         let mut store = alix::assemble::store_for(std::slice::from_ref(&deck), Some(&root_store))?;
@@ -855,6 +867,8 @@ impl TraceSession {
         Ok(TraceSession {
             session: build.session,
             store,
+            deck_path,
+            root_store,
             deck_token,
             deck_fingerprints,
             has_exam,
@@ -902,6 +916,7 @@ impl TraceSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn apply_exam_passed(&mut self, now_ms: u64) -> Result<()> {
+        self.store = reopen_store(&self.store, &self.deck_path, &self.root_store)?;
         self.store.set_deck_mastered(&self.deck_token, now_ms);
         self.store.save()?;
         Ok(())
