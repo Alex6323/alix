@@ -46,6 +46,7 @@ ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 MAKE_MESSAGE = re.compile(r"make(\[\d+\])?: ")
 SEPARATORS = {"&&", "||", ";", ";;", "|", "|&", "&", "(", ")"}
 FILE_WRITES = {">", ">>", ">|", "&>", "&>>", "<>"}
+NON_FILES = {"/dev/null", "/dev/stdout", "/dev/stderr"}
 
 
 def exact_keys(value, allowed, required, where, problems):
@@ -246,7 +247,7 @@ def segments(tokens):
 
 def writes_file(segment):
     return any(
-        token in FILE_WRITES and target != "/dev/null"
+        token in FILE_WRITES and target not in NON_FILES
         for token, target in zip(segment, segment[1:])
     )
 

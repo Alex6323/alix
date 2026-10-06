@@ -506,6 +506,21 @@ class RiskMatrixGuardTests(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
+    def test_printf_redirection_to_standard_streams_is_not_real_work(self):
+        matrix = complete_matrix()
+        makefile = self.fixture_makefile(matrix)
+        live = "test:\n\t@./evidence test\n"
+        for target in ("/dev/stdout", "/dev/stderr"):
+            with self.subTest(target=target):
+                self.assert_invalid(
+                    matrix,
+                    "command runs nothing: make test",
+                    makefile.replace(
+                        live,
+                        f"test:\n\t@printf evidence > {target}\n",
+                    ),
+                )
+
     def test_printf_read_write_redirection_is_real_work(self):
         matrix = complete_matrix()
         makefile = self.fixture_makefile(matrix)
