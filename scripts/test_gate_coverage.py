@@ -181,6 +181,28 @@ class GuardsTheExceptionList(unittest.TestCase):
                     "an env option does not turn cargo run into a test",
                 )
 
+    def test_env_help_does_not_gate_the_root_crate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / "Cargo.toml").write_text("[package]\nname='root'\n")
+            (root / "Makefile").write_text(
+                "check:\n\tenv --help cargo test\n"
+            )
+            with mock.patch.multiple(
+                gate,
+                REPO_ROOT=root,
+                MAKEFILE=root / "Makefile",
+                WORKFLOWS=root / ".github" / "workflows",
+                LOCAL_GATES=("check",),
+                CI_ONLY={},
+            ):
+                self.assertEqual(
+                    1,
+                    run_guard(),
+                    "env --help exits without running the following cargo test",
+                )
+
     def test_a_workflow_comment_does_not_prove_a_ci_only_suite_runs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
