@@ -301,6 +301,139 @@ void main() {
       expect(controller.searchHits!.single.entry.title, 'fresh');
     },
   );
+
+  test('a strip answer from the stale search cannot overwrite the refreshed '
+      'search strip', () async {
+    final firstSearch = Completer<List<PickerSearchHit>>();
+    final secondSearch = Completer<List<PickerSearchHit>>();
+    final staleStrip = Completer<Map<String, PickerStrip>>();
+    final freshStrip = Completer<Map<String, PickerStrip>>();
+    final port = _FakePickerPort(rootEntries: [_entry('ws', isWorkspace: true)])
+      ..searchReplies.addAll([firstSearch, secondSearch])
+      ..stripReplies.addAll([staleStrip, freshStrip]);
+    final controller = PickerController(port: port, root: '/decks');
+    await pumpEventQueue();
+
+    controller.openSearch();
+    await pumpEventQueue();
+    controller.reload();
+    await pumpEventQueue();
+
+    firstSearch.complete([
+      PickerSearchHit(root: '/decks', entry: _entry('deck')),
+    ]);
+    await pumpEventQueue();
+    secondSearch.complete([
+      PickerSearchHit(root: '/decks', entry: _entry('deck')),
+    ]);
+    await pumpEventQueue();
+    expect(port.stripRequests, hasLength(2));
+
+    freshStrip.complete({
+      '/decks/deck.md': const PickerStrip(
+        cardCount: 2,
+        tiers: ['seen', 'unseen'],
+      ),
+    });
+    await pumpEventQueue();
+    expect(controller.stripFor('/decks/deck.md')?.cardCount, 2);
+
+    staleStrip.complete({
+      '/decks/deck.md': const PickerStrip(cardCount: 1, tiers: ['seen']),
+    });
+    await pumpEventQueue();
+
+    expect(
+      controller.stripFor('/decks/deck.md')?.cardCount,
+      2,
+      reason: 'a strip answer issued by the stale search must be ignored',
+    );
+  });
+
+  test('closing or disposing drops a queued search refresh', () async {
+    final calls = <String, int>{};
+    for (final (label, stop) in <(String, void Function(PickerController))>[
+      ('closeSearch', (controller) => controller.closeSearch()),
+      ('dispose', (controller) => controller.dispose()),
+    ]) {
+      final firstSearch = Completer<List<PickerSearchHit>>();
+      final port = _FakePickerPort(
+        rootEntries: [_entry('ws', isWorkspace: true)],
+      )..searchReplies.add(firstSearch);
+      final controller = PickerController(port: port, root: '/decks');
+      await pumpEventQueue();
+
+      controller.openSearch();
+      await pumpEventQueue();
+      controller.reload();
+      await pumpEventQueue();
+      stop(controller);
+      firstSearch.complete(const []);
+      await pumpEventQueue();
+      calls[label] = port.searchRoots.length;
+      if (label != 'dispose') controller.dispose();
+    }
+
+    expect(calls, {
+      'closeSearch': 1,
+      'dispose': 1,
+    }, reason: 'a stopped search must not launch its queued full rescan');
+  });
+
+  test(
+    'a failed search reports no uncaught error and can be retried',
+    () async {
+      final port = _FakePickerPort(
+        rootEntries: [_entry('ws', isWorkspace: true)],
+      )..searchFailures = 1;
+      final errors = <Object>[];
+      final exercised = Completer<void>();
+      late PickerController controller;
+      runZonedGuarded(() async {
+        controller = PickerController(port: port, root: '/decks');
+        await pumpEventQueue();
+        controller.openSearch();
+        await pumpEventQueue();
+        controller.closeSearch();
+        controller.openSearch();
+        await pumpEventQueue();
+        exercised.complete();
+      }, (error, _) => errors.add(error));
+      await exercised.future;
+      controller.dispose();
+
+      expect(
+        (requests: port.searchRoots.length, uncaught: errors.length),
+        (requests: 2, uncaught: 0),
+        reason: 'one failed optional search must not wedge every later search',
+      );
+    },
+  );
+
+  test(
+    'a failed strip request stays contained as optional enrichment',
+    () async {
+      final port = _FakePickerPort(rootEntries: [_entry('deck')])
+        ..stripFailures = 1;
+      final errors = <Object>[];
+      final exercised = Completer<void>();
+      late PickerController controller;
+      runZonedGuarded(() async {
+        controller = PickerController(port: port, root: '/decks');
+        await pumpEventQueue();
+        exercised.complete();
+      }, (error, _) => errors.add(error));
+      await exercised.future;
+      controller.dispose();
+
+      expect(
+        errors,
+        isEmpty,
+        reason:
+            'an optional strip failure must not escape as an uncaught error',
+      );
+    },
+  );
 }
 
 PickerEntry _entry(
@@ -346,6 +479,8 @@ class _FakePickerPort implements PickerPort {
   List<PickerSearchHit> searchable = const [];
   final List<List<String>> searchRoots = [];
   final List<Completer<List<PickerSearchHit>>> searchReplies = [];
+  int searchFailures = 0;
+  int stripFailures = 0;
 
   @override
   Future<Map<String, PickerStrip>> deckStrips({
@@ -353,6 +488,10 @@ class _FakePickerPort implements PickerPort {
     required List<String> decks,
   }) {
     stripRequests.add((root, decks));
+    if (stripFailures > 0) {
+      stripFailures--;
+      return Future.error(StateError('strip failed'));
+    }
     if (stripReplies.isNotEmpty) return stripReplies.removeAt(0).future;
     return stripReply?.future ?? Future.value(const {});
   }
@@ -360,6 +499,10 @@ class _FakePickerPort implements PickerPort {
   @override
   Future<List<PickerSearchHit>> listSearchable(List<String> roots) async {
     searchRoots.add(roots);
+    if (searchFailures > 0) {
+      searchFailures--;
+      throw StateError('search failed');
+    }
     if (searchReplies.isNotEmpty) return searchReplies.removeAt(0).future;
     return searchable;
   }

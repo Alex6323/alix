@@ -49,6 +49,7 @@ class PickerController extends ChangeNotifier {
   List<PickerSearchHit>? _searchable;
   bool _searchLoading = false;
   bool _searchWanted = false;
+  int _searchGeneration = 0;
   int _listingGeneration = 0;
 
   List<PickerEntry> get entries => _entries;
@@ -117,6 +118,7 @@ class PickerController extends ChangeNotifier {
 
   void closeSearch() {
     _searchOpen = false;
+    _searchWanted = false;
     _query = '';
     _notifyIfLive();
   }
@@ -134,38 +136,69 @@ class PickerController extends ChangeNotifier {
     }
     _searchLoading = true;
     final roots = [_root, ?_pairedRootDir];
-    unawaited(
-      _port.listSearchable(roots).then((hits) {
-        _searchLoading = false;
-        _searchable = List.unmodifiable(hits);
-        for (final root in roots) {
-          _requestStrips(root, [
-            for (final hit in hits)
-              if (hit.root == root) hit.entry,
-          ]);
-        }
-        _notifyIfLive();
-        if (!_searchWanted) return;
-        _searchWanted = false;
-        _loadSearchable();
-      }),
-    );
+    final searchGeneration = ++_searchGeneration;
+    unawaited(_finishSearch(roots, searchGeneration));
   }
 
-  void _requestStrips(String root, Iterable<PickerEntry> entries) {
+  Future<void> _finishSearch(List<String> roots, int searchGeneration) async {
+    List<PickerSearchHit>? hits;
+    try {
+      hits = await _port.listSearchable(roots);
+    } on Object {
+      hits = null;
+    }
+    _searchLoading = false;
+    if (hits != null &&
+        searchGeneration == _searchGeneration &&
+        _searchOpen &&
+        !_disposed) {
+      _searchable = List.unmodifiable(hits);
+      for (final root in roots) {
+        _requestStrips(root, [
+          for (final hit in hits)
+            if (hit.root == root) hit.entry,
+        ], searchGeneration: searchGeneration);
+      }
+      _notifyIfLive();
+    }
+    final rerun = _searchWanted && _searchOpen && !_disposed;
+    _searchWanted = false;
+    if (rerun) _loadSearchable();
+  }
+
+  void _requestStrips(
+    String root,
+    Iterable<PickerEntry> entries, {
+    int? searchGeneration,
+  }) {
     final decks = [
       for (final entry in entries)
         if (!entry.isWorkspace) entry.path,
     ];
     if (decks.isEmpty) return;
-    final generation = _listingGeneration;
-    unawaited(
-      _port.deckStrips(root: root, decks: decks).then((strips) {
-        if (generation != _listingGeneration || strips.isEmpty) return;
-        _strips.addAll(strips);
-        _notifyIfLive();
-      }),
-    );
+    unawaited(_finishStrips(root, decks, _listingGeneration, searchGeneration));
+  }
+
+  Future<void> _finishStrips(
+    String root,
+    List<String> decks,
+    int listingGeneration,
+    int? searchGeneration,
+  ) async {
+    Map<String, PickerStrip> strips;
+    try {
+      strips = await _port.deckStrips(root: root, decks: decks);
+    } on Object {
+      return;
+    }
+    if (_disposed ||
+        listingGeneration != _listingGeneration ||
+        (searchGeneration != null && searchGeneration != _searchGeneration) ||
+        strips.isEmpty) {
+      return;
+    }
+    _strips.addAll(strips);
+    _notifyIfLive();
   }
 
   void _notifyIfLive() {
@@ -240,6 +273,7 @@ class PickerController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _searchWanted = false;
     super.dispose();
   }
 
