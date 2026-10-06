@@ -40,7 +40,7 @@ STATES = {"covered", "partial", "gap"}
 CADENCES = {"per-change", "per-push", "nightly", "release", "manual"}
 TARGET = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 NO_OPS = {"true", "false", ":", "exit", "echo", "printf", "cd", "test", "["}
-SHELL_KEYWORDS = {"if", "then", "else", "elif", "fi", "for", "do", "done", "while", "!"}
+SHELL_KEYWORDS = {"if", "then", "else", "elif", "fi", "for", "do", "done", "while", "!", "{", "}"}
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 MAKE_MESSAGE = re.compile(r"make(\[\d+\])?: ")
 COMMENT = re.compile(r"(?:^|(?<=[\s;&|()]))#.*")
@@ -216,7 +216,7 @@ def runs_something(dry_run):
         if MAKE_MESSAGE.match(line):
             continue
         code = COMMENT.sub("", line.rstrip("\\"))
-        for segment in re.split(r"&&|\|\||;|\|", code):
+        for segment in re.split(r"&&|\|\||;|\||\(|\)", code):
             words = list(dropwhile(is_preamble, segment.split()))
             if words and (words[0] not in NO_OPS or FILE_REDIRECTION.search(segment)):
                 return True
