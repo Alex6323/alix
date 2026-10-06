@@ -38,9 +38,11 @@ class ShotSources(HTMLParser):
         self.templates = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.text_only:
+            return
         if tag == "template":
             self.templates += 1
-        if self.text_only or self.templates:
+        if self.templates:
             return
         if tag in TEXT_ONLY_TAGS:
             self.text_only = tag
@@ -67,12 +69,14 @@ class ShotSources(HTMLParser):
             self.picture_has_img = True
 
     def handle_endtag(self, tag: str) -> None:
+        if self.text_only:
+            if tag == self.text_only:
+                self.text_only = None
+            return
         if tag == "template" and self.templates:
             self.templates -= 1
         if self.templates:
             return
-        if tag == self.text_only:
-            self.text_only = None
         if tag == "picture" and self.picture is not None:
             if self.picture_has_img:
                 self.shots.extend(self.picture)
