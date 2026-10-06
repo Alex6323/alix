@@ -191,6 +191,27 @@ class SiteMediaTests(unittest.TestCase):
 
         self.assertEqual(1, result.returncode, result.stdout)
 
+    def test_src_and_srcset_on_one_img_do_not_repeat_the_shot(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                f'<img src="img/{SHOT}" srcset="img/{SHOT} 1x" alt="">\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_a_script_src_is_not_a_served_image_reference(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                f'<script src="img/{SHOT}"></script>\n', encoding="utf-8"
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(1, result.returncode, result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,7 @@ SHOT_ROW = re.compile(r'\[\d+, "([^"]+)", shot\d+\]')
 SITE_PAGE = REPO_ROOT / "site" / "index.html"
 PAGE_SHOT = re.compile(r"img/(shot-[^/]+\.webp)")
 TEXT_ONLY_TAGS = {"textarea", "title"}
+IMAGE_TAGS = {"img", "source"}
 README = REPO_ROOT / "README.md"
 README_SHOT = re.compile(r"/img/((?:[^\s)\"/]+/)*shot-[^\s)\"/]+\.webp)")
 MEDIA_BUDGET_BYTES = 3 * 1024 * 1024 // 2
@@ -39,11 +40,15 @@ class ShotSources(HTMLParser):
             return
         if tag in TEXT_ONLY_TAGS:
             self.text_only = tag
+        if tag not in IMAGE_TAGS:
+            return
+        element_shots: list[str] = []
         for name, value in attrs:
             for url in attribute_urls(name, value or ""):
                 shot = PAGE_SHOT.fullmatch(url)
-                if shot:
-                    self.shots.append(shot.group(1))
+                if shot and shot.group(1) not in element_shots:
+                    element_shots.append(shot.group(1))
+        self.shots.extend(element_shots)
 
     def handle_endtag(self, tag: str) -> None:
         if tag == self.text_only:
