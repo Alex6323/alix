@@ -15,7 +15,7 @@ SHOT_ROW = re.compile(r'\[\d+, "([^"]+)", shot\d+\]')
 SITE_PAGE = REPO_ROOT / "site" / "index.html"
 PAGE_SHOT = re.compile(r'src="img/(shot-[^"]+\.webp)"')
 README = REPO_ROOT / "README.md"
-README_SHOT = re.compile(r"/img/(shot-[^\s)\"]+\.webp)")
+README_SHOT = re.compile(r"/img/((?:[^\s)\"/]+/)*shot-[^\s)\"/]+\.webp)")
 MEDIA_BUDGET_BYTES = 3 * 1024 * 1024 // 2
 
 
@@ -36,7 +36,11 @@ def readme_shots() -> set[str]:
 
 def main() -> int:
     media = sorted(path for path in MEDIA_DIR.rglob("*") if path.is_file())
-    shot_names = {path.name for path in media if path.name.startswith("shot-")}
+    shot_names = {
+        path.relative_to(MEDIA_DIR).as_posix()
+        for path in media
+        if path.name.startswith("shot-")
+    }
     expected = registered_shots()
     missing = sorted(expected - shot_names)
     unexpected = sorted(shot_names - expected)
