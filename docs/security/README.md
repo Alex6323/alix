@@ -30,8 +30,9 @@ manifests, lockfiles, and policy file it reads are tracked, so anyone able to ch
 change the policy file in the same commit; the two inputs that are not tracked, an untracked root
 configuration and the files a tracked root includes, reach it from a checkout the same person can
 commit. Cargo configuration outside the checkout, in a parent directory or in `CARGO_HOME`, is
-invisible to it; release artifacts are built in CI from a fresh clone, so only committed
-configuration reaches a published binary. Dependency build scripts
+invisible to it; release artifacts are built in CI from a fresh clone, so no configuration
+left only in a developer's checkout or home directory reaches a published binary, while the CI
+runner's own `CARGO_HOME` is outside what the gate sees. Dependency build scripts
 and procedural macros execute with the authority of whoever runs the build, and nothing here
 constrains them. Known Rust advisories are covered separately by `make audit`.
 

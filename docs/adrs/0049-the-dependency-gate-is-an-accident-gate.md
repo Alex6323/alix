@@ -59,7 +59,7 @@ its real exposure is, in release artifact provenance.
 
 Growing the checker further requires naming the ordinary action that produces
 the input it would catch. Refusing an untracked root configuration has one, a
-local build setting written into `.cargo/config.toml` and left uncommitted,
+local build setting written into `.cargo/config.toml` and left untracked,
 where the gate is what makes a machine-only build difference visible. The
 walker over a tracked configuration has no such action today and stays only
 because a repository configuration may be added later.
@@ -69,7 +69,7 @@ because a repository configuration may be added later.
 Removing the checker entirely. Its accident cases are real and cheap to keep:
 a dependency added to a surface declared dependency-free, a git dependency on a
 moving branch, a path dependency outside the checkout, an undeclared dependency
-root, an uncommitted lockfile, and a lockfile damaged by a merge.
+root, an untracked lockfile, and a lockfile damaged by a merge.
 
 Keeping the security framing and adding compensating rules. Rejected. Six
 changes in fifteen hours each closed a bypass found in the previous one, every
