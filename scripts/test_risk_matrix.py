@@ -449,7 +449,7 @@ class RiskMatrixGuardTests(unittest.TestCase):
             makefile.replace(live, "test:\n\t@printf '&'\n"),
         )
 
-    def test_a_double_quoted_command_substitution_is_real_work(self):
+    def test_a_command_substitution_alone_is_not_counted_as_real_work(self):
         matrix = complete_matrix()
         makefile = self.fixture_makefile(matrix)
         live = "test:\n\t@./evidence test\n"
@@ -460,7 +460,8 @@ class RiskMatrixGuardTests(unittest.TestCase):
                 "test:\n\t@printf '%s\\n' \"$$(./evidence test)\"\n",
             ),
         )
-        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("command runs nothing: make test", result.stdout + result.stderr)
 
     def test_non_command_dollar_syntax_does_not_invent_a_command(self):
         matrix = complete_matrix()
@@ -469,6 +470,21 @@ class RiskMatrixGuardTests(unittest.TestCase):
         for recipe in (
             "printf '%s\\n' '$$(./evidence test)'",
             'printf \'%s\\n\' "$$((1 + 1))"',
+        ):
+            with self.subTest(recipe=recipe):
+                self.assert_invalid(
+                    matrix,
+                    "command runs nothing: make test",
+                    makefile.replace(live, f"test:\n\t@{recipe}\n"),
+                )
+
+    def test_shell_quoted_literals_do_not_invent_command_substitution(self):
+        matrix = complete_matrix()
+        makefile = self.fixture_makefile(matrix)
+        live = "test:\n\t@./evidence test\n"
+        for recipe in (
+            "printf '%s\\n' x'$$(./evidence test)'",
+            'printf \'%s\\n\' "\\$$(./evidence test)"',
         ):
             with self.subTest(recipe=recipe):
                 self.assert_invalid(

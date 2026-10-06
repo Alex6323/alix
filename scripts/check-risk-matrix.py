@@ -45,7 +45,6 @@ SHELL_KEYWORDS = {"if", "then", "else", "elif", "fi", "for", "do", "done", "whil
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 MAKE_MESSAGE = re.compile(r"make(\[\d+\])?: ")
 SEPARATORS = {"&&", "||", ";", ";;", "|", "|&", "&", "(", ")"}
-COMMAND_SUBSTITUTION = re.compile(r"\$\((?!\()|`")
 FILE_WRITES = {">", ">>", ">|", "&>", "&>>", "<>"}
 
 
@@ -220,14 +219,10 @@ def runs_something(dry_run):
         try:
             tokens = shell_tokens(line.rstrip("\\"))
         except ValueError:
-            return True
+            continue
         for segment in segments(tokens):
             words = list(dropwhile(is_preamble, segment))
-            if words and (
-                words[0].strip("'\"") not in NO_OPS
-                or writes_file(segment)
-                or substitutes_command(segment)
-            ):
+            if words and (words[0].strip("'\"") not in NO_OPS or writes_file(segment)):
                 return True
     return False
 
@@ -247,12 +242,6 @@ def segments(tokens):
         else:
             segment.append(token)
     yield segment
-
-
-def substitutes_command(segment):
-    return any(
-        not token.startswith("'") and COMMAND_SUBSTITUTION.search(token) for token in segment
-    )
 
 
 def writes_file(segment):
