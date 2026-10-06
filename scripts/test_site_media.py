@@ -206,6 +206,18 @@ class SiteMediaTests(unittest.TestCase):
 
         self.assertEqual(1, result.returncode, result.stdout)
 
+    def test_a_picture_inside_a_template_is_not_served(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                f'<template><picture><source srcset="img/{SHOT}">'
+                '<img src="img/fallback.png" alt=""></picture></template>\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(1, result.returncode, result.stdout)
+
     def test_a_shot_prefixed_subdirectory_is_not_a_served_media_path(self):
         nested = f"shot-old/{SHOT}"
 
