@@ -68,6 +68,9 @@ class ShotSources(HTMLParser):
         elif tag == "img":
             self.picture_has_img = True
 
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+
     def handle_endtag(self, tag: str) -> None:
         if self.text_only:
             if tag == self.text_only:
