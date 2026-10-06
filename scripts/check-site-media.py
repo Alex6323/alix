@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -13,7 +14,7 @@ CAPTURE = REPO_ROOT / "e2e" / "shots" / "capture.cjs"
 SHOTS_TABLE = re.compile(r"const SHOTS = \[(.*?)\];", re.S)
 SHOT_ROW = re.compile(r'\[\d+, "([^"]+)", shot\d+\]')
 SITE_PAGE = REPO_ROOT / "site" / "index.html"
-PAGE_SHOT = re.compile(r"""(?<=\s)src\s*=\s*["']img/(shot-[^"']+\.webp)["']""")
+PAGE_SHOT = re.compile(r"img/(shot-.+\.webp)")
 README = REPO_ROOT / "README.md"
 README_SHOT = re.compile(r"/img/((?:[^\s)\"/]+/)*shot-[^\s)\"/]+\.webp)")
 MEDIA_BUDGET_BYTES = 3 * 1024 * 1024 // 2
@@ -26,8 +27,23 @@ def registered_shots() -> set[str]:
     return set(SHOT_ROW.findall(table.group(1)))
 
 
+class ShotSources(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.shots: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        for name, value in attrs:
+            shot = PAGE_SHOT.fullmatch(value or "") if name == "src" else None
+            if shot:
+                self.shots.append(shot.group(1))
+
+
 def referenced_shots() -> list[str]:
-    return PAGE_SHOT.findall(SITE_PAGE.read_text(encoding="utf-8"))
+    parser = ShotSources()
+    parser.feed(SITE_PAGE.read_text(encoding="utf-8"))
+    parser.close()
+    return parser.shots
 
 
 def readme_shots() -> set[str]:

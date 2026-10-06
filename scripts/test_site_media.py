@@ -127,6 +127,26 @@ class SiteMediaTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
+    def test_a_commented_src_attribute_is_not_a_served_page_reference(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                f'<!-- <img src="img/{SHOT}" alt=""> -->\n', encoding="utf-8"
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(1, result.returncode, result.stdout)
+
+    def test_an_uppercase_src_attribute_is_a_served_page_reference(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                f'<img SRC="img/{SHOT}" alt="">\n', encoding="utf-8"
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
