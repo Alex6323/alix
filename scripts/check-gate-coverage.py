@@ -18,6 +18,7 @@ themselves, so a suite whose files match no pattern below is still invisible.
 
 from __future__ import annotations
 
+import itertools
 import os
 import re
 import shlex
@@ -81,6 +82,7 @@ SELECTION_FLAGS = {
     "--manifest-path",
     "-E",
     "--filterset",
+    "--no-run",
 }
 CARGO_VALUE_FLAGS = {
     "-p",
@@ -240,7 +242,7 @@ def is_whole_crate_test(command: list[str]) -> bool:
 
 def cargo_test_words(command: list[str]) -> list[str] | None:
     """The arguments after `cargo test` or `cargo nextest run`, else None."""
-    words = [token for token in command if "=" not in token or token.startswith("-")]
+    words = list(itertools.dropwhile(lambda token: "=" in token and not token.startswith("-"), command))
     if not words or words[0] != "cargo":
         return None
     if words[1:2] and words[1].startswith("+"):

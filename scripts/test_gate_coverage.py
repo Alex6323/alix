@@ -225,6 +225,20 @@ class ReadsRecipeCommands(unittest.TestCase):
             "excluding every should-panic test leaves a planted defect ungated",
         )
 
+    def test_an_equals_name_filter_is_not_a_whole_crate_test(self):
+        command = gate.commands("cargo test -- definitely=no-such-test")[0]
+        self.assertFalse(
+            gate.is_whole_crate_test(command),
+            "a positional filter containing = still narrows the libtest run",
+        )
+
+    def test_a_no_run_build_is_not_a_whole_crate_test(self):
+        command = gate.commands("cargo test --no-run")[0]
+        self.assertFalse(
+            gate.is_whole_crate_test(command),
+            "compiling the test binaries without running them gates no tests",
+        )
+
     def test_a_toolchain_qualified_whole_crate_test_is_accepted(self):
         command = gate.commands("cargo +stable test")[0]
         self.assertTrue(
