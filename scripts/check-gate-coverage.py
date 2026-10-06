@@ -63,6 +63,7 @@ CARGO_SUBDIRS = {"tests", "benches", "examples"}
 # These units are the deliberate exception, where a schedule is the point.
 SCHEDULED = {"fuzz/Cargo.toml"}
 MAIN = "main"
+ENV_VALUE_FLAGS = {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}
 # Cargo flags that pick another crate; a root-crate claim carries none.
 CRATE_FLAGS = {"-p", "--package", "--manifest-path"}
 # cargo and nextest flags that never narrow a passing run; any other flag selects.
@@ -223,7 +224,7 @@ def is_whole_crate_test(command: list[str]) -> bool:
 
 def cargo_test_words(command: list[str]) -> list[str] | None:
     """The arguments after `cargo test` or `cargo nextest run`, else None."""
-    words = list(itertools.dropwhile(is_environment, command))
+    words = without_environment(command)
     if not words or words[0] != "cargo":
         return None
     if words[1:2] and words[1].startswith("+"):
@@ -237,12 +238,27 @@ def cargo_test_words(command: list[str]) -> list[str] | None:
     return rest
 
 
-def is_environment(token: str) -> bool:
-    return token == "env" or ("=" in token and not token.startswith("-"))
+def is_assignment(token: str) -> bool:
+    return "=" in token and not token.startswith("-")
 
 
-def is_cargo(command: list[str]) -> bool:
-    return next(itertools.dropwhile(is_environment, command), None) == "cargo"
+def without_environment(command: list[str]) -> list[str]:
+    words = list(itertools.dropwhile(is_assignment, command))
+    if words[:1] != ["env"]:
+        return words
+    index = 1
+    while index < len(words):
+        token = words[index]
+        if token == "--":
+            index += 1
+            break
+        if token in ENV_VALUE_FLAGS:
+            index += 2
+        elif token.startswith("-") or is_assignment(token):
+            index += 1
+        else:
+            break
+    return list(itertools.dropwhile(is_assignment, words[index:]))
 
 
 def runs_part(arguments: list[str]) -> bool:
@@ -277,7 +293,7 @@ def gates_unit(command: list[str], unit: str) -> bool:
         return False
     words = cargo_test_words(command)
     if words is None:
-        return not is_cargo(command)
+        return not unit.endswith("Cargo.toml")
     return not runs_part(words)
 
 

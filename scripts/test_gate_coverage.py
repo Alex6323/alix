@@ -152,6 +152,35 @@ class GuardsTheExceptionList(unittest.TestCase):
                     "wrapping cargo in env does not turn cargo run into a test",
                 )
 
+    def test_an_env_option_before_cargo_run_does_not_gate_that_crate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tools" / "gfm-harness").mkdir(parents=True)
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / "Cargo.toml").write_text("[package]\nname='root'\n")
+            (root / "tools" / "gfm-harness" / "Cargo.toml").write_text(
+                "[package]\nname='gfm-harness'\n"
+            )
+            (root / "Makefile").write_text(
+                "check:\n"
+                "\tcargo test\n"
+                "\tenv -u UNUSED cargo run --locked "
+                "--manifest-path tools/gfm-harness/Cargo.toml -- --digest corpus\n"
+            )
+            with mock.patch.multiple(
+                gate,
+                REPO_ROOT=root,
+                MAKEFILE=root / "Makefile",
+                WORKFLOWS=root / ".github" / "workflows",
+                LOCAL_GATES=("check",),
+                CI_ONLY={},
+            ):
+                self.assertEqual(
+                    1,
+                    run_guard(),
+                    "an env option does not turn cargo run into a test",
+                )
+
     def test_a_workflow_comment_does_not_prove_a_ci_only_suite_runs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -335,6 +364,13 @@ class ReadsRecipeCommands(unittest.TestCase):
         self.assertFalse(
             gate.is_whole_crate_test(command),
             "compact `-pPACKAGE` still selects one package",
+        )
+
+    def test_env_option_terminator_before_cargo_keeps_a_whole_crate_test(self):
+        command = gate.commands("env -- cargo test")[0]
+        self.assertTrue(
+            gate.is_whole_crate_test(command),
+            "the env option terminator does not change the cargo command",
         )
 
     def test_a_toolchain_qualified_whole_crate_test_is_accepted(self):
