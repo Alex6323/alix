@@ -378,6 +378,23 @@ test("the submit key sends a selected multi-choice answer and Enter alone does n
   );
 });
 
+test("a Space submit binding sends a selected multi-choice answer", () => {
+  const choice = {
+    kind: "review",
+    phase: "review",
+    label: "Facts",
+    mode: "choice",
+    card: { id: "card-1" },
+    choices: ["one", "two"],
+    choices_multiple: true,
+  };
+  const run = keyHarness(choice, { submit: plain(" ") });
+  run.press("1");
+  run.press(" ");
+
+  assert.deepEqual(run.calls, ["/api/choose"], "Space submits the selection");
+});
+
 test("a rebound browse quit leaves the browser and Backspace always does", async () => {
   const picker = { kind: "review", phase: "select", label: "picker", card: null };
   const browse = { next: plain("l"), prev: plain("h"), quit: plain("q") };

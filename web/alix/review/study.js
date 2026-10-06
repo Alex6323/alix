@@ -2112,8 +2112,8 @@ export function createStudy({
     if (hit(e, keys.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
     if (hit(e, keys.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }
     if (isMultiChoice()) {
-      if (e.key === " " && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); toggleChoice(choiceFocus); return; }
       if (hit(e, keys.submit)) { e.preventDefault(); submitMultiChoice(); return; }
+      if (e.key === " " && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); toggleChoice(choiceFocus); return; }
       if (e.key >= "1" && e.key <= "9") {
         const i = +e.key - 1;
         if (i < state.choices.length) { e.preventDefault(); toggleChoice(i); }
