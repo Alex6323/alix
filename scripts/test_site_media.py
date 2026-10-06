@@ -212,6 +212,17 @@ class SiteMediaTests(unittest.TestCase):
 
         self.assertEqual(1, result.returncode, result.stdout)
 
+    def test_a_video_source_src_is_not_a_served_image_reference(self):
+        def change(root):
+            (root / "site" / "index.html").write_text(
+                f'<video><source src="img/{SHOT}" type="video/webm"></video>\n',
+                encoding="utf-8",
+            )
+
+        result = self.run_check(change)
+
+        self.assertEqual(1, result.returncode, result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
