@@ -7194,7 +7194,7 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
     // restart mid-walk continues where it stopped
     let dto = json_of(&post_json(&base, "/api/walk/restart", "{}"));
     assert_eq!(
-        ("front", "card-w2", true, 0, 2),
+        ("front", "card-w2", true, 0, 1),
         (
             dto["phase"].as_str().unwrap_or_default(),
             dto["card"]["id"].as_str().unwrap_or_default(),
@@ -7202,7 +7202,7 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
             dto["position"].as_u64().unwrap_or(9),
             dto["total"].as_u64().unwrap_or(9),
         ),
-        "restart: the never-walked item leads and the section opens again: {dto}"
+        "restart: only the never-walked item is served and the section opens again: {dto}"
     );
 
     // a flip item takes no pick, reveals, then next walks it
@@ -7215,12 +7215,24 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
     );
     let dto = json_of(&post_json(&base, "/api/walk/next", "{}"));
     assert_eq!(
-        ("card-w1", true),
+        ("done", 1, true),
         (
-            dto["card"]["id"].as_str().unwrap_or_default(),
+            dto["phase"].as_str().unwrap_or_default(),
+            dto["position"].as_u64().unwrap_or(9),
             walked_ms(guard.dir(), "card-w2").is_some()
         ),
-        "flip next: card-w2 is walked and the earlier walked item follows: {dto}"
+        "flip next: card-w2 is walked and the walked card-w1 is not served again: {dto}"
+    );
+
+    // every item walked: the next walk is a full pass, oldest first
+    let dto = json_of(&post_json(&base, "/api/walk/restart", "{}"));
+    assert_eq!(
+        ("card-w1", 2),
+        (
+            dto["card"]["id"].as_str().unwrap_or_default(),
+            dto["total"].as_u64().unwrap_or(9)
+        ),
+        "full pass: both items, the longest-ago walked first: {dto}"
     );
 
     // done
@@ -7230,6 +7242,8 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
         "/api/walk/choose",
         &format!(r#"{{"index":{index}}}"#),
     );
+    post_json(&base, "/api/walk/next", "{}");
+    post_json(&base, "/api/walk/reveal", "{}");
     let done = json_of(&post_json(&base, "/api/walk/next", "{}"));
     let stamps = (
         walked_ms(guard.dir(), "card-w1"),

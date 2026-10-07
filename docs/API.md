@@ -529,10 +529,11 @@ A walk reads one fact deck once, item by item, without drilling it: no
 grade, no schedule, no introduction. `POST /api/walk {deck}` opens it and
 returns a `WalkDto` (`kind: "walk"`). The items are the ones a review of the
 deck would serve, every direction and every cloze blank its own item, locked
-and personal cards included. Items never walked come first, then the least
-recently walked; ties keep deck order, and a card's sibling items are spread
-apart within their section. So a walk that is left early continues where it
-stopped the next time it opens.
+and personal cards included. While any item was never walked, a walk holds
+only the never-walked items, in deck order with a card's sibling items spread
+apart within their section, so `total` is what is left of the pass and a walk
+left early continues where it stopped. Once every item is walked, a walk holds
+them all, least recently walked first, ties in deck order.
 
 Each item cycles `phase` `"front"` → `"answer"` *(closed, with `"done"`)*.
 An item whose card has authored choices (`mode: "choice"`) is answered with

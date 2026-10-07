@@ -15,10 +15,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the phone's own decks and the pulled desktop copy. Deck rows no longer show
   a placeholder icon.
 
-- Walk sessions on the server: `/api/walk` reads a deck once in rotation
-  (never-walked items first, then the least recently walked), picking authored
-  choices and flipping everything else, with the tutor available on each item.
-  Moving past an answer records `walked_ms`.
+- Walk sessions on the server: `/api/walk` reads a deck once. While items
+  were never walked, a walk serves only those, so a left walk resumes where it
+  stopped; once all are walked, a walk is a full pass, least recently walked
+  first. It picks authored choices and flips everything else, with the tutor
+  available on each item. Moving past an answer records `walked_ms`.
 
 - The phone can walk a deck: **Walk** in a deck's launch sheet, set off by a
   hairline because Cram and Skip introduction do not apply to it.

@@ -68,9 +68,11 @@ The section's context sheet opens by itself the first time a walk reaches
 that section, and the tutor is available once an answer shows.
 
 Moving past an answer records that the item was walked; nothing else about
-the attempt is kept. A walk starts with the items never walked, then the ones
-walked longest ago, so leaving early and coming back continues where you
-stopped, and later walks rotate through the deck. At the end, **Next walk**
+the attempt is kept. While a deck has items never walked, a walk serves only
+those, so leaving early and coming back continues where you stopped and the
+counter shows what is left of that pass. Adding a card to a fully walked deck
+makes the next walk that one card. Once every item has been walked, a walk is
+a full pass, the items walked longest ago first. At the end, **Next walk**
 (`r`) starts the next pass. Walking counts for the drill too: the drill
 grades a walked card at first sight instead of introducing it.
 

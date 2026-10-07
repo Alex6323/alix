@@ -147,13 +147,15 @@ fn walk_order(cards: &[Card], store: &Store) -> Vec<usize> {
         .iter()
         .take_while(|&&i| last_walked(&cards[i], store).is_none())
         .count();
-    let walked = order.split_off(unwalked);
-    let mut spaced = Vec::with_capacity(order.len() + walked.len());
+    if unwalked == 0 {
+        return order;
+    }
+    order.truncate(unwalked);
+    let mut spaced = Vec::with_capacity(order.len());
     for run in order.chunk_by(|&a, &b| cards[a].section_context == cards[b].section_context) {
         let run = session::round_robin_siblings(run.to_vec(), cards);
         spaced.extend(session::separate_siblings(run, cards));
     }
-    spaced.extend(walked);
     spaced
 }
 
@@ -233,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn law_unwalked_items_lead_then_the_oldest_walked_with_ties_in_deck_order() {
+    fn law_a_walk_serves_only_unwalked_items_while_any_remain_else_every_item_oldest_first() {
         let cases: [[Option<u64>; 6]; 5] = [
             [None; 6],
             [Some(5), Some(4), Some(3), Some(2), Some(1), Some(0)],
@@ -250,27 +252,23 @@ mod tests {
                 }
             }
             let walk = WalkSession::new(cards, &store, 0);
+            let unwalked: Vec<usize> = (0..walked.len()).filter(|&i| walked[i].is_none()).collect();
+            let mut expected: Vec<usize> = if unwalked.is_empty() {
+                (0..walked.len()).collect()
+            } else {
+                unwalked
+            };
+            expected.sort_by_key(|&i| (walked[i].unwrap_or(0), i));
             assert_eq!(
-                walked.len(),
-                walk.total(),
-                "case {case}: every item is served once"
+                (expected.len(), expected),
+                (walk.total(), walk.order.clone()),
+                "case {case} ({walked:?}): only the unwalked items while any remain, else all oldest first, ties in deck order"
             );
-            for pair in walk.order.windows(2) {
-                let (a, b) = (pair[0], pair[1]);
-                let key = |i: usize| (walked[i].is_some(), walked[i].unwrap_or(0));
-                assert!(
-                    key(a) < key(b) || (key(a) == key(b) && a < b),
-                    "case {case}: item {a} ({:?}) precedes item {b} ({:?}) in {:?}",
-                    walked[a],
-                    walked[b],
-                    walk.order
-                );
-            }
         }
     }
 
     #[test]
-    fn law_sibling_spacing_never_puts_a_walked_item_before_an_unwalked_one() {
+    fn law_a_walked_sibling_waits_while_unwalked_items_remain() {
         let section = ["# One"];
         let a = card(1, &section);
         let b = card(2, &section);
@@ -278,16 +276,10 @@ mod tests {
         let (mut store, _dir) = store();
         store.get_or_insert(&id(&b)).walked_ms = Some(5);
         let walk = WalkSession::new(cards, &store, 0);
-        let walked: Vec<bool> = walk
-            .order
-            .iter()
-            .map(|&i| last_walked(&walk.cards[i], &store).is_some())
-            .collect();
         assert_eq!(
-            vec![false, false, true],
-            walked,
-            "both never-walked directions of A lead, the walked B follows: {:?}",
-            order_ids(&walk)
+            vec![id(&a), id(&reversed(&a))],
+            order_ids(&walk),
+            "both never-walked directions of A are served, the walked B is not"
         );
     }
 
@@ -302,12 +294,15 @@ mod tests {
                 step(&mut walk, &mut store, 100 + step_at as u64);
             }
             walk.restart(&store, 1_000);
-            let mut expected: Vec<String> = first[stopped_after..].to_vec();
-            expected.extend_from_slice(&first[..stopped_after]);
+            let expected = if stopped_after == cards.len() {
+                first.clone()
+            } else {
+                first[stopped_after..].to_vec()
+            };
             assert_eq!(
                 expected,
                 order_ids(&walk),
-                "after stopping at {stopped_after}: unwalked items lead, then the walked ones in walk order"
+                "after stopping at {stopped_after}: the rest of the pass, or a fresh full pass once every item is walked"
             );
             assert_eq!(
                 (0, Phase::Front),
