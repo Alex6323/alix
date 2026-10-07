@@ -960,12 +960,21 @@ fn flush_prose(
 pub fn split_sentences(text: &str) -> Vec<String> {
     use unicode_segmentation::UnicodeSegmentation;
     let masked = mask_code_and_math(text);
-    masked
-        .split_sentence_bound_indices()
-        .map(|(start, piece)| text[start..start + piece.len()].trim())
-        .filter(|sentence| !sentence.is_empty())
-        .map(str::to_string)
-        .collect()
+    let mut sentences: Vec<String> = Vec::new();
+    for (start, piece) in masked.split_sentence_bound_indices() {
+        let sentence = text[start..start + piece.len()].trim();
+        if sentence.is_empty() {
+            continue;
+        }
+        match sentences.last_mut() {
+            Some(previous) if !sentence.chars().any(char::is_alphanumeric) => {
+                previous.push(' ');
+                previous.push_str(sentence);
+            }
+            _ => sentences.push(sentence.to_string()),
+        }
+    }
+    sentences
 }
 
 fn mask_code_and_math(text: &str) -> String {
@@ -1086,6 +1095,8 @@ mod tests {
             ("Use `pin!`\non the next line.", 1),
             ("Escaped \\`not code!\\` Then a second.", 2),
             ("✅", 1),
+            ("A complete note. ...", 1),
+            ("Use `code`. )", 1),
         ];
         for (body, expected) in cases {
             let units = note_units(&card_with_note(body));
