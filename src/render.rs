@@ -963,7 +963,7 @@ pub fn split_sentences(text: &str) -> Vec<String> {
     masked
         .split_sentence_bound_indices()
         .map(|(start, piece)| text[start..start + piece.len()].trim())
-        .filter(|sentence| sentence.chars().any(char::is_alphanumeric))
+        .filter(|sentence| !sentence.is_empty())
         .map(str::to_string)
         .collect()
 }
@@ -1082,6 +1082,10 @@ mod tests {
             ("A span `a. B? C!` stays whole. The next one splits.", 2),
             ("First one. `Sleep` starts the second.", 2),
             ("Math $n! = 1$ stays whole. Then a second.", 2),
+            ("Café `é!。` stays whole. Then a second.", 2),
+            ("Use `pin!`\non the next line.", 1),
+            ("Escaped \\`not code!\\` Then a second.", 2),
+            ("✅", 1),
         ];
         for (body, expected) in cases {
             let units = note_units(&card_with_note(body));

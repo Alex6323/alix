@@ -349,6 +349,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   code or math, so `` `pin!` `` or `` `select!` `` keeps its code formatting on
   the web and the phone.
 
+- A note made only of symbols or emoji (such as ✅) is no longer dropped.
+
 - The manual said a card removed mid-session is deleted from the deck file when
   the session ends; it is deleted right away.
 
