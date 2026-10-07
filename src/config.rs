@@ -102,11 +102,11 @@ impl Default for Bindings {
             down: keys(&["j"]),
             reveal: keys(&["space", "enter"]),
             submit: keys(&["enter"]),
-            skip: keys(&["ctrl-s"]),
-            remove: keys(&["ctrl-x"]),
+            skip: keys(&[]),
+            remove: keys(&[]),
             cont: keys(&["space", "enter"]),
             restart: keys(&["r"]),
-            ask: keys(&["?"]),
+            ask: keys(&["a"]),
             context: keys(&["c"]),
             make_note: keys(&[]),
             make_card: keys(&["ctrl-d"]),
@@ -117,10 +117,97 @@ impl Default for Bindings {
 
 impl Bindings {
     pub fn label(list: &[KeyPattern]) -> String {
-        list.first()
-            .map(|p| p.to_string())
-            .unwrap_or_else(|| "?".to_string())
+        list.first().map(|p| p.to_string()).unwrap_or_default()
     }
+
+    fn actions(&self) -> [(&'static str, &[KeyPattern]); 16] {
+        [
+            ("failed", &self.failed),
+            ("partly", &self.partly),
+            ("passed", &self.passed),
+            ("up", &self.up),
+            ("down", &self.down),
+            ("reveal", &self.reveal),
+            ("submit", &self.submit),
+            ("skip", &self.skip),
+            ("remove", &self.remove),
+            ("continue", &self.cont),
+            ("restart", &self.restart),
+            ("ask", &self.ask),
+            ("context", &self.context),
+            ("make_note", &self.make_note),
+            ("make_card", &self.make_card),
+            ("quit", &self.quit),
+        ]
+    }
+}
+
+type Phases = &'static [(&'static str, &'static [&'static str])];
+
+const REVIEW_PHASES: Phases = &[
+    ("question", &["quit", "context", "remove", "skip", "reveal"]),
+    (
+        "line introduction",
+        &["quit", "context", "remove", "ask", "reveal"],
+    ),
+    (
+        "choice question",
+        &["quit", "context", "remove", "skip", "submit", "up", "down"],
+    ),
+    (
+        "typed question",
+        &["quit", "context", "remove", "skip", "submit"],
+    ),
+    (
+        "graded answer",
+        &[
+            "quit", "context", "remove", "ask", "failed", "partly", "passed",
+        ],
+    ),
+    (
+        "continued answer",
+        &["quit", "context", "remove", "ask", "failed", "continue"],
+    ),
+    (
+        "key-point checklist",
+        &["quit", "context", "remove", "ask", "up", "down"],
+    ),
+    ("summary", &["quit", "restart"]),
+    ("tutor", &["make_note", "make_card"]),
+    ("trace question", &["quit", "reveal"]),
+    (
+        "trace answer",
+        &["quit", "ask", "failed", "partly", "passed", "reveal"],
+    ),
+];
+
+const BROWSE_PHASES: Phases = &[("browse", &["next", "prev", "quit"])];
+
+fn check_collisions(set: &str, phases: Phases, actions: &[(&str, &[KeyPattern])]) -> Result<()> {
+    for (phase, live) in phases {
+        let bound: Vec<_> = actions
+            .iter()
+            .filter(|(name, _)| live.contains(name))
+            .collect();
+        for (i, (first, first_keys)) in bound.iter().enumerate() {
+            for (second, second_keys) in &bound[i + 1..] {
+                if let Some(key) = first_keys.iter().find(|key| second_keys.contains(key)) {
+                    bail!(
+                        "key {key} is bound to both {set}.{first} and {set}.{second}, \
+                         which are live together in the {phase} phase"
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_submit(submit: &[KeyPattern]) -> Result<()> {
+    if let Some(key) = submit.iter().find(|key| key.is_plain_char()) {
+        bail!("review.submit cannot use the plain key {key}: answer fields would type it as text");
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -161,7 +248,6 @@ impl Default for PickerKeys {
 pub struct BrowseBindings {
     pub next: Vec<KeyPattern>,
     pub prev: Vec<KeyPattern>,
-    pub remove: Vec<KeyPattern>,
     pub quit: Vec<KeyPattern>,
 }
 
@@ -171,9 +257,18 @@ impl Default for BrowseBindings {
         Self {
             next: keys(&["l", "n", "space"]),
             prev: keys(&["h", "p"]),
-            remove: keys(&["x"]),
             quit: keys(&["q", "esc"]),
         }
+    }
+}
+
+impl BrowseBindings {
+    fn actions(&self) -> [(&'static str, &[KeyPattern]); 3] {
+        [
+            ("next", &self.next),
+            ("prev", &self.prev),
+            ("quit", &self.quit),
+        ]
     }
 }
 
@@ -680,7 +775,6 @@ struct RawPicker {
 struct RawBrowse {
     next: Option<Vec<String>>,
     prev: Option<Vec<String>>,
-    remove: Option<Vec<String>>,
     quit: Option<Vec<String>>,
 }
 
@@ -794,8 +888,11 @@ impl Config {
         let mut browse = BrowseBindings::default();
         assign(&mut browse.next, raw.keys.browse.next, "browse.next")?;
         assign(&mut browse.prev, raw.keys.browse.prev, "browse.prev")?;
-        assign(&mut browse.remove, raw.keys.browse.remove, "browse.remove")?;
         assign(&mut browse.quit, raw.keys.browse.quit, "browse.quit")?;
+
+        check_submit(&keys.submit)?;
+        check_collisions("review", REVIEW_PHASES, &keys.actions())?;
+        check_collisions("browse", BROWSE_PHASES, &browse.actions())?;
 
         let mut ask = AskConfig::default();
         if let Some(b) = raw.ask.backend.filter(|s| !s.trim().is_empty()) {
@@ -1222,11 +1319,11 @@ pub fn default_config_toml() -> &'static str {
 # passed = ["3", "n"]           # self-graded: grade as passed (advance)
 # reveal = ["space", "enter"]   # flip mode: show the answer
 # submit = ["enter"]            # submit a typed answer, a line, or a multi-choice selection
-# skip = ["ctrl-s"]             # requeue the current card without grading
-# remove = ["ctrl-x"]           # delete the card from the deck file
+# skip = []                     # requeue the current card without grading
+# remove = []                   # delete the card from the deck file
 # continue = ["space", "enter"] # move on from an answered card
 # restart = ["r"]               # start a new session from the summary screen
-# ask = ["?"]                   # ask the tutor about an answered card
+# ask = ["a"]                   # ask the tutor about an answered card
 # context = ["c"]               # swap the question for the card's section
 # make_note = []                # ask view: condense the conversation into a note
 # make_card = ["ctrl-d"]        # ask view: distill the conversation into a card
@@ -1254,7 +1351,6 @@ pub fn default_config_toml() -> &'static str {
 [keys.browse]
 # next = ["l", "n", "space"]    # next card
 # prev = ["h", "p"]             # previous card
-# remove = ["x"]                # mark the card for removal from the deck file
 # quit = ["q", "esc"]           # leave the browser (Backspace always leaves too)
 
 # Settings for the tutor integration. Questions are sent to the
@@ -1685,9 +1781,9 @@ mod tests {
     }
 
     #[test]
-    fn binding_label_uses_the_first_key_or_the_fallback() {
+    fn binding_label_uses_the_first_key_or_nothing_for_an_unbound_action() {
         assert_eq!("j", Bindings::label(&[parse_key("j").unwrap()]));
-        assert_eq!("?", Bindings::label(&[]));
+        assert_eq!("", Bindings::label(&[]));
     }
 
     #[test]
@@ -1755,6 +1851,147 @@ mod tests {
     }
 
     #[test]
+    fn skip_and_remove_have_no_default_key_and_ask_defaults_to_a() {
+        let review = Bindings::default();
+        assert!(review.skip.is_empty(), "review.skip: {:?}", review.skip);
+        assert!(
+            review.remove.is_empty(),
+            "review.remove: {:?}",
+            review.remove
+        );
+        assert_eq!(vec![parse_key("a").unwrap()], review.ask, "review.ask");
+    }
+
+    #[test]
+    fn the_default_bindings_pass_every_load_time_key_check() {
+        let review = Bindings::default();
+        check_submit(&review.submit).unwrap();
+        check_collisions("review", REVIEW_PHASES, &review.actions()).unwrap();
+        let browse = BrowseBindings::default();
+        check_collisions("browse", BROWSE_PHASES, &browse.actions()).unwrap();
+    }
+
+    #[test]
+    fn a_submit_key_is_rejected_exactly_when_it_is_a_plain_character() {
+        for key in [
+            "x",
+            "1",
+            "?",
+            "space",
+            "enter",
+            "tab",
+            "backspace",
+            "ctrl-x",
+            "ctrl-enter",
+        ] {
+            let pattern = parse_key(key).unwrap();
+            let toml = format!("[keys.review]\nsubmit = [\"ctrl-m\", \"{key}\"]\n");
+            let result = Config::from_toml(&toml);
+            if pattern.is_plain_char() {
+                let msg = format!("{:#}", result.expect_err(key));
+                assert!(
+                    msg.contains("review.submit") && msg.contains(&pattern.to_string()),
+                    "submit {key}: the error names the action and the key: {msg}"
+                );
+                assert!(
+                    msg.contains("as text"),
+                    "submit {key}: the error says why: {msg}"
+                );
+            } else {
+                assert!(result.is_ok(), "submit {key}: {:?}", result.err());
+            }
+        }
+    }
+
+    fn key_sets() -> [(&'static str, Phases, Vec<&'static str>); 2] {
+        [
+            (
+                "review",
+                REVIEW_PHASES,
+                Bindings::default().actions().map(|(name, _)| name).to_vec(),
+            ),
+            (
+                "browse",
+                BROWSE_PHASES,
+                BrowseBindings::default()
+                    .actions()
+                    .map(|(name, _)| name)
+                    .to_vec(),
+            ),
+        ]
+    }
+
+    fn shares_a_phase(phases: Phases, a: &str, b: &str) -> bool {
+        phases
+            .iter()
+            .any(|(_, live)| live.contains(&a) && live.contains(&b))
+    }
+
+    #[test]
+    fn two_actions_may_share_a_key_only_when_no_phase_has_both_live() {
+        let sets = key_sets();
+        for (set, phases, names) in sets {
+            for (i, a) in names.iter().enumerate() {
+                for b in &names[i + 1..] {
+                    let toml = format!("[keys.{set}]\n{a} = [\"ctrl-z\"]\n{b} = [\"ctrl-z\"]\n");
+                    let result = Config::from_toml(&toml);
+                    if shares_a_phase(phases, a, b) {
+                        let msg = format!("{:#}", result.expect_err(&toml));
+                        assert!(
+                            msg.contains("Ctrl-Z")
+                                && msg.contains(&format!("{set}.{a}"))
+                                && msg.contains(&format!("{set}.{b}")),
+                            "{set}.{a} + {set}.{b}: the error names the key and both actions: {msg}"
+                        );
+                    } else {
+                        assert!(result.is_ok(), "{set}.{a} + {set}.{b}: {:?}", result.err());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_keys_reveal_shares_with_continue_and_submit_stay_legal_across_phases() {
+        for (a, b) in [
+            ("reveal", "continue"),
+            ("reveal", "submit"),
+            ("submit", "continue"),
+        ] {
+            assert!(
+                !shares_a_phase(REVIEW_PHASES, a, b),
+                "{a} + {b} share a phase"
+            );
+        }
+        let defaults = Bindings::default();
+        let enter = parse_key("enter").unwrap();
+        for list in [&defaults.reveal, &defaults.cont, &defaults.submit] {
+            assert!(
+                list.contains(&enter),
+                "enter stays a shared default: {list:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_phase_names_only_real_actions_and_every_action_is_live_somewhere() {
+        let sets = key_sets();
+        for (set, phases, names) in sets {
+            for (phase, live) in phases {
+                for action in *live {
+                    assert!(names.contains(action), "{set} phase {phase} names {action}");
+                }
+            }
+            for action in &names {
+                assert!(
+                    phases.iter().any(|(_, live)| live.contains(action)),
+                    "{set}.{action} is live in no phase"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn continue_is_a_valid_table_key() {
         let config = Config::from_toml("[keys.review]\ncontinue = [\"ctrl-n\"]\n").unwrap();
         assert_eq!(vec![parse_key("ctrl-n").unwrap()], config.keys.cont);
@@ -1809,7 +2046,6 @@ mod tests {
         let BrowseBindings {
             next,
             prev,
-            remove: browse_remove,
             quit: browse_quit,
         } = BrowseBindings::default();
         let defaults = [
@@ -1842,7 +2078,6 @@ mod tests {
             ("picker.cram", cram),
             ("browse.next", next),
             ("browse.prev", prev),
-            ("browse.remove", browse_remove),
             ("browse.quit", browse_quit),
         ];
         for (action, keys) in &defaults {
@@ -1994,7 +2229,7 @@ mod tests {
         ];
         for (surface, actions) in named {
             for action in actions {
-                let toml = format!("[keys.{surface}]\n{action} = [\"z\"]\n");
+                let toml = format!("[keys.{surface}]\n{action} = [\"ctrl-z\"]\n");
                 assert!(
                     Config::from_toml(&toml).is_ok(),
                     "[keys.{surface}] {action} must deserialize"

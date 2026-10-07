@@ -12,7 +12,7 @@ The flashcard core never calls it.)
 ## Asking about a card
 
 On any post-answer screen (a revealed flip card, the feedback after a typed
-answer, an answered choice) an **Ask** button (or the `?` key) opens a chat
+answer, an answered choice) an **Ask** button (or the `a` key) opens a chat
 panel without leaving the session: type a question, **Send**, **Make this a note**,
 **Close**. `alix` hands the tutor the card (its front, answer, note, and deck
 name) as context, and you can ask "why is that the answer?", "what's a

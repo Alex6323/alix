@@ -114,6 +114,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Review `skip` and `remove` have no default key (were `ctrl-s` and
+  `ctrl-x`); the **Skip** button and the **Remove card** menu item still work,
+  and a button whose action has no key shows no key hint. The
+  `[keys.browse] remove` setting is gone: no browse action ever used it, and a
+  config that sets it fails as an unknown key. The tutor's `ask` key defaults
+  to `a` (was `?`), and its web button and menu item read **Ask**.
+
+- A config fails to load when `[keys.review] submit` holds a plain character,
+  which an answer field would type as text, or when two review or browse
+  actions that are live at the same moment share a key; the error names the
+  key and the actions.
+
 - Default key bindings no longer claim browser or system shortcuts: the tutor's
   `make_note` has no default key (was `ctrl-n`; the **Make this a note** button
   still works), and review and browse `quit` lose `ctrl-c`.

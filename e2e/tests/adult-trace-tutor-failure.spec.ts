@@ -29,7 +29,7 @@ test("a failed tutor request during a trace does not eject the learner to the pi
   ]);
   await expect(page.locator(".wpoints .wpt code")).toHaveText("reserve");
 
-  await page.getByRole("button", { name: "Ask tutor" }).click();
+  await page.getByRole("button", { name: /^Ask/ }).click();
   await expect(page.locator(".ask-input")).toBeVisible();
 
   // The tutor question fails the way a restarted server or a dropped

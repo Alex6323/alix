@@ -1143,7 +1143,7 @@ test("the tutor leave prompt owns Enter and Escape from the chat box", async ({ 
   await openWildCram(page, "Recall");
   await answerCurrentWildCard(page);
   await mockCompletedTutor(page);
-  await page.getByRole("button", { name: "Ask tutor" }).click();
+  await page.getByRole("button", { name: /^Ask/ }).click();
   await expect(page.locator(".ask-q")).toHaveText("Why?");
 
   const input = page.locator(".ask-input");
@@ -1157,7 +1157,7 @@ test("the tutor leave prompt owns Enter and Escape from the chat box", async ({ 
   await page.keyboard.press("Enter");
   await expect(page.locator(".ask-panel")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Ask tutor" }).click();
+  await page.getByRole("button", { name: /^Ask/ }).click();
   await expect(input).toBeFocused();
   await input.press("Escape");
   await expect(leave).toBeVisible();
@@ -1204,7 +1204,7 @@ test("a fenced tutor answer renders as a code block", async ({ page }) => {
     }),
   );
 
-  await page.getByRole("button", { name: "Ask tutor" }).click();
+  await page.getByRole("button", { name: /^Ask/ }).click();
 
   const code = page.locator(".ask-a pre code");
   await expect(code).toHaveText("fn answer() {\n    println!(\"yes\");\n}");
@@ -1225,7 +1225,7 @@ test("leaving an unsaved tutor returns to its originating card without pulling s
   const originFront = await page.locator(".front-text").textContent();
   await answerCurrentWildCard(page);
   await mockCompletedTutor(page);
-  await page.getByRole("button", { name: "Ask tutor" }).click();
+  await page.getByRole("button", { name: /^Ask/ }).click();
   await expect(page.locator(".ask-q")).toHaveText("Why?");
   await page.getByRole("button", { name: /^Close/ }).click();
 
@@ -1622,7 +1622,7 @@ test("an open section drawer swallows every review key", async ({ page }) => {
   await page.locator(".section-title").click();
   await expect(page.locator(".section-drawer"), "key sweep start: drawer is open").toBeVisible();
   const before = await page.evaluate(() => fetch("/api/state").then((response) => response.json()));
-  for (const key of ["Space", "Control+s", "1", "2", "3", "?", "Control+x", "r", "s", "h"]) {
+  for (const key of ["Space", "Control+s", "1", "2", "3", "a", "Control+x", "r", "s", "h"]) {
     await page.keyboard.press(key);
     await expect(page.locator(".section-drawer"), `key sweep ${key}: drawer stays open`).toBeVisible();
   }

@@ -282,7 +282,7 @@ The well-known assignments:
     page.getByRole("button", { name: /^Recall/ }).click(),
   ]);
   await page.getByRole("button", { name: "Reveal" }).click();
-  await page.getByRole("button", { name: "Ask tutor" }).click();
+  await page.getByRole("button", { name: /^Ask/ }).click();
 
   const table = page.locator(".ask-card table");
   await expect(table).toHaveCount(1);
@@ -332,7 +332,7 @@ That it shows the presence of bugs, never their absence.
     page.getByRole("button", { name: /^Recall/ }).click(),
   ]);
   await page.getByRole("button", { name: "Reveal" }).click();
-  await page.getByRole("button", { name: "Ask tutor" }).click();
+  await page.getByRole("button", { name: /^Ask/ }).click();
 
   const quote = page.locator(".ask-card blockquote.quote");
   await expect(quote).toHaveCount(1);

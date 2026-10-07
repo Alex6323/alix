@@ -548,7 +548,7 @@ async function shot2(page, out) {
   }
   await page.goto(`${DEMO_BASE}/`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(400);
-  // Reveal the card first: Ask tutor is withheld while `!fullyRevealed()`, and
+  // Reveal the card first: Ask is withheld while `!fullyRevealed()`, and
   // an answer can take several steps (one per gradeable line, one per quotation
   // or table block), so drive the primary chip until the ask chip appears
   // rather than clicking it once. Checking for the chip BEFORE each click is

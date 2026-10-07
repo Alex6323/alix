@@ -184,13 +184,13 @@ as wide as the card, so the question stays legible above it. Dismiss it
 and it stays closed through reveal or answer input; later cards from the same
 section, in this sitting or any later one, do not open it automatically. The full section never appears inline.
 Select the title (its key sits beside it), press `c`, or use **Context**
-beside **Ask Tutor** in the review menu to open the sheet on demand. While
+beside **Ask** in the review menu to open the sheet on demand. While
 the sheet is open, the card and its review keys are inert; a click on the
 dimmed page, `c`, or Escape closes it, and focus returns to the title.
 A dim **"N left"** count in the header shows how many cards the session still
 holds; it can tick up when a card you missed cools back in for its retry. The
-**☰ menu** is context-aware: during review it holds **Ask Tutor** and,
-when available, **Context**; a trace holds **Ask Tutor**. On the deck
+**☰ menu** is context-aware: during review it holds **Ask** and,
+when available, **Context**; a trace holds **Ask**. On the deck
 picker, the library actions above plus **keyboard
 shortcuts** and **about**, with **Theme…** and **Draw
 answers** (a per-device toggle, see below) in both. The ⟳ button (also key

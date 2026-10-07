@@ -24,18 +24,28 @@ Keys are a single character (`"j"`), a special name (`"space"`, `"enter"`, `"tab
 `"esc"`, `"backspace"`), or either with a `ctrl-` prefix (`"ctrl-s"`). An
 empty list (`make_note = []`) leaves an action without a key; its button still
 works. The rebindable `[keys.review]` actions are `failed`, `partly`, `passed`,
-`reveal`, `submit` (default `enter`, submits a typed answer, a line, or a multiple-choice selection), `skip`,
-`remove` (default `ctrl-x`, deletes the card from the deck file), `ask` (default
-`?`), `context` (default `c`, open the card's section drawer), `continue`
+`reveal`, `submit` (default `enter`, submits a typed answer, a line, or a multiple-choice selection), `skip`
+(no default key), `remove` (no default key, deletes the card from the deck file),
+`ask` (default `a`), `context` (default `c`, open the card's section drawer), `continue`
 (default `space`/`enter`, moves on from an answered card or a walked answer),
 `restart` (default `r`), `quit` (default `esc`, leaves the session, the walk, or
 the trace), `up`/`down` (defaults `k`/`j`) to move within a multiple-choice or
 key-point list (the arrow keys always work too), and the tutor's distill
 actions `make_note` (no default key) and `make_card` (default `ctrl-d`). Each
-button shows the first key bound to its action. While you're typing an answer
+button shows the first key bound to its action, and no key hint when the action
+has none. While you're typing an answer
 (a reconstruct check), plain-character bindings are ignored so they can't
 shadow your input: use `ctrl-`/special keys for `skip` and `quit` there. Pass a
 different file with `--config <path>`.
+
+Two bindings fail at load with an error naming the key. `submit` may not be a
+plain character (a letter, digit, symbol, or `space`), since an answer field
+would type it as text. And two actions may not share a key when both are live
+at the same moment of a review: `skip` and `reveal` both act on an unanswered
+question, so binding both to `s` is rejected. Actions that are never live
+together may share a key, which is how `reveal` (before the answer) and
+`continue` (after it) both default to `space`/`enter`. The same rule covers the
+three `[keys.browse]` actions, which are all live together.
 
 No default claims a shortcut the browser or the system reserves (`ctrl-n`,
 `ctrl-t`, `ctrl-w`, `ctrl-c`, `ctrl-v`); binding one yourself may not reach
@@ -51,7 +61,6 @@ the web server reads its default port from `[serve]`:
 [keys.browse]
 next = ["l", "n", "space"]
 prev = ["h", "p"]
-remove = ["x"]
 quit = ["q", "esc"]   # Backspace always leaves too
 
 [serve]

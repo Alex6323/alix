@@ -809,7 +809,6 @@ fn config_cmd(init: bool) -> Result<()> {
     println!("browse bindings (first/last fixed: g/G/Home/End):");
     show("next", &config.browse.next);
     show("prev", &config.browse.prev);
-    show("remove", &config.browse.remove);
     show("quit", &config.browse.quit);
     println!("ask:");
     println!("  command     {}", config.ask.command);

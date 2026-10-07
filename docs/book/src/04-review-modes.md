@@ -205,6 +205,6 @@ hole cut out of a formula defaults to the sketch canvas there.
 
 ---
 
-To drop a card mid-session, press the **remove** key (`Ctrl-X` by default) instead
-of grading it: it leaves the session and is deleted from the deck file right
-away.
+To drop a card mid-session, choose **Remove card** in the review menu (or a
+`remove` key, if you bind one) instead of grading it: it leaves the session and
+is deleted from the deck file right away.

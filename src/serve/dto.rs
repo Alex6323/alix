@@ -559,7 +559,6 @@ impl PickerKeysDto {
 pub(super) struct BrowseKeys {
     next: Vec<KeyDto>,
     prev: Vec<KeyDto>,
-    remove: Vec<KeyDto>,
     quit: Vec<KeyDto>,
 }
 
@@ -568,7 +567,6 @@ impl BrowseKeys {
         Self {
             next: key_list(&b.next),
             prev: key_list(&b.prev),
-            remove: key_list(&b.remove),
             quit: key_list(&b.quit),
         }
     }

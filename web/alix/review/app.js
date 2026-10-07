@@ -377,7 +377,7 @@ function chip(text, cls, onClick, key, into) {
   return b;
 }
 
-// The footer's left (Leave) and right (Ask tutor) zones. Cleared each render;
+// The footer's left (Leave) and right (Ask) zones. Cleared each render;
 // the right zone keeps its #score span, which screens set directly.
 function clearLegendSides() {
   legendLeft.innerHTML = "";
@@ -426,7 +426,7 @@ document.addEventListener("click", () => menu.classList.remove("open"));
 // Show the right menu items for the current screen (picker vs review vs trace).
 function setMenuContext(ctx) {
   document.querySelectorAll("#menu .m-picker").forEach((b) => { b.style.display = ctx === "picker" ? "" : "none"; });
-  // Ask Tutor is the one .m-review item that also makes sense mid-trace; the
+  // Ask is the one .m-review item that also makes sense mid-trace; the
   // rest (Remove card, Promote) are per-deck-card actions a trace checkpoint
   // doesn't have, so they get their own narrower checks below.
   document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = (ctx === "review" || ctx === "trace" || ctx === "walk") ? "" : "none"; });

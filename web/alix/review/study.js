@@ -1591,7 +1591,7 @@ export function createStudy({
     if (feedback) {
       if (isIntroducing()) {
         chip("Seen", "primary", introduce, label(keys.cont)); // a pick acknowledges, never grades
-        chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight); // answer is showing: tutor allowed
+        chip("Ask", "ask", openTutor, label(keys.ask), legendRight); // answer is showing: tutor allowed
       } else if (isRecognizeMc()) {
         if (feedback.passed) {
           // A correct Recognize pick: Next commits it; the quiet "I guessed"
@@ -1600,14 +1600,14 @@ export function createStudy({
           // the learner always has the last word.
           chip("Next", "primary", () => grade("passed"), label(keys.cont));
           chip("I guessed", "quiet", () => grade("failed"), label(keys.failed));
-          chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
+          chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
         } else {
           // A wrong pick: the correct option is already highlighted on screen
           // (renderChoiceFeedback) — Continue is the only action, and it grades
-          // the miss (there's no guess left to walk back). Ask tutor is offered
+          // the miss (there's no guess left to walk back). Ask is offered
           // here too: "why is the highlighted option right, not the one I picked?"
           chip("Continue", "primary", () => grade("failed"), label(keys.cont));
-          chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
+          chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
         }
       } else {
         // A typed check's (or TypeLine's closing) result: pure evidence — the
@@ -1615,7 +1615,7 @@ export function createStudy({
         chip("Missed it", "failed", () => grade("failed"), label(keys.failed));
         chip("Partly", "partly", () => grade("partly"), label(keys.partly));
         chip("Got it", "passed", () => grade("passed"), label(keys.passed));
-        chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
+        chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
       }
     } else if (isIntroducing()) {
       if (effectiveDraw()) {
@@ -1624,7 +1624,7 @@ export function createStudy({
           chip("Skip", "", skip, label(keys.skip));
         } else {
           chip("Seen", "primary", introduce, label(keys.cont));      // ungraded acknowledgment
-          chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
+          chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
         }
       } else if (isIntroChoice()) {
         if (isMultiChoice()) {
@@ -1634,10 +1634,10 @@ export function createStudy({
         chip("Skip", "", skip, label(keys.skip));            // options are tappable
       } else if (revealed > 0 && state.mode === "line" && !fullyRevealed()) {
         chip("Reveal next", "primary", reveal, label(keys.reveal));
-        chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
+        chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
       } else if (revealed > 0) {
         chip("Seen", "primary", introduce, label(keys.cont)); // hide⟷show is the corner `h` toggle, not a footer button
-        chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
+        chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
       } else {
         chip("Reveal", "primary", reveal, label(keys.reveal));
         chip("Skip", "", skip, label(keys.skip));
@@ -1675,17 +1675,17 @@ export function createStudy({
         const answered = marks.filter(m => m !== undefined).length;
         chip(`Done ${answered}/${state.keypoints.length}`, "primary", submitKeypoints, "enter").disabled = true;
       }
-      chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
+      chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
     } else if (isRecognizeFallback()) {
       // No MC could be built (too few distractors): attempt→reveal, boolean call.
       chip("Knew it", "passed", () => grade("passed"), label(keys.passed));
       chip("Not yet", "failed", () => grade("failed"), label(keys.failed));
-      chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
+      chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
     } else {
       chip("Missed it", "failed", () => grade("failed"), label(keys.failed));
       chip("Partly", "partly", () => grade("partly"), label(keys.partly));
       chip("Got it", "passed", () => grade("passed"), label(keys.passed));
-      chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
+      chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
     }
     chip("Leave", "", leaveSession, label(keys.quit), legendLeft); // pinned bottom-left; return to the deck picker
   }
@@ -1693,7 +1693,7 @@ export function createStudy({
   function renderWalkLegend() {
     if (state.phase === "answer") {
       chip("Next", "primary", walkNext, label(keys.cont));
-      chip("Ask tutor", "ask", openTutor, label(keys.ask), legendRight);
+      chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
     } else if (isMultiChoice()) {
       chip("Submit", "primary", submitMultiChoice, label(keys.submit)).disabled = selectedChoices.size === 0;
     } else if (!isChoice()) {

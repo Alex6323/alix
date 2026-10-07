@@ -75,7 +75,7 @@ test("a walk serves the unwalked rest, then a full pass, with the section sheet 
     octopus.click(),
   ]);
   await expect(octopus, "walk 1 choice: the pick shows right or wrong").toHaveClass(/correct/);
-  await expect(page.getByRole("button", { name: /^Ask tutor/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Ask/ })).toBeVisible();
   await Promise.all([
     page.waitForResponse((r) => r.url().endsWith("/api/walk/next") && r.ok()),
     page.getByRole("button", { name: /^Next/ }).click(),

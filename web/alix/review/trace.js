@@ -254,7 +254,7 @@ export function createTraceSession({
     deltas.forEach((delta) => {
       chip(delta.label, delta.cls, () => grade(delta.delta), label(delta.keys()));
     });
-    chip("Ask tutor", "ask", tutor.open, label(keys().ask), legendRight);
+    chip("Ask", "ask", tutor.open, label(keys().ask), legendRight);
   }
 
   function renderDone() {
