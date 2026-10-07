@@ -55,7 +55,7 @@ async function closeSectionSheet(page: Page, step: string) {
   await expect(page.locator(".section-drawer"), `${step}: Escape closes the sheet`).toHaveCount(0);
 }
 
-test("a one-section deck walks twice, rotating, with the section sheet each walk", async ({ page }) => {
+test("a walk serves the unwalked rest, then a full pass, with the section sheet each walk", async ({ page }) => {
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Walk Tour").click();
 
@@ -91,10 +91,11 @@ test("a one-section deck walks twice, rotating, with the section sheet each walk
   const again = await openWalkMenu(page);
   await expect(again.locator("span"), "after walking the choice item: no hint").toHaveCount(1);
 
-  // Walk 2 continues with the never-walked flip item and shows the sheet again.
+  // Walk 2 holds only the never-walked flip item and shows the sheet again.
   await again.click();
   await closeSectionSheet(page, "walk 2");
   await expect(page.locator(".front-text")).toHaveText(FLIP_FRONT);
+  await expect(page.locator("#hist"), "walk 2 counts only the unwalked item").toHaveText("1 left");
 
   // A reload mid-walk resumes from GET /api/walk.
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -111,23 +112,19 @@ test("a one-section deck walks twice, rotating, with the section sheet each walk
     page.waitForResponse((r) => r.url().endsWith("/api/walk/next") && r.ok()),
     page.keyboard.press(" "),
   ]);
-  await expect(page.locator(".front-text")).toHaveText(CHOICE_FRONT);
-  await page.keyboard.press("1");
-  await expect(octopus).toHaveClass(/correct/);
-  await Promise.all([
-    page.waitForResponse((r) => r.url().endsWith("/api/walk/next") && r.ok()),
-    page.keyboard.press("Enter"),
-  ]);
 
-  // Done: Next walk replaces Next session and starts walk 3.
-  await expect(page.locator(".summary .lede")).toHaveText("walk complete");
+  // Done: Next walk replaces Next session and starts walk 3, a full pass.
+  await expect(page.locator(".summary .lede"), "walk 2 ends after its one item").toHaveText("walk complete");
   await expect(page.getByRole("button", { name: /^Next session/ })).toHaveCount(0);
   await Promise.all([
     page.waitForResponse((r) => r.url().endsWith("/api/walk/restart") && r.ok()),
     page.getByRole("button", { name: /^Next walk/ }).click(),
   ]);
   await closeSectionSheet(page, "walk 3");
-  await expect(page.locator(".front-text"), "walk 3 starts at the least recently walked item").toHaveText(FLIP_FRONT);
+  await expect(page.locator(".front-text"), "walk 3 starts at the least recently walked item").toHaveText(CHOICE_FRONT);
+  await expect(page.locator("#hist"), "walk 3 is a full pass").toHaveText("2 left");
+  await page.keyboard.press("1");
+  await expect(octopus).toHaveClass(/correct/);
 
   await page.keyboard.press("Escape");
   await adultDeckRow(page, "Walk Tour").click();
