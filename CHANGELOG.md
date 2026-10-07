@@ -345,6 +345,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A note no longer breaks into paragraphs at a `!`, `?` or `.` inside inline
+  code or math, so `` `pin!` `` or `` `select!` `` keeps its code formatting on
+  the web and the phone.
+
 - The manual said a card removed mid-session is deleted from the deck file when
   the session ends; it is deleted right away.
 

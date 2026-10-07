@@ -959,10 +959,33 @@ fn flush_prose(
 
 pub fn split_sentences(text: &str) -> Vec<String> {
     use unicode_segmentation::UnicodeSegmentation;
-    text.unicode_sentences()
-        .map(str::trim)
-        .filter(|sentence| !sentence.is_empty())
+    let masked = mask_code_and_math(text);
+    masked
+        .split_sentence_bound_indices()
+        .map(|(start, piece)| text[start..start + piece.len()].trim())
+        .filter(|sentence| sentence.chars().any(char::is_alphanumeric))
         .map(str::to_string)
+        .collect()
+}
+
+fn mask_code_and_math(text: &str) -> String {
+    let mut protected = vec![false; text.chars().count()];
+    for piece in crate::inline::line_pieces(text) {
+        if piece.code || piece.math {
+            for (&start, &end) in piece.starts.iter().zip(&piece.ends) {
+                protected[start..end].fill(true);
+            }
+        }
+    }
+    text.chars()
+        .zip(protected)
+        .map(|(ch, inside)| {
+            if inside && !ch.is_alphanumeric() && !ch.is_whitespace() {
+                "_".repeat(ch.len_utf8())
+            } else {
+                ch.to_string()
+            }
+        })
         .collect()
 }
 
@@ -1051,6 +1074,14 @@ mod tests {
             ("One sentence with no terminator", 1),
             ("First one. Second one.", 2),
             ("Is it due? Then it shows. Otherwise not!", 3),
+            ("Pin it with `pin!` before the loop.", 1),
+            (
+                "Use `tokio::pin!(sleep)` and `() = &mut sleep` in `select!` here.",
+                1,
+            ),
+            ("A span `a. B? C!` stays whole. The next one splits.", 2),
+            ("First one. `Sleep` starts the second.", 2),
+            ("Math $n! = 1$ stays whole. Then a second.", 2),
         ];
         for (body, expected) in cases {
             let units = note_units(&card_with_note(body));
