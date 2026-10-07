@@ -114,6 +114,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- On the phone, a short vertical hairline separates the deck title from the
+  "X left" counter in the review and walk bars, so a cut-off title no longer
+  runs into the count.
+
 - Review `skip` and `remove` have no default key (were `ctrl-s` and
   `ctrl-x`); the **Skip** button and the **Remove card** menu item still work,
   and a button whose action has no key shows no key hint. The

@@ -165,6 +165,43 @@ AppBar alixAppBar(
   );
 }
 
+class AppBarCount extends StatelessWidget {
+  const AppBarCount(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).alix;
+    return Padding(
+      padding: const EdgeInsets.only(right: 16),
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 16,
+              child: VerticalDivider(
+                width: 16,
+                thickness: 0,
+                color: tokens.line,
+              ),
+            ),
+            Text(
+              text,
+              style: TextStyle(
+                fontFamily: 'IBM Plex Mono',
+                fontSize: 13,
+                color: tokens.dim,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// --brand / --brand-ink: the one primary action's fill, never reskinned.
 const _brand = Color(0xFFF0883C);
 const _brandInk = Color(0xFF1A1206);

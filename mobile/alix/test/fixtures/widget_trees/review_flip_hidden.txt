@@ -47,5 +47,14 @@ Scaffold
                   Row
                     Padding(EdgeInsets(0.0, 0.0, 16.0, 0.0))
                       Center
-                        Text("2 left")
+                        Row
+                          SizedBox(width=null, height=16.0)
+                            SizedBox(width=16.0, height=null)
+                              Center
+                                Container
+                                  Padding(EdgeInsets.zero)
+                                    ConstrainedBox
+                                      Padding(EdgeInsets.zero)
+                                        ConstrainedBox
+                          Text("2 left")
     Stack

@@ -10,6 +10,7 @@ import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 
+import 'support/count_rule.dart';
 import 'support/deck_fixture.dart';
 
 const _longTitle =
@@ -109,6 +110,7 @@ void main() {
       findsNothing,
       reason: '$step: no wordmark',
     );
+    expectCountRule(tester, title, step);
     for (final word in _modeWords) {
       expect(find.text(word), findsNothing, reason: '$step: no "$word" tag');
     }

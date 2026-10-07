@@ -164,20 +164,7 @@ class ReviewView extends StatelessWidget {
             ),
           ),
           actions: [
-            if (!state.finished)
-              Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Center(
-                  child: Text(
-                    '${state.remaining} left',
-                    style: TextStyle(
-                      fontFamily: _mono,
-                      fontSize: 13,
-                      color: Theme.of(context).alix.dim,
-                    ),
-                  ),
-                ),
-              ),
+            if (!state.finished) AppBarCount('${state.remaining} left'),
           ],
         ),
         body: SafeArea(

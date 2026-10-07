@@ -8,6 +8,7 @@ import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/walk_screen.dart';
 
+import 'support/count_rule.dart';
 import 'support/deck_fixture.dart';
 
 const _oneSection =
@@ -144,6 +145,7 @@ void main() {
         (1, true),
         reason: '$step: the long title is cut to one line, not wrapped',
       );
+      expectCountRule(tester, title, step);
       if (step == 'front') await tap(tester, 'Reveal');
       if (step == 'answer') await tap(tester, 'Next');
     }

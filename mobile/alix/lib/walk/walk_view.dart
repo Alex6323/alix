@@ -78,22 +78,7 @@ class WalkView extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        actions: [
-          if (!state.done)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Center(
-                child: Text(
-                  '${state.left} left',
-                  style: TextStyle(
-                    fontFamily: monoFontFamily,
-                    fontSize: 13,
-                    color: Theme.of(context).alix.dim,
-                  ),
-                ),
-              ),
-            ),
-        ],
+        actions: [if (!state.done) AppBarCount('${state.left} left')],
       ),
       body: SafeArea(
         child: Column(
