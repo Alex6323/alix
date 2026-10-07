@@ -177,7 +177,7 @@ const REVIEW_PHASES: Phases = &[
     ("trace question", &["quit", "reveal"]),
     (
         "trace answer",
-        &["quit", "ask", "failed", "partly", "passed", "reveal"],
+        &["quit", "ask", "failed", "partly", "passed"],
     ),
 ];
 
@@ -1971,6 +1971,17 @@ mod tests {
                 "enter stays a shared default: {list:?}"
             );
         }
+    }
+
+    #[test]
+    fn trace_reveal_does_not_make_reveal_and_failed_a_collision() {
+        let result =
+            Config::from_toml("[keys.review]\nreveal = [\"ctrl-z\"]\nfailed = [\"ctrl-z\"]\n");
+        assert!(
+            result.is_ok(),
+            "trace reveal has no reveal action: {:?}",
+            result.err()
+        );
     }
 
     #[test]
