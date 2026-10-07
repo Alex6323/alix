@@ -68,7 +68,7 @@ switches are independent: a cram over a deck you already know usually wants
 both, a first pass over new material wants neither. Like Cram, it belongs to
 the launch and is off again the next time the sheet opens.
 
-The last row of the sheet, below a hairline, is **Walk**: Cram and Skip
+The last row of the sheet, below a short centered hairline, is **Walk**: Cram and Skip
 introduction do not apply to it. A walk is an ungraded read-through of the deck,
 the same walk the web app runs (see
 [Walking a deck](15-the-web-app.md#walking-a-deck)). Tapping a trace deck

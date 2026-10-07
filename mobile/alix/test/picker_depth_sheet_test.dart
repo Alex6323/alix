@@ -134,6 +134,11 @@ void main() {
 
     final divider = find.byType(Divider);
     expect(divider, findsOneWidget, reason: 'one separator in the sheet');
+    expect(
+      tester.widget<Divider>(divider).thickness,
+      0,
+      reason: 'a Flutter hairline is exactly one device pixel',
+    );
     final line = tester.getCenter(divider).dy;
     expect(
       (
@@ -145,6 +150,43 @@ void main() {
       ),
       (true, true),
       reason: 'separator at y=$line lies between Reconstruct and Walk',
+    );
+  });
+
+  testWidgets('the hairline is short, centered, and equally far from both '
+      'rows', (tester) async {
+    await tester.pumpWidget(_sheet((_) {}, onWalk: () {}));
+
+    Rect frame(String label) => tester.getRect(
+      find.descendant(
+        of: find.widgetWithText(InkWell, label),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Container &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration! as BoxDecoration).border != null,
+        ),
+      ),
+    );
+    final above = frame('Reconstruct');
+    final below = frame('Walk');
+    final line = tester.getRect(find.byType(Divider));
+    final gapAbove = line.center.dy - above.bottom;
+    final gapBelow = below.top - line.center.dy;
+    expect(
+      (gapAbove - gapBelow).abs(),
+      lessThan(0.5),
+      reason: 'gap above $gapAbove vs below $gapBelow',
+    );
+    expect(
+      line.width,
+      lessThan(above.width / 2),
+      reason: 'line ${line.width} wide under a ${above.width} row',
+    );
+    expect(
+      (line.center.dx - above.center.dx).abs(),
+      lessThan(0.5),
+      reason: 'line centered at ${line.center.dx}, row at ${above.center.dx}',
     );
   });
 

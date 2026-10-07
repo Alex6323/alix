@@ -625,10 +625,16 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                     : null,
               ),
             if (widget.onWalk case final onWalk?) ...[
-              Divider(
-                height: 16,
-                thickness: 1,
-                color: Theme.of(context).alix.line,
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: FractionallySizedBox(
+                  widthFactor: 1 / 3,
+                  child: Divider(
+                    height: 16,
+                    thickness: 0,
+                    color: Theme.of(context).alix.line,
+                  ),
+                ),
               ),
               _PickerLaunchRow(
                 label: 'Walk',
