@@ -1218,6 +1218,35 @@ test("the theme sheet's sample note is drawn like a real note", async ({ page })
   await expect(note.locator(".ts-badge")).toHaveText("Note");
 });
 
+test("a long tutor conversation never squeezes the card box at its top", async ({ page }) => {
+  await openWildCram(page, "Recall");
+  await answerCurrentWildCard(page);
+  const long = "The cheapest form is a compile-time check, not a separate pipeline. ".repeat(14);
+  await page.route("**/api/ask", (route) =>
+    route.fulfill({
+      json: {
+        transcript: [1, 2, 3].map((n) => ({ q: `Follow-up question ${n}?`, a: long })),
+        thinking: false,
+        status: null,
+        error: null,
+        draft: null,
+      },
+    }),
+  );
+  await page.getByRole("button", { name: /^Ask/ }).click();
+  await expect(page.locator(".ask-q").first()).toHaveText("Follow-up question 1?");
+  const card = page.locator(".ask-card");
+  const sizes = await card.evaluate((element) => ({
+    shown: element.clientHeight,
+    content: element.scrollHeight,
+    cap: Math.floor(window.innerHeight * 0.3),
+  }));
+  expect(
+    sizes.shown,
+    `card box shows ${sizes.shown}px of ${sizes.content}px content (cap ${sizes.cap}px)`,
+  ).toBeGreaterThanOrEqual(Math.min(sizes.content, sizes.cap) - 2);
+});
+
 test("a fenced tutor answer renders as a code block", async ({ page }) => {
   await openWildCram(page, "Recall");
   await answerCurrentWildCard(page);

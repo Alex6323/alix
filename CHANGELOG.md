@@ -348,6 +348,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - In the web app, a long inline code path in a question, answer or note wraps
   instead of running off the right edge.
 
+- In the web tutor, a long conversation no longer squeezes the card shown at
+  its top to a sliver.
+
 - A note no longer breaks into paragraphs at a `!`, `?` or `.` inside inline
   code or math, so `` `pin!` `` or `` `select!` `` keeps its code formatting on
   the web and the phone.
