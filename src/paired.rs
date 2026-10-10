@@ -1681,6 +1681,35 @@ mod tests {
     }
 
     #[test]
+    fn a_deleted_member_without_phone_progress_is_removed() {
+        let (_tmp, root) = fresh_root();
+        apply(&root, &workspace_bundle());
+        let entry_root = root.entry_root(KIND_WORKSPACE, "Biology");
+        let second = Bundle::new("Biology", KIND_WORKSPACE)
+            .file("alix.toml", b"title = \"Biology\"\n")
+            .file("decks/organs.md", b"## q2\na2\n")
+            .deck("decks/organs.md", DECK_B, None);
+
+        let report = apply(&root, &second);
+
+        for rel in [
+            "decks/cells.md".to_string(),
+            "decks/cells.local.md".to_string(),
+            format!("augment/{DECK_A}.json"),
+            document_rel(DECK_A),
+        ] {
+            assert!(
+                !entry_root.join(&rel).exists(),
+                "clean deleted member file survived: {rel}"
+            );
+        }
+        assert!(
+            !report.kept.contains(&DECK_A.to_string()),
+            "clean deleted member was reported as kept"
+        );
+    }
+
+    #[test]
     fn a_pull_keeps_a_removed_member_with_unpushed_progress_reviewable() {
         let (_tmp, root) = fresh_root();
         apply(&root, &workspace_bundle());
