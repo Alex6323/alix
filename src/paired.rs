@@ -2409,6 +2409,24 @@ mod tests {
     }
 
     #[test]
+    fn tidy_renamed_ignores_a_manifest_without_decks() {
+        let (_tmp, root) = fresh_root();
+        apply(&root, &workspace_bundle());
+        apply(
+            &root,
+            &Bundle::new("Empty", KIND_WORKSPACE).file("alix.toml", b"title = \"Empty\"\n"),
+        );
+
+        assert_eq!(
+            tidy_renamed(&root, &["Biology".to_string()]).unwrap(),
+            Vec::new(),
+            "an empty manifest cannot prove a rename by vacuous deck matching"
+        );
+        assert!(root.dir().join("Empty").is_dir());
+        assert!(root.manifest_path("Empty").is_file());
+    }
+
+    #[test]
     fn a_refused_pull_moves_nothing() {
         let (_tmp, root) = fresh_root();
         apply(&root, &deck_bundle());
@@ -2648,6 +2666,73 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn keeping_modified_times_ignores_only_absent_live_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let entry_root = tmp.path().join("live");
+        let unpacked = tmp.path().join("unpacked");
+        std::fs::create_dir_all(&entry_root).unwrap();
+        std::fs::create_dir_all(&unpacked).unwrap();
+        let missing = SyncFileDto {
+            path: "missing.md".to_string(),
+            bytes: 0,
+            digest: digest(b""),
+        };
+        keep_unchanged_modified_times(&entry_root, &unpacked, &[missing]).unwrap();
+
+        std::os::unix::fs::symlink("loop.md", entry_root.join("loop.md")).unwrap();
+        let looped = SyncFileDto {
+            path: "loop.md".to_string(),
+            bytes: 0,
+            digest: digest(b""),
+        };
+        let error = keep_unchanged_modified_times(&entry_root, &unpacked, &[looped])
+            .expect_err("a metadata error other than NotFound must surface");
+        assert!(
+            error.to_string().contains("cannot stat"),
+            "the error must name the failed metadata operation: {error:#}"
+        );
+    }
+
+    #[test]
+    fn keeping_modified_times_skips_a_missing_staged_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let entry_root = tmp.path().join("live");
+        let unpacked = tmp.path().join("unpacked");
+        std::fs::create_dir_all(&entry_root).unwrap();
+        std::fs::create_dir_all(&unpacked).unwrap();
+        std::fs::write(entry_root.join("deck.md"), b"unchanged").unwrap();
+        let file = SyncFileDto {
+            path: "deck.md".to_string(),
+            bytes: b"unchanged".len() as u64,
+            digest: digest(b"unchanged"),
+        };
+
+        keep_unchanged_modified_times(&entry_root, &unpacked, &[file])
+            .expect("an absent staged file has no modification time to preserve");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn keeping_modified_times_skips_a_non_file_live_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let entry_root = tmp.path().join("live");
+        let unpacked = tmp.path().join("unpacked");
+        let live = entry_root.join("deck.md");
+        std::fs::create_dir_all(&live).unwrap();
+        std::fs::create_dir_all(&unpacked).unwrap();
+        std::fs::write(unpacked.join("deck.md"), b"staged").unwrap();
+        let file = SyncFileDto {
+            path: "deck.md".to_string(),
+            bytes: std::fs::metadata(&live).unwrap().len(),
+            digest: digest(b""),
+        };
+
+        keep_unchanged_modified_times(&entry_root, &unpacked, &[file])
+            .expect("a non-file live path has no file modification time to preserve");
     }
 
     #[test]

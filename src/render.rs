@@ -1252,6 +1252,11 @@ mod tests {
                 "two quotations do not merge across the prose between them",
             ),
             (
+                "a\n| h | i |\n| --- | --- |\n| 1 | 2 |\nb",
+                vec![("line", 0, 1), ("table", 1, 4), ("line", 4, 5)],
+                "a table between prose is one step",
+            ),
+            (
                 "```text\n> q\n```",
                 vec![("line", 0, 1), ("line", 1, 2), ("line", 2, 3)],
                 "a fence's interior is source, never quotation",
@@ -1260,7 +1265,7 @@ mod tests {
     }
 
     #[test]
-    fn a_quotation_run_is_one_step_wherever_it_sits() {
+    fn a_block_run_is_one_step_wherever_it_sits() {
         for (back, expected, why) in step_rows() {
             let card = parsed(back);
             let mut projector = DisplayProjector::default();
