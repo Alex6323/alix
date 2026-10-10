@@ -437,6 +437,42 @@ test("long answer variants start at the first line and show scroll hints", async
   }
 });
 
+test("an unbreakable code path wraps inside the question, answer and note", async ({ page }) => {
+  const path = "iota_sdk_types::checkpoint::CheckpointSummary::new_with_a_long_tail";
+  const front = `Why did ${path} stop existing?`;
+  const state = {
+    ...longContentState({
+      answerLines: [`Because ${path} moved.`],
+      note: [{ kind: "sentence", text: `See ${path} upstream.` }],
+      front,
+    }),
+  };
+  state.card.front_runs = [{ text: "Why did " }, { text: path, code: true }, { text: " stop existing?" }];
+  const answerRuns = [{ text: "Because " }, { text: path, code: true }, { text: " moved." }];
+  state.card.back_runs = [answerRuns];
+  state.card.back_units = [{ kind: "sentence", text: `Because ${path} moved.`, runs: answerRuns }];
+  state.card.note = [{
+    badge: "note",
+    units: [{ kind: "sentence", text: `See ${path} upstream.`, runs: [{ text: "See " }, { text: path, code: true }, { text: " upstream." }] }],
+  }];
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  for (const width of [1600, 400]) {
+    await page.setViewportSize({ width, height: 900 });
+    await openApp(page);
+    await page.getByRole("button", { name: "Reveal" }).click();
+    for (const holder of [".front-text", ".reveal .answer", ".note"]) {
+      const box = await page.locator(holder).first().boundingBox();
+      const code = await page.locator(`${holder} code`).first().boundingBox();
+      expect(box, `${holder} at ${width}px`).not.toBeNull();
+      expect(code, `${holder} code at ${width}px`).not.toBeNull();
+      expect(
+        (code?.x ?? 0) + (code?.width ?? 0),
+        `${holder} code right edge at ${width}px stays inside its box ending at ${(box?.x ?? 0) + (box?.width ?? 0)}`,
+      ).toBeLessThanOrEqual((box?.x ?? 0) + (box?.width ?? 0) + 1);
+    }
+  }
+});
+
 test("a long introduction note shows overflow hints at both edges", async ({ page }) => {
   const state = {
     ...longContentState({

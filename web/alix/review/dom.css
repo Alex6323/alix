@@ -60,7 +60,7 @@
   .table-scroll { overflow-x: auto; margin: 8px 0; }
   .unit-table { border-collapse: collapse; margin: 0 auto; text-align: left; }
   .unit-table th, .unit-table td { border: 1px solid var(--line); padding: 5px 10px; }
-  code { font-family: var(--mono); color: var(--code); }
+  code { font-family: var(--mono); color: var(--code); overflow-wrap: anywhere; }
   pre code { color: inherit; font-family: inherit; }
   a.autolink { color: var(--bolt); text-decoration: underline; cursor: text; }
   .math-run { color: inherit; background: none; }
