@@ -45,11 +45,13 @@ shows before Reveal are decided here, before decks depend on them.
 
 **1. A region directive binds to the block directly above it.** A region
 directive is a `blank:`, `cover:` or `crop:` line. It applies to the nearest
-block above it; comment lines (`<!-- ... -->`) between the two do not count,
-so a card's other directives may sit in between in doctor's canonical
-comment order. A blank line anywhere between a directive and its block,
-among those comment lines included, breaks the binding. A block is, in this
-order of recognition:
+block above it; comment lines (`<!-- ... -->`) and link definitions
+(`[name]: url`, which alix lifts out as deck metadata) between the two do
+not count, so a card's other directives may sit in between in doctor's
+canonical comment order. A blank line anywhere between a directive and its
+block, among those lines included, breaks the binding. The inside of a code
+fence or a `$$` block is never another block. A block is, in this order of
+recognition:
 
 - the `##` line, measured over its visible text (trailing comments
   stripped, a closing run of `#`s stripped only when a space precedes it,
@@ -57,7 +59,9 @@ order of recognition:
 - a media line (a line holding only an image, audio or video);
 - a code fence, opener to closer;
 - a `$$` display-math block, opener to closer;
-- otherwise a maximal run of consecutive non-blank content lines. A list
+- otherwise a maximal run of consecutive non-blank content lines. A
+  comment line ends the run, as it ends a paragraph in CommonMark; a link
+  definition does not, since it is not content. A list
   with blank lines between its items is several blocks, whatever the
   indentation; a media line ends the run above it; an unbadged `>`
   quotation is content and joins its run; a note (a `>` block whose first
@@ -70,7 +74,7 @@ block's canonical maskable stream (ADR 0034). A directive whose block
 cannot match it is a hard deck error: a span (`blank:` or `cover:`) whose
 hidden text is not in the block, a rect (`blank:` or `cover:`) or a crop
 under a block that is not a media line, a directive under a note, directly
-under `---`, under nothing, in section prose outside a card, or in a card
+under `---`, in section prose outside a card, or in a card
 table (`<!-- cards -->`) including under its title line. `occurrence=` and
 the minted `position:` count within the block. A named group's members may bind to
 different blocks.
@@ -93,7 +97,8 @@ becomes one statement of the fact:
     <!-- blank: span hidden="genesis committee" -->
 
 A card without a blank still needs answer lines ("card front without an
-answer"). A `##` line that is itself a media line, so that an image with its
+answer"), unless it carries `<!-- ignore -->`, which keeps exempting a
+draft card as before. A `##` line that is itself a media line, so that an image with its
 rects is the whole question, falls under the same rules once the parser
 accepts it; it needs no further binding rule.
 
