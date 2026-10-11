@@ -41,9 +41,9 @@ full.
 | `at` | card | A repeatable named-field locator into the `source` (`at: file:lines fingerprint: xxh64-...`, plus `asset:` once frozen; a range-less path or URL cites the whole source): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
 | `given` | card | A [trace checkpoint's](13-trace-decks.md) off-screen symbol, as `name - meaning` (repeatable). |
 | `diagram` | card | Machine-maintained stamp on the line after a ```` ```mermaid ```` fence, tying the fence text to its frozen image and geometry (`fingerprint:`, `asset:`, `geometry:`). Written by deck init, never hand-authored. [→ ch 6](06-cloze-direction-images.md) |
-| `blank` | card | Masks and asks: a region of the preceding image (`rect x= y= width= height= hidden="..."`, optional `[group]`) or a text span in the answer block (`span hidden="..."`, optional `occurrence=`/`boundary=`). Carries a minted `b:` stamp (and `position:` anchor on a span), maintained by alix like ids. [→ ch 6](06-cloze-direction-images.md) |
-| `cover` | card | Masks without ever asking, for legends and labels that give answers away: `rect` on the preceding image or `span` in the answer block. No group, no stamp, no card. [→ ch 6](06-cloze-direction-images.md) |
-| `crop` | card | A viewport onto the preceding image (`rect x= y= width= height=`, at most one per image); region coordinates stay in full-source space. [→ ch 6](06-cloze-direction-images.md) |
+| `blank` | card | Masks and asks, in the block directly above it: a region of an image line (`rect x= y= width= height= hidden="..."`, optional `[group]`) or a text span (`span hidden="..."`, optional `occurrence=`/`boundary=`). Carries a minted `b:` stamp (and `position:` anchor on a span), maintained by alix like ids. [→ ch 6](06-cloze-direction-images.md) |
+| `cover` | card | Masks without ever asking, for legends and labels that give answers away: `rect` on the image line or `span` in the text block directly above it. No group, no stamp, no card. [→ ch 6](06-cloze-direction-images.md) |
+| `crop` | card | A viewport onto the image line directly above it (`rect x= y= width= height=`, at most one per image); region coordinates stay in full-source space. [→ ch 6](06-cloze-direction-images.md) |
 
 Media (images, and later audio/video) isn't a directive: write a standard
 Markdown `![alt](src)` where you want one to appear, and its position decides

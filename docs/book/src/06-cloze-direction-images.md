@@ -9,8 +9,12 @@ A cloze card hides part of the answer; you create one by pointing a
 `blank:` directive at a span of the answer text.
 
 Write the answer as ordinary prose, then name the hidden text in a
-`<!-- blank: span hidden="..." -->` comment after it. Each directive is a
-blank, and the card expands into one sub-card per blank. No marker sits in
+`<!-- blank: span hidden="..." -->` comment directly below it. A directive
+binds to the block directly above it (a run of text lines, an image line, a
+code fence or a `$$` block), and the hidden text must be in that block.
+Comment lines and link definitions between the two do not count; a blank
+line, a note or the `---` divider in between is an error. Each directive is
+a blank, and the card expands into one sub-card per blank. No marker sits in
 the prose, so the deck reads normally in any other Markdown tool.
 
 ```
@@ -63,11 +67,11 @@ name:
 ```
 ## The test pyramid, bottom to top
 Unit, integration, end-to-end
-> [!NOTE]
-> base: Fastest and most numerous, which is why they sit at the bottom.
 <!-- blank: span [base] hidden="Unit" -->
 <!-- blank: span hidden="integration" -->
 <!-- blank: span hidden="end-to-end" -->
+> [!NOTE]
+> base: Fastest and most numerous, which is why they sit at the bottom.
 ```
 
 Only the `Unit` card shows that line; the other two show nothing. Written as
@@ -185,8 +189,9 @@ working on a machine that never had the original.
 ## Image occlusion: `blank:`, `cover:` & `crop:`
 
 A card can hide a region of its picture and ask what is under it. A region is
-a directive comment on its own line beneath the image it marks, so any other
-Markdown viewer still shows the plain picture:
+a directive comment on its own line directly beneath the image line it marks
+(comment lines between them are fine, a blank line or text is an error), so
+any other Markdown viewer still shows the plain picture:
 
 ```
 ## Name the quadrant colors

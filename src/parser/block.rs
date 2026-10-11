@@ -2,13 +2,6 @@ use std::ops::Range;
 
 use super::{closes_fence, fence_opener, trim_ws};
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "bound into region binding by the next ADR 0052 slice"
-    )
-)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum LineKind {
     Heading,
@@ -16,13 +9,6 @@ pub(super) enum LineKind {
     Text,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "bound into region binding by the next ADR 0052 slice"
-    )
-)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct BodyLine<'a> {
     pub number: usize,
@@ -30,13 +16,6 @@ pub(super) struct BodyLine<'a> {
     pub kind: LineKind,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "bound into region binding by the next ADR 0052 slice"
-    )
-)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BlockKind {
     Heading,
@@ -46,13 +25,6 @@ pub(super) enum BlockKind {
     Run,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "bound into region binding by the next ADR 0052 slice"
-    )
-)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Block {
     pub kind: BlockKind,
@@ -63,13 +35,6 @@ pub(super) struct Block {
 /// The blocks of a card body in order. `definition_lines`
 /// are the link-definition lines the scanner lifted out of the body: a run
 /// continues across them, and ends at any other line the body skips.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "bound into region binding by the next ADR 0052 slice"
-    )
-)]
 pub(super) fn blocks(body: &[BodyLine], definition_lines: &[usize]) -> Vec<Block> {
     let mut blocks: Vec<Block> = Vec::new();
     let mut container: Option<Container> = None;
@@ -125,13 +90,6 @@ pub(super) fn blocks(body: &[BodyLine], definition_lines: &[usize]) -> Vec<Block
     blocks
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "bound into region binding by the next ADR 0052 slice"
-    )
-)]
 #[derive(Clone, Copy)]
 enum Container {
     Fence { ch: char, open: usize },

@@ -4,7 +4,7 @@ use super::cloze::Seg;
 use crate::inline::line_pieces;
 
 /// The canonical maskable stream (ADR 0034): the learner-visible text of a
-/// block's answer lines, one LF join, with a source map back to authored
+/// block's lines, one LF join, with a source map back to authored
 /// positions and a matchability map. Binding, position minting, repair,
 /// masking, and error counts all consume this one text.
 pub(super) struct MaskableStream {
@@ -13,7 +13,7 @@ pub(super) struct MaskableStream {
 }
 
 struct StreamLine {
-    answer_index: usize,
+    index: usize,
     pieces: Vec<StreamPiece>,
 }
 
@@ -37,9 +37,12 @@ struct StreamPiece {
 /// A piece ready for the join: (visible text, matchable, per-char map).
 type BuiltPiece = (String, bool, Vec<(usize, usize)>);
 
-pub(super) fn maskable_stream(answer: &[(usize, String)], parsed: &[Vec<Seg>]) -> MaskableStream {
+pub(super) fn maskable_stream<'a>(
+    lines: impl IntoIterator<Item = &'a str>,
+    parsed: impl IntoIterator<Item = &'a [Seg]>,
+) -> MaskableStream {
     let mut text = String::new();
-    let mut lines = Vec::new();
+    let mut stream_lines = Vec::new();
     let mut fence: Option<(char, usize)> = None;
     let mut first = true;
     let mut include =
@@ -58,12 +61,9 @@ pub(super) fn maskable_stream(answer: &[(usize, String)], parsed: &[Vec<Seg>]) -
                     map,
                 });
             }
-            lines.push(StreamLine {
-                answer_index: index,
-                pieces,
-            });
+            lines.push(StreamLine { index, pieces });
         };
-    for (index, ((_, raw), segments)) in answer.iter().zip(parsed).enumerate() {
+    for (index, (raw, segments)) in lines.into_iter().zip(parsed).enumerate() {
         if let Some((ch, open)) = fence {
             if super::closes_fence(raw, ch, open) {
                 fence = None;
@@ -76,7 +76,12 @@ pub(super) fn maskable_stream(answer: &[(usize, String)], parsed: &[Vec<Seg>]) -
                 .char_indices()
                 .map(|(byte, ch)| (byte, byte + ch.len_utf8()))
                 .collect();
-            include(vec![(raw.clone(), true, map)], index, &mut text, &mut lines);
+            include(
+                vec![(raw.to_string(), true, map)],
+                index,
+                &mut text,
+                &mut stream_lines,
+            );
             continue;
         }
         if let Some(opened) = super::fence_opener(raw) {
@@ -106,9 +111,12 @@ pub(super) fn maskable_stream(answer: &[(usize, String)], parsed: &[Vec<Seg>]) -
         if built.iter().all(|(visible, ..)| visible.trim().is_empty()) {
             continue;
         }
-        include(built, index, &mut text, &mut lines);
+        include(built, index, &mut text, &mut stream_lines);
     }
-    MaskableStream { text, lines }
+    MaskableStream {
+        text,
+        lines: stream_lines,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -194,12 +202,9 @@ impl MaskableStream {
         before && after
     }
 
-    /// The authored location of `range`: the answer-line index and the
-    /// authored byte range a masking splice replaces. None when the range
-    /// crosses piece boundaries or lands outside any visible piece.
-    // Production wiring lands with the masking slice; an #[expect] would be
-    // unfulfilled under cfg(test), where the stream tests already use this.
-    #[allow(dead_code)]
+    /// The authored location of `range`: the line index and the authored
+    /// byte range a masking splice replaces. None when the range crosses
+    /// piece boundaries or lands outside any visible piece.
     pub fn splice(&self, range: &Range<usize>) -> Option<(usize, Range<usize>)> {
         let (line, piece) = self.locate(range)?;
         let visible = &self.text[piece.range.clone()];
@@ -209,7 +214,7 @@ impl MaskableStream {
             .collect();
         let first = chars.iter().position(|byte| *byte == range.start)?;
         let last = chars.iter().rposition(|byte| *byte < range.end)?;
-        Some((line.answer_index, piece.map[first].0..piece.map[last].1))
+        Some((line.index, piece.map[first].0..piece.map[last].1))
     }
 
     fn locate(&self, range: &Range<usize>) -> Option<(&StreamLine, &StreamPiece)> {
@@ -244,7 +249,10 @@ mod tests {
                 super::super::cloze::scan_markers(line, *lineno, &mut lints).unwrap()
             })
             .collect();
-        maskable_stream(&answer, &parsed)
+        maskable_stream(
+            answer.iter().map(|(_, text)| text.as_str()),
+            parsed.iter().map(Vec::as_slice),
+        )
     }
 
     #[test]
@@ -407,7 +415,10 @@ mod tests {
             let Some((answer, parsed)) = parsed_or_skip(&lines) else {
                 return Ok(());
             };
-            let s = maskable_stream(&answer, &parsed);
+            let s = maskable_stream(
+                answer.iter().map(|(_, text)| text.as_str()),
+                parsed.iter().map(Vec::as_slice),
+            );
             let mut rebuilt = String::new();
             for (slot, line) in s.lines.iter().enumerate() {
                 if slot > 0 {
@@ -427,9 +438,12 @@ mod tests {
             let Some((answer, parsed)) = parsed_or_skip(&lines) else {
                 return Ok(());
             };
-            let s = maskable_stream(&answer, &parsed);
+            let s = maskable_stream(
+                answer.iter().map(|(_, text)| text.as_str()),
+                parsed.iter().map(Vec::as_slice),
+            );
             for line in &s.lines {
-                let raw = &answer[line.answer_index].1;
+                let raw = &answer[line.index].1;
                 for piece in &line.pieces {
                     for (start, end) in &piece.map {
                         prop_assert!(
@@ -453,7 +467,10 @@ mod tests {
             let Some((answer, parsed)) = parsed_or_skip(&lines) else {
                 return Ok(());
             };
-            let s = maskable_stream(&answer, &parsed);
+            let s = maskable_stream(
+                answer.iter().map(|(_, text)| text.as_str()),
+                parsed.iter().map(Vec::as_slice),
+            );
             if s.text.is_empty() {
                 return Ok(());
             }

@@ -11,6 +11,7 @@ use crate::{
 };
 
 mod block;
+use block::{Block, BlockKind, BodyLine, LineKind};
 mod canonical;
 pub(crate) mod checklist;
 mod cloze;
@@ -700,10 +701,6 @@ struct RawCard {
     front_extra: Vec<(usize, String)>,
     back: Vec<(usize, String)>,
     divided: bool,
-    /// The `---` line's number when divided: the side boundary for region
-    /// binding, which first-answer-content would misplace for a directive
-    /// sitting between the divider and the first content line.
-    divider_line: Option<usize>,
     notes: Vec<Note>,
     directives: CardDirectives,
     mapping: Option<Mapping>,
@@ -726,6 +723,8 @@ struct RawCard {
     /// What stands between that line and a directive here; None while the
     /// block is directly above.
     above: Option<Above>,
+    /// The link-definition lines lifted out of this card's body.
+    definition_lines: Vec<usize>,
 }
 
 /// A region directive's line and the content line it sits directly under.
@@ -1091,6 +1090,9 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         }
 
         if let Some((label, consumed)) = link_definition(lines, idx) {
+            if let Some(card) = current.as_mut() {
+                card.definition_lines.extend(lineno..lineno + consumed);
+            }
             definitions.push(label);
             skip_lines = consumed - 1;
             prev_blank = false;
@@ -1263,7 +1265,6 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 front_extra: Vec::new(),
                 back: Vec::new(),
                 divided: false,
-                divider_line: None,
                 notes: Vec::new(),
                 directives,
                 mapping: None,
@@ -1273,6 +1274,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 pending_badge: None,
                 anchor: lineno,
                 above: None,
+                definition_lines: Vec::new(),
             });
             prev_blank = false;
             prev_heading = true;
@@ -1357,7 +1359,6 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 if let Some(card) = current.as_mut() {
                     card.machinery_stays_trailing()?;
                     card.divided = true;
-                    card.divider_line = Some(lineno);
                     card.above = Some(Above::Divider);
                 }
             } else {
@@ -1518,7 +1519,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                             return Err(ParseError::InvalidRegion {
                                 line: lineno,
                                 message: format!(
-                                    "`{key}:` appears before any card, so no media element or answer block can bind it"
+                                    "`<!-- {key}: ... -->` sits outside any card, so no block can bind it; move it directly below the block it marks"
                                 ),
                             });
                         }
@@ -2078,13 +2079,23 @@ fn extract_row_stamp(line: &str) -> Option<(String, String)> {
     (key == "r").then(|| (trim_ws(&prefix[..start]).to_string(), value))
 }
 
+/// Which card line a bound span sits in: the heading, a front line of a
+/// divided card (index into `front_extra`), or an answer line (index into
+/// the answer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Origin {
+    Heading,
+    Front(usize),
+    Answer(usize),
+}
+
 /// One span's bound authored location, carried from binding to masking so
 /// both speak the same occurrence (the canonical stream resolved it once).
 struct SpanSplice {
     directive_line: usize,
     cover: bool,
     math: bool,
-    answer_index: usize,
+    origin: Origin,
     range: (usize, usize),
 }
 
@@ -2129,11 +2140,15 @@ fn capture_answer_fences(
                 };
                 let spans = splices
                     .iter()
-                    .filter(|splice| (from..index).contains(&splice.answer_index))
-                    .map(|splice| crate::card::AnswerFenceSpan {
-                        line: splice.directive_line,
-                        start: offset_in(splice.answer_index, splice.range.0),
-                        end: offset_in(splice.answer_index, splice.range.1),
+                    .filter_map(|splice| match splice.origin {
+                        Origin::Answer(at) if (from..index).contains(&at) => {
+                            Some(crate::card::AnswerFenceSpan {
+                                line: splice.directive_line,
+                                start: offset_in(at, splice.range.0),
+                                end: offset_in(at, splice.range.1),
+                            })
+                        }
+                        _ => None,
                     })
                     .collect();
                 let interior = answer[from..index]
@@ -2312,7 +2327,7 @@ fn build_region_cards(
                 let mut cuts: Vec<&SpanSplice> = prose
                     .splices
                     .iter()
-                    .filter(|splice| splice.answer_index == index)
+                    .filter(|splice| splice.origin == Origin::Answer(index))
                     .collect();
                 cuts.sort_by_key(|splice| std::cmp::Reverse(splice.range.0));
                 for cut in cuts {
@@ -2464,7 +2479,12 @@ fn build_region_cards(
         let Some(hidden) = &blank.hidden else {
             continue;
         };
-        if names_answer(&template.front, hidden) {
+        let in_front = prose.is_some_and(|prose| {
+            prose.splices.iter().any(|splice| {
+                splice.directive_line == blank.line && !matches!(splice.origin, Origin::Answer(_))
+            })
+        });
+        if !in_front && names_answer(&template.front, hidden) {
             lints.push(Lint {
                 line: template.line,
                 kind: LintKind::FrontContainsBlankAnswer {
@@ -2538,9 +2558,8 @@ fn build_table_cards_inner(
     {
         return Err(ParseError::InvalidRegion {
             line,
-            message:
-                "a region binds to a media element or an answer block, and a card table has neither"
-                    .into(),
+            message: "a region directive binds to the block directly above it, and a card table is no such block; write the row as a `##` card"
+                .into(),
         });
     }
     let token: Option<Arc<str>> = raw.directives.token.as_deref().map(Arc::from);
@@ -2828,29 +2847,64 @@ fn card_images(segments: &[Seg]) -> impl Iterator<Item = CardImage> + '_ {
 fn bind_regions(
     regions: Vec<region::RawRegion>,
     crops: Vec<region::RawCrop>,
+    sites: &[Site],
+    blocks: &[Block],
+    body: &[BodyLine],
     front_media: &mut [(usize, CardImage)],
     back_media: &mut [(usize, CardImage)],
-    answer_start: usize,
-) -> Result<Vec<region::RawRegion>, ParseError> {
-    fn target<'a>(
+) -> Result<Vec<(region::RawRegion, usize)>, ParseError> {
+    fn image_on<'a>(
         front: &'a mut [(usize, CardImage)],
         back: &'a mut [(usize, CardImage)],
-        line: usize,
-        answer_start: usize,
-    ) -> Option<&'a mut CardImage> {
-        let side = if line >= answer_start { back } else { front };
-        side.iter_mut()
-            .rfind(|(media_line, _)| *media_line < line)
+        number: usize,
+        directive_line: usize,
+    ) -> Result<&'a mut CardImage, ParseError> {
+        front
+            .iter_mut()
+            .chain(back.iter_mut())
+            .rfind(|(media_line, _)| *media_line == number)
             .map(|(_, image)| image)
+            .ok_or_else(|| unplaced(directive_line))
     }
-    let mut spans = Vec::new();
-    for crop in crops {
-        let Some(image) = target(front_media, back_media, crop.line, answer_start) else {
-            return Err(ParseError::InvalidRegion {
-                line: crop.line,
-                message: "`crop:` needs a preceding media element on its side of the card".into(),
+    fn unplaced(line: usize) -> ParseError {
+        ParseError::InvalidRegion {
+            line,
+            message: "no block above this region directive could be found".into(),
+        }
+    }
+    let block_of = |directive_line: usize| -> Result<usize, ParseError> {
+        let anchor = sites
+            .iter()
+            .find(|site| site.line == directive_line)
+            .map(|site| site.anchor)
+            .ok_or_else(|| unplaced(directive_line))?;
+        blocks
+            .iter()
+            .position(|block| {
+                body[block.range.clone()]
+                    .iter()
+                    .any(|line| line.number == anchor)
+            })
+            .ok_or_else(|| unplaced(directive_line))
+    };
+    let media_line = |directive_line: usize, key: &str| -> Result<usize, ParseError> {
+        let block = &blocks[block_of(directive_line)?];
+        if block.kind != BlockKind::Media {
+            return Err(ParseError::UnboundRegion {
+                line: directive_line,
+                key: key.to_string(),
+                above: Above::Text,
             });
-        };
+        }
+        Ok(body[block.range.start].number)
+    };
+    for crop in crops {
+        let image = image_on(
+            front_media,
+            back_media,
+            media_line(crop.line, "crop")?,
+            crop.line,
+        )?;
         if image.crop.is_some() {
             return Err(ParseError::InvalidRegion {
                 line: crop.line,
@@ -2859,18 +2913,22 @@ fn bind_regions(
         }
         image.crop = Some(crop);
     }
+    let mut spans = Vec::new();
     for region in regions {
         if matches!(region.geometry, region::RegionGeometry::Span { .. }) {
-            spans.push(region);
+            let block = block_of(region.line)?;
+            spans.push((region, block));
             continue;
         }
-        let Some(image) = target(front_media, back_media, region.line, answer_start) else {
-            return Err(ParseError::InvalidRegion {
-                line: region.line,
-                message: "a geometric region needs a preceding media element on its side of the card (`span` binds to the answer block instead)".into(),
-            });
+        let key = match region.kind {
+            region::RegionKind::Blank => "blank",
+            region::RegionKind::Cover => "cover",
         };
-        image.regions.push(region);
+        let number = media_line(region.line, key)?;
+        let line = region.line;
+        image_on(front_media, back_media, number, line)?
+            .regions
+            .push(region);
     }
     for (_, image) in front_media.iter_mut().chain(back_media.iter_mut()) {
         region::validate_media(&mut image.regions, image.crop.as_ref())?;
@@ -2932,7 +2990,6 @@ fn build_card_inner(
         front_extra,
         back,
         divided,
-        divider_line,
         notes,
         directives,
         mapping,
@@ -2942,16 +2999,19 @@ fn build_card_inner(
         pending_badge: _,
         anchor: _,
         above: _,
+        definition_lines,
     } = raw;
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
+    let heading_segments = scan_markers(&heading, line, lints)?;
+    if heading_segments
+        .iter()
+        .any(|s| matches!(s, Seg::Image { .. }))
     {
-        let segments = scan_markers(&heading, line, lints)?;
-        if segments.iter().any(|s| matches!(s, Seg::Image { .. })) {
-            return Err(ParseError::MixedImageLine(line));
-        }
+        return Err(ParseError::MixedImageLine(line));
     }
-    let (front, answer) = if divided {
-        let mut front_lines = vec![heading];
+    let mut front_display: Vec<String> = Vec::new();
+    let mut front_parsed: Vec<Vec<Seg>> = Vec::new();
+    if divided {
         for (lineno, text) in &front_extra {
             let segments = scan_markers(text, *lineno, lints)?;
             if mixed_image_line(&segments) {
@@ -2959,19 +3019,18 @@ fn build_card_inner(
             }
             front_media.extend(card_images(&segments).map(|image| (*lineno, image)));
             if !image_only(&segments) {
-                front_lines.push(seg_display(&segments));
+                front_display.push(seg_display(&segments));
             }
+            front_parsed.push(segments);
         }
-        (front_lines.join("\n"), back)
-    } else {
-        (heading, front_extra)
-    };
+    }
+    let answer: &[(usize, String)] = if divided { &back } else { &front_extra };
     if answer.is_empty() && !directives.ignore {
         return Err(ParseError::FrontWithoutAnswer(line));
     }
 
     let mut parsed = Vec::with_capacity(answer.len());
-    for (lineno, text) in &answer {
+    for (lineno, text) in answer {
         let segments = scan_markers(text, *lineno, lints)?;
         if mixed_image_line(&segments) {
             return Err(ParseError::MixedImageLine(*lineno));
@@ -2983,31 +3042,93 @@ fn build_card_inner(
         back_media.extend(card_images(segments).map(|image| (*lineno, image)));
     }
 
-    // The side boundary is the divider itself: a directive between `---` and
-    // the first answer content line is already answer-side.
-    let answer_start = if divided {
-        divider_line.map(|line| line + 1).unwrap_or(usize::MAX)
-    } else {
-        0
+    let has_regions = !directives.regions.is_empty() || !directives.crops.is_empty();
+    let mut body: Vec<BodyLine> = Vec::new();
+    let mut body_parsed: Vec<&[Seg]> = Vec::new();
+    let mut blocks: Vec<Block> = Vec::new();
+    let mut spans: Vec<(region::RawRegion, usize)> = Vec::new();
+    if has_regions {
+        let line_kind = |segments: &[Seg]| {
+            if image_only(segments) {
+                LineKind::Media
+            } else {
+                LineKind::Text
+            }
+        };
+        body.push(BodyLine {
+            number: line,
+            text: &heading,
+            kind: LineKind::Heading,
+        });
+        body_parsed.push(&heading_segments);
+        for ((number, text), segments) in front_extra.iter().zip(&front_parsed) {
+            body.push(BodyLine {
+                number: *number,
+                text,
+                kind: line_kind(segments),
+            });
+            body_parsed.push(segments);
+        }
+        for ((number, text), segments) in answer.iter().zip(&parsed) {
+            body.push(BodyLine {
+                number: *number,
+                text,
+                kind: line_kind(segments),
+            });
+            body_parsed.push(segments);
+        }
+        blocks = block::blocks(&body, &definition_lines);
+        spans = bind_regions(
+            directives.regions,
+            directives.crops,
+            &directives.sites,
+            &blocks,
+            &body,
+            &mut front_media,
+            &mut back_media,
+        )?;
+    }
+    let origin = |index: usize| -> Origin {
+        if index == 0 {
+            Origin::Heading
+        } else if index <= front_parsed.len() {
+            Origin::Front(index - 1)
+        } else {
+            Origin::Answer(index - 1 - front_parsed.len())
+        }
     };
-    let mut span_regions = bind_regions(
-        directives.regions,
-        directives.crops,
-        &mut front_media,
-        &mut back_media,
-        answer_start,
-    )?;
-    // Span binding consumes the canonical maskable stream (ADR 0034): the
-    // hidden text must occur at least N times in its MATCHABLE text, or the
-    // anchor is gone and the deck fails loudly. Plain blocks never pay for
-    // the stream.
+    // Span binding consumes the canonical maskable stream (ADR 0034) of the
+    // span's own block: the hidden text must occur at least N times in its
+    // MATCHABLE text, or the anchor is gone and the deck fails loudly.
+    let span_blocks: Vec<usize> = spans.iter().map(|(_, block)| *block).collect();
+    let mut span_regions: Vec<region::RawRegion> =
+        spans.into_iter().map(|(region, _)| region).collect();
     let mut splices: Vec<SpanSplice> = Vec::new();
-    let mut bound: Vec<(usize, usize, usize)> = Vec::new();
     let mut bound_positions: Vec<(usize, u32)> = Vec::new();
-    let mut minted_occurrences: Vec<(usize, u32, usize, usize, usize)> = Vec::new();
-    if !span_regions.is_empty() {
-        let stream = stream::maskable_stream(&answer, &parsed);
-        for (span_index, span) in span_regions.iter().enumerate() {
+    let mut streamed: Vec<usize> = Vec::new();
+    for &block_index in &span_blocks {
+        if streamed.contains(&block_index) {
+            continue;
+        }
+        streamed.push(block_index);
+        let block = &blocks[block_index];
+        let range = match block.kind {
+            BlockKind::Math => {
+                block.range.start + 1..(block.range.end - 1).max(block.range.start + 1)
+            }
+            _ => block.range.clone(),
+        };
+        let stream = stream::maskable_stream(
+            body[range.clone()].iter().map(|line| line.text),
+            body_parsed[range.clone()].iter().copied(),
+        );
+        let mut bound: Vec<(usize, usize, usize)> = Vec::new();
+        let mut minted_occurrences: Vec<(usize, u32, usize, usize, usize)> = Vec::new();
+        let own = span_regions
+            .iter()
+            .enumerate()
+            .filter(|(span_index, _)| span_blocks[*span_index] == block_index);
+        for (span_index, span) in own {
             let region::RegionGeometry::Span {
                 occurrence: n,
                 boundary,
@@ -3132,19 +3253,16 @@ fn build_card_inner(
                     });
                 }
             }
-            let (answer_index, range) = stream
+            let (index, splice_range) = stream
                 .splice(&(start..end))
                 .expect("an accepted candidate lies within one piece");
             splices.push(SpanSplice {
                 directive_line: span.line,
                 cover: span.kind == region::RegionKind::Cover,
                 math: stream.math_piece(&(start..end)).is_some(),
-                answer_index,
-                range: (range.start, range.end),
+                origin: origin(range.start + index),
+                range: (splice_range.start, splice_range.end),
             });
-        }
-        for (span_index, position) in bound_positions {
-            span_regions[span_index].bound_position = Some(position);
         }
         // Keep-old-target is only offered when taking it would keep the
         // block invariant: an alternate range another span owns stays a
@@ -3158,6 +3276,17 @@ fn build_card_inner(
             }
         }
     }
+    for (span_index, position) in bound_positions {
+        span_regions[span_index].bound_position = Some(position);
+    }
+    let front = if divided {
+        std::iter::once(heading)
+            .chain(front_display)
+            .collect::<Vec<String>>()
+            .join("\n")
+    } else {
+        heading
+    };
 
     let images: Vec<CardImage> = front_media.into_iter().map(|(_, image)| image).collect();
     let images_back: Vec<CardImage> = back_media.into_iter().map(|(_, image)| image).collect();
@@ -3312,7 +3441,7 @@ fn build_card_inner(
         .map(|(index, (_, text))| {
             let mut cuts: Vec<&SpanSplice> = splices
                 .iter()
-                .filter(|splice| splice.cover && splice.answer_index == index)
+                .filter(|splice| splice.cover && splice.origin == Origin::Answer(index))
                 .collect();
             cuts.sort_by_key(|splice| std::cmp::Reverse(splice.range.0));
             let mut line = text.clone();
@@ -3324,7 +3453,7 @@ fn build_card_inner(
         .collect();
     let block_key = content_fingerprint(&front, &masked_answer);
 
-    let answer_fences = capture_answer_fences(&answer, &splices);
+    let answer_fences = capture_answer_fences(answer, &splices);
 
     let back_lines: Vec<String> = parsed
         .iter()
@@ -3489,7 +3618,7 @@ mod tests {
             panic!("expected InvalidRegion, got {error:?}");
         };
         assert!(
-            message.contains("a card table has neither"),
+            message.contains("a card table is no such block"),
             "the rejection names the boundary: {message}"
         );
     }
@@ -8365,7 +8494,7 @@ the answer
     #[test]
     fn a_blank_card_carries_front_and_back_images() {
         let deck = parse(
-            "## front\n![](f.png)\n\n---\nthe answer here\n![](b.png)\n<!-- blank: span hidden=\"answer\" -->\n",
+            "## front\n![](f.png)\n\n---\nthe answer here\n<!-- blank: span hidden=\"answer\" -->\n![](b.png)\n",
         );
         assert_eq!(1, deck.cards.len());
         let card = &deck.cards[0];
@@ -8823,10 +8952,15 @@ the answer
     fn a_geometric_region_without_a_media_element_on_its_side_is_rejected() {
         let error =
             err("## q\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\n![](a.png)\nanswer\n");
-        let ParseError::InvalidRegion { message, .. } = error else {
-            panic!("expected InvalidRegion, got {error:?}");
-        };
-        assert!(message.contains("preceding media element"), "{message}");
+        assert_eq!(
+            ParseError::UnboundRegion {
+                line: 2,
+                key: "blank".into(),
+                above: Above::Text,
+            },
+            error,
+            "the heading above it is text, and the image below is not above it"
+        );
     }
 
     const REGION_DIRECTIVES: [(&str, &str); 5] = [
@@ -8943,11 +9077,249 @@ the answer
         ];
         for (label, lines) in between {
             for (_, directive) in REGION_DIRECTIVES {
-                let text = format!("## q\n![](a.png)\nalpha beta\n{lines}\n{directive}\n");
+                let block = if directive.contains(" span ") {
+                    "alpha beta"
+                } else {
+                    "![](a.png)"
+                };
+                let text = format!("## q\n{block}\n{lines}\n{directive}\n");
                 let result = super::parse("deck.md", &text);
                 assert!(
                     !matches!(result, Err(ParseError::UnboundRegion { .. })),
                     "{label}: {directive}: {result:?}"
+                );
+            }
+        }
+    }
+
+    const BETWEEN: &str = "<!-- editorial -->\n[ref]: https://example.com\n";
+
+    #[test]
+    fn every_region_directive_binds_to_the_block_directly_above_it_through_comment_lines() {
+        type Bound = fn(&Card) -> bool;
+        let rows: [(&str, String, Bound); 8] = [
+            (
+                "a span under the heading",
+                format!("## alpha beta\n{BETWEEN}<!-- blank: span hidden=\"alpha\" -->\ngamma\n"),
+                |card| card.span_regions[0].bound_position == Some(1),
+            ),
+            (
+                "a span under a run that is not the first block",
+                format!(
+                    "## q\ngamma\n\nprose alpha\n{BETWEEN}<!-- blank: span hidden=\"alpha\" -->\n"
+                ),
+                |card| card.span_regions[0].bound_position == Some(7),
+            ),
+            (
+                "a span under a fence",
+                format!(
+                    "## q\nalpha prose\n```\nlet alpha = 1;\n```\n{BETWEEN}<!-- blank: span hidden=\"alpha\" -->\n"
+                ),
+                |card| card.span_regions[0].bound_position == Some(5),
+            ),
+            (
+                "a span under a math block",
+                format!(
+                    "## q\nprose alpha\n$$\nalpha = 1\n$$\n{BETWEEN}<!-- blank: span hidden=\"alpha\" -->\n"
+                ),
+                |card| card.span_regions[0].bound_position == Some(1),
+            ),
+            (
+                "a cover span under a run",
+                format!("## q\nprose alpha\n{BETWEEN}<!-- cover: span hidden=\"alpha\" -->\n"),
+                |card| {
+                    card.span_regions[0].kind == region::RegionKind::Cover
+                        && card.span_regions[0].bound_position == Some(7)
+                },
+            ),
+            (
+                "a rect under the second of two images",
+                format!(
+                    "## q\n![](a.png)\n![](b.png)\n{BETWEEN}<!-- blank: rect x=1 y=1 width=2 height=2 -->\nanswer\n"
+                ),
+                |card| {
+                    card.images_back[0].regions.is_empty() && card.images_back[1].regions.len() == 1
+                },
+            ),
+            (
+                "a rect under an image below the divider",
+                format!(
+                    "## q\n![](a.png)\n\n---\n![](b.png)\n{BETWEEN}<!-- blank: rect x=1 y=1 width=2 height=2 -->\n"
+                ),
+                |card| card.images[0].regions.is_empty() && card.images_back[0].regions.len() == 1,
+            ),
+            (
+                "a crop under an image",
+                format!(
+                    "## q\n![](a.png)\n{BETWEEN}<!-- crop: rect x=0 y=0 width=50 height=50 -->\nanswer\n"
+                ),
+                |card| card.images_back[0].crop.is_some(),
+            ),
+        ];
+        for (label, text, bound) in rows {
+            let deck = match super::parse("deck.md", &text) {
+                Ok(deck) => deck,
+                Err(error) => panic!("{label}: {error}"),
+            };
+            assert!(bound(&deck.cards[0]), "{label}: {:?}", deck.cards[0]);
+            assert!(
+                !deck
+                    .lints
+                    .iter()
+                    .any(|lint| matches!(lint.kind, LintKind::FrontContainsBlankAnswer { .. })),
+                "{label}: a span's own block never reports its answer: {:?}",
+                deck.lints
+            );
+        }
+    }
+
+    #[test]
+    fn each_block_kind_bounds_a_spans_search() {
+        let span = "<!-- blank: span hidden=\"alpha\" -->\n";
+        let rows = [
+            (
+                "a comment splits two runs",
+                Some(format!(
+                    "## q\nalpha one\n<!-- editorial -->\nbeta two\n{span}"
+                )),
+                Some(format!(
+                    "## q\nalpha one\n<!-- editorial -->\nbeta alpha\n{span}"
+                )),
+            ),
+            (
+                "a blank line splits two runs",
+                Some(format!("## q\nalpha one\n\nbeta two\n{span}")),
+                Some(format!("## q\nalpha one\n\nbeta alpha\n{span}")),
+            ),
+            (
+                "a link definition joins a run",
+                None,
+                Some(format!(
+                    "## q\nalpha one\n[ref]: https://example.com\nbeta two\n{span}"
+                )),
+            ),
+            (
+                "a media line splits a run",
+                Some(format!("## q\nalpha one\n![](a.png)\nbeta two\n{span}")),
+                Some(format!("## q\nalpha one\n![](a.png)\nbeta alpha\n{span}")),
+            ),
+            (
+                "a media line holds no text",
+                Some(format!("## q\nalpha one\n![](a.png)\n{span}")),
+                None,
+            ),
+            (
+                "a fence bounds its interior",
+                Some(format!("## q\nalpha one\n```\nbeta\n```\n{span}")),
+                Some(format!("## q\nalpha one\n```\nbeta alpha\n```\n{span}")),
+            ),
+            (
+                "a math block bounds its interior across blank lines",
+                Some(format!("## q\nalpha one\n$$\nbeta\n\ngamma\n$$\n{span}")),
+                Some(format!(
+                    "## q\nalpha one\n$$\nbeta\n\ngamma alpha\n$$\n{span}"
+                )),
+            ),
+            (
+                "the heading is its own block",
+                Some(format!("## alpha one\nbeta two\n{span}")),
+                Some(format!("## alpha one\n{span}beta two\n")),
+            ),
+        ];
+        for (label, missing, present) in rows {
+            if let Some(text) = missing {
+                let error = err(&text);
+                let ParseError::InvalidRegion { message, .. } = &error else {
+                    panic!("{label}: expected InvalidRegion, got {error:?}");
+                };
+                assert!(
+                    message.contains("occurs 0 time(s)"),
+                    "{label}: the text outside the block is invisible: {message}"
+                );
+            }
+            if let Some(text) = present {
+                let deck = match super::parse("deck.md", &text) {
+                    Ok(deck) => deck,
+                    Err(error) => panic!("{label}: the text inside the block binds: {error}"),
+                };
+                assert_eq!(1, deck.cards[0].span_regions.len(), "{label}");
+            }
+        }
+    }
+
+    #[test]
+    fn occurrence_and_position_count_within_the_bound_block() {
+        let deck = parse(
+            "## q\nalpha one\n\nalpha two alpha three\n<!-- blank: span hidden=\"alpha\" occurrence=2 -->\n",
+        );
+        assert_eq!(
+            Some(11),
+            deck.cards[0].span_regions[0].bound_position,
+            "occurrence 2 is the block's second `alpha`, at its grapheme 11"
+        );
+        assert_eq!(
+            vec!["alpha one", "alpha two ⍰ three"],
+            deck.cards[0].context,
+            "the first block's `alpha` is not an occurrence"
+        );
+
+        let deck = parse("## q\nalpha one\n\nalpha two\n<!-- blank: span hidden=\"alpha\" -->\n");
+        assert_eq!(
+            vec!["alpha one", "⍰ two"],
+            deck.cards[0].context,
+            "occurrence 1 is the bound block's first"
+        );
+
+        let error = err(
+            "## q\nalpha one\n\nalpha two alpha three\n<!-- blank: span hidden=\"alpha\" occurrence=3 -->\n",
+        );
+        let ParseError::InvalidRegion { message, .. } = &error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(
+            message.contains("occurs 2 time(s)"),
+            "three occurrences in the card are two in the block: {message}"
+        );
+
+        let deck = parse(
+            "## q\nsome long first block here\n\nalpha\n<!-- blank: span hidden=\"alpha\" -->\n",
+        );
+        assert_eq!(
+            Some(1),
+            deck.cards[0].span_regions[0].bound_position,
+            "a position is minted into the block's own stream"
+        );
+    }
+
+    #[test]
+    fn a_rect_or_crop_under_a_text_block_is_rejected_as_unbound() {
+        let directives = [
+            ("blank", "<!-- blank: rect x=1 y=1 width=2 height=2 -->"),
+            ("cover", "<!-- cover: rect x=1 y=1 width=2 height=2 -->"),
+            ("crop", "<!-- crop: rect x=1 y=1 width=2 height=2 -->"),
+        ];
+        let placements = [
+            ("under the heading", "## q\n{d}\nanswer\n", 2),
+            ("under a run", "## q\n![](a.png)\nanswer\n{d}\n", 4),
+            (
+                "under a run through a comment",
+                "## q\nanswer\n<!-- editorial -->\n{d}\n",
+                4,
+            ),
+            ("under a fence", "## q\n```\ncode\n```\n{d}\n", 5),
+            ("under a math block", "## q\n$$\nx\n$$\n{d}\n", 5),
+        ];
+        for (placement, text, line) in placements {
+            for (key, directive) in directives {
+                let error = err(&text.replace("{d}", directive));
+                assert_eq!(
+                    ParseError::UnboundRegion {
+                        line,
+                        key: key.to_string(),
+                        above: Above::Text,
+                    },
+                    error,
+                    "{placement}: {directive}"
                 );
             }
         }
@@ -9041,11 +9413,11 @@ the answer
         let deck = parse(concat!(
             "## q\n",
             "```mermaid\nflowchart LR\n  A[First] --> B\n```\n",
+            "<!-- blank: span hidden=\"First\" -->\n",
             "```rust\nlet code = 1;\n```\n",
             "```MERMAID\nflowchart TD\n  C[Second] --> D\n```\n",
-            "prose with der Artikel\n",
-            "<!-- blank: span hidden=\"First\" -->\n",
             "<!-- blank: span hidden=\"Second\" -->\n",
+            "prose with der Artikel\n",
             "<!-- cover: span hidden=\"der\" -->\n",
         ));
         let card = &deck.cards[0];
@@ -9264,7 +9636,7 @@ the answer
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
         };
-        assert!(message.contains("media element"), "{message}");
+        assert!(message.contains("outside any card"), "{message}");
     }
 
     // ── Region cards (ADR 0034): assembly ──
@@ -10230,7 +10602,7 @@ the answer
     #[test]
     fn image_only_lines_stay_out_of_region_context() {
         let deck = parse(&format!(
-            "## q\n---\nthe lunate sits center\n![](hand.png)\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n---\nthe lunate sits center\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n![](hand.png)\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["the ⍰ sits center"],

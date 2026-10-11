@@ -114,6 +114,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A `blank:`, `cover:` or `crop:` line binds to the block directly above it:
+  a run of text lines, an image line, a code fence or a `$$` block. Comment
+  lines and link definitions in between are skipped. A text blank's hidden
+  words must be in that block, and `occurrence=` and `position:` count
+  within it. A region line under a note, directly under `---`, after a blank
+  line, or (for a rect or crop) under text is now an error. Pre-1.0: move
+  such lines directly below the block they mark, above any note.
+
 - On the phone, a short vertical hairline separates the deck title from the
   "X left" counter in the review and walk bars, so a cut-off title no longer
   runs into the count.
