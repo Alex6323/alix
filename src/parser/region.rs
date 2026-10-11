@@ -439,10 +439,14 @@ fn parse_region(kind: RegionKind, body: &str, line: usize) -> Result<RawRegion, 
         }
         other => return Err(err(line, format!("unknown shape `{other}`"))),
     };
-    if kind == RegionKind::Blank && f.hidden.as_deref() == Some("") {
+    if kind == RegionKind::Blank
+        && f.hidden
+            .as_deref()
+            .is_some_and(|hidden| crate::answer::normalize_answer(hidden).is_empty())
+    {
         return Err(err(
             line,
-            "`hidden=\"...\"` on a `blank:` must not be empty: it is the answer",
+            "`hidden=\"...\"` on a `blank:` must contain an answer, not only spaces or invisible characters",
         ));
     }
     Ok(RawRegion {
@@ -836,9 +840,9 @@ mod tests {
             ("rect x=1 y=1 width=2 height=2", "requires `hidden="),
             (
                 "rect x=1 y=1 width=2 height=2 hidden=\"\"",
-                "must not be empty",
+                "must contain an answer",
             ),
-            ("span hidden=\"\"", "must not be empty"),
+            ("span hidden=\"\"", "must contain an answer"),
             (
                 "rect [g] x=1 y=1 width=2 height=2 b:a1b2c3",
                 "requires `hidden=",
@@ -849,6 +853,24 @@ mod tests {
         assert!(
             parse_cover("rect x=1 y=1 width=2 height=2", 3).is_ok(),
             "a cover asks nothing, so it names no answer"
+        );
+    }
+
+    #[test]
+    fn a_whitespace_only_hidden_is_not_an_answer() {
+        reject(
+            blank("rect x=1 y=1 width=2 height=2 hidden=\"   \""),
+            "must contain an answer",
+            "whitespace-only hidden",
+        );
+    }
+
+    #[test]
+    fn a_no_ink_hidden_is_not_an_answer() {
+        reject(
+            blank("rect x=1 y=1 width=2 height=2 hidden=\"\u{200b}\""),
+            "must contain an answer",
+            "no-ink hidden",
         );
     }
 

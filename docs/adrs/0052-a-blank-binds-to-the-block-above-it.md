@@ -137,7 +137,7 @@ masking. The blank's own block is masked and never triggers it; a
 different block shown before Reveal, such as a `##` question repeating the
 hidden words above the blanked sentence, does.
 
-**10. Every blank names its answer.** A non-empty `hidden="..."` is
+**10. Every blank names its answer.** A `hidden="..."` with visible text is
 required on a `blank:` of every shape, so a rect without it is a hard deck error like a
 span without it. Typing, choices and the exam then grade every blank against
 its text. A `cover:` asks nothing and keeps `hidden=` optional and inert.
