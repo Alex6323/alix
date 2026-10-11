@@ -1367,12 +1367,14 @@ export function createStudy({
     attempt.appendChild(attemptBody);
     comparison.appendChild(attempt);
 
-    const expected = el("section", "draw-comparison-pane");
-    expected.appendChild(el("div", "draw-comparison-label", "Expected answer"));
-    const expectedBody = el("div", "draw-comparison-body");
-    renderExpected(expectedBody);
-    expected.appendChild(expectedBody);
-    comparison.appendChild(expected);
+    if (!answerInQuestion()) {
+      const expected = el("section", "draw-comparison-pane");
+      expected.appendChild(el("div", "draw-comparison-label", "Expected answer"));
+      const expectedBody = el("div", "draw-comparison-body");
+      renderExpected(expectedBody);
+      expected.appendChild(expectedBody);
+      comparison.appendChild(expected);
+    }
     a.appendChild(comparison);
   }
 

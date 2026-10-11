@@ -50,8 +50,8 @@ function byClass(node, cls) {
 }
 
 const clients = [
-  ["adult", adult.appendRuns, (units) => adult.frontEl("", null, units)],
-  ["kids", kids.appendRuns, (units) => kids.frontPrompt({ front_units: units })],
+  ["adult", (parent, runs) => adult.appendRuns(parent, runs, true), (units) => adult.frontEl("", null, units)],
+  ["kids", (parent, runs) => kids.appendRuns(parent, runs, true), (units) => kids.frontPrompt({ front_units: units })],
 ];
 
 test("an asked blank and a hidden blank render as the same pill, the hidden one muted", () => {
@@ -87,4 +87,17 @@ test("a blank inside a front code fence renders as a pill", () => {
       `${client}: the fence's markers are pills`);
     assert.equal(wrap.textContent, "let ⍰ = ⬚;", `${client}: the code text is otherwise unchanged`);
   }
+});
+
+test("marker-like prose stays prose outside a blank question", () => {
+  const runs = [{ text: "The symbols ⍰ and ⬚ are placeholders." }];
+  for (const [client, appendRuns] of [["adult", adult.appendRuns], ["kids", kids.appendRuns]]) {
+    const parent = new Node("div");
+    appendRuns(parent, runs);
+    assert.equal(byClass(parent, "blank-pill").length, 0, `${client}: default runs never become pills`);
+    assert.equal(parent.textContent, runs[0].text, `${client}: the prose is unchanged`);
+  }
+  const parent = new Node("div");
+  adult.appendUnits(parent, [{ kind: "sentence", text: runs[0].text, runs }]);
+  assert.equal(byClass(parent, "blank-pill").length, 0, "adult: tutor units never become pills");
 });

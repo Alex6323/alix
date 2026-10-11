@@ -42,7 +42,7 @@ a.autolink { color: var(--bolt); text-decoration: underline; cursor: text; }
   border: 2px solid var(--accent); border-radius: 999px;
 }
 .blank-pill .blank-glyph { visibility: hidden; }
-.blank-pill.muted { border-color: var(--muted-2); }
+.blank-pill.muted { border-color: var(--muted); }
 .blank-filled { color: var(--accent); }
 .rev-why-text .checklist { display: grid; gap: 5px; margin: 8px 0; }
 .rev-why-text .checklist-row { display: flex; align-items: flex-start; gap: 8px; }

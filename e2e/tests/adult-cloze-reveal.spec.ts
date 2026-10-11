@@ -130,6 +130,19 @@ test("reveal fills a cloze card's blank in place, highlighted, without an answer
   await expect(filled, "(c) showing again fills the blank").toHaveCount(1);
 });
 
+test("draw comparison does not repeat a cloze answer below its in-place fill", async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem("alix-draw", "1"));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await openDeck(page, "siblings.md", SIBLINGS, "Carpal Siblings");
+
+  await page.getByRole("button", { name: "Reveal" }).click();
+  const filled = page.locator("#card .region.q .blank-filled");
+  await expect(filled).toHaveCount(1);
+  const word = await filled.innerText();
+  await expect(page.locator("#ansRegion"), "the draw comparison must not repeat the in-question answer")
+    .not.toContainText(word);
+});
+
 test("line reveal fills one own blank per press", async ({ page }, testInfo) => {
   await openDeck(page, "pair.md", PAIR, "Carpal Pair");
   const question = page.locator("#card .region.q");

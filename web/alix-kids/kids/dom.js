@@ -53,13 +53,11 @@ function mathRunNode(run) {
   return wrap;
 }
 
-// A text run carries a mask marker only on a blank card's question; the
-// marker renders as a chip wherever runs render.
-function appendRuns(parent, runs) {
+function appendRuns(parent, runs, blanks = false) {
   const standaloneMath = isStandaloneInlineMath(runs);
   for (const run of runs || []) {
     if (!run.math) {
-      appendContextText(parent, run);
+      appendContextText(parent, run, blanks);
       continue;
     }
     const node = mathRunNode(run);
@@ -78,14 +76,14 @@ function blankPill(marker) {
   return pill;
 }
 
-function appendContextText(parent, run) {
+function appendContextText(parent, run, blanks = false) {
   if (run.answer) {
     const filled = el("span", "blank-filled");
     filled.appendChild(styledRunNode(run, String(run.text)));
     parent.appendChild(filled);
     return;
   }
-  const parts = String(run.text).split(/(⍰|⬚)/);
+  const parts = blanks ? String(run.text).split(/(⍰|⬚)/) : [String(run.text)];
   for (const part of parts) {
     if (!part) continue;
     if (part === "⍰" || part === "⬚") parent.appendChild(blankPill(part));
@@ -121,20 +119,20 @@ function contextLine(text, runs) {
   return line;
 }
 
-function appendChecklist(parent, items) {
+function appendChecklist(parent, items, blanks = false) {
   const checklist = el("div", "checklist");
   for (const item of items || []) {
     const row = el("div", "checklist-row");
     row.appendChild(el("span", "checklist-box", item.checked ? "☑" : "☐"));
     const text = el("span", "checklist-text");
-    if (item.runs) appendRuns(text, item.runs); else text.textContent = item.text || "";
+    if (item.runs) appendRuns(text, item.runs, blanks); else text.textContent = item.text || "";
     row.appendChild(text);
     checklist.appendChild(row);
   }
   parent.appendChild(checklist);
 }
 
-function appendTable(parent, unit) {
+function appendTable(parent, unit, blanks = false) {
   const scroll = el("div", "table-scroll");
   const table = el("table", "unit-table");
   const aligns = unit.aligns || [];
@@ -147,7 +145,7 @@ function appendTable(parent, unit) {
   (unit.header || []).forEach((runs, index) => {
     const cell = el("th");
     alignCell(cell, index);
-    appendRuns(cell, runs);
+    appendRuns(cell, runs, blanks);
     headRow.appendChild(cell);
   });
   head.appendChild(headRow);
@@ -158,7 +156,7 @@ function appendTable(parent, unit) {
     row.forEach((runs, index) => {
       const cell = el("td");
       alignCell(cell, index);
-      appendRuns(cell, runs);
+      appendRuns(cell, runs, blanks);
       tr.appendChild(cell);
     });
     body.appendChild(tr);
@@ -189,12 +187,12 @@ function frontPrompt(card, makeDiagram) {
     }
     const lines = runLines(card.front_runs);
     if (lines.length === 1) {
-      appendRuns(prompt, lines[0]);
+      appendRuns(prompt, lines[0], true);
       return prompt;
     }
     for (const line of lines) {
       const node = el("div", "rev-prompt-line");
-      appendRuns(node, line);
+      appendRuns(node, line, true);
       prompt.appendChild(node);
     }
     return prompt;
@@ -202,7 +200,7 @@ function frontPrompt(card, makeDiagram) {
   for (const unit of card.front_units) {
     if (unit.kind === "sentence") {
       const line = el("div", "rev-prompt-line");
-      if (unit.runs) appendRuns(line, unit.runs); else line.textContent = unit.text || "";
+      if (unit.runs) appendRuns(line, unit.runs, true); else line.textContent = unit.text || "";
       prompt.appendChild(line);
     } else if (unit.kind === "code") {
       const pre = el("pre", "why-code");
@@ -218,11 +216,11 @@ function frontPrompt(card, makeDiagram) {
         prompt.appendChild(img);
       }
     } else if (unit.kind === "checklist") {
-      appendChecklist(prompt, unit.items);
+      appendChecklist(prompt, unit.items, true);
     } else if (unit.kind === "table") {
-      appendTable(prompt, unit);
+      appendTable(prompt, unit, true);
     } else if (unit.kind === "quote") {
-      appendQuote(prompt, unit.units);
+      appendQuote(prompt, unit.units, true);
     }
   }
   return prompt;
@@ -241,23 +239,23 @@ function mascotEl(extra) {
 
 // A quoted block renders as its own units inside a blockquote, so a quote
 // never shows its `>` marker as text.
-function appendQuote(parent, units) {
+function appendQuote(parent, units, blanks = false) {
   const quote = el("blockquote", "quote");
   for (const unit of units || []) {
     if (unit.kind === "sentence") {
       const paragraph = el("p");
-      if (unit.runs) appendRuns(paragraph, unit.runs); else paragraph.textContent = unit.text || "";
+      if (unit.runs) appendRuns(paragraph, unit.runs, blanks); else paragraph.textContent = unit.text || "";
       quote.appendChild(paragraph);
     } else if (unit.kind === "code") {
       const pre = el("pre", "why-code");
       pre.appendChild(el("code", null, (unit.lines || []).join("\n")));
       quote.appendChild(pre);
     } else if (unit.kind === "checklist") {
-      appendChecklist(quote, unit.items);
+      appendChecklist(quote, unit.items, blanks);
     } else if (unit.kind === "table") {
-      appendTable(quote, unit);
+      appendTable(quote, unit, blanks);
     } else if (unit.kind === "quote") {
-      appendQuote(quote, unit.units);
+      appendQuote(quote, unit.units, blanks);
     }
   }
   parent.appendChild(quote);
