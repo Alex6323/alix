@@ -708,8 +708,28 @@ pub(crate) fn front_text_units(
             fence_unit(info, lines, &card.resolved_diagrams, projector)
         }
     };
-    let units = text_units_with(text, projector, true, &mut fences);
+    let mut units = text_units_with(text, projector, true, &mut fences);
+    if by_record {
+        strip_answer_markers(&mut units);
+    }
     units.iter().any(is_structural).then_some(units)
+}
+
+fn strip_answer_markers(units: &mut [ContentUnit]) {
+    use crate::inline::strip_answer_marker;
+    for unit in units {
+        match unit {
+            ContentUnit::Sentence { text, .. } => strip_answer_marker(text),
+            ContentUnit::Code { lines } => lines.iter_mut().for_each(strip_answer_marker),
+            ContentUnit::Checklist { items } => {
+                items
+                    .iter_mut()
+                    .for_each(|item| strip_answer_marker(&mut item.text));
+            }
+            ContentUnit::Quote { units } => strip_answer_markers(units),
+            ContentUnit::Diagram { .. } | ContentUnit::Table { .. } => {}
+        }
+    }
 }
 
 fn is_structural(unit: &ContentUnit) -> bool {

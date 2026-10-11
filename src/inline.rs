@@ -77,9 +77,11 @@ impl DisplayProjector {
     }
 
     pub(crate) fn project_display_math(&mut self, source: &str) -> Vec<InlineRun> {
-        let math = self.renderer.view(source, true, false);
+        let math = self.renderer.view(source, true, self.holes);
+        let mut text = source.to_string();
+        strip_answer_marker(&mut text);
         vec![InlineRun {
-            text: source.to_string(),
+            text,
             math: Some(math),
             ..InlineRun::default()
         }]
@@ -176,6 +178,12 @@ struct MathSpan {
     content_end: usize,
     display: bool,
     delimiter_len: usize,
+}
+
+pub(crate) fn strip_answer_marker(text: &mut String) {
+    if text.contains(crate::parser::ANSWER) {
+        *text = text.replace(crate::parser::ANSWER, "");
+    }
 }
 
 fn project_text(
@@ -345,10 +353,11 @@ fn project_line(
             while index < glyphs.len() && glyphs[index].math == Some(span_index) {
                 index += 1;
             }
-            let source: String = glyphs[start..index].iter().map(|glyph| glyph.ch).collect();
+            let mut source: String = glyphs[start..index].iter().map(|glyph| glyph.ch).collect();
             let math = renderer
                 .as_deref_mut()
                 .map(|renderer| renderer.view(&source, spans[span_index].display, holes));
+            strip_answer_marker(&mut source);
             push_run(
                 &mut runs,
                 InlineRun {
@@ -1666,14 +1675,24 @@ mod tests {
         let math = projector.project("$x = ⍱4ac⍱$");
         assert_eq!(1, math.len(), "{math:?}");
         assert_eq!(
-            "x = ⍱4ac⍱", math[0].text,
-            "a formula keeps its pair for the renderer"
+            "x = 4ac", math[0].text,
+            "a formula's text is its content; the pair is rendered, not shown"
         );
         assert!(!math[0].answer);
         assert!(
             math[0].math.as_ref().is_some_and(|view| view.svg.is_some()),
             "{:?}",
             math[0].math
+        );
+        let display = projector.project_display_math("x = ⍱4ac⍱ + b^2");
+        assert_eq!("x = 4ac + b^2", display[0].text, "{display:?}");
+        assert!(
+            display[0]
+                .math
+                .as_ref()
+                .is_some_and(|view| view.svg.is_some()),
+            "a display formula renders its fill boxed: {:?}",
+            display[0].math
         );
         projector.set_holes(false);
         let authored = projector.project("a ⍱b⍱ c");

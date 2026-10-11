@@ -341,8 +341,10 @@ fn literal_runs(text: &str) -> Vec<InlineRun> {
     if text.is_empty() {
         Vec::new()
     } else {
+        let mut text = text.to_string();
+        crate::inline::strip_answer_marker(&mut text);
         vec![InlineRun {
-            text: text.to_string(),
+            text,
             ..InlineRun::default()
         }]
     }
@@ -1206,8 +1208,9 @@ mod tests {
             .find(|run| run.math.is_some())
             .expect("the formula run");
         assert_eq!(
-            "x = ⍱4ac⍱ + b^2", run.text,
-            "the formula keeps its pair as source"
+            ("solve\nx = 4ac + b^2", "x = 4ac + b^2"),
+            (math.front_steps[0].front.as_str(), run.text.as_str()),
+            "the reserved answer marker must not cross the client wire"
         );
         assert!(
             run.math.as_ref().is_some_and(|math| math.svg.is_some()),
@@ -1241,6 +1244,104 @@ mod tests {
             ),
             "a step resolves the fence through the same record: {:?}",
             diagram.front_steps[0].front_units
+        );
+    }
+
+    #[test]
+    fn a_blank_cards_structural_front_steps_consume_the_reserved_answer_marker() {
+        let cards = parse(
+            "## Complete
+```rust
+let alpha = 1;
+```
+<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->
+
+## solve
+$$
+x = 4ac + b^2
+$$
+<!-- blank: span hidden=\"4ac\" b:a1b2c3 -->
+
+## recall
+```text
+x
+```
+the lunate sits here
+<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->
+",
+        );
+        let steps: Vec<(String, FrontStep)> = cards
+            .iter()
+            .map(|card| {
+                (
+                    card.back.join(" "),
+                    CardView::from(card).front_steps[0].clone(),
+                )
+            })
+            .collect();
+        let mut leaks = Vec::new();
+        for (asked, step) in &steps {
+            let mut strings = Vec::new();
+            strings_under(&serde_json::to_value(step).unwrap(), &[], &mut strings);
+            leaks.extend(
+                strings
+                    .into_iter()
+                    .filter(|text| text.contains(crate::parser::ANSWER))
+                    .map(|text| format!("{asked}: {text}")),
+            );
+        }
+        assert!(
+            leaks.is_empty(),
+            "reserved parser markers must not reach structural client fields: {leaks:#?}"
+        );
+
+        let (_, code) = &steps[0];
+        assert_eq!("Complete\n```rust\nlet alpha = 1;\n```", code.front);
+        assert!(
+            matches!(
+                code.front_units.as_deref(),
+                Some([ContentUnit::Sentence { .. }, ContentUnit::Code { lines }]) if lines == &["let alpha = 1;"]
+            ),
+            "{:?}",
+            code.front_units
+        );
+
+        let (_, display) = &steps[1];
+        assert_eq!("solve\n$$\nx = 4ac + b^2\n$$", display.front);
+        let Some(
+            [
+                ContentUnit::Sentence { .. },
+                ContentUnit::Sentence { text, runs },
+            ],
+        ) = display.front_units.as_deref()
+        else {
+            panic!(
+                "the display block is a math sentence: {:?}",
+                display.front_units
+            );
+        };
+        assert_eq!("x = 4ac + b^2", text);
+        assert!(
+            runs[0].math.as_ref().is_some_and(|math| math.svg.is_some()),
+            "the display fill renders boxed: {:?}",
+            runs[0].math
+        );
+
+        let (_, prose) = &steps[2];
+        let Some(
+            [
+                ContentUnit::Sentence { .. },
+                ContentUnit::Code { .. },
+                ContentUnit::Sentence { text, runs },
+            ],
+        ) = prose.front_units.as_deref()
+        else {
+            panic!("a fence then prose: {:?}", prose.front_units);
+        };
+        assert_eq!("the lunate sits here", text);
+        assert!(
+            runs.iter().any(|run| run.answer && run.text == "lunate"),
+            "{runs:?}"
         );
     }
 
