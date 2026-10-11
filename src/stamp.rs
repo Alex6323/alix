@@ -556,6 +556,7 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), StampError> {
 fn block_end_line(text: &str, front_line: usize, card_tables: Option<&HashSet<usize>>) -> usize {
     let mut last = front_line;
     let mut fence: Option<(char, usize)> = None;
+    let mut math_open = false;
     let Some(start) = nth_line_start(text, front_line + 1) else {
         return last;
     };
@@ -570,8 +571,18 @@ fn block_end_line(text: &str, front_line: usize, card_tables: Option<&HashSet<us
             last = line;
             continue;
         }
+        if math_open {
+            math_open = raw.trim_matches(&WS[..]) != "$$";
+            last = line;
+            continue;
+        }
         if let Some(opened) = parser::fence_opener(raw) {
             fence = Some(opened);
+            last = line;
+            continue;
+        }
+        if raw.trim_matches(&WS[..]) == "$$" {
+            math_open = true;
             last = line;
             continue;
         }
@@ -614,6 +625,8 @@ pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
     let mut found = Vec::new();
     let mut fence: Option<(char, usize)> = None;
     let mut block_end: Option<usize> = None;
+    let mut in_card = false;
+    let mut math_open = false;
     for (index, raw) in lines.iter().enumerate() {
         let raw = *raw;
         let line = index + 1;
@@ -623,8 +636,16 @@ pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
             }
             continue;
         }
+        if math_open {
+            math_open = raw.trim_matches(&WS[..]) != "$$";
+            continue;
+        }
         if let Some(opened) = parser::fence_opener(raw) {
             fence = Some(opened);
+            continue;
+        }
+        if in_card && raw.trim_matches(&WS[..]) == "$$" {
+            math_open = true;
             continue;
         }
         if raw.starts_with('|')
@@ -636,7 +657,8 @@ pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
             continue;
         }
         if let Some((depth, rest)) = parser::heading_depth(raw) {
-            if crate::parser::is_card_depth(depth) {
+            in_card = crate::parser::is_card_depth(depth);
+            if in_card {
                 block_end = Some(block_end_line(text, line, None));
                 if heading_id_marker(rest) {
                     found.push(line);
@@ -876,6 +898,12 @@ mod tests {
     fn a_marker_trailing_the_front_line_is_misplaced() {
         let text = "## q <!-- id: card-q1 -->\na\n";
         assert_eq!(vec![1], misplaced_id_markers(text));
+        let after_section_dollars = "# S\n$$\n## q <!-- id: card-q1 -->\na\n";
+        assert_eq!(
+            vec![3],
+            misplaced_id_markers(after_section_dollars),
+            "a section's literal dollars open no math"
+        );
     }
 
     #[test]
@@ -1063,18 +1091,36 @@ mod tests {
     }
 
     #[test]
-    fn stamping_is_idempotent() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write(&dir, "deck.md", "---\nsource: x\n---\n## q\na\n## r\nb\n");
+    fn law_a_second_stamp_mints_nothing_and_changes_nothing() {
+        let rows = [
+            ("---\nsource: x\n---\n## q\na\n## r\nb\n", "two plain cards"),
+            (
+                "## q\n$$\nx\n## r\ny\n$$\n",
+                "display math spanning a heading line",
+            ),
+            (
+                "## q\n$$\nx\n## r\ny\n$$\nafter\n## s\nz\n",
+                "a card after display math spanning a heading line",
+            ),
+        ];
+        for (text, why) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            let path = write(&dir, "deck.md", text);
 
-        stamp_deck(&path).unwrap();
-        let once = fs::read_to_string(&path).unwrap();
+            stamp_deck(&path).unwrap();
+            let once = fs::read_to_string(&path).unwrap();
 
-        let outcome = stamp_deck(&path).unwrap();
-        let twice = fs::read_to_string(&path).unwrap();
+            let outcome = stamp_deck(&path).unwrap();
+            let twice = fs::read_to_string(&path).unwrap();
 
-        assert_eq!(StampOutcome::default(), outcome);
-        assert_eq!(once, twice);
+            assert_eq!(StampOutcome::default(), outcome, "{why}: {once:?}");
+            assert_eq!(once, twice, "{why}");
+            assert_eq!(
+                Vec::<usize>::new(),
+                misplaced_id_markers(&once),
+                "{why}: {once:?}"
+            );
+        }
     }
 
     #[test]

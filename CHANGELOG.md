@@ -345,6 +345,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A card whose `$$` display math runs across a `##` line no longer gains a new
+  id line every time the deck is stamped; its id now lands after the math.
+
 - In the web app, a long inline code path in a question, answer or note wraps
   instead of running off the right edge.
 
