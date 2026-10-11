@@ -10,6 +10,7 @@ use crate::{
     token,
 };
 
+mod block;
 mod canonical;
 pub(crate) mod checklist;
 mod cloze;
@@ -215,6 +216,12 @@ pub enum ParseError {
     InvalidLocator { line: usize, message: String },
     #[error("line {line}: {message}")]
     InvalidRegion { line: usize, message: String },
+    #[error("line {line}: {}", .above.message(.key))]
+    UnboundRegion {
+        line: usize,
+        key: String,
+        above: Above,
+    },
     #[error("line {line}: {message}")]
     ChoiceShape { line: usize, message: String },
     #[error(
@@ -283,6 +290,34 @@ pub enum ParseError {
     NestedQuote(usize),
 }
 
+/// What a region directive sits under instead of the block it would bind to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Above {
+    Note,
+    Divider,
+    Gap,
+    Text,
+}
+
+impl Above {
+    fn message(self, key: &str) -> String {
+        match self {
+            Self::Note => format!(
+                "`<!-- {key}: ... -->` sits under a note, which is not a block; move it directly below the block it marks, above the note"
+            ),
+            Self::Divider => format!(
+                "`<!-- {key}: ... -->` sits directly under `---`, which is not a block; move it directly below the block it marks"
+            ),
+            Self::Gap => format!(
+                "a blank line separates `<!-- {key}: ... -->` from the block above it; a region directive sits directly below its block, comment lines between are fine"
+            ),
+            Self::Text => format!(
+                "`<!-- {key}: ... -->` marks a region of an image, so it sits directly below the image line; the block above it is text"
+            ),
+        }
+    }
+}
+
 impl ParseError {
     pub(crate) fn diagnostic_code(&self) -> &'static str {
         match self {
@@ -312,6 +347,7 @@ impl ParseError {
             Self::FrontDirective { .. } => "front_directive",
             Self::InvalidLocator { .. } => "invalid_locator",
             Self::InvalidRegion { .. } => "invalid_region",
+            Self::UnboundRegion { .. } => "unbound_region",
             Self::ChoiceShape { .. } => "choice_shape",
             Self::MixedImageLine(_) => "mixed_image_line",
             Self::FootnoteDefinition(_) => "footnote_definition",
@@ -367,6 +403,7 @@ impl ParseError {
             | Self::ControlChar { line, .. }
             | Self::InvalidLocator { line, .. }
             | Self::InvalidRegion { line, .. }
+            | Self::UnboundRegion { line, .. }
             | Self::ChoiceShape { line, .. }
             | Self::TableColumns { line, .. }
             | Self::TableRowWidth { line, .. }
@@ -682,6 +719,20 @@ struct RawCard {
     /// The badge of the note run being scanned, until a body line opens the
     /// note it belongs to.
     pending_badge: Option<Badge>,
+    /// The content line a region directive here would bind to (the heading
+    /// line until content arrives); comment lines and link definitions do
+    /// not move it.
+    anchor: usize,
+    /// What stands between that line and a directive here; None while the
+    /// block is directly above.
+    above: Option<Above>,
+}
+
+/// A region directive's line and the content line it sits directly under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Site {
+    line: usize,
+    anchor: usize,
 }
 
 /// What opened a card's trailing machinery run, and where.
@@ -736,6 +787,7 @@ struct RawRow {
 struct CardDirectives {
     regions: Vec<region::RawRegion>,
     crops: Vec<region::RawCrop>,
+    sites: Vec<Site>,
     token: Option<String>,
     sampling: Option<bool>,
     reveal: Option<Reveal>,
@@ -1219,6 +1271,8 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 open_math: None,
                 open_note_math: None,
                 pending_badge: None,
+                anchor: lineno,
+                above: None,
             });
             prev_blank = false;
             prev_heading = true;
@@ -1228,6 +1282,11 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         let t = trim_ws(raw);
 
         if t.is_empty() {
+            if let Some(card) = current.as_mut()
+                && card.above.is_none()
+            {
+                card.above = Some(Above::Gap);
+            }
             prev_blank = true;
             prev_heading = false;
             continue;
@@ -1299,6 +1358,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                     card.machinery_stays_trailing()?;
                     card.divided = true;
                     card.divider_line = Some(lineno);
+                    card.above = Some(Above::Divider);
                 }
             } else {
                 return Err(ParseError::StrayDivider(lineno));
@@ -1343,6 +1403,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                     quote_run = Some(run);
                     match run {
                         QuoteRun::Note => {
+                            card.above = Some(Above::Note);
                             if run_above.is_none() {
                                 if card.machinery.is_none() {
                                     card.machinery = Some(TrailingStart::Note { line: lineno });
@@ -1424,6 +1485,21 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                     match current.as_mut() {
                         Some(card) => {
                             apply_directive(&mut card.directives, &key, value, lineno, lints)?;
+                            if matches!(key.as_str(), "blank" | "cover" | "crop") {
+                                match card.above {
+                                    Some(above) => {
+                                        return Err(ParseError::UnboundRegion {
+                                            line: lineno,
+                                            key,
+                                            above,
+                                        });
+                                    }
+                                    None => card.directives.sites.push(Site {
+                                        line: lineno,
+                                        anchor: card.anchor,
+                                    }),
+                                }
+                            }
                             if is_known_card_key(&key) && card.machinery.is_none() {
                                 card.machinery =
                                     Some(TrailingStart::Directive { line: lineno, key });
@@ -2519,6 +2595,8 @@ fn push_content(
 ) -> Result<(), ParseError> {
     if let Some(card) = current.as_mut() {
         card.machinery_stays_trailing()?;
+        card.anchor = lineno;
+        card.above = None;
         if card.divided {
             card.back.push((lineno, text));
         } else {
@@ -2862,6 +2940,8 @@ fn build_card_inner(
         open_math: _,
         open_note_math: _,
         pending_badge: _,
+        anchor: _,
+        above: _,
     } = raw;
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
     {
@@ -7797,10 +7877,10 @@ a
     fn a_note_addressed_to_a_group_lands_on_the_merged_card() {
         let deck = parse(
             "## q\nalpha, beta, gamma\n\
-             > [!NOTE]\n> Shared.\n> hs: Both halves of the opening.\n\
              <!-- blank: span [hs] hidden=\"alpha\" -->\n\
              <!-- blank: span [hs] hidden=\"beta\" -->\n\
-             <!-- blank: span hidden=\"gamma\" -->\n",
+             <!-- blank: span hidden=\"gamma\" -->\n\
+             > [!NOTE]\n> Shared.\n> hs: Both halves of the opening.\n",
         );
         let merged = deck
             .cards
@@ -7823,10 +7903,10 @@ a
         let deck = parse(
             "## The test pyramid, bottom to top\n\
              Unit, integration, end-to-end\n\
-             > [!NOTE]\n> Unit tests sit at the base because they are fastest and most numerous.\n\
              <!-- blank: span hidden=\"Unit\" -->\n\
              <!-- blank: span hidden=\"integration\" -->\n\
-             <!-- blank: span hidden=\"end-to-end\" -->\n",
+             <!-- blank: span hidden=\"end-to-end\" -->\n\
+             > [!NOTE]\n> Unit tests sit at the base because they are fastest and most numerous.\n",
         );
         assert_eq!(
             vec![Lint {
@@ -7899,9 +7979,10 @@ a
     #[test]
     fn an_addressed_note_with_no_block_note_stands_alone() {
         let deck = parse(
-            "## q\nUnit, integration\n> [!NOTE]\n> base+: Fastest.\n\
+            "## q\nUnit, integration\n\
              <!-- blank: span [base] hidden=\"Unit\" -->\n\
-             <!-- blank: span hidden=\"integration\" -->\n",
+             <!-- blank: span hidden=\"integration\" -->\n\
+             > [!NOTE]\n> base+: Fastest.\n",
         );
         let base = deck
             .cards
@@ -7932,9 +8013,9 @@ a
     fn two_lines_addressed_to_one_name_join_in_written_order() {
         let deck = parse(
             "## q\nUnit, integration\n\
-             > [!NOTE]\n> base: First.\n> base: Second.\n\
              <!-- blank: span [base] hidden=\"Unit\" -->\n\
-             <!-- blank: span hidden=\"integration\" -->\n",
+             <!-- blank: span hidden=\"integration\" -->\n\
+             > [!NOTE]\n> base: First.\n> base: Second.\n",
         );
         let base = deck
             .cards
@@ -7949,9 +8030,10 @@ a
     #[test]
     fn a_note_that_looks_addressed_is_prose_where_no_blank_is_named() {
         let deck = parse(
-            "## q\nUnit, integration\n> [!NOTE]\n> 2: the second one.\n\
+            "## q\nUnit, integration\n\
              <!-- blank: span hidden=\"Unit\" -->\n\
-             <!-- blank: span hidden=\"integration\" -->\n",
+             <!-- blank: span hidden=\"integration\" -->\n\
+             > [!NOTE]\n> 2: the second one.\n",
         );
         assert_eq!(Vec::<Lint>::new(), deck.lints);
         for card in &deck.cards {
@@ -7962,9 +8044,10 @@ a
     #[test]
     fn an_address_is_separated_from_its_text_by_a_space() {
         let deck = parse(
-            "## q\nUnit, integration\n> [!NOTE]\n> base:no space.\n\
+            "## q\nUnit, integration\n\
              <!-- blank: span [base] hidden=\"Unit\" -->\n\
-             <!-- blank: span hidden=\"integration\" -->\n",
+             <!-- blank: span hidden=\"integration\" -->\n\
+             > [!NOTE]\n> base:no space.\n",
         );
         assert_eq!(Vec::<Lint>::new(), deck.lints);
         for card in &deck.cards {
@@ -7975,9 +8058,10 @@ a
     #[test]
     fn an_address_naming_no_blank_of_this_block_is_reported_and_kept() {
         let deck = parse(
-            "## q\nUnit, integration\n> [!NOTE]\n> bass: typo.\n\
+            "## q\nUnit, integration\n\
              <!-- blank: span [base] hidden=\"Unit\" -->\n\
-             <!-- blank: span hidden=\"integration\" -->\n",
+             <!-- blank: span hidden=\"integration\" -->\n\
+             > [!NOTE]\n> bass: typo.\n",
         );
         assert_eq!(
             vec![Lint {
@@ -8002,10 +8086,10 @@ a
         let deck = parse(
             "## The test pyramid, bottom to top\n\
              Unit, integration, end-to-end\n\
-             > [!NOTE]\n> base: Unit tests sit at the base because they are fastest and most numerous.\n\
              <!-- blank: span [base] hidden=\"Unit\" -->\n\
              <!-- blank: span hidden=\"integration\" -->\n\
-             <!-- blank: span hidden=\"end-to-end\" -->\n",
+             <!-- blank: span hidden=\"end-to-end\" -->\n\
+             > [!NOTE]\n> base: Unit tests sit at the base because they are fastest and most numerous.\n",
         );
         assert_eq!(
             Vec::<Lint>::new(),
@@ -8029,9 +8113,10 @@ a
     #[test]
     fn a_note_naming_no_blank_answer_is_silent() {
         let deck = parse(
-            "## q\nUnit, integration\n> [!NOTE]\n> Fastest at the base.\n\
+            "## q\nUnit, integration\n\
              <!-- blank: span hidden=\"Unit\" -->\n\
-             <!-- blank: span hidden=\"integration\" -->\n",
+             <!-- blank: span hidden=\"integration\" -->\n\
+             > [!NOTE]\n> Fastest at the base.\n",
         );
         assert_eq!(Vec::<Lint>::new(), deck.lints);
     }
@@ -8041,8 +8126,9 @@ a
         // With one blank there is no other card to leak to: the note is on
         // the card whose answer it names, the ordinary way to write one.
         let deck = parse(
-            "## q\nUnit tests\n> [!NOTE]\n> Unit tests are fastest.\n\
-             <!-- blank: span hidden=\"Unit\" -->\n",
+            "## q\nUnit tests\n\
+             <!-- blank: span hidden=\"Unit\" -->\n\
+             > [!NOTE]\n> Unit tests are fastest.\n",
         );
         assert_eq!(Vec::<Lint>::new(), deck.lints);
     }
@@ -8051,9 +8137,10 @@ a
     fn a_blank_answer_inside_a_longer_word_is_not_a_match() {
         for note in ["Reunites the suites.", "Unitary tests are narrow."] {
             let deck = parse(&format!(
-                "## q\nunit, integration\n> [!NOTE]\n> {note}\n\
+                "## q\nunit, integration\n\
                  <!-- blank: span hidden=\"unit\" -->\n\
-                 <!-- blank: span hidden=\"integration\" -->\n"
+                 <!-- blank: span hidden=\"integration\" -->\n\
+                 > [!NOTE]\n> {note}\n"
             ));
             assert_eq!(
                 Vec::<Lint>::new(),
@@ -8066,9 +8153,10 @@ a
     #[test]
     fn a_short_blank_answer_is_below_the_reporting_floor() {
         let deck = parse(
-            "## q\nTCP, integration\n> [!NOTE]\n> TCP is a protocol.\n\
+            "## q\nTCP, integration\n\
              <!-- blank: span hidden=\"TCP\" -->\n\
-             <!-- blank: span hidden=\"integration\" -->\n",
+             <!-- blank: span hidden=\"integration\" -->\n\
+             > [!NOTE]\n> TCP is a protocol.\n",
         );
         assert_eq!(
             Vec::<Lint>::new(),
@@ -8170,6 +8258,7 @@ the answer
             CardDirectives {
                 regions: Vec::new(),
                 crops: Vec::new(),
+                sites: Vec::new(),
                 token: Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
                 reveal: Some(Reveal::Flip),
                 reveal_line: Some(30),
@@ -8740,6 +8829,130 @@ the answer
         assert!(message.contains("preceding media element"), "{message}");
     }
 
+    const REGION_DIRECTIVES: [(&str, &str); 5] = [
+        ("blank", "<!-- blank: span hidden=\"alpha\" -->"),
+        ("blank", "<!-- blank: rect x=1 y=1 width=2 height=2 -->"),
+        ("cover", "<!-- cover: span hidden=\"alpha\" -->"),
+        ("cover", "<!-- cover: rect x=1 y=1 width=2 height=2 -->"),
+        ("crop", "<!-- crop: rect x=1 y=1 width=2 height=2 -->"),
+    ];
+
+    #[test]
+    fn every_misplaced_region_directive_is_a_hard_error_naming_its_placement() {
+        let placements = [
+            (
+                "under a note",
+                "## q\n![](a.png)\nalpha beta\n> [!NOTE]\n> hint\n{d}\n",
+                6,
+                Above::Note,
+                "sits under a note",
+            ),
+            (
+                "under a note, then a blank line",
+                "## q\n![](a.png)\nalpha beta\n> [!NOTE]\n> hint\n\n{d}\n",
+                7,
+                Above::Note,
+                "sits under a note",
+            ),
+            (
+                "directly under the divider",
+                "## q\n![](a.png)\nalpha beta\n\n---\n{d}\nmore alpha\n",
+                6,
+                Above::Divider,
+                "directly under `---`",
+            ),
+            (
+                "after a blank line",
+                "## q\n![](a.png)\nalpha beta\n\n{d}\n",
+                5,
+                Above::Gap,
+                "a blank line separates",
+            ),
+            (
+                "after a blank line under the heading",
+                "## q\n\n{d}\n![](a.png)\nalpha beta\n",
+                3,
+                Above::Gap,
+                "a blank line separates",
+            ),
+            (
+                "after a comment, then a blank line",
+                "## q\n![](a.png)\nalpha beta\n<!-- reveal: line -->\n\n{d}\n",
+                6,
+                Above::Gap,
+                "a blank line separates",
+            ),
+            (
+                "after a blank line, then a comment",
+                "## q\n![](a.png)\nalpha beta\n\n<!-- reveal: line -->\n{d}\n",
+                6,
+                Above::Gap,
+                "a blank line separates",
+            ),
+            (
+                "after a link definition, then a blank line",
+                "## q\n![](a.png)\nalpha beta\n[ref]: https://example.com\n\n{d}\n",
+                6,
+                Above::Gap,
+                "a blank line separates",
+            ),
+        ];
+        for (placement, text, line, above, fragment) in placements {
+            for (key, directive) in REGION_DIRECTIVES {
+                let error = err(&text.replace("{d}", directive));
+                assert_eq!(
+                    ParseError::UnboundRegion {
+                        line,
+                        key: key.to_string(),
+                        above,
+                    },
+                    error,
+                    "{placement}: {directive}"
+                );
+                let message = error.to_string();
+                assert!(
+                    message.contains(fragment)
+                        && message.contains(&format!("`<!-- {key}: ... -->`")),
+                    "{placement}: {directive}: {message}"
+                );
+                assert_eq!(
+                    ("unbound_region", line),
+                    (error.diagnostic_code(), error.line()),
+                    "{placement}: {directive}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn comment_lines_and_link_definitions_between_a_block_and_its_region_directive_are_transparent()
+    {
+        let between = [
+            ("a card directive", "<!-- reveal: line -->"),
+            ("an editorial comment", "<!-- editorial -->"),
+            ("an ignore comment", "<!-- ignore -->"),
+            ("a link definition", "[ref]: https://example.com"),
+            (
+                "a link definition over two lines",
+                "[ref]:\n  https://example.com",
+            ),
+            (
+                "a run of comments and definitions",
+                "<!-- reveal: line -->\n[ref]: https://example.com\n<!-- id: card-0123456789abcdefghjkmnpqrs -->",
+            ),
+        ];
+        for (label, lines) in between {
+            for (_, directive) in REGION_DIRECTIVES {
+                let text = format!("## q\n![](a.png)\nalpha beta\n{lines}\n{directive}\n");
+                let result = super::parse("deck.md", &text);
+                assert!(
+                    !matches!(result, Err(ParseError::UnboundRegion { .. })),
+                    "{label}: {directive}: {result:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_span_region_binds_to_the_answer_block_without_any_media() {
         let deck = parse("## q\nanswer with der Artikel\n<!-- blank: span hidden=\"der\" -->\n");
@@ -9024,10 +9237,14 @@ the answer
         let error = err(
             "## q\n![](front.png)\n\n---\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\nanswer\n",
         );
-        let ParseError::InvalidRegion { message, .. } = error else {
-            panic!("expected InvalidRegion, got {error:?}");
-        };
-        assert!(message.contains("preceding media element"), "{message}");
+        assert_eq!(
+            ParseError::UnboundRegion {
+                line: 5,
+                key: "blank".into(),
+                above: Above::Divider,
+            },
+            error
+        );
     }
 
     #[test]
@@ -9889,7 +10106,7 @@ the answer
     #[test]
     fn a_name_addressed_note_replaces_the_shared_note_on_its_card() {
         let deck = parse(&format!(
-            "## q\n---\nalpha then beta\n> [!NOTE]\n> shared note\n> g: only for g\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [h] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n---\nalpha then beta\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [h] hidden=\"beta\" b:d4e5f6 -->\n> [!NOTE]\n> shared note\n> g: only for g\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             2,
@@ -9921,7 +10138,7 @@ the answer
     #[test]
     fn an_append_address_extends_the_shared_note_on_its_card() {
         let deck = parse(&format!(
-            "## q\n---\nalpha then beta\n> [!NOTE]\n> shared note\n> g+: extra for g\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [h] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n---\nalpha then beta\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [h] hidden=\"beta\" b:d4e5f6 -->\n> [!NOTE]\n> shared note\n> g+: extra for g\n<!-- id: {RTOK} -->\n"
         ));
         let g = deck
             .cards

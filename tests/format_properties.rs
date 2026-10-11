@@ -146,13 +146,13 @@ fn render_card(card: &GenCard) -> String {
             out.push_str("<!-- choices: single -->\n");
         }
     }
-    if let Some(note) = &card.note {
-        out.push_str(&format!("> [!NOTE]\n> {note}\n"));
-    }
     if let CardShape::Cloze { holes } = &card.shape {
         for i in 0..*holes {
             out.push_str(&format!("<!-- blank: span hidden=\"gap{i}\" -->\n"));
         }
+    }
+    if let Some(note) = &card.note {
+        out.push_str(&format!("> [!NOTE]\n> {note}\n"));
     }
     if let Some(token) = &card.token {
         out.push_str(&format!("<!-- id: {token} -->\n"));

@@ -30,10 +30,10 @@ a fake "Got it" hides the card before you know it
 
 ## Why does a card you keep getting right appear more and more rarely?
 alix re-shows each card just before you would forget it
+<!-- blank: span hidden="forget" b:t4mem7 -->
 > [!NOTE]
 > And a card you miss comes back soon. That spacing is the trick
 > behind long-term memory. (This one was a gap-fill card.)
-<!-- blank: span hidden="forget" b:t4mem7 -->
 
 ## What decides whether you pick from choices or answer from memory?
 the depth you choose when starting a session
