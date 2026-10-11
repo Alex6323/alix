@@ -120,11 +120,11 @@ src/paired.rs:286: replace || with && in check_entry_name
 
 # UNOBSERVABLE. `RawTable` is created only when `invocation_below` finds a
 # Cards invocation in its contiguous trailing zone. Every row overwrites
-# `end_line` at 1795, and every trailing machinery comment overwrites it at
-# 1820 before either escape at 981 or 1520; errors return no table first.
+# `end_line` at 1890, and every trailing machinery comment overwrites it at
+# 1915 before either escape at 1046 or 1615; errors return no table first.
 # Line-pinned because `scan` holds other arithmetic.
-src/parser/mod.rs:1149: replace + with - in scan
-src/parser/mod.rs:1149: replace + with * in scan
+src/parser/mod.rs:1162: replace + with - in scan
+src/parser/mod.rs:1162: replace + with * in scan
 
 # EQUIVALENT, provably. `ground` reaches this comparison only through
 # `hex_color`, so `ink` is always the luminance of an 8-bit RGB triple.
