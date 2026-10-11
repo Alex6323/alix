@@ -56,9 +56,7 @@
   ],
   "citations": [],
   "context": [],
-  "context_leads": false,
   "context_runs": [],
-  "context_units": [],
   "crumb": null,
   "front": "Pick a city:\n- [x] Paris\n- [ ] Rome",
   "front_runs": [
@@ -73,6 +71,7 @@
       "text": "\n- [ ] Rome"
     }
   ],
+  "front_steps": [],
   "front_units": [
     {
       "kind": "sentence",

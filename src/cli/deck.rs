@@ -546,7 +546,7 @@ fn warm_items(cards: &[Card]) -> Vec<augment::WarmItem> {
 fn print_topology(topo: &augment::Topology, cards: &[Card]) {
     let fronts: std::collections::HashMap<String, String> = cards
         .iter()
-        .filter_map(|c| Some((c.id()?, truncate(&one_line(&c.front), 72))))
+        .filter_map(|c| Some((c.id()?, truncate(&one_line(&c.question_text()), 72))))
         .collect();
     let unknown = "<card not in deck>".to_string();
 

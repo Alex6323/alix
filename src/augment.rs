@@ -1160,7 +1160,7 @@ impl WarmItem {
     pub fn from_card(card: &Card) -> Self {
         Self {
             id: card.id().unwrap_or_default(),
-            question: card.front.clone(),
+            question: card.question_text(),
             answer: card.back.join("\n"),
             note: card.notes_text(),
         }

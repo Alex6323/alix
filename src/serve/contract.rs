@@ -112,13 +112,12 @@ fn statedto_review_phase_wire_shape() {
             front: "What is ownership?".to_string(),
             front_runs: crate::inline::parse_inline("What is **ownership**?"),
             front_units: None,
+            front_steps: Vec::new(),
             section_context: Vec::new(),
             section_context_runs: Vec::new(),
             section_context_units: Vec::new(),
             context: vec!["Chapter 4".to_string()],
-            context_leads: true,
             context_runs: vec![crate::inline::parse_inline("Chapter 4")],
-            context_units: Vec::new(),
             back: vec!["every value has one owner".to_string()],
             back_runs: vec![crate::inline::parse_inline("every value has one owner")],
             back_units: vec![ContentUnit::Sentence {
@@ -279,9 +278,8 @@ fn statedto_review_phase_wire_shape() {
                     {"text": "?"}
                 ],
                 "context": ["Chapter 4"],
-                "context_leads": true,
                 "context_runs": [[{"text": "Chapter 4"}]],
-                "context_units": [],
+                "front_steps": [],
                 "back": ["every value has one owner"],
                 "back_runs": [[{"text": "every value has one owner"}]],
                 "back_units": [{
@@ -719,9 +717,8 @@ fn walkdto_front_phase_wire_shape() {
                 "front": "capital of France",
                 "front_runs": [{"text": "capital of France"}],
                 "context": [],
-                "context_leads": false,
                 "context_runs": [],
-                "context_units": [],
+                "front_steps": [],
                 "back": ["Paris"],
                 "back_runs": [[{"text": "Paris"}]],
                 "back_units": [{"kind": "sentence", "text": "Paris", "runs": [{"text": "Paris"}]}],
@@ -948,9 +945,8 @@ fn carddto_sectioned_wire_shape() {
             ],
             "citations": [],
             "context": [],
-            "context_leads": false,
             "context_runs": [],
-            "context_units": [],
+            "front_steps": [],
             "crumb": null,
             "front": "q",
             "front_runs": [
@@ -1043,13 +1039,12 @@ fn carddto_wire_shape() {
             front: "Pick a city:\n- [x] Paris\n- [ ] Rome".to_string(),
             front_runs: crate::inline::parse_inline("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
             front_units: crate::render::front_units("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
+            front_steps: Vec::new(),
             section_context: Vec::new(),
             section_context_runs: Vec::new(),
             section_context_units: Vec::new(),
             context: Vec::new(),
-            context_leads: false,
             context_runs: Vec::new(),
-            context_units: Vec::new(),
             back: vec!["Use **x**".to_string(), "France".to_string()],
             back_runs: vec![
                 crate::inline::parse_inline("Use `**x**`"),
@@ -1117,9 +1112,8 @@ fn carddto_wire_shape() {
                 }
             ],
             "context": [],
-            "context_leads": false,
             "context_runs": [],
-            "context_units": [],
+            "front_steps": [],
             "back": ["Use **x**", "France"],
             "back_runs": [
                 [{"text": "Use "}, {"text": "**x**", "code": true}],
@@ -1190,13 +1184,12 @@ fn carddto_math_wire_shape() {
         front: "x^2".to_string(),
         front_runs: vec![inline],
         front_units: None,
+        front_steps: Vec::new(),
         section_context: Vec::new(),
         section_context_runs: Vec::new(),
         section_context_units: Vec::new(),
         context: vec!["$$y^2$$".to_string()],
-        context_leads: true,
         context_runs: vec![vec![display]],
-        context_units: Vec::new(),
         back: vec![r"\frac{1".to_string()],
         back_runs: vec![vec![error]],
         back_units: vec![ContentUnit::Sentence {
@@ -1236,7 +1229,6 @@ fn carddto_math_wire_shape() {
                 }
             }],
             "context": ["$$y^2$$"],
-            "context_leads": true,
             "context_runs": [[{
                 "text": "y^2",
                 "math": {
@@ -1244,7 +1236,7 @@ fn carddto_math_wire_shape() {
                     "svg": "<svg><path d=\"M1 1\"/></svg>"
                 }
             }]],
-            "context_units": [],
+            "front_steps": [],
             "back": ["\\frac{1"],
             "back_runs": [[{
                 "text": "\\frac{1",
@@ -1284,13 +1276,12 @@ fn carddto_quote_wire_shape() {
         front: "What did Dijkstra say about testing?".to_string(),
         front_runs: crate::inline::parse_inline("What did Dijkstra say about testing?"),
         front_units: None,
+        front_steps: Vec::new(),
         section_context: Vec::new(),
         section_context_runs: Vec::new(),
         section_context_units: Vec::new(),
         context: Vec::new(),
-        context_leads: false,
         context_runs: Vec::new(),
-        context_units: Vec::new(),
         back: vec![
             "That it shows the presence of bugs.".to_string(),
             "> Program testing can be used to show the presence of bugs,".to_string(),
@@ -1342,9 +1333,8 @@ fn carddto_quote_wire_shape() {
             "front": "What did Dijkstra say about testing?",
             "front_runs": [{"text": "What did Dijkstra say about testing?"}],
             "context": [],
-            "context_leads": false,
             "context_runs": [],
-            "context_units": [],
+            "front_steps": [],
             "back": [
                 "That it shows the presence of bugs.",
                 "> Program testing can be used to show the presence of bugs,",
@@ -1420,13 +1410,12 @@ fn carddto_table_wire_shape() {
         front: "Name the columns".to_string(),
         front_runs: crate::inline::parse_inline("Name the columns"),
         front_units: None,
+        front_steps: Vec::new(),
         section_context: Vec::new(),
         section_context_runs: Vec::new(),
         section_context_units: Vec::new(),
         context: Vec::new(),
-        context_leads: false,
         context_runs: Vec::new(),
-        context_units: Vec::new(),
         back: vec![
             "| a | b | c | d |".to_string(),
             "| --- | :-- | :-: | --: |".to_string(),
@@ -1458,9 +1447,8 @@ fn carddto_table_wire_shape() {
             "front": "Name the columns",
             "front_runs": [{"text": "Name the columns"}],
             "context": [],
-            "context_leads": false,
             "context_runs": [],
-            "context_units": [],
+            "front_steps": [],
             "back": [
                 "| a | b | c | d |",
                 "| --- | :-- | :-: | --: |",
@@ -1812,13 +1800,12 @@ fn browsedto_wire_shape() {
             front: "q".to_string(),
             front_runs: crate::inline::parse_inline("q"),
             front_units: None,
+            front_steps: Vec::new(),
             section_context: Vec::new(),
             section_context_runs: Vec::new(),
             section_context_units: Vec::new(),
             context: Vec::new(),
-            context_leads: false,
             context_runs: Vec::new(),
-            context_units: Vec::new(),
             back: vec!["a".to_string()],
             back_runs: vec![crate::inline::parse_inline("a")],
             back_units: vec![ContentUnit::Sentence {
@@ -1848,9 +1835,8 @@ fn browsedto_wire_shape() {
                 "front": "q",
                 "front_runs": [{"text": "q"}],
                 "context": [],
-                "context_leads": false,
                 "context_runs": [],
-                "context_units": [],
+                "front_steps": [],
                 "back": ["a"],
                 "back_runs": [[{"text": "a"}]],
                 "back_units": [{
@@ -2888,35 +2874,39 @@ fn carddto_diagram_wire_shape() {
 }
 
 #[test]
-fn carddto_context_diagram_wire_shape() {
-    let source = "flowchart LR\n A-->B";
-    let mut card = diagram_card();
-    card.context = vec![
-        "```mermaid".to_string(),
-        "flowchart LR".to_string(),
-        " A-->B".to_string(),
-        "```".to_string(),
-    ];
-    card.answer_fences.push(crate::card::AnswerFence {
-        fingerprint: crate::diagram::fingerprint(source),
-        interior: std::sync::Arc::from(source),
-        spans: Vec::new(),
-    });
+fn carddto_blank_front_diagram_wire_shape() {
+    let text = concat!(
+        "## the request path\n",
+        "the cache sits in front\n",
+        "<!-- blank: span hidden=\"cache\" -->\n",
+        "```mermaid\n",
+        "flowchart LR\n",
+        " A-->B\n",
+        "```\n",
+    );
+    let mut cards = crate::parser::parse_str("deck.md", text).unwrap();
+    let card = &mut cards[0];
+    card.resolved_diagrams = diagram_card().resolved_diagrams;
     let view =
-        crate::review::CardView::project(&card, &mut crate::inline::DisplayProjector::default());
+        crate::review::CardView::project(card, &mut crate::inline::DisplayProjector::default());
     let dto = super::dto::card_dto(view, Some("card-9w2c7xkq4m".to_string()));
-    let ContentUnit::Diagram { src, .. } = &dto.context_units[0] else {
+    let Some([_, ContentUnit::Diagram { src, .. }]) = dto.front_units.as_deref() else {
         panic!(
-            "the context fence slot holds the diagram unit: {:?}",
-            dto.context_units
+            "the front fence slot holds the diagram unit: {:?}",
+            dto.front_units
         );
     };
     let src = src.clone();
     assert!(src.starts_with("/img/"), "{src}");
     pin(
-        "CardDto.context_units",
-        &dto.context_units,
+        "CardDto.front_units",
+        &dto.front_units,
         serde_json::json!([
+            {
+                "kind": "sentence",
+                "text": "the request path the ⍰ sits in front",
+                "runs": [{"text": "the request path the ⍰ sits in front"}]
+            },
             {
                 "kind": "diagram",
                 "src": src,
@@ -2929,7 +2919,7 @@ fn carddto_context_diagram_wire_shape() {
 }
 
 #[test]
-fn carddto_masked_context_diagram_wire_shape() {
+fn carddto_masked_front_diagram_wire_shape() {
     let text = concat!(
         "## the request path\n",
         "```mermaid\n",
@@ -2973,15 +2963,20 @@ fn carddto_masked_context_diagram_wire_shape() {
     let view =
         crate::review::CardView::project(card, &mut crate::inline::DisplayProjector::default());
     let dto = super::dto::card_dto(view, Some("card-9w2c7xkq4m".to_string()));
-    let ContentUnit::Diagram { src, .. } = &dto.context_units[0] else {
-        panic!("the masked fence projects: {:?}", dto.context_units);
+    let Some([_, ContentUnit::Diagram { src, .. }]) = dto.front_units.as_deref() else {
+        panic!("the masked fence projects: {:?}", dto.front_units);
     };
     let src = src.clone();
     assert!(src.starts_with("/img/"), "{src}");
     pin(
-        "CardDto.context_units.masked",
-        &dto.context_units,
+        "CardDto.front_units.masked",
+        &dto.front_units,
         serde_json::json!([
+            {
+                "kind": "sentence",
+                "text": "the request path",
+                "runs": [{"text": "the request path"}]
+            },
             {
                 "kind": "diagram",
                 "src": src,
@@ -3002,6 +2997,66 @@ fn carddto_masked_context_diagram_wire_shape() {
                 "revealed_alt": "diagram labels: store, Cache"
             }
         ]),
+    );
+}
+
+#[test]
+fn carddto_blank_wire_shape() {
+    let text = concat!(
+        "## anatomy\n",
+        "the **lunate** sits beside the hamate\n",
+        "<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n",
+        "<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->\n",
+        "![a hand](hand.png)\n",
+    );
+    let cards = crate::parser::parse_str("deck.md", text).unwrap();
+    let view = crate::review::CardView::project(
+        &cards[0],
+        &mut crate::inline::DisplayProjector::default(),
+    );
+    let dto = super::dto::card_dto(view, Some("card-9w2c7xkq4m-ba1b2c3".to_string()));
+    let image = dto.images[0].src.clone();
+    assert!(image.starts_with("/img/"), "{image}");
+    pin(
+        "CardDto.blank",
+        &dto,
+        serde_json::json!({
+            "id": "card-9w2c7xkq4m-ba1b2c3",
+            "front": "anatomy\nthe ⍰ sits beside the ⬚",
+            "front_runs": [
+                {"text": "anatomy"},
+                {"text": "\n"},
+                {"text": "the "},
+                {"text": "⍰", "bold": true},
+                {"text": " sits beside the ⬚"}
+            ],
+            "front_steps": [{
+                "front": "anatomy\nthe lunate sits beside the ⬚",
+                "front_runs": [
+                    {"text": "anatomy"},
+                    {"text": "\n"},
+                    {"text": "the "},
+                    {"text": "lunate", "bold": true, "answer": true},
+                    {"text": " sits beside the ⬚"}
+                ]
+            }],
+            "context": [],
+            "context_runs": [],
+            "back": ["lunate"],
+            "back_runs": [[{"text": "lunate"}]],
+            "back_units": [{
+                "kind": "sentence",
+                "text": "lunate",
+                "runs": [{"text": "lunate"}]
+            }],
+            "answer_steps": [{"kind": "line", "back_from": 0, "back_to": 1}],
+            "reshaped": false,
+            "note": [],
+            "images": [{"src": image, "alt": "a hand"}],
+            "images_back": [],
+            "citations": [],
+            "crumb": null
+        }),
     );
 }
 

@@ -814,10 +814,9 @@ test("a masked context diagram lifts its asked mask and swaps alt on reveal", as
     ...original,
     card: {
       ...original.card,
-      context: ["```mermaid", "flowchart LR", "  Cache[store] --> B[Cache]", "```"],
-      context_leads: true,
-      context_runs: [[], [], [], []],
-      context_units: [{
+      front: "the request path\n```mermaid\nflowchart LR\n  C[store] --> B[Cache]\n```",
+      front_runs: [{ text: "the request path" }],
+      front_units: [{ kind: "sentence", text: "the request path", runs: [{ text: "the request path" }] }, {
         kind: "diagram",
         src: "/img/0123456789abcdef",
         width: 188,
@@ -861,10 +860,9 @@ test("concealing a new card restores its diagram mask and masked alt", async ({ 
     introducing: true,
     card: {
       ...original.card,
-      context: ["```mermaid", "flowchart LR", "  Cache[store] --> B[Cache]", "```"],
-      context_leads: true,
-      context_runs: [[], [], [], []],
-      context_units: [{
+      front: "the request path\n```mermaid\nflowchart LR\n  C[store] --> B[Cache]\n```",
+      front_runs: [{ text: "the request path" }],
+      front_units: [{ kind: "sentence", text: "the request path", runs: [{ text: "the request path" }] }, {
         kind: "diagram",
         src: "/img/0123456789abcdef",
         width: 188,
@@ -919,22 +917,25 @@ test("a revealed new card does not repeat when it will be quizzed", async ({ pag
   ).toHaveCount(0);
 });
 
-test("a cloze context fence renders its diagram in the question region", async ({ page }) => {
+test("a cloze front fence renders its diagram in the question region", async ({ page }) => {
   const original = longContentState({ answerLines: ["Answer"] });
   const state = {
     ...original,
     card: {
       ...original.card,
-      context: ["```mermaid", "flowchart LR", " A-->B", "```", "a sentence with a gap"],
-      context_leads: true,
-      context_runs: [[], [], [], [], [{ text: "a sentence with a gap" }]],
-      context_units: [{
-        kind: "diagram",
-        src: "/img/0123456789abcdef",
-        width: 188,
-        height: 114,
-        alt: "flowchart LR\n A-->B",
-      }],
+      front: "Topic\n```mermaid\nflowchart LR\n A-->B\n```\na sentence with a gap",
+      front_runs: [{ text: "Topic" }],
+      front_units: [
+        { kind: "sentence", text: "Topic", runs: [{ text: "Topic" }] },
+        {
+          kind: "diagram",
+          src: "/img/0123456789abcdef",
+          width: 188,
+          height: 114,
+          alt: "flowchart LR\n A-->B",
+        },
+        { kind: "sentence", text: "a sentence with a gap", runs: [{ text: "a sentence with a gap" }] },
+      ],
     },
   };
   await page.route("**/api/state", (route) => route.fulfill({ json: state }));

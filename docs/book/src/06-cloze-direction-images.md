@@ -27,9 +27,11 @@ let mut x: u64 = 0;
 ```
 
 This makes two cards. One blanks `mut` and shows the rest; the other blanks
-`u64`. The asked span is marked apart from the *other* spans, which are hidden
-as `⬚`, so no card gives away its siblings' answers. You only produce the
-hidden text. The web app draws both as chips rather than showing the glyphs
+`u64`. Each card's question is the whole card from its `##` line down, with
+the asked span shown as `⍰` and the *other* spans hidden as `⬚`, so no card
+gives away its siblings' answers. You only produce the hidden text. On reveal
+the question shows again with the asked span filled in; the siblings stay
+hidden. The web app draws the markers as chips rather than showing the glyphs
 themselves.
 
 The hidden text must appear in the answer exactly as written. When it appears

@@ -1,5 +1,14 @@
 [
   {
+    "kind": "sentence",
+    "runs": [
+      {
+        "text": "the request path"
+      }
+    ],
+    "text": "the request path"
+  },
+  {
     "alt": "diagram labels: store, …",
     "height": 114,
     "kind": "diagram",

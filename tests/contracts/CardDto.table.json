@@ -145,9 +145,7 @@
   ],
   "citations": [],
   "context": [],
-  "context_leads": false,
   "context_runs": [],
-  "context_units": [],
   "crumb": null,
   "front": "Name the columns",
   "front_runs": [
@@ -155,6 +153,7 @@
       "text": "Name the columns"
     }
   ],
+  "front_steps": [],
   "id": "card-9w2c7xkq4m",
   "images": [],
   "images_back": [],

@@ -209,9 +209,7 @@ class ReviewCardModel {
     required Iterable<InlineRunModel> frontRuns,
     Iterable<ReviewContentUnitModel>? frontUnits,
     required Iterable<String> context,
-    required this.contextLeads,
     required Iterable<Iterable<InlineRunModel>> contextRuns,
-    required Iterable<ReviewContentUnitModel> contextUnits,
     required Iterable<String> back,
     required Iterable<Iterable<InlineRunModel>> backRuns,
     required Iterable<ReviewContentUnitModel> backUnits,
@@ -227,7 +225,6 @@ class ReviewCardModel {
        frontUnits = frontUnits == null ? null : List.unmodifiable(frontUnits),
        context = List.unmodifiable(context),
        contextRuns = _freezeRunLines(contextRuns),
-       contextUnits = List.unmodifiable(contextUnits),
        section = List.unmodifiable(section),
        sectionRuns = _freezeRunLines(sectionRuns),
        sectionUnits = List.unmodifiable(sectionUnits),
@@ -242,16 +239,9 @@ class ReviewCardModel {
   final String front;
   final List<InlineRunModel> frontRuns;
   final List<ReviewContentUnitModel>? frontUnits;
+  /// A card table's title, labelling the front; empty on every other card.
   final List<String> context;
-
-  /// Whether `context` is the question (a cloze sentence) or a label for the
-  /// front (a card table's title).
-  final bool contextLeads;
   final List<List<InlineRunModel>> contextRuns;
-
-  /// The context's raw fences and closed bare-math blocks, in source order.
-  /// Context prose keeps its line rendering.
-  final List<ReviewContentUnitModel> contextUnits;
   final List<String> back;
   final List<List<InlineRunModel>> backRuns;
   final List<ReviewContentUnitModel> backUnits;

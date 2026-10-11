@@ -200,9 +200,7 @@ void main() {
       rootDir: root.path,
       nowMs: t0,
     ).state().card!;
-    final clozeRun = cloze.contextRuns.single.firstWhere(
-      (run) => run.math != null,
-    );
+    final clozeRun = cloze.frontRuns.firstWhere((run) => run.math != null);
     expect(clozeRun.text, contains('⍰'));
     expect(clozeRun.text, contains('⬚'));
     expect(clozeRun.text, isNot(contains('alpha')));

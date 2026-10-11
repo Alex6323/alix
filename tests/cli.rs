@@ -2778,6 +2778,29 @@ fn both_depths_due_card(card_id: &str) -> String {
 }
 
 #[test]
+fn list_shows_a_blank_cards_masked_question_on_one_line() {
+    let dir = TempDir::new().unwrap();
+    let deck_text = "---\nformat-version: 1\nid: deck-cardsdeck\n---\n## anatomy\nthe lunate sits beside the hamate\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->\n<!-- id: card-q1 -->\n";
+    let deck = write(dir.path(), "cards.md", deck_text);
+    let out = alix(&["list", &deck]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let result = stdout(&out);
+    assert!(
+        result.contains("anatomy the ____ sits beside the …")
+            && result.contains("anatomy the … sits beside the ____"),
+        "each card lists its question on one line with its gap and its sibling folded: {result}"
+    );
+    assert!(
+        !result.contains("lunate") && !result.contains("hamate"),
+        "a listing never shows a blank's answer: {result}"
+    );
+    assert!(
+        !result.contains('⍰') && !result.contains('⬚'),
+        "a listing never shows a raw marker: {result}"
+    );
+}
+
+#[test]
 fn list_shows_three_per_depth_cells_shallow_to_deep() {
     let dir = TempDir::new().unwrap();
     // Card 1: schedules at every depth, all past due.

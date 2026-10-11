@@ -268,7 +268,7 @@ fn inline_emphasis_findings(cards: &[alix::card::Card], report: &mut Report) {
             .flat_map(|text| alix::inline::parse_inline(text))
             .find(|run| run.bold || run.italic);
         if let Some(run) = emphasized {
-            let front = truncate(&one_line(&card.front), 72);
+            let front = truncate(&one_line(&card.question_text()), 72);
             let snippet = truncate(&one_line(&run.text), 72);
             report.note(format!(
                 "inline emphasis will render in \"{front}\": {snippet} \

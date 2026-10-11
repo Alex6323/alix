@@ -7,6 +7,8 @@ pub const BLANK: &str = "⍰";
 
 pub const HIDDEN: &str = "⬚";
 
+pub const ANSWER: &str = "⍱";
+
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Seg {
     Text(String),

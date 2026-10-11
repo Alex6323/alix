@@ -100,7 +100,7 @@ test("adult card surfaces render shared math SVGs safely", async ({ page, reques
     const choice = byFront("What does E = mc^2 describe?");
     const display = byFront("Evaluate this display formula");
     const checklist = byFront("Formula checklist");
-    const cloze = cards.find((card: any) => card.context && card.context.length);
+    const cloze = cards.find((card: any) => card.front_steps && card.front_steps.length);
     const code = byFront("Which dollar examples stay literal?");
     const error = byFront("This formula is intentionally malformed");
     const explain = byFront("Explain the quadratic formula");
@@ -117,7 +117,7 @@ test("adult card surfaces render shared math SVGs safely", async ({ page, reques
     audit.appendChild(front);
 
     const context = el("section", "surface-context");
-    context.appendChild(contextLine(cloze.context[0], cloze.context_runs[0]));
+    context.appendChild(frontEl(cloze.front, cloze.front_runs, cloze.front_units));
     audit.appendChild(context);
 
     const answer = el("section", "surface-answer reveal");
@@ -241,10 +241,17 @@ test("a tall display formula on the question side scales into the capped questio
   // The same SVG serves inline and display math; flagging it display puts the
   // fraction on the question side as a block, taller than the capped region.
   const formula = { ...inlineRun, math: { ...inlineRun.math, display: true } };
-  const contextCard = { ...explain, context: [inlineRun.text], context_runs: [[formula]], context_units: [] };
-  const frontCard = { ...explain, front: inlineRun.text, front_runs: [formula], front_units: null, context: [], context_runs: [], context_units: [] };
+  const linedCard = {
+    ...explain,
+    front: `Topic\n${inlineRun.text}`,
+    front_runs: [{ text: "Topic" }, { text: "\n" }, formula],
+    front_units: null,
+    context: [],
+    context_runs: [],
+  };
+  const frontCard = { ...explain, front: inlineRun.text, front_runs: [formula], front_units: null, context: [], context_runs: [] };
   await page.route("**/api/browse", (route) =>
-    route.fulfill({ json: { cards: [contextCard, frontCard], label: "tall formulas" } }),
+    route.fulfill({ json: { cards: [linedCard, frontCard], label: "tall formulas" } }),
   );
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(String(error)));
@@ -268,10 +275,10 @@ test("a tall display formula on the question side scales into the capped questio
       `${where}: formula bottom ${drawn!.y + drawn!.height} must not pass the question region's bottom ${region!.y + region!.height}`,
     ).toBeLessThanOrEqual(region!.y + region!.height);
   };
-  await formulaStaysInside("context formula");
-  await expect(question.locator(".context")).toHaveCount(1);
+  await formulaStaysInside("second-line formula");
+  await expect(question.locator(".front-line")).toHaveCount(2);
   await page.keyboard.press("ArrowRight");
-  await expect(question.locator(".context")).toHaveCount(0);
+  await expect(question.locator(".front-line")).toHaveCount(0);
   await formulaStaysInside("front formula");
 });
 
@@ -283,10 +290,11 @@ test("two display formulas share the available question height", async ({ page, 
     front: "Compare the two equivalent forms",
     front_runs: [{ text: "Compare the two equivalent forms" }],
     front_units: null,
-    context: [formula.text, formula.text],
-    context_runs: [[formula], [formula]],
-    context_units: [],
-    context_leads: true,
+    front: `${formula.text}\n${formula.text}`,
+    front_runs: [formula, { text: "\n" }, formula],
+    front_units: null,
+    context: [],
+    context_runs: [],
   };
   await openQuestionFitBrowse(page, request, [card]);
 
@@ -322,7 +330,6 @@ test("a question image remains visible beside a fitted formula", async ({ page, 
     front_units: null,
     context: [],
     context_runs: [],
-    context_units: [],
     images: [{ src: TALL_IMAGE, alt: "geometry probe" }],
   };
   await openQuestionFitBrowse(page, request, [card]);

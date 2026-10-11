@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'review.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `save_store`, `trace_excerpt`, `trace_state`
+// These functions are ignored because they are not marked as `pub`: `reopen_store`, `save_store`, `trace_excerpt`, `trace_state`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 Grade keypointGrade({required int covered, required int total}) => RustLib
@@ -161,13 +161,12 @@ class CardView {
   final String front;
   final List<InlineRun> frontRuns;
   final List<ContentUnit>? frontUnits;
+  final List<FrontStep> frontSteps;
   final List<String> sectionContext;
   final List<List<InlineRun>> sectionContextRuns;
   final List<ContentUnit> sectionContextUnits;
   final List<String> context;
-  final bool contextLeads;
   final List<List<InlineRun>> contextRuns;
-  final List<ContentUnit> contextUnits;
   final List<String> back;
   final List<List<InlineRun>> backRuns;
   final List<ContentUnit> backUnits;
@@ -182,13 +181,12 @@ class CardView {
     required this.front,
     required this.frontRuns,
     this.frontUnits,
+    required this.frontSteps,
     required this.sectionContext,
     required this.sectionContextRuns,
     required this.sectionContextUnits,
     required this.context,
-    required this.contextLeads,
     required this.contextRuns,
-    required this.contextUnits,
     required this.back,
     required this.backRuns,
     required this.backUnits,
@@ -205,13 +203,12 @@ class CardView {
       front.hashCode ^
       frontRuns.hashCode ^
       frontUnits.hashCode ^
+      frontSteps.hashCode ^
       sectionContext.hashCode ^
       sectionContextRuns.hashCode ^
       sectionContextUnits.hashCode ^
       context.hashCode ^
-      contextLeads.hashCode ^
       contextRuns.hashCode ^
-      contextUnits.hashCode ^
       back.hashCode ^
       backRuns.hashCode ^
       backUnits.hashCode ^
@@ -230,13 +227,12 @@ class CardView {
           front == other.front &&
           frontRuns == other.frontRuns &&
           frontUnits == other.frontUnits &&
+          frontSteps == other.frontSteps &&
           sectionContext == other.sectionContext &&
           sectionContextRuns == other.sectionContextRuns &&
           sectionContextUnits == other.sectionContextUnits &&
           context == other.context &&
-          contextLeads == other.contextLeads &&
           contextRuns == other.contextRuns &&
-          contextUnits == other.contextUnits &&
           back == other.back &&
           backRuns == other.backRuns &&
           backUnits == other.backUnits &&
@@ -406,6 +402,30 @@ class CrumbState {
 
 enum Depth { recognize, recall, reconstruct }
 
+class FrontStep {
+  final String front;
+  final List<InlineRun> frontRuns;
+  final List<ContentUnit>? frontUnits;
+
+  const FrontStep({
+    required this.front,
+    required this.frontRuns,
+    this.frontUnits,
+  });
+
+  @override
+  int get hashCode => front.hashCode ^ frontRuns.hashCode ^ frontUnits.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FrontStep &&
+          runtimeType == other.runtimeType &&
+          front == other.front &&
+          frontRuns == other.frontRuns &&
+          frontUnits == other.frontUnits;
+}
+
 enum Grade { fail, partial, pass }
 
 class ImageView {
@@ -446,6 +466,7 @@ class InlineRun {
   final bool sub;
   final bool sup;
   final bool ins;
+  final bool answer;
   final MathView? math;
 
   const InlineRun({
@@ -458,6 +479,7 @@ class InlineRun {
     required this.sub,
     required this.sup,
     required this.ins,
+    required this.answer,
     this.math,
   });
 
@@ -472,6 +494,7 @@ class InlineRun {
       sub.hashCode ^
       sup.hashCode ^
       ins.hashCode ^
+      answer.hashCode ^
       math.hashCode;
 
   @override
@@ -488,6 +511,7 @@ class InlineRun {
           sub == other.sub &&
           sup == other.sup &&
           ins == other.ins &&
+          answer == other.answer &&
           math == other.math;
 }
 

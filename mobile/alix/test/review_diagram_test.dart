@@ -13,8 +13,8 @@ import 'package:alix_mobile/theme.dart';
 
 void main() {
   testWidgets(
-    'ReviewCardView renders supplied context math units for paired blocks '
-    'and keeps unmatched openers literal',
+    'ReviewCardView renders supplied front math units and keeps a plain '
+    'front line literal',
     (tester) async {
       final attempt = TextEditingController();
       addTearDown(attempt.dispose);
@@ -28,27 +28,19 @@ void main() {
         code: false,
         math: InlineMathModel(display: true, svg: svg),
       );
-      ReviewCardModel card(
-        List<String> lines,
-        List<ReviewContentUnitModel> units,
-      ) {
+      ReviewSentenceModel sentence(String line) => ReviewSentenceModel(
+        text: line,
+        runs: [
+          InlineRunModel(text: line, bold: false, italic: false, code: false),
+        ],
+      );
+      ReviewCardModel card(List<ReviewContentUnitModel> units) {
         return ReviewCardModel(
           front: 'Topic',
           frontRuns: const [],
-          context: lines,
-          contextLeads: false,
-          contextRuns: [
-            for (final line in lines)
-              [
-                InlineRunModel(
-                  text: line,
-                  bold: false,
-                  italic: false,
-                  code: false,
-                ),
-              ],
-          ],
-          contextUnits: units,
+          frontUnits: [sentence('Topic'), ...units],
+          context: const [],
+          contextRuns: const [],
           back: const ['answer'],
           backRuns: const [[]],
           backUnits: const [],
@@ -121,63 +113,28 @@ void main() {
       }
 
       final unit = ReviewSentenceModel(text: 'x^2', runs: [mathRun]);
-      for (final lines in [
-        ['\$\$', 'x^2', '\$\$'],
-        ['```math', 'x^2', '```'],
-      ]) {
-        await tester.pumpWidget(app(card(lines, [unit])));
-        expect(find.bySemanticsLabel('x^2'), findsOneWidget, reason: '$lines');
-        expect(find.byType(SvgPicture), findsOneWidget, reason: '$lines');
-        expect(
-          find.textContaining('math could not render', findRichText: true),
-          findsNothing,
-          reason: '$lines',
-        );
-        expect(find.textContaining('\$\$'), findsNothing, reason: '$lines');
-        expect(find.textContaining('```'), findsNothing, reason: '$lines');
-      }
+      await tester.pumpWidget(app(card([unit])));
+      expect(find.bySemanticsLabel('x^2'), findsOneWidget);
+      expect(find.byType(SvgPicture), findsOneWidget);
+      expect(
+        find.textContaining('math could not render', findRichText: true),
+        findsNothing,
+      );
 
-      await tester.pumpWidget(app(card(['\$\$', 'x^2'], [])));
+      await tester.pumpWidget(app(card([sentence('\$\$'), sentence('x^2')])));
       expect(find.text('\$\$'), findsOneWidget);
       expect(find.text('x^2'), findsOneWidget);
 
-      final fenceRows = [
-        (
-          'a longer context fence must not steal the following math unit',
-          '````text',
-          const ['before', '```', 'after'],
-          '````',
+      await tester.pumpWidget(
+        app(
+          card([
+            ReviewCodeModel(const ['before', '```', 'after']),
+            unit,
+          ]),
         ),
-        (
-          'a five-tilde fence must not close on its interior triple run',
-          '~~~~~',
-          const ['before', '~~~', 'after'],
-          '~~~~~',
-        ),
-        (
-          'a backtick fence must not close on a tilde run',
-          '```',
-          const ['before', '~~~', 'after'],
-          '```',
-        ),
-        (
-          'a longer run of the same marker is a legal closer',
-          '```text',
-          const ['before'],
-          '`````',
-        ),
-      ];
-      for (final (label, opener, body, closer) in fenceRows) {
-        await tester.pumpWidget(
-          app(
-            card(
-              [opener, ...body, closer, '\$\$', 'x^2', '\$\$'],
-              [ReviewCodeModel(body), unit],
-            ),
-          ),
-        );
-        expect(find.bySemanticsLabel('x^2'), findsOneWidget, reason: label);
-      }
+      );
+      expect(find.bySemanticsLabel('x^2'), findsOneWidget);
+      expect(find.textContaining('before'), findsOneWidget);
     },
   );
 
@@ -195,9 +152,7 @@ void main() {
         front: 'Question',
         frontRuns: const [],
         context: const [],
-        contextLeads: false,
         contextRuns: const [],
-        contextUnits: const [],
         back: back,
         backRuns: [for (final _ in back) const <InlineRunModel>[]],
         answerSteps: [
@@ -287,19 +242,17 @@ void main() {
     }
   });
 
-  testWidgets('a leading context fence renders the resolved diagram unit', (
+  testWidgets('a front fence renders the resolved diagram unit', (
     tester,
   ) async {
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
     final source = File('assets/icon/alix-192.png').absolute.path;
     final card = ReviewCardModel(
-      front: 'Topic',
+      front: 'Topic\n```mermaid\nflowchart LR\n A-->B\n```',
       frontRuns: const [],
-      context: const ['```mermaid', 'flowchart LR', ' A-->B', '```'],
-      contextLeads: true,
-      contextRuns: const [[], [], [], []],
-      contextUnits: [
+      frontUnits: [
+        ReviewSentenceModel(text: 'Topic', runs: const []),
         ReviewDiagramModel(
           src: source,
           width: 188,
@@ -307,6 +260,8 @@ void main() {
           alt: 'flowchart LR\n A-->B',
         ),
       ],
+      context: const [],
+      contextRuns: const [],
       back: const ['answer'],
       backRuns: const [[]],
       backUnits: const [],
@@ -382,19 +337,19 @@ void main() {
     expect(find.textContaining('```'), findsNothing);
   });
 
-  testWidgets('a masked context diagram reveals only its asked label text', (
+  testWidgets('a masked front diagram reveals only its asked label text', (
     tester,
   ) async {
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
     final source = File('assets/icon/alix-192.png').absolute.path;
     ReviewCardModel card() => ReviewCardModel(
-      front: 'Topic',
+      front: 'Topic\n```mermaid\nflowchart LR\n  A[x] --> B[y]\n```',
       frontRuns: const [],
-      context: const ['```mermaid', 'flowchart LR', '  A[x] --> B[y]', '```'],
-      contextLeads: true,
-      contextRuns: const [[], [], [], []],
-      contextUnits: [
+      context: const [],
+      contextRuns: const [],
+      frontUnits: [
+        ReviewSentenceModel(text: 'Topic', runs: const []),
         ReviewDiagramModel(
           src: source,
           width: 188,
@@ -507,9 +462,7 @@ void main() {
       front: 'Question',
       frontRuns: const [],
       context: const [],
-      contextLeads: false,
       contextRuns: const [],
-      contextUnits: const [],
       back: const ['```mermaid', 'flowchart LR', ' A-->B', '```'],
       backRuns: const [[], [], [], []],
       answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 1), ReviewAnswerLineModel(backFrom: 1, backTo: 2), ReviewAnswerLineModel(backFrom: 2, backTo: 3), ReviewAnswerLineModel(backFrom: 3, backTo: 4)],

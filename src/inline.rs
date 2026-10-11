@@ -30,6 +30,9 @@ pub struct InlineRun {
     pub sup: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub ins: bool,
+    /// A blank's answer shown filled in on a revealed question.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub answer: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub math: Option<MathView>,
 }
@@ -38,6 +41,7 @@ pub struct InlineRun {
 pub struct DisplayProjector {
     renderer: MathRenderer,
     definitions: Option<std::sync::Arc<LinkDefinitions>>,
+    holes: bool,
 }
 
 impl DisplayProjector {
@@ -58,20 +62,16 @@ impl DisplayProjector {
         self.definitions = Some(definitions);
     }
 
+    /// On while projecting a masked question, the one text carrying markers.
+    pub fn set_holes(&mut self, holes: bool) {
+        self.holes = holes;
+    }
+
     pub fn project(&mut self, text: &str) -> Vec<InlineRun> {
         project_text(
             text,
             Some(&mut self.renderer),
-            false,
-            self.definitions.as_deref(),
-        )
-    }
-
-    pub fn project_context(&mut self, text: &str) -> Vec<InlineRun> {
-        project_text(
-            text,
-            Some(&mut self.renderer),
-            true,
+            self.holes,
             self.definitions.as_deref(),
         )
     }
@@ -181,7 +181,7 @@ struct MathSpan {
 fn project_text(
     text: &str,
     mut renderer: Option<&mut MathRenderer>,
-    context: bool,
+    holes: bool,
     definitions: Option<&LinkDefinitions>,
 ) -> Vec<InlineRun> {
     let mut runs = Vec::new();
@@ -189,7 +189,7 @@ fn project_text(
         let (line, newline) = chunk
             .strip_suffix('\n')
             .map_or((chunk, false), |line| (line, true));
-        let mut line_runs = project_line(line, renderer.as_deref_mut(), context, definitions);
+        let mut line_runs = project_line(line, renderer.as_deref_mut(), holes, definitions);
         append_runs(&mut runs, &mut line_runs);
         if newline {
             push_run(
@@ -322,7 +322,7 @@ fn classify_line(
 fn project_line(
     text: &str,
     mut renderer: Option<&mut MathRenderer>,
-    context: bool,
+    holes: bool,
     definitions: Option<&LinkDefinitions>,
 ) -> Vec<InlineRun> {
     let LineClassification {
@@ -333,6 +333,10 @@ fn project_line(
         strike,
         removed,
     } = classify_line(text, true, definitions);
+    let answer_marker: Option<char> = holes
+        .then(|| crate::parser::ANSWER.chars().next())
+        .flatten();
+    let mut answer = false;
     let mut runs = Vec::new();
     let mut index = 0;
     while index < glyphs.len() {
@@ -344,7 +348,7 @@ fn project_line(
             let source: String = glyphs[start..index].iter().map(|glyph| glyph.ch).collect();
             let math = renderer
                 .as_deref_mut()
-                .map(|renderer| renderer.view(&source, spans[span_index].display, context));
+                .map(|renderer| renderer.view(&source, spans[span_index].display, holes));
             push_run(
                 &mut runs,
                 InlineRun {
@@ -360,6 +364,11 @@ fn project_line(
             index += 1;
             continue;
         }
+        if answer_marker == Some(glyph.ch) {
+            answer = !answer;
+            index += 1;
+            continue;
+        }
         push_run(
             &mut runs,
             InlineRun {
@@ -372,6 +381,7 @@ fn project_line(
                 sub: glyph.subset == Some(0),
                 sup: glyph.subset == Some(1),
                 ins: glyph.subset == Some(2),
+                answer,
                 math: None,
             },
         );
@@ -716,8 +726,10 @@ fn push_run(runs: &mut Vec<InlineRun>, run: InlineRun) {
             previous.sub,
             previous.sup,
             previous.ins,
+            previous.answer,
         ) == (
             run.bold, run.italic, run.strike, run.code, run.link, run.sub, run.sup, run.ins,
+            run.answer,
         )
     {
         previous.text.push_str(&run.text);
@@ -1629,6 +1641,49 @@ mod tests {
             })
     }
 
+    #[test]
+    fn an_answer_pair_projects_as_an_answer_run_and_never_reaches_run_text() {
+        let mut projector = DisplayProjector::default();
+        projector.set_holes(true);
+        let runs = projector.project("the **⍱lunate⍱** sits ⍱beside⍱ the ⬚ ⍰");
+        assert_eq!(
+            vec![
+                plain("the "),
+                InlineRun {
+                    answer: true,
+                    ..bold("lunate")
+                },
+                plain(" sits "),
+                InlineRun {
+                    answer: true,
+                    ..plain("beside")
+                },
+                plain(" the ⬚ ⍰"),
+            ],
+            runs,
+            "the pair marks its words and the mask markers stay for the client"
+        );
+        let math = projector.project("$x = ⍱4ac⍱$");
+        assert_eq!(1, math.len(), "{math:?}");
+        assert_eq!(
+            "x = ⍱4ac⍱", math[0].text,
+            "a formula keeps its pair for the renderer"
+        );
+        assert!(!math[0].answer);
+        assert!(
+            math[0].math.as_ref().is_some_and(|view| view.svg.is_some()),
+            "{:?}",
+            math[0].math
+        );
+        projector.set_holes(false);
+        let authored = projector.project("a ⍱b⍱ c");
+        assert_eq!(
+            vec![plain("a ⍱b⍱ c")],
+            authored,
+            "no holes: the character is text"
+        );
+    }
+
     fn plain(s: &str) -> InlineRun {
         InlineRun {
             text: s.into(),
@@ -1640,6 +1695,7 @@ mod tests {
             sub: false,
             sup: false,
             ins: false,
+            answer: false,
             math: None,
         }
     }
@@ -1655,6 +1711,7 @@ mod tests {
             sub: false,
             sup: false,
             ins: false,
+            answer: false,
             math: None,
         }
     }
@@ -1670,6 +1727,7 @@ mod tests {
             sub: false,
             sup: false,
             ins: false,
+            answer: false,
             math: None,
         }
     }
@@ -1685,6 +1743,7 @@ mod tests {
             sub: false,
             sup: false,
             ins: false,
+            answer: false,
             math: None,
         }
     }
@@ -1717,6 +1776,7 @@ mod tests {
             sub: false,
             sup: false,
             ins: false,
+            answer: false,
             math: None,
         }
     }
@@ -2907,10 +2967,11 @@ mod tests {
             runs.iter().any(|run| run.link && run.text == "the ref"),
             "{runs:?}"
         );
-        let context = projector.project_context("[r] leads");
+        projector.set_holes(true);
+        let holes = projector.project("[r] leads ⍰");
         assert!(
-            context.iter().any(|run| run.link && run.text == "r"),
-            "{context:?}"
+            holes.iter().any(|run| run.link && run.text == "r"),
+            "{holes:?}"
         );
     }
 

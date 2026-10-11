@@ -2281,7 +2281,6 @@ mod tests {
                 card.context,
                 "the title reaches both halves"
             );
-            assert!(!card.context_leads, "a table title labels the front");
         }
     }
 

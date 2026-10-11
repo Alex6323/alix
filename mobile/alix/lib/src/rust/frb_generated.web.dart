@@ -223,6 +223,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_f_64(dynamic raw);
 
   @protected
+  FrontStep dco_decode_front_step(dynamic raw);
+
+  @protected
   Grade dco_decode_grade(dynamic raw);
 
   @protected
@@ -260,6 +263,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeckStrip> dco_decode_list_deck_strip(dynamic raw);
+
+  @protected
+  List<FrontStep> dco_decode_list_front_step(dynamic raw);
 
   @protected
   List<ImageView> dco_decode_list_image_view(dynamic raw);
@@ -705,6 +711,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
+  FrontStep sse_decode_front_step(SseDeserializer deserializer);
+
+  @protected
   Grade sse_decode_grade(SseDeserializer deserializer);
 
   @protected
@@ -744,6 +753,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeckStrip> sse_decode_list_deck_strip(SseDeserializer deserializer);
+
+  @protected
+  List<FrontStep> sse_decode_list_front_step(SseDeserializer deserializer);
 
   @protected
   List<ImageView> sse_decode_list_image_view(SseDeserializer deserializer);
@@ -1281,6 +1293,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_front_step(FrontStep self, SseSerializer serializer);
+
+  @protected
   void sse_encode_grade(Grade self, SseSerializer serializer);
 
   @protected
@@ -1334,6 +1349,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_deck_strip(
     List<DeckStrip> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_front_step(
+    List<FrontStep> self,
     SseSerializer serializer,
   );
 

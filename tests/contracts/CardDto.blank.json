@@ -1,0 +1,87 @@
+{
+  "answer_steps": [
+    {
+      "back_from": 0,
+      "back_to": 1,
+      "kind": "line"
+    }
+  ],
+  "back": [
+    "lunate"
+  ],
+  "back_runs": [
+    [
+      {
+        "text": "lunate"
+      }
+    ]
+  ],
+  "back_units": [
+    {
+      "kind": "sentence",
+      "runs": [
+        {
+          "text": "lunate"
+        }
+      ],
+      "text": "lunate"
+    }
+  ],
+  "citations": [],
+  "context": [],
+  "context_runs": [],
+  "crumb": null,
+  "front": "anatomy\nthe ⍰ sits beside the ⬚",
+  "front_runs": [
+    {
+      "text": "anatomy"
+    },
+    {
+      "text": "\n"
+    },
+    {
+      "text": "the "
+    },
+    {
+      "bold": true,
+      "text": "⍰"
+    },
+    {
+      "text": " sits beside the ⬚"
+    }
+  ],
+  "front_steps": [
+    {
+      "front": "anatomy\nthe lunate sits beside the ⬚",
+      "front_runs": [
+        {
+          "text": "anatomy"
+        },
+        {
+          "text": "\n"
+        },
+        {
+          "text": "the "
+        },
+        {
+          "answer": true,
+          "bold": true,
+          "text": "lunate"
+        },
+        {
+          "text": " sits beside the ⬚"
+        }
+      ]
+    }
+  ],
+  "id": "card-9w2c7xkq4m-ba1b2c3",
+  "images": [
+    {
+      "alt": "a hand",
+      "src": "/img/ca5a2c5b71be2fd3"
+    }
+  ],
+  "images_back": [],
+  "note": [],
+  "reshaped": false
+}

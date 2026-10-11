@@ -48,7 +48,6 @@
     "context": [
       "Chapter 4"
     ],
-    "context_leads": true,
     "context_runs": [
       [
         {
@@ -56,7 +55,6 @@
         }
       ]
     ],
-    "context_units": [],
     "crumb": {
       "cells": [
         [
@@ -91,6 +89,7 @@
         "text": "?"
       }
     ],
+    "front_steps": [],
     "id": "card-9w2c7xkq4m",
     "images": [
       {

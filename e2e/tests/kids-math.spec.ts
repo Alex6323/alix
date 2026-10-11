@@ -145,7 +145,7 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
     const choice = byFront("What does E = mc^2 describe?");
     const display = byFront("Evaluate this display formula");
     const checklist = byFront("Formula checklist");
-    const cloze = cards.find((card: any) => card.context && card.context.length);
+    const cloze = cards.find((card: any) => card.front_steps && card.front_steps.length);
     const code = byFront("Which dollar examples stay literal?");
     const error = byFront("This formula is intentionally malformed");
     const explain = byFront("Explain the quadratic formula");
@@ -231,19 +231,21 @@ test("kids card surfaces render shared math SVGs safely", async ({ page, request
 
     study.apply(review(cloze));
     const context = dom.el("section", "surface-context");
-    context.appendChild(rendered(".rev-context"));
+    context.appendChild(rendered(".rev-prompt"));
     audit.appendChild(context);
 
+    const topic = { kind: "sentence", text: "Topic", runs: [{ text: "Topic" }] };
+    const sentence = (text: string) => ({ kind: "sentence", text, runs: [{ text }] });
     for (const [name, lines, units] of [
       ["bare", ["$$", mathUnit.text, "$$"], [mathUnit]],
       ["fence", ["```math", mathUnit.text, "```"], [mathUnit]],
-      ["unclosed", ["$$", mathUnit.text], []],
+      ["unclosed", ["$$", mathUnit.text], [sentence("$$"), sentence(mathUnit.text)]],
     ]) {
       study.apply(review({
         ...cloze,
-        context: lines,
-        context_runs: lines.map((line: string) => [{ text: line }]),
-        context_units: units,
+        front: ["Topic", ...lines].join("\n"),
+        front_runs: [{ text: "Topic" }],
+        front_units: [topic, ...units],
       }));
       const block = dom.el("section", `surface-context-${name}`);
       block.appendChild(rendered(".rev-card"));

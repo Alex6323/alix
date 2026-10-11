@@ -1,10 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    card::Card,
-    inline::DisplayProjector,
-    parser::{BLANK, HIDDEN},
-};
+use crate::{card::Card, inline::DisplayProjector};
 
 // Struct variants (not newtype) because serde's internal tagging can't tag
 // newtype variants; wire shape is `{"kind": ..., "text": ...}` (docs/API.md).
@@ -147,7 +143,12 @@ pub(crate) fn note_views_with(
         .iter()
         .map(|note| crate::review::NoteView {
             badge: note.badge,
-            units: text_units_with(&note.body, projector, true, &card.resolved_diagrams),
+            units: text_units_with(
+                &note.body,
+                projector,
+                true,
+                &mut plain_fences(&card.resolved_diagrams),
+            ),
         })
         .collect()
 }
@@ -157,7 +158,22 @@ pub(crate) fn answer_units_with(
     projector: &mut DisplayProjector,
     diagrams: &[crate::card::ResolvedDiagram],
 ) -> Vec<ContentUnit> {
-    text_units_with(&lines.join("\n"), projector, false, diagrams)
+    text_units_with(
+        &lines.join("\n"),
+        projector,
+        false,
+        &mut plain_fences(diagrams),
+    )
+}
+
+/// What a closed fence becomes: its info string and interior lines in, one
+/// unit out.
+type FenceResolver<'a> = dyn FnMut(&str, Vec<String>, &mut DisplayProjector) -> ContentUnit + 'a;
+
+fn plain_fences(
+    diagrams: &[crate::card::ResolvedDiagram],
+) -> impl FnMut(&str, Vec<String>, &mut DisplayProjector) -> ContentUnit + '_ {
+    move |info, lines, projector| fence_unit(info, lines, diagrams, projector)
 }
 
 /// The fence's own slot gets the rendered diagram when (and only when) a
@@ -213,7 +229,7 @@ pub(crate) fn card_block_flags(
         &lines.join("\n"),
         &mut projector,
         false,
-        &card.resolved_diagrams,
+        &mut plain_fences(&card.resolved_diagrams),
     ) {
         if matches!(
             spanned.unit,
@@ -280,7 +296,12 @@ pub(crate) fn card_answer_steps(
     if card.is_blank_card() {
         return (0..lines.len()).map(line).collect();
     }
-    let spanned = text_units_spanned(&lines.join("\n"), projector, false, &card.resolved_diagrams);
+    let spanned = text_units_spanned(
+        &lines.join("\n"),
+        projector,
+        false,
+        &mut plain_fences(&card.resolved_diagrams),
+    );
     let mut blocks = spanned.into_iter().filter_map(|spanned| {
         let (back_from, back_to) = (spanned.from, spanned.to);
         match spanned.unit {
@@ -348,9 +369,9 @@ fn text_units_with(
     text: &str,
     projector: &mut DisplayProjector,
     split_prose_sentences: bool,
-    diagrams: &[crate::card::ResolvedDiagram],
+    fences: &mut FenceResolver<'_>,
 ) -> Vec<ContentUnit> {
-    text_units_spanned(text, projector, split_prose_sentences, diagrams)
+    text_units_spanned(text, projector, split_prose_sentences, fences)
         .into_iter()
         .map(|spanned| spanned.unit)
         .collect()
@@ -361,7 +382,7 @@ fn text_units_with(
 /// every non-math fence remains source code.
 pub fn tutor_answer_units(text: &str) -> Vec<ContentUnit> {
     let mut projector = DisplayProjector::default();
-    text_units_with(text, &mut projector, true, &[])
+    text_units_with(text, &mut projector, true, &mut plain_fences(&[]))
 }
 
 /// With `split_prose_sentences` set, one prose run can yield several units,
@@ -371,7 +392,7 @@ fn text_units_spanned(
     text: &str,
     projector: &mut DisplayProjector,
     split_prose_sentences: bool,
-    diagrams: &[crate::card::ResolvedDiagram],
+    fences: &mut FenceResolver<'_>,
 ) -> Vec<SpannedUnit> {
     let mut units: Vec<ContentUnit> = Vec::new();
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -408,7 +429,7 @@ fn text_units_spanned(
                     // An empty fence keeps its unit slot: clients consume one
                     // fence-shaped unit per closed raw fence.
                     let block = std::mem::take(&mut code);
-                    units.push(fence_unit(info, block, diagrams, projector));
+                    units.push(fences(info, block, projector));
                     spans.push((code_from, index));
                     code_fence = None;
                 }
@@ -554,12 +575,7 @@ fn text_units_spanned(
                 index += 1;
             }
             units.push(ContentUnit::Quote {
-                units: text_units_with(
-                    &body.join("\n"),
-                    projector,
-                    split_prose_sentences,
-                    diagrams,
-                ),
+                units: text_units_with(&body.join("\n"), projector, split_prose_sentences, fences),
             });
             spans.push((start, index));
             continue;
@@ -653,7 +669,7 @@ fn text_units_spanned(
     // An unterminated code fence still yields its gathered lines.
     if !code.is_empty() {
         let info = code_fence.map(|(_, _, info)| info).unwrap_or_default();
-        units.push(fence_unit(&info, code, diagrams, projector));
+        units.push(fences(&info, code, projector));
         spans.push((code_from, end));
     }
     units
@@ -665,56 +681,45 @@ fn text_units_spanned(
 
 pub fn front_units(front: &str) -> Option<Vec<ContentUnit>> {
     let mut projector = DisplayProjector::default();
-    front_units_with(front, &mut projector, &[])
+    let units = text_units_with(front, &mut projector, true, &mut plain_fences(&[]));
+    units.iter().any(is_structural).then_some(units)
 }
 
 pub(crate) fn front_units_with(
-    front: &str,
+    card: &Card,
     projector: &mut DisplayProjector,
-    diagrams: &[crate::card::ResolvedDiagram],
 ) -> Option<Vec<ContentUnit>> {
-    let units = text_units_with(front, projector, true, diagrams);
-    units
-        .iter()
-        .any(|unit| match unit {
-            ContentUnit::Checklist { .. } | ContentUnit::Table { .. } => true,
-            ContentUnit::Sentence { runs, .. } => runs
-                .iter()
-                .any(|run| run.math.as_ref().is_some_and(|math| math.display)),
-            ContentUnit::Code { .. } | ContentUnit::Diagram { .. } | ContentUnit::Quote { .. } => {
-                true
-            }
-        })
-        .then_some(units)
+    front_text_units(card, &card.front, projector)
 }
 
-/// The structural units of a card's context, in source order. Context
-/// renders prose line-by-line on every client, so this stream carries only
-/// raw fences and closed nonempty bare-math blocks. The
-/// context text is MASKED, so a mermaid fence resolves through its parse
-/// record's unmasked fingerprint, never through the displayed text; a
-/// record carrying spans or holes stays code until span binding ships.
-/// A math fence needs no record: its displayed (masked) body projects
-/// directly.
-pub(crate) fn context_units_with(card: &Card) -> Vec<ContentUnit> {
-    let context = &card.context;
-    let diagrams = &card.resolved_diagrams;
-    let fences = &card.answer_fences;
-    let mut projector = DisplayProjector::default();
-    let mut records = fences.iter();
-    structural_units_with(context, &mut projector, |info, lines, projector| {
-        if info.eq_ignore_ascii_case("math") && lines.iter().any(|line| !line.trim().is_empty()) {
-            let source = lines.join("\n");
-            ContentUnit::Sentence {
-                runs: projector.project_display_math(&source),
-                text: source,
-            }
+/// `text` is `card`'s masked question or one of its steps: a fence in it is
+/// masked, so a diagram resolves through its parse record, not its interior.
+pub(crate) fn front_text_units(
+    card: &Card,
+    text: &str,
+    projector: &mut DisplayProjector,
+) -> Option<Vec<ContentUnit>> {
+    let mut records = card.answer_fences.iter();
+    let by_record = card.is_blank_card();
+    let mut fences = |info: &str, lines: Vec<String>, projector: &mut DisplayProjector| {
+        if by_record && info.eq_ignore_ascii_case("mermaid") {
+            record_fence_unit(card, lines, records.next())
         } else {
-            let mermaid = info.eq_ignore_ascii_case("mermaid");
-            let record = if mermaid { records.next() } else { None };
-            context_fence_unit(card, mermaid, lines, record, diagrams)
+            fence_unit(info, lines, &card.resolved_diagrams, projector)
         }
-    })
+    };
+    let units = text_units_with(text, projector, true, &mut fences);
+    units.iter().any(is_structural).then_some(units)
+}
+
+fn is_structural(unit: &ContentUnit) -> bool {
+    match unit {
+        ContentUnit::Checklist { .. } | ContentUnit::Table { .. } => true,
+        ContentUnit::Sentence { runs, .. } => runs
+            .iter()
+            .any(|run| run.math.as_ref().is_some_and(|math| math.display)),
+        ContentUnit::Code { .. } | ContentUnit::Diagram { .. } | ContentUnit::Quote { .. } => true,
+    }
 }
 
 fn structural_units_with(
@@ -773,16 +778,14 @@ pub(crate) fn section_units(lines: &[String]) -> Vec<ContentUnit> {
     })
 }
 
-fn context_fence_unit(
+fn record_fence_unit(
     card: &Card,
-    mermaid: bool,
     lines: Vec<String>,
     record: Option<&crate::card::AnswerFence>,
-    diagrams: &[crate::card::ResolvedDiagram],
 ) -> ContentUnit {
-    if mermaid
-        && let Some(record) = record
-        && let Some(resolved) = diagrams
+    if let Some(record) = record
+        && let Some(resolved) = card
+            .resolved_diagrams
             .iter()
             .find(|d| d.fingerprint == record.fingerprint)
     {
@@ -996,43 +999,6 @@ fn mask_code_and_math(text: &str) -> String {
             }
         })
         .collect()
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ContextSpan {
-    Text(String),
-    Blank(String),
-    Hidden(String),
-}
-
-pub fn context_spans(line: &str) -> Vec<ContextSpan> {
-    let mut spans = Vec::new();
-    let mut rest = line;
-    while !rest.is_empty() {
-        let blank = rest.find(BLANK);
-        let hidden = rest.find(HIDDEN);
-        let (pos, marker, is_blank) = match (blank, hidden) {
-            (None, None) => {
-                spans.push(ContextSpan::Text(rest.to_string()));
-                break;
-            }
-            (Some(b), None) => (b, BLANK, true),
-            (None, Some(h)) => (h, HIDDEN, false),
-            (Some(b), Some(h)) if b <= h => (b, BLANK, true),
-            (Some(_), Some(h)) => (h, HIDDEN, false),
-        };
-        if pos > 0 {
-            spans.push(ContextSpan::Text(rest[..pos].to_string()));
-        }
-        let seg = marker.to_string();
-        spans.push(if is_blank {
-            ContextSpan::Blank(seg)
-        } else {
-            ContextSpan::Hidden(seg)
-        });
-        rest = &rest[pos + marker.len()..];
-    }
-    spans
 }
 
 #[cfg(test)]
@@ -1296,7 +1262,7 @@ mod tests {
         ];
         for text in cases {
             let mut projector = DisplayProjector::default();
-            let spanned = text_units_spanned(text, &mut projector, false, &[]);
+            let spanned = text_units_spanned(text, &mut projector, false, &mut plain_fences(&[]));
             let line_count = text.lines().count();
             let mut previous_end = 0;
             for unit in &spanned {
@@ -1358,20 +1324,22 @@ mod tests {
                 }
                 let lines: Vec<&str> = text.lines().collect();
                 let mut projector = DisplayProjector::default();
-                for spanned in text_units_spanned(&text, &mut projector, false, &[])
-                    .into_iter()
-                    .filter(|spanned| {
-                        matches!(
-                            spanned.unit,
-                            ContentUnit::Quote { .. } | ContentUnit::Table { .. }
-                        )
-                    })
+                for spanned in
+                    text_units_spanned(&text, &mut projector, false, &mut plain_fences(&[]))
+                        .into_iter()
+                        .filter(|spanned| {
+                            matches!(
+                                spanned.unit,
+                                ContentUnit::Quote { .. } | ContentUnit::Table { .. }
+                            )
+                        })
                 {
                     // The trailing newline keeps a span that ends on a blank
                     // line: `"a\n".lines()` drops it, `"a\n\n".lines()` does not.
                     let slice = format!("{}\n", lines[spanned.from..spanned.to].join("\n"));
                     let mut alone = DisplayProjector::default();
-                    let rebuilt = text_units_spanned(&slice, &mut alone, false, &[]);
+                    let rebuilt =
+                        text_units_spanned(&slice, &mut alone, false, &mut plain_fences(&[]));
                     assert_eq!(
                         1,
                         rebuilt.len(),
@@ -1427,7 +1395,7 @@ mod tests {
             "lead in\n| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\ntrail",
             &mut projector,
             false,
-            &[],
+            &mut plain_fences(&[]),
         );
         let table: Vec<_> = spanned
             .iter()
@@ -1972,56 +1940,16 @@ mod tests {
     }
 
     #[test]
-    fn context_spans_split_holes() {
-        use ContextSpan::*;
-        assert_eq!(context_spans("plain text"), vec![Text("plain text".into())]);
-        assert_eq!(
-            context_spans("To ⍰ or not to ⬚"),
-            vec![
-                Text("To ".into()),
-                Blank("⍰".into()),
-                Text(" or not to ".into()),
-                Hidden("⬚".into()),
-            ]
-        );
-        assert_eq!(
-            context_spans("⍰ here"),
-            vec![Blank("⍰".into()), Text(" here".into())]
-        );
-        assert_eq!(
-            context_spans("⬚ before ⍰"),
-            vec![
-                Hidden("⬚".into()),
-                Text(" before ".into()),
-                Blank("⍰".into()),
-            ]
-        );
-    }
-
-    fn resolved(source: &str) -> Vec<crate::card::ResolvedDiagram> {
-        vec![crate::card::ResolvedDiagram {
-            fingerprint: crate::diagram::fingerprint(source),
-            png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
-            geometry: crate::diagram::DiagramGeometry {
-                image: "sha256-aa.png".to_string(),
-                image_width: 376,
-                image_height: 228,
-                logical_width: 188,
-                logical_height: 114,
-                labels: Vec::new(),
-            },
-        }]
-    }
-
-    /// A rendered diagram replaces its own fence in the ordered stream:
-    /// surrounding prose keeps its position, and only a matching resolved
-    /// stamp swaps.
-    #[test]
     fn a_resolved_mermaid_fence_becomes_a_diagram_unit_in_its_own_slot() {
         let source = "flowchart LR\n A-->B";
         let text = "before\n```mermaid\nflowchart LR\n A-->B\n```\nafter";
         let mut projector = DisplayProjector::default();
-        let units = text_units_with(text, &mut projector, false, &resolved(source));
+        let units = text_units_with(
+            text,
+            &mut projector,
+            false,
+            &mut plain_fences(&resolved(source)),
+        );
         assert_eq!(3, units.len(), "{units:?}");
         assert!(matches!(&units[0], ContentUnit::Sentence { text, .. } if text == "before"));
         let ContentUnit::Diagram {
@@ -2135,14 +2063,14 @@ mod tests {
     }
 
     #[test]
-    fn a_math_fence_renders_in_section_and_context_walks() {
+    fn a_math_fence_renders_in_section_and_blank_front_walks() {
         let lines: Vec<String> = ["```math", "x^2", "```"]
             .iter()
             .map(|line| line.to_string())
             .collect();
         let section = section_units(&lines);
-        let context = context_units_with(&context_card(&lines, Vec::new(), Vec::new()));
-        for (surface, units) in [("section", section), ("context", context)] {
+        let front = blank_front_units(&lines, Vec::new(), Vec::new());
+        for (surface, units) in [("section", section), ("front", front)] {
             let [ContentUnit::Sentence { text, runs }] = units.as_slice() else {
                 panic!("a math fence in {surface} must be display math: {units:?}");
             };
@@ -2155,22 +2083,17 @@ mod tests {
     }
 
     #[test]
-    fn section_and_context_walks_share_the_bare_display_math_boundary() {
+    fn section_and_blank_front_walks_share_the_bare_display_math_boundary() {
         let cases = [
             (
                 "closed bare block",
                 vec!["$$", "x^2 + y^2", "$$"],
-                Some("x^2 + y^2"),
-            ),
-            (
-                "unclosed bare opener stays prose",
-                vec!["$$", "x^2 + y^2"],
-                None,
+                "x^2 + y^2",
             ),
             (
                 "math fence control",
                 vec!["```math", "x^2 + y^2", "```"],
-                Some("x^2 + y^2"),
+                "x^2 + y^2",
             ),
         ];
 
@@ -2178,39 +2101,36 @@ mod tests {
             let lines: Vec<String> = source.into_iter().map(str::to_string).collect();
             let surfaces = [
                 ("section", section_units(&lines)),
-                (
-                    "context",
-                    context_units_with(&context_card(&lines, Vec::new(), Vec::new())),
-                ),
+                ("front", blank_front_units(&lines, Vec::new(), Vec::new())),
             ];
             for (surface, units) in surfaces {
-                match expected {
-                    Some(expected) => {
-                        let [ContentUnit::Sentence { text, runs }] = units.as_slice() else {
-                            panic!("{case} on {surface} must be display math: {units:?}");
-                        };
-                        assert_eq!(expected, text, "{case} on {surface}");
-                        assert!(
-                            runs[0].math.as_ref().is_some_and(|math| math.display),
-                            "{case} on {surface} must carry a display run: {runs:?}"
-                        );
-                    }
-                    None => assert!(
-                        units.is_empty(),
-                        "{case} on {surface} must remain in the raw prose walk: {units:?}"
-                    ),
-                }
+                let [ContentUnit::Sentence { text, runs }] = units.as_slice() else {
+                    panic!("{case} on {surface} must be display math: {units:?}");
+                };
+                assert_eq!(expected, text, "{case} on {surface}");
+                assert!(
+                    runs[0].math.as_ref().is_some_and(|math| math.display),
+                    "{case} on {surface} must carry a display run: {runs:?}"
+                );
             }
         }
+        let unclosed: Vec<String> = ["$$", "x^2 + y^2"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        assert!(
+            section_units(&unclosed).is_empty(),
+            "an unclosed bare opener stays in the section's raw prose walk"
+        );
     }
 
     #[test]
-    fn a_context_fence_shaped_line_with_info_stays_inside() {
-        let context: Vec<String> = ["````", "````rust", "x", "````"]
+    fn a_front_fence_shaped_line_with_info_stays_inside() {
+        let lines: Vec<String> = ["````", "````rust", "x", "````"]
             .iter()
             .map(|s| s.to_string())
             .collect();
-        let units = context_units_with(&context_card(&context, Vec::new(), Vec::new()));
+        let units = blank_front_units(&lines, Vec::new(), Vec::new());
         assert_eq!(
             vec![ContentUnit::Code {
                 lines: vec!["````rust".into(), "x".into()]
@@ -2221,12 +2141,12 @@ mod tests {
     }
 
     #[test]
-    fn a_nested_context_fence_is_one_code_unit_to_its_matching_closer() {
-        let context: Vec<String> = ["````", "a", "```", "b", "````"]
+    fn a_nested_front_fence_is_one_code_unit_to_its_matching_closer() {
+        let lines: Vec<String> = ["````", "a", "```", "b", "````"]
             .iter()
             .map(|s| s.to_string())
             .collect();
-        let units = context_units_with(&context_card(&context, Vec::new(), Vec::new()));
+        let units = blank_front_units(&lines, Vec::new(), Vec::new());
         assert_eq!(
             units,
             vec![ContentUnit::Code {
@@ -2235,22 +2155,50 @@ mod tests {
         );
     }
 
-    fn context_card(
-        context: &[String],
+    fn blank_front_units(
+        lines: &[String],
         diagrams: Vec<crate::card::ResolvedDiagram>,
         fences: Vec<crate::card::AnswerFence>,
-    ) -> Card {
+    ) -> Vec<ContentUnit> {
         let mut card = Card::plain(
             std::sync::Arc::from("deck.md"),
-            "q".to_string(),
+            format!("q\n{}", lines.join("\n")),
             vec!["answer".to_string()],
             Vec::new(),
             1,
         );
-        card.context = context.to_vec();
+        card.region = Some(crate::card::RegionSlot::Single {
+            stamp: Some(Arc::from("a1b2c3")),
+            hidden: Some("answer".to_string()),
+            line: 2,
+            name: None,
+        });
         card.resolved_diagrams = diagrams;
         card.answer_fences = fences;
-        card
+        let mut projector = DisplayProjector::default();
+        front_units_with(&card, &mut projector)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|unit| {
+                !matches!(unit, ContentUnit::Sentence { runs, .. }
+                    if runs.iter().all(|run| run.math.as_ref().is_none_or(|math| !math.display)))
+            })
+            .collect()
+    }
+
+    fn resolved(source: &str) -> Vec<crate::card::ResolvedDiagram> {
+        vec![crate::card::ResolvedDiagram {
+            fingerprint: crate::diagram::fingerprint(source),
+            png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
+            geometry: crate::diagram::DiagramGeometry {
+                image: "sha256-aa.png".to_string(),
+                image_width: 376,
+                image_height: 228,
+                logical_width: 188,
+                logical_height: 114,
+                labels: Vec::new(),
+            },
+        }]
     }
 
     fn record(source: &str) -> crate::card::AnswerFence {
@@ -2261,11 +2209,8 @@ mod tests {
         }
     }
 
-    /// The context stream's law: fence-shaped units only, one per closed
-    /// fence in order; a clean record (no spans) whose unmasked
-    /// fingerprint resolves swaps to the diagram, everything else is code.
     #[test]
-    fn a_clean_recorded_context_fence_resolves_through_its_record() {
+    fn a_clean_recorded_front_fence_resolves_through_its_record() {
         let source = "flowchart LR\n A-->B";
         let context: Vec<String> = [
             "prose line",
@@ -2281,7 +2226,7 @@ mod tests {
         .map(|s| s.to_string())
         .collect();
         let fences = vec![record(source)];
-        let units = context_units_with(&context_card(&context, resolved(source), fences));
+        let units = blank_front_units(&context, resolved(source), fences);
         assert_eq!(2, units.len(), "{units:?}");
         assert!(
             matches!(&units[0], ContentUnit::Code { lines } if lines == &["let x = 1;"]),
@@ -2294,7 +2239,7 @@ mod tests {
     }
 
     #[test]
-    fn a_record_with_spans_or_no_resolution_stays_code_in_context() {
+    fn a_record_with_spans_or_no_resolution_stays_code_in_a_blank_front() {
         let source = "flowchart LR\n A-->B";
         let context: Vec<String> = ["```mermaid", "flowchart LR", " A-->B", "```"]
             .iter()
@@ -2314,7 +2259,7 @@ mod tests {
             (Vec::new(), "no record at all"),
         ];
         for (fences, why) in cases {
-            let units = context_units_with(&context_card(&context, resolved(source), fences));
+            let units = blank_front_units(&context, resolved(source), fences);
             assert!(
                 matches!(&units[0], ContentUnit::Code { .. }),
                 "{why}: {units:?}"
@@ -2323,14 +2268,14 @@ mod tests {
     }
 
     #[test]
-    fn a_masked_context_interior_resolves_by_record_never_by_its_own_text() {
+    fn a_masked_front_interior_resolves_by_record_never_by_its_own_text() {
         let authored = "flowchart LR\n![](x.png)\n A-->B";
         let context: Vec<String> = ["```mermaid", "flowchart LR", " A-->B", "```"]
             .iter()
             .map(|s| s.to_string())
             .collect();
         let fences = vec![record(authored)];
-        let units = context_units_with(&context_card(&context, resolved(authored), fences));
+        let units = blank_front_units(&context, resolved(authored), fences);
         let ContentUnit::Diagram { alt, .. } = &units[0] else {
             panic!(
                 "the record carries the unmasked fingerprint even where the \
@@ -2351,7 +2296,12 @@ mod tests {
         let source = "flowchart LR\n A-->B";
         let text = "```\n```\n```mermaid\nflowchart LR\n A-->B\n```";
         let mut projector = DisplayProjector::default();
-        let units = text_units_with(text, &mut projector, false, &resolved(source));
+        let units = text_units_with(
+            text,
+            &mut projector,
+            false,
+            &mut plain_fences(&resolved(source)),
+        );
         assert_eq!(2, units.len(), "{units:?}");
         assert!(
             matches!(&units[0], ContentUnit::Code { lines } if lines.is_empty()),
@@ -2386,7 +2336,7 @@ mod tests {
             ),
         ];
         for (text, diagrams, why) in cases {
-            let units = text_units_with(text, &mut projector, false, &diagrams);
+            let units = text_units_with(text, &mut projector, false, &mut plain_fences(&diagrams));
             assert!(
                 matches!(&units[0], ContentUnit::Code { .. }),
                 "{why}: must stay a code unit, got {units:?}"

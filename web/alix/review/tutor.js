@@ -326,7 +326,7 @@ export function createTutor({
           reference,
           card.context,
           card.context_runs,
-          card.context_units,
+          [],
           "ask-card-ctx",
           referenceDiagram,
         );

@@ -18,9 +18,7 @@ ReviewCardModel _quoteCard({required bool reshaped}) => ReviewCardModel(
   front: 'Question',
   frontRuns: const [],
   context: const [],
-  contextLeads: false,
   contextRuns: const [],
-  contextUnits: const [],
   back: const ['the claim', '> supporting quotation', '> continued quotation'],
   backRuns: [
     _runs('the claim'),

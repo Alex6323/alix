@@ -214,30 +214,15 @@ class ReviewCardView extends StatelessWidget {
           _sectionTitle(card, theme, tokens),
           const SizedBox(height: 12),
         ],
-        // A labelling context (a card table's title) sits above the prompt in
-        // a quieter style; a leading one (a cloze sentence) is the question
-        // itself and follows the front.
-        if (!card.contextLeads)
-          ..._contextLines(
-            card,
-            tokens,
-            leading: false,
-            answered: answered,
-            style: theme.textTheme.labelMedium?.copyWith(color: tokens.dim),
-          ),
-        _front(context, card, tokens),
+        ..._contextLines(
+          card,
+          style: theme.textTheme.labelMedium?.copyWith(color: tokens.dim),
+        ),
+        _front(context, card, tokens, answered: answered),
         for (final image in card.images) ...[
           const SizedBox(height: 12),
           _cardImage(context, image, answered),
         ],
-        if (card.contextLeads)
-          ..._contextLines(
-            card,
-            tokens,
-            leading: true,
-            answered: answered,
-            style: theme.textTheme.titleMedium?.copyWith(color: tokens.text),
-          ),
         const SizedBox(height: 14),
         _divider(tokens),
         const SizedBox(height: 22),
@@ -319,7 +304,12 @@ class ReviewCardView extends StatelessWidget {
     );
   }
 
-  Widget _front(BuildContext context, ReviewCardModel card, AlixTokens tokens) {
+  Widget _front(
+    BuildContext context,
+    ReviewCardModel card,
+    AlixTokens tokens, {
+    required bool answered,
+  }) {
     final style = TextStyle(
       fontFamily: _sans,
       fontWeight: FontWeight.w600,
@@ -334,6 +324,8 @@ class ReviewCardView extends StatelessWidget {
         card.front,
         style: style,
         textAlign: TextAlign.center,
+        contextHoles: true,
+        tokens: tokens,
       );
     }
     return Column(
@@ -341,7 +333,18 @@ class ReviewCardView extends StatelessWidget {
       children: [
         for (final (index, unit) in units.indexed) ...[
           if (index > 0) const SizedBox(height: 10),
-          unitWidget(unit, tokens, style, TextAlign.center),
+          switch (unit) {
+            ReviewDiagramModel() => diagramWidget(unit, answered: answered),
+            ReviewSentenceModel(:final text, :final runs) => runsOrText(
+              runs,
+              text,
+              style: style,
+              textAlign: TextAlign.center,
+              contextHoles: true,
+              tokens: tokens,
+            ),
+            _ => unitWidget(unit, tokens, style, TextAlign.center),
+          },
         ],
       ],
     );
@@ -602,53 +605,18 @@ class ReviewCardView extends StatelessWidget {
     );
   }
 
-  List<Widget> _contextLines(
-    ReviewCardModel card,
-    AlixTokens tokens, {
-    required bool leading,
-    required bool answered,
-    TextStyle? style,
-  }) {
-    final children = <Widget>[];
-    void add(Widget widget) {
-      if (leading) children.add(const SizedBox(height: 8));
-      children.add(widget);
-      if (!leading) children.add(const SizedBox(height: 8));
-    }
-
-    _walkContextBlocks(
-      card.context,
-      card.contextUnits,
-      onBlock: (source, unit, closed) {
-        if (closed && unit is ReviewDiagramModel) {
-          add(diagramWidget(unit, answered: answered));
-        } else if (closed && unit is ReviewSentenceModel) {
-          add(
-            runsOrText(
-              unit.runs,
-              unit.text,
-              textAlign: TextAlign.center,
-              style: style,
-            ),
-          );
-        } else {
-          add(codeBlock(source, style?.color ?? tokens.text));
-        }
-      },
-      onLine: (index) {
-        add(
-          runsOrText(
-            index < card.contextRuns.length ? card.contextRuns[index] : null,
-            card.context[index],
-            textAlign: TextAlign.center,
-            style: style,
-            contextHoles: leading,
-            tokens: tokens,
-          ),
-        );
-      },
-    );
-    return children;
+  List<Widget> _contextLines(ReviewCardModel card, {TextStyle? style}) {
+    return [
+      for (final (index, line) in card.context.indexed) ...[
+        runsOrText(
+          index < card.contextRuns.length ? card.contextRuns[index] : null,
+          line,
+          textAlign: TextAlign.center,
+          style: style,
+        ),
+        const SizedBox(height: 8),
+      ],
+    ];
   }
 
   // The ONE fence walk (the same alignment law as the web clients):

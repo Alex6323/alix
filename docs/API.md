@@ -802,16 +802,15 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | Key | Type | Meaning |
 |---|---|---|
 | `id` | string? | The card's prefixed id (`card-<token>`; `card-<token>-b<stamp>` for a blank span, `card-<token>-g<hash>` for a blank group, `card-<token>-t<row>` for a table row, `card-<token>-r` for a reversed twin), the same spelling `CreateCardResp` returns. Null for a card that carries no id marker yet. Clients compare it to tell whether the served card actually changed, and send it back on `POST /api/choose`; it is stable across edits to the card's text. |
-| `front` | string | The question's plain-text content, with inline Markdown markers stripped. |
+| `front` | string | The question's plain-text content, with inline Markdown markers stripped. On a cloze card it is the whole card from its heading down: the asked span (or group) as `⍰`, every sibling span and cover as `⬚`, so no hidden text reaches a client before the reveal. |
 | `front_runs` | [InlineRun] | Display projection of `front`. |
-| `front_units` | [ContentUnitDto]? | Present when the front contains a task list, fenced code, a pipe table, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. |
+| `front_units` | [ContentUnitDto]? | Present when the front contains a task list, fenced code, a pipe table, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. A cloze card's masked mermaid fence yields its `diagram` here. |
+| `front_steps` | [FrontStepDto] | A cloze card's question with its own blanks filled in, one step per own blank in directive order and cumulative (step *n* fills blanks 1..*n*); a region group contributes one step at its first `blank: rect`. The last step is the revealed question. Empty on every other card. |
 | `section_context` | [string] | The card's section: its `# ` heading and that section's prose, in file order. A blank line between paragraphs rides as an empty string; leading and trailing blanks are omitted and a run collapses to one. Present only when the card sits under a section; omitted when empty. It explains the card and is NEVER the question. A client presents it by itself on the first introduction from a section (`section_first`); every other card offers it on demand. Image syntax inside it is prose, not a media element. |
 | `section_context_runs` | [[InlineRun]] | Display projection per section line, same shape as `context_runs`. Omitted when empty, like `section_context`. |
 | `section_context_units` | [ContentUnitDto] | The section's structural blocks in source order: one unit per raw fence and per closed, nonempty bare-`$$` block. A math fence or bare-`$$` block yields a display-math `sentence`; other fences yield `code`. Nothing freezes a section's fence, so it never yields a `diagram`. An unmatched `$$` stays in the line projection and consumes no unit. Omitted when empty, like `section_context`. |
-| `context` | [string] | Context lines: a cloze card's sentence, or a card table's title. |
-| `context_leads` | bool | True when `context` is the question and the front is a topic above it (cloze); false when `context` only labels the front, which keeps the lead (table title). |
-| `context_runs` | [[InlineRun]] | Display projection per cloze context line. |
-| `context_units` | [ContentUnitDto] | The context's structural blocks in source order: raw fences yield `code`, `diagram`, or display-math `sentence` units, and each closed, nonempty bare-`$$` block yields a display-math `sentence`. Context prose keeps its per-line rendering. An unmatched `$$` stays literal and consumes no unit. Empty when the context has no structural block. |
+| `context` | [string] | A card table's title, labelling the front. Empty on every other card. |
+| `context_runs` | [[InlineRun]] | Display projection per context line. |
 | `back` | [string] | Answer-line content with inline Markdown markers stripped (may be a reshaped view). |
 | `back_runs` | [[InlineRun]] | Display projection per answer line. |
 | `back_units` | [ContentUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, checklists, and pipe tables remain structural units. Full reveal renders these. |
@@ -821,6 +820,14 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `images` / `images_back` | [ImageDto] | Front / back images, rendered as ordered blocks on that side. Empty when none. |
 | `citations` | [CitationDto] | Ordered `<!-- at: -->` citations. Empty when none. |
 | `crumb` | CrumbDto? | Topology breadcrumb (region heatmap). |
+
+### FrontStepDto
+
+`{front: string, front_runs: [InlineRun], front_units?: [ContentUnitDto]}`,
+the same three fields as the card's own, for the question at one step of
+`front_steps`. A filled blank is its hidden text in place of the `⍰`, carried
+by runs flagged `answer`; a formula's filled piece renders boxed. `front_units`
+follows the `CardDto.front_units` rule.
 
 ### AnswerStepDto
 
@@ -905,8 +912,10 @@ full image. Region coordinates stay in full-source space, never crop space.
 ### InlineRun
 
 `{text: string, bold?: bool, italic?: bool, strike?: bool, code?: bool,
-link?: bool, sub?: bool, sup?: bool, ins?: bool, math?: MathView}`.
-False style flags and absent `math` are omitted. Concatenating `text` produces
+link?: bool, sub?: bool, sup?: bool, ins?: bool, answer?: bool,
+math?: MathView}`.
+False style flags and absent `math` are omitted. `answer` marks a blank's
+hidden text shown filled in on a `front_steps` question. Concatenating `text` produces
 the matching content projection. For a math run, `text` is delimiter-free
 LaTeX source and the style flags are false. `strike` is `~~strikethrough~~`,
 pure presentation with no study semantics. `link` is an autolink
@@ -953,8 +962,8 @@ line whose next line is a delimiter row, plus the `|` lines that follow.
 from the delimiter row's colons; `header` is one run list per header cell and
 `rows` are the body cells, each padded or truncated to the header width for
 display (only the mapped-card table enforces widths). Table units appear in
-`back_units`, `front_units`, and each `NoteDto.units`; `context_units` and
-`section_context_units` carry only raw fences and closed bare-math blocks.
+`back_units`, `front_units`, and each `NoteDto.units`;
+`section_context_units` carries only raw fences and closed bare-math blocks.
 A table in an answer is ONE block, like a quote: it is excluded from the typed
 target, since typing pipe syntax tests transcription rather than
 understanding, and it reveals whole rather than a row at a time (see
@@ -992,7 +1001,7 @@ is the post-answer accessible name — asked labels revealed, siblings and
 covers still elided. Clients swap the element's accessible name to
 `revealed_alt` when the answer state changes. An unmasked diagram keeps
 the fence's mermaid source as `alt`. Example payload:
-`tests/contracts/CardDto.context_units.masked.json`.
+`tests/contracts/CardDto.front_units.masked.json`.
 
 ### ExcerptDto / LineDto
 

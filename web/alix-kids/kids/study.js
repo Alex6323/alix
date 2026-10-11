@@ -84,8 +84,8 @@ function renderReview() {
   const cardEl = el("div", "rev-card");
 
   cardEl.appendChild(el("div", "rev-eyebrow", eyebrowFor(state, introducing)));
-  cardEl.appendChild(frontPrompt(card));
-  appendContextLines(cardEl, card, done);
+  cardEl.appendChild(frontPrompt(card, (unit) => frontDiagram(unit, done)));
+  appendContextLines(cardEl, card);
   appendImages(cardEl, card.images, done);
 
   if (choiceMode) {
@@ -373,64 +373,18 @@ function plainDiagram(unit) {
   return img;
 }
 
-function appendContextLines(parent, card, done) {
+function frontDiagram(unit, done) {
+  const img = plainDiagram(unit);
+  if (done && unit.revealed_alt) img.alt = unit.revealed_alt;
+  const kept = keptRegions(unit.regions || [], done);
+  return kept.length ? maskedImage(img, kept, "rev-img") : img;
+}
+
+// `context` is a card table's title.
+function appendContextLines(parent, card) {
   const lines = card.context || [];
-  const units = card.context_units || [];
-  let unitIndex = 0;
-  const appendLine = (i) => {
+  for (let i = 0; i < lines.length; i++) {
     parent.appendChild(contextLine(lines[i], card.context_runs && card.context_runs[i]));
-  };
-  const appendBlock = (unit, source) => {
-    if (unit && unit.kind === "sentence") {
-      parent.appendChild(contextLine(unit.text, unit.runs));
-      return;
-    }
-    if (unit && unit.kind === "diagram") {
-      const img = plainDiagram(unit);
-      if (done && unit.revealed_alt) img.alt = unit.revealed_alt;
-      const kept = keptRegions(unit.regions || [], done);
-      parent.appendChild(kept.length ? maskedImage(img, kept, "rev-img") : img);
-      return;
-    }
-    const pre = el("pre", "why-code");
-    pre.appendChild(el("code", null, source.join("\n")));
-    parent.appendChild(pre);
-  };
-
-  let i = 0;
-  while (i < lines.length) {
-    if (lines[i].trim() === "$$") {
-      let close = i + 1;
-      while (close < lines.length && lines[close].trim() !== "$$") close++;
-      if (close < lines.length) {
-        const source = lines.slice(i + 1, close);
-        if (source.some((line) => line.trim())) {
-          appendBlock(units[unitIndex], source);
-          unitIndex++;
-        }
-        i = close + 1;
-        continue;
-      }
-    }
-
-    const fence = lines[i].trim().match(/^(`{3,}|~{3,})/);
-    if (fence) {
-      const marker = fence[1];
-      const source = [];
-      i++;
-      while (i < lines.length && !closesFence(lines[i], marker)) {
-        source.push(lines[i]);
-        i++;
-      }
-      const closed = i < lines.length;
-      if (closed) i++;
-      appendBlock(closed ? units[unitIndex] : null, source);
-      unitIndex++;
-      continue;
-    }
-
-    appendLine(i);
-    i++;
   }
 }
 

@@ -69,6 +69,16 @@ pub struct NoteView {
     pub units: Vec<ContentUnit>,
 }
 
+/// A blank card's question with its own blanks filled in up to this step.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct FrontStep {
+    pub front: String,
+    #[serde(default)]
+    pub front_runs: Vec<InlineRun>,
+    #[serde(default)]
+    pub front_units: Option<Vec<ContentUnit>>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CardView {
     pub front: String,
@@ -76,24 +86,22 @@ pub struct CardView {
     pub front_runs: Vec<InlineRun>,
     #[serde(default)]
     pub front_units: Option<Vec<ContentUnit>>,
+    /// One per own blank in directive order, the last one fully revealed;
+    /// empty on a plain card.
+    #[serde(default)]
+    pub front_steps: Vec<FrontStep>,
     /// The card's section: its `# ` heading and that section's prose, shown
     /// only on demand. Image syntax inside it stays prose.
     #[serde(default)]
     pub section_context: Vec<String>,
     #[serde(default)]
     pub section_context_runs: Vec<Vec<InlineRun>>,
-    /// Fence-shaped units only, in fence order, exactly as `context_units`.
+    /// Fence-shaped units only, in fence order.
     #[serde(default)]
     pub section_context_units: Vec<ContentUnit>,
     pub context: Vec<String>,
     #[serde(default)]
-    pub context_leads: bool,
-    #[serde(default)]
     pub context_runs: Vec<Vec<InlineRun>>,
-    /// The context's fence-shaped units only, in fence order (the nth raw
-    /// fence consumes the nth unit); context prose keeps its line rendering.
-    #[serde(default)]
-    pub context_units: Vec<ContentUnit>,
     pub back: Vec<String>,
     #[serde(default)]
     pub back_runs: Vec<Vec<InlineRun>>,
@@ -205,12 +213,26 @@ impl CardView {
     /// exact target (Codex, 2026-08-25).
     pub fn project_in(card: &Card, projector: &mut DisplayProjector, space: AnswerSpace) -> Self {
         projector.set_definitions(card.definitions.clone());
+        projector.set_holes(card.is_blank_card());
         let (front, front_runs) = project_block(&card.front, projector);
-        let front_units = render::front_units_with(&card.front, projector, &card.resolved_diagrams);
+        let front_units = render::front_units_with(card, projector);
+        let front_steps = card
+            .front_steps
+            .iter()
+            .map(|step| {
+                let (front, front_runs) = project_block(step, projector);
+                FrontStep {
+                    front,
+                    front_runs,
+                    front_units: render::front_text_units(card, step, projector),
+                }
+            })
+            .collect();
+        projector.set_holes(false);
         let context_runs = card
             .context
             .iter()
-            .map(|line| projector.project_context(line))
+            .map(|line| projector.project(line))
             .collect();
         let lines = card.answer_lines(space);
         let (back, back_runs) = project_lines(lines, projector);
@@ -219,19 +241,18 @@ impl CardView {
         let section_context_runs = card
             .section_context
             .iter()
-            .map(|line| projector.project_context(line))
+            .map(|line| projector.project(line))
             .collect();
         CardView {
             front,
             front_runs,
             front_units,
+            front_steps,
             section_context: card.section_context.clone(),
             section_context_runs,
             section_context_units: render::section_units(&card.section_context),
             context: card.context.clone(),
-            context_leads: card.context_leads,
             context_runs,
-            context_units: render::context_units_with(card),
             back,
             back_runs,
             back_units,
@@ -960,9 +981,9 @@ mod tests {
             .card
             .expect("a card");
         assert!(
-            card.context.iter().any(|l| l.contains("⍰")),
-            "cloze context blanks the hole: {:?}",
-            card.context
+            card.front.contains("⍰"),
+            "the cloze front blanks the hole: {:?}",
+            card.front
         );
         assert_eq!(card.back, ["answer"], "the gap text is the answer");
         assert_eq!(
@@ -989,6 +1010,252 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["/pics/back.png"]
         );
+    }
+
+    fn blank_shapes() -> Vec<Card> {
+        let text = concat!(
+            "## The trust root is the genesis committee.\n",
+            "<!-- blank: span hidden=\"genesis committee\" b:a1b2c3 -->\n",
+            "\n",
+            "## anatomy\n",
+            "the lunate sits beside the hamate bone\n",
+            "<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n",
+            "<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->\n",
+            "<!-- cover: span hidden=\"bone\" -->\n",
+            "\n",
+            "## q\n",
+            "alpha beta gamma\n",
+            "<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n",
+            "<!-- blank: span [g] hidden=\"gamma\" b:d4e5f6 -->\n",
+            "\n",
+            "## name the parts\n",
+            "![a hand](hand.png)\n",
+            "<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n",
+            "\n",
+            "## solve\n",
+            "$x = 4ac + b^2$\n",
+            "<!-- blank: span hidden=\"4ac\" b:a1b2c3 -->\n",
+            "\n",
+            "## the request path\n",
+            "```mermaid\n",
+            "flowchart LR\n",
+            "  C[store] --> B[Cache]\n",
+            "```\n",
+            "<!-- blank: span hidden=\"store\" -->\n",
+            "<!-- blank: span hidden=\"Cache\" -->\n",
+        );
+        let interior = "flowchart LR\n  C[store] --> B[Cache]";
+        let label = |id: &str, text: &str, y: u32| {
+            let start = interior.find(text).unwrap() as u32;
+            crate::diagram::GeometryLabel {
+                id: id.into(),
+                text: text.into(),
+                source: crate::diagram::LabelSource::Range {
+                    start,
+                    end: start + text.len() as u32,
+                },
+                bounds: crate::diagram::PixelBox {
+                    x: 10,
+                    y,
+                    width: 100,
+                    height: 40,
+                },
+            }
+        };
+        let resolved = crate::card::ResolvedDiagram {
+            fingerprint: crate::diagram::fingerprint(interior),
+            png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
+            geometry: crate::diagram::DiagramGeometry {
+                image: "sha256-aa.png".to_string(),
+                image_width: 376,
+                image_height: 228,
+                logical_width: 188,
+                logical_height: 114,
+                labels: vec![label("C", "store", 10), label("B", "Cache", 50)],
+            },
+        };
+        let mut cards = parse(text);
+        for card in cards
+            .iter_mut()
+            .filter(|card| card.front.contains("request path"))
+        {
+            card.resolved_diagrams = vec![resolved.clone()];
+        }
+        cards
+    }
+
+    fn strings_under(value: &serde_json::Value, skip: &[&str], out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::String(text) => out.push(text.clone()),
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    strings_under(item, skip, out);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                for (key, item) in fields {
+                    if !skip.contains(&key.as_str()) {
+                        strings_under(item, skip, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn no_pre_reveal_field_of_a_blank_card_view_carries_its_hidden_text() {
+        let cards = blank_shapes();
+        assert_eq!(8, cards.len(), "every shape parsed: {cards:?}");
+        for card in &cards {
+            let view = serde_json::to_value(CardView::from(card)).unwrap();
+            let mut shown = Vec::new();
+            strings_under(
+                &view,
+                &[
+                    "back",
+                    "back_runs",
+                    "back_units",
+                    "answer_steps",
+                    "front_steps",
+                    "note",
+                    "revealed_alt",
+                ],
+                &mut shown,
+            );
+            for hidden in &card.back {
+                assert!(
+                    shown.iter().all(|text| !text.contains(hidden.as_str())),
+                    "{:?} shows its answer {hidden:?} before reveal: {view}",
+                    card.front
+                );
+            }
+            assert!(
+                shown
+                    .iter()
+                    .all(|text| !text.contains(crate::parser::ANSWER)),
+                "{:?}: the fill marker is a reveal-only signal: {view}",
+                card.front
+            );
+        }
+    }
+
+    #[test]
+    fn every_blank_card_view_carries_one_front_step_per_own_blank_with_the_filled_run_marked() {
+        let cards = blank_shapes();
+        let view_of = |needle: &str| {
+            cards
+                .iter()
+                .filter(|card| card.back.iter().any(|hidden| hidden == needle))
+                .map(CardView::from)
+                .next()
+                .unwrap_or_else(|| panic!("a card asking {needle}"))
+        };
+        let answers = |runs: &[InlineRun]| -> Vec<String> {
+            runs.iter()
+                .filter(|run| run.answer)
+                .map(|run| run.text.clone())
+                .collect()
+        };
+        let single = view_of("lunate");
+        assert_eq!(1, single.front_steps.len(), "{:?}", single.front_steps);
+        let step = &single.front_steps[0];
+        assert_eq!("anatomy\nthe lunate sits beside the ⬚ ⬚", step.front);
+        assert_eq!(vec!["lunate"], answers(&step.front_runs));
+        assert!(step.front_units.is_none(), "{:?}", step.front_units);
+
+        let heading = view_of("genesis committee");
+        assert_eq!(
+            vec!["genesis committee"],
+            answers(&heading.front_steps[0].front_runs),
+            "a span on the heading line fills in place"
+        );
+
+        let group = view_of("alpha");
+        assert_eq!(
+            vec![vec!["alpha"], vec!["alpha", "gamma"]],
+            group
+                .front_steps
+                .iter()
+                .map(|step| answers(&step.front_runs))
+                .collect::<Vec<_>>(),
+            "a group fills one more member per step"
+        );
+
+        let rect = view_of("lunate");
+        let rect = cards
+            .iter()
+            .filter(|card| card.back == ["lunate"] && !card.images.is_empty())
+            .map(CardView::from)
+            .next()
+            .unwrap_or_else(|| panic!("the rect card; single was {single:?}, rect {rect:?}"));
+        assert_eq!(1, rect.front_steps.len(), "{:?}", rect.front_steps);
+        assert_eq!("name the parts", rect.front_steps[0].front);
+        assert!(answers(&rect.front_steps[0].front_runs).is_empty());
+        assert_eq!(
+            RegionRole::Asked,
+            rect.images[0].regions[0].role,
+            "the rect rides the question side: {:?}",
+            rect.images
+        );
+
+        let math = view_of("4ac");
+        let run = math.front_steps[0]
+            .front_runs
+            .iter()
+            .find(|run| run.math.is_some())
+            .expect("the formula run");
+        assert_eq!(
+            "x = ⍱4ac⍱ + b^2", run.text,
+            "the formula keeps its pair as source"
+        );
+        assert!(
+            run.math.as_ref().is_some_and(|math| math.svg.is_some()),
+            "the filled formula renders: {:?}",
+            run.math
+        );
+        assert!(!run.answer, "the box inside the formula is the mark");
+
+        let diagram = view_of("Cache");
+        let [
+            ContentUnit::Sentence { .. },
+            ContentUnit::Diagram {
+                regions,
+                revealed_alt,
+                ..
+            },
+        ] = diagram.front_units.as_deref().unwrap_or_default()
+        else {
+            panic!(
+                "the masked fence projects as a diagram: {:?}",
+                diagram.front_units
+            );
+        };
+        assert_eq!(2, regions.len(), "asked plus sibling: {regions:?}");
+        assert_eq!(&Some("diagram labels: …, Cache".to_string()), revealed_alt);
+        assert_eq!(1, diagram.front_steps.len());
+        assert!(
+            matches!(
+                diagram.front_steps[0].front_units.as_deref(),
+                Some([ContentUnit::Sentence { .. }, ContentUnit::Diagram { .. }])
+            ),
+            "a step resolves the fence through the same record: {:?}",
+            diagram.front_steps[0].front_units
+        );
+    }
+
+    #[test]
+    fn a_blank_cards_front_math_hole_renders_through_the_hole_substitution() {
+        let cards = parse(
+            "## Use $a + b$ here
+<!-- blank: span hidden=\"a\" b:a1b2c3 -->
+<!-- blank: span hidden=\"b\" b:d4e5f6 -->
+",
+        );
+        let view = CardView::from(&cards[0]);
+        assert_eq!("Use ⍰ + ⬚ here", view.front);
+        let math = view.front_runs[1].math.as_ref().expect("a math run");
+        assert!(math.svg.is_some(), "{:?}", math.error);
     }
 
     /// The end of the path the parser starts: a hole cut from a formula
@@ -1043,17 +1310,17 @@ mod tests {
             vec![crate::card::Note::plain("Remember $x^2$.".to_string())],
             1,
         );
-        card.context = vec!["Use $⍰ + ⬚$".to_string()];
+        card.context = vec!["Use $a + b$".to_string()];
 
         let view = CardView::from(&card);
         assert_eq!(view.front, "Find x^2");
         assert!(view.front_runs[1].math.is_some());
-        assert_eq!(view.context, ["Use $⍰ + ⬚$"]);
+        assert_eq!(view.context, ["Use $a + b$"]);
         let context_math = view.context_runs[0]
             .iter()
             .find(|run| run.math.is_some())
             .unwrap();
-        assert_eq!(context_math.text, "⍰ + ⬚");
+        assert_eq!(context_math.text, "a + b");
         assert!(context_math.math.as_ref().unwrap().svg.is_some());
         assert_eq!(view.back[0], "x^2");
         assert!(view.back_runs[0][0].math.as_ref().unwrap().display);
@@ -2194,7 +2461,7 @@ mod tests {
             .find(|card| card.back == vec!["lunate".to_string()])
             .expect("the first blank produced a card");
         let view = CardView::from(lunate_card);
-        let image = &view.images_back[0];
+        let image = &view.images[0];
 
         let roles: Vec<RegionRole> = image.regions.iter().map(|r| r.role).collect();
         assert_eq!(
@@ -2222,7 +2489,7 @@ mod tests {
             .iter()
             .find(|card| card.back == vec!["hamate".to_string()])
             .expect("the second blank produced a card");
-        let sibling_roles: Vec<RegionRole> = CardView::from(hamate_card).images_back[0]
+        let sibling_roles: Vec<RegionRole> = CardView::from(hamate_card).images[0]
             .regions
             .iter()
             .map(|r| r.role)
@@ -2294,14 +2561,19 @@ mod tests {
             .expect("the card asking the Cache label");
         card.resolved_diagrams = vec![masked_fence_geometry(Vec::new())];
         let view = CardView::from(&*card);
-        let ContentUnit::Diagram {
-            regions,
-            alt,
-            revealed_alt,
-            ..
-        } = &view.context_units[0]
+        let Some(
+            [
+                ContentUnit::Sentence { .. },
+                ContentUnit::Diagram {
+                    regions,
+                    alt,
+                    revealed_alt,
+                    ..
+                },
+            ],
+        ) = view.front_units.as_deref()
         else {
-            panic!("the fence projects as a diagram: {:?}", view.context_units);
+            panic!("the fence projects as a diagram: {:?}", view.front_units);
         };
         assert_eq!(2, regions.len(), "asked plus sibling: {regions:?}");
         let asked = regions
@@ -2350,10 +2622,12 @@ mod tests {
         let card = &mut cards[0];
         card.resolved_diagrams = vec![masked_fence_geometry(Vec::new())];
         let view = CardView::from(&*card);
-        let ContentUnit::Code { lines } = &view.context_units[0] else {
+        let Some([ContentUnit::Sentence { .. }, ContentUnit::Code { lines }]) =
+            view.front_units.as_deref()
+        else {
             panic!(
                 "an id-position span falls back to source: {:?}",
-                view.context_units
+                view.front_units
             );
         };
         assert_eq!(
@@ -2387,10 +2661,12 @@ mod tests {
             },
         }])];
         let view = CardView::from(&*card);
-        let ContentUnit::Code { lines } = &view.context_units[0] else {
+        let Some([ContentUnit::Sentence { .. }, ContentUnit::Code { lines }]) =
+            view.front_units.as_deref()
+        else {
             panic!(
                 "an out-of-bounds unrelated range falls back to source: {:?}",
-                view.context_units
+                view.front_units
             );
         };
         assert_eq!(
@@ -2432,7 +2708,7 @@ mod tests {
                 card.is_blank_card(),
                 "this is a blank card, not a plain card"
             );
-            let cover = &CardView::from(card).images_back[0].regions[0];
+            let cover = &CardView::from(card).images[0].regions[0];
             assert_eq!(RegionRole::Cover, cover.role);
             assert!(
                 !cover.reveal_on_answer,

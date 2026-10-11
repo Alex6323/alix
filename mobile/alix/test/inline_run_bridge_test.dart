@@ -16,6 +16,7 @@ void main() {
       sub: true,
       sup: true,
       ins: true,
+      answer: false,
       math: bridge.MathView(display: true, svg: '<svg/>', error: 'fallback'),
     );
 
@@ -49,6 +50,7 @@ void main() {
       sub: false,
       sup: false,
       ins: false,
+      answer: false,
     );
 
     expect(inlineRunsFromBridge(const [plain]), const [

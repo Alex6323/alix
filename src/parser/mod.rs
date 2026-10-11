@@ -23,7 +23,7 @@ mod sidecar;
 mod stream;
 
 pub use canonical::{canonical_content, content_fingerprint, mix_fingerprint};
-pub use cloze::{BLANK, HIDDEN};
+pub use cloze::{ANSWER, BLANK, HIDDEN};
 use cloze::{Seg, scan_markers, seg_display};
 pub(crate) use frontmatter::is_frontmatter_fence;
 pub use frontmatter::{
@@ -161,7 +161,7 @@ pub enum ParseError {
     NonIntegerVersion { line: usize, found: &'static str },
     #[error("line {line}: control character {found} outside the whitespace set")]
     ControlChar { line: usize, found: String },
-    #[error("line {0}: `⍰` and `⬚` are the mask markers and cannot appear in authored text")]
+    #[error("line {0}: `⍰`, `⬚` and `⍱` are the mask markers and cannot appear in authored text")]
     ReservedMarker(usize),
     #[error("line {line}: `title:` must be a non-empty single line, found {value:?}")]
     InvalidTitle { line: usize, value: String },
@@ -899,7 +899,10 @@ fn prepare(text: &str) -> Result<Vec<&str>, ParseError> {
                 found: format!("U+{:04X}", ch as u32),
             });
         }
-        if line.contains(cloze::BLANK) || line.contains(cloze::HIDDEN) {
+        if [cloze::BLANK, cloze::HIDDEN, cloze::ANSWER]
+            .iter()
+            .any(|marker| line.contains(marker))
+        {
             return Err(ParseError::ReservedMarker(idx + 1));
         }
         lines.push(line);
@@ -2121,6 +2124,7 @@ struct SpanSplice {
 /// (None where a line is image-only and rides the media list instead) plus
 /// every span's bound splice.
 struct BlockProse {
+    heading: String,
     lines: Vec<Option<String>>,
     splices: Vec<SpanSplice>,
 }
@@ -2303,6 +2307,9 @@ fn build_region_cards(
     if cards.len() == block_start {
         return Ok(());
     }
+    let Some(prose) = prose else {
+        return Ok(());
+    };
     let template = cards[block_start].clone();
     let mut blanks: Vec<&RawRegion> = template
         .images
@@ -2328,46 +2335,45 @@ fn build_region_cards(
         .map(|note| split_note(note, &names, template.line, lints))
         .collect();
 
-    // The block's prose rides every region card as context, its own span as
-    // the blank marker, sibling and cover spans as the hidden marker; a rect
-    // card masks every span. Splices land on authored bytes, so styling and
-    // escapes survive around the markers.
-    let masked_context = |own: &[usize]| -> Vec<String> {
-        let Some(prose) = prose else {
-            return Vec::new();
-        };
-        prose
-            .lines
-            .iter()
-            .enumerate()
-            .filter_map(|(index, line)| {
-                let mut line = line.clone()?;
+    let masked_question = |own: &[usize], filled: &[usize]| -> String {
+        std::iter::once((Origin::Heading, Some(&prose.heading)))
+            .chain(
+                prose
+                    .lines
+                    .iter()
+                    .enumerate()
+                    .map(|(index, line)| (Origin::Answer(index), line.as_ref())),
+            )
+            .filter_map(|(origin, line)| {
+                let mut line = line?.clone();
                 let mut cuts: Vec<&SpanSplice> = prose
                     .splices
                     .iter()
-                    .filter(|splice| splice.origin == Origin::Answer(index))
+                    .filter(|splice| splice.origin == origin)
                     .collect();
                 cuts.sort_by_key(|splice| std::cmp::Reverse(splice.range.0));
                 for cut in cuts {
-                    let marker = if !cut.cover && own.contains(&cut.directive_line) {
-                        cloze::BLANK
+                    let asked = !cut.cover && own.contains(&cut.directive_line);
+                    if asked && filled.contains(&cut.directive_line) {
+                        line.insert_str(cut.range.1, cloze::ANSWER);
+                        line.insert_str(cut.range.0, cloze::ANSWER);
                     } else {
-                        cloze::HIDDEN
-                    };
-                    line.replace_range(cut.range.0..cut.range.1, marker);
+                        let marker = if asked { cloze::BLANK } else { cloze::HIDDEN };
+                        line.replace_range(cut.range.0..cut.range.1, marker);
+                    }
                 }
                 Some(line)
             })
-            .collect()
+            .collect::<Vec<String>>()
+            .join("\n")
     };
     let math_line = |line: usize| {
-        prose.is_some_and(|prose| {
-            prose
-                .splices
-                .iter()
-                .any(|splice| splice.directive_line == line && !splice.cover && splice.math)
-        })
+        prose
+            .splices
+            .iter()
+            .any(|splice| splice.directive_line == line && !splice.cover && splice.math)
     };
+    let span_line = |line: usize| template.span_regions.iter().any(|span| span.line == line);
     let region_card = |slot: RegionSlot, back: Vec<String>| {
         let mut card = template.clone();
         // The displayed answer regains its `$` delimiters so a math-classed
@@ -2398,8 +2404,21 @@ fn build_region_cards(
             RegionSlot::Single { line, .. } => vec![*line],
             RegionSlot::Group { members, .. } => members.iter().map(|m| m.line).collect(),
         };
-        card.context = masked_context(&own);
-        card.context_leads = !card.context.is_empty();
+        card.front = masked_question(&own, &[]);
+        let mut filled: Vec<usize> = Vec::new();
+        let mut rects_stepped = false;
+        card.front_steps = own
+            .iter()
+            .filter_map(|line| {
+                if span_line(*line) {
+                    filled.push(*line);
+                } else if std::mem::replace(&mut rects_stepped, true) {
+                    return None;
+                }
+                Some(masked_question(&own, &filled))
+            })
+            .collect();
+        card.images.extend(std::mem::take(&mut card.images_back));
         card.notes = notes
             .iter()
             .filter_map(|note| {
@@ -2418,12 +2437,7 @@ fn build_region_cards(
         card.direction = None;
         card.input = card.input.or(math.then_some(Input::Draw));
         card.row = None;
-        // The effective question includes the masked context (ADR 0034): two
-        // spans over the same word in different sentences are different
-        // questions, so cached AI artifacts stale when the context moves.
-        let mut question = card.context.clone();
-        question.extend(card.back.iter().cloned());
-        card.content_fingerprint = content_fingerprint(&card.front, &question);
+        card.content_fingerprint = content_fingerprint(&card.front, &card.back);
         card
     };
 
@@ -2485,10 +2499,8 @@ fn build_region_cards(
         let Some(hidden) = &blank.hidden else {
             continue;
         };
-        let in_front = prose.is_some_and(|prose| {
-            prose.splices.iter().any(|splice| {
-                splice.directive_line == blank.line && !matches!(splice.origin, Origin::Answer(_))
-            })
+        let in_front = prose.splices.iter().any(|splice| {
+            splice.directive_line == blank.line && !matches!(splice.origin, Origin::Answer(_))
         });
         if !in_front && names_answer(&template.front, hidden) {
             lints.push(Lint {
@@ -3491,6 +3503,7 @@ fn build_card_inner(
     } else {
         content_fingerprint(&front, &back_lines)
     };
+    let question_heading = first_blank_line.is_some().then(|| front.clone());
     let mut card = Card::plain_with_fingerprints(
         Arc::clone(subject),
         front,
@@ -3515,7 +3528,8 @@ fn build_card_inner(
     card.diagrams = directives.diagrams;
     card.givens = directives.givens;
     cards.push(card);
-    let prose = first_blank_line.is_some().then(|| BlockProse {
+    let prose = question_heading.map(|heading| BlockProse {
+        heading,
         lines: answer
             .iter()
             .zip(&parsed)
@@ -3530,6 +3544,10 @@ fn build_card_inner(
 mod tests {
     use super::*;
     use crate::session::Order;
+
+    fn question_lines(card: &Card) -> Vec<String> {
+        card.front.split('\n').skip(1).map(str::to_string).collect()
+    }
 
     #[test]
     fn indentation_width_advances_tabs_to_four_column_stops() {
@@ -3625,11 +3643,11 @@ mod tests {
         assert!(card.region.is_some(), "the span derives a blank card");
         assert_eq!(vec!["Paris".to_string()], card.back);
         assert!(
-            card.context
+            question_lines(card)
                 .iter()
                 .any(|line| line.contains("| France | ⍰ |")),
             "the table renders in full with the cell blanked: {:?}",
-            card.context
+            question_lines(card)
         );
     }
 
@@ -3791,7 +3809,9 @@ mod tests {
             "the ruled definition table is deck-wide, including section prose"
         );
         assert!(
-            deck.cards[0].context.iter().all(|line| line != "[r]: /url"),
+            question_lines(&deck.cards[0])
+                .iter()
+                .all(|line| line != "[r]: /url"),
             "hidden definition metadata must not leak into card context"
         );
     }
@@ -7996,7 +8016,10 @@ a
         );
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["Berlin", "Germany"], deck.cards[0].back);
-        assert_eq!(vec!["⍰ is the capital", "of ⍰"], deck.cards[0].context);
+        assert_eq!(
+            vec!["⍰ is the capital", "of ⍰"],
+            question_lines(&deck.cards[0])
+        );
     }
 
     #[test]
@@ -8617,10 +8640,13 @@ the answer
         assert_eq!(1, deck.cards.len());
         let card = &deck.cards[0];
         assert!(card.is_blank_card());
-        assert!(card.images.is_empty(), "a blank card has no answer side");
+        assert!(
+            card.images_back.is_empty(),
+            "a blank card has no answer side"
+        );
         assert_eq!(
             vec![PathBuf::from("f.png"), PathBuf::from("b.png")],
-            img_srcs(&card.images_back)
+            img_srcs(&card.images)
         );
     }
 
@@ -9051,19 +9077,19 @@ the answer
             "## bones\n![](a.png)\n![](b.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\n![](c.png)\n<!-- blank: rect x=3 y=3 width=4 height=4 hidden=\"x\" -->\n",
         );
         let card = &deck.cards[0];
-        assert_eq!(3, card.images_back.len(), "every image survives");
+        assert_eq!(3, card.images.len(), "every image survives");
         assert!(
-            card.images_back[0].regions.is_empty(),
+            card.images[0].regions.is_empty(),
             "the farther image gets nothing"
         );
         assert_eq!(
             1,
-            card.images_back[1].regions.len(),
+            card.images[1].regions.len(),
             "the image directly above binds"
         );
         assert_eq!(
             1,
-            card.images_back[2].regions.len(),
+            card.images[2].regions.len(),
             "a later image binds its own directive"
         );
         assert!(card.span_regions.is_empty());
@@ -9262,9 +9288,7 @@ the answer
                 format!(
                     "## q\n![](a.png)\n![](b.png)\n{BETWEEN}<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\nanswer\n"
                 ),
-                |card| {
-                    card.images_back[0].regions.is_empty() && card.images_back[1].regions.len() == 1
-                },
+                |card| card.images[0].regions.is_empty() && card.images[1].regions.len() == 1,
             ),
             (
                 "a cover rect under an image below the divider",
@@ -9398,14 +9422,14 @@ the answer
         );
         assert_eq!(
             vec!["alpha one", "alpha two ⍰ three"],
-            deck.cards[0].context,
+            question_lines(&deck.cards[0]),
             "the first block's `alpha` is not an occurrence"
         );
 
         let deck = parse("## q\nalpha one\n\nalpha two\n<!-- blank: span hidden=\"alpha\" -->\n");
         assert_eq!(
             vec!["alpha one", "⍰ two"],
-            deck.cards[0].context,
+            question_lines(&deck.cards[0]),
             "occurrence 1 is the bound block's first"
         );
 
@@ -9481,7 +9505,7 @@ the answer
         assert_eq!(vec!["welcome"], deck.cards[0].back);
         assert_eq!(
             vec!["&amp; ⍰"],
-            deck.cards[0].context,
+            question_lines(&deck.cards[0]),
             "the unrelated entity remains authored while the span masks ordinary prose"
         );
     }
@@ -9492,7 +9516,7 @@ the answer
             parse("## q\nTom &amp; Jerry\n<!-- blank: span hidden=\"& Jerry\" b:a1b2c3 -->\n");
         assert_eq!(
             vec!["Tom ⍰"],
-            deck.cards[0].context,
+            question_lines(&deck.cards[0]),
             "the splice takes all of `&amp;`, neither the space before it nor leaving `amp;`"
         );
     }
@@ -9692,7 +9716,7 @@ the answer
         let deck = parse(
             "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=100 height=100 -->\n<!-- blank: rect x=90 y=0 width=20 height=20 hidden=\"x\" -->\n",
         );
-        assert_eq!(1, deck.cards[0].images_back[0].regions.len());
+        assert_eq!(1, deck.cards[0].images[0].regions.len());
 
         // The ADR's no-crop percentage example: x=100% width=10% clips to nothing.
         let error = err(
@@ -9733,7 +9757,7 @@ the answer
         let deck = parse(
             "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=50 height=50 -->\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" b:a1b2c3 -->\n",
         );
-        let image = &deck.cards[0].images_back[0];
+        let image = &deck.cards[0].images[0];
         assert_eq!(1, image.regions.len());
         assert_eq!(Some("a1b2c3"), image.regions[0].stamp.as_deref());
         assert_eq!("50", image.crop.as_ref().unwrap().width.literal);
@@ -9805,7 +9829,7 @@ the answer
         assert_eq!("name the parts", region_card.front);
         assert_eq!(
             1,
-            region_card.images_back.len(),
+            region_card.images.len(),
             "the media rides along for masking"
         );
     }
@@ -9952,7 +9976,7 @@ the answer
             cloze.cards[0].is_blank_card(),
             "a cover is a display transform, not a template: the span cards stand"
         );
-        assert_eq!(1, cloze.cards[0].images_back[0].regions.len());
+        assert_eq!(1, cloze.cards[0].images[0].regions.len());
 
         let choice = parse(&format!(
             "## pick\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\n- [x] alpha\n- [ ] beta\n<!-- choices: single -->\n<!-- id: {RTOK} -->\n"
@@ -10011,7 +10035,7 @@ the answer
         assert_eq!(1, deck.cards.len());
         assert_eq!(
             vec!["sum $\u{2370}$ here"],
-            deck.cards[0].context,
+            question_lines(&deck.cards[0]),
             "the whole-piece carve-out masks the formula to the blank marker"
         );
     }
@@ -10051,7 +10075,7 @@ the answer
         let deck = parse(&format!(
             "## q\n$x = b^2 - 4ac$\n<!-- blank: span hidden=\"b^2\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
-        assert_eq!(vec!["$x = \u{2370} - 4ac$"], deck.cards[0].context);
+        assert_eq!(vec!["$x = \u{2370} - 4ac$"], question_lines(&deck.cards[0]));
     }
 
     #[test]
@@ -10059,7 +10083,7 @@ the answer
         let deck = parse(&format!(
             "## q\n$x = -b \\pm c$\n<!-- blank: span hidden=\"\\\\pm\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
-        assert_eq!(vec!["$x = -b \u{2370} c$"], deck.cards[0].context);
+        assert_eq!(vec!["$x = -b \u{2370} c$"], question_lines(&deck.cards[0]));
     }
 
     #[test]
@@ -10081,7 +10105,7 @@ the answer
         let deck = parse(&format!(
             "## q\n$z+\\alpha{{x}}^2$\n<!-- blank: span hidden=\"{{x}}^2\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
-        assert_eq!(vec!["$z+\\alpha\u{2370}$"], deck.cards[0].context);
+        assert_eq!(vec!["$z+\\alpha\u{2370}$"], question_lines(&deck.cards[0]));
     }
 
     #[test]
@@ -10095,7 +10119,7 @@ the answer
         let Err(ParseError::InvalidRegion { message, .. }) = &result else {
             panic!(
                 "a macro argument plus its owner's script was accepted as {:?}",
-                result.unwrap().cards[0].context
+                question_lines(&result.unwrap().cards[0])
             );
         };
         assert!(
@@ -10115,7 +10139,7 @@ the answer
         let Err(ParseError::InvalidRegion { message, .. }) = &result else {
             panic!(
                 "a local macro argument plus its owner's script was accepted as {:?}",
-                result.unwrap().cards[0].context
+                question_lines(&result.unwrap().cards[0])
             );
         };
         assert!(
@@ -10150,7 +10174,7 @@ the answer
             ),
         )
         .expect("the group after a one-argument macro is an independent unit");
-        assert_eq!(vec!["$z+\\boxed{x}⍰$"], deck.cards[0].context);
+        assert_eq!(vec!["$z+\\boxed{x}⍰$"], question_lines(&deck.cards[0]));
     }
 
     #[test]
@@ -10162,7 +10186,7 @@ the answer
             ),
         )
         .expect("an operator name that saturates in-body leaves the next group independent");
-        assert_eq!(vec!["$z+\\limsup⍰$"], deck.cards[0].context);
+        assert_eq!(vec!["$z+\\limsup⍰$"], question_lines(&deck.cards[0]));
     }
 
     #[test]
@@ -10174,7 +10198,10 @@ the answer
             ),
         )
         .expect("the commented spelling never reaches the renderer");
-        assert_eq!(vec!["$⍰+y % \\def\\foo{z}$"], deck.cards[0].context);
+        assert_eq!(
+            vec!["$⍰+y % \\def\\foo{z}$"],
+            question_lines(&deck.cards[0])
+        );
     }
 
     #[test]
@@ -10208,7 +10235,7 @@ the answer
             "## q\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len());
-        assert_eq!(vec!["$A=\u{2370}$"], deck.cards[0].context);
+        assert_eq!(vec!["$A=\u{2370}$"], question_lines(&deck.cards[0]));
     }
 
     #[test]
@@ -10219,7 +10246,7 @@ the answer
         ));
         assert_eq!(
             vec!["$\\begin{pmatrix}\u{2370} & b\\end{pmatrix}$"],
-            deck.cards[0].context
+            question_lines(&deck.cards[0])
         );
     }
 
@@ -10231,7 +10258,7 @@ the answer
         ));
         assert_eq!(
             vec!["$\\frac{\u{2370}}{cd}$"],
-            deck.cards[0].context,
+            question_lines(&deck.cards[0]),
             "the equal-depth interior of one group is a unit"
         );
 
@@ -10285,7 +10312,11 @@ the answer
                 "## q\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
             ));
             assert_eq!(1, deck.cards.len(), "{hidden}");
-            assert_eq!(vec!["$\u{2370}$"], deck.cards[0].context, "{hidden}");
+            assert_eq!(
+                vec!["$\u{2370}$"],
+                question_lines(&deck.cards[0]),
+                "{hidden}"
+            );
         }
     }
 
@@ -10296,7 +10327,7 @@ the answer
         ));
         assert_eq!(
             vec!["$ \u{2370} $"],
-            deck.cards[0].context,
+            question_lines(&deck.cards[0]),
             "whitespace-adjacent dollars never open math, so the token rules do not apply"
         );
     }
@@ -10309,7 +10340,7 @@ the answer
 
         assert_eq!(
             vec!["$a % target$ ⍰"],
-            deck.cards[0].context,
+            question_lines(&deck.cards[0]),
             "Ratex does not render source after `%`, so that occurrence is not learner-visible"
         );
     }
@@ -10356,7 +10387,11 @@ the answer
             let deck = parse(&format!(
                 "## q\n{line}\n<!-- blank: span hidden=\"{hidden}\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
             ));
-            assert_eq!(vec![masked.to_string()], deck.cards[0].context, "{line}");
+            assert_eq!(
+                vec![masked.to_string()],
+                question_lines(&deck.cards[0]),
+                "{line}"
+            );
         }
     }
 
@@ -10444,6 +10479,7 @@ the answer
     fn the_mask_codepoints_are_rejected_in_authored_text_anywhere() {
         assert_eq!(ParseError::ReservedMarker(2), err("## q\na ⍰ b\n"));
         assert_eq!(ParseError::ReservedMarker(1), err("## q ⬚\nanswer\n"));
+        assert_eq!(ParseError::ReservedMarker(2), err("## q\na ⍱b⍱ c\n"));
     }
 
     #[test]
@@ -10452,8 +10488,7 @@ the answer
             "## q\nfill the ____ gap in prose\n<!-- blank: span hidden=\"prose\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
-            vec!["fill the ____ gap in ⍰"],
-            deck.cards[0].context,
+            "q\nfill the ____ gap in ⍰", deck.cards[0].front,
             "an authored marker lookalike is text; only the reserved codepoint masks"
         );
     }
@@ -10545,22 +10580,152 @@ the answer
     }
 
     #[test]
-    fn a_span_cards_context_masks_own_as_blank_and_siblings_as_hidden() {
-        let deck = parse(&format!(
-            "## anatomy\nthe lunate sits beside the hamate bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->\n<!-- cover: span hidden=\"bone\" -->\n<!-- id: {RTOK} -->\n"
-        ));
-        assert_eq!(2, deck.cards.len());
-        assert_eq!(
-            vec!["the ⍰ sits beside the ⬚ ⬚"],
-            deck.cards[0].context,
-            "own blank asked, sibling and cover hidden"
-        );
-        assert!(deck.cards[0].context_leads);
-        assert_eq!(
-            vec!["the ⬚ sits beside the ⍰ ⬚"],
-            deck.cards[1].context,
-            "each card asks its own span"
-        );
+    fn a_blank_cards_front_is_the_masked_question_from_the_heading_down() {
+        let rows: [(&str, String, Vec<&str>); 4] = [
+            (
+                "a span on the heading line",
+                format!(
+                    "## The trust root is the genesis committee.\n<!-- blank: span hidden=\"genesis committee\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec!["The trust root is the ⍰."],
+            ),
+            (
+                "spans and a cover in the prose",
+                format!(
+                    "## anatomy\nthe lunate sits beside the hamate bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->\n<!-- cover: span hidden=\"bone\" -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec![
+                    "anatomy\nthe ⍰ sits beside the ⬚ ⬚",
+                    "anatomy\nthe ⬚ sits beside the ⍰ ⬚",
+                ],
+            ),
+            (
+                "a cover on the heading above a blanked line",
+                format!(
+                    "## the lunate bone\n<!-- cover: span hidden=\"lunate\" -->\nit sits beside the hamate\n<!-- blank: span hidden=\"hamate\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec!["the ⬚ bone\nit sits beside the ⍰"],
+            ),
+            (
+                "a group beside a single",
+                format!(
+                    "## q\nalpha beta gamma\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [g] hidden=\"gamma\" b:d4e5f6 -->\n<!-- blank: span hidden=\"beta\" b:e5f6a7 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec!["q\n⍰ ⬚ ⍰", "q\n⬚ ⍰ ⬚"],
+            ),
+        ];
+        for (label, text, fronts) in rows {
+            let deck = parse(&text);
+            assert_eq!(
+                fronts,
+                deck.cards
+                    .iter()
+                    .map(|card| card.front.as_str())
+                    .collect::<Vec<_>>(),
+                "{label}: the front is the masked question"
+            );
+            for card in &deck.cards {
+                assert!(
+                    card.context.is_empty(),
+                    "{label}: a blank card has no context"
+                );
+                for hidden in &card.back {
+                    assert!(
+                        !card.front.contains(hidden.as_str()),
+                        "{label}: the front shows its own answer {hidden:?}: {:?}",
+                        card.front
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_blank_cards_front_steps_fill_its_own_blanks_in_directive_order_and_keep_siblings_hidden() {
+        let rows: [(&str, String, Vec<Vec<&str>>); 4] = [
+            (
+                "one span per card",
+                format!(
+                    "## anatomy\nthe lunate sits beside the hamate bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->\n<!-- cover: span hidden=\"bone\" -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec![
+                    vec!["anatomy\nthe ⍱lunate⍱ sits beside the ⬚ ⬚"],
+                    vec!["anatomy\nthe ⬚ sits beside the ⍱hamate⍱ ⬚"],
+                ],
+            ),
+            (
+                "a group fills one member per step",
+                format!(
+                    "## q\nalpha beta gamma\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [g] hidden=\"gamma\" b:d4e5f6 -->\n<!-- blank: span hidden=\"beta\" b:e5f6a7 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec![
+                    vec!["q\n⍱alpha⍱ ⬚ ⍰", "q\n⍱alpha⍱ ⬚ ⍱gamma⍱"],
+                    vec!["q\n⬚ ⍱beta⍱ ⬚"],
+                ],
+            ),
+            (
+                "a rect is one step with the question unchanged",
+                region_deck(
+                    r#"<!-- blank: rect x=1 y=1 width=2 height=2 hidden="lunate" b:a1b2c3 -->"#,
+                ),
+                vec![vec!["name the parts"]],
+            ),
+            (
+                "a group of a rect and a span steps in directive order",
+                format!(
+                    "## name\n![](hand.png)\n<!-- blank: rect [g] x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\nthe hamate is a bone\n<!-- blank: span [g] hidden=\"hamate\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec![vec![
+                    "name\nthe ⍰ is a bone",
+                    "name\nthe ⍱hamate⍱ is a bone",
+                ]],
+            ),
+        ];
+        for (label, text, steps) in rows {
+            let deck = parse(&text);
+            assert_eq!(
+                steps,
+                deck.cards
+                    .iter()
+                    .map(|card| card
+                        .front_steps
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>())
+                    .collect::<Vec<_>>(),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_blank_cards_media_rides_the_question_side() {
+        for (label, text) in [
+            (
+                "an image blank",
+                region_deck(
+                    r#"<!-- blank: rect x=1 y=1 width=2 height=2 hidden="lunate" b:a1b2c3 -->"#,
+                ),
+            ),
+            (
+                "an image under a blanked line",
+                format!(
+                    "## q\nthe lunate\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n![](hand.png)\n<!-- id: {RTOK} -->\n"
+                ),
+            ),
+        ] {
+            let deck = parse(&text);
+            let card = &deck.cards[0];
+            assert_eq!(
+                vec![PathBuf::from("hand.png")],
+                img_srcs(&card.images),
+                "{label}: the image is part of the question"
+            );
+            assert!(
+                card.images_back.is_empty(),
+                "{label}: nothing is on an answer side"
+            );
+        }
     }
 
     #[test]
@@ -10575,7 +10740,7 @@ the answer
             .expect("the rect card");
         assert_eq!(
             vec!["the ⬚ sits center"],
-            rect.context,
+            question_lines(rect),
             "prose is context on a rect card: every span is hidden"
         );
     }
@@ -10587,7 +10752,7 @@ the answer
         ));
         assert_eq!(
             vec!["**⍰** York is big"],
-            deck.cards[0].context,
+            question_lines(&deck.cards[0]),
             "the splice lands inside the markers, so the bold survives"
         );
     }
@@ -10657,7 +10822,7 @@ the answer
             "## q\nalpha then beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [pair] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len(), "one group card");
-        assert_eq!(vec!["⍰ then ⍰"], deck.cards[0].context);
+        assert_eq!(vec!["⍰ then ⍰"], question_lines(&deck.cards[0]));
     }
 
     #[test]
@@ -10711,7 +10876,8 @@ the answer
             "the same word in a different sentence position is a different question"
         );
         assert_ne!(
-            one.cards[0].context, two.cards[0].context,
+            question_lines(&one.cards[0]),
+            question_lines(&two.cards[0]),
             "the mask sits on a different occurrence"
         );
     }
@@ -10723,10 +10889,10 @@ the answer
         ));
         assert_eq!(
             vec!["the ⍰ sits center"],
-            deck.cards[0].context,
-            "the image rides images_back, never the prose context"
+            question_lines(&deck.cards[0]),
+            "the image rides the media list, never the prose"
         );
-        assert_eq!(1, deck.cards[0].images_back.len());
+        assert_eq!(1, deck.cards[0].images.len());
     }
 
     #[test]
@@ -10747,7 +10913,10 @@ the answer
         ));
         assert_eq!(1, deck.cards.len());
         assert!(deck.cards[0].is_blank_card());
-        assert_eq!(vec!["the legend says ⬚; fill ⍰"], deck.cards[0].context);
+        assert_eq!(
+            vec!["the legend says ⬚; fill ⍰"],
+            question_lines(&deck.cards[0])
+        );
     }
 
     #[test]
@@ -10771,12 +10940,10 @@ the answer
         );
         assert_eq!(2, deck.cards.len());
         for card in &deck.cards {
-            let mut effective_question = card.context.clone();
-            effective_question.extend(card.back.iter().cloned());
             assert_eq!(
-                content_fingerprint(&card.front, &effective_question),
+                content_fingerprint(&card.front, &card.back),
                 card.content_fingerprint,
-                "card back {:?} must hash front, its masked context, and its answer",
+                "card back {:?} must hash its masked question and its answer",
                 card.back
             );
         }
@@ -10800,14 +10967,14 @@ the answer
             (
                 "single region",
                 one("## single\nalpha then beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"),
-                (0x7295c529301f959f, 0x63853a6ecb244205),
+                (0x1accb8b0cee7e6c4, 0x63853a6ecb244205),
             ),
             (
                 "group region",
                 one(
                     "## group\nalpha then beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [pair] hidden=\"beta\" b:d4e5f6 -->\n",
                 ),
-                (0x4c937710eca65745, 0x2177997d7c587c5d),
+                (0x8594c608942a7f42, 0x2177997d7c587c5d),
             ),
             (
                 "choice",
@@ -10866,7 +11033,7 @@ the answer
             .iter()
             .find(|card| card.back == ["alpha"])
             .unwrap();
-        assert_eq!(alpha_before.context, alpha_after.context);
+        assert_eq!(question_lines(alpha_before), question_lines(alpha_after));
         assert_eq!(alpha_before.back, alpha_after.back);
         assert_eq!(
             alpha_before.content_fingerprint, alpha_after.content_fingerprint,

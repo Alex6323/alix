@@ -488,18 +488,9 @@ export function createStudy({
       }
       card.insertBefore(row, q);
     }
-    const frontNode = frontEl(c.front, c.front_runs, c.front_units);
-    // Where context is the question (a cloze sentence) it leads and the front
-    // steps back to a topic; where it only labels the front (a table title) the
-    // front keeps the lead and the label sits above it.
-    if (c.context.length && c.context_leads) frontNode.classList.add("topic");
-    if (!c.context_leads) {
-      appendContext(q, c.context, c.context_runs, c.context_units, "context label", contextDiagram);
-    }
-    q.appendChild(frontNode);
-    if (c.context_leads) {
-      appendContext(q, c.context, c.context_runs, c.context_units, undefined, contextDiagram);
-    }
+    // A context line labels the front (a card table's title) above it.
+    appendContext(q, c.context, c.context_runs, [], "context label", contextDiagram);
+    q.appendChild(frontEl(c.front, c.front_runs, c.front_units, contextDiagram));
     appendImages(q, c.images);
     fitQuestion(q);
 
@@ -525,18 +516,8 @@ export function createStudy({
       moreHint: false, // browse has no overflow marker
     });
 
-    const frontNode = frontEl(c.front, c.front_runs, c.front_units);
-    // Where context is the question (a cloze sentence) it leads and the front
-    // steps back to a topic; where it only labels the front (a table title) the
-    // front keeps the lead and the label sits above it.
-    if (c.context.length && c.context_leads) frontNode.classList.add("topic");
-    if (!c.context_leads) {
-      appendContext(q, c.context, c.context_runs, c.context_units, "context label", browseDiagram);
-    }
-    q.appendChild(frontNode);
-    if (c.context_leads) {
-      appendContext(q, c.context, c.context_runs, c.context_units, undefined, browseDiagram);
-    }
+    appendContext(q, c.context, c.context_runs, [], "context label", browseDiagram);
+    q.appendChild(frontEl(c.front, c.front_runs, c.front_units, browseDiagram));
     appendImages(q, c.images);
     fitQuestion(q);
 

@@ -30,9 +30,7 @@
     ],
     "citations": [],
     "context": [],
-    "context_leads": false,
     "context_runs": [],
-    "context_units": [],
     "crumb": null,
     "front": "capital of France",
     "front_runs": [
@@ -40,6 +38,7 @@
         "text": "capital of France"
       }
     ],
+    "front_steps": [],
     "id": "card-9w2c7xkq4m",
     "images": [],
     "images_back": [],

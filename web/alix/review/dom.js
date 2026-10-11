@@ -101,11 +101,17 @@ function isStandaloneInlineMath(runs) {
     !!runs[0].math && !runs[0].math.display;
 }
 
+// A text run carries a mask marker only on a blank card's question; the
+// marker renders as a chip wherever runs render.
 export function appendRuns(parent, runs) {
   const standaloneMath = isStandaloneInlineMath(runs);
   for (const run of runs || []) {
-    const node = run.math ? mathRunNode(run) : styledRunNode(run, run.text);
-    if (standaloneMath && run.math) node.classList.add("math-standalone");
+    if (!run.math) {
+      appendContextText(parent, run);
+      continue;
+    }
+    const node = mathRunNode(run);
+    if (standaloneMath) node.classList.add("math-standalone");
     parent.appendChild(node);
   }
 }
@@ -194,7 +200,7 @@ export function appendQuote(parent, units) {
   parent.appendChild(quote);
 }
 
-export function frontEl(text, runs, units) {
+export function frontEl(text, runs, units, makeDiagram) {
   if (units) {
     const wrap = el("div", "front-text multi");
     for (const unit of units) {
@@ -204,10 +210,7 @@ export function frontEl(text, runs, units) {
         else line.textContent = unit.text || "";
         wrap.appendChild(line);
       } else if (unit.kind === "diagram") {
-        const img = el("img", "diagram");
-        img.src = unit.src; img.alt = unit.alt || "";
-        img.width = unit.width; img.height = unit.height;
-        wrap.appendChild(img);
+        wrap.appendChild(makeDiagram ? makeDiagram(unit) : diagramImage(unit));
       } else if (unit.kind === "code") {
         const pre = el("pre");
         pre.appendChild(el("code", null, (unit.lines || []).join("\n")));
@@ -454,16 +457,7 @@ function appendContextLineText(parent, text, runs) {
     appendContextText(parent, { text: text || "" });
     return;
   }
-  const standaloneMath = isStandaloneInlineMath(runs);
-  for (const run of runs) {
-    if (run.math) {
-      const node = mathRunNode(run);
-      if (standaloneMath) node.classList.add("math-standalone");
-      parent.appendChild(node);
-    } else {
-      appendContextText(parent, run);
-    }
-  }
+  appendRuns(parent, runs);
 }
 
 export function contextLine(text, runs, cls, tag = "div") {

@@ -39,7 +39,6 @@
   "context": [
     "$$y^2$$"
   ],
-  "context_leads": true,
   "context_runs": [
     [
       {
@@ -51,7 +50,6 @@
       }
     ]
   ],
-  "context_units": [],
   "crumb": null,
   "front": "x^2",
   "front_runs": [
@@ -63,6 +61,7 @@
       "text": "x^2"
     }
   ],
+  "front_steps": [],
   "id": "card-9w2c7xkq4m",
   "images": [],
   "images_back": [],

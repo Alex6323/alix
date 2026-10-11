@@ -53,11 +53,17 @@ function mathRunNode(run) {
   return wrap;
 }
 
+// A text run carries a mask marker only on a blank card's question; the
+// marker renders as a chip wherever runs render.
 function appendRuns(parent, runs) {
   const standaloneMath = isStandaloneInlineMath(runs);
   for (const run of runs || []) {
-    const node = run.math ? mathRunNode(run) : styledRunNode(run, run.text);
-    if (standaloneMath && run.math) node.classList.add("math-standalone");
+    if (!run.math) {
+      appendContextText(parent, run);
+      continue;
+    }
+    const node = mathRunNode(run);
+    if (standaloneMath) node.classList.add("math-standalone");
     parent.appendChild(node);
   }
 }
@@ -145,11 +151,35 @@ function appendTable(parent, unit) {
   parent.appendChild(scroll);
 }
 
-function frontPrompt(card) {
+function runLines(runs) {
+  const lines = [[]];
+  for (const run of runs) {
+    const parts = String(run.text).split("\n");
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i]) lines[lines.length - 1].push({ ...run, text: parts[i] });
+      if (i < parts.length - 1) lines.push([]);
+    }
+  }
+  return lines;
+}
+
+function frontPrompt(card, makeDiagram) {
   const prompt = el("div", "rev-prompt");
   if (!card.front_units) {
-    if (card.front_runs) appendRuns(prompt, card.front_runs);
-    else prompt.textContent = card.front || "";
+    if (!card.front_runs) {
+      prompt.textContent = card.front || "";
+      return prompt;
+    }
+    const lines = runLines(card.front_runs);
+    if (lines.length === 1) {
+      appendRuns(prompt, lines[0]);
+      return prompt;
+    }
+    for (const line of lines) {
+      const node = el("div", "rev-prompt-line");
+      appendRuns(node, line);
+      prompt.appendChild(node);
+    }
     return prompt;
   }
   for (const unit of card.front_units) {
@@ -162,10 +192,14 @@ function frontPrompt(card) {
       pre.appendChild(el("code", null, (unit.lines || []).join("\n")));
       prompt.appendChild(pre);
     } else if (unit.kind === "diagram") {
-      const img = el("img", "diagram");
-      img.src = unit.src; img.alt = unit.alt || "";
-      img.width = unit.width; img.height = unit.height;
-      prompt.appendChild(img);
+      if (makeDiagram) {
+        prompt.appendChild(makeDiagram(unit));
+      } else {
+        const img = el("img", "diagram");
+        img.src = unit.src; img.alt = unit.alt || "";
+        img.width = unit.width; img.height = unit.height;
+        prompt.appendChild(img);
+      }
     } else if (unit.kind === "checklist") {
       appendChecklist(prompt, unit.items);
     } else if (unit.kind === "table") {

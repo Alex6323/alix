@@ -71,9 +71,7 @@
   ],
   "citations": [],
   "context": [],
-  "context_leads": false,
   "context_runs": [],
-  "context_units": [],
   "crumb": null,
   "front": "What did Dijkstra say about testing?",
   "front_runs": [
@@ -81,6 +79,7 @@
       "text": "What did Dijkstra say about testing?"
     }
   ],
+  "front_steps": [],
   "id": "card-8k3p1vzr5n",
   "images": [],
   "images_back": [],

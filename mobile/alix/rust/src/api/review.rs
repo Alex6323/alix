@@ -10,7 +10,7 @@ pub use alix::{
     math::MathView,
     render::{AnswerStep, CellAlign, ChecklistItem, ContentUnit},
     card::Badge,
-    review::{CardView, CheckFeedback, ChoiceFeedback, CropView, ImageView, MultiChoiceFeedback, NoteView, RegionRole, RegionView, ReviewState},
+    review::{CardView, CheckFeedback, ChoiceFeedback, CropView, FrontStep, ImageView, MultiChoiceFeedback, NoteView, RegionRole, RegionView, ReviewState},
     session::RecognizeGap,
     trace::Phase as TraceSessionPhase,
     walk::Phase as WalkPhase,
@@ -58,7 +58,15 @@ pub struct _InlineRun {
     pub sub: bool,
     pub sup: bool,
     pub ins: bool,
+    pub answer: bool,
     pub math: Option<MathView>,
+}
+
+#[flutter_rust_bridge::frb(mirror(FrontStep))]
+pub struct _FrontStep {
+    pub front: String,
+    pub front_runs: Vec<InlineRun>,
+    pub front_units: Option<Vec<ContentUnit>>,
 }
 
 #[flutter_rust_bridge::frb(mirror(ChecklistItem))]
@@ -170,13 +178,12 @@ pub struct _CardView {
     pub front: String,
     pub front_runs: Vec<InlineRun>,
     pub front_units: Option<Vec<ContentUnit>>,
+    pub front_steps: Vec<FrontStep>,
     pub section_context: Vec<String>,
     pub section_context_runs: Vec<Vec<InlineRun>>,
     pub section_context_units: Vec<ContentUnit>,
     pub context: Vec<String>,
-    pub context_leads: bool,
     pub context_runs: Vec<Vec<InlineRun>>,
-    pub context_units: Vec<ContentUnit>,
     pub back: Vec<String>,
     pub back_runs: Vec<Vec<InlineRun>>,
     pub back_units: Vec<ContentUnit>,
@@ -1607,9 +1614,9 @@ mod tests {
         assert_eq!(tutor.back, authored_back);
 
         let view = s.state(Some(T0)).card.expect("a rendered card");
-        assert_ne!(
-            view.context, tutor.back,
-            "the CardView's context blanks the hole under review; the tutor \
+        assert!(
+            tutor.back.iter().all(|hidden| !view.front.contains(hidden)),
+            "the CardView's front blanks the hole under review; the tutor \
              sees the real answer, not the blanked-out puzzle"
         );
     }

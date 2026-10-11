@@ -10,7 +10,7 @@ use crate::{
     augment::AugmentCache,
     card::Card,
     inline::{DisplayProjector, InlineRun},
-    parser::{BLANK, HIDDEN},
+    parser::{ANSWER, BLANK, HIDDEN},
     render::ContentUnit,
     review::CardView,
 };
@@ -84,9 +84,20 @@ impl MathRenderer {
 }
 
 fn substitute_context_holes(source: &str) -> String {
-    source
+    fold_answer_pairs(source, |filled| format!(r"\boxed{{{filled}}}"))
         .replace(BLANK, r"\boxed{?}")
         .replace(HIDDEN, r"\boxed{\cdots}")
+}
+
+fn fold_answer_pairs(source: &str, fill: impl Fn(&str) -> String) -> String {
+    source
+        .split(ANSWER)
+        .enumerate()
+        .map(|(index, piece)| match index % 2 {
+            1 => fill(piece),
+            _ => piece.to_string(),
+        })
+        .collect()
 }
 
 /// Parse-only Ratex validation for bind-time span checks: no layout, no SVG.
@@ -302,7 +313,9 @@ fn collect_run_diagnostics(
         let Some(dependency_error) = &math.error else {
             continue;
         };
-        let normalized = run.text.replace(BLANK, "<hole>").replace(HIDDEN, "<hole>");
+        let normalized = fold_answer_pairs(&run.text, |_| "<hole>".to_string())
+            .replace(BLANK, "<hole>")
+            .replace(HIDDEN, "<hole>");
         if !seen.insert((line, normalized, dependency_error.clone())) {
             continue;
         }
@@ -385,6 +398,41 @@ mod tests {
         renderer.view(r"\frac{1", false, false);
         renderer.view(r"\frac{1", true, false);
         assert_eq!(renderer.render_count(), 1);
+    }
+
+    #[test]
+    fn an_answer_pair_inside_a_formula_renders_boxed() {
+        let source = "x = ⍱4ac⍱ + ⬚ - ⍱b^2⍱";
+        assert_eq!(
+            r"x = \boxed{4ac} + \boxed{\cdots} - \boxed{b^2}",
+            substitute_context_holes(source)
+        );
+        let mut renderer = MathRenderer::default();
+        let view = renderer.view(source, false, true);
+        assert!(view.svg.is_some(), "{}", view.error.unwrap_or_default());
+        let mut seen = HashSet::new();
+        let mut diagnostics = Vec::new();
+        let run = |text: &str| InlineRun {
+            text: text.to_string(),
+            math: Some(MathView {
+                display: false,
+                svg: None,
+                error: Some("boom".to_string()),
+            }),
+            ..InlineRun::default()
+        };
+        collect_run_diagnostics(
+            1,
+            "front",
+            &[run("x = ⍱4ac⍱"), run("x = ⍰")],
+            &mut seen,
+            &mut diagnostics,
+        );
+        assert_eq!(
+            1,
+            diagnostics.len(),
+            "a filled and a masked copy of one formula are one diagnostic: {diagnostics:?}"
+        );
     }
 
     #[test]
@@ -607,7 +655,7 @@ mod tests {
 
         let found = diagnostics(&parsed.cards, None);
         assert_eq!(1, found.len(), "{found:#?}");
-        assert_eq!("context", found[0].surface);
+        assert_eq!("front", found[0].surface);
     }
 
     #[test]

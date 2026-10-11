@@ -113,7 +113,13 @@ function harness(initial = review()) {
         getElementById: () => null,
       },
       el: element,
-      frontPrompt: () => element("div", "rev-prompt"),
+      frontPrompt: (card, makeDiagram) => {
+        const prompt = element("div", "rev-prompt");
+        for (const unit of card.front_units || []) {
+          if (unit.kind === "diagram") prompt.appendChild(makeDiagram(unit));
+        }
+        return prompt;
+      },
       mascot: () => element("div", "mascot"),
       stage,
     },
@@ -193,16 +199,15 @@ test("kids done summary does not call a partial answer right", () => {
   assert.ok(close, "the almost line still reports the work");
 });
 
-test("kids masks a context diagram until reveal, then swaps its alt", () => {
+test("kids masks a front diagram until reveal, then swaps its alt", () => {
   const original = review({
     card: {
       id: "card-1",
       front: "Question",
       back: ["Cache"],
       answer_steps: [{ kind: "line", back_from: 0, back_to: 1 }],
-      context: ["```mermaid", "flowchart LR", "  Cache[store] --> B[Cache]", "```"],
-      context_runs: [],
-      context_units: [{
+      context: [],
+      front_units: [{ kind: "sentence", text: "Question", runs: [{ text: "Question" }] }, {
         kind: "diagram",
         src: "/img/0123456789abcdef",
         width: 188,
@@ -247,22 +252,21 @@ test("kids masks a context diagram until reveal, then swaps its alt", () => {
   assert.equal(masks.length, 1, "the asked mask drops, the sibling stays");
 });
 
-test("kids renders a context diagram unit through the fence walk", () => {
+test("kids renders a front diagram unit in its own slot", () => {
   const original = review({
     card: {
       id: "card-1",
       front: "Question",
       back: ["Answer"],
       answer_steps: [{ kind: "line", back_from: 0, back_to: 1 }],
-      context: ["```mermaid", "flowchart LR", " A-->B", "```", "a sentence"],
-      context_runs: [],
-      context_units: [{
+      context: [],
+      front_units: [{ kind: "sentence", text: "Question", runs: [{ text: "Question" }] }, {
         kind: "diagram",
         src: "/img/0123456789abcdef",
         width: 188,
         height: 114,
         alt: "flowchart LR\n A-->B",
-      }],
+      }, { kind: "sentence", text: "a sentence", runs: [{ text: "a sentence" }] }],
       images: [],
       images_back: [],
       note: [],
@@ -273,11 +277,11 @@ test("kids renders a context diagram unit through the fence walk", () => {
 
   const image = find(run.stage, (node) =>
     node.tag === "img" && node.className === "diagram");
-  assert.equal(image?.src, "/img/0123456789abcdef", "the context fence renders the diagram");
+  assert.equal(image?.src, "/img/0123456789abcdef", "the front fence renders the diagram");
   assert.equal(image?.alt, "flowchart LR\n A-->B");
   const raw = find(run.stage, (node) =>
     typeof node.textContent === "string" && node.textContent.includes("```"));
-  assert.equal(raw, null, "no raw fence marker line survives in context");
+  assert.equal(raw, null, "no raw fence marker line survives on the front");
 });
 
 test("kids renders a diagram unit on answer reveal", () => {

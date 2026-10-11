@@ -148,14 +148,16 @@ pub struct Card {
     /// across decks, which is why the table rides the card, not the session.
     pub definitions: Arc<crate::inline::LinkDefinitions>,
     pub front: String,
+    /// A blank card's question with its own blanks filled in, one entry per
+    /// own blank in directive order, each filling every blank up to its own;
+    /// a filled span is wrapped in the answer marker. Empty on a plain card.
+    pub front_steps: Vec<String>,
     /// The card's section: its `# ` heading and that section's prose. Shown
     /// only on demand and never part of identity, so re-filing a card
     /// changes what it explains, never what it is.
     pub section_context: Vec<String>,
+    /// A card table's title; empty on every other card.
     pub context: Vec<String>,
-    /// Whether `context` is the question (a cloze sentence, which leads) or a
-    /// label for the front (a table title, which steps back).
-    pub context_leads: bool,
     pub back: Vec<String>,
     pub notes: Vec<Note>,
     pub line: usize,
@@ -294,9 +296,9 @@ impl Card {
             deck_id: Arc::from(""),
             definitions: Arc::default(),
             front,
+            front_steps: Vec::new(),
             section_context: Vec::new(),
             context: Vec::new(),
-            context_leads: false,
             back,
             notes,
             line,
@@ -338,6 +340,13 @@ impl Card {
         }
     }
 
+    pub fn question_text(&self) -> String {
+        self.front
+            .replace(crate::parser::BLANK, "____")
+            .replace(crate::parser::HIDDEN, "…")
+            .replace(crate::parser::ANSWER, "")
+    }
+
     pub fn reversed(&self) -> Card {
         let mut card = Card::plain(
             Arc::clone(&self.subject),
@@ -366,7 +375,6 @@ impl Card {
         card.sampling = self.sampling;
         card.ignored = self.ignored;
         card.context = self.context.clone();
-        card.context_leads = self.context_leads;
         card.reversed = true;
         // Reuses the forward card's fingerprint instead of recomputing over swapped sides: one
         // authored card is one content unit.
@@ -540,6 +548,21 @@ mod tests {
             *line = 9;
         }
         assert_eq!(single, moved, "a directive's file position is not identity");
+    }
+
+    #[test]
+    fn question_text_folds_every_marker_for_plain_text_consumers() {
+        let mut c = card(
+            "d.md",
+            "anatomy\nthe ⍰ sits beside the ⬚",
+            &["lunate"],
+            None,
+        );
+        assert_eq!("anatomy\nthe ____ sits beside the …", c.question_text());
+        c.front = "x = ⍱4ac⍱ + ⬚".to_string();
+        assert_eq!("x = 4ac + …", c.question_text());
+        c.front = "plain question".to_string();
+        assert_eq!("plain question", c.question_text());
     }
 
     #[test]

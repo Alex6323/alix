@@ -28,6 +28,7 @@ pub(super) struct CardDto {
     pub(super) front_runs: Vec<InlineRun>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) front_units: Option<Vec<ContentUnit>>,
+    pub(super) front_steps: Vec<FrontStepDto>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) section_context: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -35,9 +36,7 @@ pub(super) struct CardDto {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) section_context_units: Vec<ContentUnit>,
     pub(super) context: Vec<String>,
-    pub(super) context_leads: bool,
     pub(super) context_runs: Vec<Vec<InlineRun>>,
-    pub(super) context_units: Vec<ContentUnit>,
     pub(super) back: Vec<String>,
     pub(super) back_runs: Vec<Vec<InlineRun>>,
     pub(super) back_units: Vec<ContentUnit>,
@@ -48,6 +47,14 @@ pub(super) struct CardDto {
     pub(super) images_back: Vec<ImageDto>,
     pub(super) citations: Vec<CitationDto>,
     pub(super) crumb: Option<CrumbDto>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct FrontStepDto {
+    pub(super) front: String,
+    pub(super) front_runs: Vec<InlineRun>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) front_units: Option<Vec<ContentUnit>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1448,13 +1455,20 @@ pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
         front: view.front,
         front_runs: view.front_runs,
         front_units: view.front_units.map(web_units),
+        front_steps: view
+            .front_steps
+            .into_iter()
+            .map(|step| FrontStepDto {
+                front: step.front,
+                front_runs: step.front_runs,
+                front_units: step.front_units.map(web_units),
+            })
+            .collect(),
         section_context: view.section_context,
         section_context_runs: view.section_context_runs,
         section_context_units: web_units(view.section_context_units),
         context: view.context,
-        context_leads: view.context_leads,
         context_runs: view.context_runs,
-        context_units: web_units(view.context_units),
         back: view.back,
         back_runs: view.back_runs,
         back_units: web_units(view.back_units),

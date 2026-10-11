@@ -1609,7 +1609,12 @@ mod tests {
             "each span minted its own stamp: {stamped:?}"
         );
         let parsed = parser::parse("deck.md", &stamped).unwrap();
-        assert!(parsed.cards.iter().all(|c| c.front == "Foo"));
+        assert!(
+            parsed
+                .cards
+                .iter()
+                .all(|c| c.front.lines().next() == Some("Foo"))
+        );
         assert!(parsed.cards.iter().all(|c| c.token.is_some()));
         let ids: HashSet<String> = parsed.cards.iter().filter_map(|c| c.id()).collect();
         assert_eq!(

@@ -19,7 +19,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::{
     DeckArgs, ResetArgs,
-    common::{confirm, expand_target},
+    common::{confirm, expand_target, one_line},
 };
 
 // One depth's cell: its state label plus its due, `-` with no schedule.
@@ -167,11 +167,11 @@ pub(crate) fn list(args: DeckArgs) -> Result<()> {
                 }
                 None => format!("{0:>11}|{0:>11}|{0:>11}", "-"),
             };
-            let front: String = card.front.chars().take(60).collect();
+            let front: String = one_line(&card.question_text()).chars().take(60).collect();
             println!("  [{cells}] {front}");
         }
         for card in &deck.ignored {
-            let front: String = card.front.chars().take(60).collect();
+            let front: String = one_line(&card.question_text()).chars().take(60).collect();
             println!("  [ignored] {front}");
         }
     }
@@ -188,10 +188,10 @@ fn select_reset_ids(cards: &[Card], card: Option<&str>) -> Vec<(String, String)>
         .into_iter()
         .filter(|(id, c)| match (exact, &needle) {
             (Some(want), _) => id.as_str() == want,
-            (None, Some(text)) => c.front.to_lowercase().contains(text),
+            (None, Some(text)) => c.question_text().to_lowercase().contains(text),
             (None, None) => true,
         })
-        .map(|(id, c)| (id, c.front.clone()))
+        .map(|(id, c)| (id, one_line(&c.question_text())))
         .collect()
 }
 

@@ -311,7 +311,7 @@ fn push_card(p: &mut String, card: &Card) {
     p.push_str("Deck: ");
     p.push_str(&card.subject);
     p.push_str("\nFront: ");
-    p.push_str(&card.front);
+    p.push_str(&card.question_text());
     p.push_str("\nAnswer:\n");
     for line in &card.back {
         p.push_str(line);
@@ -354,7 +354,10 @@ pub fn draft_card_prompt(card: &Card, transcript: &[Exchange]) -> String {
          below it. Keep the question short and the answer to one or a few lines. Base \
          it strictly on the conversation; do not invent facts.\n\n",
     );
-    p.push_str(&format!("The card under review:\n## {}\n", card.front));
+    p.push_str(&format!(
+        "The card under review:\n## {}\n",
+        card.question_text()
+    ));
     for b in &card.back {
         p.push_str(&format!("{b}\n"));
     }

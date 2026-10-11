@@ -4474,11 +4474,6 @@ fn a_table_deck_serves_sampled_choices_and_header_context_at_recognize() {
         context,
         "the title is the whole context; column labels are not per-card: {body}"
     );
-    assert_eq!(
-        Some(false),
-        body["card"]["context_leads"].as_bool(),
-        "a table title labels the front rather than leading it: {body}"
-    );
     assert!(
         !body["card"]["context_runs"]
             .as_array()
@@ -5851,6 +5846,87 @@ fn remove_refuses_and_keeps_the_card_when_the_deck_changed_on_disk() {
     assert!(
         deck.contains(&front),
         "and the card is still authored, so nothing was half-removed: {deck}"
+    );
+}
+
+fn strings_under(value: &serde_json::Value, skip: &[&str], out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::String(text) => out.push(text.clone()),
+        serde_json::Value::Array(items) => {
+            for item in items {
+                strings_under(item, skip, out);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            for (key, item) in fields {
+                if !skip.contains(&key.as_str()) {
+                    strings_under(item, skip, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn a_blank_card_is_served_with_its_masked_front_and_no_hidden_text_before_reveal() {
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| {
+        std::fs::write(
+            dir.join("cloze.md"),
+            "---\nformat-version: 1\nid: \"deck-regionfixture0000000000\"\n---\n\n## The lunate sits beside the hamate\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->\n<!-- id: card-regionfixture000000000000 -->\n",
+        )
+        .unwrap();
+    });
+    post_json(&base, "/api/select", r#"{"deck":"cloze.md"}"#);
+
+    let state = http(&base, "GET", "/api/state", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&state.body).unwrap();
+    let card = &body["card"];
+    let hidden = card["back"][0].as_str().expect("the asked span");
+    let front = card["front"].as_str().expect("a front");
+    assert_eq!(
+        front,
+        if hidden == "lunate" {
+            "The ⍰ sits beside the ⬚"
+        } else {
+            "The ⬚ sits beside the ⍰"
+        },
+        "the front is the masked heading: {body}"
+    );
+    let mut shown = Vec::new();
+    strings_under(
+        card,
+        &[
+            "back",
+            "back_runs",
+            "back_units",
+            "answer_steps",
+            "front_steps",
+            "note",
+        ],
+        &mut shown,
+    );
+    assert!(
+        shown.iter().all(|text| !text.contains(hidden)),
+        "no pre-reveal field carries {hidden:?}: {body}"
+    );
+    assert!(
+        card.get("context_leads").is_none() && card.get("context_units").is_none(),
+        "{body}"
+    );
+    let steps = card["front_steps"].as_array().expect("front steps");
+    assert_eq!(1, steps.len(), "one step per own blank: {body}");
+    assert!(
+        steps[0]["front_runs"]
+            .as_array()
+            .expect("runs")
+            .iter()
+            .any(|run| run["answer"] == true && run["text"] == hidden),
+        "the revealed step fills the asked span as an answer run: {body}"
+    );
+    assert!(
+        !steps[0]["front"].as_str().unwrap_or_default().contains('⍱'),
+        "the fill marker never reaches a plain string: {body}"
     );
 }
 

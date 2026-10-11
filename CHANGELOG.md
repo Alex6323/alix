@@ -114,6 +114,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A cloze card's question is the whole card from its `##` line down: the
+  heading and every prose line, with the asked span as `⍰` and its siblings
+  as `⬚`, so hidden text no longer reaches a client before the reveal
+  (except a mermaid node id that spells a masked label). The reveal
+  shows the same question with the card's own blanks filled in. On the wire
+  `CardDto` loses `context_leads` and `context_units` and gains `front_steps`
+  (one filled question per own blank); `context` now carries only a card
+  table's title, and `InlineRun` gains an `answer` flag. The third mask
+  marker `⍱` joins `⍰` and `⬚` as a parse error in authored text.
+
 - A `blank:`, `cover:` or `crop:` line binds to the block directly above it:
   a run of text lines, an image line, a code fence or a `$$` block. Comment
   lines and link definitions in between are skipped. A text blank's hidden
