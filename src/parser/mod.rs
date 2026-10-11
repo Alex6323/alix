@@ -735,6 +735,9 @@ struct RawCard {
     above: Option<Above>,
     /// The link-definition lines lifted out of this card's body.
     definition_lines: Vec<usize>,
+    /// Content lines whose leading marker was escaped; stored without the
+    /// backslash.
+    escaped_lines: Vec<usize>,
 }
 
 /// A region directive's line and the content line it sits directly under.
@@ -1286,6 +1289,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 anchor: lineno,
                 above: None,
                 definition_lines: Vec::new(),
+                escaped_lines: Vec::new(),
             });
             prev_blank = false;
             prev_heading = true;
@@ -1335,6 +1339,9 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 continue;
             }
             push_content(&mut current, lineno, rest.to_string())?;
+            if let Some(card) = current.as_mut() {
+                card.escaped_lines.push(lineno);
+            }
             prev_blank = false;
             prev_heading = false;
             prev_prose = true;
@@ -3014,6 +3021,7 @@ fn build_card_inner(
         anchor: _,
         above: _,
         definition_lines,
+        escaped_lines,
     } = raw;
     let divided = divider.is_some();
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
@@ -3060,8 +3068,10 @@ fn build_card_inner(
     let mut blocks: Vec<Block> = Vec::new();
     let mut spans: Vec<(region::RawRegion, usize)> = Vec::new();
     if has_regions {
-        let line_kind = |segments: &[Seg]| {
-            if image_only(segments) {
+        let line_kind = |number: usize, segments: &[Seg]| {
+            if escaped_lines.contains(&number) {
+                LineKind::Escaped
+            } else if image_only(segments) {
                 LineKind::Media
             } else {
                 LineKind::Text
@@ -3077,7 +3087,7 @@ fn build_card_inner(
             body.push(BodyLine {
                 number: *number,
                 text,
-                kind: line_kind(segments),
+                kind: line_kind(*number, segments),
             });
             body_parsed.push(segments);
         }
@@ -3085,7 +3095,7 @@ fn build_card_inner(
             body.push(BodyLine {
                 number: *number,
                 text,
-                kind: line_kind(segments),
+                kind: line_kind(*number, segments),
             });
             body_parsed.push(segments);
         }
@@ -9368,6 +9378,20 @@ the answer
                 assert_eq!(1, deck.cards[0].span_regions.len(), "{label}");
             }
         }
+    }
+
+    #[test]
+    fn an_escaped_fence_marker_never_opens_a_block_across_a_comment() {
+        let error = err(
+            "## q\n\\```\nalpha first\n<!-- editorial -->\nalpha second\n<!-- blank: span hidden=\"alpha\" occurrence=2 -->\n",
+        );
+        let ParseError::InvalidRegion { message, .. } = &error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(
+            message.contains("occurs 1 time(s)"),
+            "the escaped fence is prose, so the comment ends its run: {message}"
+        );
     }
 
     #[test]

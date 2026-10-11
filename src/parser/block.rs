@@ -7,6 +7,9 @@ pub(super) enum LineKind {
     Heading,
     Media,
     Text,
+    /// Stored without the backslash that escaped its leading marker, so its
+    /// text can look like an opener.
+    Escaped,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +64,7 @@ pub(super) fn blocks(body: &[BodyLine], definition_lines: &[usize]) -> Vec<Block
         let kind = match line.kind {
             LineKind::Heading => BlockKind::Heading,
             LineKind::Media => BlockKind::Media,
+            LineKind::Escaped => BlockKind::Run,
             LineKind::Text => {
                 if let Some((ch, open)) = fence_opener(line.text) {
                     container = Some(Container::Fence { ch, open });
@@ -158,6 +162,8 @@ mod tests {
             (22, "> a quotation", L::Text),
             (23, "run g", L::Text),
             (25, "- item two", L::Text),
+            (26, "```", L::Escaped),
+            (27, "run h", L::Text),
         ]);
         let blocks = blocks(&body, &[7]);
         assert_partition(&body, &blocks);
@@ -170,14 +176,14 @@ mod tests {
             (B::Fence, 8..14),
             (B::Math, 14..19),
             (B::Run, 19..21),
-            (B::Run, 21..22),
+            (B::Run, 21..24),
         ]
         .into_iter()
         .map(|(kind, range)| Block { kind, range })
         .collect();
         assert_eq!(
             expected, blocks,
-            "a comment ends a run, a definition joins it, media splits it, a quotation joins it, fence and math interiors are never other blocks"
+            "a comment ends a run, a definition joins it, media splits it, a quotation joins it, an escaped marker is prose, fence and math interiors are never other blocks"
         );
     }
 
