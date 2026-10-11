@@ -128,6 +128,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   skips cloze cards. Pre-1.0: fold text after `---` on a cloze card into a
   note.
 
+- An image `blank:` requires `hidden="..."`, like a text blank. A rect
+  without it asked with no answer text, so a typing check on it could never
+  pass. Pre-1.0: add the answer to every unlabelled image blank.
+
 - On the phone, a short vertical hairline separates the deck title from the
   "X left" counter in the review and walk bars, so a cut-off title no longer
   runs into the count.

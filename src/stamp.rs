@@ -2128,7 +2128,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n<!-- id: card-regionregionregionregionre -->\n"
+                "{DECK_HEAD}## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         let outcome = stamp_deck(&path).unwrap();
@@ -2136,7 +2136,7 @@ mod tests {
         let stamp = &outcome.minted_regions[0];
         let text = fs::read_to_string(&path).unwrap();
         assert!(
-            text.contains(&format!("height=2 b:{stamp} -->")),
+            text.contains(&format!("hidden=\"x\" b:{stamp} -->")),
             "the mint lands inside the directive comment before its terminator: {text}"
         );
 
@@ -2308,7 +2308,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
+                "{DECK_HEAD}## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 hidden=\"x\" b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         let outcome = stamp_deck(&path).unwrap();
@@ -2333,7 +2333,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q\nanswer one\n<!-- blank: span hidden=\"one\" b:a1b2c3 -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
+                "{DECK_HEAD}## q\nanswer one\n<!-- blank: span hidden=\"one\" b:a1b2c3 -->\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
 
@@ -2347,7 +2347,7 @@ mod tests {
         );
         assert!(
             text.contains(&format!(
-                "<!-- blank: rect x=1 y=1 width=2 height=2 b:{} -->",
+                "<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" b:{} -->",
                 outcome.minted_regions[0]
             )),
             "the later pasted region receives the fresh identity: {text}"
@@ -2359,7 +2359,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let card = |token: &str| {
             format!(
-                "## q{token}\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n<!-- id: card-{token}{token}{token}{token}{token}{token}re -->\n"
+                "## q{token}\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" b:a1b2c3 -->\n<!-- id: card-{token}{token}{token}{token}{token}{token}re -->\n"
             )
         };
         let path = write(

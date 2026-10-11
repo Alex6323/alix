@@ -405,7 +405,14 @@ fn parse_region(kind: RegionKind, body: &str, line: usize) -> Result<RawRegion, 
                     "`position:` anchors a `span` and does not apply to `rect`",
                 ));
             }
-            rect_geometry(f.numbers, directive, line)?
+            let geometry = rect_geometry(f.numbers, directive, line)?;
+            if kind == RegionKind::Blank && f.hidden.is_none() {
+                return Err(err(
+                    line,
+                    "an image `blank:` requires `hidden=\"...\"`, the answer it asks for",
+                ));
+            }
+            geometry
         }
         "span" => {
             if !f.numbers.is_empty() {
@@ -680,37 +687,37 @@ mod tests {
     #[test]
     fn the_rect_key_set_is_closed_exact_and_duplicate_free() {
         reject(
-            blank("rect x=1 y=1 width=2"),
+            blank("rect x=1 y=1 width=2 hidden=\"x\""),
             "missing `height=`",
             "missing key",
         );
         reject(
-            blank("rect x=1 y=1 width=2 height=2 cx=3"),
+            blank("rect x=1 y=1 width=2 height=2 cx=3 hidden=\"x\""),
             "does not apply to `rect`",
             "inapplicable ellipse key",
         );
         reject(
-            blank("rect x=1 y=1 width=2 height=2 rot=45"),
+            blank("rect x=1 y=1 width=2 height=2 rot=45 hidden=\"x\""),
             "unknown key `rot=`",
             "unknown key",
         );
         reject(
-            blank("rect x=1 x=2 y=1 width=2 height=2"),
+            blank("rect x=1 x=2 y=1 width=2 height=2 hidden=\"x\""),
             "duplicate `x`",
             "duplicate key",
         );
         reject(
-            blank("rect x=1 y=1 width=2 height=2 occurrence=1"),
+            blank("rect x=1 y=1 width=2 height=2 occurrence=1 hidden=\"x\""),
             "locate a `span`",
             "span key on rect",
         );
         reject(
-            blank("rect x=1 y=1 width=2 height=2 from=0 to=4"),
+            blank("rect x=1 y=1 width=2 height=2 from=0 to=4 hidden=\"x\""),
             "time key",
             "time keys",
         );
         reject(
-            blank("rect x=1 y=1 width=2 height=2 points=1,2"),
+            blank("rect x=1 y=1 width=2 height=2 points=1,2 hidden=\"x\""),
             "reserved shape",
             "polygon key",
         );
@@ -730,7 +737,7 @@ mod tests {
             ("abc", "letters"),
         ] {
             reject(
-                blank(&format!("rect x={value} y=1 width=2 height=2")),
+                blank(&format!("rect x={value} y=1 width=2 height=2 hidden=\"x\"")),
                 "not a plain non-negative number",
                 case,
             );
@@ -740,26 +747,26 @@ mod tests {
     #[test]
     fn sizes_are_strictly_positive_and_percentages_bounded() {
         reject(
-            blank("rect x=0 y=0 width=0 height=2"),
+            blank("rect x=0 y=0 width=0 height=2 hidden=\"x\""),
             "strictly positive",
             "zero width",
         );
         reject(
-            blank("rect x=0 y=0 width=2 height=0.0"),
+            blank("rect x=0 y=0 width=2 height=0.0 hidden=\"x\""),
             "strictly positive",
             "zero height",
         );
         reject(
-            blank("rect x=101% y=0% width=2% height=2%"),
+            blank("rect x=101% y=0% width=2% height=2% hidden=\"x\""),
             "exceeds 100%",
             "percent over",
         );
         assert!(
-            blank("rect x=0 y=0 width=0.5 height=2").is_ok(),
+            blank("rect x=0 y=0 width=0.5 height=2 hidden=\"x\"").is_ok(),
             "fractional size is legal"
         );
         assert!(
-            blank("rect x=100% y=0% width=2% height=2%").is_ok(),
+            blank("rect x=100% y=0% width=2% height=2% hidden=\"x\"").is_ok(),
             "100% is in range"
         );
     }
@@ -767,12 +774,12 @@ mod tests {
     #[test]
     fn a_region_carries_one_unit_across_its_fields() {
         reject(
-            blank("rect x=10% y=0 width=2 height=2"),
+            blank("rect x=10% y=0 width=2 height=2 hidden=\"x\""),
             "one unit",
             "mixed px and percent",
         );
         assert!(
-            blank("rect x=10% y=0% width=2% height=2%").is_ok(),
+            blank("rect x=10% y=0% width=2% height=2% hidden=\"x\"").is_ok(),
             "all percent"
         );
     }
@@ -817,6 +824,24 @@ mod tests {
     }
 
     #[test]
+    fn every_blank_shape_requires_hidden_while_a_cover_does_not() {
+        for (shape, needle) in [
+            ("span occurrence=2", "requires `hidden="),
+            ("rect x=1 y=1 width=2 height=2", "requires `hidden="),
+            (
+                "rect [g] x=1 y=1 width=2 height=2 b:a1b2c3",
+                "requires `hidden=",
+            ),
+        ] {
+            reject(blank(shape), needle, shape);
+        }
+        assert!(
+            parse_cover("rect x=1 y=1 width=2 height=2", 3).is_ok(),
+            "a cover asks nothing, so it names no answer"
+        );
+    }
+
+    #[test]
     fn quoted_values_escape_strictly_and_round_trip() {
         let hidden = |body: &str| blank(body).unwrap().hidden.unwrap();
         assert_eq!(hidden(r#"span hidden="\"Ja\"""#), "\"Ja\"");
@@ -852,7 +877,7 @@ mod tests {
     #[test]
     fn the_stamp_grammar_is_exactly_six_of_the_frozen_set() {
         assert!(
-            blank("rect x=1 y=1 width=2 height=2 b:a1b2c3").is_ok(),
+            blank("rect x=1 y=1 width=2 height=2 hidden=\"x\" b:a1b2c3").is_ok(),
             "legal stamp"
         );
         for (raw, case) in [
@@ -865,7 +890,9 @@ mod tests {
             ("u12345", "excluded u"),
         ] {
             reject(
-                blank(&format!("rect x=1 y=1 width=2 height=2 b:{raw}")),
+                blank(&format!(
+                    "rect x=1 y=1 width=2 height=2 hidden=\"x\" b:{raw}"
+                )),
                 "six characters of the lowercase Crockford set",
                 case,
             );
@@ -922,26 +949,26 @@ mod tests {
     #[test]
     fn group_names_share_the_hole_name_grammar() {
         assert!(
-            blank("rect [b-2_X] x=1 y=1 width=2 height=2").is_ok(),
+            blank("rect [b-2_X] x=1 y=1 width=2 height=2 hidden=\"x\"").is_ok(),
             "legal name"
         );
         reject(
-            blank("rect [] x=1 y=1 width=2 height=2"),
+            blank("rect [] x=1 y=1 width=2 height=2 hidden=\"x\""),
             "group name",
             "empty",
         );
         reject(
-            blank("rect [a b] x=1 y=1 width=2 height=2"),
+            blank("rect [a b] x=1 y=1 width=2 height=2 hidden=\"x\""),
             "not a `key=value` field",
             "space splits the token",
         );
         reject(
-            blank("rect [a.b] x=1 y=1 width=2 height=2"),
+            blank("rect [a.b] x=1 y=1 width=2 height=2 hidden=\"x\""),
             "group name",
             "dot",
         );
         reject(
-            blank("rect [x] [y] x=1 y=1 width=2 height=2"),
+            blank("rect [x] [y] x=1 y=1 width=2 height=2 hidden=\"x\""),
             "duplicate `[group]`",
             "two groups",
         );

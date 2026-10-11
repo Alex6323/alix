@@ -2376,7 +2376,6 @@ fn build_region_cards(
             RegionSlot::Single { line, .. } => back.iter().map(|text| (*line, text)).collect(),
             RegionSlot::Group { members, .. } => members
                 .iter()
-                .filter(|member| member.hidden.is_some())
                 .zip(&back)
                 .map(|(member, text)| (member.line, text))
                 .collect(),
@@ -2461,17 +2460,6 @@ fn build_region_cards(
                 only.hidden.iter().cloned().collect(),
             ));
             continue;
-        }
-        // The all-or-none rule for a group's answers: mixed presence would
-        // leave the card half-answerable.
-        let with_hidden = members.iter().filter(|m| m.hidden.is_some()).count();
-        if with_hidden != 0 && with_hidden != members.len() {
-            return Err(ParseError::InvalidRegion {
-                line: members[0].line,
-                message: format!(
-                    "group `[{name}]` mixes regions that carry `hidden=` with regions that do not"
-                ),
-            });
         }
         let hash = members
             .iter()
@@ -8343,7 +8331,7 @@ a
             ("a text blank", "a b c\n<!-- blank: span hidden=\"b\" -->"),
             (
                 "an image blank",
-                "![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->",
+                "![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->",
             ),
         ];
         for (label, block) in blanks {
@@ -8368,7 +8356,7 @@ a
             ),
             (
                 "an image blank above the divider",
-                "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\nanswer\n",
+                "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\n\n---\nanswer\n",
                 Some(5),
             ),
             (
@@ -9060,7 +9048,7 @@ the answer
     #[test]
     fn a_geometric_region_binds_to_the_image_directly_above_it_among_several() {
         let deck = parse(
-            "## bones\n![](a.png)\n![](b.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n![](c.png)\n<!-- blank: rect x=3 y=3 width=4 height=4 -->\n",
+            "## bones\n![](a.png)\n![](b.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\n![](c.png)\n<!-- blank: rect x=3 y=3 width=4 height=4 hidden=\"x\" -->\n",
         );
         let card = &deck.cards[0];
         assert_eq!(3, card.images_back.len(), "every image survives");
@@ -9083,8 +9071,9 @@ the answer
 
     #[test]
     fn a_geometric_region_without_a_media_element_on_its_side_is_rejected() {
-        let error =
-            err("## q\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\n![](a.png)\nanswer\n");
+        let error = err(
+            "## q\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\n\n---\n![](a.png)\nanswer\n",
+        );
         assert_eq!(
             ParseError::UnboundRegion {
                 line: 2,
@@ -9098,7 +9087,10 @@ the answer
 
     const REGION_DIRECTIVES: [(&str, &str); 5] = [
         ("blank", "<!-- blank: span hidden=\"alpha\" -->"),
-        ("blank", "<!-- blank: rect x=1 y=1 width=2 height=2 -->"),
+        (
+            "blank",
+            "<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->",
+        ),
         ("cover", "<!-- cover: span hidden=\"alpha\" -->"),
         ("cover", "<!-- cover: rect x=1 y=1 width=2 height=2 -->"),
         ("crop", "<!-- crop: rect x=1 y=1 width=2 height=2 -->"),
@@ -9268,7 +9260,7 @@ the answer
             (
                 "a rect under the second of two images",
                 format!(
-                    "## q\n![](a.png)\n![](b.png)\n{BETWEEN}<!-- blank: rect x=1 y=1 width=2 height=2 -->\nanswer\n"
+                    "## q\n![](a.png)\n![](b.png)\n{BETWEEN}<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\nanswer\n"
                 ),
                 |card| {
                     card.images_back[0].regions.is_empty() && card.images_back[1].regions.len() == 1
@@ -9441,7 +9433,10 @@ the answer
     #[test]
     fn a_rect_or_crop_under_a_text_block_is_rejected_as_unbound() {
         let directives = [
-            ("blank", "<!-- blank: rect x=1 y=1 width=2 height=2 -->"),
+            (
+                "blank",
+                "<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->",
+            ),
             ("cover", "<!-- cover: rect x=1 y=1 width=2 height=2 -->"),
             ("crop", "<!-- crop: rect x=1 y=1 width=2 height=2 -->"),
         ];
@@ -9666,7 +9661,7 @@ the answer
     #[test]
     fn one_media_element_carries_one_unit_across_regions_and_crop() {
         let error = err(
-            "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n<!-- blank: rect x=1% y=1% width=2% height=2% -->\n\n---\nanswer\n",
+            "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\n<!-- blank: rect x=1% y=1% width=2% height=2% hidden=\"x\" -->\n\n---\nanswer\n",
         );
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -9674,7 +9669,7 @@ the answer
         assert!(message.contains("same unit"), "{message}");
 
         let error = err(
-            "## q\n![](a.png)\n<!-- crop: rect x=0% y=0% width=9% height=9% -->\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\nanswer\n",
+            "## q\n![](a.png)\n<!-- crop: rect x=0% y=0% width=9% height=9% -->\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\n\n---\nanswer\n",
         );
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -9686,7 +9681,7 @@ the answer
     fn viewport_bounds_reject_an_invisible_blank_and_accept_partial_overlap() {
         // Touching the crop edge is outside: no positive-area intersection.
         let error = err(
-            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=100 height=100 -->\n<!-- blank: rect x=100 y=0 width=10 height=10 -->\n",
+            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=100 height=100 -->\n<!-- blank: rect x=100 y=0 width=10 height=10 hidden=\"x\" -->\n",
         );
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -9695,13 +9690,14 @@ the answer
 
         // Partial overlap is legal and clipped.
         let deck = parse(
-            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=100 height=100 -->\n<!-- blank: rect x=90 y=0 width=20 height=20 -->\n",
+            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=100 height=100 -->\n<!-- blank: rect x=90 y=0 width=20 height=20 hidden=\"x\" -->\n",
         );
         assert_eq!(1, deck.cards[0].images_back[0].regions.len());
 
         // The ADR's no-crop percentage example: x=100% width=10% clips to nothing.
-        let error =
-            err("## q\n![](a.png)\n<!-- blank: rect x=100% y=0% width=10% height=10% -->\n");
+        let error = err(
+            "## q\n![](a.png)\n<!-- blank: rect x=100% y=0% width=10% height=10% hidden=\"x\" -->\n",
+        );
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
         };
@@ -9724,7 +9720,7 @@ the answer
     #[test]
     fn a_region_directive_on_a_card_table_is_rejected_not_dropped() {
         let error = err(
-            "| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n",
+            "| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\n",
         );
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -9735,7 +9731,7 @@ the answer
     #[test]
     fn region_and_crop_survive_onto_the_stored_card_image() {
         let deck = parse(
-            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=50 height=50 -->\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n",
+            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=50 height=50 -->\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" b:a1b2c3 -->\n",
         );
         let image = &deck.cards[0].images_back[0];
         assert_eq!(1, image.regions.len());
@@ -9752,7 +9748,7 @@ the answer
     #[test]
     fn a_region_immediately_after_the_divider_cannot_bind_to_front_media() {
         let error = err(
-            "## q\n![](front.png)\n\n---\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\nanswer\n",
+            "## q\n![](front.png)\n\n---\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\nanswer\n",
         );
         assert_eq!(
             ParseError::UnboundRegion {
@@ -9767,7 +9763,7 @@ the answer
     #[test]
     fn percentage_crop_and_blank_are_clipped_against_the_source_viewport() {
         let error = err(
-            "## q\n![](a.png)\n<!-- crop: rect x=100% y=0% width=10% height=10% -->\n<!-- blank: rect x=100% y=0% width=10% height=10% -->\n\n---\nanswer\n",
+            "## q\n![](a.png)\n<!-- crop: rect x=100% y=0% width=10% height=10% -->\n<!-- blank: rect x=100% y=0% width=10% height=10% hidden=\"x\" -->\n\n---\nanswer\n",
         );
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -9777,7 +9773,8 @@ the answer
 
     #[test]
     fn a_region_directive_before_any_card_is_rejected_not_silently_dropped() {
-        let error = err("<!-- blank: rect x=1 y=1 width=2 height=2 -->\n## q\nanswer\n");
+        let error =
+            err("<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\n## q\nanswer\n");
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
         };
@@ -9885,17 +9882,6 @@ the answer
     }
 
     #[test]
-    fn a_group_mixing_hidden_presence_is_rejected() {
-        let error = err(&region_deck(
-            "<!-- blank: rect [g] x=1 y=1 width=2 height=2 hidden=\"a\" b:a1b2c3 -->\n<!-- blank: rect [g] x=5 y=5 width=2 height=2 b:d4e5f6 -->",
-        ));
-        let ParseError::InvalidRegion { message, .. } = error else {
-            panic!("expected InvalidRegion, got {error:?}");
-        };
-        assert!(message.contains("mixes"), "{message}");
-    }
-
-    #[test]
     fn an_unstamped_blank_yields_an_idless_region_card() {
         let deck = parse(&region_deck(
             r#"<!-- blank: rect x=1 y=1 width=2 height=2 hidden="lunate" -->"#,
@@ -9909,18 +9895,6 @@ the answer
         assert!(region_card.region.is_some());
     }
 
-    #[test]
-    fn an_unlabelled_blank_asks_with_an_empty_back() {
-        let deck = parse(&region_deck(
-            "<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->",
-        ));
-        let region_card = &deck.cards[0];
-        assert_eq!(Some(format!("{RTOK}-ba1b2c3")), region_card.id());
-        assert!(
-            region_card.back.is_empty(),
-            "the reveal is visual: unmasking is the answer"
-        );
-    }
     #[test]
     fn a_blank_bearing_block_is_a_template_producing_only_its_region_cards() {
         let deck = parse(&region_deck(
@@ -10592,13 +10566,13 @@ the answer
     #[test]
     fn a_rect_cards_context_masks_every_span_as_hidden() {
         let deck = parse(&format!(
-            "## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\nthe lunate sits center\n<!-- blank: span hidden=\"lunate\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+            "## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"bone\" b:a1b2c3 -->\nthe lunate sits center\n<!-- blank: span hidden=\"lunate\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
         ));
         let rect = deck
             .cards
             .iter()
-            .find(|card| card.back.is_empty())
-            .expect("the unlabelled rect card");
+            .find(|card| card.back == ["bone"])
+            .expect("the rect card");
         assert_eq!(
             vec!["the ⬚ sits center"],
             rect.context,

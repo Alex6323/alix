@@ -5,7 +5,8 @@
   and the span semantics and template correction build from the span-masking
   spec signed off 2026-08-19)
 - Amended by: 0052 (binding of every region directive, the scope of
-  `occurrence=` and `position:`, and the repeat lint)
+  `occurrence=` and `position:`, the repeat lint, and `hidden=` required on
+  every `blank:`)
 - Evidence: a_full_rect_blank_parses_with_group_hidden_and_stamp in src/parser/region.rs
 - Evidence: the_adr_0034_group_derivation_reproduces_the_frozen_vector in src/token.rs
 - Evidence: an_unstamped_region_is_minted_into_on_the_first_pass_and_then_stable in src/stamp.rs
@@ -147,6 +148,7 @@ anchor and answer) and the expected answer on a geometric shape. It is required
 on `span`, optional on a geometric `blank:`, and retained but inert on a
 geometric `cover:` so that an authoring tool toggling ask-versus-hide never
 destroys the author's text.
+(Amended by ADR 0052: required on every `blank:`, geometric ones included.)
 
 **A `span` is located by its hidden text, counted in occurrences** (ruled by
 Alex, 2026-08-19; this replaced the earlier `word=`/`char=` position pair
@@ -249,7 +251,7 @@ a parse error, never a lint and never silently ignored.
 | shape word      | `rect`, `span` (rest reserved)         | same                                    | `rect` only      |
 | geometry        | per shape, SVG names                   | same                                    | `x y width height` |
 | `[name]` group  | yes                                    | no                                      | no               |
-| `hidden="…"`    | required on `span`, optional elsewhere | required on `span`, inert elsewhere     | no               |
+| `hidden="…"`    | required (ADR 0052; was optional off `span`) | required on `span`, inert elsewhere | no         |
 | `b:<stamp>`     | yes                                    | no                                      | no               |
 | `position:<n>`  | on `span` (machine-minted anchor offset) | on `span`, same                       | no               |
 | `from=`/`to=`   | yes, on video                          | yes, on video                           | no               |

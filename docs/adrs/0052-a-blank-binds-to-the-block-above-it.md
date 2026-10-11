@@ -30,9 +30,10 @@ did not follow one rule:
 On reveal, a cloze card kept the blanked sentence (`... the ⍰.`) and showed
 the hidden words in a separate answer area below it.
 
-Every blank already names its own answer: `hidden="..."` is required on a
-span and on a rect alike. Answer lines on a blank card therefore never carry
-the answer; they can only repeat it or explain it, and a note already
+A span names its own answer: `hidden="..."` is required on it. A rect may
+omit it, and such a card asks with no answer text, so a typing check opened
+on it can never pass. Answer lines on a blank card that names its answer
+never carry it; they can only repeat it or explain it, and a note already
 explains.
 
 The region grammar (`span`, `rect`, `cover:`, `crop:`, `hidden=`,
@@ -136,6 +137,11 @@ masking. The blank's own block is masked and never triggers it; a
 different block shown before Reveal, such as a `##` question repeating the
 hidden words above the blanked sentence, does.
 
+**10. Every blank names its answer.** `hidden="..."` is required on a
+`blank:` of every shape, so a rect without it is a hard deck error like a
+span without it. Typing, choices and the exam then grade every blank against
+its text. A `cover:` asks nothing and keeps `hidden=` optional and inert.
+
 ### Amends ADR 0034
 
 This record replaces, in ADR 0034:
@@ -149,6 +155,9 @@ This record replaces, in ADR 0034:
   answer block: both now count within the bound block.
 - The doctor lint "the hidden text occurring more than once in the block",
   which now reads over the bound block.
+- `hidden="..."` "optional on a geometric `blank:`": it is now required on
+  every `blank:` (rule 10), which retires the unlabelled image region that
+  asked with no answer text.
 
 The rule stays stated over media lines, so audio and video inherit it.
 
@@ -254,6 +263,8 @@ before it is Accepted. Expected laws:
   never on the blank's own block;
 - the generator's and remediation's cloze shape parses with no answer
   lines.
+- a `blank:` of any shape without `hidden=` fails, and a `cover:` without
+  it parses.
 
 ## Reversal
 
