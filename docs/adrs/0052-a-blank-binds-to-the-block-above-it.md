@@ -135,9 +135,11 @@ tutor's card draft is out of scope here.
 hidden text.** It compares against what the question displays, after
 masking. The blank's own block is masked and never triggers it; a
 different block shown before Reveal, such as a `##` question repeating the
-hidden words above the blanked sentence, does.
+hidden words above the blanked sentence, does. The card's section prose
+(its `#` heading and the prose under it) counts too: clients open it
+before the question on a card's first introduction.
 
-**10. Every blank names its answer.** A `hidden="..."` with visible text is
+**10. Every blank names its answer.** A `hidden="..."` that grading can check is
 required on a `blank:` of every shape, so a rect without it is a hard deck error like a
 span without it. Typing, choices and the exam then grade every blank against
 its text. A `cover:` asks nothing and keeps `hidden=` optional and inert.

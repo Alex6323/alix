@@ -446,7 +446,7 @@ fn parse_region(kind: RegionKind, body: &str, line: usize) -> Result<RawRegion, 
     {
         return Err(err(
             line,
-            "`hidden=\"...\"` on a `blank:` must contain an answer, not only spaces or invisible characters",
+            "`hidden=\"...\"` on a `blank:` must contain an answer: grading ignores spaces, invisible characters and trailing punctuation, which leaves nothing here",
         ));
     }
     Ok(RawRegion {
@@ -843,6 +843,7 @@ mod tests {
                 "must contain an answer",
             ),
             ("span hidden=\"\"", "must contain an answer"),
+            ("span hidden=\"?\" boundary=char", "trailing punctuation"),
             (
                 "rect [g] x=1 y=1 width=2 height=2 b:a1b2c3",
                 "requires `hidden=",

@@ -211,7 +211,8 @@ image shape today (`span`, below, is the text shape). Three keywords, one
 concept each:
 
 - **`blank:`** masks a region and asks about it, the picture form of a text
-  span. `hidden="..."` is the expected answer, and every `blank:` needs one with visible text.
+  span. `hidden="..."` is the expected answer, and every `blank:` needs one that is not empty once grading ignores
+  spaces, invisible characters and trailing punctuation.
 - **`cover:`** masks a region and never asks: for a legend or label that would
   give an answer away. It creates no card; a `hidden=` on it is kept but
   inert, so switching a region between `blank:` and `cover:` never loses
