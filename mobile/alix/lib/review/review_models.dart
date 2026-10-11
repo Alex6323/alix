@@ -203,11 +203,25 @@ class ReviewAnswerTableModel extends ReviewAnswerStepModel {
   final List<ReviewContentUnitModel> units;
 }
 
+class ReviewFrontStepModel {
+  ReviewFrontStepModel({
+    required this.front,
+    required Iterable<InlineRunModel> frontRuns,
+    Iterable<ReviewContentUnitModel>? frontUnits,
+  }) : frontRuns = List.unmodifiable(frontRuns),
+       frontUnits = frontUnits == null ? null : List.unmodifiable(frontUnits);
+
+  final String front;
+  final List<InlineRunModel> frontRuns;
+  final List<ReviewContentUnitModel>? frontUnits;
+}
+
 class ReviewCardModel {
   ReviewCardModel({
     required this.front,
     required Iterable<InlineRunModel> frontRuns,
     Iterable<ReviewContentUnitModel>? frontUnits,
+    Iterable<ReviewFrontStepModel> frontSteps = const [],
     required Iterable<String> context,
     required Iterable<Iterable<InlineRunModel>> contextRuns,
     required Iterable<String> back,
@@ -223,6 +237,7 @@ class ReviewCardModel {
     Iterable<ReviewContentUnitModel> sectionUnits = const [],
   }) : frontRuns = List.unmodifiable(frontRuns),
        frontUnits = frontUnits == null ? null : List.unmodifiable(frontUnits),
+       frontSteps = List.unmodifiable(frontSteps),
        context = List.unmodifiable(context),
        contextRuns = _freezeRunLines(contextRuns),
        section = List.unmodifiable(section),
@@ -239,6 +254,9 @@ class ReviewCardModel {
   final String front;
   final List<InlineRunModel> frontRuns;
   final List<ReviewContentUnitModel>? frontUnits;
+
+  final List<ReviewFrontStepModel> frontSteps;
+
   /// A card table's title, labelling the front; empty on every other card.
   final List<String> context;
   final List<List<InlineRunModel>> contextRuns;
@@ -263,6 +281,33 @@ class ReviewCardModel {
   final List<ReviewContentUnitModel> sectionUnits;
   bool get hasSection => section.isNotEmpty;
   String get sectionTitle => section.isEmpty ? '' : section.first;
+}
+
+int revealStepCount(ReviewCardModel card) => card.frontSteps.isNotEmpty
+    ? card.frontSteps.length
+    : card.answerSteps.length;
+
+int filledFrontSteps(
+  ReviewCardModel card, {
+  required ReviewMode mode,
+  required bool introducing,
+  required bool answered,
+  required int revealedLines,
+}) {
+  final steps = card.frontSteps.length;
+  if (mode == ReviewMode.lineByLine && !introducing) {
+    return revealedLines.clamp(0, steps);
+  }
+  return answered ? steps : 0;
+}
+
+ReviewFrontStepModel questionAt(ReviewCardModel card, int filled) {
+  if (filled > 0) return card.frontSteps[filled - 1];
+  return ReviewFrontStepModel(
+    front: card.front,
+    frontRuns: card.frontRuns,
+    frontUnits: card.frontUnits,
+  );
 }
 
 class ReviewChoiceFeedbackModel {

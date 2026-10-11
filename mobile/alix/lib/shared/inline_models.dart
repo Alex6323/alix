@@ -9,6 +9,7 @@ class InlineRunModel {
     this.sub = false,
     this.sup = false,
     this.ins = false,
+    this.answer = false,
     this.math,
   });
 
@@ -21,6 +22,7 @@ class InlineRunModel {
   final bool sub;
   final bool sup;
   final bool ins;
+  final bool answer;
   final InlineMathModel? math;
 
   @override
@@ -36,12 +38,24 @@ class InlineRunModel {
             sub == other.sub &&
             sup == other.sup &&
             ins == other.ins &&
+            answer == other.answer &&
             math == other.math;
   }
 
   @override
-  int get hashCode =>
-      Object.hash(text, bold, italic, strike, code, link, sub, sup, ins, math);
+  int get hashCode => Object.hash(
+    text,
+    bold,
+    italic,
+    strike,
+    code,
+    link,
+    sub,
+    sup,
+    ins,
+    answer,
+    math,
+  );
 }
 
 class InlineMathModel {

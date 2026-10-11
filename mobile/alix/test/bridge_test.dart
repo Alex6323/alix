@@ -15,6 +15,7 @@ import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/review_screen.dart';
 import 'package:alix_mobile/review/review_models.dart';
+import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/src/rust/api/listing.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/api/simple.dart';
@@ -116,6 +117,51 @@ void main() {
       profile: false,
     )).entries;
     expect(members.single.title, 'm');
+  });
+
+  test('review bridge carries a cloze card\'s filled question steps', () {
+    final root = Directory.systemTemp.createTempSync('alix-front-steps-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final deck = '${root.path}/group.md';
+    writeTestDeck(
+      deck,
+      '## carpals\n'
+      'The scaphoid and the lunate.\n'
+      '<!-- blank: span [w] hidden="scaphoid" b:a1b2c3 -->\n'
+      '<!-- blank: span [w] hidden="lunate" b:d4e5f6 -->\n'
+      '<!-- id: card-group -->\n',
+    );
+    final card = const ReviewBridgeFactory()
+        .open(deckPath: deck, rootDir: root.path)
+        .state
+        .card!;
+
+    String answers(List<InlineRunModel> runs) => [
+      for (final run in runs)
+        if (run.answer) run.text,
+    ].join('|');
+    final masked = [card.front, for (final run in card.frontRuns) run.text];
+    expect(
+      masked.join(),
+      allOf(isNot(contains('scaphoid')), isNot(contains('lunate'))),
+      reason: 'masked question: $masked',
+    );
+    expect(card.frontSteps.length, 2, reason: 'one step per own blank');
+    expect(
+      answers(card.frontSteps[0].frontRuns),
+      'scaphoid',
+      reason: 'step 1 fills the first blank only',
+    );
+    expect(
+      card.frontSteps[0].frontRuns.map((run) => run.text).join(),
+      contains('⍰'),
+      reason: 'step 1 still asks the second blank',
+    );
+    expect(
+      answers(card.frontSteps[1].frontRuns),
+      'scaphoid|lunate',
+      reason: 'step 2 fills both',
+    );
   });
 
   test('review bridge carries shared math runs across every card surface', () {

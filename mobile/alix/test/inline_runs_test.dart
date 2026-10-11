@@ -3,7 +3,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:alix_mobile/shared/blank_pill.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
+import 'package:alix_mobile/review/unit_widgets.dart';
 import 'package:alix_mobile/shared/inline_runs.dart';
 import 'package:alix_mobile/theme.dart';
 
@@ -13,6 +15,16 @@ const _svg =
 const _wideSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="80" '
     'viewBox="0 0 1000 80"><path d="M0 0h1000v80H0z"/></svg>';
+
+const _blank = Color(0xFF00AA44);
+const _mutedBlank = Color(0x77777777);
+
+BorderSide pillSide(WidgetTester tester, Finder pill) {
+  final box = tester.widget<DecoratedBox>(
+    find.descendant(of: pill, matching: find.byType(DecoratedBox)),
+  );
+  return ((box.decoration as ShapeDecoration).shape as StadiumBorder).side;
+}
 
 InlineRunModel mathRun(
   String text, {
@@ -43,8 +55,15 @@ Widget testApp(
   Color foreground = const Color(0xFF1847A0),
   double width = 320,
   bool contextHoles = false,
+  double textScale = 1,
 }) {
   return MaterialApp(
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(
+        context,
+      ).copyWith(textScaler: TextScaler.linear(textScale)),
+      child: child!,
+    ),
     home: Scaffold(
       body: Center(
         child: SizedBox(
@@ -54,8 +73,8 @@ Widget testApp(
             style: TextStyle(fontSize: 20, color: foreground),
             textAlign: TextAlign.center,
             contextHoles: contextHoles,
-            holeColor: const Color(0xFF00AA44),
-            mutedHoleColor: const Color(0xFF777777),
+            blankColor: _blank,
+            mutedBlankColor: _mutedBlank,
           ),
         ),
       ),
@@ -119,9 +138,10 @@ void main() {
     expect(sub.top, greaterThan(sup.top));
   });
 
-  testWidgets('scripted cloze markers keep script baselines and hole colors', (
+  testWidgets('a blank in a script run sits on its baseline at its size', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
     await tester.pumpWidget(
       testApp(const [
         InlineRunModel(text: 'A', bold: false, italic: false, code: false),
@@ -143,41 +163,12 @@ void main() {
       ], contextHoles: true),
     );
 
-    final paragraph = tester.renderObject<RenderParagraph>(
-      find
-          .descendant(
-            of: find.byType(InlineRuns),
-            matching: find.byType(RichText),
-          )
-          .first,
-    );
-    final sub = paragraph
-        .getBoxesForSelection(
-          const TextSelection(baseOffset: 1, extentOffset: 2),
-        )
-        .single;
-    final sup = paragraph
-        .getBoxesForSelection(
-          const TextSelection(baseOffset: 3, extentOffset: 4),
-        )
-        .single;
-
-    expect(sub.top, greaterThan(sup.top));
-
-    final spans = tester
-        .widgetList<RichText>(
-          find.descendant(
-            of: find.byType(InlineRuns),
-            matching: find.byType(RichText),
-          ),
-        )
-        .expand((rich) => textSpans(rich.text))
-        .toList();
-    final active = spans.singleWhere((span) => span.text == '⍰');
-    final hidden = spans.singleWhere((span) => span.text == '⬚');
-    expect(active.style?.color, const Color(0xFF00AA44));
-    expect(active.style?.fontWeight, FontWeight.w700);
-    expect(hidden.style?.color, const Color(0xFF777777));
+    final sub = tester.getRect(find.bySemanticsLabel('blank'));
+    final sup = tester.getRect(find.bySemanticsLabel('hidden blank'));
+    expect(sub.top, greaterThan(sup.top), reason: 'sub $sub, sup $sup');
+    expect(sub.width, 5 * 20 * 0.75, reason: 'sub pill at script size');
+    expect(sup.width, sub.width, reason: 'asked and hidden widths match');
+    semantics.dispose();
   });
 
   testWidgets('inline math uses SVG, foreground color, and one label', (
@@ -268,9 +259,7 @@ void main() {
     expect(find.textContaining(r'$x$', findRichText: true), findsOneWidget);
   });
 
-  testWidgets('context holes style text while math remains intact', (
-    tester,
-  ) async {
+  testWidgets('blanks draw as pills while math remains intact', (tester) async {
     await tester.pumpWidget(
       testApp([
         textRun('the ⍰ term and ⬚ sibling '),
@@ -279,19 +268,124 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final richText = tester.widget<RichText>(
-      find.descendant(
-        of: find.byType(InlineRuns),
-        matching: find.byType(RichText),
-      ),
-    );
-    final spans = textSpans(richText.text).toList();
-    final active = spans.singleWhere((span) => span.text == '⍰');
-    final hidden = spans.singleWhere((span) => span.text == '⬚');
-    expect(active.style!.color, const Color(0xFF00AA44));
-    expect(active.style!.fontWeight, FontWeight.w700);
-    expect(hidden.style!.color, const Color(0xFF777777));
+    expect(find.byType(BlankPill), findsNWidgets(2));
     expect(find.byType(SvgPicture), findsOneWidget);
+  });
+
+  testWidgets('every blank is an empty fixed-width outlined pill', (
+    tester,
+  ) async {
+    final semanticsHandle = tester.ensureSemantics();
+    final styles = <String, InlineRunModel Function(String)>{
+      'plain': (text) => textRun(text),
+      'bold': (text) => textRun(text, bold: true),
+      'italic': (text) => textRun(text, italic: true),
+      'code': (text) => textRun(text, code: true),
+    };
+    for (final MapEntry(key: label, value: run) in styles.entries) {
+      for (final (marker, semantics, color) in [
+        ('⍰', 'blank', _blank),
+        ('⬚', 'hidden blank', _mutedBlank),
+      ]) {
+        final step = '$label $marker';
+        await tester.pumpWidget(
+          testApp([run('a $marker b')], contextHoles: true),
+        );
+        final pill = find.byType(BlankPill);
+        expect(pill, findsOneWidget, reason: step);
+        expect(tester.getSize(pill), const Size(100, 24), reason: step);
+        final side = pillSide(tester, pill);
+        expect((side.color, side.width), (color, 2.0), reason: step);
+        expect(find.bySemanticsLabel(semantics), findsOneWidget, reason: step);
+        final glyphs = tester
+            .widgetList<RichText>(find.byType(RichText))
+            .expand((rich) => textSpans(rich.text))
+            .where((span) => (span.text ?? '').contains(RegExp('⍰|⬚')));
+        expect(glyphs, isEmpty, reason: '$step: no glyph is drawn');
+      }
+    }
+    semanticsHandle.dispose();
+  });
+
+  testWidgets(
+    'both pill outlines clear 3:1 against the card in light and dark',
+    (tester) async {
+      double luminance(Color color) => color.computeLuminance();
+      double contrast(Color a, Color b) {
+        final (hi, lo) = luminance(a) > luminance(b)
+            ? (luminance(a), luminance(b))
+            : (luminance(b), luminance(a));
+        return (hi + 0.05) / (lo + 0.05);
+      }
+
+      for (final (name, theme) in [
+        ('light', alixLight()),
+        ('dark', alixDark()),
+      ]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: theme,
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: runsOrText(
+                  [textRun('a ⍰ b ⬚ c')],
+                  'a ⍰ b ⬚ c',
+                  style: const TextStyle(fontSize: 20),
+                  contextHoles: true,
+                  tokens: Theme.of(context).alix,
+                ),
+              ),
+            ),
+          ),
+        );
+        final card = theme.scaffoldBackgroundColor;
+        for (final pill in tester.widgetList<BlankPill>(
+          find.byType(BlankPill),
+        )) {
+          final outline = Color.alphaBlend(pill.color, card);
+          final ratio = contrast(outline, card);
+          expect(
+            ratio,
+            greaterThanOrEqualTo(3.0),
+            reason:
+                '$name ${pill.asked ? 'asked' : 'hidden'} pill: '
+                '${ratio.toStringAsFixed(2)}:1',
+          );
+        }
+      }
+    },
+  );
+
+  testWidgets('a pill grows with the text scale', (tester) async {
+    await tester.pumpWidget(
+      testApp([textRun('a ⍰ b')], contextHoles: true, textScale: 1.5),
+    );
+    expect(tester.getSize(find.byType(BlankPill)).width, 150);
+  });
+
+  testWidgets('a filled answer takes the blank colour', (tester) async {
+    await tester.pumpWidget(
+      testApp([
+        textRun('The '),
+        const InlineRunModel(
+          text: 'scaphoid',
+          bold: false,
+          italic: false,
+          code: false,
+          answer: true,
+        ),
+        textRun(' bone'),
+      ], contextHoles: true),
+    );
+    final spans = tester
+        .widgetList<RichText>(find.byType(RichText))
+        .expand((rich) => textSpans(rich.text))
+        .toList();
+    expect(spans.singleWhere((s) => s.text == 'scaphoid').style?.color, _blank);
+    expect(
+      spans.singleWhere((s) => s.text == ' bone').style?.color,
+      const Color(0xFF1847A0),
+    );
   });
 
   testWidgets('a code run takes the theme code ink under a mono base style', (

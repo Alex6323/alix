@@ -201,6 +201,16 @@ ReviewCardModel reviewCardFromBridge(bridge.CardView card) {
     frontUnits: card.frontUnits == null
         ? null
         : [for (final unit in card.frontUnits!) _noteFromBridge(unit)],
+    frontSteps: [
+      for (final step in card.frontSteps)
+        ReviewFrontStepModel(
+          front: step.front,
+          frontRuns: inlineRunsFromBridge(step.frontRuns),
+          frontUnits: step.frontUnits == null
+              ? null
+              : [for (final unit in step.frontUnits!) _noteFromBridge(unit)],
+        ),
+    ],
     context: card.context,
     contextRuns: [
       for (final runs in card.contextRuns) inlineRunsFromBridge(runs),

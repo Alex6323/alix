@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import 'package:alix_mobile/shared/blank_pill.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/theme.dart';
 
@@ -13,16 +14,16 @@ class InlineRuns extends StatelessWidget {
     required this.style,
     this.textAlign = TextAlign.start,
     this.contextHoles = false,
-    this.holeColor,
-    this.mutedHoleColor,
+    this.blankColor,
+    this.mutedBlankColor,
   });
 
   final List<InlineRunModel> runs;
   final TextStyle style;
   final TextAlign textAlign;
   final bool contextHoles;
-  final Color? holeColor;
-  final Color? mutedHoleColor;
+  final Color? blankColor;
+  final Color? mutedBlankColor;
 
   @override
   Widget build(BuildContext context) {
@@ -160,16 +161,15 @@ class InlineRuns extends StatelessWidget {
           ),
         );
       }
-      final text = match.group(0) ?? '';
+      final asked = match.group(0) == '⍰';
       spans.add(
-        TextSpan(
-          text: text,
-          style: _runStyle(run, codeColor).copyWith(
-            color: text == '⍰' ? holeColor : mutedHoleColor,
-            fontWeight: text == '⍰'
-                ? FontWeight.w700
-                : _runStyle(run, codeColor).fontWeight,
-          ),
+        blankPillSpan(
+          asked: asked,
+          fontSize: _runStyle(run, codeColor).fontSize ?? 14,
+          color:
+              (asked ? blankColor : mutedBlankColor) ??
+              style.color ??
+              Colors.black,
         ),
       );
       start = match.end;
@@ -245,7 +245,11 @@ class InlineRuns extends StatelessWidget {
         ? (style.fontSize ?? 14) * 0.75
         : style.fontSize;
     return style.copyWith(
-      color: run.code ? codeColor : style.color,
+      color: run.answer && blankColor != null
+          ? blankColor
+          : run.code
+          ? codeColor
+          : style.color,
       fontFamily: run.code ? _mono : style.fontFamily,
       fontWeight: run.bold ? FontWeight.w700 : style.fontWeight,
       fontStyle: run.italic ? FontStyle.italic : style.fontStyle,

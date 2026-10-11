@@ -168,8 +168,8 @@ Widget runsOrText(
     style: effectiveStyle,
     textAlign: textAlign,
     contextHoles: contextHoles,
-    holeColor: tokens?.boltHi,
-    mutedHoleColor: tokens?.dim,
+    blankColor: tokens?.boltHi,
+    mutedBlankColor: tokens?.dim,
   );
 }
 
@@ -218,7 +218,18 @@ Widget diagramWidget(ReviewDiagramModel unit, {required bool answered}) {
   );
 }
 
-Widget codeBlock(List<String> lines, Color foreground) {
+Widget codeBlock(
+  List<String> lines,
+  Color foreground, {
+  AlixTokens? blankTokens,
+}) {
+  final style = TextStyle(
+    fontFamily: monoFontFamily,
+    fontSize: 13,
+    height: 1.45,
+    color: foreground,
+  );
+  final text = lines.join('\n');
   return Container(
     width: double.infinity,
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -226,14 +237,21 @@ Widget codeBlock(List<String> lines, Color foreground) {
       color: Colors.black.withValues(alpha: 0.32),
       borderRadius: BorderRadius.circular(8),
     ),
-    child: Text(
-      lines.join('\n'),
-      style: TextStyle(
-        fontFamily: monoFontFamily,
-        fontSize: 13,
-        height: 1.45,
-        color: foreground,
-      ),
-    ),
+    child: blankTokens == null
+        ? Text(text, style: style)
+        : runsOrText(
+            [
+              InlineRunModel(
+                text: text,
+                bold: false,
+                italic: false,
+                code: false,
+              ),
+            ],
+            text,
+            style: style,
+            contextHoles: true,
+            tokens: blankTokens,
+          ),
   );
 }

@@ -16,7 +16,7 @@ void main() {
       sub: true,
       sup: true,
       ins: true,
-      answer: false,
+      answer: true,
       math: bridge.MathView(display: true, svg: '<svg/>', error: 'fallback'),
     );
 
@@ -34,6 +34,7 @@ void main() {
         sub: true,
         sup: true,
         ins: true,
+        answer: true,
         math: InlineMathModel(display: true, svg: '<svg/>', error: 'fallback'),
       ),
     );

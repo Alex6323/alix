@@ -13,6 +13,7 @@ InlineRunModel inlineRunFromBridge(bridge.InlineRun run) {
     sub: run.sub,
     sup: run.sup,
     ins: run.ins,
+    answer: run.answer,
     math: math == null
         ? null
         : InlineMathModel(

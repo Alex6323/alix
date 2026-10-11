@@ -167,7 +167,7 @@ class ReviewCardView extends StatelessWidget {
 
   bool _lineDone(ReviewCardModel card) {
     return state.mode == ReviewMode.lineByLine &&
-        revealedLines >= card.answerSteps.length;
+        revealedLines >= revealStepCount(card);
   }
 
   @override
@@ -317,11 +317,21 @@ class ReviewCardView extends StatelessWidget {
       height: 1.4,
       color: Theme.of(context).colorScheme.onSurface,
     );
-    final units = card.frontUnits;
+    final question = questionAt(
+      card,
+      filledFrontSteps(
+        card,
+        mode: state.mode,
+        introducing: state.introducing,
+        answered: answered,
+        revealedLines: revealedLines,
+      ),
+    );
+    final units = question.frontUnits;
     if (units == null) {
       return runsOrText(
-        card.frontRuns,
-        card.front,
+        question.frontRuns,
+        question.front,
         style: style,
         textAlign: TextAlign.center,
         contextHoles: true,
@@ -342,6 +352,11 @@ class ReviewCardView extends StatelessWidget {
               textAlign: TextAlign.center,
               contextHoles: true,
               tokens: tokens,
+            ),
+            ReviewCodeModel(:final lines) => codeBlock(
+              lines,
+              style.color ?? tokens.text,
+              blankTokens: tokens,
             ),
             _ => unitWidget(unit, tokens, style, TextAlign.center),
           },
@@ -463,8 +478,10 @@ class ReviewCardView extends StatelessWidget {
   Widget _body(BuildContext context, ReviewCardModel card, AlixTokens tokens) {
     if (_hasChoices) return _options(tokens);
     if (_isDrawing) return _sketchBody(context, card, tokens);
+    final answerInQuestion = card.frontSteps.isNotEmpty;
     if (state.mode == ReviewMode.lineByLine &&
         (!state.introducing || revealed)) {
+      if (answerInQuestion) return const SizedBox.shrink();
       final visible = state.introducing
           ? card.answerSteps.length
           : revealedLines;
@@ -473,6 +490,7 @@ class ReviewCardView extends StatelessWidget {
     if (_isTyping && !state.introducing) return _typing(context, card, tokens);
     if (_isExplain) return _explainBody(context, card, tokens);
     if (revealed || checkFeedback != null) {
+      if (answerInQuestion) return const SizedBox.shrink();
       if (!card.reshaped) {
         return _answerUnits(context, card.backUnits, tokens);
       }
