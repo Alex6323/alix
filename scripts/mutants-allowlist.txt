@@ -149,31 +149,31 @@ src/diagram.rs:247: replace > with >= in contrast
 # EQUIVALENT. `link.open * 1` adds only the already-dropped opening bracket
 # to the label range, so its new label bit is never observed and every kept
 # glyph is unchanged. Line-pinned.
-src/inline.rs:237: replace + with * in classify_line
+src/inline.rs:245: replace + with * in classify_line
 
 # EQUIVALENT. Every candidate in `open` has positive `remaining` whenever
 # `rposition` runs. Push is guarded by `remaining[...] > 0`; the only later
 # mutation of a candidate is through selection as `opener_index`, and a zeroed
 # opener is removed before the search repeats. The `>= 0` mutant's extra zero
 # case is unreachable. Line-pinned.
-src/inline.rs:267: replace > with >= in classify_line
+src/inline.rs:275: replace > with >= in classify_line
 
 # EQUIVALENT. The only extra candidate the widened bound admits is
-# `at == glyphs.len()`, and `raw` is `glyphs.get(at)` (src/inline.rs:617), so
+# `at == glyphs.len()`, and `raw` is `glyphs.get(at)` (src/inline.rs:636), so
 # that iteration reads `None`, the `matches!` is false, the loop advances once
-# more and stops. The check at line 683 then tests
+# more and stops. The check at line 692 then tests
 # `raw(at) != Some(closer)`, which is true for an out-of-bounds `at` either
 # way, so both versions return `None`. Line-pinned to the quoted-title closer
-# scan; the angle-destination bound at line 643 is a different site.
-src/inline.rs:678: replace < with <= in link_tail_end
+# scan; the angle-destination bound at line 652 is a different site.
+src/inline.rs:687: replace < with <= in link_tail_end
 
-# EQUIVALENT. Both callers enter with `chars[start] == '<'`: src/inline.rs:925
-# sits below the `chars[index] != '<'` early-continue at :921, and :1268 tests
+# EQUIVALENT. Both callers enter with `chars[start] == '<'`: src/inline.rs:946
+# sits below the `chars[index] != '<'` early-continue at :942, and :1288 tests
 # it explicitly. The widened range therefore adds one candidate that is `'<'`,
 # never the `'>'` the search wants, so `find` returns the same index. The body
-# slice at line 1132 reads `chars[start + 1..close]` and the mutant does
+# slice at line 1141 reads `chars[start + 1..close]` and the mutant does
 # not touch it. Line-pinned: the argument is about this one range start.
-src/inline.rs:1131: replace + with * in autolink_end
+src/inline.rs:1140: replace + with * in autolink_end
 
 # EQUIVALENT. `content_start` is set on the first source byte by every
 # preceding non-whitespace arm, including the opening parenthesis that raises
