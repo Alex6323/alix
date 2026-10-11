@@ -128,7 +128,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   skips cloze cards. Pre-1.0: fold text after `---` on a cloze card into a
   note.
 
-- An image `blank:` requires `hidden="..."`, like a text blank. A rect
+- An image `blank:` requires `hidden="..."`, like a text blank, and no
+  `blank:` accepts an empty one. A rect
   without it asked with no answer text, so a typing check on it could never
   pass. Pre-1.0: add the answer to every unlabelled image blank.
 

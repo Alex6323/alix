@@ -48,6 +48,9 @@ A region is an HTML comment line beneath the media element it marks:
     ![](hand.png)
     <!-- blank: rect x=240 y=160 width=600 height=400 b:a1b2c3 -->
 
+(Amended by ADR 0052: a `blank:` now also needs its answer, so this line reads
+`<!-- blank: rect x=240 y=160 width=600 height=400 hidden="scaphoid" b:a1b2c3 -->`.)
+
 Regions must be invisible to other Markdown renderers, which rules out fenced
 blocks (visible as code) and alt-text (breaks accessibility). Directive comments
 are what the format already uses for `id:`, `reveal:` and `direction:`.

@@ -439,6 +439,12 @@ fn parse_region(kind: RegionKind, body: &str, line: usize) -> Result<RawRegion, 
         }
         other => return Err(err(line, format!("unknown shape `{other}`"))),
     };
+    if kind == RegionKind::Blank && f.hidden.as_deref() == Some("") {
+        return Err(err(
+            line,
+            "`hidden=\"...\"` on a `blank:` must not be empty: it is the answer",
+        ));
+    }
     Ok(RawRegion {
         kind,
         geometry,
@@ -828,6 +834,11 @@ mod tests {
         for (shape, needle) in [
             ("span occurrence=2", "requires `hidden="),
             ("rect x=1 y=1 width=2 height=2", "requires `hidden="),
+            (
+                "rect x=1 y=1 width=2 height=2 hidden=\"\"",
+                "must not be empty",
+            ),
+            ("span hidden=\"\"", "must not be empty"),
             (
                 "rect [g] x=1 y=1 width=2 height=2 b:a1b2c3",
                 "requires `hidden=",
