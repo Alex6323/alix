@@ -55,7 +55,7 @@ void main() {
   testWidgets('a span cut from a formula draws without any directive', (tester) async {
     await pumpDeck(
       tester,
-      '## The quadratic formula\n---\n\$x = -b \\pm \\sqrt{d}\$\n<!-- blank: span hidden="d" b:a1b2c3 -->\n',
+      '## The quadratic formula\n\$x = -b \\pm \\sqrt{d}\$\n<!-- blank: span hidden="d" b:a1b2c3 -->\n',
       name: 'formula.md',
     );
 

@@ -5862,7 +5862,7 @@ fn removing_a_region_card_via_the_api_keeps_the_parent_block() {
     let (base, guard) = spawn_test_server_fixture(None, |dir| {
         std::fs::write(
             dir.join("regions.md"),
-            "---\nformat-version: 1\nid: \"deck-regionfixture0000000000\"\n---\n\n## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n<!-- id: card-regionfixture000000000000 -->\n",
+            "---\nformat-version: 1\nid: \"deck-regionfixture0000000000\"\n---\n\n## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n> [!NOTE]\n> carpals\n<!-- id: card-regionfixture000000000000 -->\n",
         )
         .unwrap();
     });
@@ -5893,8 +5893,8 @@ fn removing_a_region_card_via_the_api_keeps_the_parent_block() {
         "the directive line is gone: {deck}"
     );
     assert!(
-        deck.contains("carpals") && deck.contains("---"),
-        "the parent's divider and answer survive: {deck}"
+        deck.contains("> carpals"),
+        "the parent's note survives: {deck}"
     );
     assert!(
         deck.contains("## anatomy"),

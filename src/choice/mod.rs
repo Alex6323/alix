@@ -757,7 +757,7 @@ mod tests {
 
     #[test]
     fn an_image_region_card_takes_no_choice_question_from_any_source() {
-        let text = "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"answer\" b:a1b2c3 -->\n\n---\nback\n<!-- id: card-qregionregionregionregionx -->\n";
+        let text = "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"answer\" b:a1b2c3 -->\n<!-- id: card-qregionregionregionregionx -->\n";
         let cards = crate::parser::parse_str("t.md", text).unwrap();
         let region = cards
             .iter()

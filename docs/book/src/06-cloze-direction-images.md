@@ -14,7 +14,9 @@ binds to the block directly above it (a run of text lines, an image line, a
 code fence or a `$$` block), and the hidden text must be in that block.
 Comment lines and link definitions between the two do not count; a blank
 line, a note or the `---` divider in between is an error. Each directive is
-a blank, and the card expands into one sub-card per blank. No marker sits in
+a blank, and the card expands into one sub-card per blank. A cloze card has
+no answer section: it needs no answer lines, a `---` divider on it is an
+error, and explanations go in a `> [!NOTE]` note. No marker sits in
 the prose, so the deck reads normally in any other Markdown tool.
 
 ```
@@ -133,7 +135,8 @@ angeblich
 
 The two directions get **distinct progress**, are kept apart in the queue, and are
 removed together; the reversed card keeps the note. It's best for single-line
-cards, and it doesn't apply to cloze cards. When a reversed card's question side
+cards. A cloze card is never reversed: a deck-wide `direction:` skips it, and
+a `direction:` written on the card itself is an error. When a reversed card's question side
 comes from several answer lines, they render as separate centred lines rather than
 running together.
 

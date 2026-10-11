@@ -1594,8 +1594,8 @@ mod tests {
     #[test]
     fn identical_span_fronts_on_different_lines_each_get_their_own_token() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo\n---\nthe a note\n<!-- blank: span hidden=\"a\" -->\n\n\
-             ## Foo\n---\nthe b note\n<!-- blank: span hidden=\"b\" -->\n";
+        let original = "---\nformat-version: 1\nid: \"deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## Foo\nthe a note\n<!-- blank: span hidden=\"a\" -->\n\n\
+             ## Foo\nthe b note\n<!-- blank: span hidden=\"b\" -->\n";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -2128,7 +2128,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\nanswer\n<!-- id: card-regionregionregionregionre -->\n"
+                "{DECK_HEAD}## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         let outcome = stamp_deck(&path).unwrap();
@@ -2159,7 +2159,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q\n---\n日本語 target here\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
+                "{DECK_HEAD}## q\n日本語 target here\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         stamp_deck(&path).unwrap();
@@ -2183,7 +2183,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q\n---\nprose target\n<!-- blank: span hidden=\"target\" -->\n<!-- id: card-regionregionregionregionre -->\n"
+                "{DECK_HEAD}## q\nprose target\n<!-- blank: span hidden=\"target\" -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         stamp_deck(&path).unwrap();
@@ -2205,7 +2205,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\n---\ne\u{301}x\n<!-- blank: span hidden=\"\u{301}\" boundary=char b:a1b2c3 -->\n"
+                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\ne\u{301}x\n<!-- blank: span hidden=\"\u{301}\" boundary=char b:a1b2c3 -->\n"
             ),
         );
         let before = fs::read_to_string(&path).unwrap();
@@ -2225,7 +2225,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q\n---\nprose target\n<!-- cover: span hidden=\"target\" -->\n<!-- id: card-regionregionregionregionre -->\n"
+                "{DECK_HEAD}## q\nprose target\n<!-- cover: span hidden=\"target\" -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         stamp_deck(&path).unwrap();
@@ -2241,7 +2241,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q\n---\nprose target\n<!-- blank: span hidden=\"target\" b:a1b2c3 position:7 -->\n<!-- id: card-regionregionregionregionre -->\n"
+                "{DECK_HEAD}## q\nprose target\n<!-- blank: span hidden=\"target\" b:a1b2c3 position:7 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         let before = fs::read_to_string(&path).unwrap();
@@ -2256,7 +2256,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q\n---\nalpha target beta target\n<!-- blank: span hidden=\"target\" b:a1b2c3 position:1 -->\n<!-- id: card-regionregionregionregionre -->\n"
+                "{DECK_HEAD}## q\nalpha target beta target\n<!-- blank: span hidden=\"target\" b:a1b2c3 position:1 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         let before = fs::read_to_string(&path).unwrap();
@@ -2275,7 +2275,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q\n---\ntarget and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
+                "{DECK_HEAD}## q\ntarget and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         stamp_deck(&path).unwrap();
@@ -2290,7 +2290,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q\n---\néx target\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
+                "{DECK_HEAD}## q\néx target\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         stamp_deck(&path).unwrap();
@@ -2308,7 +2308,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 b:a1b2c3 -->\n\n---\nanswer\n<!-- id: card-regionregionregionregionre -->\n"
+                "{DECK_HEAD}## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         let outcome = stamp_deck(&path).unwrap();
@@ -2359,7 +2359,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let card = |token: &str| {
             format!(
-                "## q{token}\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nanswer\n<!-- id: card-{token}{token}{token}{token}{token}{token}re -->\n"
+                "## q{token}\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n<!-- id: card-{token}{token}{token}{token}{token}{token}re -->\n"
             )
         };
         let path = write(

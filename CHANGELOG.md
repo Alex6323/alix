@@ -122,6 +122,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   line, or (for a rect or crop) under text is now an error. Pre-1.0: move
   such lines directly below the block they mark, above any note.
 
+- A cloze card has no answer section: it needs no answer lines, a `---`
+  divider on it is an error (`blank_card_divider`), and so is a `direction:`
+  written on it (`blank_card_direction`). A deck-wide `direction:` still
+  skips cloze cards. Pre-1.0: fold text after `---` on a cloze card into a
+  note.
+
 - On the phone, a short vertical hairline separates the deck title from the
   "X left" counter in the review and walk bars, so a cut-off title no longer
   runs into the count.

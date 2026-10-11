@@ -151,7 +151,7 @@ mod tests {
     fn an_image_region_card_is_never_recognizable_even_with_cached_distractors() {
         let dir = tempfile::tempdir().unwrap();
         let mut cache = AugmentCache::open(dir.path().join("deck1.json"));
-        let text = "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"ans\" b:a1b2c3 -->\n\n---\nback\n<!-- id: card-qregionx -->\n";
+        let text = "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"ans\" b:a1b2c3 -->\n<!-- id: card-qregionx -->\n";
         let cards = parser::parse_str("t.md", text).unwrap();
         let region_card = cards
             .iter()

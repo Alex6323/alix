@@ -1769,7 +1769,7 @@ mod tests {
 
     fn rect_card(hidden: &str) -> Card {
         let text = format!(
-            "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"{hidden}\" b:a1b2c3 -->\n\n---\nback\n<!-- id: card-augmentaugmentaugmentaugman -->\n"
+            "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"{hidden}\" b:a1b2c3 -->\n<!-- id: card-augmentaugmentaugmentaugman -->\n"
         );
         crate::parser::parse_str("d.md", &text)
             .unwrap()

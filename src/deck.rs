@@ -1880,8 +1880,8 @@ mod tests {
 
     #[test]
     fn removing_a_region_card_keeps_its_parent_cards_answer() {
-        let text = "## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n<!-- id: card-parent1 -->\n\n## next\nanswer\n<!-- id: card-next1 -->\n";
-        let expected = "## anatomy\n![](hand.png)\n\n---\ncarpals\n<!-- id: card-parent1 -->\n\n## next\nanswer\n<!-- id: card-next1 -->\n";
+        let text = "## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n> [!NOTE]\n> carpals\n<!-- id: card-parent1 -->\n\n## next\nanswer\n<!-- id: card-next1 -->\n";
+        let expected = "## anatomy\n![](hand.png)\n> [!NOTE]\n> carpals\n<!-- id: card-parent1 -->\n\n## next\nanswer\n<!-- id: card-next1 -->\n";
 
         assert_eq!(
             expected,
@@ -1901,7 +1901,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "regions.md",
-            "## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n<!-- id: card-parent1 -->\n",
+            "## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-parent1 -->\n",
         );
         let deck = Deck::load(&path).unwrap();
         assert!(
@@ -2310,7 +2310,7 @@ mod tests {
         let path = dir.path().join("regions.md");
         std::fs::write(
             &path,
-            "---\ninput: type\ndirection: both\n---\n## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n\n---\ncarpals\n<!-- id: card-parent1 -->\n",
+            "---\ninput: type\ndirection: both\n---\n## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-parent1 -->\n",
         )
         .unwrap();
 

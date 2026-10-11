@@ -1717,9 +1717,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            format!(
-                "{ANCHOR_DECK_HEAD}## q\n---\n{body}<!-- id: card-regionregionregionregionre -->\n"
-            ),
+            format!("{ANCHOR_DECK_HEAD}## q\n{body}<!-- id: card-regionregionregionregionre -->\n"),
         )
         .unwrap();
         path

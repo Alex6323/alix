@@ -2115,7 +2115,7 @@ mod tests {
     fn explicit_draw_input_reaches_a_math_span_review_card() {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse(
-            "## q\n---\n$\\gamma$\n<!-- input: draw -->\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n",
+            "## q\n$\\gamma$\n<!-- input: draw -->\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n",
         );
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
@@ -2129,8 +2129,7 @@ mod tests {
     #[test]
     fn an_unpinned_math_span_draws_by_default() {
         let (mut store, augment, _dir) = fixtures();
-        let cards =
-            parse("## q\n---\n$\\gamma$\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n");
+        let cards = parse("## q\n$\\gamma$\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n");
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert_eq!(
@@ -2188,14 +2187,14 @@ mod tests {
 
     #[test]
     fn a_region_cards_view_classifies_asked_sibling_and_cover_masks() {
-        let text = "## bones\n![](hand.png)\n                    <!-- blank: rect x=10 y=20 width=30 height=40 hidden=\"lunate\" b:a1b2c3 -->\n                    <!-- blank: rect x=50 y=60 width=30 height=40 hidden=\"hamate\" b:d4e5f6 -->\n                    <!-- cover: rect x=1 y=2 width=3 height=4 -->\n                    <!-- crop: rect x=0 y=0 width=90 height=90 -->\n\n---\nthe carpals\n<!-- id: card-bonesbonesbonesbonesbones -->\n";
+        let text = "## bones\n![](hand.png)\n                    <!-- blank: rect x=10 y=20 width=30 height=40 hidden=\"lunate\" b:a1b2c3 -->\n                    <!-- blank: rect x=50 y=60 width=30 height=40 hidden=\"hamate\" b:d4e5f6 -->\n                    <!-- cover: rect x=1 y=2 width=3 height=4 -->\n                    <!-- crop: rect x=0 y=0 width=90 height=90 -->\n<!-- id: card-bonesbonesbonesbonesbones -->\n";
         let cards = crate::parser::parse_str("t.md", text).unwrap();
         let lunate_card = cards
             .iter()
             .find(|card| card.back == vec!["lunate".to_string()])
             .expect("the first blank produced a card");
         let view = CardView::from(lunate_card);
-        let image = &view.images[0];
+        let image = &view.images_back[0];
 
         let roles: Vec<RegionRole> = image.regions.iter().map(|r| r.role).collect();
         assert_eq!(
@@ -2223,7 +2222,7 @@ mod tests {
             .iter()
             .find(|card| card.back == vec!["hamate".to_string()])
             .expect("the second blank produced a card");
-        let sibling_roles: Vec<RegionRole> = CardView::from(hamate_card).images[0]
+        let sibling_roles: Vec<RegionRole> = CardView::from(hamate_card).images_back[0]
             .regions
             .iter()
             .map(|r| r.role)
@@ -2424,7 +2423,7 @@ mod tests {
 
     #[test]
     fn a_blank_cards_cover_stays_masked_to_protect_its_sibling_question() {
-        let text = "## diagram\n![](parts.png)\n<!-- cover: rect x=1 y=2 width=3 height=4 -->\n\n---\nThe first is alpha; the second is beta.\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n";
+        let text = "## diagram\n![](parts.png)\n<!-- cover: rect x=1 y=2 width=3 height=4 -->\nThe first is alpha; the second is beta.\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n";
         let cards = crate::parser::parse_str("t.md", text).unwrap();
         assert_eq!(2, cards.len(), "the block produces sibling span cards");
 
@@ -2433,7 +2432,7 @@ mod tests {
                 card.is_blank_card(),
                 "this is a blank card, not a plain card"
             );
-            let cover = &CardView::from(card).images[0].regions[0];
+            let cover = &CardView::from(card).images_back[0].regions[0];
             assert_eq!(RegionRole::Cover, cover.role);
             assert!(
                 !cover.reveal_on_answer,

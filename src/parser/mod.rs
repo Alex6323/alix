@@ -171,6 +171,12 @@ pub enum ParseError {
         "line {0}: card front without an answer; a card heading asks a question, so give it at least one answer line below"
     )]
     FrontWithoutAnswer(usize),
+    #[error("line {0}: a cloze card has no answer section; put explanations in a note")]
+    BlankCardDivider(usize),
+    #[error(
+        "line {0}: a `direction:` directive has no meaning on a cloze card, which is never reversed; remove it"
+    )]
+    BlankCardDirection(usize),
     #[error(
         "line {0}: this sub-card has no open parent one level above it; add that parent heading first, or remove `#`s until the depth one above is open"
     )]
@@ -334,6 +340,8 @@ impl ParseError {
             Self::InvalidTitle { .. } => "invalid_title",
             Self::EmptyFront(_) => "empty_front",
             Self::FrontWithoutAnswer(_) => "front_without_answer",
+            Self::BlankCardDivider(_) => "blank_card_divider",
+            Self::BlankCardDirection(_) => "blank_card_direction",
             Self::OrphanSubCard(_) => "orphan_sub_card",
             Self::ProseBeforeFirstHeading(_) => "prose_before_first_heading",
             Self::ContextResetInCard(_) => "context_reset_in_card",
@@ -375,6 +383,8 @@ impl ParseError {
             Self::UnclosedFrontmatter(line)
             | Self::EmptyFront(line)
             | Self::FrontWithoutAnswer(line)
+            | Self::BlankCardDivider(line)
+            | Self::BlankCardDirection(line)
             | Self::OrphanSubCard(line)
             | Self::ProseBeforeFirstHeading(line)
             | Self::ContextResetInCard(line)
@@ -700,7 +710,7 @@ struct RawCard {
     front: String,
     front_extra: Vec<(usize, String)>,
     back: Vec<(usize, String)>,
-    divided: bool,
+    divider: Option<usize>,
     notes: Vec<Note>,
     directives: CardDirectives,
     mapping: Option<Mapping>,
@@ -793,6 +803,7 @@ struct CardDirectives {
     reveal_line: Option<usize>,
     input: Option<Input>,
     direction: Option<Direction>,
+    direction_line: Option<usize>,
     citations: Vec<crate::card::SourceCitation>,
     diagrams: Vec<crate::card::DiagramStamp>,
     givens: Vec<String>,
@@ -1157,7 +1168,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 && card.front_extra.is_empty()
                 && card.back.is_empty()
                 && card.notes.is_empty()
-                && !card.divided
+                && card.divider.is_none()
             {
                 return Err(ParseError::SubCardTableTitle(card.line));
             }
@@ -1165,7 +1176,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 if card.front_extra.is_empty()
                     && card.back.is_empty()
                     && card.notes.is_empty()
-                    && !card.divided
+                    && card.divider.is_none()
                 {
                     card.machinery_stays_trailing()?;
                     title = Some(card.front);
@@ -1264,7 +1275,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 front,
                 front_extra: Vec::new(),
                 back: Vec::new(),
-                divided: false,
+                divider: None,
                 notes: Vec::new(),
                 directives,
                 mapping: None,
@@ -1353,12 +1364,12 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             let attached = lines
                 .get(idx + 1)
                 .is_some_and(|line| !trim_ws(line).is_empty());
-            let divides =
-                current.as_ref().is_some_and(|card| !card.divided) && (prev_blank || prev_heading);
+            let divides = current.as_ref().is_some_and(|card| card.divider.is_none())
+                && (prev_blank || prev_heading);
             if attached && divides {
                 if let Some(card) = current.as_mut() {
                     card.machinery_stays_trailing()?;
-                    card.divided = true;
+                    card.divider = Some(lineno);
                     card.above = Some(Above::Divider);
                 }
             } else {
@@ -2616,7 +2627,7 @@ fn push_content(
         card.machinery_stays_trailing()?;
         card.anchor = lineno;
         card.above = None;
-        if card.divided {
+        if card.divider.is_some() {
             card.back.push((lineno, text));
         } else {
             card.front_extra.push((lineno, text));
@@ -2780,7 +2791,10 @@ fn apply_directive(
             None => lints.push(bad_value(line, key, value)),
         },
         "direction" => match Direction::parse(&value) {
-            Some(direction) => directives.direction = Some(direction),
+            Some(direction) => {
+                directives.direction = Some(direction);
+                directives.direction_line = Some(line);
+            }
             None => lints.push(bad_value(line, key, value)),
         },
         "at" => {
@@ -2989,7 +3003,7 @@ fn build_card_inner(
         front: heading,
         front_extra,
         back,
-        divided,
+        divider,
         notes,
         directives,
         mapping,
@@ -3001,6 +3015,7 @@ fn build_card_inner(
         above: _,
         definition_lines,
     } = raw;
+    let divided = divider.is_some();
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
     let heading_segments = scan_markers(&heading, line, lints)?;
     if heading_segments
@@ -3025,9 +3040,6 @@ fn build_card_inner(
         }
     }
     let answer: &[(usize, String)] = if divided { &back } else { &front_extra };
-    if answer.is_empty() && !directives.ignore {
-        return Err(ParseError::FrontWithoutAnswer(line));
-    }
 
     let mut parsed = Vec::with_capacity(answer.len());
     for (lineno, text) in answer {
@@ -3303,6 +3315,20 @@ fn build_card_inner(
         .filter(|region| region.kind == region::RegionKind::Blank)
         .map(|region| region.line)
         .min();
+    match first_blank_line {
+        None if answer.is_empty() && !directives.ignore => {
+            return Err(ParseError::FrontWithoutAnswer(line));
+        }
+        None => {}
+        Some(_) => {
+            if let Some(divider) = divider {
+                return Err(ParseError::BlankCardDivider(divider));
+            }
+            if let Some(direction) = directives.direction_line {
+                return Err(ParseError::BlankCardDirection(direction));
+            }
+        }
+    }
 
     let mut task_lines = Vec::new();
     let mut has_other = false;
@@ -3656,7 +3682,7 @@ mod tests {
         );
 
         let region = parse(&format!(
-            "## region\n---\ntarget\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: {id} -->\n"
+            "## region\ntarget\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: {id} -->\n"
         ));
         assert!(
             region.cards.iter().any(|card| card.region.is_some()),
@@ -7943,14 +7969,13 @@ a
 
     #[test]
     fn a_span_in_display_math_reveals_as_math_too() {
-        let deck = parse("## q\n---\n$$x+y$$\n<!-- blank: span hidden=\"x+y\" -->\n");
+        let deck = parse("## q\n$$x+y$$\n<!-- blank: span hidden=\"x+y\" -->\n");
         assert_eq!(["$x+y$"], *deck.cards[0].back_for_display());
     }
 
     #[test]
     fn a_blank_in_prose_reveals_exactly_as_written() {
-        let deck =
-            parse("## q\n---\nthe value is dropped\n<!-- blank: span hidden=\"dropped\" -->\n");
+        let deck = parse("## q\nthe value is dropped\n<!-- blank: span hidden=\"dropped\" -->\n");
         assert_eq!(None, deck.cards[0].display_back);
         assert_eq!(["dropped"], *deck.cards[0].back_for_display());
     }
@@ -7959,7 +7984,7 @@ a
     #[test]
     fn only_the_span_inside_the_formula_reveals_as_math() {
         let deck = parse(
-            "## q\n---\nthe sign in $x+y$\n<!-- blank: span hidden=\"sign\" -->\n<!-- blank: span hidden=\"x+y\" -->\n",
+            "## q\nthe sign in $x+y$\n<!-- blank: span hidden=\"sign\" -->\n<!-- blank: span hidden=\"x+y\" -->\n",
         );
         assert_eq!(2, deck.cards.len());
         assert_eq!(None, deck.cards[0].display_back);
@@ -7969,7 +7994,7 @@ a
     #[test]
     fn a_group_may_reach_across_answer_lines() {
         let deck = parse(
-            "## q\n---\nBerlin is the capital\nof Germany\n<!-- blank: span [c] hidden=\"Berlin\" -->\n<!-- blank: span [c] hidden=\"Germany\" -->\n",
+            "## q\nBerlin is the capital\nof Germany\n<!-- blank: span [c] hidden=\"Berlin\" -->\n<!-- blank: span [c] hidden=\"Germany\" -->\n",
         );
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["Berlin", "Germany"], deck.cards[0].back);
@@ -7979,7 +8004,7 @@ a
     #[test]
     fn a_group_of_three_is_one_card() {
         let deck = parse(
-            "## q\n---\nx y z\n<!-- blank: span [a] hidden=\"x\" -->\n<!-- blank: span [a] hidden=\"y\" -->\n<!-- blank: span [a] hidden=\"z\" -->\n",
+            "## q\nx y z\n<!-- blank: span [a] hidden=\"x\" -->\n<!-- blank: span [a] hidden=\"y\" -->\n<!-- blank: span [a] hidden=\"z\" -->\n",
         );
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["x", "y", "z"], deck.cards[0].back);
@@ -7990,7 +8015,7 @@ a
     #[test]
     fn a_merged_card_is_typed_at_reconstruct_not_self_graded() {
         let deck = parse(
-            "## q\n---\nalpha, beta\n<!-- blank: span [hs] hidden=\"alpha\" -->\n<!-- blank: span [hs] hidden=\"beta\" -->\n",
+            "## q\nalpha, beta\n<!-- blank: span [hs] hidden=\"alpha\" -->\n<!-- blank: span [hs] hidden=\"beta\" -->\n",
         );
         assert_eq!(
             crate::answer::Mode::Typing,
@@ -8295,15 +8320,109 @@ a
     }
 
     #[test]
-    fn blank_cards_never_produce_a_reversed_twin() {
-        let deck = parse(
-            "---\ndirection: both\n---\n## q\n---\na b c\n<!-- direction: both -->\n<!-- blank: span hidden=\"b\" -->\n",
-        );
+    fn a_deck_wide_direction_skips_a_blank_card_and_a_card_level_one_fails_on_it() {
+        let deck =
+            parse("---\ndirection: both\n---\n## q\na b c\n<!-- blank: span hidden=\"b\" -->\n");
         assert_eq!(Some(Direction::Both), deck.frontmatter.direction);
         assert_eq!(1, deck.cards.len());
         assert!(deck.cards[0].is_blank_card());
         assert!(!deck.cards[0].reversed);
         assert_eq!(None, deck.cards[0].direction);
+
+        let blanks = [
+            ("a text blank", "a b c\n<!-- blank: span hidden=\"b\" -->"),
+            (
+                "an image blank",
+                "![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->",
+            ),
+        ];
+        for (label, block) in blanks {
+            for value in ["both", "reverse", "forward"] {
+                let error = err(&format!("## q\n{block}\n<!-- direction: {value} -->\n"));
+                assert_eq!(
+                    ParseError::BlankCardDirection(4),
+                    error,
+                    "{label} with `direction: {value}`"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_divider_on_a_blank_card_is_a_hard_error_while_covers_and_crops_keep_theirs() {
+        let rows = [
+            (
+                "a text blank above the divider",
+                "## q\nalpha beta\n<!-- blank: span hidden=\"alpha\" -->\n\n---\nexplanation\n",
+                Some(5),
+            ),
+            (
+                "an image blank above the divider",
+                "## q\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\nanswer\n",
+                Some(5),
+            ),
+            (
+                "a text blank below the divider",
+                "## q\nintro\n\n---\nalpha beta\n<!-- blank: span hidden=\"alpha\" -->\n",
+                Some(4),
+            ),
+            (
+                "a cover alone",
+                "## q\nalpha beta\n<!-- cover: span hidden=\"alpha\" -->\n\n---\nanswer\n",
+                None,
+            ),
+            (
+                "a crop alone",
+                "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=50 height=50 -->\n\n---\nanswer\n",
+                None,
+            ),
+        ];
+        for (label, text, divider) in rows {
+            let result = super::parse("deck.md", text);
+            match divider {
+                Some(line) => assert_eq!(
+                    Err(ParseError::BlankCardDivider(line)),
+                    result.map(|deck| deck.cards.len()),
+                    "{label}"
+                ),
+                None => assert!(result.is_ok(), "{label}: {result:?}"),
+            }
+        }
+        let error =
+            err("## q\nalpha beta\n<!-- blank: span hidden=\"alpha\" -->\n\n---\nexplanation\n");
+        assert_eq!(
+            ("blank_card_divider", 5),
+            (error.diagnostic_code(), error.line())
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("a cloze card has no answer section; put explanations in a note"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_blank_card_needs_no_answer_lines_and_a_plain_card_still_does() {
+        let deck = parse("## alpha beta\n<!-- blank: span hidden=\"alpha\" -->\n");
+        assert_eq!(1, deck.cards.len());
+        let card = &deck.cards[0];
+        assert!(card.is_blank_card(), "{card:?}");
+        assert_eq!(vec!["alpha"], card.back);
+        assert!(card.context.is_empty(), "{:?}", card.context);
+
+        let rows = [
+            ("a cover alone", "## q\n<!-- cover: span hidden=\"q\" -->\n"),
+            ("no directive", "## q\n"),
+            ("a note only", "## q\n> [!NOTE]\n> hint\n"),
+        ];
+        for (label, text) in rows {
+            assert_eq!(ParseError::FrontWithoutAnswer(1), err(text), "{label}");
+        }
+        assert!(
+            super::parse("deck.md", "## q\n<!-- ignore -->\n").is_ok(),
+            "ignore keeps exempting a draft"
+        );
     }
 
     #[test]
@@ -8393,6 +8512,7 @@ the answer
                 reveal_line: Some(30),
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
+                direction_line: Some(32),
                 sampling: None,
                 citations: vec![crate::card::SourceCitation {
                     locator: "src/caching.rs:46-66".into(),
@@ -8492,15 +8612,18 @@ the answer
     }
 
     #[test]
-    fn a_blank_card_carries_front_and_back_images() {
+    fn a_blank_card_keeps_every_image_in_order() {
         let deck = parse(
-            "## front\n![](f.png)\n\n---\nthe answer here\n<!-- blank: span hidden=\"answer\" -->\n![](b.png)\n",
+            "## front\n![](f.png)\nthe answer here\n<!-- blank: span hidden=\"answer\" -->\n![](b.png)\n",
         );
         assert_eq!(1, deck.cards.len());
         let card = &deck.cards[0];
         assert!(card.is_blank_card());
-        assert_eq!(vec![PathBuf::from("f.png")], img_srcs(&card.images));
-        assert_eq!(vec![PathBuf::from("b.png")], img_srcs(&card.images_back));
+        assert!(card.images.is_empty(), "a blank card has no answer side");
+        assert_eq!(
+            vec![PathBuf::from("f.png"), PathBuf::from("b.png")],
+            img_srcs(&card.images_back)
+        );
     }
 
     #[test]
@@ -8925,25 +9048,25 @@ the answer
     // ── Image regions (ADR 0034): binding and cross-region rules ──
 
     #[test]
-    fn a_geometric_region_binds_to_the_nearest_preceding_image_on_its_side() {
+    fn a_geometric_region_binds_to_the_image_directly_above_it_among_several() {
         let deck = parse(
-            "## bones\n![](a.png)\n![](b.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n\n---\n![](c.png)\n<!-- blank: rect x=3 y=3 width=4 height=4 -->\nanswer\n",
+            "## bones\n![](a.png)\n![](b.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 -->\n![](c.png)\n<!-- blank: rect x=3 y=3 width=4 height=4 -->\n",
         );
         let card = &deck.cards[0];
-        assert_eq!(2, card.images.len(), "both front images survive");
+        assert_eq!(3, card.images_back.len(), "every image survives");
         assert!(
-            card.images[0].regions.is_empty(),
+            card.images_back[0].regions.is_empty(),
             "the farther image gets nothing"
         );
         assert_eq!(
             1,
-            card.images[1].regions.len(),
-            "the nearest preceding image binds"
+            card.images_back[1].regions.len(),
+            "the image directly above binds"
         );
         assert_eq!(
             1,
-            card.images_back[0].regions.len(),
-            "the back region binds on its own side"
+            card.images_back[2].regions.len(),
+            "a later image binds its own directive"
         );
         assert!(card.span_regions.is_empty());
     }
@@ -9142,9 +9265,9 @@ the answer
                 },
             ),
             (
-                "a rect under an image below the divider",
+                "a cover rect under an image below the divider",
                 format!(
-                    "## q\n![](a.png)\n\n---\n![](b.png)\n{BETWEEN}<!-- blank: rect x=1 y=1 width=2 height=2 -->\n"
+                    "## q\n![](a.png)\n\n---\n![](b.png)\n{BETWEEN}<!-- cover: rect x=1 y=1 width=2 height=2 -->\n"
                 ),
                 |card| card.images[0].regions.is_empty() && card.images_back[0].regions.len() == 1,
             ),
@@ -9335,8 +9458,7 @@ the answer
 
     #[test]
     fn a_span_enabled_answer_can_start_with_an_entity() {
-        let deck =
-            parse("## q\n---\n&amp; welcome\n<!-- blank: span hidden=\"welcome\" b:a1b2c3 -->\n");
+        let deck = parse("## q\n&amp; welcome\n<!-- blank: span hidden=\"welcome\" b:a1b2c3 -->\n");
         assert_eq!(vec!["welcome"], deck.cards[0].back);
         assert_eq!(
             vec!["&amp; ⍰"],
@@ -9540,7 +9662,7 @@ the answer
     fn viewport_bounds_reject_an_invisible_blank_and_accept_partial_overlap() {
         // Touching the crop edge is outside: no positive-area intersection.
         let error = err(
-            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=100 height=100 -->\n<!-- blank: rect x=100 y=0 width=10 height=10 -->\n\n---\nanswer\n",
+            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=100 height=100 -->\n<!-- blank: rect x=100 y=0 width=10 height=10 -->\n",
         );
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -9549,14 +9671,13 @@ the answer
 
         // Partial overlap is legal and clipped.
         let deck = parse(
-            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=100 height=100 -->\n<!-- blank: rect x=90 y=0 width=20 height=20 -->\n\n---\nanswer\n",
+            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=100 height=100 -->\n<!-- blank: rect x=90 y=0 width=20 height=20 -->\n",
         );
-        assert_eq!(1, deck.cards[0].images[0].regions.len());
+        assert_eq!(1, deck.cards[0].images_back[0].regions.len());
 
         // The ADR's no-crop percentage example: x=100% width=10% clips to nothing.
-        let error = err(
-            "## q\n![](a.png)\n<!-- blank: rect x=100% y=0% width=10% height=10% -->\n\n---\nanswer\n",
-        );
+        let error =
+            err("## q\n![](a.png)\n<!-- blank: rect x=100% y=0% width=10% height=10% -->\n");
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
         };
@@ -9590,9 +9711,9 @@ the answer
     #[test]
     fn region_and_crop_survive_onto_the_stored_card_image() {
         let deck = parse(
-            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=50 height=50 -->\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nanswer\n",
+            "## q\n![](a.png)\n<!-- crop: rect x=0 y=0 width=50 height=50 -->\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n",
         );
-        let image = &deck.cards[0].images[0];
+        let image = &deck.cards[0].images_back[0];
         assert_eq!(1, image.regions.len());
         assert_eq!(Some("a1b2c3"), image.regions[0].stamp.as_deref());
         assert_eq!("50", image.crop.as_ref().unwrap().width.literal);
@@ -9644,9 +9765,7 @@ the answer
     const RTOK: &str = "card-regionregionregionregion";
 
     fn region_deck(regions: &str) -> String {
-        format!(
-            "## name the parts\n![](hand.png)\n{regions}\n\n---\nthe parts\n<!-- id: {RTOK} -->\n"
-        )
+        format!("## name the parts\n![](hand.png)\n{regions}\n<!-- id: {RTOK} -->\n")
     }
 
     #[test]
@@ -9665,7 +9784,7 @@ the answer
         assert_eq!("name the parts", region_card.front);
         assert_eq!(
             1,
-            region_card.images.len(),
+            region_card.images_back.len(),
             "the media rides along for masking"
         );
     }
@@ -9702,7 +9821,7 @@ the answer
     #[test]
     fn a_mixed_shape_group_keeps_its_answers_in_file_order() {
         let deck = parse(
-            "## identify both\n---\nalpha beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n![](diagram.png)\n<!-- blank: rect [pair] x=1 y=1 width=2 height=2 hidden=\"diagram\" b:d4e5f6 -->\n<!-- id: card-mixed1 -->\n",
+            "## identify both\nalpha beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n![](diagram.png)\n<!-- blank: rect [pair] x=1 y=1 width=2 height=2 hidden=\"diagram\" b:d4e5f6 -->\n<!-- id: card-mixed1 -->\n",
         );
         let group = deck
             .cards
@@ -9736,7 +9855,7 @@ the answer
         assert_eq!(1, deck.cards.len(), "a cover never asks");
         assert_eq!(
             1,
-            deck.cards[0].images[0].regions.len(),
+            deck.cards[0].images_back[0].regions.len(),
             "the cover still rides the media for drawing"
         );
     }
@@ -9793,7 +9912,7 @@ the answer
     #[test]
     fn notes_ride_every_region_card() {
         let deck = parse(&format!(
-            "## name the parts\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 hidden=\"hamate\" b:d4e5f6 -->\n\n---\nthe parts\n> [!NOTE]\n> the lunate sits center\n<!-- id: {RTOK} -->\n"
+            "## name the parts\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: rect x=5 y=5 width=2 height=2 hidden=\"hamate\" b:d4e5f6 -->\n> [!NOTE]\n> the lunate sits center\n<!-- id: {RTOK} -->\n"
         ));
         for card in &deck.cards {
             assert_eq!(
@@ -9807,7 +9926,7 @@ the answer
     #[test]
     fn a_task_list_answer_plus_a_blank_region_is_a_composition_error() {
         let error = err(&format!(
-            "## pick\n---\n- [x] alpha\n- [ ] beta\n<!-- choices: single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## pick\n- [x] alpha\n- [ ] beta\n<!-- choices: single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -9818,7 +9937,7 @@ the answer
     #[test]
     fn an_incomplete_task_list_plus_a_blank_region_is_still_a_composition_error() {
         let error = err(&format!(
-            "## pick\n---\n- [ ] alpha\n- [ ] beta\n<!-- choices: single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## pick\n- [ ] alpha\n- [ ] beta\n<!-- choices: single -->\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -9829,13 +9948,13 @@ the answer
     #[test]
     fn covers_and_crops_stay_legal_beside_blanks_and_task_lists() {
         let cloze = parse(&format!(
-            "## q\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n<!-- crop: rect x=0 y=0 width=9 height=9 -->\n\n---\nw z y\n<!-- blank: span hidden=\"z\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n<!-- crop: rect x=0 y=0 width=9 height=9 -->\nw z y\n<!-- blank: span hidden=\"z\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert!(
             cloze.cards[0].is_blank_card(),
             "a cover is a display transform, not a template: the span cards stand"
         );
-        assert_eq!(1, cloze.cards[0].images[0].regions.len());
+        assert_eq!(1, cloze.cards[0].images_back[0].regions.len());
 
         let choice = parse(&format!(
             "## pick\n![](a.png)\n<!-- cover: rect x=1 y=1 width=2 height=2 -->\n\n---\n- [x] alpha\n- [ ] beta\n<!-- choices: single -->\n<!-- id: {RTOK} -->\n"
@@ -9847,7 +9966,7 @@ the answer
     #[test]
     fn a_span_binds_into_styled_contents_over_the_stream() {
         let deck = parse(&format!(
-            "## q\n---\nthe **lunate** bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nthe **lunate** bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["lunate"], deck.cards[0].back);
@@ -9889,7 +10008,7 @@ the answer
     #[test]
     fn a_whole_math_formula_is_a_legal_span_blank() {
         let deck = parse(&format!(
-            "## q\n---\nsum $x+y$ here\n<!-- blank: span hidden=\"x+y\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nsum $x+y$ here\n<!-- blank: span hidden=\"x+y\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len());
         assert_eq!(
@@ -9932,7 +10051,7 @@ the answer
     #[test]
     fn a_complete_base_and_script_is_a_legal_span_blank() {
         let deck = parse(&format!(
-            "## q\n---\n$x = b^2 - 4ac$\n<!-- blank: span hidden=\"b^2\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n$x = b^2 - 4ac$\n<!-- blank: span hidden=\"b^2\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(vec!["$x = \u{2370} - 4ac$"], deck.cards[0].context);
     }
@@ -9940,7 +10059,7 @@ the answer
     #[test]
     fn an_allowlisted_symbol_command_is_a_legal_span_blank() {
         let deck = parse(&format!(
-            "## q\n---\n$x = -b \\pm c$\n<!-- blank: span hidden=\"\\\\pm\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n$x = -b \\pm c$\n<!-- blank: span hidden=\"\\\\pm\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(vec!["$x = -b \u{2370} c$"], deck.cards[0].context);
     }
@@ -9962,7 +10081,7 @@ the answer
     #[test]
     fn a_group_after_a_zero_argument_symbol_is_a_legal_script_base() {
         let deck = parse(&format!(
-            "## q\n---\n$z+\\alpha{{x}}^2$\n<!-- blank: span hidden=\"{{x}}^2\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n$z+\\alpha{{x}}^2$\n<!-- blank: span hidden=\"{{x}}^2\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(vec!["$z+\\alpha\u{2370}$"], deck.cards[0].context);
     }
@@ -10029,7 +10148,7 @@ the answer
         let deck = super::parse(
             "deck.md",
             &format!(
-                "## q\n---\n$z+\\boxed{{x}}{{y}}^2$\n<!-- blank: span hidden=\"{{y}}^2\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+                "## q\n$z+\\boxed{{x}}{{y}}^2$\n<!-- blank: span hidden=\"{{y}}^2\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
             ),
         )
         .expect("the group after a one-argument macro is an independent unit");
@@ -10041,7 +10160,7 @@ the answer
         let deck = super::parse(
             "deck.md",
             &format!(
-                "## q\n---\n$z+\\limsup{{x}}^2$\n<!-- blank: span hidden=\"{{x}}^2\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+                "## q\n$z+\\limsup{{x}}^2$\n<!-- blank: span hidden=\"{{x}}^2\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
             ),
         )
         .expect("an operator name that saturates in-body leaves the next group independent");
@@ -10053,7 +10172,7 @@ the answer
         let deck = super::parse(
             "deck.md",
             &format!(
-                "## q\n---\n$x+y % \\def\\foo{{z}}$\n<!-- blank: span hidden=\"x\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+                "## q\n$x+y % \\def\\foo{{z}}$\n<!-- blank: span hidden=\"x\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
             ),
         )
         .expect("the commented spelling never reaches the renderer");
@@ -10088,7 +10207,7 @@ the answer
         let line = r"$A=\{x\}$";
         let hidden = r"\\{x\\}";
         let deck = parse(&format!(
-            "## q\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len());
         assert_eq!(vec!["$A=\u{2370}$"], deck.cards[0].context);
@@ -10098,7 +10217,7 @@ the answer
     fn a_matrix_cell_is_a_complete_structural_unit() {
         let line = r"$\begin{pmatrix}a & b\end{pmatrix}$";
         let deck = parse(&format!(
-            "## q\n---\n{line}\n<!-- blank: span hidden=\"a\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n{line}\n<!-- blank: span hidden=\"a\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["$\\begin{pmatrix}\u{2370} & b\\end{pmatrix}$"],
@@ -10110,7 +10229,7 @@ the answer
     fn a_group_interior_binds_at_equal_depth_and_a_group_split_is_rejected() {
         let line = r"$\frac{ab}{cd}$";
         let deck = parse(&format!(
-            "## q\n---\n{line}\n<!-- blank: span hidden=\"ab\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n{line}\n<!-- blank: span hidden=\"ab\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["$\\frac{\u{2370}}{cd}$"],
@@ -10120,7 +10239,7 @@ the answer
 
         let hidden = r"ab}{cd";
         let error = err(&format!(
-            "## q\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let ParseError::InvalidRegion { message, .. } = error else {
             panic!("expected InvalidRegion, got {error:?}");
@@ -10165,7 +10284,7 @@ the answer
             ),
         ] {
             let deck = parse(&format!(
-                "## q\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+                "## q\n{line}\n<!-- blank: span hidden=\"{hidden}\" boundary=char b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
             ));
             assert_eq!(1, deck.cards.len(), "{hidden}");
             assert_eq!(vec!["$\u{2370}$"], deck.cards[0].context, "{hidden}");
@@ -10175,7 +10294,7 @@ the answer
     #[test]
     fn space_padded_dollars_are_prose_so_the_span_binds_as_text() {
         let deck = parse(&format!(
-            "## q\n---\n$ \\gamma $\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n$ \\gamma $\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["$ \u{2370} $"],
@@ -10187,7 +10306,7 @@ the answer
     #[test]
     fn a_math_comment_does_not_consume_the_first_visible_occurrence() {
         let deck = parse(&format!(
-            "## q\n---\n$a % target$ target\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n$a % target$ target\n<!-- blank: span hidden=\"target\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
 
         assert_eq!(
@@ -10237,7 +10356,7 @@ the answer
             (r"$$a + b$$", "b", "$$a + \u{2370}$$"),
         ] {
             let deck = parse(&format!(
-                "## q\n---\n{line}\n<!-- blank: span hidden=\"{hidden}\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+                "## q\n{line}\n<!-- blank: span hidden=\"{hidden}\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
             ));
             assert_eq!(vec![masked.to_string()], deck.cards[0].context, "{line}");
         }
@@ -10272,7 +10391,7 @@ the answer
     #[test]
     fn a_math_span_pinned_to_typing_a_command_is_linted_untypable() {
         let deck = parse(&format!(
-            "## q\n---\n$\\gamma$\n<!-- input: type -->\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n$\\gamma$\n<!-- input: type -->\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec![LintKind::UntypableSpan {
@@ -10286,7 +10405,7 @@ the answer
         );
 
         let contains = parse(&format!(
-            "## q\n---\n$x \\leq y$\n<!-- input: type -->\n<!-- blank: span hidden=\"x \\\\leq y\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n$x \\leq y$\n<!-- input: type -->\n<!-- blank: span hidden=\"x \\\\leq y\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             1,
@@ -10300,7 +10419,7 @@ the answer
         );
 
         let drawn = parse(&format!(
-            "## q\n---\n$\\gamma$\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n$\\gamma$\n<!-- blank: span hidden=\"\\\\gamma\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert!(
             drawn.lints.is_empty(),
@@ -10332,7 +10451,7 @@ the answer
     #[test]
     fn literal_underscores_and_bracket_dots_are_ordinary_prose_beside_spans() {
         let deck = parse(&format!(
-            "## q\n---\nfill the ____ gap in prose\n<!-- blank: span hidden=\"prose\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nfill the ____ gap in prose\n<!-- blank: span hidden=\"prose\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["fill the ____ gap in ⍰"],
@@ -10394,7 +10513,7 @@ the answer
     #[test]
     fn prose_beside_links_stays_blankable() {
         let beside_cover = parse(&format!(
-            "## ports\n---\nSSH is 22; HTTPS is 22/tcp\n<!-- cover: span hidden=\"22\" -->\n<!-- id: {RTOK} -->\n"
+            "## ports\nSSH is 22; HTTPS is 22/tcp\n<!-- cover: span hidden=\"22\" -->\n<!-- id: {RTOK} -->\n"
         ));
         assert!(
             beside_cover.cards.iter().all(|card| card.region.is_none()),
@@ -10402,12 +10521,12 @@ the answer
         );
 
         let beside_link = parse(&format!(
-            "## q\n---\nsee [the RFC](https://x) for port 22\n<!-- blank: span hidden=\"port\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nsee [the RFC](https://x) for port 22\n<!-- blank: span hidden=\"port\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(vec!["port"], beside_link.cards[0].back);
 
         let label = parse(&format!(
-            "## q\n---\nsee [the RFC](https://x) for port 22\n<!-- blank: span hidden=\"RFC\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nsee [the RFC](https://x) for port 22\n<!-- blank: span hidden=\"RFC\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["RFC"],
@@ -10430,7 +10549,7 @@ the answer
     #[test]
     fn a_span_cards_context_masks_own_as_blank_and_siblings_as_hidden() {
         let deck = parse(&format!(
-            "## anatomy\n---\nthe lunate sits beside the hamate bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->\n<!-- cover: span hidden=\"bone\" -->\n<!-- id: {RTOK} -->\n"
+            "## anatomy\nthe lunate sits beside the hamate bone\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->\n<!-- cover: span hidden=\"bone\" -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(2, deck.cards.len());
         assert_eq!(
@@ -10449,7 +10568,7 @@ the answer
     #[test]
     fn a_rect_cards_context_masks_every_span_as_hidden() {
         let deck = parse(&format!(
-            "## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\n\n---\nthe lunate sits center\n<!-- blank: span hidden=\"lunate\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+            "## anatomy\n![](hand.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 b:a1b2c3 -->\nthe lunate sits center\n<!-- blank: span hidden=\"lunate\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
         ));
         let rect = deck
             .cards
@@ -10466,7 +10585,7 @@ the answer
     #[test]
     fn masking_splices_authored_bytes_so_styling_survives() {
         let deck = parse(&format!(
-            "## q\n---\n**New** York is big\n<!-- blank: span hidden=\"New\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\n**New** York is big\n<!-- blank: span hidden=\"New\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["**⍰** York is big"],
@@ -10478,7 +10597,7 @@ the answer
     #[test]
     fn a_name_addressed_note_replaces_the_shared_note_on_its_card() {
         let deck = parse(&format!(
-            "## q\n---\nalpha then beta\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [h] hidden=\"beta\" b:d4e5f6 -->\n> [!NOTE]\n> shared note\n> g: only for g\n<!-- id: {RTOK} -->\n"
+            "## q\nalpha then beta\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [h] hidden=\"beta\" b:d4e5f6 -->\n> [!NOTE]\n> shared note\n> g: only for g\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             2,
@@ -10510,7 +10629,7 @@ the answer
     #[test]
     fn an_append_address_extends_the_shared_note_on_its_card() {
         let deck = parse(&format!(
-            "## q\n---\nalpha then beta\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [h] hidden=\"beta\" b:d4e5f6 -->\n> [!NOTE]\n> shared note\n> g+: extra for g\n<!-- id: {RTOK} -->\n"
+            "## q\nalpha then beta\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [h] hidden=\"beta\" b:d4e5f6 -->\n> [!NOTE]\n> shared note\n> g+: extra for g\n<!-- id: {RTOK} -->\n"
         ));
         let g = deck
             .cards
@@ -10537,7 +10656,7 @@ the answer
     #[test]
     fn a_group_card_blanks_every_member_in_context() {
         let deck = parse(&format!(
-            "## q\n---\nalpha then beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [pair] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nalpha then beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [pair] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len(), "one group card");
         assert_eq!(vec!["⍰ then ⍰"], deck.cards[0].context);
@@ -10546,7 +10665,7 @@ the answer
     #[test]
     fn a_lone_named_span_stays_single_and_keeps_its_stamp_identity() {
         let deck = parse(&format!(
-            "## q\n---\nalpha then beta\n<!-- blank: span [base] hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nalpha then beta\n<!-- blank: span [base] hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             1,
@@ -10571,7 +10690,7 @@ the answer
     #[test]
     fn a_second_member_births_the_group_and_the_derived_identity() {
         let deck = parse(&format!(
-            "## q\n---\nalpha then beta\n<!-- blank: span [base] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [base] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nalpha then beta\n<!-- blank: span [base] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [base] hidden=\"beta\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len(), "two members are one group card");
         let id = deck.cards[0].id().expect("stamped group id");
@@ -10584,10 +10703,10 @@ the answer
     #[test]
     fn moving_a_span_to_another_occurrence_changes_the_fingerprint() {
         let one = parse(&format!(
-            "## q\n---\nport 22 forwards to port 22\n<!-- blank: span hidden=\"22\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nport 22 forwards to port 22\n<!-- blank: span hidden=\"22\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let two = parse(&format!(
-            "## q\n---\nport 22 forwards to port 22\n<!-- blank: span hidden=\"22\" occurrence=2 b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nport 22 forwards to port 22\n<!-- blank: span hidden=\"22\" occurrence=2 b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_ne!(
             one.cards[0].content_fingerprint, two.cards[0].content_fingerprint,
@@ -10602,7 +10721,7 @@ the answer
     #[test]
     fn image_only_lines_stay_out_of_region_context() {
         let deck = parse(&format!(
-            "## q\n---\nthe lunate sits center\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n![](hand.png)\n<!-- id: {RTOK} -->\n"
+            "## q\nthe lunate sits center\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n![](hand.png)\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(
             vec!["the ⍰ sits center"],
@@ -10626,7 +10745,7 @@ the answer
     #[test]
     fn a_cover_span_masks_answer_giving_prose_in_blank_context() {
         let deck = parse(&format!(
-            "## q\n---\nthe legend says alpha; fill alpha\n<!-- cover: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"alpha\" occurrence=2 b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nthe legend says alpha; fill alpha\n<!-- cover: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"alpha\" occurrence=2 b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_eq!(1, deck.cards.len());
         assert!(deck.cards[0].is_blank_card());
@@ -10636,10 +10755,10 @@ the answer
     #[test]
     fn moving_a_cover_span_changes_the_blank_cards_fingerprint() {
         let first = parse(&format!(
-            "## q\n---\nalpha then alpha; fill x\n<!-- cover: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"x\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nalpha then alpha; fill x\n<!-- cover: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"x\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         let second = parse(&format!(
-            "## q\n---\nalpha then alpha; fill x\n<!-- cover: span hidden=\"alpha\" occurrence=2 -->\n<!-- blank: span hidden=\"x\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+            "## q\nalpha then alpha; fill x\n<!-- cover: span hidden=\"alpha\" occurrence=2 -->\n<!-- blank: span hidden=\"x\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
         ));
         assert_ne!(
             first.cards[0].content_fingerprint,
@@ -10650,7 +10769,7 @@ the answer
     #[test]
     fn each_blank_card_fingerprints_its_effective_masked_question() {
         let deck = parse(
-            "## q\n---\nfirst alpha; second beta\n<!-- blank: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"beta\" -->\n",
+            "## q\nfirst alpha; second beta\n<!-- blank: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"beta\" -->\n",
         );
         assert_eq!(2, deck.cards.len());
         for card in &deck.cards {
@@ -10682,15 +10801,13 @@ the answer
             ),
             (
                 "single region",
-                one(
-                    "## single\n---\nalpha then beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n",
-                ),
+                one("## single\nalpha then beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n"),
                 (0x7295c529301f959f, 0x63853a6ecb244205),
             ),
             (
                 "group region",
                 one(
-                    "## group\n---\nalpha then beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [pair] hidden=\"beta\" b:d4e5f6 -->\n",
+                    "## group\nalpha then beta\n<!-- blank: span [pair] hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span [pair] hidden=\"beta\" b:d4e5f6 -->\n",
                 ),
                 (0x4c937710eca65745, 0x2177997d7c587c5d),
             ),
@@ -10706,7 +10823,7 @@ the answer
             ),
             (
                 "escaped image marker",
-                one("## escaped\n---\n\\![diagram](\\<x.png>)\n"),
+                one("## escaped\n\\![diagram](\\<x.png>)\n"),
                 (0x017a84119800b4e1, 0x46f230036d4820ee),
             ),
         ];
@@ -10736,10 +10853,10 @@ the answer
     #[test]
     fn editing_a_hidden_sibling_preserves_the_unchanged_blank_cards_fingerprint() {
         let before = parse(
-            "## q\n---\nfirst alpha; second beta\n<!-- blank: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"beta\" -->\n",
+            "## q\nfirst alpha; second beta\n<!-- blank: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"beta\" -->\n",
         );
         let after = parse(
-            "## q\n---\nfirst alpha; second gamma\n<!-- blank: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"gamma\" -->\n",
+            "## q\nfirst alpha; second gamma\n<!-- blank: span hidden=\"alpha\" -->\n<!-- blank: span hidden=\"gamma\" -->\n",
         );
         let alpha_before = before
             .cards

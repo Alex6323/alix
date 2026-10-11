@@ -7487,7 +7487,7 @@ fn doctor_repairs_the_uninitialized_nested_deck_it_diagnoses() {
     let deck = decks.join("draft.md");
     std::fs::write(
         &deck,
-        "## q\n---\ntarget and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 position:1 -->\n",
+        "## q\ntarget and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 position:1 -->\n",
     )
     .unwrap();
 
@@ -7523,7 +7523,7 @@ fn doctor_reports_a_symlinked_workspace_cycle_only_once() {
     std::fs::write(workspace.join("alix.toml"), "title = \"Nested\"\n").unwrap();
     std::fs::write(
         decks.join("cards.md"),
-        "## q\n---\ntarget and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 position:1 -->\n",
+        "## q\ntarget and target\n<!-- blank: span hidden=\"target\" occurrence=2 b:a1b2c3 position:1 -->\n",
     )
     .unwrap();
     std::os::unix::fs::symlink(&workspace, workspace.join("loop")).unwrap();
