@@ -4,6 +4,8 @@
   ruled frozen 2026-08-18, the base build's first four slices are committed,
   and the span semantics and template correction build from the span-masking
   spec signed off 2026-08-19)
+- Amended by: 0052 (binding of every region directive, the scope of
+  `occurrence=` and `position:`, and the repeat lint)
 - Evidence: a_full_rect_blank_parses_with_group_hidden_and_stamp in src/parser/region.rs
 - Evidence: the_adr_0034_group_derivation_reproduces_the_frozen_vector in src/token.rs
 - Evidence: an_unstamped_region_is_minted_into_on_the_first_pass_and_then_stable in src/stamp.rs
@@ -81,6 +83,9 @@ Three keywords, and no fourth is implied:
   every region on the picture.
 
 ### Binding is positional, and shape-specific
+
+(Amended by ADR 0052: every region directive binds to the block directly
+above it; the two rules below are replaced.)
 
 **Geometric and temporal shapes** (`rect`, `ellipse`, `polygon`, `clip`) bind to
 the nearest preceding media element **on the same side of the card**, never
