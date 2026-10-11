@@ -30,8 +30,22 @@ export function revealKidsAnswer(model) {
 }
 
 export function kidsStepCount(model) {
-  const steps = model.state && model.state.card && model.state.card.answer_steps;
-  return steps ? steps.length : 0;
+  const card = model.state && model.state.card;
+  if (!card) return 0;
+  const front = card.front_steps || [];
+  return front.length || (card.answer_steps || []).length;
+}
+
+export function kidsFilledSteps(model) {
+  const steps = (model.state && model.state.card && model.state.card.front_steps) || [];
+  if (!steps.length) return 0;
+  if (kidsChoiceMode(model)) return model.chosen !== null ? steps.length : 0;
+  if (model.state.mode === "line") return Math.min(model.revealed, steps.length);
+  return model.revealed > 0 ? steps.length : 0;
+}
+
+export function kidsQuestionAt(card, filled) {
+  return filled > 0 ? card.front_steps[filled - 1] : card;
 }
 
 export function kidsChoiceMode(model) {

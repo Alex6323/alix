@@ -84,15 +84,17 @@ function renderReview() {
   const cardEl = el("div", "rev-card");
 
   cardEl.appendChild(el("div", "rev-eyebrow", eyebrowFor(state, introducing)));
-  cardEl.appendChild(frontPrompt(card, (unit) => frontDiagram(unit, done)));
+  const cloze = (card.front_steps || []).length > 0;
+  const question = model.questionAt(card, model.filled(studyModel));
+  cardEl.appendChild(frontPrompt(question, (unit) => frontDiagram(unit, done)));
   appendContextLines(cardEl, card);
   appendImages(cardEl, card.images, done);
 
   if (choiceMode) {
     cardEl.appendChild(renderOptions());
-  } else if (lineMode) {
+  } else if (lineMode && !cloze) {
     cardEl.appendChild(renderLines(card));
-  } else {
+  } else if (!cloze) {
     // Fill-in-the-blank: a blank before reveal, the green answer after.
     cardEl.appendChild(done ? answerFill(card) : blankEl());
   }

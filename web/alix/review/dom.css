@@ -19,23 +19,6 @@
   .section-prose { color: var(--dim); font-family: var(--sans); font-size: clamp(0.95rem, 2.2vw, 1.08rem);
     line-height: 1.55; margin: 0 0 10px; white-space: pre-wrap; }
   .section-prose:last-child { margin-bottom: 0; }
-  /* Both holes render as chips with their glyphs hidden: the text still sizes
-     the chip and still copies, but `⍰` draws as a bare glyph and
-     `⬚` is noise. Only the answerable gap gets the rule, which is drawn on
-     the content box so the padding insets it and it lands on the baseline. */
-  .context .hole { color: transparent; font-weight: 700;
-    display: inline-block; min-width: 2.6em;
-    background-color: color-mix(in srgb, var(--bolt-hi) 14%, transparent);
-    background-image: linear-gradient(var(--bolt-hi), var(--bolt-hi));
-    background-repeat: no-repeat;
-    background-origin: content-box;
-    background-size: 100% 2px;
-    background-position: center bottom 0.28em;
-    border-radius: 4px; padding: 0.06em 0.42em; }
-  .context .muted-hole { color: transparent;
-    display: inline-block; min-width: 1.6em;
-    background-color: color-mix(in srgb, var(--dim) 13%, transparent);
-    border-radius: 4px; padding: 0.06em 0.42em; }
   /* bound the image by its region (flex shrink + min-height:0), so it scales
      down to fit instead of scrolling; flex-grow 0 keeps small images at their
      natural size rather than ballooning. */

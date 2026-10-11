@@ -708,7 +708,17 @@ pub(crate) fn front_text_units(
             fence_unit(info, lines, &card.resolved_diagrams, projector)
         }
     };
-    let mut units = text_units_with(text, projector, true, &mut fences);
+    let mut units = match text.split_once('\n') {
+        Some((heading, question)) if by_record => {
+            let mut units = vec![ContentUnit::Sentence {
+                text: heading.to_string(),
+                runs: projector.project(heading),
+            }];
+            units.extend(text_units_with(question, projector, true, &mut fences));
+            units
+        }
+        _ => text_units_with(text, projector, true, &mut fences),
+    };
     if by_record {
         strip_answer_markers(&mut units);
     }

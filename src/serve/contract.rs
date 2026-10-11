@@ -2890,7 +2890,7 @@ fn carddto_blank_front_diagram_wire_shape() {
     let view =
         crate::review::CardView::project(card, &mut crate::inline::DisplayProjector::default());
     let dto = super::dto::card_dto(view, Some("card-9w2c7xkq4m".to_string()));
-    let Some([_, ContentUnit::Diagram { src, .. }]) = dto.front_units.as_deref() else {
+    let Some([_, _, ContentUnit::Diagram { src, .. }]) = dto.front_units.as_deref() else {
         panic!(
             "the front fence slot holds the diagram unit: {:?}",
             dto.front_units
@@ -2904,8 +2904,13 @@ fn carddto_blank_front_diagram_wire_shape() {
         serde_json::json!([
             {
                 "kind": "sentence",
-                "text": "the request path the ⍰ sits in front",
-                "runs": [{"text": "the request path the ⍰ sits in front"}]
+                "text": "the request path",
+                "runs": [{"text": "the request path"}]
+            },
+            {
+                "kind": "sentence",
+                "text": "the ⍰ sits in front",
+                "runs": [{"text": "the ⍰ sits in front"}]
             },
             {
                 "kind": "diagram",

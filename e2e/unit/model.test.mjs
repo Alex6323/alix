@@ -6,6 +6,9 @@ import {
   createModel,
   currentScreen,
   enterPicker,
+  filledSteps,
+  questionAt,
+  revealStepCount,
 } from "../../web/alix/review/model.js";
 
 test("applying a new card resets only card scoped client state", () => {
@@ -68,4 +71,59 @@ test("screen selection uses explicit dto discriminants", () => {
       `walk phase ${phase} maps to ${screen}`,
     );
   }
+});
+
+const clozeCard = {
+  front: "q\nthe ⍰ and ⍰",
+  front_runs: [{ text: "q\nthe ⍰ and ⍰" }],
+  front_steps: [
+    { front: "q\nthe a and ⍰", front_runs: [{ text: "q\nthe " }, { text: "a", answer: true }, { text: " and ⍰" }] },
+    { front: "q\nthe a and b", front_runs: [{ text: "q\nthe " }, { text: "a", answer: true }, { text: " and " }, { text: "b", answer: true }] },
+  ],
+  answer_steps: [{ kind: "line", back_from: 0, back_to: 1 }],
+};
+const plainCard = {
+  front: "q",
+  front_runs: [{ text: "q" }],
+  front_steps: [],
+  answer_steps: [
+    { kind: "line", back_from: 0, back_to: 1 },
+    { kind: "line", back_from: 1, back_to: 2 },
+    { kind: "line", back_from: 2, back_to: 3 },
+  ],
+};
+
+test("a cloze card reveals in front steps and every other card in answer steps", () => {
+  assert.equal(revealStepCount(clozeCard), 2, "cloze: one step per own blank");
+  assert.equal(revealStepCount(plainCard), 3, "plain: one step per answer step");
+  assert.equal(revealStepCount(null), 0, "no card: nothing to reveal");
+});
+
+test("the filled step count follows the reveal mode on a cloze card", () => {
+  const rows = [
+    ["flip, unrevealed", { mode: "flip", revealed: 0, answered: false }, 0],
+    ["flip, revealed", { mode: "flip", revealed: 2, answered: true }, 2],
+    ["line, first press", { mode: "line", revealed: 1, answered: false }, 1],
+    ["line, second press", { mode: "line", revealed: 2, answered: true }, 2],
+    ["line, beyond the steps", { mode: "line", revealed: 5, answered: true }, 2],
+    ["typing, before the check", { mode: "typing", revealed: 0, answered: false }, 0],
+    ["typing, after the check", { mode: "typing", revealed: 0, answered: true }, 2],
+    ["choice, after the pick", { mode: "choice", revealed: 0, answered: true }, 2],
+    ["concealed after reveal", { mode: "flip", revealed: 2, answered: true, concealed: true }, 0],
+  ];
+  for (const [label, view, expected] of rows) {
+    assert.equal(filledSteps({ card: clozeCard, ...view }), expected, label);
+  }
+  assert.equal(
+    filledSteps({ card: plainCard, mode: "flip", revealed: 3, answered: true }),
+    0,
+    "a card without front steps never fills its question",
+  );
+});
+
+test("the question shown is the masked front until a step fills it", () => {
+  assert.equal(questionAt(clozeCard, 0), clozeCard, "nothing filled: the masked question");
+  assert.equal(questionAt(clozeCard, 1), clozeCard.front_steps[0], "one filled: the first step");
+  assert.equal(questionAt(clozeCard, 2), clozeCard.front_steps[1], "all filled: the last step");
+  assert.equal(questionAt(plainCard, 0), plainCard, "a plain card is its own question");
 });

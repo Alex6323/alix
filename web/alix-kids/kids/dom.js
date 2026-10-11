@@ -72,18 +72,35 @@ function isStandaloneInlineMath(runs) {
     !!runs[0].math && !runs[0].math.display;
 }
 
+function blankPill(marker) {
+  const pill = el("span", marker === "⍰" ? "blank-pill" : "blank-pill muted");
+  pill.appendChild(el("span", "blank-glyph", marker));
+  return pill;
+}
+
 function appendContextText(parent, run) {
+  if (run.answer) {
+    const filled = el("span", "blank-filled");
+    filled.appendChild(styledRunNode(run, String(run.text)));
+    parent.appendChild(filled);
+    return;
+  }
   const parts = String(run.text).split(/(⍰|⬚)/);
   for (const part of parts) {
     if (!part) continue;
-    if (part === "⍰" || part === "⬚") {
-      const marker = el("span", part === "⍰" ? "hole" : "muted-hole");
-      marker.appendChild(styledRunNode(run, part));
-      parent.appendChild(marker);
-    } else {
-      parent.appendChild(styledRunNode(run, part));
-    }
+    if (part === "⍰" || part === "⬚") parent.appendChild(blankPill(part));
+    else parent.appendChild(styledRunNode(run, part));
   }
+}
+
+function codeWithBlanks(lines) {
+  const code = el("code");
+  for (const part of (lines || []).join("\n").split(/(⍰|⬚)/)) {
+    if (!part) continue;
+    if (part === "⍰" || part === "⬚") code.appendChild(blankPill(part));
+    else code.appendChild(document.createTextNode(part));
+  }
+  return code;
 }
 
 function contextLine(text, runs) {
@@ -189,7 +206,7 @@ function frontPrompt(card, makeDiagram) {
       prompt.appendChild(line);
     } else if (unit.kind === "code") {
       const pre = el("pre", "why-code");
-      pre.appendChild(el("code", null, (unit.lines || []).join("\n")));
+      pre.appendChild(codeWithBlanks(unit.lines));
       prompt.appendChild(pre);
     } else if (unit.kind === "diagram") {
       if (makeDiagram) {

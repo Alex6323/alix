@@ -1346,6 +1346,44 @@ the lunate sits here
     }
 
     #[test]
+    fn a_blank_cards_heading_stays_its_own_front_unit_beside_a_structural_block() {
+        let cards = parse(
+            "## Fence heading
+the lunate sits here
+<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->
+```text
+x
+```
+
+## Math heading
+the hamate sits here
+<!-- blank: span hidden=\"hamate\" b:d4e5f6 -->
+$$
+x = 1
+$$
+",
+        );
+        assert_eq!(2, cards.len(), "{cards:?}");
+        for (card, heading) in cards.iter().zip(["Fence heading", "Math heading"]) {
+            let view = CardView::from(card);
+            let mut surfaces = vec![("front".to_string(), view.front_units.clone())];
+            surfaces.extend(
+                view.front_steps
+                    .iter()
+                    .enumerate()
+                    .map(|(index, step)| (format!("step {index}"), step.front_units.clone())),
+            );
+            for (surface, units) in surfaces {
+                let first = units.as_deref().and_then(|units| units.first());
+                assert!(
+                    matches!(first, Some(ContentUnit::Sentence { text, .. }) if text == heading),
+                    "{heading} {surface}: the heading must be its own first unit: {units:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_blank_cards_front_math_hole_renders_through_the_hole_substitution() {
         let cards = parse(
             "## Use $a + b$ here

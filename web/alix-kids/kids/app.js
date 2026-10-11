@@ -82,6 +82,8 @@ study = createKidsStudy({
     multiMode: kidsMultiMode,
     toggle: toggleKidsChoice,
     revealDone: kidsRevealDone,
+    filled: kidsFilledSteps,
+    questionAt: kidsQuestionAt,
     screen: kidsStudyScreen,
   },
   rerender: render,

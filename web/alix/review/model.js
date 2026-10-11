@@ -62,3 +62,21 @@ export function currentScreen(model) {
   if (model.state.phase === "browse") return "browse";
   return "picker";
 }
+
+export function revealStepCount(card) {
+  if (!card) return 0;
+  const front = card.front_steps || [];
+  return front.length || (card.answer_steps || []).length;
+}
+
+export function filledSteps({ card, mode, revealed, answered, concealed }) {
+  const steps = (card && card.front_steps) || [];
+  if (!steps.length || concealed) return 0;
+  if (answered) return steps.length;
+  if (mode === "line") return Math.min(revealed, steps.length);
+  return revealed > 0 ? steps.length : 0;
+}
+
+export function questionAt(card, filled) {
+  return filled > 0 ? card.front_steps[filled - 1] : card;
+}

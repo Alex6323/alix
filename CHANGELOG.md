@@ -114,6 +114,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The web apps draw every unrevealed cloze blank as an empty outlined pill of
+  one fixed width, asked or hidden, so the gap never hints at the answer's
+  length; a hidden sibling's pill is muted. Reveal fills the card's own blanks
+  in the question itself, highlighted in the accent colour, and no separate
+  answer area repeats them. A `reveal: line` card fills one blank per press.
+
 - A cloze card's question is the whole card from its `##` line down: the
   heading and every prose line, with the asked span as `⍰` and its siblings
   as `⬚`, so hidden text no longer reaches a client before the reveal

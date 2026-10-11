@@ -3,10 +3,19 @@
     "kind": "sentence",
     "runs": [
       {
-        "text": "the request path the ⍰ sits in front"
+        "text": "the request path"
       }
     ],
-    "text": "the request path the ⍰ sits in front"
+    "text": "the request path"
+  },
+  {
+    "kind": "sentence",
+    "runs": [
+      {
+        "text": "the ⍰ sits in front"
+      }
+    ],
+    "text": "the ⍰ sits in front"
   },
   {
     "alt": "flowchart LR\n A-->B",

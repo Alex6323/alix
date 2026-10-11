@@ -30,9 +30,12 @@ This makes two cards. One blanks `mut` and shows the rest; the other blanks
 `u64`. Each card's question is the whole card from its `##` line down, with
 the asked span shown as `⍰` and the *other* spans hidden as `⬚`, so no card
 gives away its siblings' answers. You only produce the hidden text. On reveal
-the question shows again with the asked span filled in; the siblings stay
-hidden. The web app draws the markers as chips rather than showing the glyphs
-themselves.
+the question fills the asked span in place; the siblings stay hidden, and no
+separate answer repeats it. The web app draws every unrevealed blank as an
+empty outlined pill of one fixed width, a sibling's muted, so the gap never
+hints at the answer's length, and highlights the filled text in the accent
+colour. A card asking several spans at once (a named group) fills one span per
+press under `reveal: line`, all at once under `flip`.
 
 The hidden text must appear in the answer exactly as written. When it appears
 more than once, `occurrence=2` picks the second match; matches snap to word

@@ -72,6 +72,8 @@ export function createStudy({
   let clientModel = model.create(storage);
   let state = clientModel.state;
   let revealed = clientModel.revealed;
+  let questionNode = null;
+  let questionFilled = 0;
   let citationView = clientModel.citationView;
   let sectionView = clientModel.sectionView;
   let questionWatch = null;
@@ -380,7 +382,7 @@ export function createStudy({
   // TWO counts, never one: reveal walks every step (a quotation or a table is
   // one), while typing asks only the gradeable ones.
   function answerSteps() { return (state.card && state.card.answer_steps) || []; }
-  function stepCount() { return answerSteps().length; }
+  function stepCount() { return model.revealStepCount(state.card); }
   function gradeableSteps() { return answerSteps().filter(s => s.kind === "line"); }
   function fullyRevealed() { return stepCount() === 0 || revealed >= stepCount(); }
   function stopDuePoll() { if (duePoll) { timers.clearInterval(duePoll); duePoll = null; } }
@@ -490,7 +492,9 @@ export function createStudy({
     }
     // A context line labels the front (a card table's title) above it.
     appendContext(q, c.context, c.context_runs, [], "context label", contextDiagram);
-    q.appendChild(frontEl(c.front, c.front_runs, c.front_units, contextDiagram));
+    questionFilled = filledNow();
+    questionNode = questionEl(c, questionFilled, contextDiagram);
+    q.appendChild(questionNode);
     appendImages(q, c.images);
     fitQuestion(q);
 
@@ -517,15 +521,17 @@ export function createStudy({
     });
 
     appendContext(q, c.context, c.context_runs, [], "context label", browseDiagram);
-    q.appendChild(frontEl(c.front, c.front_runs, c.front_units, browseDiagram));
+    q.appendChild(questionEl(c, (c.front_steps || []).length, browseDiagram));
     appendImages(q, c.images);
     fitQuestion(q);
 
-    const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
-    if (isReshapedList(c)) appendFullAnswer(sec, c, true);
-    else appendAnswerUnits(sec, c.back_units);
-    a.appendChild(sec);
-    appendImages(a, c.images_back);
+    if (!(c.front_steps || []).length) {
+      const sec = el("div", "reveal" + (leftAlignAnswer(c) ? " list" : ""));
+      if (isReshapedList(c)) appendFullAnswer(sec, c, true);
+      else appendAnswerUnits(sec, c.back_units);
+      a.appendChild(sec);
+      appendImages(a, c.images_back);
+    }
     a.classList.add("has-body"); // browse always shows the full answer
     card.classList.add("answered"); // and reveal-on-answer masks lift with it
 
@@ -557,6 +563,34 @@ export function createStudy({
     parent.appendChild(toggle);
   }
 
+  function questionEl(c, filled, makeDiagram) {
+    const shown = model.questionAt(c, filled);
+    return frontEl(shown.front, shown.front_runs, shown.front_units, makeDiagram);
+  }
+  function filledNow() {
+    return model.filledSteps({
+      card: state.card,
+      mode: state.mode,
+      revealed,
+      answered: isAnswered(),
+      concealed: isIntroducing() && answerConcealed,
+    });
+  }
+  function syncQuestion() {
+    if (!questionNode || !questionNode.parentElement) return;
+    const filled = filledNow();
+    if (filled === questionFilled) return;
+    const q = questionNode.parentElement;
+    const next = questionEl(state.card, filled, contextDiagram);
+    q.replaceChild(next, questionNode);
+    questionNode = next;
+    questionFilled = filled;
+    fitQuestion(q);
+  }
+  function answerInQuestion() {
+    return !!(state.card && state.card.front_steps && state.card.front_steps.length);
+  }
+
   function noteVisibleForCurrentCard() {
     if (isIntroducing()) {
       if (effectiveDraw()) return revealed > 0;
@@ -571,6 +605,7 @@ export function createStudy({
   function fillBottom() {
     const a = doc.getElementById("ansRegion");
     if (!a) return;
+    syncQuestion();
     a.innerHTML = "";
     const citations = state.card.citations || [];
     const citable = citations.length > 0 && isAnswered();
@@ -592,7 +627,8 @@ export function createStudy({
         if (feedback) renderChoiceFeedback(a); else renderChoices(a);
         setNote(!!feedback);
       } else if (revealed > 0) {
-        fillIntroduction(a); setNote(true);          // recall: answer shown after reveal
+        if (!answerInQuestion()) fillIntroduction(a);
+        setNote(true);          // recall: answer shown after reveal
       } else {
         a.appendChild(el("div", "introduction-hint", "new card: try to recall it, then reveal."));
         setNote(false);                          // recall: front only until revealed
@@ -610,7 +646,7 @@ export function createStudy({
       }
     }
     else if (isExplain()) { renderExplain(a); setNote(fullyRevealed()); }
-    else { fillAnswer(a); setNote(fullyRevealed()); }
+    else { if (!answerInQuestion()) fillAnswer(a); setNote(fullyRevealed()); }
     const cardEl = doc.getElementById("card");
     if (cardEl) {
       cardEl.classList.toggle("answered", isAnswered());
@@ -675,7 +711,7 @@ export function createStudy({
     if (feedback) { renderChoiceFeedback(a); setNote(true); }
     else if (state.phase === "answer") {
       if (drawSnapshot) renderDrawComparison(a, fillAnswer);
-      else fillAnswer(a);
+      else if (!answerInQuestion()) fillAnswer(a);
       setNote(true);
     }
     else if (isChoice()) { renderChoices(a); setNote(false); }
@@ -1852,6 +1888,7 @@ export function createStudy({
     const a = doc.getElementById("ansRegion");
     if (!a) return;
     a.classList.toggle("concealed", answerConcealed); // visibility only — no reflow, no movement
+    syncQuestion();
     const cardEl = doc.getElementById("card");
     if (cardEl) syncDiagramAnswerState(cardEl);
     paintIntroCue(a);
