@@ -2234,15 +2234,22 @@ fn shown_blank_answers(
     masked: &[(usize, String)],
 ) -> Vec<Lint> {
     use crate::answer::normalize_answer;
+    let shown = |line: &str| crate::inline::strip_inline_with(line, &template.definitions);
+    let section: Vec<String> = template
+        .section_context
+        .iter()
+        .map(|line| shown(line))
+        .collect();
     let places: Vec<(AnswerShownAt, String)> = std::iter::once((
         AnswerShownAt::Section,
-        normalize_answer(&template.section_context.join("\n")),
+        normalize_answer(&section.join("\n")),
     ))
-    .chain(
-        masked
-            .iter()
-            .map(|(number, line)| (AnswerShownAt::QuestionLine(*number), normalize_answer(line))),
-    )
+    .chain(masked.iter().map(|(number, line)| {
+        (
+            AnswerShownAt::QuestionLine(*number),
+            normalize_answer(&shown(line)),
+        )
+    }))
     .collect();
     let mut found: Vec<Lint> = Vec::new();
     for blank in blanks {
@@ -8162,7 +8169,17 @@ a
         use AnswerShownAt::{QuestionLine, Section};
         type Row = (&'static str, String, Vec<(&'static str, AnswerShownAt)>);
         let alpha = "<!-- blank: span hidden=\"alpha\" -->\n";
-        let rows: [Row; 14] = [
+        let rows: [Row; 16] = [
+            (
+                "a link destination is not shown text",
+                format!("## Read [the guide](https://example.test/alpha)\nthe alpha twin\n{alpha}"),
+                vec![],
+            ),
+            (
+                "inline styling splits the shown hidden words",
+                "## What is the **genesis** committee?\nThe trust root is the genesis committee.\n<!-- blank: span hidden=\"genesis committee\" -->\n".to_string(),
+                vec![("genesis committee", QuestionLine(1))],
+            ),
             (
                 "the `##` line repeats the hidden words above the blanked sentence",
                 "## What is the genesis committee?\nThe trust root is the genesis committee.\n<!-- blank: span hidden=\"genesis committee\" -->\n".to_string(),
