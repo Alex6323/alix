@@ -89,8 +89,8 @@ pub struct DiagramStamp {
     pub line: usize,
 }
 
-/// One closed mermaid fence in the block's answer, in block order, captured
-/// at parse time because a region card's context holds the fence MASKED:
+/// One closed mermaid fence in the block, in block order, captured at parse
+/// time because a region card's question holds the fence masked:
 /// neither the unmasked fingerprint nor a span's authored offsets can be
 /// recovered from the displayed text.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,7 +108,7 @@ pub struct AnswerFence {
 
 /// One span's bound range inside its fence, in bytes of the LF-normalized
 /// interior; `line` is the directive line, the same identity `RegionSlot`
-/// and `masked_context` match spans by.
+/// and `masked_lines` match spans by.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnswerFenceSpan {
     pub line: usize,

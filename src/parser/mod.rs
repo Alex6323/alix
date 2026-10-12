@@ -2139,7 +2139,7 @@ struct BlockProse {
 /// interior. Walks with
 /// the render tokenizer's fence grammar so records align one-to-one with
 /// the fence-shaped units clients consume; captured at parse because a
-/// region card's context carries the fence MASKED, so display text can
+/// region card's question carries the fence masked, so display text can
 /// recover neither the unmasked fingerprint nor authored offsets.
 fn capture_answer_fences(
     answer: &[(usize, String)],
