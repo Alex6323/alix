@@ -40,10 +40,10 @@ test("home lists the Animals box", async ({ page }) => {
   await page.getByRole("button", { name: "Ocean" }).click();
   await expect(page.getByRole("menu", { name: "Colours" })).toBeHidden();
   await expect(settings).toHaveAttribute("aria-expanded", "false");
-  await expect(page.locator(":root")).toHaveCSS("--accent", "#0fa8b4");
+  await expect(page.locator(":root")).toHaveCSS("--accent", "#0fa4b0");
 
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.locator(":root")).toHaveCSS("--accent", "#0fa8b4");
+  await expect(page.locator(":root")).toHaveCSS("--accent", "#0fa4b0");
 });
 
 test("a box drills into its decks, and a deck offers the two depth choices", async ({ page }) => {

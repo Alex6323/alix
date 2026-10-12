@@ -119,10 +119,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The web apps and the mobile app draw every unrevealed cloze blank as an empty
   outlined pill of one fixed width, asked or hidden, so the gap never hints at
-  the answer's length; a hidden sibling's pill is muted. Reveal fills the
-  card's own blanks in the question itself, highlighted in the accent colour,
-  and no separate answer area repeats them. A `reveal: line` card fills one
-  blank per press.
+  the answer's length; the asked pill carries a faint accent fill, and a
+  hidden sibling's pill is muted and dashed, so the two differ without colour.
+  Reveal fills the card's own blanks in the question itself, highlighted in the
+  accent colour, and no separate answer area repeats them. A `reveal: line`
+  card fills one blank per press.
+
+- The sunrise and ocean palettes' accent is a shade darker on the web apps
+  (adult sunrise `#e65b00`, ocean `#0d939f`; kids Sunrise `#e07936`, Ocean
+  `#0fa4b0`), so an asked blank's outline clears 3:1 against the card.
 
 - A cloze card's question is the whole card from its `##` line down: the
   heading and every prose line, with the asked span as `⍰` and its siblings

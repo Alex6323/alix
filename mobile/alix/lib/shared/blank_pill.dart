@@ -10,6 +10,8 @@ class BlankPill extends StatelessWidget {
 
   static const widthEm = 5.0;
   static const heightEm = 1.2;
+  static const strokeWidth = 2.0;
+  static const askedFillAlpha = 0.16;
 
   final bool asked;
   final double fontSize;
@@ -24,14 +26,50 @@ class BlankPill extends StatelessWidget {
       child: SizedBox(
         width: em * widthEm,
         height: em * heightEm,
-        child: DecoratedBox(
-          decoration: ShapeDecoration(
-            shape: StadiumBorder(side: BorderSide(color: color, width: 2)),
-          ),
-        ),
+        child: asked
+            ? DecoratedBox(
+                decoration: ShapeDecoration(
+                  color: color.withValues(alpha: askedFillAlpha),
+                  shape: StadiumBorder(
+                    side: BorderSide(color: color, width: strokeWidth),
+                  ),
+                ),
+              )
+            : CustomPaint(painter: DashedStadiumPainter(color)),
       ),
     );
   }
+}
+
+class DashedStadiumPainter extends CustomPainter {
+  DashedStadiumPainter(this.color);
+
+  static const dash = 5.0;
+  static const gap = 3.5;
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = (Offset.zero & size).deflate(BlankPill.strokeWidth / 2);
+    final outline = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(rect, Radius.circular(rect.height / 2)),
+      );
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = BlankPill.strokeWidth;
+    for (final metric in outline.computeMetrics()) {
+      for (var start = 0.0; start < metric.length; start += dash + gap) {
+        canvas.drawPath(metric.extractPath(start, start + dash), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(DashedStadiumPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 WidgetSpan blankPillSpan({

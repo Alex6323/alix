@@ -32,6 +32,6 @@ test("kids theme rejects unknown names and persists known names", () => {
   assert.equal(properties.get("--bg-top"), "#eafaf7");
   assert.equal(properties.get("--bg-bot"), "#cdeeff");
   assert.equal(properties.get("--bg"), "linear-gradient(168deg, #eafaf7 0%, #cdeeff 100%)");
-  assert.equal(properties.get("--accent"), "#0fa8b4");
+  assert.equal(properties.get("--accent"), "#0fa4b0");
   assert.equal(properties.get("--accent-sh"), "#0b7d86");
 });

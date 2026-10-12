@@ -39,10 +39,10 @@ a.autolink { color: var(--bolt); text-decoration: underline; cursor: text; }
 .blank-pill {
   display: inline-block; box-sizing: border-box; width: 5em; height: 1.2em;
   vertical-align: -0.22em; overflow: hidden;
-  border: 2px solid var(--accent); border-radius: 999px;
+  border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 999px;
 }
 .blank-pill .blank-glyph { visibility: hidden; }
-.blank-pill.muted { border-color: var(--muted); }
+.blank-pill.muted { border-color: var(--muted); border-style: dashed; background: none; }
 .blank-filled { color: var(--accent); }
 .rev-why-text .checklist { display: grid; gap: 5px; margin: 8px 0; }
 .rev-why-text .checklist-row { display: flex; align-items: flex-start; gap: 8px; }

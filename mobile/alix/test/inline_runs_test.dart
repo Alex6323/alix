@@ -19,11 +19,35 @@ const _wideSvg =
 const _blank = Color(0xFF00AA44);
 const _mutedBlank = Color(0x77777777);
 
-BorderSide pillSide(WidgetTester tester, Finder pill) {
-  final box = tester.widget<DecoratedBox>(
-    find.descendant(of: pill, matching: find.byType(DecoratedBox)),
+({Color outline, double width, Color? fill, bool dashed}) pillCue(
+  WidgetTester tester,
+  Finder pill,
+) {
+  final boxes = find.descendant(of: pill, matching: find.byType(DecoratedBox));
+  if (boxes.evaluate().isNotEmpty) {
+    final decoration =
+        tester.widget<DecoratedBox>(boxes).decoration as ShapeDecoration;
+    final side = (decoration.shape as StadiumBorder).side;
+    return (
+      outline: side.color,
+      width: side.width,
+      fill: decoration.color,
+      dashed: false,
+    );
+  }
+  final painter =
+      tester
+              .widget<CustomPaint>(
+                find.descendant(of: pill, matching: find.byType(CustomPaint)),
+              )
+              .painter
+          as DashedStadiumPainter;
+  return (
+    outline: painter.color,
+    width: BlankPill.strokeWidth,
+    fill: null,
+    dashed: true,
   );
-  return ((box.decoration as ShapeDecoration).shape as StadiumBorder).side;
 }
 
 InlineRunModel mathRun(
@@ -294,8 +318,13 @@ void main() {
         final pill = find.byType(BlankPill);
         expect(pill, findsOneWidget, reason: step);
         expect(tester.getSize(pill), const Size(100, 24), reason: step);
-        final side = pillSide(tester, pill);
-        expect((side.color, side.width), (color, 2.0), reason: step);
+        final asked = marker == '⍰';
+        expect(pillCue(tester, pill), (
+          outline: color,
+          width: 2.0,
+          fill: asked ? color.withValues(alpha: 0.16) : null,
+          dashed: !asked,
+        ), reason: step);
         expect(find.bySemanticsLabel(semantics), findsOneWidget, reason: step);
         final glyphs = tester
             .widgetList<RichText>(find.byType(RichText))

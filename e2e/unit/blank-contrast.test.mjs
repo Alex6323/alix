@@ -70,8 +70,6 @@ function effective(border, background, alpha) {
   return alpha === 1 ? border : composite(border, background, alpha);
 }
 
-const ASKED_TODO = "the asked border (--bolt-hi, kids --accent) is below 3:1 in some palettes; fixing it recolours the palette, which needs a ruling";
-
 function adultBorderCases(role, name, alpha) {
   const failures = [];
   for (const selector of ADULT_PALETTES) {
@@ -107,10 +105,10 @@ test("kids muted blank outline reaches 3:1 against the card", () => {
     `kids muted border ${colour} on ${card} is ${contrast(colour, card).toFixed(2)}:1`);
 });
 
-test("adult asked blank outline reaches 3:1 in each palette", { todo: ASKED_TODO }, () => {
+test("adult asked blank outline reaches 3:1 in each palette", () => {
   assert.deepEqual(adultBorderCases("asked", "--bolt-hi", 1), []);
 });
 
-test("kids asked blank outline reaches 3:1 in each palette", { todo: ASKED_TODO }, () => {
+test("kids asked blank outline reaches 3:1 in each palette", () => {
   assert.deepEqual(kidsAskedFailures(), []);
 });

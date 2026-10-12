@@ -1,6 +1,6 @@
 const KIDS_THEMES = {
-  Sunrise: { bgTop: "#fff5ec", bgBot: "#ffe7d4", accent: "#ff8a3d", shadow: "#e0702a" },
-  Ocean: { bgTop: "#eafaf7", bgBot: "#cdeeff", accent: "#0fa8b4", shadow: "#0b7d86" },
+  Sunrise: { bgTop: "#fff5ec", bgBot: "#ffe7d4", accent: "#e07936", shadow: "#c56325" },
+  Ocean: { bgTop: "#eafaf7", bgBot: "#cdeeff", accent: "#0fa4b0", shadow: "#0b7d86" },
   Berry: { bgTop: "#fdeefb", bgBot: "#f1dbff", accent: "#c04bd0", shadow: "#9c34ab" },
 };
 

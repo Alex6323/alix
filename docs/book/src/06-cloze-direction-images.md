@@ -39,9 +39,10 @@ the asked span shown as `⍰` and the *other* spans hidden as `⬚`, so no card
 gives away its siblings' answers. You only produce the hidden text. On reveal
 the question fills the asked span in place; the siblings stay hidden, and no
 separate answer repeats it. The web and mobile apps draw every unrevealed
-blank as an empty outlined pill of one fixed width, a sibling's muted, so the
-gap never hints at the answer's length, and highlight the filled text in the
-accent colour. A card asking several spans at once (a named group) fills one span per
+blank as an empty outlined pill of one fixed width, so the gap never hints at
+the answer's length. The asked pill is faintly filled with the accent colour; a
+sibling's is muted and dashed. Filled text is highlighted in the accent
+colour. A card asking several spans at once (a named group) fills one span per
 press under `reveal: line`, all at once under `flip`.
 
 The hidden text must appear in the bound block exactly as written. When it appears

@@ -59,6 +59,8 @@ test("a kids cloze card shows no hidden text before reveal", async ({ page }, te
   for (const word of HIDDEN) expect(before, `(a) hidden word ${word} before reveal`).not.toContain(word);
   await expect(prompt.locator(".blank-pill:not(.muted)"), "(a) one asked pill").toHaveCount(1);
   await expect(prompt.locator(".blank-pill.muted"), "(a) one muted sibling pill").toHaveCount(1);
+  await expect(prompt.locator(".blank-pill:not(.muted)"), "(a) the asked pill is tinted").not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(prompt.locator(".blank-pill.muted"), "(a) the sibling pill has a dashed outline").toHaveCSS("border-top-style", "dashed");
   await expect(prompt.locator(".blank-glyph").first(), "(a) the asked marker glyph is not drawn").toBeHidden();
   await expect(prompt.locator(".blank-glyph").last(), "(a) the hidden marker glyph is not drawn").toBeHidden();
   await expect(page.locator(".rev-blank"), "(a) no separate blank line under the question").toHaveCount(0);

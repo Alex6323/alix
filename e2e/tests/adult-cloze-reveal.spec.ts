@@ -102,6 +102,10 @@ test("a cloze card shows no hidden text before reveal", async ({ page }, testInf
   await expect(asked.locator(".blank-glyph"), "(a) the asked marker glyph is not drawn").toBeHidden();
   await expect(muted.locator(".blank-glyph"), "(a) the hidden marker glyph is not drawn").toBeHidden();
   await expect(asked, "(a) the asked pill is outlined in the accent").toHaveCSS("border-top-color", await accentColor(page));
+  await expect(asked, "(a) the asked pill has a solid outline").toHaveCSS("border-top-style", "solid");
+  await expect(asked, "(a) the asked pill is tinted").not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(muted, "(a) the sibling pill has a dashed outline").toHaveCSS("border-top-style", "dashed");
+  await expect(muted, "(a) the sibling pill is not tinted").toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 
   const askedWidth = (await asked.boundingBox())?.width;
   const mutedWidth = (await muted.boundingBox())?.width;
