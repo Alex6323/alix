@@ -309,7 +309,7 @@ export function createStudy({
   // is on — but only for the self-graded modes L1 supports, and never while introducing.
   function effectiveDraw() {
     if (!state || !state.card) return false;
-    if (state.card.context && state.card.context.length) return false; // cloze cards don't draw in L1 (a mode-less cloze resolves to flip)
+    if (answerInQuestion()) return false;
     if (state.mode !== "flip" && state.mode !== "explain") return false;
     return state.input === "draw" || drawToggle;
   }

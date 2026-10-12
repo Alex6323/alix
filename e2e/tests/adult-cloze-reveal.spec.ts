@@ -145,10 +145,11 @@ test("reveal fills a cloze card's blank in place, highlighted, without an answer
   await expect(filled, "(c) showing again fills the blank").toHaveCount(1);
 });
 
-test("draw comparison does not repeat a cloze answer below its in-place fill", async ({ page }) => {
+test("the draw toggle leaves a cloze card without a canvas or a repeated answer", async ({ page }) => {
   await page.evaluate(() => localStorage.setItem("alix-draw", "1"));
   await page.reload({ waitUntil: "domcontentloaded" });
   await openDeck(page, "siblings.md", SIBLINGS, "Carpal Siblings");
+  await expect(page.locator("canvas"), "a cloze card is never drawn on the web").toHaveCount(0);
 
   await page.getByRole("button", { name: "Reveal" }).click();
   const filled = page.locator("#card .region.q .blank-filled");
