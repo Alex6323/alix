@@ -557,19 +557,7 @@ impl ReviewSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn tutor_card(&self) -> Option<TutorCard> {
-        let card = self.session.current()?;
-        Some(TutorCard {
-            id: card.id()?,
-            deck_id: card.deck_id.to_string(),
-            subject: card.subject.to_string(),
-            front: card.front.clone(),
-            back: card.back.clone(),
-            at: card
-                .citations
-                .first()
-                .map(|citation| citation.locator.clone()),
-            line: card.line,
-        })
+        tutor_card_of(self.session.current()?)
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -1071,19 +1059,7 @@ impl WalkSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn tutor_card(&self) -> Option<TutorCard> {
-        let card = self.session.current()?;
-        Some(TutorCard {
-            id: card.id()?,
-            deck_id: card.deck_id.to_string(),
-            subject: card.subject.to_string(),
-            front: card.front.clone(),
-            back: card.back.clone(),
-            at: card
-                .citations
-                .first()
-                .map(|citation| citation.locator.clone()),
-            line: card.line,
-        })
+        tutor_card_of(self.session.current()?)
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -1132,6 +1108,21 @@ impl WalkSession {
         }
         Ok(())
     }
+}
+
+fn tutor_card_of(card: &alix::card::Card) -> Option<TutorCard> {
+    Some(TutorCard {
+        id: card.id()?,
+        deck_id: card.deck_id.to_string(),
+        subject: card.subject.to_string(),
+        front: card.question_text(),
+        back: card.back.clone(),
+        at: card
+            .citations
+            .first()
+            .map(|citation| citation.locator.clone()),
+        line: card.line,
+    })
 }
 
 #[cfg(test)]
@@ -1612,6 +1603,11 @@ mod tests {
 
         let tutor = s.tutor_card().expect("a card is current");
         assert_eq!(tutor.subject, "d.md");
+        assert_eq!(
+            tutor.front,
+            "capital?\nParis is the capital of ____",
+            "the phone tutor reference must fold internal cloze markers for display",
+        );
         assert_eq!(tutor.back, authored_back);
 
         let view = s.state(Some(T0)).card.expect("a rendered card");
