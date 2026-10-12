@@ -9,7 +9,7 @@ const kidsDomCss = read("web/alix-kids/kids/dom.css");
 const kidsThemeJs = read("web/alix-kids/kids/theme.js");
 
 const MINIMUM_RATIO = 3;
-const ADULT_PALETTES = [":root,\n[data-theme=\"dark\"]", "[data-theme=\"light\"]", "[data-theme=\"sunrise\"]", "[data-theme=\"ocean\"]", "[data-theme=\"berry\"]"];
+const ADULT_PALETTES = [...themeCss.matchAll(/^\[data-theme="[^"]+"\](?=\s*\{)/gm)].map(([selector]) => selector);
 
 function rgb(hex) {
   const digits = hex.slice(1);
