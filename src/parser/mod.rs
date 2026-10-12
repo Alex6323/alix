@@ -3201,9 +3201,7 @@ fn build_card_inner(
         streamed.push(block_index);
         let block = &blocks[block_index];
         let range = match block.kind {
-            BlockKind::Math => {
-                block.range.start + 1..(block.range.end - 1).max(block.range.start + 1)
-            }
+            BlockKind::Math => block.range.start + 1..block.range.end - 1,
             _ => block.range.clone(),
         };
         let stream = stream::maskable_stream(
@@ -9363,6 +9361,15 @@ the answer
         }
     }
 
+    #[test]
+    fn a_math_blocks_delimiter_lines_hold_no_matchable_text() {
+        let error = err("## q\n$$\nalpha = 1\n$$\n<!-- blank: span hidden=\"$$\" -->\n");
+        let ParseError::InvalidRegion { message, .. } = &error else {
+            panic!("expected InvalidRegion, got {error:?}");
+        };
+        assert!(message.contains("occurs 0 time(s)"), "{message}");
+    }
+
     const BETWEEN: &str = "<!-- editorial -->\n[ref]: https://example.com\n";
 
     #[test]
@@ -11066,6 +11073,23 @@ the answer
         assert_ne!(
             first.cards[0].content_fingerprint,
             second.cards[0].content_fingerprint
+        );
+    }
+
+    #[test]
+    fn an_answer_cover_below_a_multi_line_front_masks_its_own_answer_line() {
+        let deck = parse(
+            "## q\nfront line\n\n---\nfirst answer\nalpha beta\n<!-- cover: span hidden=\"alpha\" -->\n",
+        );
+        let card = &deck.cards[0];
+        let masked = vec![
+            "first answer".to_string(),
+            format!("{} beta", cloze::HIDDEN),
+        ];
+        assert_eq!(
+            content_fingerprint(&card.front, &masked),
+            card.block_fingerprint,
+            "the block key hashes the front and the cover-masked answer"
         );
     }
 

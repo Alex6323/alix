@@ -2216,6 +2216,23 @@ mod tests {
             .collect()
     }
 
+    #[test]
+    fn a_card_without_a_blank_projects_its_front_like_plain_front_text() {
+        let card = Card::plain(
+            Arc::from("deck.md"),
+            "Capital\nof France\n```\nx\n```".to_string(),
+            vec!["Paris".to_string()],
+            Vec::new(),
+            1,
+        );
+        let mut projector = DisplayProjector::default();
+        assert_eq!(
+            front_units(&card.front),
+            front_units_with(&card, &mut projector),
+            "only a blank card splits its heading off as its own sentence"
+        );
+    }
+
     fn resolved(source: &str) -> Vec<crate::card::ResolvedDiagram> {
         vec![crate::card::ResolvedDiagram {
             fingerprint: crate::diagram::fingerprint(source),
