@@ -50,6 +50,47 @@ pub(crate) fn ask_config(command: &Path) -> AskConfig {
     }
 }
 
+const STALE_CLOZE_TEACHING: [&str; 7] = [
+    "NEVER on the front",
+    "below answer lines",
+    "below its answer lines",
+    "directly below the answer",
+    "an answer line that states the fact",
+    "Each answer line is full plain prose",
+    "short instruction",
+];
+
+pub(crate) fn assert_teaches_answerless_cloze(name: &str, prompt: &str) {
+    for stale in STALE_CLOZE_TEACHING {
+        assert!(
+            !prompt.contains(stale),
+            "{name} teaches a cloze card with an answer section ({stale:?}): {prompt}"
+        );
+    }
+    let lines: Vec<&str> = prompt.lines().collect();
+    for (index, line) in lines.iter().enumerate() {
+        if !line.starts_with("<!-- blank:") {
+            continue;
+        }
+        let above = index.checked_sub(1).map_or("", |above| lines[above]);
+        assert!(
+            above.starts_with("## ") || above.starts_with("<!-- blank:"),
+            "{name} puts a line between a cloze card's `##` sentence and its blank ({above:?}): {prompt}"
+        );
+        let sentence_line = lines[..index]
+            .iter()
+            .rposition(|candidate| candidate.starts_with("## "))
+            .expect("a blank line sits under a `##` line, checked above");
+        let example = lines[sentence_line..=index].join("\n");
+        let cards = crate::parser::parse_str("prompt-example.md", &example)
+            .unwrap_or_else(|error| panic!("{name} teaches an unparseable cloze: {error}"));
+        assert!(
+            cards.iter().all(|card| card.is_blank_card()),
+            "{name} teaches a cloze example that is not a cloze card: {example}"
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

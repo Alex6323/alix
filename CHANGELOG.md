@@ -150,6 +150,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   skips cloze cards. Pre-1.0: fold text after `---` on a cloze card into a
   note.
 
+- The deck generator and the exam's remediation cards write a text cloze card
+  as the sentence on its `##` line with the `blank:` comments directly below,
+  with no separate question or answer lines; the shared card-shape guide
+  teaches the same shape.
+
 - An image `blank:` requires `hidden="..."`, like a text blank, and no
   `blank:` accepts one that is empty once grading ignores spaces, invisible
   characters and trailing punctuation. A rect

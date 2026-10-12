@@ -87,12 +87,14 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
              CARD SHAPE SYNTAX:\n\
              - A plain card puts short answer lines below its `## ` front. Do not prefix \
              answers with bullets or dashes.\n\
-             - A cloze card writes its answer line as plain prose and hides each span with \
-             a `<!-- blank: span hidden=\"...\" -->` comment on its own line directly below \
-             the answer. The hidden text must appear verbatim in the answer line; if it \
-             repeats there, add `occurrence=N` (1-based) to pick which one. Blanks belong \
-             below answer lines, NEVER on the front. Example: `When the owner leaves scope, \
-             the value is dropped.` then `<!-- blank: span hidden=\"dropped\" -->`.\n\
+             - A cloze card has no answer section: write the whole sentence on the `## ` \
+             line and hide each span with a `<!-- blank: span hidden=\"...\" -->` comment on \
+             its own line directly below it. The hidden text must appear verbatim in that \
+             sentence; if it repeats there, add `occurrence=N` (1-based) to pick which one. \
+             Never write a separate question above the sentence, an answer line, or `---` on \
+             a cloze card. Example:\n\
+             ## When the owner leaves scope, the value is dropped.\n\
+             <!-- blank: span hidden=\"dropped\" -->\n\
              - An authored-choice card puts 3-5 GitHub task-list options directly below its \
              front: exactly one checked `- [x]` answer and at least two unchecked `- [ ]` \
              distractors, then `<!-- choices: single -->` on the line directly below the last \
@@ -118,13 +120,15 @@ pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
              per pair.",
         ),
         GenerateCardStyle::Cloze => Cow::Borrowed(
-            "- Write EVERY card as cloze. Each answer line is full plain prose, and every \
-             hidden span gets a `<!-- blank: span hidden=\"...\" -->` comment on its own \
-             line directly below the answer lines. The hidden text must appear verbatim in \
-             an answer line; if it repeats, add `occurrence=N` (1-based). Blanks belong \
-             below answer lines, NEVER on the front. Do not prefix answers with bullets or \
-             dashes. Do not write plain answers or task-list choices. Put a mapping in one \
-             card with one pair per line and a blank span hiding each recalled half.",
+            "- Write EVERY card as cloze. A cloze card has no answer section: write the \
+             whole sentence on the `## ` line, and give every hidden span a \
+             `<!-- blank: span hidden=\"...\" -->` comment on its own line directly below \
+             it. The hidden text must appear verbatim in that sentence; if it repeats, add \
+             `occurrence=N` (1-based). Never write a separate question above the sentence, \
+             an answer line, or `---`. Do not write plain answers or task-list choices. Put \
+             a mapping in one card: a short title on the `## ` line, one pair per line \
+             below it, and the blank span comments directly below those lines, each hiding a \
+             recalled half. The title must not contain any hidden text.",
         ),
         GenerateCardStyle::AuthoredChoices => Cow::Borrowed(
             "- Write EVERY card as authored multiple-choice. Directly below the `## ` front, \
@@ -313,8 +317,9 @@ distinct cards. A front and its answer must ask and tell the same thing.
 - Keep the EXACT same file format: the leading `---` frontmatter block, cards \
 written as `## ` blocks or card-table rows, plain or task-list answers below \
 block fronts, `> [!NOTE]` notes, and any `<!-- key: value -->` directive lines. A \
-cloze card keeps its `<!-- blank: span hidden=\"...\" -->` comments below its \
-answer lines.
+cloze card keeps its sentence on the `## ` line and its \
+`<!-- blank: span hidden=\"...\" -->` comments directly below it, with no answer \
+lines.
 - Preserve the good cards and their order; do not invent filler to hit a count.
 
 Output ONLY the improved deck — no commentary, no markdown code fences.
@@ -417,8 +422,9 @@ fn review_mapping(style: GenerateCardStyle) -> &'static str {
         }
         GenerateCardStyle::Cloze => {
             "- Rewrite any card that recalls a whole mapping or table of pairs at once \
-             (\"match each X to its Y\") as one cloze card: one line per pair, a blank span \
-             comment hiding each recalled half. Ordered steps may stay a \
+             (\"match each X to its Y\") as one cloze card: a short title on the `## ` line, one line per pair below it, \
+             and blank span comments directly below those lines, each hiding a recalled \
+             half. Ordered steps may stay a \
              `<!-- reveal: line -->` card; unordered pairs never."
         }
         GenerateCardStyle::Plain => {
@@ -768,8 +774,8 @@ mod tests {
         assert!(!p.contains("{max_cards}"));
         assert!(p.contains("blank: span hidden="));
         assert!(p.contains("hidden=\"dropped\""));
-        assert!(p.contains("NEVER on the front"));
-        assert!(p.contains("Every card needs at least one answer line"));
+        assert!(p.contains("A cloze card has no answer section"));
+        assert!(p.contains("Every card except a cloze card needs at least one answer line"));
         assert!(p.contains("Add a note to most cards"));
         assert!(p.contains("Give most cards a `> [!NOTE]` note"));
         assert!(p.contains("NO TWO CARDS MAY TEST THE SAME FACT"));
@@ -1053,6 +1059,35 @@ mod tests {
             !explanation.contains("A `> ` line\nis a note"),
             "a bare blockquote is answer quotation now, not a note: {explanation}"
         );
+    }
+
+    #[test]
+    fn every_prompt_that_teaches_cloze_teaches_an_answerless_card() {
+        let styles = [
+            GenerateCardStyle::Mixed,
+            GenerateCardStyle::Plain,
+            GenerateCardStyle::Cloze,
+            GenerateCardStyle::AuthoredChoices,
+        ];
+        crate::testutil::assert_teaches_answerless_cloze("card shape guide", card_shape_guide());
+        for card_style in styles {
+            let style_spec = GenerationSpec {
+                card_style,
+                ..spec()
+            };
+            for url in [true, false] {
+                let prompt = build_prompt("src", url, &cfg(12), &style_spec);
+                crate::testutil::assert_teaches_answerless_cloze(
+                    &format!("{} generate prompt (url {url})", card_style.as_str()),
+                    &prompt,
+                );
+            }
+            let review = build_review_prompt("## Q\nA\n", &style_spec);
+            crate::testutil::assert_teaches_answerless_cloze(
+                &format!("{} review prompt", card_style.as_str()),
+                &review,
+            );
+        }
     }
 
     #[test]

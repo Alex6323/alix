@@ -982,12 +982,13 @@ fn remediation_prompt(gaps: &[String]) -> String {
          never drop a distinct idea.\n\n\
          CHOOSE THE CARD TYPE per gap, by what the gap actually is:\n\
          - A missed FACT or TERM (a definition, a value, what lives where) -> a \
-         cheap recall card. Prefer a cloze: a `## ` front with a short \
-         instruction, an answer line that states the fact as plain prose, then \
-         one `<!-- blank: span hidden=\"...\" -->` comment line per hidden \
-         span, where `hidden` repeats the exact answer text to hide. If there \
-         is no natural word to blank out, use a plain `## ` card with the \
-         answer on the line below instead.\n\
+         cheap recall card. Prefer a cloze: the sentence that states the fact \
+         goes on the `## ` line itself, then one \
+         `<!-- blank: span hidden=\"...\" -->` comment line per hidden span, \
+         where `hidden` repeats the exact words to hide. A cloze card has no \
+         separate question, no answer line and no `---`. If there is no \
+         natural word to blank out, use a plain `## ` card with the answer \
+         on the line below instead.\n\
          - A missed CONCEPT, MECHANISM or CONNECTION (a \"why\", \"how\" or \"what \
          happens if\") -> an understanding card: a `## ` open prompt with the \
          key points a good answer covers, one per line below it. This forces the \
@@ -1003,13 +1004,12 @@ fn remediation_prompt(gaps: &[String]) -> String {
     prompt.push_str(
         "\nFORMAT — a Markdown deck, cards one after another. A card is a `## ` \
          front at column 0 (never indented); its answer is the plain \
-         (unindented) line(s) below it; a `> [!NOTE]` line after them opens an \
+         (unindented) line(s) below it (a cloze card has none); a `> [!NOTE]` line after them opens an \
          optional note (a caveat, example or why it matters) whose body lines \
          each start with `> `. A blockquote with no badge first line is a \
          quotation and belongs to the answer. No frontmatter, no \
          headings other than the `## ` fronts. One example of each card type:\n\
-         ## Recall how a String is laid out in memory.\n\
-         A String stores a pointer, length and capacity on the stack, and its \
+         ## A String stores a pointer, length and capacity on the stack, and its \
          bytes live on the heap.\n\
          <!-- blank: span hidden=\"pointer\" -->\n\
          <!-- blank: span hidden=\"length\" -->\n\
@@ -1412,10 +1412,18 @@ mod tests {
     }
 
     #[test]
+    fn remediation_prompt_teaches_an_answerless_cloze_card() {
+        crate::testutil::assert_teaches_answerless_cloze(
+            "remediation prompt",
+            &remediation_prompt(&["x".to_string()]),
+        );
+    }
+
+    #[test]
     fn remediation_prompt_recall_example_parses_as_four_blank_cards() {
         let prompt = remediation_prompt(&["x".to_string()]);
         let start = prompt
-            .find("## Recall how a String is laid out in memory.")
+            .find("## A String stores a pointer, length and capacity")
             .expect("the recall example starts");
         let tail = &prompt[start..];
         let end = tail
