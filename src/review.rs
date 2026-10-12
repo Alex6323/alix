@@ -77,6 +77,8 @@ pub struct FrontStep {
     pub front_runs: Vec<InlineRun>,
     #[serde(default)]
     pub front_units: Option<Vec<ContentUnit>>,
+    #[serde(default)]
+    pub rects_revealed: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -219,12 +221,14 @@ impl CardView {
         let front_steps = card
             .front_steps
             .iter()
-            .map(|step| {
+            .enumerate()
+            .map(|(index, step)| {
                 let (front, front_runs) = project_block(step, projector);
                 FrontStep {
                     front,
                     front_runs,
                     front_units: render::front_text_units(card, step, projector),
+                    rects_revealed: card.rect_step.is_some_and(|rect| index >= rect),
                 }
             })
             .collect();
@@ -1343,6 +1347,45 @@ the lunate sits here
             runs.iter().any(|run| run.answer && run.text == "lunate"),
             "{runs:?}"
         );
+    }
+
+    #[test]
+    fn rects_revealed_marks_the_rect_step_and_every_later_step_only() {
+        let rows = [
+            (
+                "rect first in a mixed group",
+                "## name\n![](hand.png)\n<!-- blank: rect [g] x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\nthe hamate is a bone\n<!-- blank: span [g] hidden=\"hamate\" b:d4e5f6 -->\n",
+                vec![vec![true, true]],
+            ),
+            (
+                "span first in a mixed group",
+                "## name\nthe hamate is a bone\n<!-- blank: span [g] hidden=\"hamate\" b:d4e5f6 -->\n![](hand.png)\n<!-- blank: rect [g] x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\n",
+                vec![vec![false, true]],
+            ),
+            (
+                "a second rect after a span keeps the first rect's step",
+                "## name\n![](hand.png)\n<!-- blank: rect [g] x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\nthe hamate is a bone\n<!-- blank: span [g] hidden=\"hamate\" b:d4e5f6 -->\n![](foot.png)\n<!-- blank: rect [g] x=1 y=1 width=2 height=2 hidden=\"talus\" b:a7b8c9 -->\n",
+                vec![vec![true, true]],
+            ),
+            (
+                "spans only",
+                "## q\nalpha beta\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n",
+                vec![vec![false], vec![false]],
+            ),
+        ];
+        for (label, text, expected) in rows {
+            let flags: Vec<Vec<bool>> = parse(text)
+                .iter()
+                .map(|card| {
+                    CardView::from(card)
+                        .front_steps
+                        .iter()
+                        .map(|step| step.rects_revealed)
+                        .collect()
+                })
+                .collect();
+            assert_eq!(expected, flags, "{label}");
+        }
     }
 
     #[test]

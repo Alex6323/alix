@@ -209,6 +209,7 @@ ReviewCardModel reviewCardFromBridge(bridge.CardView card) {
           frontUnits: step.frontUnits == null
               ? null
               : [for (final unit in step.frontUnits!) _noteFromBridge(unit)],
+          rectsRevealed: step.rectsRevealed,
         ),
     ],
     context: card.context,

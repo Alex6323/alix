@@ -127,7 +127,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (except a mermaid node id that spells a masked label). The reveal
   shows the same question with the card's own blanks filled in. On the wire
   `CardDto` loses `context_leads` and `context_units` and gains `front_steps`
-  (one filled question per own blank); `context` now carries only a card
+  (one filled question per own blank, each with `rects_revealed`, true
+  from the step that uncovers the card's image rects); `context` now carries
+  only a card
   table's title, and `InlineRun` gains an `answer` flag. The third mask
   marker `⍱` joins `⍰` and `⬚` as a parse error in authored text.
 

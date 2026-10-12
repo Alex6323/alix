@@ -152,6 +152,9 @@ pub struct Card {
     /// own blank in directive order, each filling every blank up to its own;
     /// a filled span is wrapped in the answer marker. Empty on a plain card.
     pub front_steps: Vec<String>,
+    /// Index into `front_steps` of the step that uncovers the card's image
+    /// rects.
+    pub rect_step: Option<usize>,
     /// The card's section: its `# ` heading and that section's prose. Shown
     /// only on demand and never part of identity, so re-filing a card
     /// changes what it explains, never what it is.
@@ -297,6 +300,7 @@ impl Card {
             definitions: Arc::default(),
             front,
             front_steps: Vec::new(),
+            rect_step: None,
             section_context: Vec::new(),
             context: Vec::new(),
             back,

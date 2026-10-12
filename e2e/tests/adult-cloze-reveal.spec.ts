@@ -37,10 +37,25 @@ x
 <!-- id: card-clozefence -->
 `);
 
+const RECT_FIRST = deck("deck-00000000000000000000000044", "Carpal Rect First", "", `## Carpal rect first
+![](hand.png)
+<!-- blank: rect [g] x=10 y=10 width=30 height=30 hidden="lunate" b:e2c006 -->
+the hamate is a bone
+<!-- blank: span [g] hidden="hamate" b:e2c007 -->
+<!-- reveal: line -->
+<!-- id: card-clozerectfirst -->
+`);
+
+const PIXEL_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAAAAABVicqIAAAAPUlEQVR4nO3NAQkAAAwDoPUvvbU4HLSA6YFIJBKJRCKRSCQSiUQikUgkEolEIpFIJBKJRCKRSCQSiUTyPxkx2OsrwSn2FgAAAABJRU5ErkJggg==",
+  "base64",
+);
+
 async function openDeck(page: Page, file: string, text: string, title: string): Promise<void> {
   fs.mkdirSync(path.join(WORKSPACE, "decks"), { recursive: true });
   fs.writeFileSync(path.join(WORKSPACE, "alix.toml"), 'title = "Cloze Reveal"\n');
   fs.writeFileSync(path.join(WORKSPACE, "decks", file), text);
+  if (text === RECT_FIRST) fs.writeFileSync(path.join(WORKSPACE, "hand.png"), PIXEL_PNG);
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Cloze Reveal").click();
   await adultDeckRow(page, title).click();
@@ -168,4 +183,13 @@ test("a cloze question's heading stays its own line beside a code fence", async 
   await expect(lines.first(), "(e) the heading is its own line").toHaveText("Fence heading");
   await expect(page.locator("#card .region.q pre .blank-pill"), "(e) no pill inside the fence").toHaveCount(0);
   await expect(page.locator("#card .region.q .front-line .blank-pill"), "(e) the prose pill").toHaveCount(1);
+});
+
+test("line reveal lifts a rect-first mixed group's rect on the first press", async ({ page }) => {
+  await openDeck(page, "rect-first.md", RECT_FIRST, "Carpal Rect First");
+  const rect = page.locator("#card .region.q .img-mask.reveals");
+  await expect(rect, "(f) the rect is masked before reveal").toBeVisible();
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await expect(page.locator("#card .region.q .blank-filled"), "(f) the first press is the rect step").toHaveCount(0);
+  await expect(rect, "(f) the first press uncovers the rect").toBeHidden();
 });

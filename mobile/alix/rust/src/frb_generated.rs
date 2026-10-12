@@ -2669,6 +2669,7 @@ const _: fn() = || {
         let _: String = FrontStep.front;
         let _: Vec<crate::api::review::InlineRun> = FrontStep.front_runs;
         let _: Option<Vec<crate::api::review::ContentUnit>> = FrontStep.front_units;
+        let _: bool = FrontStep.rects_revealed;
     }
     {
         let ImageView = None::<crate::api::review::ImageView>.unwrap();
@@ -3210,10 +3211,12 @@ impl SseDecode for crate::api::review::FrontStep {
         let mut var_frontRuns = <Vec<crate::api::review::InlineRun>>::sse_decode(deserializer);
         let mut var_frontUnits =
             <Option<Vec<crate::api::review::ContentUnit>>>::sse_decode(deserializer);
+        let mut var_rectsRevealed = <bool>::sse_decode(deserializer);
         return crate::api::review::FrontStep {
             front: var_front,
             front_runs: var_frontRuns,
             front_units: var_frontUnits,
+            rects_revealed: var_rectsRevealed,
         };
     }
 }
@@ -5125,6 +5128,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::FrontStep>
             self.0.front.into_into_dart().into_dart(),
             self.0.front_runs.into_into_dart().into_dart(),
             self.0.front_units.into_into_dart().into_dart(),
+            self.0.rects_revealed.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -6366,6 +6370,7 @@ impl SseEncode for crate::api::review::FrontStep {
         <String>::sse_encode(self.front, serializer);
         <Vec<crate::api::review::InlineRun>>::sse_encode(self.front_runs, serializer);
         <Option<Vec<crate::api::review::ContentUnit>>>::sse_encode(self.front_units, serializer);
+        <bool>::sse_encode(self.rects_revealed, serializer);
     }
 }
 

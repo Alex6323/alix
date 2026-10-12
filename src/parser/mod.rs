@@ -2406,18 +2406,20 @@ fn build_region_cards(
         };
         card.front = masked_question(&own, &[]);
         let mut filled: Vec<usize> = Vec::new();
-        let mut rects_stepped = false;
-        card.front_steps = own
-            .iter()
-            .filter_map(|line| {
-                if span_line(*line) {
-                    filled.push(*line);
-                } else if std::mem::replace(&mut rects_stepped, true) {
-                    return None;
-                }
-                Some(masked_question(&own, &filled))
-            })
-            .collect();
+        let mut front_steps = Vec::new();
+        let mut rect_step = None;
+        for line in &own {
+            if span_line(*line) {
+                filled.push(*line);
+            } else if rect_step.is_some() {
+                continue;
+            } else {
+                rect_step = Some(front_steps.len());
+            }
+            front_steps.push(masked_question(&own, &filled));
+        }
+        card.front_steps = front_steps;
+        card.rect_step = rect_step;
         card.images.extend(std::mem::take(&mut card.images_back));
         card.notes = notes
             .iter()

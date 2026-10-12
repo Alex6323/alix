@@ -3043,7 +3043,8 @@ fn carddto_blank_wire_shape() {
                     {"text": "the "},
                     {"text": "lunate", "bold": true, "answer": true},
                     {"text": " sits beside the ⬚"}
-                ]
+                ],
+                "rects_revealed": false
             }],
             "context": [],
             "context_runs": [],

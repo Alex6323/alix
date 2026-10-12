@@ -823,9 +823,11 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 
 ### FrontStepDto
 
-`{front: string, front_runs: [InlineRun], front_units?: [ContentUnitDto]}`,
+`{front: string, front_runs: [InlineRun], front_units?: [ContentUnitDto], rects_revealed: bool}`,
 the same three fields as the card's own, for the question at one step of
-`front_steps`. A filled blank is its hidden text in place of the `⍰`, carried
+`front_steps`, plus `rects_revealed`: true on the step that uncovers the card's
+image rects and every later step, false before it and on every step of a card
+without rects. A filled blank is its hidden text in place of the `⍰`, carried
 by runs flagged `answer`; a formula's filled piece renders boxed. `front_units`
 follows the `CardDto.front_units` rule.
 

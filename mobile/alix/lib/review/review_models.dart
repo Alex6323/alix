@@ -208,12 +208,14 @@ class ReviewFrontStepModel {
     required this.front,
     required Iterable<InlineRunModel> frontRuns,
     Iterable<ReviewContentUnitModel>? frontUnits,
+    this.rectsRevealed = false,
   }) : frontRuns = List.unmodifiable(frontRuns),
        frontUnits = frontUnits == null ? null : List.unmodifiable(frontUnits);
 
   final String front;
   final List<InlineRunModel> frontRuns;
   final List<ReviewContentUnitModel>? frontUnits;
+  final bool rectsRevealed;
 }
 
 class ReviewCardModel {

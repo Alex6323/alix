@@ -406,15 +406,21 @@ class FrontStep {
   final String front;
   final List<InlineRun> frontRuns;
   final List<ContentUnit>? frontUnits;
+  final bool rectsRevealed;
 
   const FrontStep({
     required this.front,
     required this.frontRuns,
     this.frontUnits,
+    required this.rectsRevealed,
   });
 
   @override
-  int get hashCode => front.hashCode ^ frontRuns.hashCode ^ frontUnits.hashCode;
+  int get hashCode =>
+      front.hashCode ^
+      frontRuns.hashCode ^
+      frontUnits.hashCode ^
+      rectsRevealed.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -423,7 +429,8 @@ class FrontStep {
           runtimeType == other.runtimeType &&
           front == other.front &&
           frontRuns == other.frontRuns &&
-          frontUnits == other.frontUnits;
+          frontUnits == other.frontUnits &&
+          rectsRevealed == other.rectsRevealed;
 }
 
 enum Grade { fail, partial, pass }

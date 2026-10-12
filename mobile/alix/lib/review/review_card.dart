@@ -207,6 +207,18 @@ class ReviewCardView extends StatelessWidget {
         choice != null ||
         multiChoice != null ||
         _lineDone(card);
+    final rectsLifted =
+        answered ||
+        questionAt(
+          card,
+          filledFrontSteps(
+            card,
+            mode: state.mode,
+            introducing: state.introducing,
+            answered: answered,
+            revealedLines: revealedLines,
+          ),
+        ).rectsRevealed;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -221,7 +233,7 @@ class ReviewCardView extends StatelessWidget {
         _front(context, card, tokens, answered: answered),
         for (final image in card.images) ...[
           const SizedBox(height: 12),
-          _cardImage(context, image, answered),
+          _cardImage(context, image, rectsLifted),
         ],
         const SizedBox(height: 14),
         _divider(tokens),
@@ -419,6 +431,9 @@ class ReviewCardView extends StatelessWidget {
       height: MediaQuery.sizeOf(context).height * 0.38,
       child: canvas,
     );
+    if (revealed && card.frontSteps.isNotEmpty) {
+      return box;
+    }
     if (revealed) {
       // The attempt stays on screen beside the answer: the sketch is not the
       // answer, it is what the learner grades themselves against.

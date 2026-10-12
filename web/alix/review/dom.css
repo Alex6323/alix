@@ -32,7 +32,7 @@
   .img-box .card-img { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; border-radius: 0; max-width: none; object-fit: fill; }
   .img-mask { position: absolute; background: #64748b; border: 1px solid rgba(0,0,0,.25); border-radius: 4px; container-type: size; display: flex; align-items: center; justify-content: center; }
   .img-mask-glyph { font-size: clamp(10px, 55cqmin, 40px); line-height: 1; opacity: .75; user-select: none; }
-  .card.answered .img-mask.reveals { display: none; }
+  .card.answered .img-mask.reveals, .card.rects-lifted .img-mask.reveals { display: none; }
   /* Introduction self-test: concealing re-masks the diagram answer too. */
   .card.answered.concealing .img-mask.reveals { display: flex; }
 

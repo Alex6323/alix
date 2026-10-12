@@ -2723,12 +2723,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   FrontStep dco_decode_front_step(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return FrontStep(
       front: dco_decode_String(arr[0]),
       frontRuns: dco_decode_list_inline_run(arr[1]),
       frontUnits: dco_decode_opt_list_content_unit(arr[2]),
+      rectsRevealed: dco_decode_bool(arr[3]),
     );
   }
 
@@ -4175,10 +4176,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_front = sse_decode_String(deserializer);
     var var_frontRuns = sse_decode_list_inline_run(deserializer);
     var var_frontUnits = sse_decode_opt_list_content_unit(deserializer);
+    var var_rectsRevealed = sse_decode_bool(deserializer);
     return FrontStep(
       front: var_front,
       frontRuns: var_frontRuns,
       frontUnits: var_frontUnits,
+      rectsRevealed: var_rectsRevealed,
     );
   }
 
@@ -5972,6 +5975,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.front, serializer);
     sse_encode_list_inline_run(self.frontRuns, serializer);
     sse_encode_opt_list_content_unit(self.frontUnits, serializer);
+    sse_encode_bool(self.rectsRevealed, serializer);
   }
 
   @protected

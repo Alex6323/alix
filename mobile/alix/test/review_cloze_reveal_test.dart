@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/bridge/review_bridge.dart';
+import 'package:alix_mobile/review/masked_image.dart';
 import 'package:alix_mobile/review/review_card.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/sketch.dart';
@@ -21,16 +22,17 @@ ReviewCardModel groupCard() => openCard(
   '<!-- id: card-group -->\n',
 );
 
-ReviewCardModel openCard(String body) {
+ReviewStateModel openState(String body) {
   final root = Directory.systemTemp.createTempSync('alix-cloze-reveal-');
   addTearDown(() => root.deleteSync(recursive: true));
   final deck = '${root.path}/carpals.md';
   writeTestDeck(deck, body);
   return const ReviewBridgeFactory()
       .open(deckPath: deck, rootDir: root.path)
-      .state
-      .card!;
+      .state;
 }
+
+ReviewCardModel openCard(String body) => openState(body).card!;
 
 class RevealRow {
   const RevealRow(
@@ -41,6 +43,7 @@ class RevealRow {
     this.revealedLines = 0,
     this.choice,
     this.check,
+    this.input = ReviewInput.type,
     required this.filled,
   });
 
@@ -51,6 +54,7 @@ class RevealRow {
   final int revealedLines;
   final ReviewChoiceFeedbackModel? choice;
   final ReviewCheckFeedbackModel? check;
+  final ReviewInput input;
   final int filled;
 }
 
@@ -77,6 +81,7 @@ Future<void> pumpRow(
             card: card,
             mode: row.mode,
             depth: ReviewDepth.recall,
+            input: row.input,
             introducing: row.introducing,
             choices: choiceMode ? const ['option one', 'option two'] : null,
             finished: false,
@@ -270,5 +275,76 @@ void main() {
     );
     expect(find.byType(BlankPill), findsNothing, reason: 'revealed: no pill');
     expect(code(), contains('&mut y'), reason: 'revealed: ${code()}');
+  });
+
+  testWidgets('a draw reveal does not repeat its filled cloze answer', (
+    tester,
+  ) async {
+    final state = openState(
+      '## carpal\n'
+      'the scaphoid\n'
+      '<!-- input: draw -->\n'
+      '<!-- blank: span hidden="scaphoid" b:a1b2c3 -->\n'
+      '<!-- id: card-draw -->\n',
+    );
+    expect(state.input, ReviewInput.draw, reason: 'ordinary authored draw path');
+    final card = state.card!;
+    await pumpRow(
+      tester,
+      card,
+      RevealRow(
+        'draw after reveal',
+        state.mode,
+        revealed: true,
+        input: state.input,
+        filled: 1,
+      ),
+    );
+
+    final shown = spansOf(
+      tester,
+    ).where((span) => (span.text ?? '').contains('scaphoid'));
+    expect(
+      shown,
+      hasLength(1),
+      reason: 'scaphoid belongs only in the question fill, not below the sketch',
+    );
+  });
+
+  testWidgets('a rect-first mixed group reveals the rect on its first step', (
+    tester,
+  ) async {
+    final card = openCard(
+      '## name\n'
+      '![](hand.png)\n'
+      '<!-- blank: rect [g] x=1 y=1 width=2 height=2 hidden="lunate" b:a1b2c3 -->\n'
+      'the hamate is a bone\n'
+      '<!-- blank: span [g] hidden="hamate" b:d4e5f6 -->\n'
+      '<!-- reveal: line -->\n'
+      '<!-- id: card-mixed -->\n',
+    );
+    expect(card.frontSteps, hasLength(2), reason: 'rect then span');
+    expect(
+      card.frontSteps.first.front,
+      card.front,
+      reason: 'step one is the rect, so its text is unchanged',
+    );
+
+    await pumpRow(
+      tester,
+      card,
+      const RevealRow(
+        'mixed after rect step',
+        ReviewMode.lineByLine,
+        revealedLines: 1,
+        filled: 1,
+      ),
+    );
+
+    expect(
+      tester.widget<MaskedCardImage>(find.byType(MaskedCardImage)).answered,
+      isTrue,
+      reason: 'the first Reveal press must visibly uncover the first rect blank',
+    );
   });
 }

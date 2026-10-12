@@ -67,6 +67,7 @@ pub struct _FrontStep {
     pub front: String,
     pub front_runs: Vec<InlineRun>,
     pub front_units: Option<Vec<ContentUnit>>,
+    pub rects_revealed: bool,
 }
 
 #[flutter_rust_bridge::frb(mirror(ChecklistItem))]

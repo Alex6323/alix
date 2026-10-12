@@ -55,6 +55,7 @@ pub(super) struct FrontStepDto {
     pub(super) front_runs: Vec<InlineRun>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) front_units: Option<Vec<ContentUnit>>,
+    pub(super) rects_revealed: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -1462,6 +1463,7 @@ pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
                 front: step.front,
                 front_runs: step.front_runs,
                 front_units: step.front_units.map(web_units),
+                rects_revealed: step.rects_revealed,
             })
             .collect(),
         section_context: view.section_context,

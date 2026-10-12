@@ -576,6 +576,9 @@ export function createStudy({
       concealed: isIntroducing() && answerConcealed,
     });
   }
+  function rectsLiftedNow() {
+    return isAnswered() || Boolean(model.questionAt(state.card, filledNow()).rects_revealed);
+  }
   function syncQuestion() {
     if (!questionNode || !questionNode.parentElement) return;
     const filled = filledNow();
@@ -650,6 +653,7 @@ export function createStudy({
     const cardEl = doc.getElementById("card");
     if (cardEl) {
       cardEl.classList.toggle("answered", isAnswered());
+      cardEl.classList.toggle("rects-lifted", rectsLiftedNow());
       syncDiagramAnswerState(cardEl);
     }
     const toggles = el("div", "region-toggles");
