@@ -2892,4 +2892,222 @@ mod tests {
             );
         }
     }
+
+    fn with_desktop_revision<'a>(
+        mut bundle: Bundle<'a>,
+        rel: &str,
+        deck_id: &str,
+        saves: u64,
+    ) -> Bundle<'a> {
+        let document = document_rel(deck_id);
+        bundle.files.retain(|(path, _)| *path != document);
+        bundle.decks.retain(|(_, id, _)| id != deck_id);
+        bundle.deck(rel, deck_id, Some(saves))
+    }
+
+    #[test]
+    fn a_pull_conflict_keeps_the_phone_document_live_and_the_desktop_copy_aside_in_every_entry_kind()
+     {
+        let rows = [
+            (
+                workspace_bundle as fn() -> Bundle<'static>,
+                "decks/cells.md",
+                DECK_A,
+                3,
+            ),
+            (deck_bundle, "physics.md", DECK_C, 2),
+        ];
+        for (bundle, rel, deck_id, saves) in rows {
+            let (_tmp, root) = fresh_root();
+            let first = bundle();
+            apply(&root, &first);
+            let doc = root.document_path(first.kind, first.entry, deck_id);
+            bump(&doc, deck_id);
+            let moved = with_desktop_revision(bundle(), rel, deck_id, saves + 3);
+            let report = apply(&root, &moved);
+            assert_eq!(
+                report.conflicts,
+                vec![deck_id.to_string()],
+                "{} entry `{}`: the moved desktop revision conflicts",
+                first.kind,
+                first.entry
+            );
+            assert_eq!(
+                revision(&doc, deck_id),
+                Some(saves + 1),
+                "{} entry `{}`: the phone document stays live",
+                first.kind,
+                first.entry
+            );
+            assert_eq!(
+                revision(&pulled_path(&doc), deck_id),
+                Some(saves + 3),
+                "{} entry `{}`: the desktop copy is kept aside",
+                first.kind,
+                first.entry
+            );
+        }
+    }
+
+    #[test]
+    fn a_deck_entry_repull_removes_only_the_files_the_desktop_dropped_and_keeps_the_phone_document()
+    {
+        let document = document_rel(DECK_C);
+        let drop_sidecar = |mut bundle: Bundle<'static>| {
+            bundle.files.retain(|(path, _)| path != "physics.local.md");
+            bundle
+        };
+        let reset_progress = |mut bundle: Bundle<'static>| {
+            bundle
+                .files
+                .retain(|(path, _)| *path != document_rel(DECK_C));
+            bundle.decks.clear();
+            bundle.deck("physics.md", DECK_C, None)
+        };
+        let rows = [
+            (
+                "desktop dropped the sidecar",
+                false,
+                drop_sidecar(deck_bundle()),
+                vec!["physics.local.md".to_string()],
+                Some(2),
+            ),
+            (
+                "desktop reset the progress the phone reviewed",
+                true,
+                reset_progress(deck_bundle()),
+                Vec::new(),
+                Some(3),
+            ),
+        ];
+        for (name, phone_reviewed, second, removed, phone_revision) in rows {
+            let (_tmp, root) = fresh_root();
+            apply(&root, &deck_bundle());
+            let doc = root.dir().join(&document);
+            if phone_reviewed {
+                bump(&doc, DECK_C);
+            }
+            let report = apply(&root, &second);
+            assert_eq!(report.removed, removed, "{name}: reported removals");
+            assert_eq!(
+                revision(&doc, DECK_C),
+                phone_revision,
+                "{name}: live phone document"
+            );
+            assert!(
+                second
+                    .files
+                    .iter()
+                    .all(|(rel, bytes)| std::fs::read(root.dir().join(rel)).unwrap() == *bytes),
+                "{name}: every carried file is live byte for byte"
+            );
+        }
+    }
+
+    #[test]
+    fn landing_units_group_each_deck_asset_directory_and_land_the_deck_file_last() {
+        let document = document_rel(DECK_C);
+        let rows = [
+            (vec!["physics.md"], vec![("physics.md".to_string(), false)]),
+            (
+                vec![
+                    "physics.md",
+                    "assets/one/a.png",
+                    "assets/one/b.png",
+                    "assets/two/c.png",
+                ],
+                vec![
+                    ("assets/one".to_string(), true),
+                    ("assets/two".to_string(), true),
+                    ("physics.md".to_string(), false),
+                ],
+            ),
+            (
+                vec!["physics.md", "assets/loose.png"],
+                vec![
+                    ("assets/loose.png".to_string(), false),
+                    ("physics.md".to_string(), false),
+                ],
+            ),
+            (
+                vec!["physics.md", document.as_str(), "augment/x.json"],
+                vec![
+                    (document.clone(), false),
+                    ("augment/x.json".to_string(), false),
+                    ("physics.md".to_string(), false),
+                ],
+            ),
+        ];
+        for (files, expected) in rows {
+            let tmp = tempfile::tempdir().unwrap();
+            for rel in &files {
+                let path = rel_path(tmp.path(), rel);
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(path, b"x").unwrap();
+            }
+            assert_eq!(
+                landing_units(tmp.path(), "physics.md").unwrap(),
+                expected,
+                "staged files {files:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn removing_a_deck_entry_drops_its_asset_directory_document_and_sync_state_and_keeps_the_other_entrys()
+     {
+        let (_tmp, root) = fresh_root();
+        apply(&root, &deck_bundle());
+        let chem = Bundle::new("chem.md", KIND_DECK)
+            .file("chem.md", b"## q3\na3\n")
+            .file(&format!("assets/{DECK_A}/two.png"), b"png")
+            .deck("chem.md", DECK_A, Some(1));
+        apply(&root, &chem);
+        let physics_doc = root.document_path(KIND_DECK, "physics.md", DECK_C);
+        let chem_doc = root.document_path(KIND_DECK, "chem.md", DECK_A);
+        assert!(physics_doc.exists(), "before removal: physics document");
+        assert!(chem_doc.exists(), "before removal: chem document");
+
+        remove_entry(&root, "physics.md").unwrap();
+
+        assert!(
+            !root.dir().join(format!("assets/{DECK_C}")).exists(),
+            "after removal: the physics asset directory is gone"
+        );
+        assert!(
+            !physics_doc.exists(),
+            "after removal: the physics document is gone"
+        );
+        assert!(
+            !root.dir().join("physics.md").exists(),
+            "after removal: the physics deck file is gone"
+        );
+        assert!(
+            !root.manifest_path("physics.md").exists(),
+            "after removal: the physics manifest is gone"
+        );
+        assert_eq!(
+            tree(root.dir())
+                .into_keys()
+                .filter(|rel| !rel.starts_with(".alix/") || *rel == document_rel(DECK_A))
+                .collect::<Vec<_>>(),
+            vec![
+                document_rel(DECK_A),
+                format!("assets/{DECK_A}/two.png"),
+                "chem.md".to_string(),
+            ],
+            "after removal: only the chem entry's files remain"
+        );
+        assert_eq!(
+            read_pushed(&root).unwrap(),
+            BTreeMap::from([(
+                DECK_A.to_string(),
+                Pushed {
+                    desktop: Some(1),
+                    phone: 1
+                }
+            )]),
+            "after removal: only the chem deck's pushed state remains"
+        );
+    }
 }

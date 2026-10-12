@@ -95,8 +95,10 @@ pub(crate) fn assert_teaches_answerless_cloze(name: &str, prompt: &str) {
 mod tests {
     #[test]
     fn the_answerless_cloze_check_rejects_every_stale_shape_and_accepts_the_current_one() {
-        let rows = [
-            ("a stale phrase", "Write it below its answer lines.", true),
+        let stale = super::STALE_CLOZE_TEACHING
+            .iter()
+            .map(|phrase| (*phrase, format!("Write it {phrase}."), true));
+        let shapes = [
             (
                 "a line between the sentence and its blank",
                 "## alpha beta\nmore\n<!-- blank: span hidden=\"alpha\" -->",
@@ -112,10 +114,11 @@ mod tests {
                 "## alpha beta\n<!-- blank: span hidden=\"alpha\" -->",
                 false,
             ),
-        ];
-        for (label, prompt, rejected) in rows {
+        ]
+        .map(|(label, prompt, rejected)| (label, prompt.to_string(), rejected));
+        for (label, prompt, rejected) in stale.chain(shapes) {
             let outcome = std::panic::catch_unwind(|| {
-                super::assert_teaches_answerless_cloze(label, prompt);
+                super::assert_teaches_answerless_cloze(label, &prompt);
             });
             assert_eq!(rejected, outcome.is_err(), "{label}");
         }
