@@ -155,8 +155,9 @@ This record replaces, in ADR 0034:
 - `occurrence=N` counting "over the answer block's lines", and `position:`
   indexing "the block's canonical maskable stream" where the block was the
   answer block: both now count within the bound block.
-- The doctor lint "the hidden text occurring more than once in the block",
-  which now reads over the bound block.
+- The doctor lint "the hidden text occurring more than once in the block":
+  rule 9 takes its place, since an uncovered second occurrence stays
+  visible in the masked question.
 - `hidden="..."` "optional on a geometric `blank:`": it is now required on
   every `blank:` (rule 10), which retires the unlabelled image region that
   asked with no answer text.

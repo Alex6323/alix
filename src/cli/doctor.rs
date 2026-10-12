@@ -671,10 +671,18 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
             "the note contains the text of blank {blank}'s answer (`{answer}`); \
              the block's other cards show this note"
         ),
-        LintKind::FrontContainsBlankAnswer { blank, answer } => format!(
-            "the front contains the text of blank {blank}'s answer (`{answer}`); \
-             the card shows its answer before the reveal"
-        ),
+        LintKind::QuestionShowsBlankAnswer { answer, at } => {
+            let place = match at {
+                alix::parser::AnswerShownAt::Section => "the card's section prose".to_string(),
+                alix::parser::AnswerShownAt::QuestionLine(line) => {
+                    format!("line {line}, outside its blank")
+                }
+            };
+            format!(
+                "the hidden text `{answer}` shows in {place}; \
+                 the card shows its answer before the reveal"
+            )
+        }
         LintKind::NoteNamesNoBlank { name } => format!(
             "`{name}:` names no named blank of this block, so the line is \
              shown as the block note"

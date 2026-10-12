@@ -130,15 +130,19 @@ pub enum LintKind {
         blank: usize,
         answer: String,
     },
-    /// A front that spells out one blank's answer, so the card shows it
-    /// before the reveal. `blank` is 1-based, in author order.
-    FrontContainsBlankAnswer {
-        blank: usize,
+    QuestionShowsBlankAnswer {
         answer: String,
+        at: AnswerShownAt,
     },
     NoteNamesNoBlank {
         name: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnswerShownAt {
+    Section,
+    QuestionLine(usize),
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -2121,11 +2125,11 @@ struct SpanSplice {
 }
 
 /// The prose a blank-bearing block hands its region cards: raw answer lines
-/// (None where a line is image-only and rides the media list instead) plus
-/// every span's bound splice.
+/// with their deck line numbers (None where a line is image-only and rides
+/// the media list instead) plus every span's bound splice.
 struct BlockProse {
     heading: String,
-    lines: Vec<Option<String>>,
+    lines: Vec<(usize, Option<String>)>,
     splices: Vec<SpanSplice>,
 }
 
@@ -2208,6 +2212,65 @@ fn names_answer(note: &str, answer: &str) -> bool {
         let after = note_lower[at + hit.len()..].chars().next();
         !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
     })
+}
+
+fn shows_answer(shown: &str, answer: &str) -> bool {
+    !region::occurrences_with(shown, answer, &mut |start, end| {
+        !shown[..start]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_alphanumeric)
+            && !shown[end..]
+                .chars()
+                .next()
+                .is_some_and(char::is_alphanumeric)
+    })
+    .is_empty()
+}
+
+fn shown_blank_answers(
+    blanks: &[&region::RawRegion],
+    template: &Card,
+    masked: &[(usize, String)],
+) -> Vec<Lint> {
+    use crate::answer::normalize_answer;
+    let places: Vec<(AnswerShownAt, String)> = std::iter::once((
+        AnswerShownAt::Section,
+        normalize_answer(&template.section_context.join("\n")),
+    ))
+    .chain(
+        masked
+            .iter()
+            .map(|(number, line)| (AnswerShownAt::QuestionLine(*number), normalize_answer(line))),
+    )
+    .collect();
+    let mut found: Vec<Lint> = Vec::new();
+    for blank in blanks {
+        let Some(answer) = &blank.hidden else {
+            continue;
+        };
+        if !template
+            .span_regions
+            .iter()
+            .any(|span| span.line == blank.line)
+        {
+            continue;
+        }
+        let normalized = normalize_answer(answer);
+        for (at, shown) in &places {
+            let lint = Lint {
+                line: template.line,
+                kind: LintKind::QuestionShowsBlankAnswer {
+                    answer: answer.clone(),
+                    at: *at,
+                },
+            };
+            if shows_answer(shown, &normalized) && !found.contains(&lint) {
+                found.push(lint);
+            }
+        }
+    }
+    found
 }
 
 /// One authored note after its name-addressed lines are separated out.
@@ -2335,16 +2398,16 @@ fn build_region_cards(
         .map(|note| split_note(note, &names, template.line, lints))
         .collect();
 
-    let masked_question = |own: &[usize], filled: &[usize]| -> String {
-        std::iter::once((Origin::Heading, Some(&prose.heading)))
+    let masked_lines = |own: &[usize], filled: &[usize]| -> Vec<(usize, String)> {
+        std::iter::once((template.line, Origin::Heading, Some(&prose.heading)))
             .chain(
                 prose
                     .lines
                     .iter()
                     .enumerate()
-                    .map(|(index, line)| (Origin::Answer(index), line.as_ref())),
+                    .map(|(index, (number, line))| (*number, Origin::Answer(index), line.as_ref())),
             )
-            .filter_map(|(origin, line)| {
+            .filter_map(|(number, origin, line)| {
                 let mut line = line?.clone();
                 let mut cuts: Vec<&SpanSplice> = prose
                     .splices
@@ -2362,8 +2425,14 @@ fn build_region_cards(
                         line.replace_range(cut.range.0..cut.range.1, marker);
                     }
                 }
-                Some(line)
+                Some((number, line))
             })
+            .collect()
+    };
+    let masked_question = |own: &[usize], filled: &[usize]| -> String {
+        masked_lines(own, filled)
+            .into_iter()
+            .map(|(_, line)| line)
             .collect::<Vec<String>>()
             .join("\n")
     };
@@ -2497,23 +2566,11 @@ fn build_region_cards(
         };
         new_cards.push(region_card(slot, back));
     }
-    for (index, blank) in blanks.iter().enumerate() {
-        let Some(hidden) = &blank.hidden else {
-            continue;
-        };
-        let in_front = prose.splices.iter().any(|splice| {
-            splice.directive_line == blank.line && !matches!(splice.origin, Origin::Answer(_))
-        });
-        if !in_front && names_answer(&template.front, hidden) {
-            lints.push(Lint {
-                line: template.line,
-                kind: LintKind::FrontContainsBlankAnswer {
-                    blank: index + 1,
-                    answer: hidden.clone(),
-                },
-            });
-        }
-    }
+    lints.extend(shown_blank_answers(
+        &blanks,
+        &template,
+        &masked_lines(&[], &[]),
+    ));
     if new_cards.len() > 1 {
         for (index, blank) in blanks.iter().enumerate() {
             let Some(hidden) = &blank.hidden else {
@@ -3535,7 +3592,9 @@ fn build_card_inner(
         lines: answer
             .iter()
             .zip(&parsed)
-            .map(|((_, text), segments)| (!image_only(segments)).then(|| text.clone()))
+            .map(|((number, text), segments)| {
+                (*number, (!image_only(segments)).then(|| text.clone()))
+            })
             .collect(),
         splices,
     });
@@ -8099,57 +8158,99 @@ a
     }
 
     #[test]
-    fn a_front_naming_a_blanks_answer_is_reported_per_blank_before_the_reveal() {
-        let spans = "<!-- blank: span hidden=\"Unit\" -->\n\
-                     <!-- blank: span hidden=\"integration\" -->\n\
-                     <!-- blank: span hidden=\"end-to-end\" -->\n";
-        let rows = [
+    fn a_question_showing_a_blanks_hidden_text_outside_its_blank_warns() {
+        use AnswerShownAt::{QuestionLine, Section};
+        type Row = (&'static str, String, Vec<(&'static str, AnswerShownAt)>);
+        let alpha = "<!-- blank: span hidden=\"alpha\" -->\n";
+        let rows: [Row; 14] = [
             (
-                "a front naming the first blank, in another case",
-                "The test pyramid: unit tests sit at the base",
-                vec![(1, "Unit")],
+                "the `##` line repeats the hidden words above the blanked sentence",
+                "## What is the genesis committee?\nThe trust root is the genesis committee.\n<!-- blank: span hidden=\"genesis committee\" -->\n".to_string(),
+                vec![("genesis committee", QuestionLine(1))],
             ),
             (
-                "a front naming two blanks",
-                "From integration to end-to-end",
-                vec![(2, "integration"), (3, "end-to-end")],
+                "a sibling text block shows the hidden word",
+                format!("## q\nalpha comes first\n\nthe alpha twin\n{alpha}"),
+                vec![("alpha", QuestionLine(2))],
             ),
             (
-                "a front containing the answer only inside a longer word",
-                "Units of the pyramid",
+                "a list item in another block shows the hidden word",
+                format!("## q\n- beta\n- Alpha\n\nthe alpha twin\n{alpha}"),
+                vec![("alpha", QuestionLine(3))],
+            ),
+            (
+                "the section prose shows the hidden word",
+                format!("# Greek\nThe alpha comes first.\n\n## q\nthe alpha twin\n{alpha}"),
+                vec![("alpha", Section)],
+            ),
+            (
+                "the section heading shows the hidden word, in another case",
+                format!("# Alpha letters\n\n## q\nthe alpha twin\n{alpha}"),
+                vec![("alpha", Section)],
+            ),
+            (
+                "the hidden word shows only at its blanked spot",
+                format!("# Greek\n\n## q\nthe alpha twin\n{alpha}"),
                 vec![],
             ),
             (
-                "a front naming no blank",
-                "The test pyramid, bottom to top",
+                "a blank bound to the `##` line itself",
+                format!("## the alpha twin\n{alpha}"),
                 vec![],
             ),
             (
-                "a front naming the answer of a one-blank block",
-                "Unit tests, bottom of the pyramid",
-                vec![(1, "Unit")],
+                "the hidden word only inside longer words",
+                "## a box of oxen\nan ox pulls\n<!-- blank: span hidden=\"ox\" -->\n".to_string(),
+                vec![],
+            ),
+            (
+                "a short hidden word shown as a whole word",
+                "## the ox\nan ox pulls\n<!-- blank: span hidden=\"ox\" -->\n".to_string(),
+                vec![("ox", QuestionLine(1))],
+            ),
+            (
+                "a second occurrence in the bound block the mask did not cover",
+                format!("## q\nalpha and alpha\n{alpha}"),
+                vec![("alpha", QuestionLine(2))],
+            ),
+            (
+                "two blanks, each hidden word only at its own spot",
+                format!("## q\nalpha before beta\n{alpha}<!-- blank: span hidden=\"beta\" -->\n"),
+                vec![],
+            ),
+            (
+                "whitespace in the shown text is collapsed before comparing",
+                "## the genesis   committee\nthe genesis committee\n<!-- blank: span hidden=\"genesis committee\" -->\n".to_string(),
+                vec![("genesis committee", QuestionLine(1))],
+            ),
+            (
+                "two blanks on one hidden text report a shown line once",
+                format!("## alpha\nalpha and alpha\n{alpha}<!-- blank: span hidden=\"alpha\" occurrence=2 -->\n"),
+                vec![("alpha", QuestionLine(1))],
+            ),
+            (
+                "an image blank's label is not displayed text",
+                "## Alpha\n![](a.png)\n<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"Alpha\" -->\n".to_string(),
+                vec![],
             ),
         ];
-        for (label, front, expected) in rows {
-            let body = if label.contains("one-blank") {
-                "<!-- blank: span hidden=\"Unit\" -->\n".to_string()
-            } else {
-                spans.to_string()
-            };
-            let deck = parse(&format!(
-                "## {front}\nUnit, integration, end-to-end\n{body}"
-            ));
+        for (label, text, expected) in rows {
+            let deck = parse(&text);
+            let card_line = text
+                .lines()
+                .position(|line| line.starts_with("## "))
+                .map_or(0, |index| index + 1);
             let want: Vec<Lint> = expected
                 .into_iter()
-                .map(|(blank, answer)| Lint {
-                    line: 1,
-                    kind: LintKind::FrontContainsBlankAnswer {
-                        blank,
+                .map(|(answer, at)| Lint {
+                    line: card_line,
+                    kind: LintKind::QuestionShowsBlankAnswer {
                         answer: answer.to_string(),
+                        at,
                     },
                 })
                 .collect();
-            assert_eq!(want, deck.lints, "{label}: front {front:?}");
+            assert_eq!(want, deck.lints, "{label}: deck {text:?}");
         }
     }
 
@@ -9250,11 +9351,12 @@ the answer
     #[test]
     fn every_region_directive_binds_to_the_block_directly_above_it_through_comment_lines() {
         type Bound = fn(&Card) -> bool;
-        let rows: [(&str, String, Bound); 8] = [
+        let rows: [(&str, String, Bound, &[usize]); 8] = [
             (
                 "a span under the heading",
                 format!("## alpha beta\n{BETWEEN}<!-- blank: span hidden=\"alpha\" -->\ngamma\n"),
                 |card| card.span_regions[0].bound_position == Some(1),
+                &[],
             ),
             (
                 "a span under a run that is not the first block",
@@ -9262,6 +9364,7 @@ the answer
                     "## q\ngamma\n\nprose alpha\n{BETWEEN}<!-- blank: span hidden=\"alpha\" -->\n"
                 ),
                 |card| card.span_regions[0].bound_position == Some(7),
+                &[],
             ),
             (
                 "a span under a fence",
@@ -9269,6 +9372,7 @@ the answer
                     "## q\nalpha prose\n```\nlet alpha = 1;\n```\n{BETWEEN}<!-- blank: span hidden=\"alpha\" -->\n"
                 ),
                 |card| card.span_regions[0].bound_position == Some(5),
+                &[2],
             ),
             (
                 "a span under a math block",
@@ -9276,6 +9380,7 @@ the answer
                     "## q\nprose alpha\n$$\nalpha = 1\n$$\n{BETWEEN}<!-- blank: span hidden=\"alpha\" -->\n"
                 ),
                 |card| card.span_regions[0].bound_position == Some(1),
+                &[2],
             ),
             (
                 "a cover span under a run",
@@ -9284,6 +9389,7 @@ the answer
                     card.span_regions[0].kind == region::RegionKind::Cover
                         && card.span_regions[0].bound_position == Some(7)
                 },
+                &[],
             ),
             (
                 "a rect under the second of two images",
@@ -9291,6 +9397,7 @@ the answer
                     "## q\n![](a.png)\n![](b.png)\n{BETWEEN}<!-- blank: rect x=1 y=1 width=2 height=2 hidden=\"x\" -->\nanswer\n"
                 ),
                 |card| card.images[0].regions.is_empty() && card.images[1].regions.len() == 1,
+                &[],
             ),
             (
                 "a cover rect under an image below the divider",
@@ -9298,6 +9405,7 @@ the answer
                     "## q\n![](a.png)\n\n---\n![](b.png)\n{BETWEEN}<!-- cover: rect x=1 y=1 width=2 height=2 -->\n"
                 ),
                 |card| card.images[0].regions.is_empty() && card.images_back[0].regions.len() == 1,
+                &[],
             ),
             (
                 "a crop under an image",
@@ -9305,20 +9413,29 @@ the answer
                     "## q\n![](a.png)\n{BETWEEN}<!-- crop: rect x=0 y=0 width=50 height=50 -->\nanswer\n"
                 ),
                 |card| card.images_back[0].crop.is_some(),
+                &[],
             ),
         ];
-        for (label, text, bound) in rows {
+        for (label, text, bound, shown_lines) in rows {
             let deck = match super::parse("deck.md", &text) {
                 Ok(deck) => deck,
                 Err(error) => panic!("{label}: {error}"),
             };
             assert!(bound(&deck.cards[0]), "{label}: {:?}", deck.cards[0]);
-            assert!(
-                !deck
-                    .lints
-                    .iter()
-                    .any(|lint| matches!(lint.kind, LintKind::FrontContainsBlankAnswer { .. })),
-                "{label}: a span's own block never reports its answer: {:?}",
+            let reported: Vec<usize> = deck
+                .lints
+                .iter()
+                .filter_map(|lint| match lint.kind {
+                    LintKind::QuestionShowsBlankAnswer {
+                        at: AnswerShownAt::QuestionLine(line),
+                        ..
+                    } => Some(line),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                shown_lines, reported,
+                "{label}: a span's own block never reports its answer, another block showing it does: {:?}",
                 deck.lints
             );
         }

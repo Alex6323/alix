@@ -61,8 +61,13 @@ card or the deck to keep the keyboard. An authored `input:` wins over the
 default on mobile; the desktop web app currently ignores `input: draw` on a
 cloze card and types it regardless.
 `alix doctor` warns when a typed span's answer would need LaTeX to type.
-It also warns when the card's front contains a blank's answer: the card
-would show its answer before the reveal.
+It also warns when the question still shows a span's hidden text outside
+its blank: a `##` line repeating the hidden words above the blanked
+sentence, another block of the card, a second occurrence the blank does not
+cover, or the card's section heading and prose. The card would show its
+answer before the reveal. The check ignores case and runs of whitespace and
+matches whole words only, so a hidden `ox` does not fire on `box`. An image
+blank's label is not displayed text and is not checked.
 
 ### A note for one blank
 

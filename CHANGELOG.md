@@ -89,8 +89,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every count; an ignored card may lack an answer. `alix stats` reports the
   count and `alix list` marks the cards.
 
-- `alix doctor` warns when a cloze card's front contains a blank's answer,
-  the check that already covers a block note.
+- `alix doctor` warns when a cloze card's question, as shown before the
+  reveal, still shows a span's hidden text outside its blank: on the `##`
+  line, in another block, as an uncovered second occurrence, or in the
+  card's section heading and prose. Case and whitespace are ignored and only
+  whole words match.
 
 - The phone can now sync with a paired desktop: the Sync button beside the
   desktop's heading in the picker runs a cycle over everything beneath it
