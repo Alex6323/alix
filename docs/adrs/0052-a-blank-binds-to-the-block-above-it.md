@@ -1,8 +1,22 @@
 # 0052: A blank binds to the block above it, and a blank card has no answer section
 
-- Status: Proposed
+- Status: Accepted
 - Recorded: 2026-10-11
 - Retrospective: No
+- Evidence: fn every_region_directive_binds_to_the_block_directly_above_it_through_comment_lines in src/parser/mod.rs
+- Evidence: fn comment_lines_and_link_definitions_between_a_block_and_its_region_directive_are_transparent in src/parser/mod.rs
+- Evidence: fn each_block_kind_bounds_a_spans_search in src/parser/mod.rs
+- Evidence: fn a_divider_on_a_blank_card_is_a_hard_error_while_covers_and_crops_keep_theirs in src/parser/mod.rs
+- Evidence: fn a_blank_card_needs_no_answer_lines_and_a_plain_card_still_does in src/parser/mod.rs
+- Evidence: fn no_pre_reveal_field_of_a_blank_card_view_carries_its_hidden_text in src/review.rs
+- Evidence: fn a_blank_cards_front_steps_fill_its_own_blanks_in_directive_order_and_keep_siblings_hidden in src/parser/mod.rs
+- Evidence: reveal fills a cloze card's blank in place, highlighted, without an answer repeat in e2e/tests/adult-cloze-reveal.spec.ts
+- Evidence: every mode fills the question in place and never repeats it in mobile/alix/test/review_cloze_reveal_test.dart
+- Evidence: fn a_deck_wide_direction_skips_a_blank_card_and_a_card_level_one_fails_on_it in src/parser/mod.rs
+- Evidence: fn a_question_showing_a_blanks_hidden_text_outside_its_blank_warns in src/parser/mod.rs
+- Evidence: fn every_prompt_that_teaches_cloze_teaches_an_answerless_card in src/generate.rs
+- Evidence: fn remediation_prompt_teaches_an_answerless_cloze_card in src/exam.rs
+- Evidence: fn every_blank_shape_requires_hidden_while_a_cover_does_not in src/parser/region.rs
 
 ## Context
 
@@ -247,8 +261,7 @@ stream builder; the `##` line becomes a new input to it.
 
 ## Verification
 
-To be written with the implementation; the record names its evidence
-before it is Accepted. Expected laws:
+Each law below is pinned by the test the matching Evidence line names:
 
 - every region directive binds to the block directly above it, comment
   lines skipped, and every other placement is a hard error, for span, rect,
