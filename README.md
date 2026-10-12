@@ -75,8 +75,8 @@ The front is the `## ` line; the plain lines below are the answer. A `> [!NOTE]`
 line opens a note shown after you answer (a blockquote without one of GitHub's
 five alert badges is a quotation, and belongs to the answer), and a `<!-- -->`
 directive on a card tunes it
-(here the `blank:` directive hides `mut` in the answer, making the card a
-fill-in-the-blank). Run `alix deck init <file>` once on a hand-written deck: it mints the
+(here the `blank:` directive hides `mut` in the line directly above it, making
+the card a fill-in-the-blank with no answer lines). Run `alix deck init <file>` once on a hand-written deck: it mints the
 stable deck and card ids that make the file appear in the picker and carry
 review history. Full format and every directive:
 [the deck format](docs/book/src/03-the-deck-format.md),

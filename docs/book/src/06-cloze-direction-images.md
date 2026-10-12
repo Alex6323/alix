@@ -5,10 +5,10 @@ from chapter 3.
 
 ## Cloze cards: fill in the blank
 
-A cloze card hides part of the answer; you create one by pointing a
-`blank:` directive at a span of the answer text.
+A cloze card hides part of its own text; you create one by pointing a
+`blank:` directive at a span of the block above it.
 
-Write the answer as ordinary prose, then name the hidden text in a
+Write the sentence as ordinary prose, then name the hidden text in a
 `<!-- blank: span hidden="..." -->` comment directly below it. A directive
 binds to the block directly above it (a run of text lines, an image line, a
 code fence or a `$$` block), and the hidden text must be in that block.
@@ -26,6 +26,13 @@ let mut x: u64 = 0;
 <!-- blank: span hidden="u64" -->
 ```
 
+The `##` line may itself be the sentence, which needs no separate heading:
+
+```
+## A value is dropped when its owner goes out of scope.
+<!-- blank: span hidden="dropped" -->
+```
+
 This makes two cards. One blanks `mut` and shows the rest; the other blanks
 `u64`. Each card's question is the whole card from its `##` line down, with
 the asked span shown as `⍰` and the *other* spans hidden as `⬚`, so no card
@@ -37,7 +44,7 @@ gap never hints at the answer's length, and highlight the filled text in the
 accent colour. A card asking several spans at once (a named group) fills one span per
 press under `reveal: line`, all at once under `flip`.
 
-The hidden text must appear in the answer exactly as written. When it appears
+The hidden text must appear in the bound block exactly as written. When it appears
 more than once, `occurrence=2` picks the second match; matches snap to word
 boundaries unless the directive says `boundary=char`.
 
@@ -257,6 +264,8 @@ cloze groups and with the same warning, a regrouped card starts its history
 over:
 
 ```
+## Name the organelles
+![a cell](cell.png)
 <!-- blank: rect x=10 y=40 width=80 height=30 hidden="mitochondrion" [organelles] -->
 <!-- blank: rect x=10 y=90 width=80 height=30 hidden="nucleus" [organelles] -->
 ```

@@ -155,6 +155,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with no separate question or answer lines; the shared card-shape guide
   teaches the same shape.
 
+- The bundled tutorial deck's gap-fill card is the sentence on its `##` line,
+  and the book, README and slides describe a blank as hiding text in the
+  block above it.
+
 - An image `blank:` requires `hidden="..."`, like a text blank, and no
   `blank:` accepts one that is empty once grading ignores spaces, invisible
   characters and trailing punctuation. A rect

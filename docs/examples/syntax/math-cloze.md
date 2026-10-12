@@ -26,8 +26,8 @@ $e^{i\pi} + 1 = 0$
 
 ## The derivative of a power
 $$\frac{d}{dx}x^n = n x^{n-1}$$
-<!-- blank: span hidden="n" occurrence=2 b:p2wrn6 -->
-<!-- blank: span hidden="n-1" b:p8wn17 -->
+<!-- blank: span hidden="x^n" b:p2wrn6 -->
+<!-- blank: span hidden="x^{n-1}" b:p8wn17 -->
 > [!NOTE]
 > Two blanks, two sub-cards, drilled separately. The exponent rule fails
 > in two different places, so it is worth separating them.

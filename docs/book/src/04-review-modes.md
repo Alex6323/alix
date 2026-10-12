@@ -25,7 +25,7 @@ frontmatter, or per card with a `<!-- reveal: ... -->` directive (default `flip`
   frontmatter to walk the deck top to bottom.
 
 A card becomes **cloze** (a gap to fill) when a `blank:` directive hides a
-span of its answer; the directive is the trigger, never a `reveal:` value.
+span of the text directly above it; the directive is the trigger, never a `reveal:` value.
 See [cloze cards](06-cloze-direction-images.md).
 
 ```

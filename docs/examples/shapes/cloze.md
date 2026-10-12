@@ -1,7 +1,7 @@
 ---
 title: "Cloze: the sentence cues the term"
 description: >-
-  Hide a span with a blank: span comment below the answer line. The context
+  Hide a span with a blank: span comment directly below its sentence. The context
   does the cueing, so recall is anchored where the term will be used.
 id: "deck-3na8f2nm1bcqhd2cacvam3y23c"
 ---

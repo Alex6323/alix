@@ -28,8 +28,7 @@ a fake "Got it" hides the card before you know it
 > the cards you still need. The three grade taps (Missed it / Partly /
 > Got it) are the whole interface of a review.
 
-## Why does a card you keep getting right appear more and more rarely?
-alix re-shows each card just before you would forget it
+## A card you keep getting right appears more and more rarely, because alix re-shows each card just before you would forget it.
 <!-- blank: span hidden="forget" b:t4mem7 -->
 > [!NOTE]
 > And a card you miss comes back soon. That spacing is the trick
