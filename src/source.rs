@@ -225,6 +225,7 @@ impl SourceBase {
 
         let (file, spec) = parse_locator(&citation.locator);
         let Some(spec) = spec else {
+            current?;
             return Ok(CitationIntegrity::Changed);
         };
         let path = self

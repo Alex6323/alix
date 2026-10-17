@@ -414,6 +414,40 @@ fn plain_doctor_and_repair_mode_both_report_an_unresolvable_live_locator_as_an_e
 }
 
 #[test]
+fn plain_doctor_errors_when_a_fingerprinted_whole_file_live_citation_disappears() {
+    let dir = TempDir::new().unwrap();
+    let source = write(dir.path(), "notes.txt", "one\n");
+    let deck = write(
+        dir.path(),
+        "d.md",
+        "---\nsource: .\n---\n\n## q\nanswer\n<!-- at: notes.txt -->\n",
+    );
+
+    let repair = alix(&["doctor", &deck, "--repair-source-locators"]);
+    assert!(
+        repair.status.success(),
+        "repair doctor: stdout {}\nstderr {}",
+        stdout(&repair),
+        stderr(&repair)
+    );
+    assert!(
+        std::fs::read_to_string(&deck)
+            .unwrap()
+            .contains("fingerprint: xxh64-"),
+        "repair doctor must stamp the live citation"
+    );
+    std::fs::remove_file(source).unwrap();
+
+    let plain = alix(&["doctor", &deck]);
+    assert!(
+        !plain.status.success(),
+        "plain doctor: stdout {}\nstderr {}",
+        stdout(&plain),
+        stderr(&plain)
+    );
+}
+
+#[test]
 fn deck_copy_lands_the_public_deck_and_reports_the_boundary() {
     let dir = TempDir::new().unwrap();
     let source = dir.path().join("source");

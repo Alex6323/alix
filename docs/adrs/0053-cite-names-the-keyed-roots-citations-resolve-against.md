@@ -148,8 +148,8 @@ Locators are written into deck files, so their grammar is decided here.
 ### Who reads what
 
 14. The exam grounds in the deck's own and the manifest's `source:` plus the
-    text every locator cites: the live file for a local locator when present,
-    else its frozen copy, and always the frozen copy for a URL locator. Each
+    text every locator cites, as review serves it (13): the frozen copy for a
+    locator with an `asset:`, the live file for one without. Each
     file counts once, even when reached through nested roots, and is
     truncated as source files are today. Cited text joins the primary
     grounding. A root's uncited files are never read. A deck is exam-eligible
