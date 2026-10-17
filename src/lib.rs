@@ -51,6 +51,7 @@ pub mod inline;
 pub mod invisible;
 pub mod library;
 pub mod listing;
+pub mod locator;
 pub mod log;
 pub mod math;
 pub mod parser;
