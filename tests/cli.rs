@@ -385,6 +385,35 @@ fn check_accepts_a_valid_deck() {
 }
 
 #[test]
+fn plain_doctor_and_repair_mode_both_report_an_unresolvable_live_locator_as_an_error() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join("a")).unwrap();
+    std::fs::create_dir_all(dir.path().join("b")).unwrap();
+    write(&dir.path().join("a"), "x.txt", "one\n");
+    write(&dir.path().join("b"), "y.txt", "two\n");
+    let deck = write(
+        dir.path(),
+        "d.md",
+        "---\nsource:\n  - a\n  - b\n---\n\n## q\nanswer\n<!-- at: 1 -->\n",
+    );
+
+    let plain = alix(&["doctor", &deck]);
+    assert!(
+        !plain.status.success(),
+        "plain doctor: stdout {}\nstderr {}",
+        stdout(&plain),
+        stderr(&plain)
+    );
+    let repair = alix(&["doctor", &deck, "--repair-source-locators"]);
+    assert!(
+        !repair.status.success(),
+        "repair doctor: stdout {}\nstderr {}",
+        stdout(&repair),
+        stderr(&repair)
+    );
+}
+
+#[test]
 fn deck_copy_lands_the_public_deck_and_reports_the_boundary() {
     let dir = TempDir::new().unwrap();
     let source = dir.path().join("source");

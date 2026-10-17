@@ -1092,6 +1092,49 @@ pub fn validate_at_root(deck: &Deck, root: &Path) -> Result<(), AssetError> {
     Ok(())
 }
 
+pub fn unreferenced_objects(deck: &Deck, root: &Path) -> Result<Vec<String>, AssetError> {
+    let deck_id = deck
+        .deck_token
+        .as_deref()
+        .ok_or_else(|| AssetError::MissingDeckId(deck.path.clone()))?;
+    let owned = deck_dir(root, deck_id)?;
+    if !owned.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut referenced: HashSet<String> = HashSet::new();
+    for card in &deck.cards {
+        referenced.extend(card.citations.iter().filter_map(|c| c.asset.clone()));
+        for stamp in &card.diagrams {
+            referenced.insert(stamp.asset.clone());
+            referenced.insert(stamp.geometry.clone());
+        }
+    }
+    let text = read_text(&deck.path)?;
+    referenced.extend(
+        crate::parser::image_references(&text)
+            .iter()
+            .filter_map(|image| Path::new(&image.source).file_name())
+            .map(|name| name.to_string_lossy().into_owned()),
+    );
+    let io_err = |source| AssetError::Io {
+        path: owned.clone(),
+        source,
+    };
+    let mut orphans = Vec::new();
+    for entry in std::fs::read_dir(&owned).map_err(io_err)? {
+        let name = entry
+            .map_err(io_err)?
+            .file_name()
+            .to_string_lossy()
+            .into_owned();
+        if is_object_name(&name) && !referenced.contains(&name) {
+            orphans.push(name);
+        }
+    }
+    orphans.sort();
+    Ok(orphans)
+}
+
 pub fn validate_owned_dir(root: &Path, deck_id: &str) -> Result<(), AssetError> {
     let owned = deck_dir(root, deck_id)?;
     for entry in std::fs::read_dir(&owned).map_err(|source| AssetError::Io {
@@ -2983,6 +3026,51 @@ mod tests {
                 .filter(|line| line.starts_with("<!-- diagram:"))
                 .count(),
             "only the healthy fence is stamped"
+        );
+    }
+
+    #[test]
+    fn a_frozen_deck_references_every_object_until_a_range_change_orphans_the_old_excerpt() {
+        let directory = workspace();
+        let source = directory.path().join("notes.md");
+        std::fs::write(&source, "one\ntwo\nthree\n").unwrap();
+        std::fs::write(directory.path().join("diagram.png"), [0, 1, 2, 255]).unwrap();
+        let path = directory.path().join("decks/facts.md");
+        let text = format!(
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## q\n![d](diagram.png)\na\n<!-- at: notes.md:2 -->\n",
+            crate::parser::yaml_quote(&source.display().to_string())
+        );
+        std::fs::write(&path, &text).unwrap();
+        freeze_member(&path).unwrap();
+
+        let frozen = Deck::load(&path).unwrap();
+        assert_eq!(
+            Vec::<String>::new(),
+            unreferenced_objects(&frozen, directory.path()).unwrap(),
+            "step 1: a freshly frozen deck references its excerpt and its image"
+        );
+
+        let first_excerpt = object_name(b"two\n", "md");
+        let moved = std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .map(|line| {
+                if line.starts_with("<!-- at: ") {
+                    "<!-- at: notes.md:3 -->".to_string()
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&path, moved + "\n").unwrap();
+        freeze_member(&path).unwrap();
+
+        let refrozen = Deck::load(&path).unwrap();
+        assert_eq!(
+            vec![first_excerpt],
+            unreferenced_objects(&refrozen, directory.path()).unwrap(),
+            "step 2: after re-freezing a changed range the old excerpt is orphaned"
         );
     }
 }

@@ -480,6 +480,22 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             frozen_assets_valid = false;
         }
     }
+    if managed && let Some(root) = alix::workspace::root_for_deck(&deck.path) {
+        match alix::assets::unreferenced_objects(deck, &root) {
+            Ok(orphans) => {
+                for orphan in orphans {
+                    report.warn(format!(
+                        "{}: frozen object `{orphan}` is no longer referenced by the deck",
+                        deck.path.display()
+                    ));
+                }
+            }
+            Err(error) => report.warn(format!(
+                "{}: cannot check frozen objects: {error:#}",
+                deck.path.display()
+            )),
+        }
+    }
     if managed && let Ok(text) = std::fs::read_to_string(&deck.path) {
         for image in alix::parser::image_references(&text) {
             if alix::deck::is_url(&image.source) {
@@ -569,6 +585,13 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
                         "the excerpt matches several ranges ({}); review it manually",
                         locators.join(", ")
                     )),
+                    Err(error) if citation.asset.is_none() => {
+                        report.error(format!(
+                            "{}: card at line {}: `at: {}` {error:#}",
+                            deck.subject, card.line, citation.locator
+                        ));
+                        None
+                    }
                     Err(error) => Some(format!("{error:#}")),
                 };
                 if let Some(detail) = detail {
@@ -921,6 +944,13 @@ fn findings_in(dir: &Path) -> Report {
     for path in alix::workspace::misplaced_deck_files(dir).unwrap_or_default() {
         report.warn(format!(
             "{}: workspace decks belong in {}; this file is not discovered",
+            path.display(),
+            dir.join(alix::workspace::DECKS).display()
+        ));
+    }
+    for path in alix::workspace::stray_member_entries(dir).unwrap_or_default() {
+        report.warn(format!(
+            "{}: not a deck; keep only decks in {}",
             path.display(),
             dir.join(alix::workspace::DECKS).display()
         ));
@@ -3649,8 +3679,8 @@ printf ']}}'
             "trace-locator: {warnings}"
         );
         assert!(
-            warnings.contains("cannot read the source"),
-            "dangling `at:` citation: {warnings}"
+            errors.contains("cannot read the source"),
+            "dangling live `at:` citation is an error: {errors}"
         );
         assert!(
             warnings.contains("requires ungrounded") && warnings.contains("`sourceless`"),

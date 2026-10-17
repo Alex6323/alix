@@ -415,6 +415,45 @@ pub struct ClassifiedDecks {
     pub unreadable: Vec<(PathBuf, io::Error)>,
 }
 
+pub fn stray_member_entries(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    if !has_manifest(dir) {
+        return Ok(Vec::new());
+    }
+    let decks = member_dir(dir);
+    let entries = match std::fs::read_dir(&decks) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut stray = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.')
+            || is_sidecar_name(&name)
+            || is_conventional_non_deck(&name)
+            || is_conflict_name(&name)
+        {
+            continue;
+        }
+        if entry.file_type()?.is_dir() {
+            stray.push(path);
+            continue;
+        }
+        let is_deck = path.extension().is_some_and(|extension| extension == "md")
+            && std::fs::read_to_string(&path).is_ok_and(|text| {
+                crate::parser::deck_identity(&text).ok().flatten().is_some()
+                    || crate::parser::is_deck_content(&text)
+            });
+        if !is_deck {
+            stray.push(path);
+        }
+    }
+    stray.sort();
+    Ok(stray)
+}
+
 pub fn classify_deck_files(dir: &Path) -> io::Result<ClassifiedDecks> {
     let candidates = members_where_in(&member_dir(dir), |_| true)?;
     let mut found = ClassifiedDecks::default();
@@ -803,6 +842,50 @@ mod tests {
             .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
         assert_eq!(vec!["deck.md".to_string()], names);
+    }
+
+    #[test]
+    fn every_non_deck_entry_in_a_workspace_decks_folder_is_stray_except_files_other_checks_own() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join(MANIFEST), "");
+        let decks = dir.path().join(DECKS);
+        let rows: [(&str, &str, bool); 11] = [
+            ("deck.md", "## q\na\n", false),
+            (
+                "init.md",
+                "---\nformat-version: 1\nid: \"deck-a\"\n---\n## q\na\n",
+                false,
+            ),
+            ("deck.local.md", "mine\n", false),
+            ("README.md", "# about\n", false),
+            ("deck.md.bak", "## old\nb\n", false),
+            (".hidden", "x\n", false),
+            ("notes.md", "# Notes\n\njust prose\n", true),
+            ("scratch.txt", "x\n", true),
+            ("gone.md.bak", "## old\nb\n", false),
+            ("deck.md.sync-conflict-1.md", "## q\na\n", false),
+            ("sub/nested.md", "## q\na\n", true),
+        ];
+        for (name, text, _) in rows {
+            let path = decks.join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            write(&path, text);
+        }
+
+        let stray: Vec<String> = stray_member_entries(dir.path())
+            .unwrap()
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+
+        for (name, _, expected) in rows {
+            let top = name.split('/').next().unwrap();
+            assert_eq!(
+                expected,
+                stray.iter().any(|s| s == top),
+                "entry `{name}`: expected stray={expected}, stray list {stray:?}"
+            );
+        }
     }
 
     #[test]

@@ -401,6 +401,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix doctor` now reports a live `at:` citation it cannot resolve (a missing
+  file, or a line-only locator on a deck with several sources) as an error in
+  every mode; plain doctor used to pass it with a warning.
+
+- `alix doctor` warns about a frozen excerpt or image in a deck's asset folder
+  that the deck no longer references, such as the old excerpt left behind
+  after a citation's range changed and the deck was initialized again.
+
+- `alix doctor` warns about a subfolder, a prose file, or any other non-deck
+  entry in a workspace's `decks/` folder. Hidden files, personal `.local.md`
+  files, `README`/`LICENSE`, backups and sync-conflict copies keep their own
+  handling.
+
 - A card whose `$$` display math runs across a `##` line no longer gains a new
   id line every time the deck is stamped; its id now lands after the math.
 

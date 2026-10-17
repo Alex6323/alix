@@ -261,7 +261,11 @@ notes it.
   initialized, invalid or orphaned per-deck progress or augmentation documents,
   and synchronization conflict copies. Workspace checks also reject live source
   evidence, missing or cross-deck assets, local images outside the owning deck
-  directory, and SHA-256 filenames that do not match their bytes. `--backends` additionally
+  directory, and SHA-256 filenames that do not match their bytes. They warn
+  about a frozen object the deck no longer references and about any non-deck
+  entry in `decks/` (hidden files, personal `.local.md` files, `README`/`LICENSE`,
+  backups and conflict copies excepted). A live `at:` citation that does not
+  resolve is an error. `--backends` additionally
   probes the configured AI backend end to end (one real, tiny request);
   `--all-backends` probes all four. `--grading` spot-checks the configured
   model's exam grading against the hand-labeled calibration probes (a few
