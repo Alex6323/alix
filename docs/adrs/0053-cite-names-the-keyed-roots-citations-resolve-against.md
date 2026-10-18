@@ -51,9 +51,13 @@ Locators are written into deck files, so their grammar is decided here.
 ### Keys and their jobs
 
 1. `cite:` lists **keyed roots**: the places locators resolve against and
-   freezing copies from. A root is a local directory or a URL. `source:` keeps
-   its meaning: any path or URL the exam grounds in, unkeyed. `link:`
-   (reading for the tutor that the exam ignores) is unchanged.
+   freezing copies from. A root is a local directory or a URL. `source:` is
+   renamed `exam:`, in decks and in the manifest: any path or URL the exam
+   grounds in, unkeyed. `link:` (reading for the tutor that the exam
+   ignores) is unchanged. One key, one job: `exam:` decides what the exam
+   reads, `cite:` where card evidence comes from, `link:` extra reading for
+   the tutor only. The tutor also lists `exam:` entries as context and may
+   browse a `cite:` root (15).
 
 2. Every root has a key, even when there is only one. In a deck:
 
@@ -78,13 +82,13 @@ Locators are written into deck files, so their grammar is decided here.
    is not a string, and a key used twice in one deck's list are errors.
 
 4. A member deck sees the manifest's keys plus its own. A deck key that
-   repeats a manifest key is an error, never an override. Where a rule below
-   needs "the first key", it is the first in the deck's own list, else the
-   manifest's first in key-name order (TOML tables have no order).
+   repeats a manifest key is an error, never an override.
 
 5. A local root is written as a platform path. A relative root resolves
    against the workspace folder, or the deck's own folder for a loose deck.
-   Roots may nest. A local root that is a file is an error.
+   A local root that is a file is an error. Two roots a deck sees (its own
+   and the manifest's) may not contain one another, compared after resolving
+   symlinks; nesting is an error naming both keys.
 
 6. A URL root is provenance only: alix never fetches it. Only a member deck
    may declare one; a loose deck that does is an error. Every locator under a
@@ -147,39 +151,41 @@ Locators are written into deck files, so their grammar is decided here.
 
 ### Who reads what
 
-14. The exam grounds in the deck's own and the manifest's `source:` plus the
-    text every locator cites, as review serves it (13): the frozen copy for a
-    locator with an `asset:`, the live file for one without. Each
-    file counts once, even when reached through nested roots, and is
-    truncated as source files are today. Cited text joins the primary
-    grounding. A root's uncited files are never read. A deck is exam-eligible
-    when it or its manifest has a `source:`, or it has at least one locator.
+14. The exam grounds only in `exam:`, the deck's own and the manifest's, as
+    `source:` is read today. It never reads `cite:` roots or cited text. A
+    deck is exam-eligible only when it or its manifest declares `exam:`. To
+    examine a cited file, list it under `exam:` too.
 
 15. With `source_access` on, the tutor browses the root of the first local
-    key among the card's locators, else the first local key (4). A URL root
-    is never browsed.
+    key among the card's locators. A card without a local locator browses a
+    root only when the deck sees exactly one local root; otherwise none. A
+    URL root is never browsed.
 
 16. A generator that writes locators (`alix workspace generate`, trace
     builds) declares its input as a root under the key `src`;
     `workspace generate` writes it into the manifest. A generator that
     writes none (a facts deck from `alix deck generate`) declares its input
-    as `source:`, as today. When a manifest root
-    already contains a local input, the generator reuses the deepest such
-    key. An input outside every manifest root while the manifest declares
+    as `exam:`. When a manifest root
+    already contains a local input, the generator reuses that key. An input outside every manifest root while the manifest declares
     `src` is an error. A URL trace build freezes each cited passage under its
     URL root; outside a workspace it is an error.
 
-17. Deck transfer (`alix deck copy|move`) writes the moved deck's inherited
-    keys into its own `cite:`, and makes every relative local root, its own
-    and inherited, absolute against the old workspace. In the
-    destination, a deck key that repeats a manifest key with the same root
-    (same absolute path, or same URL) is dropped from the deck; any other
-    repeat makes the transfer refuse.
+17. Deck transfer (`alix deck copy|move`) changes neither manifest and does
+    not rewrite the deck. It is allowed only when every key the deck's
+    locators use resolves in the destination, through the deck's own `cite:`
+    or the destination's manifest, to the same root as in the source (local
+    roots as canonical absolute paths, URLs as exact strings). Otherwise it
+    refuses, naming each key and both roots.
 
 ## Consequences
 
 - Citation roots and exam ground truth no longer share one key, so each can
   change without breaking the other.
+- A deck that cites but declares no `exam:` cannot be examined, as a deck
+  without a source cannot be today. A code deck that should be examined lists
+  its files under `exam:` as well as its root under `cite:`. The exam reads
+  each `exam:` entry as one file, so a directory entry still fails until the
+  exam can read directories.
 - Every existing locator lacks a key and stops resolving. Single-file-source
   traces (`at: 1-2`) and URL traces (`at: <sentence>`) are included. This is
   a pre-1.0 break; decks are rewritten by tooling outside the repository,
@@ -215,8 +221,9 @@ Locators are written into deck files, so their grammar is decided here.
 
 ## Compatibility
 
-Changes the deck frontmatter (new `cite:`), the workspace manifest (new
-`[cite]`), and the locator grammar. Supersedes the tokenizing rule of ADR
+Changes the deck frontmatter (new `cite:`, `source:` renamed `exam:`), the
+workspace manifest (new `[cite]`, `source` renamed `exam`), and the locator
+grammar. A deck or manifest still using `source` fails as an unknown key. Supersedes the tokenizing rule of ADR
 0026's "Locator fields"; the field order and the `fingerprint:` and `asset:`
 fields are unchanged. Old locators fail as ordinary invalid input; no reader
 accepts the old form.
@@ -228,8 +235,8 @@ accepts the old form.
   outside the declared roots.
 - A root itself may be any local directory, including an absolute one. A
   received deck can therefore declare a root such as `/` and cite any file
-  under it into its frozen assets and the exam. Local `source:` entries carry
-  the same exposure today. Whether received decks may declare absolute or
+  under it into its frozen assets. Local `exam:` entries carry the same
+  exposure for the exam, as `source:` does today. Whether received decks may declare absolute or
   out-of-workspace roots is left to the receive path, not decided here.
 - No new network access: URL roots are never fetched.
 
