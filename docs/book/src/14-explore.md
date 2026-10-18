@@ -37,7 +37,8 @@ goes like this: the plan prints, `alix` confirms
 explores the source **once** and reuses that single session to fill every item —
 predict-verify checkpoints for the traces, fact cards for the decks — so the
 [workspace](08-workspaces.md) comes out review-ready in one command: an
-`alix.toml` (carrying the goal; `--title` names it) and one file per item under
+`alix.toml` (carrying the goal and the source as the `[cite]` root `src`, which
+every generated locator names; `--title` names it) and one file per item under
 `decks/`: a `trace:` deck per trace and a `exam:` facts deck per deck, wired together
 with `requires:` so they unlock in dependency order, each `exam:` pointing
 back at the real source. Writing the whole set from one understanding keeps the
@@ -75,7 +76,9 @@ Before you even know what to trace, `alix deck generate <source> --trace` builds
 short **tour of the source's shape**, written as a trace deck: you predict what
 kind of program it is (from the manifest), its domain nouns (from the module
 list), how it's driven (the entry point), its spine (the central file), and
-finally the first paths worth tracing — each hop revealing the real lines. It's
+finally the first paths worth tracing, each hop revealing the real lines
+cited under the `cite:` root `src` it declares for the source, as
+[a trace build](13-trace-decks.md) does. It's
 written to a file (`-o`, default `explore.md`; `--into` places it inside a
 workspace), and you trace it from the [web picker](15-the-web-app.md): run `alix`
 and pick it.

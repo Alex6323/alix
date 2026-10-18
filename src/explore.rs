@@ -18,7 +18,7 @@ use crate::{
     source::resolve_source,
     store::Store,
     title,
-    trace_ai::{build_run_config, clean_to_cards},
+    trace_ai::{BuiltTrace, build_run_config, clean_to_cards, trace_root},
     workspace,
 };
 
@@ -135,29 +135,33 @@ fn explore_prompt(source: &str, spec: &GenerationSpec, url: bool, cfg: &TraceCon
 
 pub fn trace(
     source: &str,
+    out: &Path,
     spec: &GenerationSpec,
     cfg: &TraceConfig,
     ask_cfg: &AskConfig,
-) -> Result<String> {
-    let url = is_url(source);
-    ensure_source_reachable(ask_cfg, url)?;
-    let cwd = if url {
-        None
-    } else {
-        let (base_dir, _) = resolve_source(None, Some(source));
-        Some(base_dir)
-    };
-    let prompt = trace_prompt(source, spec, url, cfg);
-    let run_cfg = build_run_config(cfg, ask_cfg, cwd, url);
+) -> Result<BuiltTrace> {
+    let root = trace_root(out, &[], source)?;
+    ensure_source_reachable(ask_cfg, root.url)?;
+    let prompt = trace_prompt(source, spec, root.url, root.locator_prefix(), cfg);
+    let run_cfg = build_run_config(cfg, ask_cfg, root.cwd.clone(), root.url);
     let raw = ask::run(&run_cfg, &prompt, &[])?;
     let cards = clean_to_cards(&raw);
     if cards.trim().is_empty() {
         bail!("the explore trace produced no checkpoints");
     }
-    Ok(cards)
+    Ok(BuiltTrace {
+        cards,
+        cite: root.cite(),
+    })
 }
 
-fn trace_prompt(source: &str, spec: &GenerationSpec, url: bool, cfg: &TraceConfig) -> String {
+fn trace_prompt(
+    source: &str,
+    spec: &GenerationSpec,
+    url: bool,
+    locator_prefix: &str,
+    cfg: &TraceConfig,
+) -> String {
     let goal = &spec.goal;
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
@@ -168,10 +172,14 @@ fn trace_prompt(source: &str, spec: &GenerationSpec, url: bool, cfg: &TraceConfi
             .to_string()
     };
     let locator = if url {
-        "a short quoted span from the page — the exact words the answer rests on"
+        "a short quoted span from the page — the exact words the answer rests on".to_string()
     } else {
-        "ONE contiguous range, `file:start-end`, relative to the source root (e.g. \
-         `Cargo.toml:8-20` or `src/lib.rs:12-33`) — never comma-separated"
+        format!(
+            "ONE contiguous range, `{locator_prefix}<file>:start-end` where `<file>` is \
+             relative to the source root (e.g. `{locator_prefix}Cargo.toml:8-20` or \
+             `{locator_prefix}src/lib.rs:12-33`), with the `{locator_prefix}` part written \
+             exactly as given; never comma-separated"
+        )
     };
     let mut p = format!(
         "You are building an EXPLORE trace: a short predict-and-verify trace deck that \
@@ -299,11 +307,11 @@ fn fill_prompt(items: &[Item], spec: &GenerationSpec) -> String {
          number) followed by its content:\n\
          - a [trace] → the predict-verify CHECKPOINT cards: each is a `## ` question \
          at column 0 (never indented), then its key points as plain unindented \
-         lines, an `<!-- at: file:start-end -->` locator line citing the REAL \
+         lines, an `<!-- at: src:file:start-end -->` locator line citing the REAL \
          lines, and an optional `> [!NOTE]` note. Each hop opens on the previous reveal, \
          predicts forward, and its key points are grounded in the cited lines.\n\
          - a [deck] → FACT cards: each is a `## ` front at column 0, followed by \
-         the required deck-card shape below, plus an `<!-- at: file:start-end -->` \
+         the required deck-card shape below, plus an `<!-- at: src:file:start-end -->` \
          locator line citing the REAL lines whenever the fact maps to a specific \
          range (so the card can show its source on reveal; omit it when the fact \
          synthesizes across several places). One fact per card, concise and \
@@ -313,10 +321,11 @@ fn fill_prompt(items: &[Item], spec: &GenerationSpec) -> String {
          {card_format}\n\n\
          The selected card style applies to [deck] items. [trace] items retain \
          their predict-and-verify checkpoint shape.\n\n\
-         Every `at:` `file` part MUST be written relative to the SAME root — the \
-         source root you explored (your working directory) — as ONE consistent path \
-         per file across ALL items; never drop or add a leading directory (always \
-         `src/foo.rs`, never sometimes `foo.rs`), so the frozen citations all resolve.\n\n\
+         Every `at:` locator starts with `src:`, the key naming the source root you \
+         explored (your working directory). Its `file` part MUST be written relative \
+         to that root as ONE consistent path per file across ALL items; never drop or \
+         add a leading directory (always `src:src/foo.rs`, never sometimes \
+         `src:foo.rs`), so the frozen citations all resolve.\n\n\
          Do NOT emit any frontmatter (`trace:`, `exam:`, `requires:` keys) or a \
          `# ` title — those are already written; output only the `## ` cards. \
          Output ONLY the delimited item bodies: no preamble, no code fences, nothing \
@@ -477,6 +486,14 @@ pub fn materialize(
     if let Some(source) = public_url.or_else(|| root.as_ref().and_then(|path| path.to_str())) {
         manifest.push_str(&format!("exam = \"{}\"\n", toml_escape(source)));
     }
+    let cite_root = root
+        .as_ref()
+        .map_or_else(|| source.to_string(), |path| path.display().to_string());
+    manifest.push_str(&format!(
+        "\n[cite]\n{} = \"{}\"\n",
+        crate::cite::GENERATED_KEY,
+        toml_escape(&cite_root)
+    ));
     fs::write(dir.join(crate::workspace::MANIFEST), manifest)?;
 
     let mut traces = 0;
@@ -858,6 +875,7 @@ mod tests {
             ".",
             &spec("understand the source"),
             false,
+            "src:",
             &TraceConfig::default(),
         );
 
@@ -887,10 +905,10 @@ mod tests {
         ];
         let p = fill_prompt(&items, &spec("understand the source"));
         assert!(p.contains("FACT cards"));
-        assert!(p.contains("<!-- at: file:start-end -->"));
+        assert!(p.contains("<!-- at: src:file:start-end -->"));
         assert!(!p.contains("TAB-indented"));
         assert!(p.contains("show its source on reveal"));
-        assert!(p.contains("relative to the SAME root"));
+        assert!(p.contains("starts with `src:`"));
         assert!(p.contains("enumeration"));
         assert!(p.contains("split it"));
     }
@@ -962,7 +980,13 @@ mod tests {
         let mut spec = spec("understand the repo");
         spec.language = Some("German".to_string());
         spec.audience = Some("new contributors".to_string());
-        let p = trace_prompt(".", &spec, false, &TraceConfig::default());
+        let p = trace_prompt(
+            ".",
+            &spec,
+            false,
+            "code:crates/core/",
+            &TraceConfig::default(),
+        );
         assert!(p.contains("EXPLORE trace"));
         assert!(p.contains("PREDICT its"));
         assert!(p.contains("DOMAIN NOUNS"));
@@ -970,6 +994,7 @@ mod tests {
         assert!(p.contains("CITE REAL STRUCTURAL EVIDENCE"));
         assert!(p.contains("candidate traces"));
         assert!(p.contains("<!-- at:"));
+        assert!(p.contains("`code:crates/core/<file>:start-end`"));
         assert!(p.contains("Read, Glob"));
         assert!(p.contains("German"));
         assert!(p.contains("new contributors"));
@@ -997,6 +1022,7 @@ mod tests {
                     ".",
                     &spec("understand the repo"),
                     false,
+                    "src:",
                     &TraceConfig {
                         extra: Some("  Focus on state transitions.  ".to_string()),
                         ..TraceConfig::default()
@@ -1033,6 +1059,7 @@ mod tests {
                     ".",
                     &spec("understand the repo"),
                     false,
+                    "src:",
                     &TraceConfig {
                         extra: Some("   \n\t".to_string()),
                         ..TraceConfig::default()
@@ -1059,17 +1086,22 @@ mod tests {
             dir.path(),
             "## What happens next?\nThe parser builds a card.\n",
         );
+        let source = dir.path().join("source");
+        fs::create_dir(&source).unwrap();
+        let source = fs::canonicalize(source).unwrap().display().to_string();
 
-        let checkpoints = trace(
-            "https://example.org/source",
+        let built = trace(
+            &source,
+            &dir.path().join("explore.md"),
             &spec("understand the path"),
             &TraceConfig::default(),
             &ask_config(&cli),
         )
         .unwrap();
 
-        assert!(checkpoints.contains("What happens next?"));
-        assert!(checkpoints.contains("parser builds a card"));
+        assert!(built.cards.contains("What happens next?"));
+        assert!(built.cards.contains("parser builds a card"));
+        assert_eq!(Some(("src".to_string(), source)), built.cite);
     }
 
     const SAMPLE_PLAN: &str = "\
@@ -1126,6 +1158,7 @@ Spine   a -> b
         assert!(manifest.contains("description = \"understand the repo\""));
         assert!(!manifest.contains("title ="));
         assert!(manifest.contains("exam = "), "{manifest}");
+        assert!(manifest.contains("\n[cite]\nsrc = "), "{manifest}");
         assert!(!manifest.contains("origin"), "{manifest}");
 
         let deck = fs::read_to_string(dir.join("decks/01-the-deck-format.md")).unwrap();
@@ -1214,13 +1247,13 @@ back a
 === item 2 ===
 # question
 \tkey point
-<!-- at: src/x.rs:1-3 -->
+<!-- at: src:src/x.rs:1-3 -->
 === item 3 ===
 ";
         let filled = parse_filled(raw);
         assert_eq!(2, filled.len());
         assert!(filled[&1].contains("## front a"));
-        assert!(filled[&2].contains("<!-- at: src/x.rs:1-3 -->"));
+        assert!(filled[&2].contains("<!-- at: src:src/x.rs:1-3 -->"));
         assert!(!filled.contains_key(&3));
     }
 
@@ -1231,7 +1264,7 @@ back a
         let mut filled = HashMap::new();
         filled.insert(
             2usize,
-            "## how does text become Cards?\nparse_str runs a state machine\n<!-- at: src/parser.rs:1-9 -->"
+            "## how does text become Cards?\nparse_str runs a state machine\n<!-- at: src:src/parser.rs:1-9 -->"
                 .to_string(),
         );
 
@@ -1241,7 +1274,7 @@ back a
         let trace = fs::read_to_string(dir.join("decks/02-how-text-becomes-cards.md")).unwrap();
         assert!(trace.contains("trace: \"How Text Becomes Cards\""));
         assert!(trace.contains("## how does text become Cards?"));
-        assert!(trace.contains("<!-- at: src/parser.rs:1-9 -->"));
+        assert!(trace.contains("<!-- at: src:src/parser.rs:1-9 -->"));
         let deck = fs::read_to_string(dir.join("decks/01-the-deck-format.md")).unwrap();
         assert!(deck.contains("Stub from `alix workspace generate`"));
 

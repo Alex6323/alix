@@ -1,18 +1,90 @@
 //! Split out of `trace` so the core trace compiles without the AI backend.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow, bail};
 
 use crate::{
     ask,
     backend::{backend_for, ensure_source_reachable},
+    cite::GeneratedRoot,
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
     source::resolve_source,
 };
 
-pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuiltTrace {
+    pub cards: String,
+    pub cite: Option<(String, String)>,
+}
+
+impl BuiltTrace {
+    pub fn deck_text(&self, path: &Path, existing: &str) -> Result<String> {
+        let text = crate::deck::trace_checkpoint_text(path, existing, &self.cards)?;
+        Ok(match &self.cite {
+            Some((key, value)) => crate::deck::with_added_cite(&text, key, value)?,
+            None => text,
+        })
+    }
+}
+
+pub(crate) struct TraceRoot {
+    pub url: bool,
+    pub cwd: Option<PathBuf>,
+    pub root: Option<GeneratedRoot>,
+}
+
+impl TraceRoot {
+    pub(crate) fn locator_prefix(&self) -> &str {
+        self.root
+            .as_ref()
+            .map_or("", |root| root.locator_prefix.as_str())
+    }
+
+    pub(crate) fn cite(&self) -> Option<(String, String)> {
+        let root = self.root.as_ref()?;
+        Some((root.key.clone(), root.declare.clone()?))
+    }
+}
+
+pub(crate) fn trace_root(
+    deck_path: &Path,
+    deck_cite: &[(String, String)],
+    source: &str,
+) -> Result<TraceRoot> {
+    if is_url(source) {
+        if crate::workspace::root_for_deck(deck_path).is_none() {
+            bail!(
+                "{} traces the url {source}, whose cited passages are frozen into a workspace; only a workspace member deck can trace a url",
+                deck_path.display()
+            );
+        }
+        return Ok(TraceRoot {
+            url: true,
+            cwd: None,
+            root: None,
+        });
+    }
+    let content_root = crate::workspace::content_root(deck_path);
+    let (base_dir, file) = resolve_source(Some(&content_root), Some(source));
+    let declare_as = match file {
+        Some(_) => Path::new(source)
+            .parent()
+            .map(|parent| parent.to_string_lossy().into_owned())
+            .filter(|parent| !parent.is_empty())
+            .unwrap_or_else(|| ".".to_string()),
+        None => source.to_string(),
+    };
+    let root = crate::cite::generated_root_for_deck(deck_path, deck_cite, &base_dir, &declare_as)?;
+    Ok(TraceRoot {
+        url: false,
+        cwd: Some(base_dir),
+        root: Some(root),
+    })
+}
+
+pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<BuiltTrace> {
     let description = deck
         .trace
         .as_deref()
@@ -21,23 +93,19 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
         .exam
         .first()
         .ok_or_else(|| anyhow!("{} declares no `exam:` scope to trace", deck.subject))?;
-    let url = is_url(source);
-    ensure_source_reachable(ask_cfg, url)?;
-    let cwd = if url {
-        None
-    } else {
-        let content_root = crate::workspace::content_root(&deck.path);
-        let (base_dir, _) = resolve_source(Some(&content_root), Some(source));
-        Some(base_dir)
-    };
-    let prompt = build_prompt(description, source, url, cfg);
-    let run_cfg = build_run_config(cfg, ask_cfg, cwd, url);
+    let root = trace_root(&deck.path, &deck.cite, source)?;
+    ensure_source_reachable(ask_cfg, root.url)?;
+    let prompt = build_prompt(description, source, root.url, root.locator_prefix(), cfg);
+    let run_cfg = build_run_config(cfg, ask_cfg, root.cwd.clone(), root.url);
     let raw = ask::run(&run_cfg, &prompt, &[])?;
     let cards = clean_to_cards(&raw);
     if cards.trim().is_empty() {
         bail!("the build produced no checkpoints");
     }
-    Ok(cards)
+    Ok(BuiltTrace {
+        cards,
+        cite: root.cite(),
+    })
 }
 
 pub fn suggest(source: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
@@ -89,7 +157,13 @@ pub(crate) fn build_run_config(
     }
 }
 
-fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -> String {
+fn build_prompt(
+    description: &str,
+    source: &str,
+    url: bool,
+    locator_prefix: &str,
+    cfg: &TraceConfig,
+) -> String {
     let explore = if url {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
     } else {
@@ -101,10 +175,14 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
     };
     let locator = if url {
         "a short quoted span from the page — the exact sentence(s) the key points rest on"
+            .to_string()
     } else {
-        "ONE contiguous range, `file:start-end` (or `file:N` for a single line) \
-         relative to the source root, e.g. `src/session.rs:682-689` — NEVER \
-         comma-separated ranges"
+        format!(
+            "ONE contiguous range, `{locator_prefix}<file>:start-end` (or \
+             `{locator_prefix}<file>:N` for a single line) where `<file>` is relative to \
+             the source root, e.g. `{locator_prefix}src/session.rs:682-689`. Write the \
+             `{locator_prefix}` part exactly as given, and NEVER comma-separated ranges"
+        )
     };
     let mut p = format!(
         "You are tracing ONE path through a source so a learner can UNDERSTAND it by \
@@ -344,11 +422,18 @@ mod tests {
 
     #[test]
     fn build_prompt_carries_goal_source_format_and_rules() {
-        let p = build_prompt("how X becomes Y", ".", false, &TraceConfig::default());
+        let p = build_prompt(
+            "how X becomes Y",
+            ".",
+            false,
+            "code:crates/core/",
+            &TraceConfig::default(),
+        );
         assert!(p.contains("how X becomes Y"));
         assert!(p.contains("Source (the scope): ."));
         assert!(p.contains("Read, Glob"));
-        assert!(p.contains("file:start-end"));
+        assert!(p.contains("`code:crates/core/<file>:start-end`"));
+        assert!(p.contains("`code:crates/core/src/session.rs:682-689`"));
         assert!(p.contains("ONE CONTIGUOUS RANGE"));
         assert!(p.contains("## <the question"));
         assert!(p.contains("<!-- at:"));
@@ -371,7 +456,13 @@ mod tests {
 
     #[test]
     fn build_prompt_example_writes_a_badged_note() {
-        let prompt = build_prompt("how X becomes Y", ".", false, &TraceConfig::default());
+        let prompt = build_prompt(
+            "how X becomes Y",
+            ".",
+            false,
+            "src:",
+            &TraceConfig::default(),
+        );
 
         assert!(
             prompt.contains("> [!NOTE]\n> <one connecting insight, shown after the reveal>"),
@@ -420,7 +511,7 @@ mod tests {
 
     #[test]
     fn build_prompt_url_uses_webfetch_and_quoted_span() {
-        let p = build_prompt("how X", "https://x", true, &TraceConfig::default());
+        let p = build_prompt("how X", "https://x", true, "", &TraceConfig::default());
         assert!(p.contains("WebFetch"));
         assert!(p.contains("quoted span"));
         assert!(!p.contains("Glob"));
@@ -432,7 +523,7 @@ mod tests {
             extra: Some("trace the read path".to_string()),
             ..TraceConfig::default()
         };
-        let p = build_prompt("g", ".", false, &cfg);
+        let p = build_prompt("g", ".", false, "src:", &cfg);
         assert!(p.contains("Additional instructions:"));
         assert!(p.contains("trace the read path"));
     }
@@ -499,8 +590,8 @@ mod tests {
 
     #[test]
     fn clean_to_cards_strips_fence_and_preamble() {
-        let raw = "Here is the trace:\n```text\n## Q1\np\n<!-- at: 1 -->\n```";
-        assert_eq!("## Q1\np\n<!-- at: 1 -->", clean_to_cards(raw));
+        let raw = "Here is the trace:\n```text\n## Q1\np\n<!-- at: src:a.rs:1 -->\n```";
+        assert_eq!("## Q1\np\n<!-- at: src:a.rs:1 -->", clean_to_cards(raw));
     }
 
     #[test]
@@ -516,7 +607,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(
             dir.path(),
-            "## Q1\np1\n<!-- at: 1 -->\n## Q2\np2\n<!-- at: 2 -->\n",
+            "## Q1\np1\n<!-- at: src:a.rs:1 -->\n## Q2\np2\n<!-- at: src:a.rs:2 -->\n",
         );
         let path = write(
             dir.path(),
@@ -524,10 +615,15 @@ mod tests {
             "---\ntrace: how it works\nexam: .\n---\n",
         );
         let deck = Deck::load(&path).unwrap();
-        let cards = build(&deck, &TraceConfig::default(), &ask_config(&cli)).unwrap();
-        assert!(cards.starts_with("## Q1"));
-        assert!(cards.contains("## Q2"));
-        assert!(cards.contains("<!-- at: 2 -->"));
+        let built = build(&deck, &TraceConfig::default(), &ask_config(&cli)).unwrap();
+        assert!(built.cards.starts_with("## Q1"));
+        assert!(built.cards.contains("## Q2"));
+        assert!(built.cards.contains("<!-- at: src:a.rs:2 -->"));
+        assert_eq!(
+            Some(("src".to_string(), ".".to_string())),
+            built.cite,
+            "a loose deck tracing its own folder declares it as `src`"
+        );
     }
 
     fn freeze_workspace(root: &Path) -> PathBuf {

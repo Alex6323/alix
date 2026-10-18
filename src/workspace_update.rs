@@ -51,13 +51,12 @@ links, and unrelated frontmatter.
 - Remove cards the current source no longer supports.
 - Add only important new propositions that deepen understanding.
 - Keep one idea per card and avoid duplicates.
-- Keep `exam:` exactly as supplied in the input deck.
-- Use live `<!-- at: path:start-end -->` locators relative to the source root. \
-Read the real lines and never guess. Do not include fingerprints or `from`.
+- Keep `exam:` and `cite:` exactly as supplied in the input deck.
+- Use live `<!-- at: key:path:start-end -->` locators. `key` names one of the \
+citation roots listed below and `path` is relative to that root. Keep the key \
+of every existing locator. Read the real lines and never guess. Do not include \
+fingerprints or assets.
 - Keep the Alix Markdown deck grammar exactly.
-
-CURRENT DECK IN LIVE-SOURCE PROPOSAL FORM:
-
 ";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -500,7 +499,7 @@ fn stage_member(
     } = against;
     let staged_path = staging.join(relative);
 
-    let proposed = reconcile(&live_deck, live_source, generate, ask)?;
+    let proposed = reconcile(&live_deck, deck, live_source, generate, ask)?;
     fs::write(&staged_path, proposed.as_bytes())
         .with_context(|| format!("cannot write {}", staged_path.display()))?;
 
@@ -691,14 +690,29 @@ fn reconcile_run_config(
 
 fn reconcile(
     live_deck: &str,
+    deck: &Deck,
     source: &str,
     generate: &GenerateDeckConfig,
     ask: &AskConfig,
 ) -> Result<String> {
     let run = reconcile_run_config(source, generate, ask)?;
-    let prompt = format!("{UPDATE_PROMPT}{live_deck}");
+    let prompt = update_prompt(live_deck, &CitationRoots::for_deck(deck));
     let raw = crate::ask::run(&run, &prompt, &[])?;
     clean_model_output(&raw)
+}
+
+fn update_prompt(live_deck: &str, roots: &CitationRoots) -> String {
+    let roots: String = roots
+        .visible()
+        .iter()
+        .map(|visible| match &visible.root {
+            crate::cite::Root::Local(path) => format!("- {}: {}\n", visible.key, path.display()),
+            crate::cite::Root::Url(url) => format!("- {}: {url}\n", visible.key),
+        })
+        .collect();
+    format!(
+        "{UPDATE_PROMPT}\nCITATION ROOTS:\n{roots}\nCURRENT DECK IN LIVE-SOURCE PROPOSAL FORM:\n\n{live_deck}"
+    )
 }
 
 fn clean_model_output(raw: &str) -> Result<String> {
@@ -778,6 +792,12 @@ fn validate_proposal_metadata(current: &Deck, candidate: &Deck, source: &str) ->
     {
         bail!(
             "{} changed deck metadata outside the source update boundary",
+            candidate.path.display()
+        );
+    }
+    if candidate.cite != current.cite {
+        bail!(
+            "{} changed `cite:` instead of preserving the deck's citation roots",
             candidate.path.display()
         );
     }
@@ -1425,6 +1445,54 @@ mod tests {
         assert!(
             validate_proposal_metadata(&current, &same, "src").is_ok(),
             "an unchanged pair must pass"
+        );
+    }
+
+    #[test]
+    fn a_proposal_may_not_drop_or_change_the_cite_roots() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: src\ncite:\n  - src: src\n---\n## q\na\n<!-- id: card-q1 -->\n";
+        let write_deck = |name: &str, text: &str| {
+            let path = dir.path().join(name);
+            fs::write(&path, text).unwrap();
+            Deck::load(&path).unwrap()
+        };
+        let current = write_deck("current.md", base);
+        for (label, text) in [
+            ("a dropped cite", base.replace("cite:\n  - src: src\n", "")),
+            (
+                "a moved root",
+                base.replace("  - src: src\n", "  - src: elsewhere\n"),
+            ),
+            (
+                "a renamed key",
+                base.replace("  - src: src\n", "  - code: src\n"),
+            ),
+            (
+                "an added root",
+                base.replace("  - src: src\n", "  - src: src\n  - docs: docs\n"),
+            ),
+        ] {
+            let candidate = write_deck("candidate.md", &text);
+            let error = validate_proposal_metadata(&current, &candidate, "src").unwrap_err();
+            assert!(
+                format!("{error:#}").contains("`cite:`"),
+                "row `{label}`: {error:#}"
+            );
+        }
+        assert!(
+            UPDATE_PROMPT.contains("Keep `exam:` and `cite:` exactly as supplied"),
+            "the prompt names the guarded key: {UPDATE_PROMPT}"
+        );
+        let prompt = update_prompt("BODY", &CitationRoots::for_deck(&current));
+        assert!(
+            prompt.contains(&format!(
+                "CITATION ROOTS:\n- src: {}\n",
+                std::path::absolute(dir.path().join("src"))
+                    .unwrap()
+                    .display()
+            )) && prompt.ends_with("PROPOSAL FORM:\n\nBODY"),
+            "the prompt lists each key with its root before the deck: {prompt}"
         );
     }
 

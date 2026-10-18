@@ -125,6 +125,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Generators that write locators declare their input under the `cite:` key
+  `src`. `alix workspace generate` writes `[cite] src = "<source>"` into the
+  manifest and cites `src:<path>:<lines>`. A trace build and
+  `alix deck generate --trace` add `- src: <dir>` to the deck's `cite:` (for a
+  file, its folder), unless a root the deck already sees holds the input, in
+  which case they reuse that key. An input outside every root while `src` is
+  taken stops the build before the model is called. `alix workspace update`
+  refuses a proposal that changes the deck's `cite:`.
+
 - Every `<!-- at: -->` locator names a `cite:` key: `<key>:<path>[:<lines>]`,
   or a bare `<key>` for the frozen passage of a URL root. A locator without a
   key, a key no root declares, or a path that leaves its root is an error for
@@ -422,6 +431,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Pre-1.0: re-pair once after upgrading.
 
 ### Fixed
+
+- A URL trace build outside a workspace now stops before calling the model
+  instead of writing a deck that does not parse.
 
 - Drift was judged against a deck's first local source whatever root a
   citation came from, so an unchanged file under a later source was reported

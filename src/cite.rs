@@ -179,6 +179,110 @@ fn visible_root(key: &str, value: &str, base: &Path) -> VisibleRoot {
     }
 }
 
+pub const GENERATED_KEY: &str = "src";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratedRoot {
+    pub key: String,
+    pub locator_prefix: String,
+    pub declare: Option<String>,
+}
+
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum GeneratedRootError {
+    #[error("`cite:` roots are invalid: {}", violations(.0))]
+    InvalidRoots(Vec<CiteViolation>),
+    #[error("cannot read the input {}: {reason}", .input.display())]
+    Unreadable { input: PathBuf, reason: String },
+    #[error(
+        "the input {} lies outside every `cite:` root, and `src` already names {}; add a root that holds the input, or rename that `src`",
+        .input.display(),
+        .taken.display()
+    )]
+    SrcTaken { input: PathBuf, taken: PathBuf },
+}
+
+pub fn generated_root(
+    deck_cite: &[(String, String)],
+    place: DeckPlace,
+    input_dir: &Path,
+    declare_as: &str,
+) -> Result<GeneratedRoot, GeneratedRootError> {
+    let roots = visible_roots(deck_cite, place).map_err(GeneratedRootError::InvalidRoots)?;
+    let input =
+        std::fs::canonicalize(input_dir).map_err(|error| GeneratedRootError::Unreadable {
+            input: input_dir.to_path_buf(),
+            reason: error.to_string(),
+        })?;
+    for root in &roots {
+        let Root::Local(dir) = &root.root else {
+            continue;
+        };
+        let Some(under) = std::fs::canonicalize(dir)
+            .ok()
+            .and_then(|dir| input.strip_prefix(dir).ok().map(Path::to_path_buf))
+        else {
+            continue;
+        };
+        let under: String = under
+            .components()
+            .map(|component| format!("{}/", component.as_os_str().to_string_lossy()))
+            .collect();
+        return Ok(GeneratedRoot {
+            key: root.key.clone(),
+            locator_prefix: format!("{}:{under}", root.key),
+            declare: None,
+        });
+    }
+    if let Some(taken) = roots.iter().find(|root| root.key == GENERATED_KEY) {
+        let taken = match &taken.root {
+            Root::Local(path) => path.clone(),
+            Root::Url(url) => PathBuf::from(url),
+        };
+        return Err(GeneratedRootError::SrcTaken {
+            input: input_dir.to_path_buf(),
+            taken,
+        });
+    }
+    let mut declared = deck_cite.to_vec();
+    declared.push((GENERATED_KEY.to_string(), declare_as.to_string()));
+    visible_roots(&declared, place).map_err(GeneratedRootError::InvalidRoots)?;
+    Ok(GeneratedRoot {
+        key: GENERATED_KEY.to_string(),
+        locator_prefix: format!("{GENERATED_KEY}:"),
+        declare: Some(declare_as.to_string()),
+    })
+}
+
+pub fn generated_root_for_deck(
+    deck_path: &Path,
+    deck_cite: &[(String, String)],
+    input_dir: &Path,
+    declare_as: &str,
+) -> Result<GeneratedRoot, GeneratedRootError> {
+    let deck_path = std::path::absolute(deck_path).unwrap_or_else(|_| deck_path.to_path_buf());
+    let folder = deck_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    match crate::workspace::root_for_deck(&deck_path) {
+        Some(workspace) => {
+            let manifest_cite = crate::workspace::manifest_cite(&workspace);
+            let place = DeckPlace::Member {
+                workspace: &workspace,
+                manifest_cite: &manifest_cite,
+            };
+            generated_root(deck_cite, place, input_dir, declare_as)
+        }
+        None => generated_root(
+            deck_cite,
+            DeckPlace::Loose { folder: &folder },
+            input_dir,
+            declare_as,
+        ),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CitationRoots {
     roots: Result<Vec<VisibleRoot>, Vec<CiteViolation>>,
@@ -280,6 +384,10 @@ impl CitationRoots {
             roots: visible_roots(deck_cite, place),
             asset_dir,
         }
+    }
+
+    pub fn visible(&self) -> &[VisibleRoot] {
+        self.roots.as_deref().unwrap_or_default()
     }
 
     pub fn asset_dir(&self) -> Option<&Path> {
@@ -652,6 +760,128 @@ mod tests {
                 "row `{label}`"
             );
         }
+    }
+
+    #[test]
+    fn a_generator_reuses_the_root_holding_its_input_or_declares_src_or_refuses() {
+        let fx = fixture();
+        let ws = fx.workspace.clone();
+        let reused = |key: &str, prefix: &str| {
+            Ok(GeneratedRoot {
+                key: key.into(),
+                locator_prefix: prefix.into(),
+                declare: None,
+            })
+        };
+        let declared = |value: &str| {
+            Ok(GeneratedRoot {
+                key: GENERATED_KEY.into(),
+                locator_prefix: "src:".into(),
+                declare: Some(value.into()),
+            })
+        };
+        type Row = (
+            &'static str,
+            Entries,
+            Option<Entries>,
+            &'static str,
+            Result<GeneratedRoot, GeneratedRootError>,
+        );
+        let rows: Vec<Row> = vec![
+            (
+                "a loose deck without roots declares src",
+                vec![],
+                None,
+                "here",
+                declared("here"),
+            ),
+            (
+                "a manifest root holding the input is reused with the input's place under it",
+                vec![],
+                Some(vec![("code", "crates/core")]),
+                "crates/core/inner",
+                reused("code", "code:inner/"),
+            ),
+            (
+                "a manifest root equal to the input is reused bare",
+                vec![],
+                Some(vec![("code", "crates/core")]),
+                "crates/core",
+                reused("code", "code:"),
+            ),
+            (
+                "the deck's own src holding the input is reused, so a rebuild declares nothing",
+                vec![("src", "docs")],
+                Some(vec![]),
+                "docs",
+                reused("src", "src:"),
+            ),
+            (
+                "an input outside every root while the manifest declares src",
+                vec![],
+                Some(vec![("src", "docs")]),
+                "crates/core-extra",
+                Err(GeneratedRootError::SrcTaken {
+                    input: ws.join("crates/core-extra"),
+                    taken: ws.join("docs"),
+                }),
+            ),
+            (
+                "an input outside every root while the deck declares src",
+                vec![("src", "docs")],
+                Some(vec![]),
+                "crates/core",
+                Err(GeneratedRootError::SrcTaken {
+                    input: ws.join("crates/core"),
+                    taken: ws.join("docs"),
+                }),
+            ),
+            (
+                "an input holding a manifest root would nest under src",
+                vec![],
+                Some(vec![("deep", "crates/core/inner")]),
+                "crates/core",
+                Err(GeneratedRootError::InvalidRoots(vec![nested(
+                    &fx,
+                    "src",
+                    "crates/core",
+                    "deep",
+                    "crates/core/inner",
+                )])),
+            ),
+        ];
+        for (label, deck, manifest, input, expected) in rows {
+            let deck_cite = pairs(&deck);
+            let manifest_cite: Option<BTreeMap<String, String>> =
+                manifest.map(|entries| pairs(&entries).into_iter().collect());
+            let (place, base) = match &manifest_cite {
+                Some(manifest_cite) => (
+                    DeckPlace::Member {
+                        workspace: &ws,
+                        manifest_cite,
+                    },
+                    &ws,
+                ),
+                None => (DeckPlace::Loose { folder: &fx.loose }, &fx.loose),
+            };
+            assert_eq!(
+                expected,
+                generated_root(&deck_cite, place, &base.join(input), input),
+                "row `{label}`"
+            );
+        }
+        assert!(
+            matches!(
+                generated_root(
+                    &[],
+                    DeckPlace::Loose { folder: &fx.loose },
+                    &fx.loose.join("gone"),
+                    "gone"
+                ),
+                Err(GeneratedRootError::Unreadable { .. })
+            ),
+            "row `a missing input`"
+        );
     }
 
     #[test]

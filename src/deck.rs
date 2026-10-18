@@ -977,6 +977,51 @@ pub fn with_added_exam(text: &str, value: &str) -> Result<String, DeckError> {
     with_exam(text, &entries)
 }
 
+pub fn with_added_cite(text: &str, key: &str, value: &str) -> Result<String, DeckError> {
+    let parsed = parser::parse("deck.md", text).map_err(|source| DeckError::Parse {
+        path: PathBuf::from("deck.md"),
+        source,
+    })?;
+    let Some((open, close)) = parsed.frontmatter_span else {
+        return Err(DeckError::Io {
+            path: PathBuf::from("deck.md"),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "the deck has no YAML frontmatter",
+            ),
+        });
+    };
+    let mut entries = parsed.frontmatter.cite.clone();
+    entries.push((key.to_string(), value.to_string()));
+    let cite_lines = std::iter::once("cite:".to_string()).chain(
+        entries
+            .iter()
+            .map(|(key, value)| format!("  - {key}: {}", parser::yaml_quote(value))),
+    );
+    let mut out = Vec::new();
+    let mut skipping = false;
+    for (index, line) in text.lines().enumerate() {
+        let line_number = index + 1;
+        if line_number > open && line_number < close {
+            if let Some(found) = top_level_yaml_key(line) {
+                skipping = found == "cite";
+            }
+            if skipping {
+                continue;
+            }
+        }
+        if line_number == close {
+            out.extend(cite_lines.clone());
+        }
+        out.push(line.to_string());
+    }
+    let mut joined = out.join("\n");
+    if text.ends_with('\n') {
+        joined.push('\n');
+    }
+    Ok(joined)
+}
+
 fn push_exam_lines(out: &mut Vec<String>, entries: &[String]) {
     match entries {
         [] => {}
@@ -2646,6 +2691,34 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("trace: t\n"), "{out}");
+    }
+
+    #[test]
+    fn with_added_cite_appends_an_entry_and_keeps_every_other_line() {
+        for (label, text, expected) in [
+            (
+                "a deck without cite",
+                "---\ntrace: t\nexam: .\n---\n## q\na\n",
+                "---\ntrace: t\nexam: .\ncite:\n  - src: \".\"\n---\n## q\na\n",
+            ),
+            (
+                "a deck with a cite list",
+                "---\ncite:\n  - code: \"crates/core\"\ntrace: t\n---\n## q\na\n",
+                "---\ntrace: t\ncite:\n  - code: \"crates/core\"\n  - src: \".\"\n---\n## q\na\n",
+            ),
+        ] {
+            let out = with_added_cite(text, "src", ".").unwrap();
+            assert_eq!(expected, out, "row `{label}`");
+            assert_eq!(
+                parser::parse("deck.md", &out)
+                    .unwrap()
+                    .frontmatter
+                    .cite
+                    .last(),
+                Some(&("src".to_string(), ".".to_string())),
+                "row `{label}` parses back"
+            );
+        }
     }
 
     #[test]

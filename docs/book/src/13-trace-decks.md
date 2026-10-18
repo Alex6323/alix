@@ -78,7 +78,13 @@ alix deck generate mytrace.md
 The model explores the source — **read-only** `Read`/`Glob`/`Grep`, source root as
 its working directory, no write or shell access — finds the single load-bearing
 path, and writes the checkpoints (with their `<!-- at: -->` locators) back into the deck.
-Alix fingerprints those locators before placing the result. The result is
+The locators use the `cite:` key `src`, which the build declares for its input:
+the `exam:` directory, or the folder holding an `exam:` file (so a file is cited
+as `src:<file name>:<lines>`). When a `cite:` root the deck already sees holds
+the input, the build reuses that key instead; when none does and `src` is
+already taken, it stops before calling the model. A URL trace build works only
+in a workspace member deck. Alix fingerprints those locators before placing the
+result. The result is
 cached and version-controlled there, so review it (especially the locators) and
 edit freely; re-run it to regenerate.
 

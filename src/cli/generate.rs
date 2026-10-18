@@ -441,12 +441,12 @@ fn trace_build(
         "Tracing a path through {source} (exploring the source — this can take a \
          few minutes)…"
     );
-    let cards = alix::trace_ai::build(deck, &config.trace, &config.ask)?;
+    let built = alix::trace_ai::build(deck, &config.trace, &config.ask)?;
+    let existing = std::fs::read_to_string(deck_path)
+        .with_context(|| format!("cannot read {}", deck_path.display()))?;
+    let new_text = built.deck_text(deck_path, &existing)?;
 
     if rebuild {
-        let existing = std::fs::read_to_string(deck_path)
-            .with_context(|| format!("cannot read {}", deck_path.display()))?;
-        let new_text = alix::deck::trace_checkpoint_text(deck_path, &existing, &cards)?;
         let dir = deck_path.parent().unwrap_or_else(|| Path::new("."));
         let name = deck_path
             .file_name()
@@ -464,13 +464,13 @@ fn trace_build(
         return Ok(());
     }
 
-    alix::deck::set_trace_checkpoints(deck_path, &cards)?;
+    alix::deck::write_deck_text(deck_path, &new_text)?;
     let initialized = alix::assets::initialize(deck_path)?;
     if initialized.freeze.is_none() {
         alix::source::stamp_citations(deck_path)?;
     }
 
-    let n = alix::parser::parse_str(&deck.subject, &cards)
+    let n = alix::parser::parse_str(&deck.subject, &built.cards)
         .map(|c| c.len())
         .unwrap_or(0);
     println!(
@@ -521,7 +521,7 @@ fn generate_trace(
         "Exploring {source} to build an explore trace (one pass — this can take a \
          minute)…"
     );
-    let checkpoints = alix::explore::trace(&source, spec, &config.trace, &config.ask)?;
+    let built = alix::explore::trace(&source, &out, spec, &config.trace, &config.ask)?;
 
     let name = Path::new(&source)
         .file_name()
@@ -532,9 +532,15 @@ fn generate_trace(
     let trace = parser::yaml_quote(&format!(
         "exploring {name} — what it is, its parts, and its spine"
     ));
+    let cite = built
+        .cite
+        .as_ref()
+        .map(|(key, value)| format!("cite:\n  - {key}: {}\n", parser::yaml_quote(value)))
+        .unwrap_or_default();
     let mut deck_text = format!(
-        "---\ntrace: {trace}\nexam: {}\n\n---\n\n{checkpoints}\n",
-        parser::yaml_quote(&source)
+        "---\ntrace: {trace}\nexam: {}\n{cite}\n---\n\n{}\n",
+        parser::yaml_quote(&source),
+        built.cards
     );
     if let Some(url) = &args.common.source_url {
         deck_text = alix::deck::with_added_exam(&deck_text, url)?;

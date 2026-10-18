@@ -3990,7 +3990,7 @@ fn generate_builds_checkpoints_into_an_existing_trace_stub() {
     let stub = write(
         dir.path(),
         "t.md",
-        "---\ntrace: how it works\nexam: .\ncite:\n  - src: .\n---\n",
+        "---\ntrace: how it works\nexam: .\n---\n",
     );
     let cli = fake_claude(
         dir.path(),
@@ -4011,6 +4011,205 @@ fn generate_builds_checkpoints_into_an_existing_trace_stub() {
     let rewritten = std::fs::read_to_string(&stub).unwrap();
     assert!(rewritten.contains("trace: how it works"), "{rewritten}");
     assert!(rewritten.contains("checkpoint one"), "{rewritten}");
+    assert!(
+        rewritten.contains("cite:\n  - src: \".\"\n"),
+        "the build declares its input as the `src` root: {rewritten}"
+    );
+    assert!(
+        rewritten.contains("<!-- at: src:notes.md:1 fingerprint: xxh64-"),
+        "the keyed locator resolves and is stamped: {rewritten}"
+    );
+}
+
+#[test]
+fn a_trace_build_over_one_file_roots_src_at_its_folder_and_rebuilds_without_redeclaring() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join("docs")).unwrap();
+    write(
+        &dir.path().join("docs"),
+        "notes.md",
+        "first line\nsecond line\n",
+    );
+    let stub = write(
+        dir.path(),
+        "t.md",
+        "---\ntrace: how it works\nexam: docs/notes.md\n---\n",
+    );
+    let request = dir.path().join("request.txt");
+    let reply = write(
+        dir.path(),
+        "reply.txt",
+        "## checkpoint one\nsome point\n<!-- at: src:notes.md:2 -->\n",
+    );
+    let cli = write(
+        dir.path(),
+        "fake-claude",
+        &format!("#!/bin/sh\ncat > {}\ncat {reply}\n", request.display()),
+    );
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
+    assert!(out.status.success(), "step build: {}", stderr(&out));
+    let built = std::fs::read_to_string(&stub).unwrap();
+    assert!(
+        built.contains("cite:\n  - src: \"docs\"\n"),
+        "step build: a file input roots `src` at its folder: {built}"
+    );
+    assert!(
+        std::fs::read_to_string(&request)
+            .unwrap()
+            .contains("`src:<file>:start-end`"),
+        "step build: the prompt teaches the keyed locator"
+    );
+
+    let out = alix(&[
+        "deck", "generate", &stub, "--config", &config, "--yes", "--force",
+    ]);
+    assert!(out.status.success(), "step rebuild: {}", stderr(&out));
+    let rebuilt = std::fs::read_to_string(&stub).unwrap();
+    assert_eq!(
+        1,
+        rebuilt.matches("  - src:").count(),
+        "step rebuild: the deck's own `src` already holds the input, so it is reused: {rebuilt}"
+    );
+}
+
+#[test]
+fn a_member_trace_build_reuses_the_manifest_key_whose_root_holds_its_input() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::create_dir_all(ws.join("repo/crates/core")).unwrap();
+    write(&ws.join("repo/crates/core"), "lib.rs", "fn one() {}\n");
+    write(&ws, "alix.toml", "[cite]\ncode = \"repo\"\n");
+    let stub = write(
+        &ws.join("decks"),
+        "t.md",
+        "---\ntrace: how it works\nexam: repo/crates/core\n---\n",
+    );
+    let request = dir.path().join("request.txt");
+    let reply = write(
+        dir.path(),
+        "reply.txt",
+        "## checkpoint one\nsome point\n<!-- at: code:crates/core/lib.rs:1 -->\n",
+    );
+    let cli = write(
+        dir.path(),
+        "fake-claude",
+        &format!("#!/bin/sh\ncat > {}\ncat {reply}\n", request.display()),
+    );
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    let built = std::fs::read_to_string(&stub).unwrap();
+    assert!(!built.contains("cite:"), "no `src` is declared: {built}");
+    assert!(
+        std::fs::read_to_string(&request)
+            .unwrap()
+            .contains("`code:crates/core/<file>:start-end`"),
+        "the prompt prefixes locators with the reused key and the input's place under its root"
+    );
+}
+
+#[test]
+fn a_trace_build_refuses_an_input_outside_every_root_while_src_is_taken() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::create_dir_all(ws.join("elsewhere")).unwrap();
+    std::fs::create_dir_all(ws.join("input")).unwrap();
+    write(&ws, "alix.toml", "[cite]\nsrc = \"elsewhere\"\n");
+    let stub = write(
+        &ws.join("decks"),
+        "t.md",
+        "---\ntrace: how it works\nexam: input\n---\n",
+    );
+    let called = dir.path().join("called");
+    let cli = write(
+        dir.path(),
+        "fake-claude",
+        &format!("#!/bin/sh\ntouch {}\ncat >/dev/null\n", called.display()),
+    );
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let original = std::fs::read_to_string(&stub).unwrap();
+
+    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("outside every `cite:` root"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        !called.exists(),
+        "the refusal comes before any backend call"
+    );
+    assert_eq!(original, std::fs::read_to_string(&stub).unwrap());
+}
+
+#[test]
+fn a_url_trace_build_outside_a_workspace_is_refused_before_the_backend() {
+    let dir = TempDir::new().unwrap();
+    let stub = write(
+        dir.path(),
+        "t.md",
+        "---\ntrace: how a guard gates the body\nexam: https://example.com/guide\n---\n",
+    );
+    let called = dir.path().join("called");
+    let cli = write(
+        dir.path(),
+        "fake-claude",
+        &format!("#!/bin/sh\ntouch {}\ncat >/dev/null\n", called.display()),
+    );
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("only a workspace member"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        !called.exists(),
+        "the refusal comes before any backend call"
+    );
 }
 
 #[test]
@@ -4067,7 +4266,10 @@ fn generate_trace_plan_prints_the_suggestion_menu() {
 fn generate_trace_writes_an_explore_deck() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "notes.md", "some source material\n");
-    let cli = fake_claude(dir.path(), "## what it is\nsome point\n<!-- at: 1 -->\n");
+    let cli = fake_claude(
+        dir.path(),
+        "## what it is\nsome point\n<!-- at: src:notes.md:1 -->\n",
+    );
     let config = write(
         dir.path(),
         "config.toml",
@@ -4089,13 +4291,26 @@ fn generate_trace_writes_an_explore_deck() {
     assert!(text.contains("trace: \"exploring"), "{text}");
     assert!(text.contains("exam:"), "{text}");
     assert!(text.contains("what it is"), "{text}");
+    let root = dir.path().canonicalize().unwrap();
+    assert!(
+        text.contains(&format!("cite:\n  - src: \"{}\"\n", root.display())),
+        "the explore trace declares its input as the `src` root: {text}"
+    );
+    assert!(
+        !stderr(&out).contains("does not parse"),
+        "the explore trace parses: {}",
+        stderr(&out)
+    );
 }
 
 #[test]
 fn generate_trace_refuses_to_clobber_an_existing_output() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "notes.md", "some source material\n");
-    let cli = fake_claude(dir.path(), "## what it is\nsome point\n<!-- at: 1 -->\n");
+    let cli = fake_claude(
+        dir.path(),
+        "## what it is\nsome point\n<!-- at: src:notes.md:1 -->\n",
+    );
     let config = write(
         dir.path(),
         "config.toml",
@@ -4537,7 +4752,7 @@ fn generate_workspace_applies_goal_language_audience_and_card_style() {
          - [ ] München\n\
          > [!NOTE]\n\
          > Hamburg und München sind Großstädte, aber keine Bundeshauptstadt.\n\
-         <!-- at: notes.md:1 -->\n\
+         <!-- at: src:notes.md:1 -->\n\
          === item 2 ===\n\
          ## Welche Ebene ist hier gemeint?\n\
          - [ ] Kommune\n\
@@ -4545,7 +4760,7 @@ fn generate_workspace_applies_goal_language_audience_and_card_style() {
          - [ ] Land\n\
          > [!NOTE]\n\
          > Kommune und Land bezeichnen andere staatliche Ebenen.\n\
-         <!-- at: notes.md:1 -->\n",
+         <!-- at: src:notes.md:1 -->\n",
     );
     let request = dir.path().join("request.txt");
     let cli = dir.path().join("fake-claude");
@@ -4622,6 +4837,20 @@ fn generate_workspace_applies_goal_language_audience_and_card_style() {
     assert!(request.contains("German"));
     assert!(request.contains("new voters"));
     assert!(request.contains("authored multiple-choice"));
+    assert!(
+        request.contains("<!-- at: src:file:start-end -->"),
+        "the fill prompt teaches the keyed locator: {request}"
+    );
+    let manifest = std::fs::read_to_string(workspace.join("alix.toml")).unwrap();
+    let source_root = source.canonicalize().unwrap();
+    assert!(
+        manifest.contains(&format!("[cite]\nsrc = \"{}\"\n", source_root.display())),
+        "the manifest declares the input root under `src`: {manifest}"
+    );
+    assert!(
+        manifest.contains(&format!("exam = \"{}\"\n", source_root.display())),
+        "the manifest keeps its `exam`: {manifest}"
+    );
     for name in ["01-institutions.md", "02-terms.md"] {
         let deck = alix::deck::Deck::load(workspace.join("decks").join(name)).unwrap();
         assert!(
@@ -6778,7 +7007,11 @@ fn generate_trace_keeps_a_silent_backends_full_trace_budget() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "notes.md", "some source material\n");
     let reply = dir.path().join("reply.txt");
-    std::fs::write(&reply, "## what it is\nsome point\n<!-- at: 1 -->\n").unwrap();
+    std::fs::write(
+        &reply,
+        "## what it is\nsome point\n<!-- at: src:notes.md:1 -->\n",
+    )
+    .unwrap();
     let cli = dir.path().join("fake-gemini");
     std::fs::write(
         &cli,
