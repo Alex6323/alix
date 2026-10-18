@@ -3,6 +3,7 @@
 - Status: Proposed
 - Recorded: 2026-10-17
 - Retrospective: No
+- Refines: [ADR 0024](0024-deck-transfer-reuses-public-bundles.md)
 
 ## Context
 
@@ -179,8 +180,11 @@ Locators are written into deck files, so their grammar is decided here.
     not rewrite the deck. It is allowed only when every key the deck's
     locators use resolves in the destination, through the deck's own `cite:`
     or the destination's manifest, to the same root as in the source (local
-    roots as canonical absolute paths, URLs as exact strings). Otherwise it
-    refuses, naming each key and both roots.
+    roots as canonical absolute paths, URLs as exact strings), and every
+    `exam:` entry the deck uses (its own, else the manifest's) resolves to
+    the same file, folder or URL. Otherwise it refuses, naming each key or
+    entry and both sides. This replaces ADR 0024's materialization of
+    `exam:` into the transferred deck.
 
 ## Consequences
 
