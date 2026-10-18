@@ -508,6 +508,39 @@ fn deck_copy_refuses_a_cited_key_that_resolves_to_another_root_in_the_destinatio
 }
 
 #[test]
+fn deck_copy_refuses_an_exam_entry_that_resolves_to_another_path_in_the_destination() {
+    let dir = TempDir::new().unwrap();
+    let source = dir.path().join("source");
+    let destination = dir.path().join("destination");
+    for workspace in [&source, &destination] {
+        std::fs::create_dir_all(workspace.join("decks")).unwrap();
+        std::fs::create_dir_all(workspace.join("material")).unwrap();
+        std::fs::write(workspace.join("alix.toml"), "exam = \"material\"\n").unwrap();
+    }
+    let deck = write(
+        &source.join("decks"),
+        "facts.md",
+        "---\nformat-version: 1\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-card1 -->\n",
+    );
+
+    let out = alix(&["deck", "copy", &deck, destination.to_str().unwrap()]);
+
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    let from = source.canonicalize().unwrap().join("material");
+    let to = destination.canonicalize().unwrap().join("material");
+    assert!(
+        stderr(&out).contains(&format!(
+            "`exam:` entry `material` resolves to {} in the source workspace but to {} in the destination",
+            from.display(),
+            to.display()
+        )),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(!destination.join("decks/facts.md").exists());
+}
+
+#[test]
 fn deck_move_requires_confirmation_and_reports_progress() {
     let dir = TempDir::new().unwrap();
     let source = dir.path().join("source");

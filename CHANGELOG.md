@@ -151,7 +151,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   locators use would resolve to a different root in the destination workspace
   (or to none), naming each key and both roots. A relative root resolves
   against its own workspace, so the same relative `[cite]` entry in both
-  manifests names two folders. Transfer never rewrites locators or `cite:` and
+  manifests names two folders. They also refuse when the deck's `exam:` (its
+  own and the workspace's) would resolve to different files, folders or URLs
+  in the destination, naming each entry and both sides in the same message.
+  Transfer never rewrites locators, `cite:` or `exam:` (it no longer writes an
+  inherited or relative `exam` into the transferred deck as absolute paths) and
   changes neither manifest.
 
 - `alix doctor` reports a trace checkpoint's locator problem only as an error,

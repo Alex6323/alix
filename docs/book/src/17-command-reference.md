@@ -147,7 +147,9 @@ The rest of the AI-and-deck surface:
   carry progress when the workspaces use different user roots, then remove the
   source. Refuses missing prerequisites and source dependents. Copy and move
   both refuse when a `cite:` key the deck's locators use would resolve to a
-  different root in the destination.
+  different root in the destination, or when the deck's `exam:` (its own and
+  the workspace's) would resolve to different files, folders or URLs there.
+  Neither rewrites the deck.
 - `alix deck import <file.tsv>`: import an Anki TSV export (no model CLI
   needed; `--workspace <dir>` imports into a workspace).
 - `alix deck remove <deck> [--yes]`: remove a deck and everything that is

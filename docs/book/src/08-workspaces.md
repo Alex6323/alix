@@ -173,12 +173,10 @@ the source.
 
 The destination must be another Alix workspace. Transfer refuses overwrites,
 stable-ID collisions, missing required decks, and moves that would break a
-source deck's dependents. An inherited or relative `exam` is written
-explicitly into the transferred deck so the destination cannot reinterpret its
-live provenance through unrelated workspace defaults.
+source deck's dependents.
 
-Transfer never rewrites a deck's locators or `cite:`, and changes neither
-workspace's `alix.toml`. It is allowed only when every key the deck's locators
+Transfer never rewrites a deck's locators, `cite:` or `exam:`, and changes
+neither workspace's `alix.toml`. It is allowed only when every key the deck's locators
 use resolves in the destination, through the deck's own `cite:` or the
 destination's `[cite]` table, to the same root as in the source. Local roots
 are compared as absolute paths with symlinks resolved; URL roots must match
@@ -186,6 +184,18 @@ exactly. A relative root resolves against its workspace folder, so a key
 written as `code = "crates"` in both manifests names two different folders,
 and the transfer refuses. The refusal names each key and both roots. Keys that
 no locator uses are not checked.
+
+The same holds for `exam:`. The deck's exam material is its own `exam:` list
+plus the workspace's `exam`, and every entry must resolve to the same file,
+folder or URL in the destination as in the source. In the destination the
+deck's own entries are read against the destination workspace folder, and the
+destination's `exam` takes the place of the source's. Paths are compared like `cite:` roots, URLs exactly, and the
+lists are compared as sets. A relative `exam: material` therefore names a
+different folder after the transfer, and the transfer refuses; so does a deck
+whose workspace `exam` the destination does not declare, or whose destination
+adds `exam` material the source did not have. The refusal
+names each entry and what it resolves to on both sides, in one message with
+any `cite:` refusals.
 
 Now open the cluster and drill its members one at a time:
 

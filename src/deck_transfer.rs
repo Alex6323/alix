@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 
 use crate::{
-    cite::{self, DeckPlace},
+    cite::{self, DeckPlace, ExamPlace},
     deck::{self, Deck},
     share,
     state::UserFiles,
@@ -31,7 +31,6 @@ pub struct TransferReport {
 
 struct Transfer {
     source: PathBuf,
-    source_root: PathBuf,
     destination_deck: PathBuf,
     deck: Deck,
     deck_id: String,
@@ -71,7 +70,6 @@ fn transfer_with_remove(
     let transfer = Transfer::prepare(source, destination_workspace, mode)?;
     let scratch = tempfile::tempdir().context("cannot create deck transfer staging directory")?;
     let (bundle, _) = share::stage_deck_bundle(&transfer.source, scratch.path())?;
-    transfer.materialize_sources(&bundle)?;
     transfer.verify_staged_identity(&bundle)?;
 
     if let Err(error) = share::land_deck_bundle(&bundle, &transfer.destination_files.decks()) {
@@ -163,7 +161,7 @@ impl Transfer {
             &deck_id,
         )?;
         ensure_requirements_resolve(&deck, &destination_files.decks())?;
-        ensure_citations_keep_their_roots(&deck, &source_root, &destination_root)?;
+        ensure_citations_and_exam_resolve_alike(&deck, &source_root, &destination_root)?;
         if mode == TransferMode::Move {
             let dependents = deck::dependents(&source);
             if !dependents.is_empty() {
@@ -196,7 +194,6 @@ impl Transfer {
 
         Ok(Self {
             source,
-            source_root,
             destination_deck,
             deck,
             deck_id,
@@ -209,31 +206,6 @@ impl Transfer {
             progress,
             baseline,
         })
-    }
-
-    /// A transferred deck leaves its workspace behind, so its layered sources
-    /// (own, else the source workspace's) materialize into its own `exam:`
-    /// list, with relative local paths made absolute against the old root.
-    fn materialize_sources(&self, bundle: &Path) -> Result<()> {
-        let layers = self.deck.exam_layers();
-        let sources = if layers.own.is_empty() {
-            &layers.workspace
-        } else {
-            &layers.own
-        };
-        if sources.is_empty() {
-            return Ok(());
-        }
-        let materialized: Vec<String> = sources
-            .iter()
-            .map(|source| materialized_source(source, &self.source_root))
-            .collect();
-        let staged_deck = self.staged_deck(bundle)?;
-        let text = std::fs::read_to_string(&staged_deck)
-            .with_context(|| format!("cannot read {}", staged_deck.display()))?;
-        let text = deck::with_exam(&text, &materialized)?;
-        deck::write_deck_text(&staged_deck, &text)?;
-        Ok(())
     }
 
     fn verify_staged_identity(&self, bundle: &Path) -> Result<()> {
@@ -392,7 +364,7 @@ fn ensure_requirements_resolve(deck: &Deck, destination_decks: &Path) -> Result<
     Ok(())
 }
 
-fn ensure_citations_keep_their_roots(
+fn ensure_citations_and_exam_resolve_alike(
     deck: &Deck,
     source_root: &Path,
     destination_root: &Path,
@@ -404,7 +376,7 @@ fn ensure_citations_keep_their_roots(
         .iter()
         .flat_map(|card| &card.citations)
         .map(|citation| citation.locator.key.as_str());
-    let mismatches = cite::transfer_mismatches(
+    let cite_mismatches = cite::transfer_mismatches(
         &deck.cite,
         used,
         DeckPlace::Member {
@@ -416,28 +388,32 @@ fn ensure_citations_keep_their_roots(
             manifest_cite: &destination_cite,
         },
     );
+    let source_exam = workspace::manifest_exam(source_root);
+    let destination_exam = workspace::manifest_exam(destination_root);
+    let exam_mismatches = cite::exam_transfer_mismatches(
+        &deck.exam,
+        ExamPlace {
+            base: source_root,
+            manifest_exam: &source_exam,
+        },
+        ExamPlace {
+            base: destination_root,
+            manifest_exam: &destination_exam,
+        },
+    );
+    let mismatches: Vec<String> = cite_mismatches
+        .iter()
+        .map(ToString::to_string)
+        .chain(exam_mismatches.iter().map(ToString::to_string))
+        .collect();
     if !mismatches.is_empty() {
         bail!(
             "cannot transfer {}: {}",
             deck.path.display(),
-            mismatches
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join("; ")
+            mismatches.join("; ")
         );
     }
     Ok(())
-}
-
-fn materialized_source(source: &str, source_root: &Path) -> String {
-    let source = source.trim();
-    if deck::is_url(source) || Path::new(source).is_absolute() {
-        source.to_string()
-    } else {
-        let path = source_root.join(source);
-        path.canonicalize().unwrap_or(path).display().to_string()
-    }
 }
 
 fn resolved_user_root(workspace_root: &Path) -> PathBuf {
@@ -758,56 +734,44 @@ mod tests {
     }
 
     #[test]
-    fn an_own_relative_source_is_materialized_against_the_old_workspace_root() {
+    fn an_exam_entry_that_resolves_differently_in_the_destination_refuses_before_writes() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, "");
-        workspace(&destination, "");
+        let shared = dir.path().join("shared");
+        std::fs::create_dir_all(&shared).unwrap();
+        let shared = shared.canonicalize().unwrap().display().to_string();
+        workspace(&source, &format!("exam = {shared:?}\n"));
+        workspace(&destination, &format!("exam = {shared:?}\n"));
         std::fs::create_dir(source.join("material")).unwrap();
-        let deck = deck(&source, "facts.md", "exam: material\n");
+        std::fs::create_dir(destination.join("material")).unwrap();
+        let path = deck(&source, "facts.md", "exam: material\n");
 
-        transfer(&deck, &destination, TransferMode::Copy).unwrap();
-
-        let copied = Deck::load(destination.join("decks/facts.md")).unwrap();
-        assert_eq!(
-            vec![
-                source
-                    .join("material")
-                    .canonicalize()
+        for mode in [TransferMode::Copy, TransferMode::Move] {
+            let error = format!("{:#}", transfer(&path, &destination, mode).unwrap_err());
+            let side = |root: &Path| {
+                root.canonicalize()
                     .unwrap()
+                    .join("material")
                     .display()
                     .to_string()
-            ],
-            copied.exam
-        );
-    }
+            };
+            assert!(
+                error.contains("`exam:` entry `material`")
+                    && error.contains(&side(&source))
+                    && error.contains(&side(&destination)),
+                "{mode:?}: the refusal names the entry and both sides: {error}"
+            );
+            assert!(path.is_file(), "{mode:?}");
+            assert!(!destination.join("decks/facts.md").exists(), "{mode:?}");
+        }
 
-    #[test]
-    fn an_inherited_relative_workspace_source_is_materialized_without_changing_ids() {
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("source");
-        let destination = dir.path().join("destination");
-        workspace(&source, "exam = \"material\"\n");
-        workspace(&destination, "");
-        std::fs::create_dir(source.join("material")).unwrap();
-        let deck = deck(&source, "facts.md", "");
-
-        transfer(&deck, &destination, TransferMode::Copy).unwrap();
-
-        let copied = Deck::load(destination.join("decks/facts.md")).unwrap();
-        assert_eq!(Some("deck-deck1"), copied.deck_token.as_deref());
-        assert_eq!(Some("card-card1".to_string()), copied.cards[0].id());
+        let path = deck(&source, "facts.md", "");
+        transfer(&path, &destination, TransferMode::Copy).unwrap();
         assert_eq!(
-            vec![
-                source
-                    .join("material")
-                    .canonicalize()
-                    .unwrap()
-                    .display()
-                    .to_string()
-            ],
-            copied.exam
+            std::fs::read_to_string(&path).unwrap(),
+            std::fs::read_to_string(destination.join("decks/facts.md")).unwrap(),
+            "an allowed transfer never writes `exam:` into the deck"
         );
     }
 
@@ -955,32 +919,6 @@ mod tests {
             std::fs::write(path, original).unwrap();
             transfer.verify_source_unchanged().unwrap();
         }
-    }
-
-    #[test]
-    fn source_materialization_preserves_urls_and_absolute_paths_only() {
-        // Absoluteness and separators are platform-defined, so the fixtures
-        // are built the way the platform spells them rather than as Unix
-        // literals: `/absolute` is a relative path on Windows.
-        let root = Path::new("/workspace").join("root");
-        // Deliberately un-normalized: an absolute source is returned
-        // verbatim, so a version that resolved it instead would collapse
-        // this and fail rather than agree by coincidence.
-        let absolute = std::env::current_dir().unwrap().join("src/../src");
-        assert!(absolute.is_absolute() && absolute.exists());
-
-        assert_eq!(
-            "https://example.org/source",
-            materialized_source(" https://example.org/source ", &root)
-        );
-        assert_eq!(
-            absolute.display().to_string(),
-            materialized_source(&absolute.display().to_string(), &root)
-        );
-        assert_eq!(
-            root.join("relative/source").display().to_string(),
-            materialized_source("relative/source", &root)
-        );
     }
 
     #[test]

@@ -181,7 +181,7 @@ Locators are written into deck files, so their grammar is decided here.
     locators use resolves in the destination, through the deck's own `cite:`
     or the destination's manifest, to the same root as in the source (local
     roots as canonical absolute paths, URLs as exact strings), and every
-    `exam:` entry the deck uses (its own, else the manifest's) resolves to
+    `exam:` entry the deck uses (its own and the manifest's) resolves to
     the same file, folder or URL. Otherwise it refuses, naming each key or
     entry and both sides. This replaces ADR 0024's materialization of
     `exam:` into the transferred deck.
