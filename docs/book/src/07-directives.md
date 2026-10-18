@@ -14,7 +14,7 @@ full.
 | `#` heading | section | Opens a section: its text and the prose under it are the shared context of every card below, shown on demand (`c` in the web app), never while you answer. Takes no directives and no card ID. [→ ch 3](03-the-deck-format.md#sections-and-sub-cards) |
 | `###` to `######` front | card | A sub-card of the card one level shallower, withheld from review until that parent graduates. Six hashes is the deepest, since a seventh is prose. [→ ch 3](03-the-deck-format.md#sections-and-sub-cards) |
 | `>` block | card | A blockquote: a note shown after you answer when its first line is an alert badge (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), otherwise a quotation that belongs to the answer and reveals with it. [→ ch 3](03-the-deck-format.md) |
-| `<!-- -->` | anywhere | A deck's comments are alix machinery, not editorial prose. A comment that is not recognized (a directive, a locator, an id, or an invocation) is ignored and draws a doctor finding, whatever its length. Prose about a deck belongs in `description:`, its origin in `source:`. |
+| `<!-- -->` | anywhere | A deck's comments are alix machinery, not editorial prose. A comment that is not recognized (a directive, a locator, an id, or an invocation) is ignored and draws a doctor finding, whatever its length. Prose about a deck belongs in `description:`, its origin in `exam:`. |
 | `choices: single` / `choices: multiple` | card | Invocation comment on the line below a task list: maps it to a [choice card](03-the-deck-format.md#choice-cards-task-lists), one correct answer or select-all-that-apply. A bare task list stays a literal checklist. |
 | `cards` | card | Invocation comment on the line below a pipe table: maps it to a [card table](03-the-deck-format.md#card-tables). A bare table renders literally. |
 | `plain` | card · section | On the line below a task list, a table, or a thematic break of any spelling: keeps that one shape literal (for a break: the divider and thematic-break grammar, in every position, including where the break would otherwise be an error). |
@@ -36,9 +36,9 @@ full.
 | `license` | deck | The deck's licence, a single string, by convention an SPDX identifier. |
 | `created-at` | deck | When the deck was made, a single string, by convention an ISO 8601 date. Stored verbatim and not validated. |
 | `link` | deck | [tutor reference](10-tutor.md) URL, tutor-only (repeatable). |
-| `source` | deck | [Exam ground truth](12-the-ai-exam.md): a YAML list of URLs, files, or directories (one entry is the norm), also a [trace](13-trace-decks.md)'s cited path and a tutor reference. It identifies evidence but never grants access to a wider local tree. A workspace `alix.toml` may declare a `source` too, as supporting context for its members. |
+| `exam` | deck | [Exam ground truth](12-the-ai-exam.md): a YAML list of URLs, files, or directories (one entry is the norm), also a [trace](13-trace-decks.md)'s cited path and a tutor reference. It identifies evidence but never grants access to a wider local tree. A workspace `alix.toml` may declare a `source` too, as supporting context for its members. |
 | `trace` | deck | The path a [trace](13-trace-decks.md) follows; its presence makes the deck a trace. |
-| `at` | card | A repeatable named-field locator into the `source` (`at: file:lines fingerprint: xxh64-...`, plus `asset:` once frozen; a range-less path or URL cites the whole source): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
+| `at` | card | A repeatable named-field locator into the `exam` material (`at: file:lines fingerprint: xxh64-...`, plus `asset:` once frozen; a range-less path or URL cites the whole source): a [trace checkpoint's](13-trace-decks.md) reveal target, or a [fact card's source citation](06-cloze-direction-images.md#source-citations) shown on reveal. |
 | `given` | card | A [trace checkpoint's](13-trace-decks.md) off-screen symbol, as `name - meaning` (repeatable). |
 | `diagram` | card | Machine-maintained stamp on the line after a ```` ```mermaid ```` fence, tying the fence text to its frozen image and geometry (`fingerprint:`, `asset:`, `geometry:`). Written by deck init, never hand-authored. [→ ch 6](06-cloze-direction-images.md) |
 | `blank` | card | Masks and asks, in the block directly above it: a region of an image line (`rect x= y= width= height= hidden="..."`, optional `[group]`) or a text span (`span hidden="..."`, optional `occurrence=`/`boundary=`). Carries a minted `b:` stamp (and `position:` anchor on a span), maintained by alix like ids. [→ ch 6](06-cloze-direction-images.md) |
@@ -49,14 +49,14 @@ Media (images, and later audio/video) isn't a directive: write a standard
 Markdown `![alt](src)` where you want one to appear, and its position decides
 the side. See [Image cards](06-cloze-direction-images.md).
 
-## `link` vs `source`
+## `link` vs `exam`
 
 Two that look similar but aren't. Both point at material a deck is about, but
-`source` is the **exam's ground truth**: questions are generated from it and
+`exam` is the **exam's ground truth**: questions are generated from it and
 answers graded against it, and a URL source doubles as a tutor reference.
 `link` is **only** a tutor reference and never becomes exam material; use it
 for supplementary reading the exam should ignore. The implication runs one
-way: a `source` URL is offered to the tutor, but a `link` is never promoted to
+way: an `exam` URL is offered to the tutor, but a `link` is never promoted to
 a source.
 
 ## Precedence

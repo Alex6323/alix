@@ -257,11 +257,11 @@ code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
 Begin the file with exactly this frontmatter block:
 ---
-source: {source}
+exam: {source}
 choices: single
 
 ---
-The `source:` key ties the deck to its source, so `alix exam` can later grade \
+The `exam:` key ties the deck to its source, so `alix exam` can later grade \
 your understanding against it.
 
 PEDAGOGY — produce a balanced deck aiming for at most {max_cards} cards, spread across \
@@ -1510,7 +1510,7 @@ mod tests {
         let p = build_prompt("src/scheduler.rs", false, &cfg(8), &spec());
         assert!(p.contains("src/scheduler.rs"));
         assert!(p.contains("Read, Glob and Grep"));
-        assert!(p.contains("source: src/scheduler.rs"));
+        assert!(p.contains("exam: src/scheduler.rs"));
         assert!(p.contains("aiming for at most 8 cards"));
         assert!(!p.contains("WebFetch"));
         assert!(!p.contains("{source}"));

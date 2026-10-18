@@ -171,14 +171,14 @@ fn ensure_source_capability(
 ) -> anyhow::Result<()> {
     if is_url && !can_fetch_web {
         anyhow::bail!(
-            "the {} backend can't fetch a url under read-only; point source: at a local file, \
+            "the {} backend can't fetch a url under read-only; point exam: at a local file, \
              or use a backend that can fetch",
             name
         );
     }
     if !is_url && !can_read_source {
         anyhow::bail!(
-            "the {} backend can't read a local source; point source: at a url, or use a backend \
+            "the {} backend can't read a local source; point exam: at a url, or use a backend \
              that can read files",
             name
         );

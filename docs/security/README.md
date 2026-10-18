@@ -68,7 +68,7 @@ Alix does not claim to provide:
 | `.alix/progress/<deck-id>.json`, `.alix/recent.json`, and `alix.local.toml` | Learning history, device-local settings, or scheduling state is disclosed or corrupted. |
 | Pairing tokens and profile configuration | An unintended LAN client can invoke guarded API operations. |
 | User-created bug-report archive | Redacted diagnostics or metadata are disclosed after the user attaches the file. |
-| Explicit `source` trees | A grounded AI call reads files outside the evidence the learner expected to share. |
+| Explicit `exam` trees | A grounded AI call reads files outside the evidence the learner expected to share. |
 | AI CLI session and provider account | Prompts or local reads are disclosed; model-backed actions are performed as the user. |
 | Share-transfer process and received archive | An external transfer tool or hostile archive discloses data or writes unexpected files. |
 | Authored deck files versus generated output | Untrusted generated or received content is mistaken for reviewed authored material. |
@@ -309,7 +309,7 @@ output, command output, and filesystem paths, so its external run directory
 should be protected like the target checkout (`orchestrator/`).
 
 Filesystem grounding is opt-in. `[ask] source_access = true` is effective only
-when the deck or workspace declares a `source:`, and the grant covers exactly
+when the deck or workspace declares a `exam:`, and the grant covers exactly
 that declared tree; `at:` locators remain evidence pointers and never infer a
 wider project root (`src/deck.rs`, `src/source.rs`). This is the boundary for Alix's built-in grant. A user can
 deliberately widen the provider CLI's permissions through `permission_mode`,
@@ -340,7 +340,7 @@ the tutor continues from frozen evidence and reports that it cannot verify the
 full current source.
 
 Received workspace manifests are untrusted configuration. Before using AI on a
-received workspace, inspect `source_access`, `source`, links, citations, and
+received workspace, inspect `source_access`, `exam`, links, citations, and
 frozen excerpts. A portable manifest can request source access, and a source
 path that exists on the receiving machine may expose more than the sender
 intended.
@@ -409,8 +409,8 @@ safe or accurate.
 | Pairing token leaks through a URL | API accepts a bearer header after bootstrap. | Treat the URL as a credential; do not publish screenshots, history, logs, or bookmarks containing it. |
 | A paired sync client targets the wrong library or stale progress | The root header is checked before body and document reads; the per-deck revision is compared on the Study owner thread; conflicts write nothing and return the current revision. | A valid token still authorizes bulk entry export and progress replacement for its root. Review the explicit conflict choice and keep independent backups. |
 | A paired client removes the wrong library row | Removal resolves only catalog-owned names, refuses active sessions, previews the exact Alix-owned set, and reports partial failures without disclosing host paths. | The token authorizes irreversible deletion. Verify the typed name and preview, keep independent backups, and run `alix doctor` after a partial failure. |
-| A deck or page attempts prompt injection | Headless AI runs use explicit tool grants; source reads require a declared `source`. | Provider enforcement varies. Review sources and do not enable source access for untrusted workspaces. |
-| A broad `source` exposes unrelated files | No root is inferred; the grant must be explicit. | Keep `source` as narrow as practical and inspect inherited workspace defaults. |
+| A deck or page attempts prompt injection | Headless AI runs use explicit tool grants; source reads require a declared `exam`. | Provider enforcement varies. Review sources and do not enable source access for untrusted workspaces. |
+| A broad `exam` exposes unrelated files | No root is inferred; the grant must be explicit. | Keep `exam` as narrow as practical and inspect inherited workspace defaults. |
 | Syncthing or another tool creates concurrent same-deck progress writes | Per-deck atomic replacement, revision checks, writer warnings, and conflict-file detection. | Different decks are independent; for one deck, keep one active writer, resolve conflict copies manually, and back up before recovery. |
 | Sharing leaks personal state | Share filters it; receive strips it again. | Frozen excerpts and ordinary deck contents are still intentionally shared. |
 | A support archive leaks credentials or unintended learning content | Token and prompt keys are dropped, generated text is redacted, deck identities are hashed, and personal sidecars are never read into the archive. `--include-deck` deliberately includes the one named deck verbatim. Deterministic tests open and inspect every archive entry. | Stable hashes, operational history, and any explicitly included deck can identify a learner or subject. Review the local archive before attaching it. |

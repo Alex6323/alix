@@ -2,7 +2,7 @@
 // embedded core (RustLib.init in setUpAll; real deck files on disk),
 // mirroring bridge_test.dart's own fixtures/pattern and the review screen's
 // exam-chip tests (review_screen_exam_chip_test.dart) for the client-
-// acquisition seam. A trace fixture always carries an in-folder `% source:`
+// acquisition seam. A trace fixture always carries an in-folder `% exam:`
 // so its checkpoints resolve real gutter lines, matching the rust bridge's
 // own `trace_fixture` (mobile/alix/rust/src/api/review.rs).
 import 'dart:async';
@@ -53,7 +53,7 @@ void main() {
       '${root.path}/t.md',
       '---\n'
       'trace: how it works\n'
-      'source: source.txt\n'
+      'exam: source.txt\n'
       '---\n'
       '## Predict the first hop\n'
       'it reads the first line\n'
@@ -75,7 +75,7 @@ void main() {
       '${root.path}/t.md',
       '---\n'
       'trace: a short path\n'
-      'source: source.txt\n'
+      'exam: source.txt\n'
       '---\n'
       '## Predict the hop\n'
       'it reads the first line\n'
@@ -93,7 +93,7 @@ void main() {
       '${root.path}/t.md',
       '---\n'
       'trace: a highlighted path\n'
-      'source: source.txt\n'
+      'exam: source.txt\n'
       '---\n'
       '## Predict the source lookup\n'
       '`origin` flows through `resolve_source_root`.\n'
@@ -103,7 +103,7 @@ void main() {
   }
 
   /// A trace whose checkpoint locator has nothing to resolve against (no
-  /// `% source:` at all): the excerpt-error fallback path.
+  /// `% exam:` at all): the excerpt-error fallback path.
   Directory noSourceRoot() {
     final root = tempRoot('alix-trace-nosource-');
     writeTestDeck(
@@ -208,7 +208,7 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(find.text('Got it'), findsOneWidget);
         // The honest excerpt_error fallback (a line-only locator with no
-        // `% source:` to resolve it against), not a silent gap.
+        // `% exam:` to resolve it against), not a silent gap.
         expect(find.textContaining('is not a single file'), findsOneWidget);
       },
     );
@@ -488,7 +488,7 @@ void main() {
           '${root.path}/t.md',
           '---\n'
           'trace: a picker-launched trace\n'
-          'source: source.txt\n'
+          'exam: source.txt\n'
           'title: T\n'
           '---\n'
           '## Predict\n'

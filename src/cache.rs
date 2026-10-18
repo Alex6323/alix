@@ -35,19 +35,19 @@ struct Entry {
 /// manifest, a second file the deck's own (mtime, size) cannot see.
 #[derive(Clone)]
 struct CachedDeck {
-    workspace_has_sources: bool,
+    workspace_has_exam: bool,
     settings: DeckSettings,
     deck: Result<Arc<Deck>, Arc<DeckError>>,
 }
 
 impl CachedDeck {
-    fn load(path: &Path, settings: DeckSettings, workspace_has_sources: bool) -> Self {
+    fn load(path: &Path, settings: DeckSettings, workspace_has_exam: bool) -> Self {
         profile::hit(Counter::DecksLoaded);
-        let deck = Deck::load_in_workspace(path, &settings, workspace_has_sources)
+        let deck = Deck::load_in_workspace(path, &settings, workspace_has_exam)
             .map(Arc::new)
             .map_err(Arc::new);
         CachedDeck {
-            workspace_has_sources,
+            workspace_has_exam,
             settings,
             deck,
         }
@@ -72,7 +72,7 @@ struct ManifestMeta {
     title: Option<String>,
     description: Option<String>,
     settings: DeckSettings,
-    source: Vec<String>,
+    exam: Vec<String>,
     icon: Option<String>,
 }
 
@@ -114,34 +114,33 @@ impl DeckCache {
     }
 
     pub fn load(&mut self, path: &Path) -> Result<Arc<Deck>, Arc<DeckError>> {
-        let workspace_has_sources = self.workspace_has_sources(path);
+        let workspace_has_exam = self.workspace_has_exam(path);
         let settings = self.workspace_settings(path);
-        self.load_with(path, &settings, workspace_has_sources)
+        self.load_with(path, &settings, workspace_has_exam)
     }
 
     pub fn load_with(
         &mut self,
         path: &Path,
         settings: &DeckSettings,
-        workspace_has_sources: bool,
+        workspace_has_exam: bool,
     ) -> Result<Arc<Deck>, Arc<DeckError>> {
         match self.slot(path) {
             Some(entry) => {
                 if entry.deck.as_ref().is_some_and(|cached| {
-                    cached.workspace_has_sources != workspace_has_sources
-                        || cached.settings != *settings
+                    cached.workspace_has_exam != workspace_has_exam || cached.settings != *settings
                 }) {
                     entry.deck = None;
                 }
                 entry
                     .deck
                     .get_or_insert_with(|| {
-                        CachedDeck::load(path, settings.clone(), workspace_has_sources)
+                        CachedDeck::load(path, settings.clone(), workspace_has_exam)
                     })
                     .deck
                     .clone()
             }
-            None => CachedDeck::load(path, settings.clone(), workspace_has_sources).deck,
+            None => CachedDeck::load(path, settings.clone(), workspace_has_exam).deck,
         }
     }
 
@@ -165,13 +164,13 @@ impl DeckCache {
         }
     }
 
-    fn workspace_has_sources(&mut self, deck: &Path) -> bool {
+    fn workspace_has_exam(&mut self, deck: &Path) -> bool {
         let manifest = workspace::content_root(deck).join(workspace::MANIFEST);
         match self.slot(&manifest) {
             Some(entry) => !entry
                 .manifest
                 .get_or_insert_with(|| read_manifest_meta(&manifest))
-                .source
+                .exam
                 .is_empty(),
             None => false,
         }
@@ -205,7 +204,7 @@ impl DeckCache {
             title: meta.title,
             description: meta.description,
             settings: meta.settings,
-            source: meta.source,
+            exam: meta.exam,
             members,
             identities,
             icon,
@@ -224,12 +223,12 @@ impl DeckCache {
 }
 
 fn read_manifest_meta(path: &Path) -> ManifestMeta {
-    let (title, description, settings, icon, source) = workspace::read_manifest(path);
+    let (title, description, settings, icon, exam) = workspace::read_manifest(path);
     ManifestMeta {
         title,
         description,
         settings,
-        source,
+        exam,
         icon,
     }
 }
@@ -388,10 +387,10 @@ mod tests {
         let first = cache.load(&path).unwrap();
         assert!(!first.has_exam(), "an unsourced workspace has no exam");
 
-        write(&workspace.join("alix.toml"), "source = \"notes.md\"\n");
+        write(&workspace.join("alix.toml"), "exam = \"notes.md\"\n");
         assert_eq!(
             vec!["notes.md".to_string()],
-            cache.workspace(&workspace).source,
+            cache.workspace(&workspace).exam,
             "the same server cache sees the edited manifest"
         );
         assert!(
@@ -406,7 +405,7 @@ mod tests {
         let workspace = dir.path().join("workspace");
         let decks = workspace.join("decks");
         std::fs::create_dir_all(&decks).unwrap();
-        write(&workspace.join("alix.toml"), "source = \"notes.md\"\n");
+        write(&workspace.join("alix.toml"), "exam = \"notes.md\"\n");
         let path = decks.join("d.md");
         write(
             &path,
@@ -429,7 +428,7 @@ mod tests {
         let workspace = dir.path().join("workspace");
         let decks = workspace.join("decks");
         std::fs::create_dir_all(&decks).unwrap();
-        write(&workspace.join("alix.toml"), "source = \"notes.md\"\n");
+        write(&workspace.join("alix.toml"), "exam = \"notes.md\"\n");
         let path = decks.join("d.md");
         write(
             &path,
@@ -440,7 +439,7 @@ mod tests {
 
         write(
             &workspace.join("alix.toml"),
-            "title = \"Renamed\"\nsource = \"notes.md\"\n",
+            "title = \"Renamed\"\nexam = \"notes.md\"\n",
         );
         assert_eq!(
             Some("Renamed".to_string()),

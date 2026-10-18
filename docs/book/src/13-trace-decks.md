@@ -17,7 +17,7 @@ build that chain yourself.
 ## What a trace looks like
 
 A trace is a deck with a `trace:` (a path description — what it traces, and the
-thing that marks the deck a trace) and a `source:` (the path's origin), then a
+thing that marks the deck a trace) and a `exam:` (the path's origin), then a
 sequence of **checkpoint** cards. Each checkpoint is an `explain`-style card — an
 open *predict* prompt and the key points a good prediction should hit — plus a
 `<!-- at: -->` locator pointing at the real lines in the source:
@@ -25,7 +25,7 @@ open *predict* prompt and the key points a good prediction should hit — plus a
 ```
 ---
 trace: how `let s2 = s1` moves a String and avoids a double free
-source: .
+exam: .
 ---
 
 ## You write `let s2 = s1`. What gets copied onto the stack, and what stays shared?
@@ -50,7 +50,7 @@ they occur in its revealed source excerpt. Matching is exact and case-sensitive,
 so the author controls the emphasis by choosing which terms to put in backticks.
 
 The `<!-- at: -->` locator's `at:` field is a single contiguous range
-`file:start-end` (just line numbers when `source:` is one file; a range-less
+`file:start-end` (just line numbers when `exam:` is one file; a range-less
 path or URL cites the whole source, the form frozen URL sources use), never
 comma-separated, since a stitched excerpt makes disjoint code look adjacent. Its
 `fingerprint: xxh64-...` field fingerprints the displayed lines. A live trace
@@ -64,7 +64,7 @@ so the excerpt stays focused without orphaning the names it needs.
 ## Building it with the model
 
 You don't have to hand-write checkpoints. Declare just the `trace:` and
-`source:`, then name the stub deck as
+`exam:`, then name the stub deck as
 [`alix deck generate`](11-generating-decks.md)'s source:
 
 ```sh
@@ -94,7 +94,7 @@ alix deck generate . --trace --plan
 
 does a single read-only recon pass over a source (a repo `.`, a directory, a file,
 or a URL) and prints a **ranked menu of candidate traces** — each a path-question,
-a one-line spine sketch, and a suggested `source:` scope. The list is sized by
+a one-line spine sketch, and a suggested `exam:` scope. The list is sized by
 **coverage** (the central spine plus one main path per major subsystem), so it's
 as long as the source needs. It also names the *node-shaped* subsystems it skips —
 a config table, a store's on-disk format — as **facts-deck material**, because
@@ -166,7 +166,7 @@ cards, so Alix never exports a whole file or an entire repository.
 
 Every copied excerpt lives below `assets/deck-<token>/` and is named
 `sha256-<digest>.<ext>`, where the digest covers its exact stored bytes. Freezing
-leaves the deck's `source:` pointed at the real material (a path or a URL): it is
+leaves the deck's `exam:` pointed at the real material (a path or a URL): it is
 never rewritten to point into `assets/`. Each `<!-- at: -->` keeps its real
 `at:` path and lines, keeps its excerpt `fingerprint:`, and gains an `asset:`
 field naming the content-addressed object:
@@ -177,7 +177,7 @@ field naming the content-addressed object:
 
 Review reveals the frozen excerpt (display evidence, numbered from the `at:`
 start line), and the `fingerprint:` verifies those stored bytes. The `at:` path
-and the deck's `source:` retain provenance for drift reporting and a future
+and the deck's `exam:` retain provenance for drift reporting and a future
 deliberate source update. When the live source is available and permitted, the
 tutor and exam may consult it for surrounding context and staleness detection;
 offline, they report the missing live source rather than silently degrading. A
@@ -185,7 +185,7 @@ loose trace over a live source is left as-is.
 
 ## Checking the locators
 
-For a trace that *isn't* frozen — a loose `.md` over a live `source:` —
+For a trace that *isn't* frozen — a loose `.md` over a live `exam:` —
 [`alix doctor <deck>`](17-command-reference.md) validates that every
 `<!-- at: -->` still resolves and matches its fingerprint. A missing fingerprint,
 missing file, changed excerpt, or ambiguous exact match is reported without

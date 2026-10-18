@@ -861,7 +861,7 @@ mod tests {
         std::fs::write(dir.path().join(crate::workspace::MANIFEST), "").unwrap();
 
         let error =
-            place_deck(&decks, "facts", "---\nsource: missing.md\n---\n## q\na\n").unwrap_err();
+            place_deck(&decks, "facts", "---\nexam: missing.md\n---\n## q\na\n").unwrap_err();
 
         assert!(format!("{error:#}").contains("missing.md"));
         assert!(!decks.join("facts.md").exists());
@@ -1045,7 +1045,7 @@ mod tests {
     #[test]
     fn a_replace_that_fails_after_its_renames_restores_the_whole_trio() {
         // A workspace member, because only members freeze their source and a
-        // missing `source:` is the portable post-rename failure injection.
+        // missing `exam:` is the portable post-rename failure injection.
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("ws");
         let members = ws.join("decks");
@@ -1068,7 +1068,7 @@ mod tests {
         let err = replace_deck(
             &members,
             "a",
-            "---\nsource: missing.md\n---\n## new q\nnew ans\n",
+            "---\nexam: missing.md\n---\n## new q\nnew ans\n",
             &mut store,
         )
         .unwrap_err();
@@ -1824,7 +1824,7 @@ mod tests {
 
     /// One fixture: frontmatter without `id:`, a divided card (fence + note +
     /// escaped divider + trailing-space front), and a two-hole cloze card.
-    const MARKER_FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe alpha and beta here\n> cloze note\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n";
+    const MARKER_FIXTURE: &str = "---\nexam: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe alpha and beta here\n> cloze note\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n";
 
     fn all_tokens(subject: &str, text: &str) -> Vec<String> {
         let deck = crate::parser::parse(subject, text).unwrap();
@@ -1916,7 +1916,7 @@ mod tests {
     #[test]
     fn a_trace_rebuild_routes_through_replace_and_wipes_the_old_checkpoints() {
         let dir = tempfile::tempdir().unwrap();
-        let existing = "---\nformat-version: 1\nid: \"deck-da1\"\ntrace: how x becomes y\nsource: notes.md\n---\n## old cp\nold\n<!-- id: card-c1 -->\n";
+        let existing = "---\nformat-version: 1\nid: \"deck-da1\"\ntrace: how x becomes y\nexam: notes.md\n---\n## old cp\nold\n<!-- id: card-c1 -->\n";
         let path = dir.path().join("t.md");
         std::fs::write(&path, existing).unwrap();
         let mut store = crate::state::open_store(&path, dir.path()).unwrap();
@@ -1930,7 +1930,7 @@ mod tests {
         )
         .unwrap();
         assert!(new_text.contains("trace: how x becomes y"));
-        assert!(new_text.contains("source: notes.md"));
+        assert!(new_text.contains("exam: notes.md"));
 
         replace_deck(dir.path(), "t", &new_text, &mut store).unwrap();
 

@@ -102,7 +102,7 @@ get: **`alix deck generate`** always writes one deck, **`alix workspace
 generate`** always builds a workspace.
 
 Both take the same steering options. `--source-url <URL>` records a public
-source (added to the deck or workspace `source:`) for later tutor and exam
+source (added to the deck or workspace `exam:`) for later tutor and exam
 context after local evidence is frozen. `--goal <TEXT>` scopes what the new
 deck or workspace teaches. `--language <LANGUAGE>` controls learner-facing
 output, and `--audience <TEXT>` controls assumed knowledge and difficulty.
@@ -254,8 +254,8 @@ notes it.
   still awaiting a token. For `requires:` it separates a dangling filename edge
   from a dangling deck-id edge, a `card-…` id pasted where a deck belongs, and
   a file that only shares a required id's name (the id wins, so add the `.md`
-  extension to mean the file). It nudges a `source:` that lists more than a few entries
-  toward their common directory, and flags a `source:` pointing into `assets/`
+  extension to mean the file). It nudges a `exam:` that lists more than a few entries
+  toward their common directory, and flags a `exam:` pointing into `assets/`
   (a deck keeps its real source, never its frozen excerpt fragments). It also
   names deck-like Markdown ignored until explicitly
   initialized, invalid or orphaned per-deck progress or augmentation documents,
@@ -267,7 +267,7 @@ notes it.
   backups and conflict copies excepted). A live `at:` citation that does not
   resolve is an error. In `alix.toml` it warns about each unknown key or
   invalid value in `[defaults]`, which alix ignores, and reports `cite`,
-  `exam` or `source` inside `[defaults]` as an error naming where the key
+  `exam` inside `[defaults]` as an error naming where the key
   belongs. `--backends` additionally
   probes the configured AI backend end to end (one real, tiny request);
   `--all-backends` probes all four. `--grading` spot-checks the configured

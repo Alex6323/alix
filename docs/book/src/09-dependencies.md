@@ -38,20 +38,20 @@ dependency cycle is treated as non-blocking. A broken edge never hides a deck.
 (or browse) a deck, the session holds exactly that deck's cards; prerequisites
 are never pulled in, so the `reveal`/`review` you study under is always
 the deck's own. What dependencies shape is the picker's **dependency tree**
-(foundations shown first) and, for a deck with a `source:`, the **exam gate**
+(foundations shown first) and, for a deck with a `exam:`, the **exam gate**
 below.
 
 ## Unlocks
 
 The same `requires:` graph drives **unlocks**, with no extra syntax, and the
 gate is the **exam**, not drilling. You can review any deck at any time, in any
-order; what `requires:` controls is **exam order**: a deck with a `source:`
+order; what `requires:` controls is **exam order**: a deck with a `exam:`
 can't sit its exam until each of its *sourced* prerequisites has passed its own
 exam, and passing a foundation's exam unlocks the exams that build on it. A
-prerequisite with no `source:` at all has no exam to pass, so it never gates:
+prerequisite with no `exam:` at all has no exam to pass, so it never gates:
 its edge is just a suggested order in the tree. (`alix doctor` warns when an
 exam-grounded deck requires one without exam grounding, since that edge can't
-gate an exam; add a `source:` to the prerequisite to make it real. It also flags
+gate an exam; add a `exam:` to the prerequisite to make it real. It also flags
 a **dangling** `requires:`, one naming a deck that does not exist, so a renamed
 or deleted prerequisite is caught rather than silently dropping the edge, and
 distinguishes an id-mode value that points nowhere from a card id pasted by

@@ -15,7 +15,7 @@ Each item is tagged `[trace]` or `[deck]`, chosen by the **shape of the
 knowledge**: a *path* you predict hop by hop becomes a trace; a *table of facts* —
 a config's knobs, a store's on-disk format — becomes a facts deck. Each carries its
 `requires:` prerequisites (the list is a valid dependency order, foundations
-first) and a `source:` scope. The `--goal` scopes coverage: a broad goal spans
+first) and a `exam:` scope. The `--goal` scopes coverage: a broad goal spans
 every subsystem; a narrow one collapses to its slice and traces it in more detail.
 `--plan` is read-only — it prints the plan and stops, so you can author the items
 yourself (`alix deck generate` [a trace](13-trace-decks.md) or
@@ -38,8 +38,8 @@ explores the source **once** and reuses that single session to fill every item �
 predict-verify checkpoints for the traces, fact cards for the decks — so the
 [workspace](08-workspaces.md) comes out review-ready in one command: an
 `alix.toml` (carrying the goal; `--title` names it) and one file per item under
-`decks/`: a `trace:` deck per trace and a `source:` facts deck per deck, wired together
-with `requires:` so they unlock in dependency order, each `source:` pointing
+`decks/`: a `trace:` deck per trace and a `exam:` facts deck per deck, wired together
+with `requires:` so they unlock in dependency order, each `exam:` pointing
 back at the real source. Writing the whole set from one understanding keeps the
 items **coherent** (each builds on its prerequisites instead of repeating them).
 Before the hidden staging workspace becomes visible, Alix initializes every

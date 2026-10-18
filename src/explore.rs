@@ -190,7 +190,7 @@ fn trace_prompt(source: &str, spec: &GenerationSpec, url: bool, cfg: &TraceConfi
          The reveal is the real text; the source is the oracle, never invented. Every \
          hop has a locator.\n\n\
          FORMAT — output ONLY the checkpoint cards: no frontmatter, no `trace:`/\
-         `source:` key, no preamble, no code fences. Each checkpoint:\n\n\
+         `exam:` key, no preamble, no code fences. Each checkpoint:\n\n\
          ## <the shape question, asked plainly>\n\
          <a key point a correct answer hits>\n\
          <another key point>\n\
@@ -317,7 +317,7 @@ fn fill_prompt(items: &[Item], spec: &GenerationSpec) -> String {
          source root you explored (your working directory) — as ONE consistent path \
          per file across ALL items; never drop or add a leading directory (always \
          `src/foo.rs`, never sometimes `foo.rs`), so the frozen citations all resolve.\n\n\
-         Do NOT emit any frontmatter (`trace:`, `source:`, `requires:` keys) or a \
+         Do NOT emit any frontmatter (`trace:`, `exam:`, `requires:` keys) or a \
          `# ` title — those are already written; output only the `## ` cards. \
          Output ONLY the delimited item bodies: no preamble, no code fences, nothing \
          between the last card of one item and the next `=== item ===` line.\n\n\
@@ -472,10 +472,10 @@ pub fn materialize(
         manifest.push_str(&format!("title = \"{}\"\n", toml_escape(title)));
     }
     manifest.push_str(&format!("description = \"{}\"\n", toml_escape(goal)));
-    // The workspace `source`: the material the workspace is about, layered
+    // The workspace `exam`: the material the workspace is about, layered
     // under every member deck's own sources (ADR 0026).
     if let Some(source) = public_url.or_else(|| root.as_ref().and_then(|path| path.to_str())) {
-        manifest.push_str(&format!("source = \"{}\"\n", toml_escape(source)));
+        manifest.push_str(&format!("exam = \"{}\"\n", toml_escape(source)));
     }
     fs::write(dir.join(crate::workspace::MANIFEST), manifest)?;
 
@@ -496,9 +496,9 @@ pub fn materialize(
         }
         match rewrite_scope(&item.source, root.as_deref()).as_slice() {
             [] => {}
-            [only] => body.push_str(&format!("source: {}\n", yaml_quote(only))),
+            [only] => body.push_str(&format!("exam: {}\n", yaml_quote(only))),
             many => {
-                body.push_str("source:\n");
+                body.push_str("exam:\n");
                 for entry in many {
                     body.push_str(&format!("  - {}\n", yaml_quote(entry)));
                 }
@@ -718,7 +718,7 @@ pub fn freeze_workspace(dir: &Path) -> Result<FreezeSummary> {
         let has_local_image = crate::parser::image_references(&text)
             .iter()
             .any(|image| !crate::deck::is_url(&image.source));
-        if deck.deck_token.is_some() && deck.sources.is_empty() && !has_local_image {
+        if deck.deck_token.is_some() && deck.exam.is_empty() && !has_local_image {
             continue;
         }
         let result = if deck.deck_token.is_some() {
@@ -1127,12 +1127,12 @@ Spine   a -> b
         let manifest = fs::read_to_string(dir.join("alix.toml")).unwrap();
         assert!(manifest.contains("description = \"understand the repo\""));
         assert!(!manifest.contains("title ="));
-        assert!(manifest.contains("source = "), "{manifest}");
+        assert!(manifest.contains("exam = "), "{manifest}");
         assert!(!manifest.contains("origin"), "{manifest}");
 
         let deck = fs::read_to_string(dir.join("decks/01-the-deck-format.md")).unwrap();
         assert!(deck.contains("# The Deck Format"));
-        assert!(deck.contains("source: "));
+        assert!(deck.contains("exam: "));
 
         let trace = fs::read_to_string(dir.join("decks/02-how-text-becomes-cards.md")).unwrap();
         assert!(trace.contains("trace: \"How Text Becomes Cards\""));
@@ -1182,7 +1182,7 @@ Spine   a -> b
     }
 
     #[test]
-    fn materialize_prefers_an_explicit_public_url_as_the_manifest_source() {
+    fn materialize_prefers_an_explicit_public_url_as_the_manifest_exam() {
         let dir = std::env::temp_dir().join(format!("alix-explore-src-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
 
@@ -1199,7 +1199,7 @@ Spine   a -> b
 
         let manifest = fs::read_to_string(dir.join("alix.toml")).unwrap();
         assert!(
-            manifest.contains("source = \"https://example.org/source\""),
+            manifest.contains("exam = \"https://example.org/source\""),
             "{manifest}"
         );
 
@@ -1560,14 +1560,14 @@ back a
         fs::write(dir.join("src/a.rs"), "x\ny\nz\n").unwrap();
         fs::write(
             dir.join("alix.toml"),
-            "source = \"https://example.org/current\"\n",
+            "exam = \"https://example.org/current\"\n",
         )
         .unwrap();
         let src = dir.join("src");
         fs::write(
             dir.join("decks/01-t.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: t\nsource: {}\n---\n## h\np\n<!-- at: a.rs:1-2 -->\n",
+                "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: t\nexam: {}\n---\n## h\np\n<!-- at: a.rs:1-2 -->\n",
                 src.display()
             ),
         )
@@ -1575,7 +1575,7 @@ back a
         fs::write(
             dir.join("decks/02-d.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-facts\"\nsource: {}\n---\n## q\na\n<!-- at: a.rs:3 -->\n",
+                "---\nformat-version: 1\nid: \"deck-facts\"\nexam: {}\n---\n## q\na\n<!-- at: a.rs:3 -->\n",
                 src.display()
             ),
         )
@@ -1595,10 +1595,10 @@ back a
         assert!(!dir.join("assets/a.rs").exists());
         let fact = fs::read_to_string(dir.join("decks/02-d.md")).unwrap();
         assert!(
-            fact.contains(&format!("source: {}", src.display())),
+            fact.contains(&format!("exam: {}", src.display())),
             "the live source declaration stays untouched: {fact}"
         );
-        assert!(!fact.contains("source: \"assets/"), "{fact}");
+        assert!(!fact.contains("exam: \"assets/"), "{fact}");
         assert!(!fact.contains("origin:"), "freezing stamps nothing: {fact}");
         assert!(!fact.contains("<!-- at: a.rs:3 -->"), "{fact}");
         assert!(
@@ -1619,7 +1619,7 @@ back a
         fs::write(
             dir.join("decks/01-broken.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-broken\"\nsource: {}/does-not-exist\n---\n## q\na\n<!-- at: src/x.rs:1 -->\n",
+                "---\nformat-version: 1\nid: \"deck-broken\"\nexam: {}/does-not-exist\n---\n## q\na\n<!-- at: src/x.rs:1 -->\n",
                 dir.display()
             ),
         )
@@ -1689,7 +1689,7 @@ back a
         fs::write(
             dir.path().join("decks/both.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck4\"\nsource: {}\n---\n## q\n![diagram](diagram.png)\na\n<!-- at: notes.md:2 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck4\"\nexam: {}\n---\n## q\n![diagram](diagram.png)\na\n<!-- at: notes.md:2 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )

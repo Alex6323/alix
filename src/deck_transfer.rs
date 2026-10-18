@@ -210,10 +210,10 @@ impl Transfer {
     }
 
     /// A transferred deck leaves its workspace behind, so its layered sources
-    /// (own, else the source workspace's) materialize into its own `source:`
+    /// (own, else the source workspace's) materialize into its own `exam:`
     /// list, with relative local paths made absolute against the old root.
     fn materialize_sources(&self, bundle: &Path) -> Result<()> {
-        let layers = self.deck.source_layers();
+        let layers = self.deck.exam_layers();
         let sources = if layers.own.is_empty() {
             &layers.workspace
         } else {
@@ -229,7 +229,7 @@ impl Transfer {
         let staged_deck = self.staged_deck(bundle)?;
         let text = std::fs::read_to_string(&staged_deck)
             .with_context(|| format!("cannot read {}", staged_deck.display()))?;
-        let text = deck::with_sources(&text, &materialized)?;
+        let text = deck::with_exam(&text, &materialized)?;
         deck::write_deck_text(&staged_deck, &text)?;
         Ok(())
     }
@@ -659,7 +659,7 @@ mod tests {
         workspace(&source, "");
         workspace(&destination, "");
         std::fs::create_dir(source.join("material")).unwrap();
-        let deck = deck(&source, "facts.md", "source: material\n");
+        let deck = deck(&source, "facts.md", "exam: material\n");
 
         transfer(&deck, &destination, TransferMode::Copy).unwrap();
 
@@ -673,7 +673,7 @@ mod tests {
                     .display()
                     .to_string()
             ],
-            copied.sources
+            copied.exam
         );
     }
 
@@ -682,7 +682,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let destination = dir.path().join("destination");
-        workspace(&source, "source = \"material\"\n");
+        workspace(&source, "exam = \"material\"\n");
         workspace(&destination, "");
         std::fs::create_dir(source.join("material")).unwrap();
         let deck = deck(&source, "facts.md", "");
@@ -701,7 +701,7 @@ mod tests {
                     .display()
                     .to_string()
             ],
-            copied.sources
+            copied.exam
         );
     }
 

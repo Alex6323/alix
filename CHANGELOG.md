@@ -125,6 +125,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The deck frontmatter key and the workspace manifest key `source` are renamed
+  `exam`. A deck or manifest that still uses `source` fails as an unknown key.
+
 - The web apps and the mobile app draw every unrevealed cloze blank as an empty
   outlined pill of one fixed width, asked or hidden, so the gap never hints at
   the answer's length; the asked pill carries a faint accent fill, and a

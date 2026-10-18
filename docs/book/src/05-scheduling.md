@@ -179,7 +179,7 @@ the picker and `alix stats`:
 - **finished** (`done ✓`): every card has **graduated** (reached FSRS's review
   phase, past the initial learning steps)
 
-A deck that declares a `source:` adds one state in between: **exam due**. For
+A deck that declares a `exam:` adds one state in between: **exam due**. For
 those decks, drilling the cards no longer finishes them: passing the **AI exam**
 does, which marks the deck *mastered*. That's the subject of a later chapter.
 

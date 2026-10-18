@@ -230,7 +230,7 @@ own mirror: `/api/trace/ask`, `/api/trace/ask/note`, `GET /api/trace/ask`, and
 so does the walk (§4.13): `/api/walk/ask`, `/api/walk/ask/note`,
 `GET /api/walk/ask`, always about the walk's current item.
 Frozen excerpts are always supplied as evidence. When no usable live
-`source:` (deck or workspace) is available, `status` carries a deterministic
+`exam:` (deck or workspace) is available, `status` carries a deterministic
 warning that the tutor has only the frozen evidence rather than the full
 current source.
 
@@ -413,7 +413,7 @@ server resolves **its own copy** of the named deck, by the same resolution
 trace deck now sits too (since 0.6.0): it opens straight in `answering`
 with the path's one fixed compression question, graded the same way the
 browser's own trace exam is (`RemoteExamDto.is_trace` tells the two apart,
-§6). A non-trace deck with no `source:` at either level (deck or workspace)
+§6). A non-trace deck with no `exam:` at either level (deck or workspace)
 is still refused outright (409): there is nothing to examine. The
 browser's `requires:` deck lock and trace re-sit
 cooldown are read from the server's own store, which is not the phone's

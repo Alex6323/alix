@@ -281,10 +281,10 @@ fn inline_emphasis_findings(cards: &[alix::card::Card], report: &mut Report) {
     }
 }
 
-/// `source:` must point at real material, never into `assets/`: asset objects
+/// `exam:` must point at real material, never into `assets/`: asset objects
 /// are excerpt fragments, and an examiner or tutor grounded on fragments would
 /// confidently fill the gaps around them.
-fn source_points_into_assets(source: &str) -> bool {
+fn exam_points_into_assets(source: &str) -> bool {
     if alix::deck::is_url(source) {
         return false;
     }
@@ -450,10 +450,10 @@ fn geometry_agreement(
 
 fn deck_resource_findings(deck: &Deck, report: &mut Report) {
     let managed = workspace::root_for_deck(&deck.path).is_some() && deck.deck_token.is_some();
-    for source in &deck.sources {
-        if source_points_into_assets(source) {
+    for source in &deck.exam {
+        if exam_points_into_assets(source) {
             report.warn(format!(
-                "{}: `source:` points into `assets/` (`{source}`); a frozen deck keeps its \
+                "{}: `exam:` points into `assets/` (`{source}`); a frozen deck keeps its \
                  real source, not its asset objects",
                 deck.path.display()
             ));
@@ -461,7 +461,7 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
     }
     let mut frozen_assets_valid = true;
     let mut has_live_citations = false;
-    if managed && !deck.sources.is_empty() {
+    if managed && !deck.exam.is_empty() {
         let live = deck
             .cards
             .iter()
@@ -606,18 +606,18 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             }
         }
     }
-    if deck.sources.len() > 3 {
+    if deck.exam.len() > 3 {
         report.warn(format!(
-            "{}: `source:` lists {} expressions; point at their common root instead \
+            "{}: `exam:` lists {} expressions; point at their common root instead \
              (a directory source covers its files)",
             deck.path.display(),
-            deck.sources.len()
+            deck.exam.len()
         ));
     }
     for prereq in alix::deck::nongating_prerequisites(deck) {
         report.warn(format!(
             "{}: requires ungrounded `{prereq}`: this edge doesn't gate its exam; \
-             give it a `source:` (deck or workspace) to make it a real prerequisite",
+             give it a `exam:` (deck or workspace) to make it a real prerequisite",
             deck.subject
         ));
     }
@@ -1165,8 +1165,8 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
             if !deck.requires.is_empty() {
                 println!("  requires: {}", deck.requires.join(", "));
             }
-            if !deck.sources.is_empty() {
-                println!("  sources:  {}", deck.sources.join(", "));
+            if !deck.exam.is_empty() {
+                println!("  sources:  {}", deck.exam.join(", "));
             }
             if let Some(desc) = &deck.trace {
                 println!("  trace:    {desc}");
@@ -2192,12 +2192,12 @@ mod tests {
 
     #[test]
     fn only_local_paths_inside_assets_are_asset_sources() {
-        assert!(source_points_into_assets("assets/deck-one/object.md"));
-        assert!(source_points_into_assets(
+        assert!(exam_points_into_assets("assets/deck-one/object.md"));
+        assert!(exam_points_into_assets(
             "workspace/assets/deck-one/object.md"
         ));
-        assert!(!source_points_into_assets("notes/assets-overview.md"));
-        assert!(!source_points_into_assets(
+        assert!(!exam_points_into_assets("notes/assets-overview.md"));
+        assert!(!exam_points_into_assets(
             "https://example.test/assets/deck-one/object.md"
         ));
     }
@@ -2222,13 +2222,13 @@ mod tests {
         w(
             dir.path(),
             "three.md",
-            "---\nsource: [a, b, c]\n---\n## q\na\n",
+            "---\nexam: [a, b, c]\n---\n## q\na\n",
         );
         let four = dir.path().join("four.md");
         w(
             dir.path(),
             "four.md",
-            "---\nsource: [a, b, c, d]\n---\n## q\na\n",
+            "---\nexam: [a, b, c, d]\n---\n## q\na\n",
         );
         let mut report = Report::default();
         deck_findings(&three, &mut report);
@@ -2542,7 +2542,7 @@ mod tests {
             ),
             (
                 "known-keys",
-                "title = \"Known\"\ndescription = \"Description\"\nicon = \"icon.svg\"\nsource = \"source.txt\"\nsource_access = true\n[defaults]\nreveal = \"line\"\n",
+                "title = \"Known\"\ndescription = \"Description\"\nicon = \"icon.svg\"\nexam = \"source.txt\"\nsource_access = true\n[defaults]\nreveal = \"line\"\n",
                 None,
                 "Known",
             ),
@@ -2640,7 +2640,7 @@ mod tests {
         w(
             dir.path(),
             "declared.md",
-            "---\nformat-version: 1\nid: deck-declared\nreveal: line\nreview: sequential\nrequires: ghost\nsource: https://example.test/source\n---\n## q\na\n<!-- id: card-q -->\n",
+            "---\nformat-version: 1\nid: deck-declared\nreveal: line\nreview: sequential\nrequires: ghost\nexam: https://example.test/source\n---\n## q\na\n<!-- id: card-q -->\n",
         );
         let plain = dir.path().join("plain.md");
         w(dir.path(), "plain.md", "## q\na\n");
@@ -2703,7 +2703,7 @@ mod tests {
         w(
             dir.path(),
             "cloze.md",
-            "---\nformat-version: 1\nid: deck-cloze\nsource: .\n---\n\
+            "---\nformat-version: 1\nid: deck-cloze\nexam: .\n---\n\
              ## q\nthe first and the second\n\
              <!-- blank: span hidden=\"first\" b:a1b2c3 -->\n\
              <!-- blank: span hidden=\"second\" b:d4e5f6 -->\n\
@@ -2737,7 +2737,7 @@ mod tests {
         std::fs::write(
             &deck_path,
             format!(
-                "---\nid: deck-1xpgnc8f1mypv80cgzyxrn2cqf\nsource: ..\n---\n\
+                "---\nid: deck-1xpgnc8f1mypv80cgzyxrn2cqf\nexam: ..\n---\n\
                  ## stale\na\n<!-- at: source.txt:1 fingerprint: {} -->\n\
                  <!-- id: card-1xpgnc8f1mypv80cgzyxrn2cqf -->\n\n\
                  ## live\nb\n<!-- at: source.txt:1 -->\n\
@@ -2791,7 +2791,7 @@ mod tests {
         let deck_path = dir.path().join(workspace::DECKS).join("member.md");
         std::fs::write(
             &deck_path,
-            "---\nid: deck-1xpgnc8f1mypv80cgzyxrn2cqf\nsource: ..\n---\n\
+            "---\nid: deck-1xpgnc8f1mypv80cgzyxrn2cqf\nexam: ..\n---\n\
              ## frozen\na\n<!-- at: source.txt:1 -->\n\
              <!-- id: card-1xpgnc8f1mypv80cgzyxrn2cqf -->\n\n\
              ## live\nb\n<!-- at: source.txt:2 -->\n\
@@ -2852,7 +2852,7 @@ mod tests {
             dir.path(),
             "twin.md",
             &format!(
-                "---\nformat-version: 1\nid: deck-twin\nsource: .\n---\n\
+                "---\nformat-version: 1\nid: deck-twin\nexam: .\n---\n\
                  ## q\na\n<!-- at: source.txt:1 fingerprint: {} -->\n\
                  <!-- at: source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
                 one_line_fingerprint("first"),
@@ -2884,7 +2884,7 @@ mod tests {
             dir.path(),
             "changed.md",
             &format!(
-                "---\nformat-version: 1\nid: deck-changed\nsource: .\n---\n## q\na\n<!-- at: source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
+                "---\nformat-version: 1\nid: deck-changed\nexam: .\n---\n## q\na\n<!-- at: source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
                 one_line_fingerprint("gone")
             ),
         );
@@ -2908,7 +2908,7 @@ mod tests {
             dir.path(),
             "ambiguous.md",
             &format!(
-                "---\nformat-version: 1\nid: deck-ambiguous\nsource: .\n---\n## q\na\n<!-- at: source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
+                "---\nformat-version: 1\nid: deck-ambiguous\nexam: .\n---\n## q\na\n<!-- at: source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
                 one_line_fingerprint("target")
             ),
         );
@@ -3021,7 +3021,7 @@ printf ']}}'
         w(
             dir.path(),
             "facts.md",
-            "---\nformat-version: 1\nid: deck-facts\nsource: .\n---\n## q\na\n<!-- at: source.txt:1 -->\n<!-- id: card-q -->\n<!-- reveal: line -->\n",
+            "---\nformat-version: 1\nid: deck-facts\nexam: .\n---\n## q\na\n<!-- at: source.txt:1 -->\n<!-- id: card-q -->\n<!-- reveal: line -->\n",
         );
         let before = std::fs::read_to_string(&deck).unwrap();
         let args = |repair_source_locators| DoctorArgs {
@@ -3100,7 +3100,7 @@ printf ']}}'
         let path = decks.join("facts.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: deck-deck1\nsource: notes.md\n---\n## q\na\n<!-- at: notes.md:1 -->\n<!-- id: card-card1 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\nexam: notes.md\n---\n## q\na\n<!-- at: notes.md:1 -->\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         let before = std::fs::read(&path).unwrap();
@@ -3129,7 +3129,7 @@ printf ']}}'
         std::fs::write(
             decks.join("facts.md"),
             format!(
-                "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
+                "---\nformat-version: 1\nid: deck-deck1\nexam: assets/deck-deck1/{name}\n---\n\
                  ## q\na\n<!-- id: card-card1 -->\n"
             ),
         )
@@ -3611,7 +3611,7 @@ printf ']}}'
         w(
             &decks,
             "unspliceable.md",
-            "---\n{source: [a]}\n---\n## q\nb\n<!-- id: card-uq1 -->\n",
+            "---\n{exam: [a]}\n---\n## q\nb\n<!-- id: card-uq1 -->\n",
         );
         w(
             &decks,
@@ -3631,19 +3631,19 @@ printf ']}}'
         w(
             &decks,
             "trace-bad.md",
-            "---\ntrace: a walk\nsource: trace-src.txt\n---\n## hop\nstep\n<!-- id: card-thop1 -->\n<!-- at: 5-6 -->\n",
+            "---\ntrace: a walk\nexam: trace-src.txt\n---\n## hop\nstep\n<!-- id: card-thop1 -->\n<!-- at: 5-6 -->\n",
         );
         w(dir, "trace-src.txt", "one\ntwo\n");
         w(
             &decks,
             "at-dangling.md",
-            "---\nsource: .\n---\n## cited\nb\n<!-- at: missing.rs:1-2 -->\n<!-- id: card-atd1 -->\n",
+            "---\nexam: .\n---\n## cited\nb\n<!-- at: missing.rs:1-2 -->\n<!-- id: card-atd1 -->\n",
         );
         w(&decks, "sourceless.md", "## a\n1\n<!-- id: card-sla1 -->\n");
         w(
             &decks,
             "gated.md",
-            "---\nsource: https://example.test\nrequires: sourceless\n---\n## b\n1\n<!-- id: card-gtd1 -->\n",
+            "---\nexam: https://example.test\nrequires: sourceless\n---\n## b\n1\n<!-- id: card-gtd1 -->\n",
         );
 
         let mut store = alix::store::Store::open_deck(
@@ -3820,7 +3820,7 @@ printf ']}}'
             &decks,
             "facts.md",
             &format!(
-                "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
+                "---\nformat-version: 1\nid: deck-deck1\nexam: assets/deck-deck1/{name}\n---\n\
                  ## q\na\n<!-- id: card-card1 -->\n"
             ),
         );
@@ -3896,7 +3896,7 @@ printf ']}}'
             dir.path(),
             "deck.md",
             &format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: .\n---\n\
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: .\n---\n\
                  ## q\nanswer\n<!-- at: code.rs:2-3 fingerprint: {fingerprint} -->\n\
                  <!-- id: card-card1 -->\n"
             ),

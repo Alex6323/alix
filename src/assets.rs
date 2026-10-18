@@ -838,7 +838,7 @@ fn declared_source_inputs(
     deck: &Deck,
 ) -> Result<Vec<SourceInput>, AssetError> {
     let mut inputs = Vec::new();
-    let layers = deck.source_layers();
+    let layers = deck.exam_layers();
     for source in layers.base_locals() {
         if let Some(path) = crate::source::source_path(source, Some(workspace_root)) {
             let path = path
@@ -1394,7 +1394,7 @@ mod tests {
         std::fs::write(directory.path().join("old image.png"), [9, 9]).unwrap();
         let path = directory.path().join("decks/facts.md");
         let text = format!(
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## q\n![d](diagram.PNG)\n![m](<old image.png> \"Old title\")\na\n<!-- at: notes.md:2 -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n## q\n![d](diagram.PNG)\n![m](<old image.png> \"Old title\")\na\n<!-- at: notes.md:2 -->\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();
@@ -1415,7 +1415,7 @@ mod tests {
         assert!(deck.is_frozen());
         assert_eq!(
             vec![source.display().to_string()],
-            deck.sources,
+            deck.exam,
             "the live source declaration stays untouched"
         );
         assert!(
@@ -1477,7 +1477,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck5\"\nsource: {}\n---\n## q\na\n<!-- at: notes.md:2 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck5\"\nexam: {}\n---\n## q\na\n<!-- at: notes.md:2 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1509,7 +1509,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck2\"\nsource: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck2\"\nexam: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1529,7 +1529,7 @@ mod tests {
         );
         assert_eq!(
             vec![source.display().to_string()],
-            deck.sources,
+            deck.exam,
             "the live source declaration stays untouched"
         );
         let evidence_name = object_name(b"b\nc\n", "rs");
@@ -1565,7 +1565,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck6\"\nsource: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck6\"\nexam: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1598,7 +1598,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck8\"\nsource: {}\n---\n## q\na\n<!-- at: notes.md:5-104 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck8\"\nexam: {}\n---\n## q\na\n<!-- at: notes.md:5-104 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1646,7 +1646,7 @@ mod tests {
         std::fs::write(source.join("lib.rs"), "a\n").unwrap();
         let path = directory.path().join("decks/plain.md");
         let text = format!(
-            "---\nformat-version: 1\nid: \"deck-deck3\"\nsource: {}\n---\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-deck3\"\nexam: {}\n---\n## q\na\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();
@@ -1667,7 +1667,7 @@ mod tests {
         assert!(!deck.is_frozen());
         assert_eq!(
             vec![source.display().to_string()],
-            deck.sources,
+            deck.exam,
             "the live source declaration stays untouched"
         );
     }
@@ -1675,11 +1675,7 @@ mod tests {
     #[test]
     fn a_member_with_no_own_source_initializes_and_freezes_from_the_workspace_source() {
         let directory = workspace();
-        std::fs::write(
-            directory.path().join("alix.toml"),
-            "source = \"notes.md\"\n",
-        )
-        .unwrap();
+        std::fs::write(directory.path().join("alix.toml"), "exam = \"notes.md\"\n").unwrap();
         std::fs::write(directory.path().join("notes.md"), "one\ntwo\nthree\n").unwrap();
         let path = directory.path().join("decks/facts.md");
         std::fs::write(
@@ -1725,7 +1721,7 @@ mod tests {
         std::fs::write(&source, "a\n").unwrap();
         let path = directory.path().join("decks/facts.md");
         let text = format!(
-            "---\nformat-version: 1\nid: \"deck-deck4\"\nsource: {}\n---\n## q\n![d](missing.png)\na\n",
+            "---\nformat-version: 1\nid: \"deck-deck4\"\nexam: {}\n---\n## q\n![d](missing.png)\na\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();
@@ -1845,7 +1841,7 @@ mod tests {
         let directory = workspace();
         let path = directory.path().join("decks/remote.md");
         let original =
-            b"---\nsource: https://example.test/source.md\n---\n## q\na\n<!-- at: notes.md:1 -->\n";
+            b"---\nexam: https://example.test/source.md\n---\n## q\na\n<!-- at: notes.md:1 -->\n";
         std::fs::write(&path, original).unwrap();
 
         let error = initialize(&path).unwrap_err();
@@ -1866,7 +1862,7 @@ mod tests {
         let path = directory.path().join("decks/mixed.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource:\n  - https://example.test/page\n  - notes.md\n---\n\
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam:\n  - https://example.test/page\n  - notes.md\n---\n\
              ## q\na\n<!-- at: notes.md:2 -->\n",
         )
         .unwrap();
@@ -1887,7 +1883,7 @@ mod tests {
         let url_only = directory.path().join("decks/url-only.md");
         std::fs::write(
             &url_only,
-            "---\nsource: https://example.test/page\n---\n## q\na\n",
+            "---\nexam: https://example.test/page\n---\n## q\na\n",
         )
         .unwrap();
         let report = initialize(&url_only).unwrap();
@@ -2969,7 +2965,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## q\n```mermaid\nflowchart LR\n A-->B\n```\na\n<!-- at: notes.md:2 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n## q\n```mermaid\nflowchart LR\n A-->B\n```\na\n<!-- at: notes.md:2 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -3037,7 +3033,7 @@ mod tests {
         std::fs::write(directory.path().join("diagram.png"), [0, 1, 2, 255]).unwrap();
         let path = directory.path().join("decks/facts.md");
         let text = format!(
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## q\n![d](diagram.png)\na\n<!-- at: notes.md:2 -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n## q\n![d](diagram.png)\na\n<!-- at: notes.md:2 -->\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();

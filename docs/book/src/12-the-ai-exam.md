@@ -9,20 +9,20 @@ The reasoning: recall isn't understanding. You can drill every card and still no
 see how the ideas connect. So a deck can name a ground-truth **source** and require
 you to pass an exam *against that source* before it counts.
 
-## Declaring a source: `source:`
+## Declaring the exam material: `exam:`
 
 Name one or more sources in the deck's frontmatter, each a URL, a file, or a
 directory:
 
 ```
 ---
-source:
+exam:
   - https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
   - notes/ownership.md
 ---
 ```
 
-A URL `source:` doubles as a [tutor](10-tutor.md) reference, so you
+A URL `exam:` doubles as a [tutor](10-tutor.md) reference, so you
 needn't repeat it as a `link:`. The reverse doesn't hold: a `link:` stays
 tutor-only and never becomes exam ground truth: keep supplementary reading (a
 blog post, an SO answer) as `link:` so the exam ignores it.
@@ -30,7 +30,7 @@ blog post, an SO answer) as `link:` so the exam ignores it.
 Once every card in an exam-grounded deck has **graduated** (reached FSRS's
 review phase, past the initial learning steps) the deck is **exam due** rather
 than finished: drilled, but not yet counted, so it doesn't unlock its
-dependents yet. A deck with no `source:` at all (and no workspace source)
+dependents yet. A deck with no `exam:` at all (and no workspace source)
 simply becomes *finished* when all its cards graduate, unlocking its
 dependents directly.
 

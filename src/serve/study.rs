@@ -2074,7 +2074,7 @@ mod tests {
             decks,
             load_warnings: Vec::new(),
             links: HashMap::new(),
-            source_layers: HashMap::new(),
+            exam_layers: HashMap::new(),
             base_roots: HashMap::new(),
             source_bases: HashMap::new(),
             topology_name: None,

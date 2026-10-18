@@ -2,7 +2,7 @@
 title: "Rust ownership moves"
 description: A guided predict-and-verify trace through real source.
 trace: How `let s2 = s1` moves a String and avoids a double free.
-source: https://github.com/rust-lang/book/blob/main/src/ch04-01-what-is-ownership.md
+exam: https://github.com/rust-lang/book/blob/main/src/ch04-01-what-is-ownership.md
 id: "deck-5w9g21vjyf3xf3kpn9q8cckavs"
 ---
 

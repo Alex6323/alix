@@ -116,7 +116,7 @@ fn uuid_from_seed(now_ms: u64, pid: u64, nonce: u64) -> String {
 #[derive(Clone, Copy, Debug)]
 pub struct TutorContext<'a> {
     pub links: &'a [String],
-    pub sources: &'a crate::deck::SourceLayers,
+    pub sources: &'a crate::deck::ExamLayers,
     pub root: Option<&'a Path>,
     pub frozen: Option<&'a str>,
 }
@@ -947,7 +947,7 @@ mod tests {
         )
     }
 
-    static NO_SOURCES: crate::deck::SourceLayers = crate::deck::SourceLayers {
+    static NO_SOURCES: crate::deck::ExamLayers = crate::deck::ExamLayers {
         own: Vec::new(),
         workspace: Vec::new(),
     };
@@ -986,13 +986,13 @@ mod tests {
     }
 
     #[test]
-    fn first_prompt_labels_deck_and_workspace_sources_apart_from_links() {
+    fn first_prompt_labels_deck_and_workspace_exam_apart_from_links() {
         let links = vec![
             "https://own.example".to_string(),
             "https://context.example".to_string(),
             "https://docs.rs/tokio".to_string(),
         ];
-        let sources = crate::deck::SourceLayers {
+        let sources = crate::deck::ExamLayers {
             own: vec!["https://own.example".to_string()],
             workspace: vec!["https://context.example".to_string()],
         };
@@ -1014,7 +1014,7 @@ mod tests {
 
     #[test]
     fn first_prompt_labels_both_layers_for_local_sources_too() {
-        let sources = crate::deck::SourceLayers {
+        let sources = crate::deck::ExamLayers {
             own: vec!["notes/own.md".to_string()],
             workspace: vec!["ws-material".to_string()],
         };
@@ -1035,7 +1035,7 @@ mod tests {
 
     #[test]
     fn first_prompt_keeps_sources_with_a_shared_basename_distinguishable() {
-        let sources = crate::deck::SourceLayers {
+        let sources = crate::deck::ExamLayers {
             own: vec!["a/notes.md".to_string(), "b/notes.md".to_string()],
             workspace: Vec::new(),
         };
@@ -1083,7 +1083,7 @@ mod tests {
                 "Related links:",
             ),
         ] {
-            let sources = crate::deck::SourceLayers { own, workspace };
+            let sources = crate::deck::ExamLayers { own, workspace };
             let context = TutorContext {
                 links: &links,
                 sources: &sources,

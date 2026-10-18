@@ -17,7 +17,7 @@ import 'support/picker_listing.dart';
 const traceDeck = '''
 ---
 trace: Parser trace
-source: source.txt
+exam: source.txt
 ---
 ## A `ReadingCloze` block just ended. What is handed to `parse_cloze_cards`?
 The accumulated cloze `text` plus the block's start and end line numbers.

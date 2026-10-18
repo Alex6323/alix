@@ -410,7 +410,7 @@ struct ReceiveArgs {
 /// The options both kinds of generation take.
 #[derive(Args)]
 struct GenerateCommonArgs {
-    /// Public URL recorded as an additional `source:` (the workspace `source`
+    /// Public URL recorded as an additional `exam:` (the workspace `exam`
     /// for a generated workspace) for tutor context and exam grounding.
     #[arg(long, value_name = "URL")]
     source_url: Option<String>,

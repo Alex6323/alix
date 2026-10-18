@@ -2209,7 +2209,7 @@ mod tests {
             &path,
             "---\n\
              trace: how `it` works\n\
-             source: source.txt\n\
+             exam: source.txt\n\
              ---\n\
              ## Predict the `first` hop\n\
              it reads the `first` line\n\
@@ -2376,7 +2376,7 @@ mod tests {
             &deck_path,
             "---\n\
              trace: a member trace\n\
-             source: source.txt\n\
+             exam: source.txt\n\
              ---\n\
              ## Predict\n\
              it reads line two\n\
@@ -2442,7 +2442,7 @@ mod tests {
             &url_source,
             "---\n\
              trace: a path with a URL source\n\
-             source: https://example.com/readme.md\n\
+             exam: https://example.com/readme.md\n\
              ---\n\
              ## Predict something\n\
              the answer\n\

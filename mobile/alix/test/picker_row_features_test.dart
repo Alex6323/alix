@@ -143,7 +143,7 @@ void main() {
         '${root.path}/t.md',
         '---\n'
             'trace: a picker-launched trace\n'
-            'source: source.txt\n'
+            'exam: source.txt\n'
             'title: T\n'
             '---\n'
             '## Predict\n'
@@ -329,7 +329,7 @@ void main() {
   });
 
   group('item 12: exam-due badge', () {
-    /// Graduates a single-card `% source:` deck to real FSRS Review state
+    /// Graduates a single-card `% exam:` deck to real FSRS Review state
     /// (never a hand-constructed `FsrsState`): two full Pass grades, each
     /// re-opened past the previous due date, graduate New -> Learning ->
     /// Review (`fsrs_two_goods_graduate_to_review`, src/scheduler.rs). The
@@ -344,7 +344,7 @@ void main() {
       final deck = '${root.path}/base.md';
       writeTestDeck(
         deck,
-        '---\nsource: https://example.com\ntitle: Base\n---\n## q?\na\n',
+        '---\nexam: https://example.com\ntitle: Base\n---\n## q?\na\n',
       );
       final t0 = DateTime.now().millisecondsSinceEpoch - 902000;
       ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: BigInt.from(t0))
@@ -496,7 +496,7 @@ void main() {
       File('${ws.path}/alix.toml').writeAsStringSync('');
       writeTestDeck(
         '${decks.path}/base.md',
-        '---\nsource: https://example.com\ntitle: Base\n---\n## q?\na\n',
+        '---\nexam: https://example.com\ntitle: Base\n---\n## q?\na\n',
       );
       writeTestDeck(
         '${decks.path}/mid.md',

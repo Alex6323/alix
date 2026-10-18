@@ -96,7 +96,7 @@ Once paired, review gains things it doesn't have offline:
   goes back into the chat box) rather than waiting for a result that will
   never come.
 - A **Take the exam** chip on the session summary, for any deck that
-  declares a `source:`. It opens a full-screen exam: one question at a
+  declares a `exam:`. It opens a full-screen exam: one question at a
   time, then a Pass/Partial/Fail breakdown per question and, on a fail, a
   **Turn the gaps into cards** button. A pass and any remediation cards it
   creates land in the phone's own progress store, exactly like an offline

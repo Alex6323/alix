@@ -155,7 +155,7 @@ pub struct SourceBase {
 
 impl SourceBase {
     pub fn for_deck(deck: &Deck) -> Self {
-        let layers = deck.source_layers();
+        let layers = deck.exam_layers();
         let locals = layers.base_locals();
         let first = locals.first().map(|source| source.as_str());
         // With several local sources a lines-only locator is ambiguous, so no
@@ -512,14 +512,14 @@ fn excerpt_at(base_dir: &Path, source_file: Option<&Path>, locator: &str) -> Res
             .is_some_and(|file| !Path::new(file).is_absolute());
     if joins_onto_base && !base_dir.is_dir() {
         bail!(
-            "the `source:` base `{}` does not exist; the deck's source path is \
+            "the `exam:` base `{}` does not exist; the deck's source path is \
              likely stale or wrong",
             base_dir.display()
         );
     }
     let path = locator_path(base_dir, source_file, file.as_deref()).ok_or_else(|| {
         anyhow!(
-            "locator `{locator}` gives only line numbers, but `source:` \
+            "locator `{locator}` gives only line numbers, but `exam:` \
              is not a single file; write it as `file:lines`"
         )
     })?;
@@ -714,7 +714,7 @@ mod tests {
         let deck_path = write(
             directory.path(),
             "facts.md",
-            "---\nsource: notes.md\n---\n## q\na\n<!-- at: notes.md:2-3 -->\n",
+            "---\nexam: notes.md\n---\n## q\na\n<!-- at: notes.md:2-3 -->\n",
         );
         let deck = Deck::load(&deck_path).unwrap();
         let base = SourceBase::for_deck(&deck);
@@ -740,7 +740,7 @@ mod tests {
             directory.path(),
             "facts.md",
             &format!(
-                "---\nsource:\n  - {}\n  - src/lib.rs\n---\n\
+                "---\nexam:\n  - {}\n  - src/lib.rs\n---\n\
                  ## q1\na1\n<!-- at: README.md:1-2 -->\n\
                  ## q2\na2\n<!-- at: src/lib.rs:3-4 -->\n",
                 readme.display()
@@ -767,14 +767,14 @@ mod tests {
     #[test]
     fn a_manifest_source_does_not_break_lines_only_locators_of_a_single_file_member() {
         let directory = tempfile::tempdir().unwrap();
-        std::fs::write(directory.path().join("alix.toml"), "source = \"ws.md\"\n").unwrap();
+        std::fs::write(directory.path().join("alix.toml"), "exam = \"ws.md\"\n").unwrap();
         std::fs::create_dir(directory.path().join("decks")).unwrap();
         write(directory.path(), "ws.md", "w1\nw2\n");
         write(directory.path(), "own.md", "o1\no2\no3\n");
         let deck_path = write(
             directory.path(),
             "decks/facts.md",
-            "---\nformat-version: 1\nid: deck-deck1\nsource: own.md\n---\n## q\na\n<!-- at: 2 -->\n<!-- id: card-card1 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\nexam: own.md\n---\n## q\na\n<!-- at: 2 -->\n<!-- id: card-card1 -->\n",
         );
         let deck = Deck::load(&deck_path).unwrap();
         let base = SourceBase::for_deck(&deck);
@@ -1009,7 +1009,7 @@ mod tests {
         let deck_path = write(
             directory.path(),
             "deck.md",
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: .\n---\n\
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: .\n---\n\
              ## q\nanswer\n<!-- at: big.rs:1-100 -->\n<!-- id: card-card1 -->\n",
         );
         assert_eq!(1, stamp_citations(&deck_path).unwrap());
@@ -1355,7 +1355,7 @@ mod tests {
         let deck_path = write(
             directory.path(),
             "deck.md",
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: .\n---\n\
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: .\n---\n\
              ## q\nanswer\n<!-- at: code.rs:2-3 -->\n<!-- id: card-card1 -->\n",
         );
         assert_eq!(1, stamp_citations(&deck_path).unwrap());
@@ -1378,7 +1378,7 @@ mod tests {
         let deck_path = write(
             directory.path(),
             "deck.md",
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: .\n---\n\
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: .\n---\n\
              ## q\nanswer\n<!-- at: code.rs:2-3 -->\n<!-- id: card-card1 -->\n",
         );
         assert_eq!(1, stamp_citations(&deck_path).unwrap());
@@ -1451,7 +1451,7 @@ mod tests {
         let deck_path = write(
             directory.path(),
             "deck.md",
-            "---\nformat-version: 1\nid: \"deck-src1\"\nsource: notes.txt\n---\n## q\na\n<!-- id: card-src1c1 -->\n",
+            "---\nformat-version: 1\nid: \"deck-src1\"\nexam: notes.txt\n---\n## q\na\n<!-- id: card-src1c1 -->\n",
         );
         let deck = crate::deck::Deck::load(&deck_path).unwrap();
         let base = SourceBase::for_deck(&deck);

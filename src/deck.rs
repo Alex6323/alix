@@ -105,13 +105,13 @@ pub struct Deck {
     pub definitions: Vec<String>,
     pub links: Vec<String>,
     pub requires: Vec<String>,
-    pub sources: Vec<String>,
+    pub exam: Vec<String>,
     pub cite: Vec<(String, String)>,
     pub settings: DeckSettings,
     pub title: Option<String>,
     pub description: Option<String>,
     pub trace: Option<String>,
-    pub workspace_has_sources: std::sync::OnceLock<bool>,
+    pub workspace_has_exam: std::sync::OnceLock<bool>,
     /// Generic load diagnostics (a stamped diagram that did not resolve):
     /// the session surfaces these so a silent fallback cannot be mistaken
     /// for a successful freeze.
@@ -151,15 +151,15 @@ impl Deck {
     pub fn load_in_workspace(
         path: impl AsRef<Path>,
         defaults: &DeckSettings,
-        workspace_has_sources: bool,
+        workspace_has_exam: bool,
     ) -> Result<Self, DeckError> {
-        Self::load_inner(path.as_ref(), defaults, Some(workspace_has_sources))
+        Self::load_inner(path.as_ref(), defaults, Some(workspace_has_exam))
     }
 
     fn load_inner(
         path: &Path,
         defaults: &DeckSettings,
-        workspace_has_sources: Option<bool>,
+        workspace_has_exam: Option<bool>,
     ) -> Result<Self, DeckError> {
         let path = path.to_path_buf();
         let subject = path
@@ -184,7 +184,7 @@ impl Deck {
         let definitions = parsed.definitions.clone();
         let links = parsed.frontmatter.link.clone();
         let requires = parsed.frontmatter.requires.clone();
-        let sources = parsed.frontmatter.source.clone();
+        let exam = parsed.frontmatter.exam.clone();
         let cite = parsed.frontmatter.cite.clone();
         let title = parsed.title.clone();
         let description = parsed.frontmatter.description.clone();
@@ -241,10 +241,10 @@ impl Deck {
             }
         }
         let cards = expanded;
-        let known_workspace_sources = workspace_has_sources;
-        let workspace_has_sources = std::sync::OnceLock::new();
-        if let Some(known) = known_workspace_sources {
-            let _ = workspace_has_sources.set(known);
+        let known_workspace_exam = workspace_has_exam;
+        let workspace_has_exam = std::sync::OnceLock::new();
+        if let Some(known) = known_workspace_exam {
+            let _ = workspace_has_exam.set(known);
         }
         Ok(Self {
             path,
@@ -255,13 +255,13 @@ impl Deck {
             definitions,
             links,
             requires,
-            sources,
+            exam,
             cite,
             settings,
             title,
             description,
             trace,
-            workspace_has_sources,
+            workspace_has_exam,
             load_warnings,
         })
     }
@@ -272,10 +272,10 @@ impl Deck {
 
     pub fn has_exam(&self) -> bool {
         self.is_trace()
-            || !self.sources.is_empty()
+            || !self.exam.is_empty()
             || *self
-                .workspace_has_sources
-                .get_or_init(|| !self.workspace_sources().is_empty())
+                .workspace_has_exam
+                .get_or_init(|| !self.workspace_exam().is_empty())
     }
 
     /// `title:` else the condensed `trace:` else the filename stem (D10).
@@ -329,24 +329,24 @@ impl Deck {
         out
     }
 
-    /// The workspace manifest's `source`: the material the workspace is about,
+    /// The workspace manifest's `exam`: the material the workspace is about,
     /// layered under every member's own sources as supporting context.
-    pub fn workspace_sources(&self) -> Vec<String> {
-        crate::workspace::manifest_source(&crate::workspace::content_root(&self.path))
+    pub fn workspace_exam(&self) -> Vec<String> {
+        crate::workspace::manifest_exam(&crate::workspace::content_root(&self.path))
     }
 
-    pub fn source_layers(&self) -> SourceLayers {
-        let own = self.sources.clone();
+    pub fn exam_layers(&self) -> ExamLayers {
+        let own = self.exam.clone();
         let workspace = self
-            .workspace_sources()
+            .workspace_exam()
             .into_iter()
             .filter(|source| !own.contains(source))
             .collect();
-        SourceLayers { own, workspace }
+        ExamLayers { own, workspace }
     }
 
     pub fn source_urls(&self) -> Vec<String> {
-        let layers = self.source_layers();
+        let layers = self.exam_layers();
         let mut out = Vec::new();
         for source in layers.own.iter().chain(&layers.workspace) {
             if is_url(source) && !out.contains(source) {
@@ -359,7 +359,7 @@ impl Deck {
     /// The single mechanical base: the deck's first local-path source, falling
     /// back to the workspace source when the deck declares none (ADR 0026).
     pub fn base_root(&self) -> Option<PathBuf> {
-        let layers = self.source_layers();
+        let layers = self.exam_layers();
         let local = layers
             .own
             .iter()
@@ -403,12 +403,12 @@ impl Deck {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct SourceLayers {
+pub struct ExamLayers {
     pub own: Vec<String>,
     pub workspace: Vec<String>,
 }
 
-impl SourceLayers {
+impl ExamLayers {
     pub fn is_empty(&self) -> bool {
         self.own.is_empty() && self.workspace.is_empty()
     }
@@ -915,7 +915,7 @@ fn rewrite_source_citations(text: &str, ats: &[AtRewrite]) -> (String, usize) {
     (joined, rewritten)
 }
 
-pub fn with_sources(text: &str, sources: &[String]) -> Result<String, DeckError> {
+pub fn with_exam(text: &str, entries: &[String]) -> Result<String, DeckError> {
     let parsed = parser::parse("deck.md", text).map_err(|source| DeckError::Parse {
         path: PathBuf::from("deck.md"),
         source,
@@ -936,9 +936,9 @@ pub fn with_sources(text: &str, sources: &[String]) -> Result<String, DeckError>
         let line_number = index + 1;
         if line_number > open && line_number < close {
             if let Some(key) = top_level_yaml_key(line) {
-                skipping = key == "source";
+                skipping = key == "exam";
                 if skipping && !inserted {
-                    push_source_lines(&mut out, sources);
+                    push_exam_lines(&mut out, entries);
                     inserted = true;
                 }
                 if skipping {
@@ -950,7 +950,7 @@ pub fn with_sources(text: &str, sources: &[String]) -> Result<String, DeckError>
             }
         }
         if line_number == close && !inserted {
-            push_source_lines(&mut out, sources);
+            push_exam_lines(&mut out, entries);
             inserted = true;
         }
         out.push(line.to_string());
@@ -962,27 +962,27 @@ pub fn with_sources(text: &str, sources: &[String]) -> Result<String, DeckError>
     Ok(joined)
 }
 
-pub fn with_added_source(text: &str, value: &str) -> Result<String, DeckError> {
+pub fn with_added_exam(text: &str, value: &str) -> Result<String, DeckError> {
     let parsed = parser::parse("deck.md", text).map_err(|source| DeckError::Parse {
         path: PathBuf::from("deck.md"),
         source,
     })?;
-    let mut sources = parsed.frontmatter.source.clone();
-    if sources.iter().any(|existing| existing == value) {
+    let mut entries = parsed.frontmatter.exam.clone();
+    if entries.iter().any(|existing| existing == value) {
         return Ok(text.to_string());
     }
-    sources.push(value.to_string());
-    with_sources(text, &sources)
+    entries.push(value.to_string());
+    with_exam(text, &entries)
 }
 
-fn push_source_lines(out: &mut Vec<String>, sources: &[String]) {
-    match sources {
+fn push_exam_lines(out: &mut Vec<String>, entries: &[String]) {
+    match entries {
         [] => {}
-        [only] => out.push(format!("source: {}", parser::yaml_quote(only))),
+        [only] => out.push(format!("exam: {}", parser::yaml_quote(only))),
         many => {
-            out.push("source:".to_string());
-            for source in many {
-                out.push(format!("  - {}", parser::yaml_quote(source)));
+            out.push("exam:".to_string());
+            for entry in many {
+                out.push(format!("  - {}", parser::yaml_quote(entry)));
             }
         }
     }
@@ -991,7 +991,7 @@ fn push_source_lines(out: &mut Vec<String>, sources: &[String]) {
 pub(crate) fn rewrite_frozen_assets(
     text: &str,
     frontmatter_span: Option<crate::parser::LineSpan>,
-    source: Option<&str>,
+    exam: Option<&str>,
     ats: &[AtRewrite],
     replacements: &[(Range<usize>, String)],
 ) -> Result<String, DeckError> {
@@ -1000,7 +1000,7 @@ pub(crate) fn rewrite_frozen_assets(
         return Ok(rewrite_source_citations(&text, ats).0);
     };
     let by_line = ats_by_line(ats);
-    let mut inserted = source.is_none();
+    let mut inserted = exam.is_none();
     let mut skipping = false;
     let mut at_index = 0;
     let mut out: Vec<String> = Vec::new();
@@ -1009,11 +1009,11 @@ pub(crate) fn rewrite_frozen_assets(
         let in_frontmatter = line_number > open && line_number < close;
         if in_frontmatter {
             if let Some(key) = top_level_yaml_key(line) {
-                // With no replacement source, the deck's own `source:` stays
+                // With no replacement exam, the deck's own `exam:` stays
                 // untouched (ADR 0026: freezing never rewrites it).
-                skipping = source.is_some() && key == "source";
+                skipping = exam.is_some() && key == "exam";
                 if skipping && !inserted {
-                    push_replacement_source(&mut out, source);
+                    push_replacement_exam(&mut out, exam);
                     inserted = true;
                 }
                 if skipping {
@@ -1027,7 +1027,7 @@ pub(crate) fn rewrite_frozen_assets(
             continue;
         }
         if line_number == close && !inserted {
-            push_replacement_source(&mut out, source);
+            push_replacement_exam(&mut out, exam);
             inserted = true;
         }
         if let Some(rewrite) = by_line.get(&line_number)
@@ -1096,9 +1096,9 @@ fn top_level_yaml_key(line: &str) -> Option<&str> {
         .filter(|key| !key.is_empty())
 }
 
-fn push_replacement_source(out: &mut Vec<String>, source: Option<&str>) {
-    if let Some(source) = source {
-        out.push(format!("source: {}", parser::yaml_quote(source)));
+fn push_replacement_exam(out: &mut Vec<String>, exam: Option<&str>) {
+    if let Some(exam) = exam {
+        out.push(format!("exam: {}", parser::yaml_quote(exam)));
     }
 }
 
@@ -1333,7 +1333,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nformat-version: 1\nid: \"deck-d1\"\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -1351,7 +1351,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n## b\n2\n<!-- id: card-q2 -->\n",
+            "---\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n## b\n2\n<!-- id: card-q2 -->\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -1389,11 +1389,11 @@ mod tests {
     fn nongating_prerequisites_flags_a_sourceless_required_deck() {
         let dir = tempfile::tempdir().unwrap();
         write_deck(dir.path(), "a.md", "## a\n1\n");
-        write_deck(dir.path(), "c.md", "---\nsource: https://x\n---\n## c\n1\n");
+        write_deck(dir.path(), "c.md", "---\nexam: https://x\n---\n## c\n1\n");
         let b_path = write_deck(
             dir.path(),
             "b.md",
-            "---\nsource: https://x\nrequires:\n  - a\n  - c\n---\n## b\n1\n",
+            "---\nexam: https://x\nrequires:\n  - a\n  - c\n---\n## b\n1\n",
         );
         let b = Deck::load(&b_path).unwrap();
         assert_eq!(vec!["a".to_string()], nongating_prerequisites(&b));
@@ -1408,7 +1408,7 @@ mod tests {
         let c = write_deck(
             dir.path(),
             "c.md",
-            "---\nsource: https://x\nrequires: nope\n---\n## c\n1\n",
+            "---\nexam: https://x\nrequires: nope\n---\n## c\n1\n",
         );
         assert!(nongating_prerequisites(&Deck::load(&c).unwrap()).is_empty());
     }
@@ -1419,7 +1419,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nformat-version: 1\nid: \"deck-d1\"\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n## b\n2\n<!-- id: card-q2 -->\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n## b\n2\n<!-- id: card-q2 -->\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -1445,7 +1445,7 @@ mod tests {
         let basics = write_deck(
             dir.path(),
             "basics.md",
-            "---\nformat-version: 1\nid: \"deck-basics1\"\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
+            "---\nformat-version: 1\nid: \"deck-basics1\"\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
         );
         let adv = write_deck(
             dir.path(),
@@ -1527,7 +1527,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "t.md",
-            "---\ntrace: how it works\nsource: .\n---\n\n## old question\nold point\n<!-- at: 1 -->\n",
+            "---\ntrace: how it works\nexam: .\n---\n\n## old question\nold point\n<!-- at: 1 -->\n",
         );
         set_trace_checkpoints(
             &path,
@@ -1536,7 +1536,7 @@ mod tests {
         .unwrap();
 
         let text = std::fs::read_to_string(&path).unwrap();
-        assert!(text.starts_with("---\ntrace: how it works\nsource: .\n---\n"));
+        assert!(text.starts_with("---\ntrace: how it works\nexam: .\n---\n"));
         assert!(!text.contains("old question"));
         assert!(text.contains("## new q1"));
         let deck = Deck::load(&path).unwrap();
@@ -1546,9 +1546,9 @@ mod tests {
 
     #[test]
     fn replace_after_header_appends_when_no_cards_yet() {
-        let text = "---\ntrace: how it works\nsource: .\n---\n";
+        let text = "---\ntrace: how it works\nexam: .\n---\n";
         let out = replace_after_header(text, &fronts(text), "## q\np\n");
-        assert_eq!("---\ntrace: how it works\nsource: .\n---\n\n## q\np\n", out);
+        assert_eq!("---\ntrace: how it works\nexam: .\n---\n\n## q\np\n", out);
     }
 
     #[test]
@@ -1620,7 +1620,7 @@ mod tests {
         write_deck(
             dir.path(),
             "a.md",
-            "---\nformat-version: 1\nid: \"deck-a1\"\nsource: https://x\n---\n## a\n1\n",
+            "---\nformat-version: 1\nid: \"deck-a1\"\nexam: https://x\n---\n## a\n1\n",
         );
         write_deck(
             dir.path(),
@@ -1630,7 +1630,7 @@ mod tests {
         let cpath = write_deck(
             dir.path(),
             "c.md",
-            "---\nsource: https://y\nrequires: b\n---\n## c\n3\n",
+            "---\nexam: https://y\nrequires: b\n---\n## c\n3\n",
         );
         let c = Deck::load(&cpath).unwrap();
         let a = Deck::load(dir.path().join("a.md")).unwrap();
@@ -1690,7 +1690,7 @@ mod tests {
             dir.path(),
             "basics.md",
             &format!(
-                "---\nformat-version: 1\nid: \"{CANONICAL_DECK_ID}\"\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n"
+                "---\nformat-version: 1\nid: \"{CANONICAL_DECK_ID}\"\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n"
             ),
         );
         let adv = write_deck(
@@ -1750,7 +1750,7 @@ mod tests {
         write_deck(
             dir.path(),
             &format!("{CANONICAL_DECK_ID}.md"),
-            "---\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
+            "---\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
         );
         let adv = write_deck(
             dir.path(),
@@ -1771,7 +1771,7 @@ mod tests {
         write_deck(
             dir.path(),
             &format!("{CANONICAL_DECK_ID}.md"),
-            "---\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
+            "---\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
         );
         let adv = write_deck(
             dir.path(),
@@ -1791,7 +1791,7 @@ mod tests {
         write_deck(
             dir.path(),
             "b.md",
-            "---\nsource: https://x\nrequires: a\n---\n## b\n1\n",
+            "---\nexam: https://x\nrequires: a\n---\n## b\n1\n",
         );
         write_deck(dir.path(), "c.md", "---\nrequires: b\n---\n## c\n1\n");
         let b = Deck::load(dir.path().join("b.md")).unwrap();
@@ -1813,7 +1813,7 @@ mod tests {
         write_deck(
             dir.path(),
             "a.md",
-            "---\nsource: https://x\nrequires: b\n---\n## a\n1\n",
+            "---\nexam: https://x\nrequires: b\n---\n## a\n1\n",
         );
         write_deck(dir.path(), "b.md", "---\nrequires: a\n---\n## b\n2\n");
         let a = Deck::load(dir.path().join("a.md")).unwrap();
@@ -1849,12 +1849,12 @@ mod tests {
         write_deck(
             dir.path(),
             "a.md",
-            "---\nsource: https://x\nrequires: b\n---\n## a\n1\n",
+            "---\nexam: https://x\nrequires: b\n---\n## a\n1\n",
         );
         write_deck(
             dir.path(),
             "b.md",
-            "---\nsource: https://y\nrequires: a\n---\n## b\n2\n",
+            "---\nexam: https://y\nrequires: a\n---\n## b\n2\n",
         );
         let a = Deck::load(dir.path().join("a.md")).unwrap();
         let (store, _s) = empty_store();
@@ -2016,7 +2016,7 @@ mod tests {
         let path = write_deck(
             &decks,
             "d.md",
-            &format!("---\nsource: {}\n---\n## f\nb\n", source.to_string_lossy()),
+            &format!("---\nexam: {}\n---\n## f\nb\n", source.to_string_lossy()),
         );
 
         // ADR 0026: the deck's first local-path source IS the mechanical base;
@@ -2034,7 +2034,7 @@ mod tests {
         let source = dir.path().join("source");
         std::fs::create_dir_all(&decks).unwrap();
         std::fs::create_dir_all(&source).unwrap();
-        let path = write_deck(&decks, "d.md", "---\nsource: ../source\n---\n## f\nb\n");
+        let path = write_deck(&decks, "d.md", "---\nexam: ../source\n---\n## f\nb\n");
 
         assert_eq!(
             Some(source.canonicalize().unwrap()),
@@ -2052,13 +2052,13 @@ mod tests {
         std::fs::create_dir_all(&source).unwrap();
         std::fs::write(
             workspace.join(crate::workspace::MANIFEST),
-            "source = \"../source\"\n",
+            "exam = \"../source\"\n",
         )
         .unwrap();
         let path = write_deck(
             &members,
             "d.md",
-            "---\nsource: https://example.org/page\n---\n## f\nb\n",
+            "---\nexam: https://example.org/page\n---\n## f\nb\n",
         );
         let deck = Deck::load(&path).unwrap();
 
@@ -2067,7 +2067,7 @@ mod tests {
         let own = write_deck(
             &members,
             "own.md",
-            "---\nsource: ../source/file.rs\n---\n## f\nb\n",
+            "---\nexam: ../source/file.rs\n---\n## f\nb\n",
         );
         std::fs::write(source.join("file.rs"), "x\n").unwrap();
         // The deck's own local source wins over the workspace source.
@@ -2083,30 +2083,30 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nsource: https://example.org/page\n---\n## f\nb\n",
+            "---\nexam: https://example.org/page\n---\n## f\nb\n",
         );
         assert_eq!(None, Deck::load(path).unwrap().base_root());
     }
 
     #[test]
-    fn source_layers_carry_the_workspace_source_without_shadowing() {
+    fn exam_layers_carry_the_workspace_source_without_shadowing() {
         let dir = tempfile::tempdir().unwrap();
         let members = dir.path().join(crate::workspace::DECKS);
         std::fs::create_dir_all(&members).unwrap();
         std::fs::write(
             dir.path().join(crate::workspace::MANIFEST),
-            "source = [\"https://ws.example\", \"notes.md\"]\n",
+            "exam = [\"https://ws.example\", \"notes.md\"]\n",
         )
         .unwrap();
-        let path = write_deck(&members, "d.md", "---\nsource: own.rs\n---\n## f\nb\n");
+        let path = write_deck(&members, "d.md", "---\nexam: own.rs\n---\n## f\nb\n");
         let deck = Deck::load(&path).unwrap();
 
         assert_eq!(
-            SourceLayers {
+            ExamLayers {
                 own: vec!["own.rs".to_string()],
                 workspace: vec!["https://ws.example".to_string(), "notes.md".to_string()],
             },
-            deck.source_layers()
+            deck.exam_layers()
         );
         assert!(deck.has_exam());
     }
@@ -2118,7 +2118,7 @@ mod tests {
         std::fs::create_dir_all(&members).unwrap();
         std::fs::write(
             dir.path().join(crate::workspace::MANIFEST),
-            "source = \"notes.md\"\n",
+            "exam = \"notes.md\"\n",
         )
         .unwrap();
         let path = write_deck(&members, "d.md", "## f\nb\n");
@@ -2132,7 +2132,7 @@ mod tests {
     #[test]
     fn a_local_source_confers_an_exam() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.md", "---\nsource: notes.md\n---\n## f\nb\n");
+        let path = write_deck(dir.path(), "d.md", "---\nexam: notes.md\n---\n## f\nb\n");
         assert!(Deck::load(&path).unwrap().has_exam());
     }
 
@@ -2143,13 +2143,13 @@ mod tests {
         std::fs::create_dir_all(&members).unwrap();
         std::fs::write(
             dir.path().join(crate::workspace::MANIFEST),
-            "source = \"https://ws.example\"\n",
+            "exam = \"https://ws.example\"\n",
         )
         .unwrap();
         let path = write_deck(
             &members,
             "d.md",
-            "---\nlink: https://a.example\nsource:\n  - https://b.example\n  - notes.md\n  - https://a.example\n---\n## f\nb\n",
+            "---\nlink: https://a.example\nexam:\n  - https://b.example\n  - notes.md\n  - https://a.example\n---\n## f\nb\n",
         );
         let deck = Deck::load(&path).unwrap();
         assert_eq!(
@@ -2498,7 +2498,7 @@ mod tests {
     /// every citation.
     #[test]
     fn every_citation_stamps_whatever_order_the_cards_supply_them() {
-        let text = "---\nsource: ../src\n---\n## one\na\n<!-- at: src/lib.rs:1 -->\n## two\nb\n<!-- at: src/lib.rs:2 -->\n";
+        let text = "---\nexam: ../src\n---\n## one\na\n<!-- at: src/lib.rs:1 -->\n## two\nb\n<!-- at: src/lib.rs:2 -->\n";
         let ats = [
             AtRewrite {
                 at: "src/lib.rs:2".into(),
@@ -2558,7 +2558,7 @@ mod tests {
 
     #[test]
     fn frozen_asset_rewrite_replaces_yaml_lists_and_image_destinations() {
-        let text = "---\nsource:\n  - ../README.md\n  - ../src/lib.rs\ntitle: kept\n---\n\n## q\n![diagram](<old image.png>)\na\n<!-- at: src/lib.rs:2 -->\n";
+        let text = "---\nexam:\n  - ../README.md\n  - ../src/lib.rs\ntitle: kept\n---\n\n## q\n![diagram](<old image.png>)\na\n<!-- at: src/lib.rs:2 -->\n";
         let parsed = parser::parse("t.md", text).unwrap();
         let image = parser::image_references(text).remove(0);
         let ats = [AtRewrite {
@@ -2578,14 +2578,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            "---\nsource: \"../source tree\"\ntitle: kept\n---\n\n## q\n![diagram](<assets/deck/sha256-image.png>)\na\n<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->\n",
+            "---\nexam: \"../source tree\"\ntitle: kept\n---\n\n## q\n![diagram](<assets/deck/sha256-image.png>)\na\n<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->\n",
             out
         );
     }
 
     #[test]
     fn frozen_asset_rewrite_without_a_source_preserves_the_source_yaml_and_stamps_nothing() {
-        let text = "---\nsource: ../src\n---\n## q\na\n<!-- at: src/lib.rs:2 -->\n";
+        let text = "---\nexam: ../src\n---\n## q\na\n<!-- at: src/lib.rs:2 -->\n";
         let parsed = parser::parse("t.md", text).unwrap();
         let ats = [AtRewrite {
             at: "src/lib.rs:2".into(),
@@ -2596,7 +2596,7 @@ mod tests {
 
         let out = rewrite_frozen_assets(text, parsed.frontmatter_span, None, &ats, &[]).unwrap();
 
-        assert!(out.contains("source: ../src\n"), "{out}");
+        assert!(out.contains("exam: ../src\n"), "{out}");
         assert!(!out.contains("origin:"), "freezing stamps nothing: {out}");
         assert!(out.contains(
             "<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->"
@@ -2604,37 +2604,37 @@ mod tests {
     }
 
     #[test]
-    fn with_sources_replaces_the_source_list_preserving_other_yaml() {
-        let text = "---\nsource:\n  - a.md\n  - b.md\ntrace: t\n---\n## q\na\n";
-        let out = with_sources(
+    fn with_exam_replaces_the_source_list_preserving_other_yaml() {
+        let text = "---\nexam:\n  - a.md\n  - b.md\ntrace: t\n---\n## q\na\n";
+        let out = with_exam(
             text,
             &["/abs/a.md".to_string(), "https://example.org".to_string()],
         )
         .unwrap();
         assert_eq!(
-            "---\nsource:\n  - \"/abs/a.md\"\n  - \"https://example.org\"\ntrace: t\n---\n## q\na\n",
+            "---\nexam:\n  - \"/abs/a.md\"\n  - \"https://example.org\"\ntrace: t\n---\n## q\na\n",
             out
         );
     }
 
     #[test]
-    fn with_added_source_appends_once_and_keeps_an_existing_value() {
-        let text = "---\nsource: page.md\n---\n## q\na\n";
-        let out = with_added_source(text, "https://example.org/current").unwrap();
+    fn with_added_exam_appends_once_and_keeps_an_existing_value() {
+        let text = "---\nexam: page.md\n---\n## q\na\n";
+        let out = with_added_exam(text, "https://example.org/current").unwrap();
         assert!(
-            out.contains("source:\n  - \"page.md\"\n  - \"https://example.org/current\"\n"),
+            out.contains("exam:\n  - \"page.md\"\n  - \"https://example.org/current\"\n"),
             "{out}"
         );
         assert_eq!(
             out,
-            with_added_source(&out, "https://example.org/current").unwrap(),
+            with_added_exam(&out, "https://example.org/current").unwrap(),
             "adding a duplicate is a no-op"
         );
 
         let sourceless = "---\ntrace: t\n---\n## q\na\n";
-        let out = with_added_source(sourceless, "https://example.org/current").unwrap();
+        let out = with_added_exam(sourceless, "https://example.org/current").unwrap();
         assert!(
-            out.contains("source: \"https://example.org/current\"\n"),
+            out.contains("exam: \"https://example.org/current\"\n"),
             "{out}"
         );
         assert!(out.contains("trace: t\n"), "{out}");
@@ -2666,9 +2666,9 @@ mod tests {
 
     #[test]
     fn frozen_rewrites_preserve_frontmatter_order_and_final_newline() {
-        let text = "---\ntitle: kept\nsource: old.md\ntrace: path\n---\n## q\na";
+        let text = "---\ntitle: kept\nexam: old.md\ntrace: path\n---\n## q\na";
         let parsed = parser::parse("t.md", text).unwrap();
-        let expected = "---\ntitle: kept\nsource: \"new.md\"\ntrace: path\n---\n## q\na";
+        let expected = "---\ntitle: kept\nexam: \"new.md\"\ntrace: path\n---\n## q\na";
 
         assert_eq!(
             expected,
@@ -2689,7 +2689,7 @@ mod tests {
         let sourceless = "---\ntitle: kept\n---\n## q\na\n";
         let parsed = parser::parse("t.md", sourceless).unwrap();
         assert_eq!(
-            "---\ntitle: kept\nsource: \"new.md\"\n---\n## q\na\n",
+            "---\ntitle: kept\nexam: \"new.md\"\n---\n## q\na\n",
             rewrite_frozen_assets(
                 sourceless,
                 parsed.frontmatter_span,
@@ -2735,9 +2735,9 @@ mod tests {
 
     #[test]
     fn top_level_yaml_keys_exclude_each_non_top_level_shape() {
-        assert_eq!(Some("source"), top_level_yaml_key("source: x"));
-        assert_eq!(None, top_level_yaml_key("  source: nested"));
-        assert_eq!(None, top_level_yaml_key("# source: commented"));
+        assert_eq!(Some("exam"), top_level_yaml_key("exam: x"));
+        assert_eq!(None, top_level_yaml_key("  exam: nested"));
+        assert_eq!(None, top_level_yaml_key("# exam: commented"));
         assert_eq!(None, top_level_yaml_key("plain text"));
     }
 

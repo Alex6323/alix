@@ -1323,7 +1323,7 @@ fn a_dependent_member_reads_its_prerequisites_active_owner_projection() {
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
     std::fs::write(
         ws.join("decks/base.md"),
-        "---\nformat-version: 1\nid: \"deck-base\"\nsource: https://example.org\n---\n## q1\na1\n<!-- id: card-qa -->\n",
+        "---\nformat-version: 1\nid: \"deck-base\"\nexam: https://example.org\n---\n## q1\na1\n<!-- id: card-qa -->\n",
     )
     .unwrap();
     std::fs::write(
@@ -1816,7 +1816,7 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &mut Store, depth: Depth
         decks,
         load_warnings: Vec::new(),
         links: HashMap::new(),
-        source_layers: HashMap::new(),
+        exam_layers: HashMap::new(),
         base_roots: HashMap::new(),
         source_bases: HashMap::new(),
         topology_name: None,
@@ -2057,7 +2057,7 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         decks,
         load_warnings: Vec::new(),
         links: HashMap::new(),
-        source_layers: HashMap::new(),
+        exam_layers: HashMap::new(),
         base_roots: HashMap::new(),
         source_bases: HashMap::new(),
         topology_name: None,
@@ -2300,7 +2300,7 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
     let deck_path = dir.path().join("decks/d.md");
     std::fs::write(
         &deck_path,
-        "---\nformat-version: 1\nid: \"deck-frozendeck1\"\nsource: 29.rs\n---\n## q\na\n\
+        "---\nformat-version: 1\nid: \"deck-frozendeck1\"\nexam: 29.rs\n---\n## q\na\n\
          <!-- at: 29.rs:1 -->\n",
     )
     .unwrap();
@@ -2336,7 +2336,7 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
         decks,
         load_warnings: Vec::new(),
         links: HashMap::new(),
-        source_layers: HashMap::new(),
+        exam_layers: HashMap::new(),
         base_roots,
         source_bases,
         topology_name: None,
@@ -2384,7 +2384,7 @@ fn a_frozen_review_card_with_a_live_local_source_needs_no_fallback_warning() {
     let deck_path = dir.path().join("decks/d.md");
     std::fs::write(
         &deck_path,
-        "---\nformat-version: 1\nid: \"deck-livefrozen1\"\nsource: source.rs\n---\n\
+        "---\nformat-version: 1\nid: \"deck-livefrozen1\"\nexam: source.rs\n---\n\
          ## q\na\n<!-- at: source.rs:1 -->\n<!-- id: card-livefrozen1 -->\n",
     )
     .unwrap();
@@ -2415,7 +2415,7 @@ fn a_frozen_review_card_with_a_live_local_source_needs_no_fallback_warning() {
         decks,
         load_warnings: Vec::new(),
         links: HashMap::new(),
-        source_layers: HashMap::new(),
+        exam_layers: HashMap::new(),
         base_roots,
         source_bases,
         topology_name: None,
@@ -2472,7 +2472,7 @@ fn exam_due_reports_the_decks_name_not_its_routing_id() {
     // keyed by it, but the wire value must stay the resolvable deck name.
     std::fs::write(
         &deck_path,
-        "---\nformat-version: 1\nid: \"deck-examduedeck\"\nsource: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
+        "---\nformat-version: 1\nid: \"deck-examduedeck\"\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
     )
     .unwrap();
     let deck = crate::deck::Deck::load(&deck_path).unwrap();
@@ -2500,7 +2500,7 @@ fn trace_deck(dir: &Path) -> crate::trace::Trace {
     let path = dir.join("t.md");
     std::fs::write(
         &path,
-        "---\ntrace: how `it` works\nsource: source.txt\n---\n\
+        "---\ntrace: how `it` works\nexam: source.txt\n---\n\
          ## Predict the `first` hop\n\
          it reads the `first` line\n\
          > [!NOTE]\n\
@@ -3053,7 +3053,7 @@ fn a_scoped_crumb_reports_a_locked_card_outside_the_sitting() {
         decks,
         load_warnings: Vec::new(),
         links: HashMap::new(),
-        source_layers: HashMap::new(),
+        exam_layers: HashMap::new(),
         base_roots: HashMap::new(),
         source_bases: HashMap::new(),
         topology_name: Some("t".to_string()),

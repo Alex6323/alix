@@ -92,7 +92,7 @@ void main() {
       final exam = '${root.path}/exam.md';
       writeTestDeck(
         exam,
-        '---\nsource: https://example.com\ntitle: Exam\n---\n## q?\na\n',
+        '---\nexam: https://example.com\ntitle: Exam\n---\n## q?\na\n',
       );
       final now = DateTime.now().millisecondsSinceEpoch;
       final t0 = now - 902000;
@@ -170,7 +170,7 @@ void main() {
     );
     writeTestDeck(
       '${decks.path}/base.md',
-      '---\nsource: https://example.com\ntitle: Base\n---\n## q?\na\n',
+      '---\nexam: https://example.com\ntitle: Base\n---\n## q?\na\n',
     );
     writeTestDeck(
       '${decks.path}/mid.md',

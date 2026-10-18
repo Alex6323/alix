@@ -348,7 +348,7 @@ warns, and the fence shows as a plain code block until you install the
 renderer and re-run `alix deck init`; a fence sekien cannot render, or a
 theme whose colors alix cannot read (below), is reported the same way and
 that one diagram stays unfrozen. A standalone deck (no workspace) always
-shows source: freezing needs the workspace's asset store.
+shows exam: freezing needs the workspace's asset store.
 
 Editing a frozen fence makes its stamp stale, and the fence falls back to
 its source until the next `deck init` re-freezes it. Fallback always means
@@ -425,13 +425,13 @@ the fence references on more than one line, where which occurrence is
 ## Source citations
 
 A plain fact card can show *where its answer comes from*. Declare the deck's source
-with a `source:` line in the frontmatter, give the card an `<!-- at: ... -->`
+with a `exam:` line in the frontmatter, give the card an `<!-- at: ... -->`
 locator into it, and on reveal the card offers to swap the worded answer for the
 exact source lines:
 
 ```
 ---
-source: src/string.rs
+exam: src/string.rs
 ---
 
 ## What does the `String` struct hold?
@@ -441,7 +441,7 @@ A `Vec<u8>` (its bytes).
 
 The locator is the same shape a [trace checkpoint](13-trace-decks.md) uses. Its
 fields are named and ordered: `at:` is the source path and line range (e.g.
-`src/string.rs:1-3`, just `lines` when `source:` is a single file, or a
+`src/string.rs:1-3`, just `lines` when `exam:` is a single file, or a
 range-less path or URL to cite the whole source, the form a frozen URL
 source uses), and
 `fingerprint:` is an `xxh64-<hex>` digest of the displayed source text. alix
@@ -480,7 +480,7 @@ remain untouched for semantic review. Initializing a workspace member goes one
 further and **freezes** its source evidence and local images below
 `assets/deck-<token>/`, so the deck travels without the original source and the
 quotes never shift. Freezing stores only the cited excerpt, never the whole
-file, and leaves the deck's `source:` pointed at the real material: each frozen
+file, and leaves the deck's `exam:` pointed at the real material: each frozen
 citation keeps its real path in `at:` and gains an `asset:` field naming the
 content-addressed object, so a drift check can still compare against the live
 source when it is reachable.

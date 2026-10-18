@@ -220,7 +220,7 @@ fn assert_tutor_formats_code(kind: BackendKind) {
         Vec::new(),
         1,
     );
-    let sources = alix::deck::SourceLayers::default();
+    let sources = alix::deck::ExamLayers::default();
     let context = ask::TutorContext {
         links: &[],
         sources: &sources,

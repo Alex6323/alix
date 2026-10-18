@@ -66,7 +66,7 @@ pub struct Frontmatter {
     pub created_at: Option<String>,
     pub title: Option<String>,
     pub description: Option<String>,
-    pub source: Vec<String>,
+    pub exam: Vec<String>,
     pub cite: Vec<(String, String)>,
     pub requires: Vec<String>,
     pub link: Vec<String>,
@@ -188,7 +188,7 @@ fn load_frontmatter(
                     });
                 }
             },
-            "source" => frontmatter.source = string_list(key, value, line, lints),
+            "exam" => frontmatter.exam = string_list(key, value, line, lints),
             "cite" => {
                 frontmatter.cite = cite_entries(value)
                     .map_err(|message| ParseError::InvalidCite { line, message })?;
@@ -426,7 +426,7 @@ const CANONICAL_KEY_ORDER: [&str; 19] = [
     "direction",
     "sampling",
     "choices",
-    "source",
+    "exam",
     "cite",
     "requires",
     "link",
@@ -546,7 +546,7 @@ mod tests {
         let rows = [
             ("id", MultilineDisposition::HardError),
             ("format-version", MultilineDisposition::HardError),
-            ("source", MultilineDisposition::Stored),
+            ("exam", MultilineDisposition::Stored),
             ("requires", MultilineDisposition::Stored),
             ("link", MultilineDisposition::Stored),
             ("trace", MultilineDisposition::Stored),
@@ -724,7 +724,7 @@ mod tests {
             assert_eq!(expected, key_line(&block, 11, key), "key {key}");
         }
 
-        let invalid = ["title: ok", "source: [unterminated"];
+        let invalid = ["title: ok", "exam: [unterminated"];
         let error = load_frontmatter(&invalid, 11, &mut Vec::new()).unwrap_err();
         assert!(
             matches!(error, ParseError::FrontmatterSyntax { line: 13, .. }),
@@ -771,7 +771,7 @@ mod tests {
             "link",
             "requires",
             "cite",
-            "source",
+            "exam",
             "choices",
             "sampling",
             "direction",
@@ -804,7 +804,7 @@ mod tests {
                 "direction",
                 "sampling",
                 "choices",
-                "source",
+                "exam",
                 "cite",
                 "requires",
                 "link",
@@ -837,8 +837,8 @@ mod tests {
     #[test]
     fn a_column_zero_list_item_travels_with_its_key() {
         assert_eq!(
-            "---\ntitle: T\nsource:\n- a\n- b\nid: \"deck-x\"\n---\n",
-            reordered("---\nid: \"deck-x\"\nsource:\n- a\n- b\ntitle: T\n---\n")
+            "---\ntitle: T\nexam:\n- a\n- b\nid: \"deck-x\"\n---\n",
+            reordered("---\nid: \"deck-x\"\nexam:\n- a\n- b\ntitle: T\n---\n")
         );
     }
 

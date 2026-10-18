@@ -45,7 +45,7 @@ How the source is recorded depends on its kind, and it matters later:
   `link:` line back to it, so the [tutor](10-tutor.md) can
   consult the page on your cards.
 - A **local source** is explored read-only with `Read`/`Glob`/`Grep`, and the
-  deck opens with a `source:` line, so the **AI exam** can later grade your
+  deck opens with a `exam:` line, so the **AI exam** can later grade your
   understanding against that same source (next chapter). Each fact that maps to
   specific lines also gets a fingerprinted
   [`<!-- at: -->` citation](06-cloze-direction-images.md#source-citations), so

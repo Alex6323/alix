@@ -410,7 +410,7 @@ fn stage_deck_bundle_with_parts(
 }
 
 fn validate_bundle_material(deck: &crate::deck::Deck, root: &Path) -> Result<()> {
-    if !deck.sources.is_empty() {
+    if !deck.exam.is_empty() {
         crate::assets::validate_at_root(deck, root)?;
     }
     let text = std::fs::read_to_string(&deck.path)
@@ -1383,7 +1383,7 @@ mod tests {
         let deck = decks.join("facts.md");
         std::fs::write(
             &deck,
-            "---\nformat-version: 1\nid: deck-deck1\nsource: notes.md\n---\n## q\na\n<!-- id: card-card1 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\nexam: notes.md\n---\n## q\na\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         let stage = dir.path().join("stage");
@@ -1410,7 +1410,7 @@ mod tests {
         std::fs::write(
             &deck_path,
             format!(
-                "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{source_name}\n---\n\
+                "---\nformat-version: 1\nid: deck-deck1\nexam: assets/deck-deck1/{source_name}\n---\n\
                  ## q\na\n<!-- at: {source_name}:1 -->\n<!-- id: card-card1 -->\n"
             ),
         )
@@ -1521,7 +1521,7 @@ mod tests {
         std::fs::write(
             &deck,
             format!(
-                "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
+                "---\nformat-version: 1\nid: deck-deck1\nexam: assets/deck-deck1/{name}\n---\n\
                  ## q\na\n<!-- id: card-card1 -->\n"
             ),
         )
@@ -1550,7 +1550,7 @@ mod tests {
         std::fs::write(
             &deck,
             format!(
-                "---\nformat-version: 1\nid: deck-deck1\nsource: assets/deck-deck1/{name}\n---\n\
+                "---\nformat-version: 1\nid: deck-deck1\nexam: assets/deck-deck1/{name}\n---\n\
                  ## q\na\n<!-- id: card-card1 -->\n"
             ),
         )
@@ -2225,14 +2225,14 @@ mod tests {
         let deck_path = root.join("m.md");
         std::fs::write(
             &deck_path,
-            "---\nformat-version: 1\nid: \"deck-m1\"\nsource: .\n---\n## q\na\n\
+            "---\nformat-version: 1\nid: \"deck-m1\"\nexam: .\n---\n## q\na\n\
              <!-- at: code.rs:1 fingerprint: xxh64-0000000000000000 \
              asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.rs -->\n\
              <!-- id: card-m1c1 -->\n",
         )
         .unwrap();
         let deck = crate::deck::Deck::load(&deck_path).unwrap();
-        assert!(!deck.sources.is_empty(), "the fixture declares a source");
+        assert!(!deck.exam.is_empty(), "the fixture declares a source");
 
         let error = validate_bundle_material(&deck, root).unwrap_err();
         assert!(

@@ -50,7 +50,7 @@ links, and unrelated frontmatter.
 - Remove cards the current source no longer supports.
 - Add only important new propositions that deepen understanding.
 - Keep one idea per card and avoid duplicates.
-- Keep `source:` exactly as supplied in the input deck.
+- Keep `exam:` exactly as supplied in the input deck.
 - Use live `<!-- at: path:start-end -->` locators relative to the source root. \
 Read the real lines and never guess. Do not include fingerprints or `from`.
 - Keep the Alix Markdown deck grammar exactly.
@@ -198,7 +198,7 @@ fn eligible_members(
     let mut live_only = Vec::new();
     for path in &workspace.members {
         let deck = Deck::load_with_defaults(path, &workspace.settings)?;
-        if deck.sources.is_empty() {
+        if deck.exam.is_empty() {
             continue;
         }
         if !deck.cards.iter().any(|card| !card.citations.is_empty()) {
@@ -720,7 +720,7 @@ fn clean_model_output(raw: &str) -> Result<String> {
 /// The reconcile pointer (ADR 0026): the member's own first local-path source,
 /// workspace source as fallback.
 fn reconcile_pointer(deck: &Deck) -> Result<String> {
-    let layers = deck.source_layers();
+    let layers = deck.exam_layers();
     if let Some(local) = layers
         .own
         .iter()
@@ -735,7 +735,7 @@ fn reconcile_pointer(deck: &Deck) -> Result<String> {
             deck.path.display()
         ),
         None => bail!(
-            "{} declares no source to reconcile against",
+            "{} declares no `exam:` to reconcile against",
             deck.path.display()
         ),
     }
@@ -780,9 +780,9 @@ fn validate_proposal_metadata(current: &Deck, candidate: &Deck, source: &str) ->
             candidate.path.display()
         );
     }
-    if candidate.sources != vec![source.to_string()] {
+    if candidate.exam != vec![source.to_string()] {
         bail!(
-            "{} changed `source:` instead of preserving the supplied live source",
+            "{} changed `exam:` instead of preserving the supplied live source",
             candidate.path.display()
         );
     }
@@ -1360,7 +1360,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         // Staging canonicalizes the workspace root; on macOS the raw tempdir
         // path traverses the /var -> /private/var symlink, so the fixture must
-        // embed the canonical form or `source:` comparisons spuriously differ.
+        // embed the canonical form or `exam:` comparisons spuriously differ.
         // The root nests one level down so the staging sibling stays inside
         // the tempdir; at the tempdir root it would outlive the fixture.
         let root = directory.path().canonicalize().unwrap().join("ws");
@@ -1374,7 +1374,7 @@ mod tests {
         fs::write(
             &deck,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## Old question\nOld answer\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n## Old question\nOld answer\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1386,7 +1386,7 @@ mod tests {
     #[cfg(unix)]
     fn proposal(source: &Path, body: &str) -> String {
         format!(
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n{body}",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n{body}",
             parser::yaml_quote(&source.display().to_string())
         )
     }
@@ -1397,7 +1397,7 @@ mod tests {
     #[test]
     fn a_proposal_may_not_change_the_title_or_the_description() {
         let dir = tempfile::tempdir().unwrap();
-        let base = "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: src\ntitle: Facts\ndescription: |\n  Two lines\n  of description.\n---\n## q\na\n<!-- id: card-q1 -->\n";
+        let base = "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: src\ntitle: Facts\ndescription: |\n  Two lines\n  of description.\n---\n## q\na\n<!-- id: card-q1 -->\n";
         let write_deck = |name: &str, text: &str| {
             let path = dir.path().join(name);
             fs::write(&path, text).unwrap();
@@ -1626,7 +1626,7 @@ mod tests {
         fs::write(
             workspace.join("decks/plain.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck9\"\nsource: {}\n---\n## p\na\n<!-- id: card-plain1 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck9\"\nexam: {}\n---\n## p\na\n<!-- id: card-plain1 -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1806,7 +1806,7 @@ mod tests {
         fs::write(
             &deck,
             format!(
-                "---\nformat-version: 1\nid: \"{deck_id}\"\nsource: {}\n---\n## Other question\nOther answer\n<!-- at: code.rs:1 -->\n<!-- id: {card_id} -->\n",
+                "---\nformat-version: 1\nid: \"{deck_id}\"\nexam: {}\n---\n## Other question\nOther answer\n<!-- at: code.rs:1 -->\n<!-- id: {card_id} -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -2133,7 +2133,7 @@ mod tests {
         fs::write(
             root.join(workspace::DECKS).join("live.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck2\"\nsource: {}\n---\n## Live question\nLive answer\n<!-- at: code.rs:1 -->\n<!-- id: card-livecard -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck2\"\nexam: {}\n---\n## Live question\nLive answer\n<!-- at: code.rs:1 -->\n<!-- id: card-livecard -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -2493,7 +2493,7 @@ mod tests {
         fs::write(
             &raw,
             format!(
-                "---\nformat-version: 1\nid: \"deck-raw\"\nsource: {}\n---\n## Q\nA\n<!-- at: code.rs:1 -->\n<!-- id: card-raw -->\n",
+                "---\nformat-version: 1\nid: \"deck-raw\"\nexam: {}\n---\n## Q\nA\n<!-- at: code.rs:1 -->\n<!-- id: card-raw -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -2513,7 +2513,7 @@ mod tests {
         fs::write(
             &pictured,
             format!(
-                "---\nformat-version: 1\nid: \"deck-pictured\"\nsource: {}\n---\n## Q\nA\n![alt](missing.png)\n<!-- id: card-pictured -->\n",
+                "---\nformat-version: 1\nid: \"deck-pictured\"\nexam: {}\n---\n## Q\nA\n![alt](missing.png)\n<!-- id: card-pictured -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -2529,7 +2529,7 @@ mod tests {
         fs::write(
             &needy,
             format!(
-                "---\nformat-version: 1\nid: \"deck-needy\"\nrequires:\n  - ghost\nsource: {}\n---\n## Q\nA\n<!-- id: card-needy -->\n",
+                "---\nformat-version: 1\nid: \"deck-needy\"\nrequires:\n  - ghost\nexam: {}\n---\n## Q\nA\n<!-- id: card-needy -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )

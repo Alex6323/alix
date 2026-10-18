@@ -20,7 +20,7 @@ pub struct DeckInfo {
     pub path: PathBuf,
     pub deck_token: Option<String>,
     pub links: Vec<String>,
-    pub source_layers: crate::deck::SourceLayers,
+    pub exam_layers: crate::deck::ExamLayers,
     pub base_root: Option<PathBuf>,
     pub source_access: bool,
     pub source_base: SourceBase,

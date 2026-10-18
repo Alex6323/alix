@@ -437,7 +437,7 @@ fn choice_answer(front: &str) -> &'static str {
 /// (trace) exam endpoint families — mirrors `src/serve/tests.rs`'s
 /// `trace_deck` fixture in miniature (kept to two hops; that's enough to
 /// exercise a hop transition without a bigger fixture to maintain).
-const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nsource: source.txt\n---\n\
+const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nexam: source.txt\n---\n\
 ## Predict the first hop\n\
 it reads the first line\n\
 <!-- given: line — the input line -->\n\
@@ -647,7 +647,7 @@ fn add_grounded_tutor_fixture(dir: &Path) {
     std::fs::write(dir.join("source.txt"), "source context\n").unwrap();
     std::fs::write(
         &deck_path,
-        "---\nformat-version: 1\nid: \"deck-grounded\"\nsource: source.txt\n---\n\
+        "---\nformat-version: 1\nid: \"deck-grounded\"\nexam: source.txt\n---\n\
          ## server authored front\nserver authored back\n> [!NOTE]\n> authored note sentinel\n\
          <!-- at: 1 -->\n<!-- id: card-grounded -->\n",
     )
@@ -690,7 +690,7 @@ fn add_frozen_tutor_fixture(dir: &Path) {
     std::fs::write(
         decks.join("frozen.md"),
         format!(
-            "---\nformat-version: 1\nid: \"deck-frozen\"\nsource: missing-source-root\n---\n\
+            "---\nformat-version: 1\nid: \"deck-frozen\"\nexam: missing-source-root\n---\n\
              ## frozen front\nfrozen back\n\
              <!-- at: src/lib.rs:1 fingerprint: {fingerprint} asset: {object} -->\n\
              <!-- id: card-frozen -->\n"
@@ -5739,7 +5739,7 @@ fn post_api_exam_start_with_an_unknown_deck_yields_400() {
 
 #[test]
 fn post_api_exam_start_on_a_deck_with_no_exam_yields_409() {
-    // `sample.md` declares no `source:` and isn't a trace — `has_exam()`
+    // `sample.md` declares no `exam:` and isn't a trace — `has_exam()`
     // is false, so it can never be sat.
     let (base, _guard) = spawn_full_server(None);
 
@@ -6061,7 +6061,7 @@ fn generate_lands_the_deck_then_close_frees_the_slot() {
 #[test]
 fn law_review_server_generate_routes_preserve_nonempty_guidance() {
     let _lock = exec_lock();
-    let reply = "---\nsource: https://example.org\n---\n## Q\nA\n";
+    let reply = "---\nexam: https://example.org\n---\n## Q\nA\n";
     let guidance = "  focus on boundary identity  ";
     let expected = "Additional instructions:\nfocus on boundary identity";
 
@@ -7967,14 +7967,14 @@ fn workspace_deadline_returns_500_when_the_local_manifest_has_a_non_table_review
 // `/api/remote/*` ever touches the server's own store
 // (`remote_endpoints_never_write_the_server_store`).
 
-/// A source-backed fact deck (`source:` at a local file) alongside
+/// A source-backed fact deck (`exam:` at a local file) alongside
 /// `spawn_full_server`'s other fixtures: enough for the AI exam's
 /// generate → answer → grade → remediate walk. One card is enough; the exam
 /// grades the source, never the deck's own cards.
 fn write_exam_deck_fixture(dir: &Path) {
     std::fs::write(
         dir.join("examdeck.md"),
-        "---\nformat-version: 1\nid: \"deck-examdeck\"\nsource: examsource.txt\n---\n## c\na\n<!-- id: card-e1 -->\n",
+        "---\nformat-version: 1\nid: \"deck-examdeck\"\nexam: examsource.txt\n---\n## c\na\n<!-- id: card-e1 -->\n",
     )
     .unwrap();
     std::fs::write(dir.join("examsource.txt"), "c stands for a concept.\n").unwrap();
@@ -8538,9 +8538,9 @@ fn remote_exam_start_accepts_a_trace_deck_and_opens_answering() {
     assert_eq!(false, body["can_remediate"], "body: {body}");
 }
 
-/// A non-trace deck with no `source:` still has nothing to examine, so it
-/// still 409s at start (the refusal `deck.is_trace() || deck.sources.is_empty()`
-/// narrowed to `!deck.is_trace() && deck.sources.is_empty()`, not dropped).
+/// A non-trace deck with no `exam:` still has nothing to examine, so it
+/// still 409s at start (the refusal `deck.is_trace() || deck.exam.is_empty()`
+/// narrowed to `!deck.is_trace() && deck.exam.is_empty()`, not dropped).
 #[test]
 fn remote_exam_start_still_refuses_a_source_less_non_trace_deck_with_409() {
     let (base, _guard) = spawn_full_server(None);

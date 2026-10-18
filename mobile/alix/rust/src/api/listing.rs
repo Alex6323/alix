@@ -386,7 +386,7 @@ mod tests {
         let root = dir.path();
         write_deck(
             root.join("base.md"),
-            "---\nsource: \"https://x\"\n---\n## q\na\n<!-- id: card-q1 -->\n",
+            "---\nexam: \"https://x\"\n---\n## q\na\n<!-- id: card-q1 -->\n",
         );
         write_deck(root.join("fresh.md"), "## q\na\n");
 
@@ -426,7 +426,7 @@ mod tests {
         let root = dir.path();
         write_deck(
             root.join("gate.md"),
-            "---\nsource: \"https://x\"\n---\n## q\na\n",
+            "---\nexam: \"https://x\"\n---\n## q\na\n",
         );
         let ws = root.join("ws");
         let members = ws.join("decks");

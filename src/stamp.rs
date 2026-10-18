@@ -829,7 +829,7 @@ mod tests {
 
     /// The trailing space after `## First question` is deliberate: a mutation
     /// that trims the line before inserting would silently normalize it away.
-    const FIXTURE: &str = "---\nsource: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe alpha and beta here\n> cloze note\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n";
+    const FIXTURE: &str = "---\nexam: notes.md\nrequires: basics\n---\n# The Title\nintro prose\n\n## First question \nextra front line\n\n---\nthe answer\n\\--- escaped divider\n> a note\n```\nfenced\n## not a card\n```\ntail prose\n\n## Fill in the blanks\nthe alpha and beta here\n> cloze note\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n<!-- blank: span hidden=\"beta\" b:d4e5f6 -->\n";
 
     fn write(dir: &tempfile::TempDir, name: &str, text: &str) -> PathBuf {
         let path = dir.path().join(name);
@@ -1059,7 +1059,7 @@ mod tests {
     #[test]
     fn an_id_line_splices_into_block_mapping_frontmatter() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\nsource: notes.md\n---\n## q\na\n";
+        let original = "---\nexam: notes.md\n---\n## q\na\n";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();
@@ -1067,19 +1067,19 @@ mod tests {
         let deck_tok = outcome.minted_deck.as_ref().unwrap();
 
         assert_eq!(
-            format!("---\nsource: notes.md\nid: \"{deck_tok}\"\n---\n"),
+            format!("---\nexam: notes.md\nid: \"{deck_tok}\"\n---\n"),
             stamped[..stamped.find("## q").unwrap()],
             "the machine id line splices last, per the canonical key order"
         );
         let parsed = parser::parse("deck.md", &stamped).unwrap();
         assert_eq!(Some(deck_tok.as_str()), parsed.deck_token.as_deref());
-        assert_eq!(vec!["notes.md".to_string()], parsed.frontmatter.source);
+        assert_eq!(vec!["notes.md".to_string()], parsed.frontmatter.exam);
     }
 
     #[test]
     fn flow_mapping_frontmatter_is_a_loud_write_fail_not_a_splice() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\n{source: [a]}\n---\n## q\nb\n";
+        let original = "---\n{exam: [a]}\n---\n## q\nb\n";
         let path = write(&dir, "deck.md", original);
 
         let result = stamp_deck(&path);
@@ -1093,7 +1093,7 @@ mod tests {
     #[test]
     fn law_a_second_stamp_mints_nothing_and_changes_nothing() {
         let rows = [
-            ("---\nsource: x\n---\n## q\na\n## r\nb\n", "two plain cards"),
+            ("---\nexam: x\n---\n## q\na\n## r\nb\n", "two plain cards"),
             (
                 "## q\n$$\nx\n## r\ny\n$$\n",
                 "display math spanning a heading line",
@@ -1451,7 +1451,7 @@ mod tests {
     #[test]
     fn stamping_a_crlf_deck_rewrites_it_to_lf_and_changes_nothing_else() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "---\r\nsource: notes.md\r\n---\r\n## q\r\na\r\n## r\r\nb\r\n";
+        let original = "---\r\nexam: notes.md\r\n---\r\n## q\r\na\r\n## r\r\nb\r\n";
         let path = write(&dir, "deck.md", original);
 
         let outcome = stamp_deck(&path).unwrap();

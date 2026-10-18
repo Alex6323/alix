@@ -320,7 +320,7 @@ fn generate_single_deck(
     eprintln!("Generating a deck from {source} (this can take a minute)…");
     let mut text = generate::generate_deck(&source, &gen_cfg, &config.ask, spec)?;
     if let Some(url) = &args.common.source_url {
-        text = alix::deck::with_added_source(&text, url)?;
+        text = alix::deck::with_added_exam(&text, url)?;
     }
 
     if args.review || gen_cfg.review {
@@ -421,9 +421,9 @@ fn trace_build(
             deck.subject
         );
     }
-    if deck.sources.is_empty() {
+    if deck.exam.is_empty() {
         bail!(
-            "{} declares no `source:` — add the scope to trace (a repo `.`, a \
+            "{} declares no `exam:` — add the scope to trace (a repo `.`, a \
              directory, a file, or a URL)",
             deck.subject
         );
@@ -435,7 +435,7 @@ fn trace_build(
             deck.subject
         );
     }
-    let source = deck.sources.first().map(String::as_str).unwrap_or_default();
+    let source = deck.exam.first().map(String::as_str).unwrap_or_default();
     preflight_source(source, config.ask.preflight_threshold, yes)?;
     eprintln!(
         "Tracing a path through {source} (exploring the source — this can take a \
@@ -491,7 +491,7 @@ fn trace_suggest(source: &str, yes: bool, config: &Config) -> Result<()> {
     println!("{menu}");
     println!(
         "\n{DIM}Paste a suggestion into a new deck's frontmatter (its `trace:` + \
-         `source:` keys), then build it:  alix deck generate <deck>{RESET}"
+         `exam:` keys), then build it:  alix deck generate <deck>{RESET}"
     );
     Ok(())
 }
@@ -533,11 +533,11 @@ fn generate_trace(
         "exploring {name} — what it is, its parts, and its spine"
     ));
     let mut deck_text = format!(
-        "---\ntrace: {trace}\nsource: {}\n\n---\n\n{checkpoints}\n",
+        "---\ntrace: {trace}\nexam: {}\n\n---\n\n{checkpoints}\n",
         parser::yaml_quote(&source)
     );
     if let Some(url) = &args.common.source_url {
-        deck_text = alix::deck::with_added_source(&deck_text, url)?;
+        deck_text = alix::deck::with_added_exam(&deck_text, url)?;
     }
     let out_dir = out
         .parent()

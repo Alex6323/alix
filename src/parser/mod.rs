@@ -5338,8 +5338,8 @@ a
 
     #[test]
     fn a_flow_mapping_frontmatter_parses_but_is_reported_unspliceable() {
-        let deck = parse("---\n{source: [a]}\n---\n## q\nb\n");
-        assert_eq!(vec!["a".to_string()], deck.frontmatter.source);
+        let deck = parse("---\n{exam: [a]}\n---\n## q\nb\n");
+        assert_eq!(vec!["a".to_string()], deck.frontmatter.exam);
         assert!(deck.frontmatter.unspliceable);
     }
 
@@ -5359,13 +5359,13 @@ a
         assert_eq!(None, parse("## q\na\n").frontmatter_span);
         assert_eq!(
             Some((1, 3)),
-            parse("---\nsource: x\n---\n## q\na\n").frontmatter_span
+            parse("---\nexam: x\n---\n## q\na\n").frontmatter_span
         );
         assert_eq!(
             Some((2, 4)),
-            parse("\n---\nsource: x\n---\n## q\na\n").frontmatter_span
+            parse("\n---\nexam: x\n---\n## q\na\n").frontmatter_span
         );
-        let deck = parse("---\n{source: [a]}\n---\n## q\nb\n");
+        let deck = parse("---\n{exam: [a]}\n---\n## q\nb\n");
         assert_eq!(Some((1, 3)), deck.frontmatter_span);
         assert!(deck.frontmatter.unspliceable);
     }
@@ -5451,8 +5451,8 @@ a
 
     #[test]
     fn frontmatter_lists_accept_a_scalar_as_a_singleton() {
-        let deck = parse("---\nsource: notes.md\nrequires: basics\n---\n## q\na\n");
-        assert_eq!(vec!["notes.md".to_string()], deck.frontmatter.source);
+        let deck = parse("---\nexam: notes.md\nrequires: basics\n---\n## q\na\n");
+        assert_eq!(vec!["notes.md".to_string()], deck.frontmatter.exam);
         assert_eq!(vec!["basics".to_string()], deck.frontmatter.requires);
     }
 
@@ -5502,7 +5502,7 @@ a
         assert_eq!(Ok(None), deck_identity("## q\nid: \"abc\"\na\n"));
         assert_eq!(
             Ok(None),
-            deck_identity("---\nsource: notes.md\n---\n## q\na\n")
+            deck_identity("---\nexam: notes.md\n---\n## q\na\n")
         );
         assert!(matches!(
             deck_identity("---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n"),
@@ -5529,7 +5529,7 @@ a
     #[test]
     fn a_header_only_stub_is_deck_content() {
         assert!(is_deck_content("---\ntrace: a walk\n---\n"));
-        assert!(is_deck_content("---\nsource: notes.md\n---\n"));
+        assert!(is_deck_content("---\nexam: notes.md\n---\n"));
     }
 
     #[test]
@@ -7540,7 +7540,7 @@ a
             (
                 "<!-- Generated 2026-06 from a working session -->",
                 false,
-                "a provenance note, which belongs in `source:` or `description:`",
+                "a provenance note, which belongs in `exam:` or `description:`",
             ),
             (
                 "<!-- % origin: /home/me/dev -->",
@@ -8583,7 +8583,7 @@ a
         let text = r#"---
 format-version: 1
 id: "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"
-source:
+exam:
   - https://example.org/book
   - notes.md
 requires:
@@ -8626,7 +8626,7 @@ the answer
                 license: Some("MIT".into()),
                 title: Some("The Title".into()),
                 description: None,
-                source: vec!["https://example.org/book".into(), "notes.md".into()],
+                exam: vec!["https://example.org/book".into(), "notes.md".into()],
                 cite: Vec::new(),
                 requires: vec!["basics".into()],
                 link: vec!["https://docs.rs/tokio".into()],

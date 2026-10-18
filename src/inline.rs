@@ -3424,14 +3424,14 @@ mod tests {
             prop_assert_eq!(
                 projected.as_str(),
                 expected.as_str(),
-                "source: {:?}; runs: {:?}",
+                "exam: {:?}; runs: {:?}",
                 source,
                 runs
             );
             prop_assert_eq!(
                 stripped.as_str(),
                 expected.as_str(),
-                "source: {:?}",
+                "exam: {:?}",
                 source
             );
             prop_assert!(
@@ -3493,7 +3493,7 @@ mod tests {
             prop_assert_eq!(
                 1,
                 math_runs.len(),
-                "source: {:?}; runs: {:?}",
+                "exam: {:?}; runs: {:?}",
                 source,
                 runs
             );

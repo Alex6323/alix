@@ -68,7 +68,7 @@ struct Manifest {
     title: Option<String>,
     description: Option<String>,
     icon: Option<String>,
-    source: Option<ManifestSource>,
+    exam: Option<ManifestExam>,
     source_access: Option<bool>,
     #[serde(default)]
     cite: BTreeMap<String, String>,
@@ -78,12 +78,12 @@ struct Manifest {
 
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum ManifestSource {
+enum ManifestExam {
     One(String),
     Many(Vec<String>),
 }
 
-impl ManifestSource {
+impl ManifestExam {
     fn into_values(self) -> Vec<String> {
         let values = match self {
             Self::One(value) => vec![value],
@@ -103,7 +103,7 @@ pub struct Workspace {
     pub title: Option<String>,
     pub description: Option<String>,
     pub settings: DeckSettings,
-    pub source: Vec<String>,
+    pub exam: Vec<String>,
     pub members: Vec<PathBuf>,
     /// Each member's physical path, keyed by its spelling in `members`.
     pub identities: HashMap<PathBuf, PathBuf>,
@@ -120,14 +120,14 @@ impl Workspace {
             }
             Err(error) => return Err(error),
         };
-        let (title, description, settings, icon_key, source) = read_manifest(&path.join(MANIFEST));
+        let (title, description, settings, icon_key, exam) = read_manifest(&path.join(MANIFEST));
         let icon = resolve_icon(&path, icon_key.as_deref());
         Ok(Workspace {
             path,
             title,
             description,
             settings,
-            source,
+            exam,
             members,
             identities,
             icon,
@@ -144,7 +144,7 @@ impl Workspace {
     }
 }
 
-pub fn manifest_source(dir: &Path) -> Vec<String> {
+pub fn manifest_exam(dir: &Path) -> Vec<String> {
     profile::hit(Counter::ManifestReads);
     let Ok(text) = std::fs::read_to_string(dir.join(MANIFEST)) else {
         return Vec::new();
@@ -153,8 +153,8 @@ pub fn manifest_source(dir: &Path) -> Vec<String> {
         return Vec::new();
     };
     manifest
-        .source
-        .map(ManifestSource::into_values)
+        .exam
+        .map(ManifestExam::into_values)
         .unwrap_or_default()
 }
 
@@ -205,7 +205,7 @@ pub fn manifest_findings(dir: &Path) -> Vec<ManifestFinding> {
     for (key, value) in &manifest.defaults {
         let place = match key.as_str() {
             "cite" => Some("the `[cite]` table"),
-            "source" | "exam" => Some("the top-level `source`"),
+            "exam" => Some("the top-level `exam`"),
             _ => None,
         };
         if let Some(place) = place {
@@ -265,8 +265,8 @@ pub(crate) fn read_manifest(
         DeckSettings::from_directives(&directives),
         manifest.icon,
         manifest
-            .source
-            .map(ManifestSource::into_values)
+            .exam
+            .map(ManifestExam::into_values)
             .unwrap_or_default(),
     )
 }
@@ -743,14 +743,14 @@ mod tests {
                 vec![misplaced("cite", "the `[cite]` table")],
             ),
             (
-                "source inside defaults names the top-level key",
+                "source inside defaults is an unknown default",
                 "[defaults]\nsource = \"notes.md\"\n",
-                vec![misplaced("source", "the top-level `source`")],
+                vec![unknown("source")],
             ),
             (
                 "exam inside defaults names the top-level key",
                 "[defaults]\nexam = \"notes.md\"\n",
-                vec![misplaced("exam", "the top-level `source`")],
+                vec![misplaced("exam", "the top-level `exam`")],
             ),
             (
                 "well-formed cite keys are silent",
@@ -925,28 +925,25 @@ mod tests {
     }
 
     #[test]
-    fn manifest_source_accepts_a_string_or_a_list() {
+    fn manifest_exam_accepts_a_string_or_a_list() {
         let dir = tempfile::tempdir().unwrap();
-        write(
-            &dir.path().join(MANIFEST),
-            "source = \"https://x.example\"\n",
-        );
+        write(&dir.path().join(MANIFEST), "exam = \"https://x.example\"\n");
         assert_eq!(
             vec!["https://x.example".to_string()],
-            Workspace::load(dir.path()).unwrap().source
+            Workspace::load(dir.path()).unwrap().exam
         );
 
         write(
             &dir.path().join(MANIFEST),
-            "source = [\"https://x.example\", \"  \", \"notes.md\"]\n",
+            "exam = [\"https://x.example\", \"  \", \"notes.md\"]\n",
         );
         assert_eq!(
             vec!["https://x.example".to_string(), "notes.md".to_string()],
-            manifest_source(dir.path())
+            manifest_exam(dir.path())
         );
 
         write(&dir.path().join(MANIFEST), "title = \"W\"\n");
-        assert!(Workspace::load(dir.path()).unwrap().source.is_empty());
+        assert!(Workspace::load(dir.path()).unwrap().exam.is_empty());
     }
 
     #[test]

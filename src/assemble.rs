@@ -13,7 +13,7 @@ use crate::{
     card::Card,
     choice::ColumnPools,
     config::{AskConfig, ReviewConfig},
-    deck::{Deck, DeckSettings, SourceLayers},
+    deck::{Deck, DeckSettings, ExamLayers},
     depth::{Depth, default_depth},
     scheduler::Fsrs,
     session::{DeckInfo, Order, Session, SessionOptions},
@@ -93,7 +93,7 @@ pub struct SessionBuild {
     /// session so a silent fallback cannot pass for a successful freeze.
     pub load_warnings: Vec<String>,
     pub links: HashMap<String, Vec<String>>,
-    pub source_layers: HashMap<String, SourceLayers>,
+    pub exam_layers: HashMap<String, ExamLayers>,
     pub base_roots: HashMap<String, PathBuf>,
     pub source_bases: HashMap<String, SourceBase>,
     pub topology_name: Option<String>,
@@ -226,7 +226,7 @@ pub fn load_decks(
                 path: deck.path.clone(),
                 deck_token: deck.deck_token.clone(),
                 links: deck.reference_links(),
-                source_layers: deck.source_layers(),
+                exam_layers: deck.exam_layers(),
                 base_root: deck.base_root(),
                 source_access: false,
                 source_base: SourceBase::for_deck(&deck),
@@ -621,12 +621,12 @@ pub fn select(
             )
         })
         .collect();
-    let source_layers = decks
+    let exam_layers = decks
         .values()
         .map(|info| {
             (
                 info.deck_token.clone().unwrap_or_default(),
-                info.source_layers.clone(),
+                info.exam_layers.clone(),
             )
         })
         .collect();
@@ -660,7 +660,7 @@ pub fn select(
         decks: deck_id_paths(decks),
         load_warnings,
         links,
-        source_layers,
+        exam_layers,
         base_roots,
         source_bases,
         topology_name,
@@ -1542,7 +1542,7 @@ mod tests {
         assert_eq!(None, store_path_for(&[]));
     }
 
-    const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nsource: source.txt\n---\n\
+    const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nexam: source.txt\n---\n\
 ## Predict the first hop\n\
 it reads the first line\n\
 <!-- at: 1 -->\n\
@@ -1937,7 +1937,7 @@ it reads line two\n\
         let trace = dir.path().join("t.md");
         std::fs::write(
             &trace,
-            "---\ntrace: how it works\nsource: .\n---\n\n## q\npoint\n<!-- at: 1 -->\n<!-- id: card-qq -->\n",
+            "---\ntrace: how it works\nexam: .\n---\n\n## q\npoint\n<!-- at: 1 -->\n<!-- id: card-qq -->\n",
         )
         .unwrap();
         let fact = dir.path().join("f.md");
@@ -2090,7 +2090,7 @@ it reads line two\n\
         let fact = dir.path().join("rust.md");
         std::fs::write(
             &fact,
-            "---\nformat-version: 1\nid: \"deck-rust\"\nsource: https://example.org\n---\n\
+            "---\nformat-version: 1\nid: \"deck-rust\"\nexam: https://example.org\n---\n\
              ## q\na\n<!-- id: card-q1 -->\n",
         )
         .unwrap();
@@ -2104,7 +2104,7 @@ it reads line two\n\
             (
                 build.session.total(),
                 build.info.deck_token.clone(),
-                build.info.source_layers.own.clone()
+                build.info.exam_layers.own.clone()
             ),
             "the walk carries the deck's identity and sources for the tutor"
         );

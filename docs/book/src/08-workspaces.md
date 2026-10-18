@@ -67,7 +67,7 @@ direction = "both"
 reveal = "line"
 ```
 
-Besides `title`, `description`, `icon`, and a shared `source`, the manifest
+Besides `title`, `description`, `icon`, and a shared `exam`, the manifest
 may set a top-level `source_access`, which overrides the global
 `[ask] source_access` for this workspace's decks in either direction (see
 [the tutor](10-tutor.md)). The manifest travels with the folder when
@@ -122,7 +122,7 @@ alix workspace update ~/decks/spanish
 ```
 
 The command gives its AI backend read-only access to each recorded local
-`source`, then writes one exact proposal into a dot-prefixed sibling workspace.
+`exam`, then writes one exact proposal into a dot-prefixed sibling workspace.
 The original workspace remains untouched. Inspect the proposed decks and
 evidence there, then publish those exact bytes without another model call:
 
@@ -172,7 +172,7 @@ the source.
 
 The destination must be another Alix workspace. Transfer refuses overwrites,
 stable-ID collisions, missing required decks, and moves that would break a
-source deck's dependents. An inherited or relative `source` is written
+source deck's dependents. An inherited or relative `exam` is written
 explicitly into the transferred deck so the destination cannot reinterpret its
 live provenance through unrelated workspace defaults.
 

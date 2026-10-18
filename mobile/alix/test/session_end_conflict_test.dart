@@ -36,7 +36,7 @@ void main() {
     File('${workspace.path}/alix.toml').writeAsStringSync('title = "Ws"\n');
     writeTestDeck(
       '${workspace.path}/decks/deck.md',
-      '---\ntitle: Deck\nsource: source.txt\n---\n## q\na\n',
+      '---\ntitle: Deck\nexam: source.txt\n---\n## q\na\n',
     );
     File(
       '${workspace.path}/decks/source.txt',
@@ -45,7 +45,7 @@ void main() {
       '${workspace.path}/decks/trace.md',
       '---\n'
           'trace: a paired trace\n'
-          'source: source.txt\n'
+          'exam: source.txt\n'
           'title: Trace\n'
           '---\n'
           '## Predict\n'
@@ -60,7 +60,7 @@ void main() {
       '${workspace.path}/decks/trace2.md',
       '---\n'
           'trace: a two-hop paired trace\n'
-          'source: source.txt\n'
+          'exam: source.txt\n'
           'title: Trace2\n'
           '---\n'
           '## Predict one\n'

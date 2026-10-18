@@ -10,7 +10,7 @@ use serde::Deserialize;
 use crate::{
     ask::{self, parse_json},
     config::{AskConfig, ExamConfig, Strictness},
-    deck::{self, Deck, SourceLayers},
+    deck::{self, Deck, ExamLayers},
     store::Store,
     workspace,
 };
@@ -80,7 +80,7 @@ pub fn generate_questions(
 ) -> Result<Vec<ExamQuestion>> {
     let sources = examination_sources(deck);
     if sources.is_empty() {
-        bail!("the deck and its workspace declare no `source:` to examine against");
+        bail!("the deck and its workspace declare no `exam:` to examine against");
     }
     if let Some(error) = source_boundary_error(deck) {
         bail!("{error}");
@@ -91,8 +91,8 @@ pub fn generate_questions(
 
 /// Both layers, told apart (ADR 0026): the deck's own sources are the primary
 /// grounding, the workspace source is supporting context, never shadowed.
-fn examination_sources(deck: &Deck) -> SourceLayers {
-    deck.source_layers()
+fn examination_sources(deck: &Deck) -> ExamLayers {
+    deck.exam_layers()
 }
 
 fn source_boundary_error(deck: &Deck) -> Option<String> {
@@ -111,7 +111,7 @@ pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()
 }
 
 fn generate_questions_from(
-    sources: &SourceLayers,
+    sources: &ExamLayers,
     base: Option<&Path>,
     cfg: &ExamConfig,
     ask_cfg: &AskConfig,
@@ -198,7 +198,7 @@ pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig)
 }
 
 pub fn spawn_questions(
-    sources: SourceLayers,
+    sources: ExamLayers,
     base: Option<PathBuf>,
     cfg: ExamConfig,
     ask_cfg: AskConfig,
@@ -699,7 +699,7 @@ fn split_layer(sources: &[String], base: Option<&Path>) -> Result<LayerSection> 
             continue;
         };
         let text = std::fs::read_to_string(&path)
-            .with_context(|| format!("cannot read `source:` {}", path.display()))?;
+            .with_context(|| format!("cannot read `exam:` {}", path.display()))?;
         let declared = src.trim();
         let label = if Path::new(declared).has_root() {
             path.file_name()
@@ -721,7 +721,7 @@ fn split_layer(sources: &[String], base: Option<&Path>) -> Result<LayerSection> 
     Ok(LayerSection { urls, files })
 }
 
-fn source_section(sources: &SourceLayers, base: Option<&Path>) -> Result<String> {
+fn source_section(sources: &ExamLayers, base: Option<&Path>) -> Result<String> {
     let own = split_layer(&sources.own, base)?;
     let workspace = split_layer(&sources.workspace, base)?;
     if own.urls.is_empty()
@@ -729,7 +729,7 @@ fn source_section(sources: &SourceLayers, base: Option<&Path>) -> Result<String>
         && workspace.urls.is_empty()
         && workspace.files.is_empty()
     {
-        bail!("none of the declared `source:` paths could be read to examine against");
+        bail!("none of the declared `exam:` paths could be read to examine against");
     }
 
     let mut out = String::new();
@@ -782,11 +782,7 @@ fn truncate(text: &str) -> (String, bool) {
     )
 }
 
-fn questions_prompt(
-    sources: &SourceLayers,
-    base: Option<&Path>,
-    cfg: &ExamConfig,
-) -> Result<String> {
+fn questions_prompt(sources: &ExamLayers, base: Option<&Path>, cfg: &ExamConfig) -> Result<String> {
     let sources = source_section(sources, base)?;
     let mut prompt = format!(
         "You are a strict examiner writing an oral exam that verifies a student \
@@ -1072,7 +1068,7 @@ struct GradesDto {
 mod tests {
     use super::*;
 
-    fn deck_with_sources(srcs: &[&str]) -> Deck {
+    fn deck_with_exam(srcs: &[&str]) -> Deck {
         Deck {
             // A root that cannot exist, so no stray manifest supplies a
             // workspace source to these fixtures.
@@ -1084,19 +1080,19 @@ mod tests {
             definitions: Vec::new(),
             links: Vec::new(),
             requires: Vec::new(),
-            sources: srcs.iter().map(|s| s.to_string()).collect(),
+            exam: srcs.iter().map(|s| s.to_string()).collect(),
             cite: Vec::new(),
             settings: Default::default(),
             title: None,
             description: None,
             trace: None,
-            workspace_has_sources: Default::default(),
+            workspace_has_exam: Default::default(),
             load_warnings: Vec::new(),
         }
     }
 
-    fn url_layers(own: &[&str]) -> SourceLayers {
-        SourceLayers {
+    fn url_layers(own: &[&str]) -> ExamLayers {
+        ExamLayers {
             own: own.iter().map(|s| s.to_string()).collect(),
             workspace: Vec::new(),
         }
@@ -1119,19 +1115,19 @@ mod tests {
         std::fs::create_dir_all(&members).unwrap();
         std::fs::write(
             dir.path().join(crate::workspace::MANIFEST),
-            "source = \"https://example.org/current\"\n",
+            "exam = \"https://example.org/current\"\n",
         )
         .unwrap();
         let path = members.join("d.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: https://example.org/own\n---\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: https://example.org/own\n---\n## q\na\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
 
         assert_eq!(
-            SourceLayers {
+            ExamLayers {
                 own: vec!["https://example.org/own".to_string()],
                 workspace: vec!["https://example.org/current".to_string()],
             },
@@ -1147,13 +1143,13 @@ mod tests {
         std::fs::create_dir_all(&members).unwrap();
         std::fs::write(
             dir.path().join(crate::workspace::MANIFEST),
-            "source = \"https://example.org/own\"\n",
+            "exam = \"https://example.org/own\"\n",
         )
         .unwrap();
         let path = members.join("d.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: https://example.org/own\n---\n## q\na\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: https://example.org/own\n---\n## q\na\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
@@ -1207,7 +1203,7 @@ mod tests {
 
     #[test]
     fn questions_prompt_labels_deck_and_workspace_layers() {
-        let sources = SourceLayers {
+        let sources = ExamLayers {
             own: vec!["https://example.org/own".to_string()],
             workspace: vec!["https://example.org/context".to_string()],
         };
@@ -1227,7 +1223,7 @@ mod tests {
             std::fs::create_dir(&source_dir).unwrap();
             std::fs::write(source_dir.join("notes.md"), text).unwrap();
         }
-        let sources = SourceLayers {
+        let sources = ExamLayers {
             own: vec!["a/notes.md".to_string(), "b/notes.md".to_string()],
             workspace: Vec::new(),
         };
@@ -1252,7 +1248,7 @@ mod tests {
         std::fs::write(nested.join("relative.md"), "relative body").unwrap();
         std::fs::write(dir.path().join("absolute.md"), "absolute body").unwrap();
         let absolute = dir.path().join("absolute.md");
-        let sources = SourceLayers {
+        let sources = ExamLayers {
             own: vec![
                 "deep/relative.md".to_string(),
                 absolute.display().to_string(),
@@ -1285,7 +1281,7 @@ mod tests {
         std::fs::create_dir(workspace.parent().unwrap()).unwrap();
         std::fs::write(&own, "primary body").unwrap();
         std::fs::write(&workspace, "supporting body").unwrap();
-        let sources = SourceLayers {
+        let sources = ExamLayers {
             own: vec![own.display().to_string()],
             workspace: vec![workspace.display().to_string()],
         };
@@ -1591,7 +1587,7 @@ mod tests {
             "a".repeat(MAX_SOURCE_BYTES + 1),
         )
         .unwrap();
-        let sources = SourceLayers {
+        let sources = ExamLayers {
             own: vec!["large.md".to_string()],
             workspace: Vec::new(),
         };
@@ -1623,14 +1619,14 @@ mod tests {
 
     #[test]
     fn generate_questions_rejects_a_deck_without_a_source() {
-        let deck = deck_with_sources(&[]);
+        let deck = deck_with_exam(&[]);
         let err = generate_questions(
             &deck,
             &ExamConfig::default(),
             &ask_config(std::path::Path::new("unused")),
         )
         .unwrap_err();
-        assert!(format!("{err:#}").contains("no `source:`"));
+        assert!(format!("{err:#}").contains("no `exam:`"));
     }
 
     #[test]
@@ -1642,7 +1638,7 @@ mod tests {
         let path = members.join("d.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\nsource: https://example.org/source\n---\n## q\na\n<!-- at: source.md:1 fingerprint: xxh64-0000000000000007 asset: missing.txt -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
+            "---\nformat-version: 1\nid: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\nexam: https://example.org/source\n---\n## q\na\n<!-- at: source.md:1 fingerprint: xxh64-0000000000000007 asset: missing.txt -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
@@ -1769,7 +1765,7 @@ mod tests {
     #[test]
     fn ensure_backend_can_examine_rejects_url_source_on_fetch_incapable_backend() {
         use crate::config::BackendKind;
-        let deck = deck_with_sources(&["https://example.org/doc"]);
+        let deck = deck_with_exam(&["https://example.org/doc"]);
         let ask_cfg = AskConfig {
             backend: BackendKind::Codex,
             command: "/dev/null".to_string(),
@@ -1789,7 +1785,7 @@ mod tests {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = fake_reply(dir.path(), "{\"questions\":[]}");
-        let deck = deck_with_sources(&["https://x"]);
+        let deck = deck_with_exam(&["https://x"]);
         let err = generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap_err();
         assert!(format!("{err:#}").contains("no questions"));
     }
@@ -1809,7 +1805,7 @@ mod tests {
         ] {
             let dir = tempfile::tempdir().unwrap();
             let cli = fake_reply(dir.path(), reply);
-            let deck = deck_with_sources(&["https://x"]);
+            let deck = deck_with_exam(&["https://x"]);
             let err =
                 generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap_err();
             assert!(
@@ -1889,7 +1885,7 @@ mod tests {
         let json = "{\"questions\":[{\"prompt\":\"Why move?\",\
                     \"points\":[\"avoids double free\"]}]}";
         let cli = fake_reply(dir.path(), json);
-        let deck = deck_with_sources(&["https://x"]);
+        let deck = deck_with_exam(&["https://x"]);
         let cfg = ExamConfig {
             num_questions: 1,
             ..ExamConfig::default()
@@ -1965,16 +1961,16 @@ mod tests {
             definitions: Vec::new(),
             links: Vec::new(),
             requires: Vec::new(),
-            sources: vec!["notes.md".to_string()],
+            exam: vec!["notes.md".to_string()],
             cite: Vec::new(),
             settings: Default::default(),
             title: None,
             description: None,
             trace: None,
-            workspace_has_sources: Default::default(),
+            workspace_has_exam: Default::default(),
             load_warnings: Vec::new(),
         };
-        let section = source_section(&deck.source_layers(), deck.path.parent()).unwrap();
+        let section = source_section(&deck.exam_layers(), deck.path.parent()).unwrap();
         assert!(section.contains("the ground truth text"));
         assert!(section.contains("notes.md"));
         assert!(section.contains("primary grounding"));
@@ -2026,7 +2022,7 @@ mod tests {
         let path = dir.join("d.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-d1\"\nsource: https://x\n---\n## c\na\n<!-- id: card-qc -->\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\nexam: https://x\n---\n## c\na\n<!-- id: card-qc -->\n",
         )
         .unwrap();
         Deck::load(&path).unwrap()
@@ -2501,7 +2497,7 @@ mod windows_tests {
         let declared = source.to_string_lossy()[prefix_len..].to_string();
         assert!(Path::new(&declared).has_root(), "{declared}");
         assert!(!Path::new(&declared).is_absolute(), "{declared}");
-        let sources = SourceLayers {
+        let sources = ExamLayers {
             own: vec![declared.clone()],
             workspace: Vec::new(),
         };

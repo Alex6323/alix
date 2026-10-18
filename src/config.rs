@@ -1369,7 +1369,7 @@ pub fn default_config_toml() -> &'static str {
 # Tools the assistant may use. With "dontAsk" this is an exclusive
 # allowlist; the defaults let it consult deck links but nothing else.
 # allowed_tools = ["WebFetch", "WebSearch"]
-# Let the tutor READ the deck's first local `source:` root (workspace `source`
+# Let the tutor READ the deck's first local `exam:` root (workspace `exam`
 # as fallback) with Read/Glob/Grep to verify its answer instead of relying on
 # memory. An `at:` citation never grants access by itself. Off by default
 # because this can expose local files to a possibly LAN-served tutor; enable it
@@ -1393,8 +1393,8 @@ pub fn default_config_toml() -> &'static str {
 # prompt = ""                   # override; supports {url}, {source}, {max_cards}, {card_format}
 # review = false                # run a second pass to drop redundant cards (--review)
 
-# AI exam. Generates open understanding questions from the deck's `source:`
-# (the workspace `source` joins as supporting context), then grades typed
+# AI exam. Generates open understanding questions from the deck's `exam:`
+# (the workspace `exam` joins as supporting context), then grades typed
 # answers; passing marks the deck
 # "mastered" and unlocks its dependents. Reuses the [ask] command, permission
 # mode and tool allowlist (WebFetch reads a source URL).
@@ -1407,7 +1407,7 @@ pub fn default_config_toml() -> &'static str {
 # retry_cooldown_secs = 3600    # wait this long before re-sitting a FAILED trace exam (0 = off)
 # extra = ""                    # extra guidance appended to question generation
 
-# Trace building (`alix deck generate <trace-stub>` / `--trace`). Explores the `source:`
+# Trace building (`alix deck generate <trace-stub>` / `--trace`). Explores the `exam:`
 # to discover the path and writes the checkpoints back. Reuses the [ask] command,
 # but runs with read-only file tools (Read/Glob/Grep, + WebFetch for a URL
 # source) and the source root as the working directory — never a write/shell tool.

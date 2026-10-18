@@ -113,7 +113,7 @@ void main() {
       '${fixture.workspace.path}/decks/trace.md',
       '---\n'
           'trace: a paired trace\n'
-          'source: source.txt\n'
+          'exam: source.txt\n'
           'title: Trace\n'
           '---\n'
           '## Predict\n'

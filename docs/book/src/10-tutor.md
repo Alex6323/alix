@@ -75,17 +75,17 @@ link:
 
 These are handed to the tutor with your first question as material to consult when
 useful: fetched once and remembered for the rest of the run. They're tutor-only:
-unlike `source:` (the exam's ground truth, covered next chapter), a `link:`
+unlike `exam:` (the exam's ground truth, covered next chapter), a `link:`
 never becomes exam material. And like every directive, they don't affect a
 card's identity.
 
-## Grounding a frozen card: `source:`
+## Grounding a frozen card: `exam:`
 
 A frozen workspace card is grounded in its deck-owned `assets/deck-<token>/`
 evidence. The tutor receives the exact excerpt shown during review, so deleting
 or editing the live source cannot silently change its ground truth.
 
-The deck's `source:` (and a workspace's `source`) records where that evidence
+The deck's `exam:` (and a workspace's `exam`) records where that evidence
 came from and can give the tutor broader current context. A URL source is
 fetched when the selected backend can use `WebFetch`. A local source is readable
 only when `[ask] source_access = true`. The tutor always receives the frozen
@@ -97,8 +97,8 @@ workspace's `alix.toml` may carry its own top-level `source_access` key,
 which overrides the global setting in either direction for that workspace's
 decks. The manifest travels when a workspace is shared, so inspect a
 received workspace's `alix.toml` before making an AI call over it. An
-explicit deck or workspace `source` defines the readable root. Without one,
-alix does not grant the tutor filesystem access: a `source:` identifies the
+explicit deck or workspace `exam` defines the readable root. Without one,
+alix does not grant the tutor filesystem access: a `exam:` identifies the
 cited evidence, but it never implicitly authorizes the surrounding project.
 This keeps decks portable across profile-managed deck directories and keeps
 every wider live-source grant reviewable: globally in your config, or per

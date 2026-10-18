@@ -18,9 +18,9 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Stri
         .as_deref()
         .ok_or_else(|| anyhow!("{} declares no `trace:` to build", deck.subject))?;
     let source = deck
-        .sources
+        .exam
         .first()
-        .ok_or_else(|| anyhow!("{} declares no `source:` scope to trace", deck.subject))?;
+        .ok_or_else(|| anyhow!("{} declares no `exam:` scope to trace", deck.subject))?;
     let url = is_url(source);
     ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
@@ -115,7 +115,7 @@ fn build_prompt(description: &str, source: &str, url: bool, cfg: &TraceConfig) -
          facts about the topic. Then write it as a series of CHECKPOINT cards, one \
          per hop.\n\n\
          FORMAT — output ONLY the checkpoint cards: no frontmatter, no `trace:` or \
-         `source:` key, no preamble, no code fences. Each checkpoint is:\n\n\
+         `exam:` key, no preamble, no code fences. Each checkpoint is:\n\n\
          ## <the question for this hop, asked plainly>\n\
          <!-- given: <name> — <what it is> -->\n\
          <a key point a correct answer hits>\n\
@@ -521,7 +521,7 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: how it works\nsource: .\n---\n",
+            "---\ntrace: how it works\nexam: .\n---\n",
         );
         let deck = Deck::load(&path).unwrap();
         let cards = build(&deck, &TraceConfig::default(), &ask_config(&cli)).unwrap();
@@ -538,13 +538,13 @@ mod tests {
         write(
             &root.join("ws"),
             "alix.toml",
-            "title = \"W\"\nsource = \"../src\"\n",
+            "title = \"W\"\nexam = \"../src\"\n",
         );
         std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(
             &root.join("ws/decks"),
             "t.md",
-            "---\ntrace: how it works\nsource: ../src\n---\n\
+            "---\ntrace: how it works\nexam: ../src\n---\n\
              ## hop 1\nit reads a\n<!-- at: a.rs:2-3 -->\n\
              ## hop 2\nit reads b\n<!-- at: b.rs:1 -->\n",
         )
@@ -572,7 +572,7 @@ mod tests {
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
         assert!(
-            text.contains("source: ../src"),
+            text.contains("exam: ../src"),
             "the live source declaration stays untouched: {text}"
         );
         assert!(!text.contains("origin:"), "freezing stamps nothing: {text}");
@@ -621,7 +621,7 @@ mod tests {
         let deck_path = write(
             &root.join("ws/decks"),
             "t.md",
-            "---\ntrace: t\nsource: ../notes.md\n---\n## hop\np\n<!-- at: 2 -->\n",
+            "---\ntrace: t\nexam: ../notes.md\n---\n## hop\np\n<!-- at: 2 -->\n",
         );
         let report = crate::assets::initialize(&deck_path).unwrap();
         let deck = Deck::load(&deck_path).unwrap();
@@ -641,7 +641,7 @@ mod tests {
         );
         let text = std::fs::read_to_string(&deck_path).unwrap();
         assert!(
-            text.contains("source: ../notes.md"),
+            text.contains("exam: ../notes.md"),
             "the live source declaration stays untouched: {text}"
         );
         assert!(
@@ -668,7 +668,7 @@ mod tests {
         let deck_path = write(
             &root.join("ws/decks"),
             "d.md",
-            "---\nsource:\n  - ../src/a.rs\n  - ../src/b.rs\n---\n\
+            "---\nexam:\n  - ../src/a.rs\n  - ../src/b.rs\n---\n\
              ## q1\np\n<!-- at: a.rs:2-3 -->\n\
              ## q2\np\n<!-- at: b.rs:1 -->\n",
         );
@@ -708,7 +708,7 @@ mod tests {
         let loose = write(
             root,
             "t.md",
-            "---\ntrace: t\nsource: .\n---\n## h\np\n<!-- at: x.rs:1 -->\n",
+            "---\ntrace: t\nexam: .\n---\n## h\np\n<!-- at: x.rs:1 -->\n",
         );
         crate::stamp::stamp_deck(&loose).unwrap();
         let err = crate::assets::freeze_member(&loose).unwrap_err();
@@ -721,7 +721,7 @@ mod tests {
         let url = write(
             &root.join("ws/decks"),
             "u.md",
-            "---\ntrace: t\nsource: https://example.com/p\n---\n## h\np\n<!-- at: 1 -->\n",
+            "---\ntrace: t\nexam: https://example.com/p\n---\n## h\np\n<!-- at: 1 -->\n",
         );
         let err = crate::assets::initialize(&url).unwrap_err();
         assert!(

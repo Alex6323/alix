@@ -206,7 +206,7 @@ fn member_rows(
     let (store, health) = member_store(root, dir);
     let augment = AugmentCache::open_for_workspace(dir).ok();
     let mut table = deck::LoadedDecks::for_workspace(ws);
-    let known_sources = workspace::has_manifest(dir).then_some(!ws.source.is_empty());
+    let known_sources = workspace::has_manifest(dir).then_some(!ws.exam.is_empty());
     let members: LoadedMembers = ws
         .members
         .iter()
@@ -1335,7 +1335,7 @@ mod tests {
         let source_path = dir.path().join("source.md");
         write(
             &source_path,
-            "---\nformat-version: 1\nid: \"deck-source\"\nsource: https://example.com\n---\n",
+            "---\nformat-version: 1\nid: \"deck-source\"\nexam: https://example.com\n---\n",
         );
         let source = Deck::load(&source_path).unwrap();
         let source_store = Store::open(dir.path().join("source.json")).unwrap();
@@ -1343,7 +1343,7 @@ mod tests {
         let exam_path = dir.path().join("exam.md");
         write(
             &exam_path,
-            "---\nformat-version: 1\nid: \"deck-exam\"\nsource: https://example.com\n---\n## q\na\n<!-- id: card-exam -->\n",
+            "---\nformat-version: 1\nid: \"deck-exam\"\nexam: https://example.com\n---\n## q\na\n<!-- id: card-exam -->\n",
         );
         let exam = Deck::load(&exam_path).unwrap();
         let mut exam_store = Store::open(dir.path().join("exam.json")).unwrap();
@@ -1379,7 +1379,7 @@ mod tests {
         let error_path = error_root.join("error.md");
         write(
             &error_path,
-            "---\nformat-version: 1\nid: \"deck-error\"\nsource: https://example.com\n---\n## q\na\n<!-- id: card-error -->\n",
+            "---\nformat-version: 1\nid: \"deck-error\"\nexam: https://example.com\n---\n## q\na\n<!-- id: card-error -->\n",
         );
         let progress = error_root.join(".alix/progress");
         std::fs::create_dir_all(&progress).unwrap();
@@ -1709,7 +1709,7 @@ mod tests {
         write(&ws.join("alix.toml"), "title = \"WS\"\n");
         write(
             &ws.join("decks/base.md"),
-            "---\nformat-version: 1\nid: \"deck-base1\"\nsource: https://x\n---\n## q\na\n<!-- id: card-qbase -->\n",
+            "---\nformat-version: 1\nid: \"deck-base1\"\nexam: https://x\n---\n## q\na\n<!-- id: card-qbase -->\n",
         );
         write(
             &ws.join("decks/advanced.md"),
@@ -1957,7 +1957,7 @@ mod tests {
         write(&ws.join("alix.toml"), "");
         write(
             &ws.join("decks/w.md"),
-            "---\nsource: https://x\n---\n## w\n1\n<!-- id: card-qw -->\n",
+            "---\nexam: https://x\n---\n## w\n1\n<!-- id: card-qw -->\n",
         );
         write(
             &ws.join("decks/x.md"),
@@ -2191,7 +2191,7 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("gate.md"),
-            "---\nsource: https://x\n---\n## q\na\n<!-- id: card-qgate -->\n",
+            "---\nexam: https://x\n---\n## q\na\n<!-- id: card-qgate -->\n",
         );
         let ws = root.join("ws");
         std::fs::create_dir_all(ws.join("decks")).unwrap();
@@ -2202,7 +2202,7 @@ mod tests {
         );
         write(
             &ws.join("decks/zzz-examdue.md"),
-            "---\nsource: https://y\n---\n## q\na\n<!-- id: card-qexamdue -->\n",
+            "---\nexam: https://y\n---\n## q\na\n<!-- id: card-qexamdue -->\n",
         );
 
         let store_path = workspace::store_path(&ws);
@@ -2240,7 +2240,7 @@ mod tests {
         let root = dir.path();
         write(
             &root.join("gate.md"),
-            "---\nsource: https://x\n---\n## q\na\n<!-- id: card-qgate -->\n",
+            "---\nexam: https://x\n---\n## q\na\n<!-- id: card-qgate -->\n",
         );
         let ws = root.join("ws");
         std::fs::create_dir_all(ws.join("decks")).unwrap();

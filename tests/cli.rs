@@ -394,7 +394,7 @@ fn plain_doctor_and_repair_mode_both_report_an_unresolvable_live_locator_as_an_e
     let deck = write(
         dir.path(),
         "d.md",
-        "---\nsource:\n  - a\n  - b\n---\n\n## q\nanswer\n<!-- at: 1 -->\n",
+        "---\nexam:\n  - a\n  - b\n---\n\n## q\nanswer\n<!-- at: 1 -->\n",
     );
 
     let plain = alix(&["doctor", &deck]);
@@ -420,7 +420,7 @@ fn plain_doctor_errors_when_a_fingerprinted_whole_file_live_citation_disappears(
     let deck = write(
         dir.path(),
         "d.md",
-        "---\nsource: .\n---\n\n## q\nanswer\n<!-- at: notes.txt -->\n",
+        "---\nexam: .\n---\n\n## q\nanswer\n<!-- at: notes.txt -->\n",
     );
 
     let repair = alix(&["doctor", &deck, "--repair-source-locators"]);
@@ -707,7 +707,7 @@ fn doctor_reports_a_moved_excerpt_and_repair_rebases_it_without_touching_the_evi
     std::fs::write(
         &deck,
         format!(
-            "---\nformat-version: 1\nsource: {}\n---\n## q\na\n<!-- at: notes.md:1 -->\n",
+            "---\nformat-version: 1\nexam: {}\n---\n## q\na\n<!-- at: notes.md:1 -->\n",
             source.display()
         ),
     )
@@ -776,7 +776,7 @@ fn doctor_nudges_a_long_source_list_toward_its_common_root() {
     let deck = write(
         dir.path(),
         "cards.md",
-        "---\nformat-version: 1\nid: \"deck-deck1\"\nsource:\n  - a.rs\n  - b.rs\n  - c.rs\n  - d.rs\n---\n## q\na\n<!-- id: card-card1 -->\n",
+        "---\nformat-version: 1\nid: \"deck-deck1\"\nexam:\n  - a.rs\n  - b.rs\n  - c.rs\n  - d.rs\n---\n## q\na\n<!-- id: card-card1 -->\n",
     );
     let out = alix(&["doctor", &deck]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
@@ -4008,7 +4008,7 @@ fn generate_builds_checkpoints_into_an_existing_trace_stub() {
     let stub = write(
         dir.path(),
         "t.md",
-        "---\ntrace: how it works\nsource: .\n---\n",
+        "---\ntrace: how it works\nexam: .\n---\n",
     );
     let cli = fake_claude(
         dir.path(),
@@ -4037,7 +4037,7 @@ fn generate_refuses_to_rebuild_trace_checkpoints_without_force() {
     let stub = write(
         dir.path(),
         "t.md",
-        "---\ntrace: how it works\nsource: .\n---\n## old checkpoint\nold point\n<!-- at: 1 -->\n<!-- id: card-c1 -->\n",
+        "---\ntrace: how it works\nexam: .\n---\n## old checkpoint\nold point\n<!-- at: 1 -->\n<!-- id: card-c1 -->\n",
     );
     let original = std::fs::read_to_string(&stub).unwrap();
 
@@ -4105,7 +4105,7 @@ fn generate_trace_writes_an_explore_deck() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let text = std::fs::read_to_string(&out_path).unwrap();
     assert!(text.contains("trace: \"exploring"), "{text}");
-    assert!(text.contains("source:"), "{text}");
+    assert!(text.contains("exam:"), "{text}");
     assert!(text.contains("what it is"), "{text}");
 }
 
@@ -4144,7 +4144,7 @@ fn ordinary_text_and_markdown_files_never_enter_trace_building() {
     for (name, source_text) in [
         (
             "trace-shaped.txt",
-            "---\ntrace: how it works\nsource: .\n---\n",
+            "---\ntrace: how it works\nexam: .\n---\n",
         ),
         (
             "ordinary.md",
@@ -4738,7 +4738,7 @@ fn generate_single_deck_records_the_explicit_public_url_as_a_source() {
     let dir = TempDir::new().unwrap();
     let cli = fake_claude(
         dir.path(),
-        "---\nlink: https://mirror.example/page\nsource: https://mirror.example/page\n---\n\n## Generated Q\nGenerated A\n",
+        "---\nlink: https://mirror.example/page\nexam: https://mirror.example/page\n---\n\n## Generated Q\nGenerated A\n",
     );
     let config = write(
         dir.path(),
@@ -4767,7 +4767,7 @@ fn generate_single_deck_records_the_explicit_public_url_as_a_source() {
     let deck = std::fs::read_to_string(ws.join("decks/gen.md")).unwrap();
     assert!(
         deck.contains(
-            "source:\n  - \"https://mirror.example/page\"\n  - \"https://canonical.example/page\""
+            "exam:\n  - \"https://mirror.example/page\"\n  - \"https://canonical.example/page\""
         ),
         "{deck}"
     );
@@ -5637,7 +5637,7 @@ fn deck_init_freezes_its_excerpts_when_named_by_a_relative_path() {
     std::fs::write(
         decks.join("d.md"),
         format!(
-            "---\nsource: {}\n---\n\n## what does it say\nthe cited paragraph\n\
+            "---\nexam: {}\n---\n\n## what does it say\nthe cited paragraph\n\
              <!-- at: notes.md:1-2 -->\n",
             decks.display()
         ),
@@ -6104,7 +6104,7 @@ fn workspace_init_on_an_existing_workspace_errors() {
 fn workspace_update_previews_then_applies_without_a_second_backend_call() {
     let dir = TempDir::new().unwrap();
     // Staging canonicalizes the workspace root; on macOS the raw tempdir path
-    // traverses /var -> /private/var, so the embedded `source:` must be the
+    // traverses /var -> /private/var, so the embedded `exam:` must be the
     // canonical form or the preserved-source comparison spuriously differs.
     let root = dir.path().canonicalize().unwrap();
     let workspace = root.join("workspace");
@@ -6117,14 +6117,14 @@ fn workspace_update_previews_then_applies_without_a_second_backend_call() {
     std::fs::write(
         &deck,
         format!(
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## Old?\nold\n<!-- at: facts.rs:1 -->\n<!-- id: card-oldcard -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n## Old?\nold\n<!-- at: facts.rs:1 -->\n<!-- id: card-oldcard -->\n",
             alix::parser::yaml_quote(source.to_str().unwrap())
         ),
     )
     .unwrap();
     alix::assets::freeze_member(&deck).unwrap();
     let proposal = format!(
-        "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## New?\nnew\n<!-- at: facts.rs:2 -->\n",
+        "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n## New?\nnew\n<!-- at: facts.rs:2 -->\n",
         alix::parser::yaml_quote(source.to_str().unwrap())
     );
     let cli = fake_claude(dir.path(), &proposal);
@@ -6853,7 +6853,7 @@ fn workspace_update_stops_a_wedged_provider_at_the_inactivity_limit() {
     std::fs::write(
         &deck,
         format!(
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nsource: {}\n---\n## Old?\nold\n<!-- at: facts.rs:1 -->\n<!-- id: card-oldcard -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n## Old?\nold\n<!-- at: facts.rs:1 -->\n<!-- id: card-oldcard -->\n",
             alix::parser::yaml_quote(source.to_str().unwrap())
         ),
     )

@@ -1,6 +1,6 @@
 // The "Take the exam" chip's gating: it exists only on the done summary,
 // only with a reachable, current-enough paired desktop AND a deck that
-// sits an AI exam (`% source:`, never a trace). ReviewScreen's own
+// sits an AI exam (`% exam:`, never a trace). ReviewScreen's own
 // listing/session calls the real bridge in initState, so RustLib.init() is
 // required to mount it, same as review_screen_ask_chip_test.dart (T5).
 import 'dart:io';
@@ -29,14 +29,14 @@ void main() {
     return dir;
   }
 
-  /// `examinable`: a deck with `% source:` (never a trace), matching the
-  /// bridge's own `has_exam` capture (`!is_trace() && !sources.is_empty()`,
+  /// `examinable`: a deck with `% exam:` (never a trace), matching the
+  /// bridge's own `has_exam` capture (`!is_trace() && !exam.is_empty()`,
   /// `mobile/alix/rust/src/api/review.rs`). `plain` has no source, so it
   /// never sits an exam.
   Directory deckRoot({required bool examinable}) {
     final root = Directory.systemTemp.createTempSync('alix-exam-chip-decks-');
     final text = examinable
-        ? '---\nsource: https://example.com\n---\n## q?\na\n'
+        ? '---\nexam: https://example.com\n---\n## q?\na\n'
         : '## q?\na\n';
     writeTestDeck('${root.path}/facts.md', text);
     addTearDown(() => root.deleteSync(recursive: true));
@@ -146,7 +146,7 @@ void main() {
       ).writeAsStringSync('title = "Ws"\n');
       writeTestDeck(
         '${root.path}/wsfolder/decks/member.md',
-        '---\nsource: https://example.com\n---\n## q?\na\n',
+        '---\nexam: https://example.com\n---\n## q?\na\n',
       );
 
       final support = tempSupport();

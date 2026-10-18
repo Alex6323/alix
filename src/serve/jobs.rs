@@ -38,14 +38,14 @@ pub(super) fn can_fetch_url_sources(cfg: &AskConfig) -> bool {
 
 struct TutorInfo {
     links: Vec<String>,
-    sources: crate::deck::SourceLayers,
+    sources: crate::deck::ExamLayers,
     root: Option<PathBuf>,
     source_base: Option<SourceBase>,
 }
 
 struct TutorContextData {
     links: Vec<String>,
-    sources: crate::deck::SourceLayers,
+    sources: crate::deck::ExamLayers,
     root: Option<PathBuf>,
     frozen: Option<String>,
 }
@@ -97,7 +97,7 @@ pub(super) struct Reviewing {
     pub(super) images: HashMap<String, PathBuf>,
     pub(super) ask: Ask,
     pub(super) links: HashMap<String, Vec<String>>,
-    pub(super) source_layers: HashMap<String, crate::deck::SourceLayers>,
+    pub(super) exam_layers: HashMap<String, crate::deck::ExamLayers>,
     pub(super) base_roots: HashMap<String, PathBuf>,
     pub(super) source_bases: HashMap<String, SourceBase>,
     pub(super) augment: AugmentCache,
@@ -468,7 +468,7 @@ impl RemoteAsk {
                 let info = *info;
                 let tutor_info = TutorInfo {
                     links: info.links,
-                    sources: info.source_layers,
+                    sources: info.exam_layers,
                     root: info.source_access.then_some(info.base_root).flatten(),
                     source_base: Some(info.source_base),
                 };
@@ -479,7 +479,7 @@ impl RemoteAsk {
                 card,
                 TutorContextData {
                     links: Vec::new(),
-                    sources: crate::deck::SourceLayers::default(),
+                    sources: crate::deck::ExamLayers::default(),
                     root: None,
                     frozen: None,
                 },
@@ -732,7 +732,7 @@ impl Reviewing {
             ask: Ask::new(),
             links: build.links,
             base_roots: build.base_roots,
-            source_layers: build.source_layers,
+            exam_layers: build.exam_layers,
             source_bases: build.source_bases,
             augment: build.augment,
             present_seq: now_ms(),
@@ -788,7 +788,7 @@ impl Reviewing {
         let info = TutorInfo {
             links: self.links.get(&*card.deck_id).cloned().unwrap_or_default(),
             sources: self
-                .source_layers
+                .exam_layers
                 .get(&*card.deck_id)
                 .cloned()
                 .unwrap_or_default(),
@@ -1566,7 +1566,7 @@ impl Tracing {
             .checkpoint()
             .and_then(|checkpoint| self.session.trace().frozen_block(checkpoint));
         let live_root = root.as_deref().filter(|path| path.exists());
-        let sources = &self.session.trace().source_layers;
+        let sources = &self.session.trace().exam_layers;
         let has_url_source = sources
             .own
             .iter()
@@ -1652,7 +1652,7 @@ impl Walking {
         };
         let info = TutorInfo {
             links: self.info.links.clone(),
-            sources: self.info.source_layers.clone(),
+            sources: self.info.exam_layers.clone(),
             root: self
                 .info
                 .source_access

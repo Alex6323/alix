@@ -2864,7 +2864,7 @@ mod tests {
 
     #[test]
     fn split_card_blocks_is_one_block_for_a_span_and_drops_preamble() {
-        let text = "---\nsource: x\n---\n\n## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" -->\n<!-- blank: span hidden=\"be\" occurrence=2 -->\n";
+        let text = "---\nexam: x\n---\n\n## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" -->\n<!-- blank: span hidden=\"be\" occurrence=2 -->\n";
         let blocks = split_card_blocks(text);
         assert_eq!(
             1,
