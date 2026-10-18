@@ -144,11 +144,14 @@ Locators are written into deck files, so their grammar is decided here.
     no search for the bare file name. A locator never leaves its root: the
     symlink-resolved file must lie inside the symlink-resolved root.
 
-13. A locator with an `asset:` is served from its frozen copy. Its live side
-    (root, file or lines missing, or text changed) is drift: a doctor
-    warning, never an error, so a shared frozen deck works without its
-    sources. A locator without an `asset:` must resolve live; if its root,
-    file or lines are missing, that is an error.
+13. A locator with an `asset:` is served from its frozen copy, whether or not
+    its live side still backs it. Its live side (root, file or lines
+    missing, or text changed) is drift, which `alix doctor` reports only
+    with `--warn-on-source-locator-drift`, as a warning, never an error: a
+    frozen copy going stale is normal for many decks, and a shared frozen
+    deck works without its sources. A locator without an `asset:` must
+    resolve live; if its root, file or lines are missing, that is an
+    error.
 
 ### Who reads what
 
