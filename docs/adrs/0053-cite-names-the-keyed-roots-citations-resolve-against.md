@@ -162,13 +162,16 @@ Locators are written into deck files, so their grammar is decided here.
     URL root is never browsed.
 
 16. A generator that writes locators (`alix workspace generate`, trace
-    builds) declares its input as a root under the key `src`;
-    `workspace generate` writes it into the manifest. A generator that
-    writes none (a facts deck from `alix deck generate`) declares its input
-    as `exam:`. When a manifest root
-    already contains a local input, the generator reuses that key. An input outside every manifest root while the manifest declares
+    builds, facts decks from `alix deck generate`) declares its input as a
+    root under the key `src`; `workspace generate` writes it into the
+    manifest. A facts deck also declares its input as `exam:`. When a
+    manifest root already contains a local input, the generator reuses that
+    key. An input outside every manifest root while the manifest declares
     `src` is an error. A URL trace build freezes each cited passage under its
-    URL root; outside a workspace it is an error.
+    URL root; outside a workspace it is an error. The model hands over each
+    passage verbatim between two lines carrying a token alix mints per
+    build, so no page text can end the passage early; alix freezes it as a
+    `.txt` object.
 
 17. Deck transfer (`alix deck copy|move`) changes neither manifest and does
     not rewrite the deck. It is allowed only when every key the deck's
