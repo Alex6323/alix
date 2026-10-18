@@ -227,6 +227,8 @@ pub enum ParseError {
     InvalidLocator { line: usize, message: String },
     #[error("line {line}: {message}")]
     InvalidRegion { line: usize, message: String },
+    #[error("line {line}: {message}")]
+    InvalidCite { line: usize, message: String },
     #[error("line {line}: {}", .above.message(.key))]
     UnboundRegion {
         line: usize,
@@ -360,6 +362,7 @@ impl ParseError {
             Self::FrontDirective { .. } => "front_directive",
             Self::InvalidLocator { .. } => "invalid_locator",
             Self::InvalidRegion { .. } => "invalid_region",
+            Self::InvalidCite { .. } => "invalid_cite",
             Self::UnboundRegion { .. } => "unbound_region",
             Self::ChoiceShape { .. } => "choice_shape",
             Self::MixedImageLine(_) => "mixed_image_line",
@@ -418,6 +421,7 @@ impl ParseError {
             | Self::ControlChar { line, .. }
             | Self::InvalidLocator { line, .. }
             | Self::InvalidRegion { line, .. }
+            | Self::InvalidCite { line, .. }
             | Self::UnboundRegion { line, .. }
             | Self::ChoiceShape { line, .. }
             | Self::TableColumns { line, .. }
@@ -8623,6 +8627,7 @@ the answer
                 title: Some("The Title".into()),
                 description: None,
                 source: vec!["https://example.org/book".into(), "notes.md".into()],
+                cite: Vec::new(),
                 requires: vec!["basics".into()],
                 link: vec!["https://docs.rs/tokio".into()],
                 trace: Some("how a keypress becomes a grade".into()),

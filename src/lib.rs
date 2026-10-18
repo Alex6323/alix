@@ -24,6 +24,7 @@ pub mod cache;
 pub mod calibrate;
 pub mod card;
 pub mod choice;
+pub mod cite;
 pub mod config;
 pub mod deck;
 #[cfg(feature = "full")]

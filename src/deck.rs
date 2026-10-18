@@ -32,17 +32,21 @@ impl DeckSettings {
     pub fn from_directives(directives: &[(String, String)]) -> Self {
         let mut settings = Self::default();
         for (key, value) in directives {
-            match key.as_str() {
-                "reveal" => settings.reveal = Reveal::parse(value),
-                "input" => settings.input = Input::parse(value),
-                "review" => settings.order = Order::parse(value),
-                "direction" => settings.direction = Direction::parse(value),
-                "sampling" => settings.sampling = parser::parse_sampling(value),
-                "strictness" => settings.exam_strictness = Strictness::parse(value),
-                _ => {}
-            }
+            let _ignored_here_reported_by_doctor = settings.apply_directive(key, value);
         }
         settings
+    }
+
+    pub fn apply_directive(&mut self, key: &str, value: &str) -> Result<(), DirectiveProblem> {
+        match key {
+            "reveal" => store(&mut self.reveal, Reveal::parse(value)),
+            "input" => store(&mut self.input, Input::parse(value)),
+            "review" => store(&mut self.order, Order::parse(value)),
+            "direction" => store(&mut self.direction, Direction::parse(value)),
+            "sampling" => store(&mut self.sampling, parser::parse_sampling(value)),
+            "strictness" => store(&mut self.exam_strictness, Strictness::parse(value)),
+            _ => Err(DirectiveProblem::UnknownKey),
+        }
     }
 
     pub fn from_frontmatter(frontmatter: &parser::Frontmatter) -> Self {
@@ -68,6 +72,20 @@ impl DeckSettings {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DirectiveProblem {
+    UnknownKey,
+    BadValue,
+}
+
+fn store<T>(slot: &mut Option<T>, parsed: Option<T>) -> Result<(), DirectiveProblem> {
+    *slot = parsed;
+    match slot {
+        Some(_) => Ok(()),
+        None => Err(DirectiveProblem::BadValue),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeckState {
     NotStarted,
     Started,
@@ -88,6 +106,7 @@ pub struct Deck {
     pub links: Vec<String>,
     pub requires: Vec<String>,
     pub sources: Vec<String>,
+    pub cite: Vec<(String, String)>,
     pub settings: DeckSettings,
     pub title: Option<String>,
     pub description: Option<String>,
@@ -166,6 +185,7 @@ impl Deck {
         let links = parsed.frontmatter.link.clone();
         let requires = parsed.frontmatter.requires.clone();
         let sources = parsed.frontmatter.source.clone();
+        let cite = parsed.frontmatter.cite.clone();
         let title = parsed.title.clone();
         let description = parsed.frontmatter.description.clone();
         let trace = parsed.frontmatter.trace.clone();
@@ -236,6 +256,7 @@ impl Deck {
             links,
             requires,
             sources,
+            cite,
             settings,
             title,
             description,

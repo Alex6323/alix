@@ -5,9 +5,10 @@ use std::{
 };
 
 use serde::Deserialize;
+use thiserror::Error;
 
 use crate::{
-    deck::DeckSettings,
+    deck::{DeckSettings, DirectiveProblem},
     profile::{self, Counter},
 };
 
@@ -69,6 +70,8 @@ struct Manifest {
     icon: Option<String>,
     source: Option<ManifestSource>,
     source_access: Option<bool>,
+    #[serde(default)]
+    cite: BTreeMap<String, String>,
     #[serde(default)]
     defaults: BTreeMap<String, toml::Value>,
 }
@@ -153,6 +156,78 @@ pub fn manifest_source(dir: &Path) -> Vec<String> {
         .source
         .map(ManifestSource::into_values)
         .unwrap_or_default()
+}
+
+pub fn manifest_cite(dir: &Path) -> BTreeMap<String, String> {
+    profile::hit(Counter::ManifestReads);
+    std::fs::read_to_string(dir.join(MANIFEST))
+        .ok()
+        .and_then(|text| toml::from_str::<Manifest>(&text).ok())
+        .map(|manifest| manifest.cite)
+        .unwrap_or_default()
+}
+
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum ManifestFinding {
+    #[error(
+        "`[cite]` key `{key}` must match `[a-z][a-z0-9_-]*` and not be `true`, `false` or `null`"
+    )]
+    CiteKey { key: String },
+    #[error("`[defaults]` key `{key}` is not a deck directive and is ignored")]
+    UnknownDefault { key: String },
+    #[error("`[defaults]` value `{value}` is not valid for `{key}` and is ignored")]
+    BadDefault { key: String, value: String },
+    #[error("`{key}` does not belong in `[defaults]`; declare it as {place}")]
+    MisplacedDefault { key: String, place: &'static str },
+}
+
+impl ManifestFinding {
+    pub fn is_error(&self) -> bool {
+        matches!(self, Self::CiteKey { .. } | Self::MisplacedDefault { .. })
+    }
+}
+
+pub fn manifest_findings(dir: &Path) -> Vec<ManifestFinding> {
+    profile::hit(Counter::ManifestReads);
+    let Some(manifest) = std::fs::read_to_string(dir.join(MANIFEST))
+        .ok()
+        .and_then(|text| toml::from_str::<Manifest>(&text).ok())
+    else {
+        return Vec::new();
+    };
+    let mut findings: Vec<ManifestFinding> = manifest
+        .cite
+        .keys()
+        .filter(|key| crate::locator::parse_key(key).is_err())
+        .map(|key| ManifestFinding::CiteKey { key: key.clone() })
+        .collect();
+    let mut probe = DeckSettings::default();
+    for (key, value) in &manifest.defaults {
+        let place = match key.as_str() {
+            "cite" => Some("the `[cite]` table"),
+            "source" | "exam" => Some("the top-level `source`"),
+            _ => None,
+        };
+        if let Some(place) = place {
+            findings.push(ManifestFinding::MisplacedDefault {
+                key: key.clone(),
+                place,
+            });
+            continue;
+        }
+        let value = value_to_string(value);
+        match probe.apply_directive(key, &value) {
+            Ok(()) => {}
+            Err(DirectiveProblem::UnknownKey) => {
+                findings.push(ManifestFinding::UnknownDefault { key: key.clone() });
+            }
+            Err(DirectiveProblem::BadValue) => findings.push(ManifestFinding::BadDefault {
+                key: key.clone(),
+                value,
+            }),
+        }
+    }
+    findings
 }
 
 pub fn manifest_parse_error(dir: &Path) -> Option<toml::de::Error> {
@@ -623,6 +698,96 @@ pub fn set_deadline_str(dir: &Path, date: Option<&str>) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use crate::depth::Reveal;
+
+    #[test]
+    fn every_manifest_cite_and_defaults_case_has_these_findings() {
+        let unknown = |key: &str| ManifestFinding::UnknownDefault { key: key.into() };
+        let bad = |key: &str, value: &str| ManifestFinding::BadDefault {
+            key: key.into(),
+            value: value.into(),
+        };
+        let misplaced = |key: &str, place: &'static str| ManifestFinding::MisplacedDefault {
+            key: key.into(),
+            place,
+        };
+        let rows: Vec<(&str, &str, Vec<ManifestFinding>)> = vec![
+            (
+                "every known default with a good value is silent",
+                "[defaults]\nreveal = \"line\"\ninput = \"type\"\nreview = \"sequential\"\n\
+                 direction = \"both\"\nsampling = \"on\"\nstrictness = \"lenient\"\n",
+                vec![],
+            ),
+            (
+                "a manifest without tables is silent",
+                "title = \"T\"\n",
+                vec![],
+            ),
+            (
+                "an unknown default key warns",
+                "[defaults]\ncolour = \"red\"\n",
+                vec![unknown("colour")],
+            ),
+            (
+                "a bad string value warns",
+                "[defaults]\nreveal = \"sideways\"\n",
+                vec![bad("reveal", "sideways")],
+            ),
+            (
+                "a non-string value warns as written",
+                "[defaults]\nsampling = true\n",
+                vec![bad("sampling", "true")],
+            ),
+            (
+                "cite inside defaults names the cite table",
+                "[defaults]\ncite = \"crates/core\"\n",
+                vec![misplaced("cite", "the `[cite]` table")],
+            ),
+            (
+                "source inside defaults names the top-level key",
+                "[defaults]\nsource = \"notes.md\"\n",
+                vec![misplaced("source", "the top-level `source`")],
+            ),
+            (
+                "exam inside defaults names the top-level key",
+                "[defaults]\nexam = \"notes.md\"\n",
+                vec![misplaced("exam", "the top-level `source`")],
+            ),
+            (
+                "well-formed cite keys are silent",
+                "[cite]\ncode = \"crates/core\"\nsrc_2-b = \"x\"\n",
+                vec![],
+            ),
+            (
+                "an uppercase cite key is an error",
+                "[cite]\nCode = \"crates/core\"\n",
+                vec![ManifestFinding::CiteKey { key: "Code".into() }],
+            ),
+            (
+                "a reserved word cite key is an error",
+                "[cite]\nfalse = \"crates/core\"\n",
+                vec![ManifestFinding::CiteKey {
+                    key: "false".into(),
+                }],
+            ),
+        ];
+        for (label, manifest, expected) in rows {
+            let dir = tempfile::TempDir::new().unwrap();
+            write(&dir.path().join(MANIFEST), manifest);
+            assert_eq!(
+                None,
+                manifest_parse_error(dir.path()).map(|e| e.to_string()),
+                "row `{label}` parses"
+            );
+            assert_eq!(expected, manifest_findings(dir.path()), "row `{label}`");
+        }
+        assert!(
+            ManifestFinding::CiteKey { key: "A".into() }.is_error()
+                && misplaced("cite", "x").is_error()
+                && !unknown("x").is_error()
+                && !bad("x", "y").is_error(),
+            "severity: cite keys and misplaced keys are errors, defaults problems warn"
+        );
+    }
 
     fn write(path: &Path, text: &str) {
         std::fs::write(path, text).unwrap();

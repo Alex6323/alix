@@ -7794,3 +7794,41 @@ fn a_sync_identity_write_failure_precedes_the_success_banner() {
         "the error names the policy and location: {out_stderr}"
     );
 }
+
+#[test]
+fn doctor_on_a_workspace_reports_a_deck_root_nested_in_a_manifest_root_as_an_error() {
+    let root = TempDir::new().unwrap();
+    let workspace = root.path();
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::create_dir_all(workspace.join("crates/core/inner")).unwrap();
+    std::fs::write(
+        workspace.join("alix.toml"),
+        "[cite]\ncode = \"crates/core\"\n\n[defaults]\ncolour = \"red\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        workspace.join("decks/cards.md"),
+        "---\nformat-version: 1\nid: \"deck-mathdeck\"\ncite:\n  - inner: crates/core/inner\n---\n## What is 2 + 2?\n4\n<!-- id: card-math1 -->\n",
+    )
+    .unwrap();
+
+    let out = alix(&["doctor", workspace.to_str().unwrap()]);
+    let text = stderr(&out);
+    assert!(
+        !out.status.success(),
+        "step exit: a nested root fails doctor: {text}"
+    );
+    assert!(
+        text.lines().any(|line| line.starts_with("error: ")
+            && line.contains("cards.md")
+            && line.contains("`code`")
+            && line.contains("`inner`")
+            && line.contains("nest")),
+        "step nesting: an error line names the deck and both keys: {text}"
+    );
+    assert!(
+        text.lines()
+            .any(|line| line.starts_with("warning: ") && line.contains("`colour`")),
+        "step defaults: an unknown `[defaults]` key warns: {text}"
+    );
+}

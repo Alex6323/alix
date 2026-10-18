@@ -265,7 +265,10 @@ notes it.
   about a frozen object the deck no longer references and about any non-deck
   entry in `decks/` (hidden files, personal `.local.md` files, `README`/`LICENSE`,
   backups and conflict copies excepted). A live `at:` citation that does not
-  resolve is an error. `--backends` additionally
+  resolve is an error. In `alix.toml` it warns about each unknown key or
+  invalid value in `[defaults]`, which alix ignores, and reports `cite`,
+  `exam` or `source` inside `[defaults]` as an error naming where the key
+  belongs. `--backends` additionally
   probes the configured AI backend end to end (one real, tiny request);
   `--all-backends` probes all four. `--grading` spot-checks the configured
   model's exam grading against the hand-labeled calibration probes (a few

@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Deck frontmatter accepts `cite:`, a list of keyed roots such as
+  `- code: crates/core`, and `alix.toml` accepts a `[cite]` table. A
+  malformed `cite:` (not a list of one-key mappings, a bad or repeated key,
+  an empty root) makes the deck invalid. `alix doctor` reports as errors a
+  bad `[cite]` key, a deck key repeating a manifest key, a root that is a
+  file, two roots where one contains the other, and a URL root in a deck
+  outside a workspace. Citations do not resolve against these roots yet.
+
 - The phone's deck list shows a strip of card tiers under each deck and
   workspace member, one cell per card like the web drawer's heatmap, with the
   deck's card count at its end. Strips fill in after the list appears. A search
@@ -400,6 +408,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Pre-1.0: re-pair once after upgrading.
 
 ### Fixed
+
+- `alix doctor` warns about each unknown key and each invalid value in
+  `alix.toml`'s `[defaults]`, which alix ignores silently, and reports `cite`,
+  `exam` or `source` inside `[defaults]` as an error.
 
 - `alix doctor` now reports a live `at:` citation it cannot resolve (a missing
   file, or a line-only locator on a deck with several sources) as an error in

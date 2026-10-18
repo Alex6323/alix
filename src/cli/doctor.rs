@@ -82,6 +82,9 @@ fn deck_findings(path: &Path, report: &mut Report) {
             return;
         }
     };
+    for violation in alix::cite::deck_violations(path, &deck.frontmatter.cite) {
+        report.error(format!("{}: {violation}", path.display()));
+    }
     let initialized = deck.deck_token.is_some();
     if !initialized && alix::parser::is_deck_content(&text) {
         report.warn(format!(
@@ -925,11 +928,20 @@ fn workspace_findings(dir: &Path) -> Report {
 }
 
 fn workspace_manifest_findings(dir: &Path, report: &mut Report) {
+    let manifest = dir.join(alix::workspace::MANIFEST);
     if let Some(error) = alix::workspace::manifest_parse_error(dir) {
-        report.error(format!(
-            "{}: {error}",
-            dir.join(alix::workspace::MANIFEST).display()
-        ));
+        report.error(format!("{}: {error}", manifest.display()));
+    }
+    for finding in alix::workspace::manifest_findings(dir) {
+        let message = format!("{}: {finding}", manifest.display());
+        if finding.is_error() {
+            report.error(message);
+        } else {
+            report.warn(message);
+        }
+    }
+    for violation in alix::cite::manifest_violations(dir) {
+        report.error(format!("{}: {violation}", manifest.display()));
     }
 }
 

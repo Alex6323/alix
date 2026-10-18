@@ -67,6 +67,7 @@ pub struct Frontmatter {
     pub title: Option<String>,
     pub description: Option<String>,
     pub source: Vec<String>,
+    pub cite: Vec<(String, String)>,
     pub requires: Vec<String>,
     pub link: Vec<String>,
     pub trace: Option<String>,
@@ -188,6 +189,10 @@ fn load_frontmatter(
                 }
             },
             "source" => frontmatter.source = string_list(key, value, line, lints),
+            "cite" => {
+                frontmatter.cite = cite_entries(value)
+                    .map_err(|message| ParseError::InvalidCite { line, message })?;
+            }
             "requires" => frontmatter.requires = string_list(key, value, line, lints),
             "link" => frontmatter.link = string_list(key, value, line, lints),
             "trace" => match value {
@@ -315,6 +320,56 @@ fn string_list(key: &str, value: &Yaml, line: usize, lints: &mut Vec<Lint>) -> V
     }
 }
 
+fn cite_entries(value: &Yaml) -> Result<Vec<(String, String)>, String> {
+    let Yaml::Array(items) = value else {
+        return Err(format!(
+            "`cite:` must be a list of one-key mappings such as `- code: crates/core`, got {}",
+            yaml_kind(value)
+        ));
+    };
+    let mut entries: Vec<(String, String)> = Vec::with_capacity(items.len());
+    for item in items {
+        let Yaml::Hash(mapping) = item else {
+            return Err(format!(
+                "a `cite:` entry must be a one-key mapping such as `- code: crates/core`, got {}",
+                yaml_kind(item)
+            ));
+        };
+        let mut pairs = mapping.iter();
+        let (Some((key_node, root_node)), None) = (pairs.next(), pairs.next()) else {
+            return Err(format!(
+                "a `cite:` entry must hold exactly one key, this one holds {}",
+                mapping.len()
+            ));
+        };
+        let Yaml::String(key) = key_node else {
+            return Err(format!(
+                "a `cite:` key must be a string, got {}",
+                yaml_kind(key_node)
+            ));
+        };
+        let key = crate::locator::parse_key(key).map_err(|_| {
+            format!(
+                "`cite:` key `{key}` must match `[a-z][a-z0-9_-]*` and not be `true`, `false` or `null`"
+            )
+        })?;
+        if entries.iter().any(|(seen, _)| *seen == key) {
+            return Err(format!("`cite:` key `{key}` is used twice"));
+        }
+        let root = match root_node {
+            Yaml::String(root) if !trim_ws(root).is_empty() => root.clone(),
+            other => {
+                return Err(format!(
+                    "`cite:` key `{key}` needs a non-empty directory path or url, got {}",
+                    describe(other)
+                ));
+            }
+        };
+        entries.push((key, root));
+    }
+    Ok(entries)
+}
+
 fn key_line(block: &[&str], first_line: usize, key: &str) -> usize {
     for (i, line) in block.iter().enumerate() {
         if let Some(rest) = trim_ws(line).strip_prefix(key)
@@ -356,7 +411,7 @@ pub enum Reorder {
 /// The canonical order for frontmatter alix itself writes and for the opt-in
 /// doctor repair: authored keys first, machine lines last. An author's own
 /// order is never diagnosed against it.
-const CANONICAL_KEY_ORDER: [&str; 18] = [
+const CANONICAL_KEY_ORDER: [&str; 19] = [
     "title",
     "description",
     "trace",
@@ -372,6 +427,7 @@ const CANONICAL_KEY_ORDER: [&str; 18] = [
     "sampling",
     "choices",
     "source",
+    "cite",
     "requires",
     "link",
     "format-version",
@@ -508,6 +564,7 @@ mod tests {
             ("created-at", MultilineDisposition::Stored),
             ("language", MultilineDisposition::Ignored),
             ("revision", MultilineDisposition::Ignored),
+            ("cite", MultilineDisposition::HardError),
         ];
 
         for (key, expected) in rows {
@@ -537,6 +594,110 @@ mod tests {
                     .all(|lint| !matches!(lint.kind, LintKind::UnknownKey { .. })),
                 "`{key}` must be recognized by the parser: {lints:?}"
             );
+        }
+    }
+
+    type CiteRow = (
+        &'static str,
+        &'static [&'static str],
+        Result<&'static [(&'static str, &'static str)], &'static str>,
+    );
+
+    #[test]
+    fn every_cite_frontmatter_input_is_stored_in_order_or_rejected_with_its_reason() {
+        let rows: [CiteRow; 14] = [
+            (
+                "a valid list keeps author order",
+                &[
+                    "cite:",
+                    "  - code: crates/core",
+                    "  - guide: https://example.org/g",
+                ],
+                Ok(&[("code", "crates/core"), ("guide", "https://example.org/g")]),
+            ),
+            (
+                "keys with digits, dash and underscore",
+                &["cite:", "  - a1_b-c: x"],
+                Ok(&[("a1_b-c", "x")]),
+            ),
+            (
+                "a bare string is not a list",
+                &["cite: crates/core"],
+                Err("must be a list"),
+            ),
+            (
+                "a mapping is not a list",
+                &["cite:", "  code: crates/core"],
+                Err("must be a list"),
+            ),
+            (
+                "a list item that is a string",
+                &["cite:", "  - crates/core"],
+                Err("one-key mapping"),
+            ),
+            (
+                "a list item with two keys",
+                &["cite:", "  - code: a", "    docs: b"],
+                Err("exactly one key"),
+            ),
+            (
+                "a boolean key",
+                &["cite:", "  - true: a"],
+                Err("must be a string"),
+            ),
+            (
+                "an integer key",
+                &["cite:", "  - 12: a"],
+                Err("must be a string"),
+            ),
+            (
+                "a quoted reserved word key",
+                &["cite:", "  - \"null\": a"],
+                Err("`null`"),
+            ),
+            ("an uppercase key", &["cite:", "  - Code: a"], Err("`Code`")),
+            (
+                "a key repeated in the list",
+                &["cite:", "  - code: a", "  - code: b"],
+                Err("`code` is used twice"),
+            ),
+            (
+                "an empty value",
+                &["cite:", "  - code: \"\""],
+                Err("non-empty"),
+            ),
+            ("a null value", &["cite:", "  - code:"], Err("non-empty")),
+            (
+                "an integer value",
+                &["cite:", "  - code: 3"],
+                Err("non-empty"),
+            ),
+        ];
+
+        for (label, block, expected) in rows {
+            let mut lints = Vec::new();
+            let parsed = load_frontmatter(block, 2, &mut lints);
+            match (expected, parsed) {
+                (Ok(entries), Ok(frontmatter)) => {
+                    let actual: Vec<(&str, &str)> = frontmatter
+                        .cite
+                        .iter()
+                        .map(|(key, root)| (key.as_str(), root.as_str()))
+                        .collect();
+                    assert_eq!(entries, actual.as_slice(), "row `{label}`");
+                    assert!(lints.is_empty(), "row `{label}` lints: {lints:?}");
+                }
+                (Err(fragment), Err(ParseError::InvalidCite { line, message })) => {
+                    assert!(
+                        message.contains(fragment),
+                        "row `{label}`: message {message:?} lacks {fragment:?}"
+                    );
+                    assert_eq!(2, line, "row `{label}` reports the `cite:` line");
+                }
+                (expected, actual) => {
+                    panic!("row `{label}`: expected {expected:?}, got {actual:?}")
+                }
+            }
         }
     }
 
@@ -609,6 +770,7 @@ mod tests {
             "format-version",
             "link",
             "requires",
+            "cite",
             "source",
             "choices",
             "sampling",
@@ -643,6 +805,7 @@ mod tests {
                 "sampling",
                 "choices",
                 "source",
+                "cite",
                 "requires",
                 "link",
                 "format-version",
