@@ -2160,6 +2160,57 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn an_update_citing_through_the_manifest_keeps_its_cite_table_byte_for_byte() {
+        let _lock = exec_lock();
+        let (_dir, root, source, deck) = workspace("Old answer\nNew answer\n");
+        let manifest_text = format!(
+            "# roots\n[cite]\nsrc = {:?}\n",
+            source.display().to_string()
+        );
+        fs::write(root.join(workspace::MANIFEST), &manifest_text).unwrap();
+        let exam = parser::yaml_quote(&source.display().to_string());
+        let head = format!("---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {exam}\n---\n");
+        fs::write(
+            &deck,
+            format!("{head}## Old question\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n"),
+        )
+        .unwrap();
+        fs::remove_dir_all(root.join("assets")).unwrap();
+        assets::freeze_member(&deck).unwrap();
+        let command = fake_reply(
+            &root,
+            &format!("{head}## New question\nNew answer\n<!-- at: src:code.rs:2 -->\n"),
+        );
+
+        let staged = stage(&root, &GenerateDeckConfig::default(), &ask_config(&command)).unwrap();
+        assert!(
+            staged.failed.is_empty(),
+            "stage: a manifest root resolves in the proposal: {:?}",
+            staged.failed
+        );
+        assert_eq!(
+            manifest_text,
+            fs::read_to_string(staged.staging.join(workspace::MANIFEST)).unwrap(),
+            "stage: the proposal's manifest"
+        );
+
+        apply(&root).unwrap();
+
+        assert_eq!(
+            manifest_text,
+            fs::read_to_string(root.join(workspace::MANIFEST)).unwrap(),
+            "apply: the workspace manifest"
+        );
+        let applied = Deck::load(&deck).unwrap();
+        assert_eq!(
+            "src:code.rs:2",
+            applied.cards[0].citations[0].locator.to_string(),
+            "apply: the applied card cites through the manifest key"
+        );
+    }
+
     #[test]
     fn a_manifest_carries_every_field_and_no_others() {
         let staged = r#"{"path":"decks/a.md","deck_id":"deck-a","baseline":"b","staged":"s","augment_baseline":null,"augment_staged":null,"retained_tokens":[],"retired_tokens":[],"retired_ids":[],"added_tokens":[]}"#;

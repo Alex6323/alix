@@ -327,6 +327,104 @@ fn with_deck_place<T>(deck_path: &Path, act: impl FnOnce(DeckPlace) -> T) -> T {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RootLookup {
+    Found(Root),
+    Unknown,
+    Invalid(Vec<CiteViolation>),
+}
+
+impl std::fmt::Display for RootLookup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Found(Root::Local(path)) => write!(f, "{}", path.display()),
+            Self::Found(Root::Url(url)) => f.write_str(url),
+            Self::Unknown => f.write_str("no root"),
+            Self::Invalid(found) => write!(
+                f,
+                "no root (its `cite:` roots are invalid: {})",
+                violations(found)
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[error(
+    "`cite:` key `{key}` resolves to {from} in the source workspace but to {to} in the destination"
+)]
+pub struct RootMismatch {
+    pub key: String,
+    pub from: RootLookup,
+    pub to: RootLookup,
+}
+
+pub fn transfer_mismatches<'a>(
+    deck_cite: &[(String, String)],
+    used_keys: impl IntoIterator<Item = &'a str>,
+    from: DeckPlace,
+    to: DeckPlace,
+) -> Vec<RootMismatch> {
+    let from = visible_roots(deck_cite, from);
+    let to = visible_roots(deck_cite, to);
+    let used: std::collections::BTreeSet<&str> = used_keys.into_iter().collect();
+    used.into_iter()
+        .filter_map(|key| {
+            let from = lookup(&from, key);
+            let to = lookup(&to, key);
+            let same = match (&from, &to) {
+                (RootLookup::Found(from), RootLookup::Found(to)) => same_root(from, to),
+                _ => false,
+            };
+            (!same).then(|| RootMismatch {
+                key: key.to_string(),
+                from,
+                to,
+            })
+        })
+        .collect()
+}
+
+fn lookup(roots: &Result<Vec<VisibleRoot>, Vec<CiteViolation>>, key: &str) -> RootLookup {
+    match roots {
+        Err(found) => RootLookup::Invalid(found.clone()),
+        Ok(roots) => roots
+            .iter()
+            .find(|root| root.key == key)
+            .map_or(RootLookup::Unknown, |root| {
+                RootLookup::Found(root.root.clone())
+            }),
+    }
+}
+
+fn same_root(from: &Root, to: &Root) -> bool {
+    match (from, to) {
+        (Root::Url(from), Root::Url(to)) => from == to,
+        (Root::Local(from), Root::Local(to)) => {
+            match (std::fs::canonicalize(from), std::fs::canonicalize(to)) {
+                (Ok(from), Ok(to)) => from == to,
+                _ => lexical(from) == lexical(to),
+            }
+        }
+        _ => false,
+    }
+}
+
+fn lexical(path: &Path) -> PathBuf {
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut out = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 #[derive(Debug, Clone)]
 pub struct CitationRoots {
     roots: Result<Vec<VisibleRoot>, Vec<CiteViolation>>,
@@ -1362,5 +1460,207 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum Refusal {
+        Differs,
+        MissingThere,
+        InvalidThere,
+        UnknownHere,
+    }
+
+    #[test]
+    fn a_transfer_is_refused_for_every_used_key_whose_root_differs_in_the_destination() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let top = canonical(dir.path());
+        let from_ws = top.join("from");
+        let to_ws = top.join("to");
+        let shared = top.join("shared");
+        for folder in [
+            from_ws.join("crates"),
+            to_ws.join("crates"),
+            shared.join("inner"),
+        ] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&shared, top.join("shared-link")).unwrap();
+        let shared_text = shared.display().to_string();
+        let gone = top.join("gone").display().to_string();
+        let gone_dotted = top.join("shared/../gone").display().to_string();
+        type Row = (
+            &'static str,
+            Vec<(String, String)>,
+            Vec<&'static str>,
+            Vec<(String, String)>,
+            Vec<(String, String)>,
+            Vec<(&'static str, Refusal)>,
+        );
+        let p = |key: &str, root: &str| (key.to_string(), root.to_string());
+        let rows: Vec<Row> = vec![
+            (
+                "both manifests name one absolute root",
+                vec![],
+                vec!["code"],
+                vec![p("code", &shared_text)],
+                vec![p("code", &shared_text)],
+                vec![],
+            ),
+            (
+                "a relative manifest root resolves against each workspace",
+                vec![],
+                vec!["code"],
+                vec![p("code", "crates")],
+                vec![p("code", "crates")],
+                vec![("code", Refusal::Differs)],
+            ),
+            (
+                "the deck's own absolute root travels with it",
+                vec![p("code", &shared_text)],
+                vec!["code"],
+                vec![],
+                vec![],
+                vec![],
+            ),
+            (
+                "the deck's own relative root resolves against the new workspace",
+                vec![p("code", "crates")],
+                vec!["code"],
+                vec![],
+                vec![],
+                vec![("code", Refusal::Differs)],
+            ),
+            (
+                "the destination manifest lacks the key",
+                vec![],
+                vec!["code"],
+                vec![p("code", &shared_text)],
+                vec![],
+                vec![("code", Refusal::MissingThere)],
+            ),
+            (
+                "the destination manifest repeats a key the deck declares",
+                vec![p("code", &shared_text)],
+                vec!["code"],
+                vec![],
+                vec![p("code", &shared_text)],
+                vec![("code", Refusal::InvalidThere)],
+            ),
+            (
+                "a key no root names in the source either",
+                vec![],
+                vec!["code"],
+                vec![],
+                vec![],
+                vec![("code", Refusal::UnknownHere)],
+            ),
+            (
+                "identical urls",
+                vec![],
+                vec!["guide"],
+                vec![p("guide", "https://example.org/guide")],
+                vec![p("guide", "https://example.org/guide")],
+                vec![],
+            ),
+            (
+                "urls compare byte for byte",
+                vec![],
+                vec!["guide"],
+                vec![p("guide", "https://example.org/guide")],
+                vec![p("guide", "https://example.org/guide/")],
+                vec![("guide", Refusal::Differs)],
+            ),
+            (
+                "a url never matches a local root",
+                vec![],
+                vec!["guide"],
+                vec![p("guide", "https://example.org/guide")],
+                vec![p("guide", &shared_text)],
+                vec![("guide", Refusal::Differs)],
+            ),
+            (
+                "missing roots compare lexically after absolutizing",
+                vec![],
+                vec!["code"],
+                vec![p("code", &gone)],
+                vec![p("code", &gone_dotted)],
+                vec![],
+            ),
+            (
+                "a declared key no locator uses does not matter",
+                vec![p("notes", "crates")],
+                vec!["code"],
+                vec![p("code", &shared_text)],
+                vec![p("code", &shared_text)],
+                vec![],
+            ),
+            (
+                "each differing key is named once",
+                vec![],
+                vec!["code", "docs", "code"],
+                vec![p("code", "crates"), p("docs", "https://a.example")],
+                vec![p("code", "crates")],
+                vec![("code", Refusal::Differs), ("docs", Refusal::MissingThere)],
+            ),
+        ];
+        #[cfg(unix)]
+        let symlinked: Vec<Row> = vec![(
+            "a symlinked root naming the same directory",
+            vec![],
+            vec!["code"],
+            vec![p("code", &shared_text)],
+            vec![p("code", &top.join("shared-link").display().to_string())],
+            vec![],
+        )];
+        #[cfg(not(unix))]
+        let symlinked: Vec<Row> = Vec::new();
+        for (label, deck_cite, used, from_manifest, to_manifest, expected) in
+            rows.into_iter().chain(symlinked)
+        {
+            let from_manifest: BTreeMap<String, String> = from_manifest.into_iter().collect();
+            let to_manifest: BTreeMap<String, String> = to_manifest.into_iter().collect();
+            let actual: Vec<(String, Refusal)> = transfer_mismatches(
+                &deck_cite,
+                used,
+                DeckPlace::Member {
+                    workspace: &from_ws,
+                    manifest_cite: &from_manifest,
+                },
+                DeckPlace::Member {
+                    workspace: &to_ws,
+                    manifest_cite: &to_manifest,
+                },
+            )
+            .into_iter()
+            .map(|mismatch| {
+                let refusal = match (&mismatch.from, &mismatch.to) {
+                    (RootLookup::Found(_), RootLookup::Found(_)) => Refusal::Differs,
+                    (RootLookup::Found(_), RootLookup::Unknown) => Refusal::MissingThere,
+                    (RootLookup::Found(_), RootLookup::Invalid(_)) => Refusal::InvalidThere,
+                    _ => Refusal::UnknownHere,
+                };
+                (mismatch.key, refusal)
+            })
+            .collect();
+            let expected: Vec<(String, Refusal)> = expected
+                .into_iter()
+                .map(|(key, refusal)| (key.to_string(), refusal))
+                .collect();
+            assert_eq!(expected, actual, "row `{label}`");
+        }
+    }
+
+    #[test]
+    fn a_root_mismatch_names_its_key_and_both_roots() {
+        let mismatch = RootMismatch {
+            key: "code".into(),
+            from: RootLookup::Found(Root::Local(PathBuf::from("/a/crates"))),
+            to: RootLookup::Unknown,
+        };
+        assert_eq!(
+            "`cite:` key `code` resolves to /a/crates in the source workspace but to no root in the destination",
+            mismatch.to_string()
+        );
     }
 }

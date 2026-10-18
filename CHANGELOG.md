@@ -147,6 +147,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nudges a long `exam:` list toward a common root, and it checks every live
   citation of a workspace member whether or not the deck declares an `exam:`.
 
+- `alix deck copy` and `alix deck move` refuse when a `cite:` key the deck's
+  locators use would resolve to a different root in the destination workspace
+  (or to none), naming each key and both roots. A relative root resolves
+  against its own workspace, so the same relative `[cite]` entry in both
+  manifests names two folders. Transfer never rewrites locators or `cite:` and
+  changes neither manifest.
+
+- `alix doctor` reports a trace checkpoint's locator problem only as an error,
+  no longer also as a warning, and checks a frozen locator's key and shape even
+  when the deck's frozen assets are invalid.
+
 - With `source_access` on, the tutor browses a `cite:` root instead of the
   first local `exam:` entry: the root of the card's first locator whose key
   names a local root, else the deck's only local root when it sees exactly

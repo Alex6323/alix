@@ -145,7 +145,9 @@ The rest of the AI-and-deck surface:
   deck and card IDs are preserved; progress is not copied.
 - `alix deck move <deck> <workspace> [--yes]`: move the same public bundle,
   carry progress when the workspaces use different user roots, then remove the
-  source. Refuses missing prerequisites and source dependents.
+  source. Refuses missing prerequisites and source dependents. Copy and move
+  both refuse when a `cite:` key the deck's locators use would resolve to a
+  different root in the destination.
 - `alix deck import <file.tsv>`: import an Anki TSV export (no model CLI
   needed; `--workspace <dir>` imports into a workspace).
 - `alix deck remove <deck> [--yes]`: remove a deck and everything that is
@@ -254,8 +256,7 @@ notes it.
   still awaiting a token. For `requires:` it separates a dangling filename edge
   from a dangling deck-id edge, a `card-…` id pasted where a deck belongs, and
   a file that only shares a required id's name (the id wins, so add the `.md`
-  extension to mean the file). It nudges a `exam:` that lists more than a few entries
-  toward their common directory, and flags a `exam:` pointing into `assets/`
+  extension to mean the file). It flags a `exam:` pointing into `assets/`
   (a deck keeps its real source, never its frozen excerpt fragments). It also
   names deck-like Markdown ignored until explicitly
   initialized, invalid or orphaned per-deck progress or augmentation documents,
@@ -265,7 +266,11 @@ notes it.
   about a frozen object the deck no longer references and about any non-deck
   entry in `decks/` (hidden files, personal `.local.md` files, `README`/`LICENSE`,
   backups and conflict copies excepted). A live `at:` citation that does not
-  resolve is an error. In `alix.toml` it warns about each unknown key or
+  resolve is an error. A locator whose key is missing or names no `cite:` root,
+  that breaks the locator grammar, or that does not fit its root (a file under
+  a URL root, a bare key under a directory root, a URL passage without an
+  `asset:`) is an error in every mode, repair flags included, frozen or live,
+  trace decks included. In `alix.toml` it warns about each unknown key or
   invalid value in `[defaults]`, which alix ignores, and reports `cite`,
   `exam` inside `[defaults]` as an error naming where the key
   belongs. `--backends` additionally

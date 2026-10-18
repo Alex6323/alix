@@ -554,7 +554,11 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
         match Trace::from_deck(deck) {
             Ok(trace) => {
                 for issue in trace.lint_locators() {
-                    let line = deck.cards.get(issue.checkpoint).map_or(0, |c| c.line);
+                    let card = deck.cards.get(issue.checkpoint);
+                    if card.is_some_and(|card| !card.citations.is_empty()) {
+                        continue;
+                    }
+                    let line = card.map_or(0, |c| c.line);
                     report.warn(format!(
                         "{}: checkpoint at line {}: {}",
                         deck.subject, line, issue.message
@@ -564,54 +568,63 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             Err(e) => report.warn(format!("{}: {e:#}", deck.subject)),
         }
     }
-    if frozen_assets_valid {
-        let roots = CitationRoots::for_deck(deck);
-        // One authored `at:` line serves every card its block produced (a
-        // table's rows, a cloze block's holes), so the report is per authored
-        // citation. Its identity is its own directive line: a card may carry
-        // several `at:` lines, and keying on the card would let a healthy one
-        // hide a stale sibling.
-        let mut reported = std::collections::HashSet::new();
-        for card in &deck.cards {
-            for citation in &card.citations {
-                if !reported.insert(citation.line) {
-                    continue;
-                }
+    let roots = CitationRoots::for_deck(deck);
+    // One authored `at:` line serves every card its block produced (a
+    // table's rows, a cloze block's holes), so the report is per authored
+    // citation. Its identity is its own directive line: a card may carry
+    // several `at:` lines, and keying on the card would let a healthy one
+    // hide a stale sibling.
+    let mut reported = std::collections::HashSet::new();
+    for card in &deck.cards {
+        for citation in &card.citations {
+            if !reported.insert(citation.line) {
+                continue;
+            }
+            if let Err(error) = roots.check(&citation.locator, citation.asset.is_some()) {
+                report.error(format!(
+                    "{}: card at line {}: `at: {}` {error}",
+                    deck.subject, card.line, citation.locator
+                ));
+                continue;
+            }
+            if citation.asset.is_some() && !frozen_assets_valid {
+                continue;
+            }
 
-                let counted_by_the_live_error = has_live_citations && citation.asset.is_none();
-                let detail = match roots.inspect_citation(citation) {
-                    Ok(CitationIntegrity::Current(_)) => None,
-                    Ok(CitationIntegrity::Unfingerprinted { .. }) => (!counted_by_the_live_error)
-                        .then(|| {
-                            "has no excerpt fingerprint; review it, then run \
-                             `alix doctor --repair-source-locators`"
-                                .to_string()
-                        }),
-                    Ok(CitationIntegrity::Relocated { locator, .. }) => Some(format!(
-                        "the exact excerpt moved to `{locator}`; run \
-                         `alix doctor --repair-source-locators` to rebase it"
-                    )),
-                    Ok(CitationIntegrity::Changed) => {
-                        Some("the excerpt changed or disappeared; review it manually".to_string())
-                    }
-                    Ok(CitationIntegrity::Ambiguous { locators }) => Some(format!(
-                        "the excerpt matches several ranges ({}); review it manually",
-                        alix::source::labels(&locators)
-                    )),
-                    Err(error) => {
-                        report.error(format!(
-                            "{}: card at line {}: `at: {}` {error:#}",
-                            deck.subject, card.line, citation.locator
-                        ));
-                        None
-                    }
-                };
-                if let Some(detail) = detail {
-                    report.warn(format!(
-                        "{}: card at line {}: `at: {}` {detail}",
+            let counted_by_the_live_error = has_live_citations && citation.asset.is_none();
+            let detail = match roots.inspect_citation(citation) {
+                Ok(CitationIntegrity::Current(_)) => None,
+                Ok(CitationIntegrity::Unfingerprinted { .. }) => {
+                    (!counted_by_the_live_error).then(|| {
+                        "has no excerpt fingerprint; review it, then run \
+                         `alix doctor --repair-source-locators`"
+                            .to_string()
+                    })
+                }
+                Ok(CitationIntegrity::Relocated { locator, .. }) => Some(format!(
+                    "the exact excerpt moved to `{locator}`; run \
+                     `alix doctor --repair-source-locators` to rebase it"
+                )),
+                Ok(CitationIntegrity::Changed) => {
+                    Some("the excerpt changed or disappeared; review it manually".to_string())
+                }
+                Ok(CitationIntegrity::Ambiguous { locators }) => Some(format!(
+                    "the excerpt matches several ranges ({}); review it manually",
+                    alix::source::labels(&locators)
+                )),
+                Err(error) => {
+                    report.error(format!(
+                        "{}: card at line {}: `at: {}` {error:#}",
                         deck.subject, card.line, citation.locator
                     ));
+                    None
                 }
+            };
+            if let Some(detail) = detail {
+                report.warn(format!(
+                    "{}: card at line {}: `at: {}` {detail}",
+                    deck.subject, card.line, citation.locator
+                ));
             }
         }
     }
@@ -1121,6 +1134,14 @@ fn findings_in(dir: &Path) -> Report {
 }
 
 fn check(decks: Vec<PathBuf>) -> Result<()> {
+    let report = check_report(decks);
+    if report.render() {
+        bail!("{} error(s) found", report.errors.len());
+    }
+    Ok(())
+}
+
+fn check_report(decks: Vec<PathBuf>) -> Report {
     let mut report = Report::default();
     let mut manifests_reported = std::collections::HashSet::new();
     for path in &decks {
@@ -1184,10 +1205,7 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
         }
         deck_findings(path, &mut report);
     }
-    if report.render() {
-        bail!("{} error(s) found", report.errors.len());
-    }
-    Ok(())
+    report
 }
 
 /// The parsed `position:` token's byte offset in a directive line: outside
@@ -1458,6 +1476,60 @@ fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
+#[derive(Clone, Copy, Default)]
+struct Repairs {
+    normalize: bool,
+    source_locators: bool,
+    positions: bool,
+    diagrams: bool,
+    frontmatter_order: bool,
+    comment_order: bool,
+}
+
+impl Repairs {
+    fn of(args: &DoctorArgs) -> Self {
+        Self {
+            normalize: args.normalize,
+            source_locators: args.repair_source_locators,
+            positions: args.repair_positions,
+            diagrams: args.repair_diagrams,
+            frontmatter_order: args.repair_frontmatter_order,
+            comment_order: args.repair_comment_order,
+        }
+    }
+
+    fn any(self) -> bool {
+        self.normalize
+            || self.source_locators
+            || self.positions
+            || self.diagrams
+            || self.frontmatter_order
+            || self.comment_order
+    }
+
+    fn run(self, paths: &[PathBuf]) -> Result<()> {
+        if self.normalize {
+            normalize_decks(paths)?;
+        }
+        if self.source_locators {
+            repair_source_locators(paths)?;
+        }
+        if self.positions {
+            repair_positions(paths)?;
+        }
+        if self.diagrams {
+            repair_diagrams(paths)?;
+        }
+        if self.frontmatter_order {
+            repair_frontmatter_order(paths)?;
+        }
+        if self.comment_order {
+            repair_comment_order(paths)?;
+        }
+        Ok(())
+    }
+}
+
 fn repair_after_explicit_path(path: Option<&Path>) -> bool {
     path.is_none_or(|path| !workspace::is_workspace(path))
 }
@@ -1555,46 +1627,15 @@ fn nested_sync_root_files(root: &Path) -> Result<Vec<PathBuf>> {
 pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     use alix::doctor::{self, Status};
     let repair_after_explicit_path = repair_after_explicit_path(args.dir.as_deref());
+    let repairs = Repairs::of(&args);
     if let Some(path) = &args.dir {
         if path.is_file() {
-            if args.normalize {
-                normalize_decks(std::slice::from_ref(path))?;
-            }
-            if args.repair_source_locators {
-                repair_source_locators(std::slice::from_ref(path))?;
-            }
-            if args.repair_positions {
-                repair_positions(std::slice::from_ref(path))?;
-            }
-            if args.repair_diagrams {
-                repair_diagrams(std::slice::from_ref(path))?;
-            }
-            if args.repair_frontmatter_order {
-                repair_frontmatter_order(std::slice::from_ref(path))?;
-            }
-            if args.repair_comment_order {
-                repair_comment_order(std::slice::from_ref(path))?;
-            }
+            repairs.run(std::slice::from_ref(path))?;
             return check(vec![path.clone()]);
         }
         if alix::workspace::is_workspace(path) {
-            if args.normalize {
-                normalize_decks(&alix::workspace::diagnosable_deck_files(path))?;
-            }
-            if args.repair_source_locators {
-                repair_source_locators(&alix::workspace::diagnosable_deck_files(path))?;
-            }
-            if args.repair_positions {
-                repair_positions(&alix::workspace::diagnosable_deck_files(path))?;
-            }
-            if args.repair_diagrams {
-                repair_diagrams(&alix::workspace::diagnosable_deck_files(path))?;
-            }
-            if args.repair_frontmatter_order {
-                repair_frontmatter_order(&alix::workspace::diagnosable_deck_files(path))?;
-            }
-            if args.repair_comment_order {
-                repair_comment_order(&alix::workspace::diagnosable_deck_files(path))?;
+            if repairs.any() {
+                repairs.run(&alix::workspace::diagnosable_deck_files(path))?;
             }
             check(vec![path.clone()])?;
         }
@@ -1612,23 +1653,8 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
             (dir, store)
         }
     };
-    if args.normalize && repair_after_explicit_path {
-        normalize_decks(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
-    }
-    if args.repair_source_locators && repair_after_explicit_path {
-        repair_source_locators(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
-    }
-    if args.repair_positions && repair_after_explicit_path {
-        repair_positions(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
-    }
-    if args.repair_diagrams && repair_after_explicit_path {
-        repair_diagrams(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
-    }
-    if args.repair_frontmatter_order && repair_after_explicit_path {
-        repair_frontmatter_order(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
-    }
-    if args.repair_comment_order && repair_after_explicit_path {
-        repair_comment_order(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
+    if repairs.any() && repair_after_explicit_path {
+        repairs.run(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
     }
     if args.remove_backup_files {
         let baks = doctor::backup_files(&decks_dir);
@@ -2393,6 +2419,234 @@ mod tests {
         assert!(
             format!("{error:#}").contains("names no `cite:` root"),
             "repair: {error:#}"
+        );
+    }
+
+    fn doctor_target_report(target: &Path, repairs: Repairs) -> Report {
+        let mut report = Report::default();
+        let paths = if target.is_file() {
+            vec![target.to_path_buf()]
+        } else {
+            alix::workspace::diagnosable_deck_files(target)
+        };
+        if let Err(error) = repairs.run(&paths) {
+            report.error(format!("{error:#}"));
+            return report;
+        }
+        if target.is_file() {
+            return check_report(vec![target.to_path_buf()]);
+        }
+        if alix::workspace::is_workspace(target) {
+            report = check_report(vec![target.to_path_buf()]);
+            if !report.errors.is_empty() {
+                return report;
+            }
+        }
+        let nested = workspace_findings(target);
+        report.errors.extend(nested.errors);
+        report.warnings.extend(nested.warnings);
+        report
+    }
+
+    #[test]
+    fn every_rule_11_locator_violation_is_an_error_in_every_doctor_mode_and_target() {
+        #[derive(Clone, Copy, PartialEq)]
+        enum Place {
+            Anywhere,
+            MemberOnly,
+            LooseOnly,
+        }
+        const ASSET: &str = " fingerprint: xxh64-0000000000000000 asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.txt";
+        let rows: [(&str, &str, &str, Place); 13] = [
+            ("missing key", "x.txt:1", "rule 3", Place::Anywhere),
+            ("rule 7 spacing", "src:x.txt:1 ", "rule 7", Place::Anywhere),
+            (
+                "rule 8 unquoted space",
+                "src:a b.txt:1",
+                "rule 8",
+                Place::Anywhere,
+            ),
+            ("rule 9 range", "src:x.txt:2-1", "rule 9", Place::Anywhere),
+            (
+                "rule 10 parent segment",
+                "src:../x.txt:1",
+                "rule 10",
+                Place::Anywhere,
+            ),
+            (
+                "unknown key",
+                "nope:x.txt:1",
+                "names no `cite:` root",
+                Place::Anywhere,
+            ),
+            (
+                "passage under a local root",
+                "src",
+                "is a directory",
+                Place::Anywhere,
+            ),
+            (
+                "frozen unknown key",
+                "nope:x.txt:1{asset}",
+                "names no `cite:` root",
+                Place::MemberOnly,
+            ),
+            (
+                "frozen passage under a local root",
+                "src{asset}",
+                "is a directory",
+                Place::MemberOnly,
+            ),
+            (
+                "url passage without asset",
+                "guide",
+                "carries no `asset:`",
+                Place::MemberOnly,
+            ),
+            (
+                "file under a url root",
+                "guide:x.txt:1",
+                "is a url",
+                Place::MemberOnly,
+            ),
+            (
+                "frozen file under a url root",
+                "guide:x.txt:1{asset}",
+                "is a url",
+                Place::MemberOnly,
+            ),
+            (
+                "url root in a loose deck",
+                "guide",
+                "only a workspace member deck may declare",
+                Place::LooseOnly,
+            ),
+        ];
+        let modes = [
+            ("plain", Repairs::default()),
+            (
+                "normalize",
+                Repairs {
+                    normalize: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "repair-source-locators",
+                Repairs {
+                    source_locators: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "repair-positions",
+                Repairs {
+                    positions: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "repair-diagrams",
+                Repairs {
+                    diagrams: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "repair-frontmatter-order",
+                Repairs {
+                    frontmatter_order: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "repair-comment-order",
+                Repairs {
+                    comment_order: true,
+                    ..Default::default()
+                },
+            ),
+        ];
+        let mut failures = Vec::new();
+        for (label, at, fragment, place) in rows {
+            let at = at.replace("{asset}", ASSET);
+            for kind in ["", "trace: walk\n"] {
+                for target in ["member file", "workspace", "loose file", "loose folder"] {
+                    let member = !target.starts_with("loose");
+                    if (member && place == Place::LooseOnly)
+                        || (!member && place == Place::MemberOnly)
+                    {
+                        continue;
+                    }
+                    for (mode, repairs) in modes {
+                        let dir = tempfile::tempdir().unwrap();
+                        let top = dir.path().canonicalize().unwrap();
+                        std::fs::create_dir_all(top.join("src")).unwrap();
+                        w(&top.join("src"), "x.txt", "one\ntwo\n");
+                        let src = top.join("src").display().to_string();
+                        let own_cite = if member {
+                            String::new()
+                        } else if place == Place::LooseOnly {
+                            "cite:\n  - guide: https://example.org/guide\n".to_string()
+                        } else {
+                            format!("cite:\n  - src: {src}\n")
+                        };
+                        let text = format!(
+                            "---\nformat-version: 1\nid: deck-deck1\n{kind}{own_cite}---\n\n## q\nanswer\n<!-- at: {at} -->\n<!-- id: card-card1 -->\n"
+                        );
+                        let folder = if member {
+                            let ws = top.join("ws");
+                            std::fs::create_dir_all(ws.join("decks")).unwrap();
+                            w(
+                                &ws,
+                                "alix.toml",
+                                &format!(
+                                    "[cite]\nsrc = {src:?}\nguide = \"https://example.org/guide\"\n"
+                                ),
+                            );
+                            ws.join("decks")
+                        } else {
+                            let loose = top.join("loose");
+                            std::fs::create_dir_all(&loose).unwrap();
+                            loose
+                        };
+                        w(&folder, "d.md", &text);
+                        let deck = folder.join("d.md");
+                        let target_path = match target {
+                            "workspace" => top.join("ws"),
+                            "loose folder" => folder.clone(),
+                            _ => deck.clone(),
+                        };
+                        let expected = if !member && repairs.diagrams {
+                            "not a member of an Alix workspace"
+                        } else {
+                            fragment
+                        };
+
+                        let report = doctor_target_report(&target_path, repairs);
+
+                        let errored = report.errors.iter().any(|error| error.contains(expected));
+                        let warned = report
+                            .warnings
+                            .iter()
+                            .any(|warning| warning.contains(expected));
+                        if !errored || warned {
+                            failures.push(format!(
+                                "{label} [{}] {target} {mode}: errors {:?} warnings {:?}",
+                                kind.trim(),
+                                report.errors,
+                                report.warnings
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} failure(s):\n{}",
+            failures.len(),
+            failures.join("\n")
         );
     }
 
@@ -3841,8 +4095,12 @@ printf ']}}'
         assert!(warnings.contains("indented `##`"), "{warnings}");
         assert!(warnings.contains("missing image"), "{warnings}");
         assert!(
-            warnings.contains("checkpoint at line") && warnings.contains("2 line(s)"),
-            "trace-locator: {warnings}"
+            errors.contains("trace-src.txt:5-6") && errors.contains("2 line(s)"),
+            "trace-locator: a live range past the end is an error: {errors}"
+        );
+        assert!(
+            !warnings.contains("2 line(s)"),
+            "trace-locator: never also a warning: {warnings}"
         );
         assert!(
             errors.contains("is not found under `cite:` root"),

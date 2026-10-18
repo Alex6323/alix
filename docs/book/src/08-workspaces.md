@@ -177,6 +177,16 @@ source deck's dependents. An inherited or relative `exam` is written
 explicitly into the transferred deck so the destination cannot reinterpret its
 live provenance through unrelated workspace defaults.
 
+Transfer never rewrites a deck's locators or `cite:`, and changes neither
+workspace's `alix.toml`. It is allowed only when every key the deck's locators
+use resolves in the destination, through the deck's own `cite:` or the
+destination's `[cite]` table, to the same root as in the source. Local roots
+are compared as absolute paths with symlinks resolved; URL roots must match
+exactly. A relative root resolves against its workspace folder, so a key
+written as `code = "crates"` in both manifests names two different folders,
+and the transfer refuses. The refusal names each key and both roots. Keys that
+no locator uses are not checked.
+
 Now open the cluster and drill its members one at a time:
 
 ```sh

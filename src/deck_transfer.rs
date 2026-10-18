@@ -6,6 +6,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 
 use crate::{
+    cite::{self, DeckPlace},
     deck::{self, Deck},
     share,
     state::UserFiles,
@@ -162,6 +163,7 @@ impl Transfer {
             &deck_id,
         )?;
         ensure_requirements_resolve(&deck, &destination_files.decks())?;
+        ensure_citations_keep_their_roots(&deck, &source_root, &destination_root)?;
         if mode == TransferMode::Move {
             let dependents = deck::dependents(&source);
             if !dependents.is_empty() {
@@ -385,6 +387,44 @@ fn ensure_requirements_resolve(deck: &Deck, destination_decks: &Path) -> Result<
         bail!(
             "destination is missing required deck(s): {}",
             missing.join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn ensure_citations_keep_their_roots(
+    deck: &Deck,
+    source_root: &Path,
+    destination_root: &Path,
+) -> Result<()> {
+    let source_cite = workspace::manifest_cite(source_root);
+    let destination_cite = workspace::manifest_cite(destination_root);
+    let used = deck
+        .cards
+        .iter()
+        .flat_map(|card| &card.citations)
+        .map(|citation| citation.locator.key.as_str());
+    let mismatches = cite::transfer_mismatches(
+        &deck.cite,
+        used,
+        DeckPlace::Member {
+            workspace: source_root,
+            manifest_cite: &source_cite,
+        },
+        DeckPlace::Member {
+            workspace: destination_root,
+            manifest_cite: &destination_cite,
+        },
+    );
+    if !mismatches.is_empty() {
+        bail!(
+            "cannot transfer {}: {}",
+            deck.path.display(),
+            mismatches
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("; ")
         );
     }
     Ok(())
@@ -629,6 +669,72 @@ mod tests {
         assert!(format!("{error:#}").contains("required by dependent.md"));
         assert!(deck.is_file());
         assert!(!destination.join("decks/facts.md").exists());
+    }
+
+    #[test]
+    fn a_cited_key_whose_root_differs_in_the_destination_refuses_before_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let destination = dir.path().join("destination");
+        let shared = dir.path().join("shared");
+        std::fs::create_dir_all(&shared).unwrap();
+        let shared_root = format!(
+            "shared = {:?}\n",
+            shared.canonicalize().unwrap().display().to_string()
+        );
+        workspace(
+            &source,
+            &format!("[cite]\ncode = \"crates\"\n{shared_root}"),
+        );
+        workspace(
+            &destination,
+            &format!("[cite]\ncode = \"crates\"\n{shared_root}"),
+        );
+        let path = source.join("decks/facts.md");
+        let cited = |key: &str| {
+            format!(
+                "---\nformat-version: 1\nid: deck-deck1\n---\n## q\nanswer\n<!-- at: {key}:x.txt:1 -->\n<!-- id: card-card1 -->\n"
+            )
+        };
+
+        std::fs::write(&path, cited("code")).unwrap();
+        for mode in [TransferMode::Copy, TransferMode::Move] {
+            let error = format!("{:#}", transfer(&path, &destination, mode).unwrap_err());
+            assert!(
+                error.contains("`code`")
+                    && error.contains(
+                        &source
+                            .canonicalize()
+                            .unwrap()
+                            .join("crates")
+                            .display()
+                            .to_string()
+                    )
+                    && error.contains(
+                        &destination
+                            .canonicalize()
+                            .unwrap()
+                            .join("crates")
+                            .display()
+                            .to_string()
+                    ),
+                "{mode:?}: the refusal names the key and both roots: {error}"
+            );
+            assert!(path.is_file(), "{mode:?}");
+            assert!(!destination.join("decks/facts.md").exists(), "{mode:?}");
+        }
+
+        std::fs::write(&path, cited("shared")).unwrap();
+        transfer(&path, &destination, TransferMode::Copy).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            std::fs::read_to_string(destination.join("decks/facts.md")).unwrap(),
+            "an allowed transfer never rewrites the deck's citations"
+        );
+        assert_eq!(
+            format!("[cite]\ncode = \"crates\"\n{shared_root}"),
+            std::fs::read_to_string(destination.join("alix.toml")).unwrap()
+        );
     }
 
     #[test]
