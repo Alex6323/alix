@@ -356,19 +356,6 @@ impl Deck {
         out
     }
 
-    /// The single mechanical base: the deck's first local-path source, falling
-    /// back to the workspace source when the deck declares none (ADR 0026).
-    pub fn base_root(&self) -> Option<PathBuf> {
-        let layers = self.exam_layers();
-        let local = layers
-            .own
-            .iter()
-            .chain(&layers.workspace)
-            .find(|source| !is_url(source))?;
-        let content_root = crate::workspace::content_root(&self.path);
-        Some(resolve_base_root(local, &content_root))
-    }
-
     pub fn is_frozen(&self) -> bool {
         self.cards.iter().any(|card| {
             card.citations
@@ -411,36 +398,6 @@ pub struct ExamLayers {
 impl ExamLayers {
     pub fn is_empty(&self) -> bool {
         self.own.is_empty() && self.workspace.is_empty()
-    }
-
-    /// The mechanical base layer (ADR 0026): the deck's own local-path
-    /// sources; the workspace layer participates only when the deck declares
-    /// no local one.
-    pub fn base_locals(&self) -> Vec<&String> {
-        let own: Vec<&String> = self.own.iter().filter(|source| !is_url(source)).collect();
-        if own.is_empty() {
-            self.workspace
-                .iter()
-                .filter(|source| !is_url(source))
-                .collect()
-        } else {
-            own
-        }
-    }
-}
-
-fn resolve_base_root(source: &str, content_root: &Path) -> PathBuf {
-    let source = Path::new(source.trim());
-    let path = if source.is_absolute() {
-        source.to_path_buf()
-    } else {
-        content_root.join(source)
-    };
-    let path = path.canonicalize().unwrap_or(path);
-    if path.is_file() {
-        path.parent().unwrap_or(&path).to_path_buf()
-    } else {
-        path
     }
 }
 
@@ -2056,89 +2013,6 @@ mod tests {
         assert_eq!(Some(Order::Sequential), deck.settings.order);
         // An unparseable value is linted (doctor material), not an error.
         assert_eq!(None, deck.settings.direction);
-    }
-
-    #[test]
-    fn base_root_derives_from_the_first_local_source() {
-        let dir = tempfile::tempdir().unwrap();
-        let decks = dir.path().join("decks");
-        let source = dir.path().join("project/src/lib.rs");
-        std::fs::create_dir_all(&decks).unwrap();
-        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
-        std::fs::write(&source, "// lib\n").unwrap();
-        let path = write_deck(
-            &decks,
-            "d.md",
-            &format!("---\nexam: {}\n---\n## f\nb\n", source.to_string_lossy()),
-        );
-
-        // ADR 0026: the deck's first local-path source IS the mechanical base;
-        // a file source resolves to its directory.
-        assert_eq!(
-            Some(source.parent().unwrap().canonicalize().unwrap()),
-            Deck::load(path).unwrap().base_root()
-        );
-    }
-
-    #[test]
-    fn base_root_resolves_a_relative_source_against_the_content_root() {
-        let dir = tempfile::tempdir().unwrap();
-        let decks = dir.path().join("decks");
-        let source = dir.path().join("source");
-        std::fs::create_dir_all(&decks).unwrap();
-        std::fs::create_dir_all(&source).unwrap();
-        let path = write_deck(&decks, "d.md", "---\nexam: ../source\n---\n## f\nb\n");
-
-        assert_eq!(
-            Some(source.canonicalize().unwrap()),
-            Deck::load(path).unwrap().base_root()
-        );
-    }
-
-    #[test]
-    fn base_root_skips_url_sources_and_falls_back_to_the_workspace_source() {
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path().join("workspace");
-        let source = dir.path().join("source");
-        let members = workspace.join(crate::workspace::DECKS);
-        std::fs::create_dir_all(&members).unwrap();
-        std::fs::create_dir_all(&source).unwrap();
-        std::fs::write(
-            workspace.join(crate::workspace::MANIFEST),
-            "exam = \"../source\"\n",
-        )
-        .unwrap();
-        let path = write_deck(
-            &members,
-            "d.md",
-            "---\nexam: https://example.org/page\n---\n## f\nb\n",
-        );
-        let deck = Deck::load(&path).unwrap();
-
-        assert_eq!(Some(source.canonicalize().unwrap()), deck.base_root());
-
-        let own = write_deck(
-            &members,
-            "own.md",
-            "---\nexam: ../source/file.rs\n---\n## f\nb\n",
-        );
-        std::fs::write(source.join("file.rs"), "x\n").unwrap();
-        // The deck's own local source wins over the workspace source.
-        assert_eq!(
-            Some(source.canonicalize().unwrap()),
-            Deck::load(own).unwrap().base_root()
-        );
-    }
-
-    #[test]
-    fn a_deck_without_any_local_source_has_no_base_root() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(
-            dir.path(),
-            "d.md",
-            "---\nexam: https://example.org/page\n---\n## f\nb\n",
-        );
-        assert_eq!(None, Deck::load(path).unwrap().base_root());
     }
 
     #[test]

@@ -1629,6 +1629,140 @@ mod tests {
         assert!(format!("{err:#}").contains("no `exam:`"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn the_exam_reads_only_exam_entries_never_cite_roots_or_cited_text() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("ws");
+        for folder in ["decks", "code", "lib"] {
+            std::fs::create_dir_all(ws.join(folder)).unwrap();
+        }
+        std::fs::write(
+            ws.join(crate::workspace::MANIFEST),
+            "exam = \"manifest-exam.txt\"\n\n[cite]\nshared = \"lib\"\n",
+        )
+        .unwrap();
+        std::fs::write(ws.join("manifest-exam.txt"), "MANIFEST_EXAM_MARKER\n").unwrap();
+        std::fs::write(ws.join("own-exam.txt"), "DECK_EXAM_MARKER\n").unwrap();
+        std::fs::write(ws.join("code/cited.rs"), "CITED_TEXT_MARKER\n").unwrap();
+        std::fs::write(ws.join("code/uncited.rs"), "CITE_ROOT_MARKER\n").unwrap();
+        std::fs::write(ws.join("lib/shared.rs"), "MANIFEST_CITED_MARKER\n").unwrap();
+        let deck_path = ws.join("decks/d.md");
+        std::fs::write(
+            &deck_path,
+            "---\nformat-version: 1\nid: deck-examcitea1b2c3d4e5f6g7h8j9\nexam: own-exam.txt\n\
+             cite:\n  - code: code\n---\n\
+             ## q1\na\n<!-- at: code:cited.rs:1 -->\n\n\
+             ## q2\nb\n<!-- at: shared:shared.rs:1 -->\n",
+        )
+        .unwrap();
+        crate::assets::freeze_member(&deck_path).unwrap();
+        crate::stamp::stamp_deck(&deck_path).unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        assert!(
+            deck.cards
+                .iter()
+                .all(|card| card.citations.iter().all(|c| c.asset.is_some())),
+            "setup: every citation is frozen"
+        );
+
+        let prompt = dir.path().join("prompt.txt");
+        let args = dir.path().join("args.txt");
+        std::fs::write(
+            dir.path().join("reply.json"),
+            "{\"questions\":[{\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
+        )
+        .unwrap();
+        let cli = crate::testutil::fake_cli(
+            dir.path(),
+            &format!(
+                "cat > {}; printf '%s\\n' \"$@\" > {}; cat {}",
+                prompt.display(),
+                args.display(),
+                dir.path().join("reply.json").display()
+            ),
+        );
+        let mut ask_cfg = ask_config(&cli);
+        ask_cfg.source_access = true;
+        generate_questions(&deck, &ExamConfig::default(), &ask_cfg).unwrap();
+        let seen = format!(
+            "{}\n{}",
+            std::fs::read_to_string(&prompt).unwrap(),
+            std::fs::read_to_string(&args).unwrap()
+        );
+
+        let code_root = ws.join("code").canonicalize().unwrap();
+        let lib_root = ws.join("lib").canonicalize().unwrap();
+        let rows: [(&str, &str, bool); 7] = [
+            ("the deck's own exam entry", "DECK_EXAM_MARKER", true),
+            ("the manifest's exam entry", "MANIFEST_EXAM_MARKER", true),
+            ("text cited from a deck root", "CITED_TEXT_MARKER", false),
+            (
+                "text cited from a manifest root",
+                "MANIFEST_CITED_MARKER",
+                false,
+            ),
+            (
+                "an uncited file under a cite root",
+                "CITE_ROOT_MARKER",
+                false,
+            ),
+            (
+                "the deck's cite root path",
+                code_root.to_str().unwrap(),
+                false,
+            ),
+            (
+                "the manifest's cite root path",
+                lib_root.to_str().unwrap(),
+                false,
+            ),
+        ];
+        for (label, needle, expected) in rows {
+            assert_eq!(
+                expected,
+                seen.contains(needle),
+                "{label}: `{needle}` in the exam's prompt and arguments:\n{seen}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_deck_is_exam_eligible_only_when_it_or_its_manifest_declares_exam() {
+        let rows = [
+            ("cites but declares no exam anywhere", "", "", false),
+            ("the deck declares exam", "exam: e.txt\n", "", true),
+            ("the manifest declares exam", "", "exam = \"e.txt\"\n", true),
+            (
+                "both declare exam",
+                "exam: e.txt\n",
+                "exam = \"e.txt\"\n",
+                true,
+            ),
+        ];
+        for (label, deck_exam, manifest_exam, expected) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(dir.path().join("decks")).unwrap();
+            std::fs::create_dir_all(dir.path().join("code")).unwrap();
+            std::fs::write(dir.path().join("code/x.rs"), "x\n").unwrap();
+            std::fs::write(dir.path().join("e.txt"), "e\n").unwrap();
+            std::fs::write(
+                dir.path().join(crate::workspace::MANIFEST),
+                format!("{manifest_exam}\n[cite]\nshared = \"code\"\n"),
+            )
+            .unwrap();
+            let path = dir.path().join("decks/d.md");
+            std::fs::write(
+                &path,
+                format!("---\ntitle: d\n{deck_exam}---\n## q\na\n<!-- at: shared:x.rs:1 -->\n"),
+            )
+            .unwrap();
+            let deck = Deck::load(&path).unwrap();
+            assert_eq!(expected, deck.has_exam(), "{label}");
+        }
+    }
+
     #[test]
     fn workspace_asset_boundary_failures_surface_through_the_sitting() {
         let dir = tempfile::tempdir().unwrap();

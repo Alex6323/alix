@@ -71,7 +71,6 @@ pub struct Trace {
     pub exam_layers: crate::deck::ExamLayers,
     pub checkpoints: Vec<Checkpoint>,
     pub deck_path: PathBuf,
-    pub base_root: Option<PathBuf>,
     roots: CitationRoots,
 }
 
@@ -123,7 +122,6 @@ impl Trace {
             exam_layers: deck.exam_layers(),
             checkpoints,
             deck_path: deck.path.clone(),
-            base_root: deck.base_root(),
             roots: CitationRoots::for_deck(deck),
         })
     }
@@ -148,6 +146,10 @@ impl Trace {
             asset: checkpoint.asset.clone(),
             line: checkpoint.line,
         })
+    }
+
+    pub fn browse_root(&self, checkpoint: &Checkpoint) -> Option<PathBuf> {
+        self.roots.browse_root(checkpoint.locator.as_ref())
     }
 
     pub fn frozen_block(&self, checkpoint: &Checkpoint) -> Option<String> {

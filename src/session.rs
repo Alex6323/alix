@@ -21,10 +21,20 @@ pub struct DeckInfo {
     pub deck_token: Option<String>,
     pub links: Vec<String>,
     pub exam_layers: crate::deck::ExamLayers,
-    pub base_root: Option<PathBuf>,
     pub source_access: bool,
     pub source_base: CitationRoots,
     pub load_warnings: Vec<String>,
+}
+
+impl DeckInfo {
+    pub fn browse_root(&self, card: &Card) -> Option<PathBuf> {
+        self.source_access
+            .then(|| {
+                self.source_base
+                    .browse_root(card.citations.iter().map(|citation| &citation.locator))
+            })
+            .flatten()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -1817,7 +1817,7 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &mut Store, depth: Depth
         load_warnings: Vec::new(),
         links: HashMap::new(),
         exam_layers: HashMap::new(),
-        base_roots: HashMap::new(),
+        browsable: std::collections::HashSet::new(),
         source_bases: HashMap::new(),
         topology_name: None,
         region_name: None,
@@ -2058,7 +2058,7 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         load_warnings: Vec::new(),
         links: HashMap::new(),
         exam_layers: HashMap::new(),
-        base_roots: HashMap::new(),
+        browsable: std::collections::HashSet::new(),
         source_bases: HashMap::new(),
         topology_name: None,
         region_name: None,
@@ -2296,11 +2296,12 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("alix.toml"), "").unwrap();
     std::fs::create_dir(dir.path().join("decks")).unwrap();
-    std::fs::write(dir.path().join("29.rs"), "fn real() {}\n").unwrap();
+    std::fs::create_dir(dir.path().join("code")).unwrap();
+    std::fs::write(dir.path().join("code/29.rs"), "fn real() {}\n").unwrap();
     let deck_path = dir.path().join("decks/d.md");
     std::fs::write(
         &deck_path,
-        "---\nformat-version: 1\nid: \"deck-frozendeck1\"\nexam: 29.rs\ncite:\n  - src: .\n---\n## q\na\n\
+        "---\nformat-version: 1\nid: \"deck-frozendeck1\"\nexam: code/29.rs\ncite:\n  - src: code\n---\n## q\na\n\
          <!-- at: src:29.rs:1 -->\n",
     )
     .unwrap();
@@ -2322,12 +2323,8 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
     );
     let mut decks = HashMap::new();
     decks.insert("deck-frozendeck1".to_string(), deck_path);
-    let mut base_roots = HashMap::new();
-    // Configured (`source_access` opted in), but unresolved on disk.
-    base_roots.insert(
-        "deck-frozendeck1".to_string(),
-        dir.path().join("gone-source"),
-    );
+    std::fs::remove_dir_all(dir.path().join("code")).unwrap();
+    let browsable = std::collections::HashSet::from(["deck-frozendeck1".to_string()]);
     let mut source_bases = HashMap::new();
     source_bases.insert(
         "deck-frozendeck1".to_string(),
@@ -2340,7 +2337,7 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
         load_warnings: Vec::new(),
         links: HashMap::new(),
         exam_layers: HashMap::new(),
-        base_roots,
+        browsable,
         source_bases,
         topology_name: None,
         region_name: None,
@@ -2408,8 +2405,7 @@ fn a_frozen_review_card_with_a_live_local_source_needs_no_fallback_warning() {
     let deck_id = "deck-livefrozen1".to_string();
     let mut decks = HashMap::new();
     decks.insert(deck_id.clone(), deck_path);
-    let mut base_roots = HashMap::new();
-    base_roots.insert(deck_id.clone(), dir.path().to_path_buf());
+    let browsable = std::collections::HashSet::from([deck_id.clone()]);
     let mut source_bases = HashMap::new();
     source_bases.insert(deck_id, CitationRoots::for_deck(&deck));
     let mut reviewing = Reviewing::new(SessionBuild {
@@ -2419,7 +2415,7 @@ fn a_frozen_review_card_with_a_live_local_source_needs_no_fallback_warning() {
         load_warnings: Vec::new(),
         links: HashMap::new(),
         exam_layers: HashMap::new(),
-        base_roots,
+        browsable,
         source_bases,
         topology_name: None,
         region_name: None,
@@ -2649,7 +2645,13 @@ fn a_frozen_trace_checkpoint_with_a_live_local_source_needs_no_fallback_warning(
     crate::stamp::stamp_deck(&deck_path).unwrap();
     crate::assets::freeze_member(&deck_path).unwrap();
     let trace = crate::trace::Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
-    assert!(trace.base_root.as_deref().is_some_and(Path::exists));
+    assert!(
+        trace
+            .checkpoints
+            .first()
+            .and_then(|checkpoint| trace.browse_root(checkpoint))
+            .is_some_and(|root| root.exists())
+    );
     assert!(
         trace
             .checkpoints
@@ -2677,8 +2679,7 @@ fn a_frozen_trace_checkpoint_without_reachable_source_warns_about_the_fallback()
     std::fs::rename(&initial.deck_path, &deck_path).unwrap();
     crate::stamp::stamp_deck(&deck_path).unwrap();
     crate::assets::freeze_member(&deck_path).unwrap();
-    let mut trace = crate::trace::Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
-    trace.base_root = Some(dir.path().join("gone-source"));
+    let trace = crate::trace::Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
     assert!(
         trace
             .checkpoints
@@ -3057,7 +3058,7 @@ fn a_scoped_crumb_reports_a_locked_card_outside_the_sitting() {
         load_warnings: Vec::new(),
         links: HashMap::new(),
         exam_layers: HashMap::new(),
-        base_roots: HashMap::new(),
+        browsable: std::collections::HashSet::new(),
         source_bases: HashMap::new(),
         topology_name: Some("t".to_string()),
         region_name: Some("r1".to_string()),

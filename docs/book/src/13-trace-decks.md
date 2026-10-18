@@ -195,10 +195,11 @@ object:
 Review reveals the frozen excerpt (display evidence, numbered from the `at:`
 start line), and the `fingerprint:` verifies those stored bytes. The `at:` key
 and path retain provenance for drift reporting, judged against that key's own
-root, and a future deliberate source update. When the live source is available and permitted, the
-tutor and exam may consult it for surrounding context and staleness detection;
-offline, they report the missing live source rather than silently degrading. A
-loose trace over a live source is left as-is.
+root, and a future deliberate source update. When that root is available and
+`source_access` permits it, the tutor browses it for surrounding context and
+staleness detection; offline, it reports the missing live source rather than
+silently degrading. The exam never reads cited text. A loose trace over a live
+source is left as-is.
 
 ## Checking the locators
 

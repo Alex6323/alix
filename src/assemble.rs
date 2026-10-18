@@ -94,7 +94,7 @@ pub struct SessionBuild {
     pub load_warnings: Vec<String>,
     pub links: HashMap<String, Vec<String>>,
     pub exam_layers: HashMap<String, ExamLayers>,
-    pub base_roots: HashMap<String, PathBuf>,
+    pub browsable: std::collections::HashSet<String>,
     pub source_bases: HashMap<String, CitationRoots>,
     pub topology_name: Option<String>,
     pub region_name: Option<String>,
@@ -227,7 +227,6 @@ pub fn load_decks(
                 deck_token: deck.deck_token.clone(),
                 links: deck.reference_links(),
                 exam_layers: deck.exam_layers(),
-                base_root: deck.base_root(),
                 source_access: false,
                 source_base: CitationRoots::for_deck(&deck),
                 load_warnings: deck.load_warnings.clone(),
@@ -630,14 +629,10 @@ pub fn select(
             )
         })
         .collect();
-    let base_roots = decks
+    let browsable = decks
         .values()
         .filter(|info| info.source_access)
-        .filter_map(|info| {
-            info.base_root
-                .clone()
-                .map(|root| (info.deck_token.clone().unwrap_or_default(), root))
-        })
+        .map(|info| info.deck_token.clone().unwrap_or_default())
         .collect();
     let source_bases = decks
         .values()
@@ -661,7 +656,7 @@ pub fn select(
         load_warnings,
         links,
         exam_layers,
-        base_roots,
+        browsable,
         source_bases,
         topology_name,
         region_name: region_sel.map(str::to_string),

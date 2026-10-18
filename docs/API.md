@@ -379,8 +379,9 @@ server first resolves `deck_id` through its served catalog and then matches
 `card_id` exactly in the same assembled deck the desktop tutor uses. A match
 therefore includes authored and personal cards, cached formatting and notes,
 personal sidecar notes, links, sources, frozen excerpts, and the same
-`source_access` decision. A local source root, when allowed and live, becomes
-the AI helper's working directory. Unknown or ambiguous deck ids, an absent
+`source_access` decision. The card's local `cite:` root (the tutor chapter
+of the book states the rule), when allowed and live, becomes the AI helper's
+working directory. Unknown or ambiguous deck ids, an absent
 card id, or a deck/catalog load failure use the request's fallback text
 instead and set `card_only: true`; no path supplied by the client is opened.
 

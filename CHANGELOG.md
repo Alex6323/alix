@@ -147,6 +147,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nudges a long `exam:` list toward a common root, and it checks every live
   citation of a workspace member whether or not the deck declares an `exam:`.
 
+- With `source_access` on, the tutor browses a `cite:` root instead of the
+  first local `exam:` entry: the root of the card's first locator whose key
+  names a local root, else the deck's only local root when it sees exactly
+  one, else none. A URL root is never browsed. `exam:` entries are still
+  listed to the tutor as context.
+
 - The deck frontmatter key and the workspace manifest key `source` are renamed
   `exam`. A deck or manifest that still uses `source` fails as an unknown key.
 

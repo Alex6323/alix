@@ -188,7 +188,7 @@ Remote tutor requests carry client fallback text but resolve their stable deck
 and card ids against the desktop's served catalog. A match gives the tutor the
 desktop's assembled card and the same grounding as a local tutor call. A
 pairing-token holder can therefore make the desktop run its AI CLI rooted at
-the live local source of any served deck when that deck's effective
+the local `cite:` root chosen for a served card when that deck's effective
 `source_access` setting allows it, with the read tools granted by
 `ask::with_source_root`. The effective setting includes a workspace manifest's
 override. Unknown, ambiguous, unreadable, or unmatched cards stay card-only,
@@ -308,10 +308,16 @@ commands must be trusted. Run evidence may contain source code, prompts, model
 output, command output, and filesystem paths, so its external run directory
 should be protected like the target checkout (`orchestrator/`).
 
-Filesystem grounding is opt-in. `[ask] source_access = true` is effective only
-when the deck or workspace declares a `exam:`, and the grant covers exactly
-that declared tree; `at:` locators remain evidence pointers and never infer a
-wider project root (`src/deck.rs`, `src/source.rs`). This is the boundary for Alix's built-in grant. A user can
+Filesystem grounding is opt-in. With `[ask] source_access = true` (or a
+manifest override), the tutor browses one local `cite:` root per card: the
+root of the first locator, in card order, whose key names a local root; for a
+card without one, the deck's only local root when the deck and its manifest
+declare exactly one; otherwise none. A URL root is never browsed, and an
+`exam:` entry never grants browsing (`CitationRoots::browse_root` in
+`src/cite.rs`). A root may be any local directory the deck or manifest
+declares, absolute ones included, so a received deck can name a wide root;
+inspect a received workspace's `cite:` roots before enabling source access.
+The exam reads only `exam:` entries, never `cite:` roots or cited text. This is the boundary for Alix's built-in grant. A user can
 deliberately widen the provider CLI's permissions through `permission_mode`,
 `allowed_tools`, or provider-specific configuration, and then owns that wider
 trust decision.
@@ -322,7 +328,7 @@ declared source into a working directory plus read tools,
 `ask::with_source_root`, is reached only from a local or paired tutor's ask
 path, so no other derived configuration acquires source grounding by that
 route. The walk's tutor (`/api/walk/ask`) is such a local path: it grounds the
-walked item exactly as review's tutor does, from the deck's declared source and
+walked item exactly as review's tutor does, from the card's `cite:` root and
 the same source-access setting (`src/serve/jobs.rs`). Deck
 generation, trace generation, a workspace source refresh, exam grading, and
 workspace icon drawing additionally force the source-access flag off rather
@@ -340,7 +346,7 @@ the tutor continues from frozen evidence and reports that it cannot verify the
 full current source.
 
 Received workspace manifests are untrusted configuration. Before using AI on a
-received workspace, inspect `source_access`, `exam`, links, citations, and
+received workspace, inspect `source_access`, `exam`, `cite` roots, links, citations, and
 frozen excerpts. A portable manifest can request source access, and a source
 path that exists on the receiving machine may expose more than the sender
 intended.

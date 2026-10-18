@@ -447,6 +447,29 @@ impl CitationRoots {
             .map(|root| &root.root)
     }
 
+    pub fn browse_root<'a>(
+        &self,
+        locators: impl IntoIterator<Item = &'a Locator>,
+    ) -> Option<PathBuf> {
+        fn local(root: &Root) -> Option<&PathBuf> {
+            match root {
+                Root::Local(dir) => Some(dir),
+                Root::Url(_) => None,
+            }
+        }
+        let cited = locators
+            .into_iter()
+            .find_map(|locator| self.root_of(&locator.key).and_then(local));
+        let dir = cited.or_else(|| {
+            let mut locals = self.visible().iter().filter_map(|root| local(&root.root));
+            match (locals.next(), locals.next()) {
+                (Some(only), None) => Some(only),
+                _ => None,
+            }
+        })?;
+        Some(std::fs::canonicalize(dir).unwrap_or_else(|_| dir.clone()))
+    }
+
     pub fn check(&self, locator: &Locator, has_asset: bool) -> Result<&VisibleRoot, ResolveError> {
         let key = || locator.key.clone();
         let roots = self
@@ -575,6 +598,103 @@ mod tests {
         crate::locator::parse_locator_comment(&format!("<!-- at: {text} -->"))
             .unwrap()
             .locator
+    }
+
+    #[test]
+    fn the_tutor_browses_the_first_local_cited_root_else_the_deck_s_only_local_root() {
+        let fx = fixture();
+        let ws = &fx.workspace;
+        let manifest_cite: BTreeMap<String, String> =
+            pairs(&[("code", "crates/core")]).into_iter().collect();
+        let member = |deck_cite: &[(&str, &str)], manifest: &BTreeMap<String, String>| {
+            CitationRoots::from_place(
+                &pairs(deck_cite),
+                DeckPlace::Member {
+                    workspace: ws,
+                    manifest_cite: manifest,
+                },
+                None,
+            )
+        };
+        let no_manifest = BTreeMap::new();
+        let code_and_guide = member(&[("guide", "https://example.org/guide")], &manifest_cite);
+        let code_and_docs = member(&[("docs", "docs")], &manifest_cite);
+        let url_only = member(&[("guide", "https://example.org/guide")], &no_manifest);
+        let loose_one = CitationRoots::from_place(
+            &pairs(&[("here", "here")]),
+            DeckPlace::Loose { folder: &fx.loose },
+            None,
+        );
+        let loose_none =
+            CitationRoots::from_place(&[], DeckPlace::Loose { folder: &fx.loose }, None);
+        let core = canonical(&ws.join("crates/core"));
+        let docs = canonical(&ws.join("docs"));
+        let here = canonical(&fx.loose.join("here"));
+        let rows: Vec<(&str, &CitationRoots, Vec<&str>, Option<PathBuf>)> = vec![
+            (
+                "a card with a local locator",
+                &code_and_guide,
+                vec!["code:x.txt:1"],
+                Some(core.clone()),
+            ),
+            (
+                "a card whose first locator is a url passage and second local",
+                &code_and_guide,
+                vec!["guide", "code:x.txt"],
+                Some(core.clone()),
+            ),
+            (
+                "card order wins over deck order among two local roots",
+                &code_and_docs,
+                vec!["docs:a.md", "code:x.txt"],
+                Some(docs.clone()),
+            ),
+            (
+                "an unknown key is skipped for the next local key",
+                &code_and_docs,
+                vec!["typo:x.txt", "code:x.txt"],
+                Some(core.clone()),
+            ),
+            (
+                "a locator-less card with one local root",
+                &code_and_guide,
+                vec![],
+                Some(core.clone()),
+            ),
+            (
+                "a card citing only a url passage with one local root",
+                &code_and_guide,
+                vec!["guide"],
+                Some(core.clone()),
+            ),
+            (
+                "a locator-less card with two local roots",
+                &code_and_docs,
+                vec![],
+                None,
+            ),
+            (
+                "a deck with only a url root",
+                &url_only,
+                vec!["guide"],
+                None,
+            ),
+            (
+                "a loose deck with one local root",
+                &loose_one,
+                vec![],
+                Some(here.clone()),
+            ),
+            ("a loose deck without roots", &loose_none, vec![], None),
+        ];
+        for (label, roots, locators, expected) in rows {
+            let locators: Vec<Locator> = locators.into_iter().map(locator).collect();
+            assert_eq!(
+                expected,
+                roots.browse_root(&locators),
+                "{label}: locators {locators:?}"
+            );
+        }
     }
 
     #[test]

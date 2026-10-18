@@ -2075,7 +2075,7 @@ mod tests {
             load_warnings: Vec::new(),
             links: HashMap::new(),
             exam_layers: HashMap::new(),
-            base_roots: HashMap::new(),
+            browsable: std::collections::HashSet::new(),
             source_bases: HashMap::new(),
             topology_name: None,
             region_name: None,

@@ -79,30 +79,33 @@ unlike `exam:` (the exam's ground truth, covered next chapter), a `link:`
 never becomes exam material. And like every directive, they don't affect a
 card's identity.
 
-## Grounding a frozen card: `exam:`
+## Grounding a frozen card: `exam:` and `cite:`
 
 A frozen workspace card is grounded in its deck-owned `assets/deck-<token>/`
 evidence. The tutor receives the exact excerpt shown during review, so deleting
 or editing the live source cannot silently change its ground truth.
 
-The deck's `exam:` (and a workspace's `exam`) records where that evidence
-came from and can give the tutor broader current context. A URL source is
-fetched when the selected backend can use `WebFetch`. A local source is readable
-only when `[ask] source_access = true`. The tutor always receives the frozen
-excerpt first; current source context can explain the surrounding material or
-detect drift, but never silently replaces the captured evidence.
+The deck's `exam:` (and a workspace's `exam`) is listed to the tutor as
+context. A URL entry is fetched when the selected backend can use `WebFetch`.
+The tutor always receives the frozen excerpt first; current source context can
+explain the surrounding material or detect drift, but never silently replaces
+the captured evidence.
 
-Local file grounding is opt-in with `[ask] source_access = true`, and a
+Local file browsing is opt-in with `[ask] source_access = true`, and a
 workspace's `alix.toml` may carry its own top-level `source_access` key,
 which overrides the global setting in either direction for that workspace's
 decks. The manifest travels when a workspace is shared, so inspect a
-received workspace's `alix.toml` before making an AI call over it. An
-explicit deck or workspace `exam` defines the readable root. Without one,
-alix does not grant the tutor filesystem access: a `exam:` identifies the
-cited evidence, but it never implicitly authorizes the surrounding project.
-This keeps decks portable across profile-managed deck directories and keeps
-every wider live-source grant reviewable: globally in your config, or per
-workspace in a manifest you can read.
+received workspace's `alix.toml` before making an AI call over it. With
+access on, the tutor browses one local `cite:` root, chosen per card:
+
+- the root of the first locator (in card order) whose key names a local root;
+- for a card without such a locator, the deck's only local root, when the
+  deck and its manifest declare exactly one;
+- otherwise none. A URL root is never browsed, and an `exam:` entry never
+  grants browsing.
+
+This keeps every live-source grant reviewable: the grant is on in your config
+or a manifest you can read, and the folder is a root the deck declares.
 
 When no usable source is available, the tutor still works from the frozen
 excerpt and card context. The Ask status warns that it lacks the full current

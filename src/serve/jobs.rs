@@ -98,7 +98,7 @@ pub(super) struct Reviewing {
     pub(super) ask: Ask,
     pub(super) links: HashMap<String, Vec<String>>,
     pub(super) exam_layers: HashMap<String, crate::deck::ExamLayers>,
-    pub(super) base_roots: HashMap<String, PathBuf>,
+    pub(super) browsable: std::collections::HashSet<String>,
     pub(super) source_bases: HashMap<String, CitationRoots>,
     pub(super) augment: AugmentCache,
     pub(super) present_seq: u64,
@@ -468,10 +468,11 @@ impl RemoteAsk {
         let (card, context_data, has_source_context, card_only) = match resolution {
             RemoteCardResolution::Grounded { card, info } => {
                 let info = *info;
+                let root = info.browse_root(&card);
                 let tutor_info = TutorInfo {
                     links: info.links,
                     sources: info.exam_layers,
-                    root: info.source_access.then_some(info.base_root).flatten(),
+                    root,
                     source_base: Some(info.source_base),
                 };
                 let (context, has_source_context) = tutor_context_for(&card, tutor_info, cfg);
@@ -733,7 +734,7 @@ impl Reviewing {
             images,
             ask: Ask::new(),
             links: build.links,
-            base_roots: build.base_roots,
+            browsable: build.browsable,
             exam_layers: build.exam_layers,
             source_bases: build.source_bases,
             augment: build.augment,
@@ -787,6 +788,11 @@ impl Reviewing {
         let Some(card) = self.session.current().cloned() else {
             return false;
         };
+        let source_base = self.source_bases.get(&*card.deck_id).cloned();
+        let root = source_base
+            .as_ref()
+            .filter(|_| self.browsable.contains(&*card.deck_id))
+            .and_then(|base| base.browse_root(card.citations.iter().map(|c| &c.locator)));
         let info = TutorInfo {
             links: self.links.get(&*card.deck_id).cloned().unwrap_or_default(),
             sources: self
@@ -794,8 +800,8 @@ impl Reviewing {
                 .get(&*card.deck_id)
                 .cloned()
                 .unwrap_or_default(),
-            root: self.base_roots.get(&*card.deck_id).cloned(),
-            source_base: self.source_bases.get(&*card.deck_id).cloned(),
+            root,
+            source_base,
         };
         let (context_data, has_source_context) = tutor_context_for(&card, info, cfg);
         let context = context_data.context();
@@ -1559,14 +1565,12 @@ impl Tracing {
         let Some(card) = self.checkpoint_card() else {
             return false;
         };
-        let root = cfg
-            .source_access
-            .then(|| self.session.trace().base_root.clone())
-            .flatten();
-        let frozen = self
-            .session
-            .checkpoint()
-            .and_then(|checkpoint| self.session.trace().frozen_block(checkpoint));
+        let checkpoint = self.session.checkpoint();
+        let root = checkpoint
+            .filter(|_| cfg.source_access)
+            .and_then(|checkpoint| self.session.trace().browse_root(checkpoint));
+        let frozen =
+            checkpoint.and_then(|checkpoint| self.session.trace().frozen_block(checkpoint));
         let live_root = root.as_deref().filter(|path| path.exists());
         let sources = &self.session.trace().exam_layers;
         let has_url_source = sources
@@ -1655,11 +1659,7 @@ impl Walking {
         let info = TutorInfo {
             links: self.info.links.clone(),
             sources: self.info.exam_layers.clone(),
-            root: self
-                .info
-                .source_access
-                .then(|| self.info.base_root.clone())
-                .flatten(),
+            root: self.info.browse_root(&card),
             source_base: Some(self.info.source_base.clone()),
         };
         let (context_data, has_source_context) = tutor_context_for(&card, info, cfg);

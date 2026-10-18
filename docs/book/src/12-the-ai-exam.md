@@ -27,12 +27,16 @@ needn't repeat it as a `link:`. The reverse doesn't hold: a `link:` stays
 tutor-only and never becomes exam ground truth: keep supplementary reading (a
 blog post, an SO answer) as `link:` so the exam ignores it.
 
+The exam reads only `exam:` entries (the deck's own and its workspace
+manifest's). It never reads `cite:` roots or the text your cards cite: to
+examine a cited file, list it under `exam:` as well.
+
 Once every card in an exam-grounded deck has **graduated** (reached FSRS's
 review phase, past the initial learning steps) the deck is **exam due** rather
 than finished: drilled, but not yet counted, so it doesn't unlock its
-dependents yet. A deck with no `exam:` at all (and no workspace source)
-simply becomes *finished* when all its cards graduate, unlocking its
-dependents directly.
+dependents yet. A deck with no `exam:` at all (in the deck or its
+workspace manifest) simply becomes *finished* when all its cards graduate,
+unlocking its dependents directly, even when it declares `cite:` roots.
 
 ## Sitting the exam
 
