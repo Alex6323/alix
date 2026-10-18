@@ -5,6 +5,8 @@ use std::{
 
 use thiserror::Error;
 
+use crate::locator::{Locator, Target};
+
 #[derive(Debug, Clone, Copy)]
 pub enum DeckPlace<'a> {
     Member {
@@ -164,11 +166,194 @@ fn visible_root(key: &str, value: &str, base: &Path) -> VisibleRoot {
     let root = if crate::deck::is_url(value) {
         Root::Url(value.to_string())
     } else {
-        Root::Local(base.join(value))
+        Root::Local(
+            base.join(value)
+                .components()
+                .filter(|component| !matches!(component, std::path::Component::CurDir))
+                .collect(),
+        )
     };
     VisibleRoot {
         key: key.to_string(),
         root,
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CitationRoots {
+    roots: Result<Vec<VisibleRoot>, Vec<CiteViolation>>,
+    asset_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Resolved {
+    File {
+        root: PathBuf,
+        path: PathBuf,
+        range: Option<(u32, u32)>,
+    },
+    Passage {
+        key: String,
+    },
+}
+
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum ResolveError {
+    #[error("`cite:` roots are invalid: {}", violations(.0))]
+    InvalidRoots(Vec<CiteViolation>),
+    #[error("locator key `{key}` names no `cite:` root of this deck or its workspace")]
+    UnknownKey { key: String },
+    #[error(
+        "`cite:` root `{key}` is a url, so its locator is the bare key `{key}` naming a frozen passage, not a file"
+    )]
+    FileUnderUrlRoot { key: String },
+    #[error("`cite:` root `{key}` is a directory, so its locator names a file as `{key}:<path>`")]
+    PassageUnderLocalRoot { key: String },
+    #[error(
+        "passage locator `{key}` carries no `asset:`; a url root is never fetched, so only a frozen passage can be cited"
+    )]
+    PassageWithoutAsset { key: String },
+    #[error("`cite:` root `{key}` ({}) is not a directory", .root.display())]
+    RootMissing { key: String, root: PathBuf },
+    #[error("file `{path}` is not found under `cite:` root `{key}` ({})", .root.display())]
+    FileMissing {
+        key: String,
+        path: String,
+        root: PathBuf,
+    },
+    #[error("file `{path}` resolves outside `cite:` root `{key}` ({})", .root.display())]
+    Escapes {
+        key: String,
+        path: String,
+        root: PathBuf,
+    },
+    #[error("`{path}` has {lines} line(s), so lines {range} run past its end")]
+    LinesMissing {
+        path: String,
+        range: String,
+        lines: usize,
+    },
+}
+
+fn violations(violations: &[CiteViolation]) -> String {
+    violations
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+impl CitationRoots {
+    pub fn for_deck(deck: &crate::deck::Deck) -> Self {
+        let deck_path = std::path::absolute(&deck.path).unwrap_or_else(|_| deck.path.clone());
+        let folder = deck_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let workspace = crate::workspace::root_for_deck(&deck_path);
+        let asset_dir = workspace
+            .as_deref()
+            .zip(deck.deck_token.as_deref())
+            .and_then(|(root, deck_id)| crate::assets::deck_dir(root, deck_id).ok());
+        match &workspace {
+            Some(workspace) => {
+                let manifest_cite = crate::workspace::manifest_cite(workspace);
+                Self::from_place(
+                    &deck.cite,
+                    DeckPlace::Member {
+                        workspace,
+                        manifest_cite: &manifest_cite,
+                    },
+                    asset_dir,
+                )
+            }
+            None => Self::from_place(&deck.cite, DeckPlace::Loose { folder: &folder }, asset_dir),
+        }
+    }
+
+    pub(crate) fn from_place(
+        deck_cite: &[(String, String)],
+        place: DeckPlace,
+        asset_dir: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            roots: visible_roots(deck_cite, place),
+            asset_dir,
+        }
+    }
+
+    pub fn asset_dir(&self) -> Option<&Path> {
+        self.asset_dir.as_deref()
+    }
+
+    pub fn root_of(&self, key: &str) -> Option<&Root> {
+        self.roots
+            .as_ref()
+            .ok()?
+            .iter()
+            .find(|root| root.key == key)
+            .map(|root| &root.root)
+    }
+
+    pub fn check(&self, locator: &Locator, has_asset: bool) -> Result<&VisibleRoot, ResolveError> {
+        let key = || locator.key.clone();
+        let roots = self
+            .roots
+            .as_ref()
+            .map_err(|violations| ResolveError::InvalidRoots(violations.clone()))?;
+        let root = roots
+            .iter()
+            .find(|root| root.key == locator.key)
+            .ok_or_else(|| ResolveError::UnknownKey { key: key() })?;
+        match (&root.root, &locator.target) {
+            (Root::Url(_), Target::File { .. }) => {
+                Err(ResolveError::FileUnderUrlRoot { key: key() })
+            }
+            (Root::Local(_), Target::Passage) => {
+                Err(ResolveError::PassageUnderLocalRoot { key: key() })
+            }
+            (Root::Url(_), Target::Passage) if !has_asset => {
+                Err(ResolveError::PassageWithoutAsset { key: key() })
+            }
+            _ => Ok(root),
+        }
+    }
+
+    pub fn resolve(&self, locator: &Locator, has_asset: bool) -> Result<Resolved, ResolveError> {
+        let root = self.check(locator, has_asset)?;
+        let key = locator.key.clone();
+        let (Root::Local(dir), Target::File { path, range }) = (&root.root, &locator.target) else {
+            return Ok(Resolved::Passage { key });
+        };
+        let canonical_root = std::fs::canonicalize(dir)
+            .ok()
+            .filter(|resolved| resolved.is_dir())
+            .ok_or_else(|| ResolveError::RootMissing {
+                key: key.clone(),
+                root: dir.clone(),
+            })?;
+        let file = dir.join(path);
+        let missing = || ResolveError::FileMissing {
+            key: key.clone(),
+            path: path.clone(),
+            root: dir.clone(),
+        };
+        if !file.is_file() {
+            return Err(missing());
+        }
+        let canonical_file = std::fs::canonicalize(&file).map_err(|_| missing())?;
+        if !canonical_file.starts_with(&canonical_root) {
+            return Err(ResolveError::Escapes {
+                key,
+                path: path.clone(),
+                root: dir.clone(),
+            });
+        }
+        Ok(Resolved::File {
+            root: dir.clone(),
+            path: file,
+            range: *range,
+        })
     }
 }
 
@@ -231,6 +416,241 @@ mod tests {
             inner: inner.into(),
             outer_path: canonical(&fixture.workspace.join(outer_rel)),
             inner_path: canonical(&fixture.workspace.join(inner_rel)),
+        }
+    }
+
+    fn locator(text: &str) -> Locator {
+        crate::locator::parse_locator_comment(&format!("<!-- at: {text} -->"))
+            .unwrap()
+            .locator
+    }
+
+    #[test]
+    fn every_locator_resolves_inside_its_root_or_fails_as_the_table_says() {
+        let fx = fixture();
+        let ws = fx.workspace.clone();
+        let core = ws.join("crates/core");
+        std::fs::write(core.join("x.txt"), "one\ntwo\nthree\n").unwrap();
+        std::fs::write(core.join("inner/y.txt"), "deep\n").unwrap();
+        std::fs::write(ws.join("x.txt"), "elsewhere\n").unwrap();
+        std::fs::write(ws.join("secret.txt"), "secret\n").unwrap();
+        std::fs::write(fx.loose.join("here/h.txt"), "loose\n").unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(ws.join("secret.txt"), core.join("escape.txt")).unwrap();
+            std::os::unix::fs::symlink(&ws, core.join("out")).unwrap();
+        }
+        let manifest_cite: BTreeMap<String, String> =
+            pairs(&[("code", "crates/core")]).into_iter().collect();
+        let member = CitationRoots::from_place(
+            &pairs(&[("guide", "https://example.org/guide"), ("gone", "nowhere")]),
+            DeckPlace::Member {
+                workspace: &ws,
+                manifest_cite: &manifest_cite,
+            },
+            None,
+        );
+        let loose = CitationRoots::from_place(
+            &pairs(&[("here", "here")]),
+            DeckPlace::Loose { folder: &fx.loose },
+            None,
+        );
+        let file = |path: &str, range| Resolved::File {
+            root: core.clone(),
+            path: core.join(path),
+            range,
+        };
+        type Row<'a> = (
+            &'a str,
+            &'a CitationRoots,
+            &'a str,
+            bool,
+            Result<Resolved, ResolveError>,
+        );
+        let mut rows: Vec<Row> = vec![
+            (
+                "a whole file under a manifest root",
+                &member,
+                "code:x.txt",
+                false,
+                Ok(file("x.txt", None)),
+            ),
+            (
+                "a range under a manifest root",
+                &member,
+                "code:x.txt:2-3",
+                false,
+                Ok(file("x.txt", Some((2, 3)))),
+            ),
+            (
+                "a nested path",
+                &member,
+                "code:inner/y.txt",
+                false,
+                Ok(file("inner/y.txt", None)),
+            ),
+            (
+                "a frozen file still resolves its live side",
+                &member,
+                "code:x.txt:1",
+                true,
+                Ok(file("x.txt", Some((1, 1)))),
+            ),
+            (
+                "a frozen passage under a url root",
+                &member,
+                "guide",
+                true,
+                Ok(Resolved::Passage {
+                    key: "guide".into(),
+                }),
+            ),
+            (
+                "a passage without an asset",
+                &member,
+                "guide",
+                false,
+                Err(ResolveError::PassageWithoutAsset {
+                    key: "guide".into(),
+                }),
+            ),
+            (
+                "a file under a url root",
+                &member,
+                "guide:x.txt",
+                true,
+                Err(ResolveError::FileUnderUrlRoot {
+                    key: "guide".into(),
+                }),
+            ),
+            (
+                "a passage under a local root",
+                &member,
+                "code",
+                true,
+                Err(ResolveError::PassageUnderLocalRoot { key: "code".into() }),
+            ),
+            (
+                "an unknown key",
+                &member,
+                "docs:x.txt",
+                false,
+                Err(ResolveError::UnknownKey { key: "docs".into() }),
+            ),
+            (
+                "a missing root",
+                &member,
+                "gone:x.txt",
+                false,
+                Err(ResolveError::RootMissing {
+                    key: "gone".into(),
+                    root: ws.join("nowhere"),
+                }),
+            ),
+            (
+                "a mistyped directory whose basename exists elsewhere",
+                &member,
+                "code:docs/x.txt",
+                false,
+                Err(ResolveError::FileMissing {
+                    key: "code".into(),
+                    path: "docs/x.txt".into(),
+                    root: core.clone(),
+                }),
+            ),
+            (
+                "a missing file",
+                &member,
+                "code:nope.txt:1",
+                false,
+                Err(ResolveError::FileMissing {
+                    key: "code".into(),
+                    path: "nope.txt".into(),
+                    root: core.clone(),
+                }),
+            ),
+            (
+                "a loose deck root relative to the deck folder",
+                &loose,
+                "here:h.txt:1",
+                false,
+                Ok(Resolved::File {
+                    root: fx.loose.join("here"),
+                    path: fx.loose.join("here/h.txt"),
+                    range: Some((1, 1)),
+                }),
+            ),
+        ];
+        if cfg!(unix) {
+            rows.push((
+                "a symlinked file escaping the root",
+                &member,
+                "code:escape.txt",
+                false,
+                Err(ResolveError::Escapes {
+                    key: "code".into(),
+                    path: "escape.txt".into(),
+                    root: core.clone(),
+                }),
+            ));
+            rows.push((
+                "a path through a symlinked directory escaping the root",
+                &member,
+                "code:out/secret.txt:1",
+                false,
+                Err(ResolveError::Escapes {
+                    key: "code".into(),
+                    path: "out/secret.txt".into(),
+                    root: core.clone(),
+                }),
+            ));
+        }
+        for (label, roots, text, has_asset, expected) in rows {
+            assert_eq!(
+                expected,
+                roots.resolve(&locator(text), has_asset),
+                "row `{label}`"
+            );
+        }
+
+        let lines = |text: &str| {
+            member
+                .live_excerpt(&locator(text))
+                .map(|excerpt| excerpt.lines)
+                .map_err(|error| error.downcast::<ResolveError>().ok())
+        };
+        assert_eq!(
+            Ok(vec![(2, "two".to_string()), (3, "three".to_string())]),
+            lines("code:x.txt:2-3"),
+            "row `a range reads its lines`"
+        );
+        assert_eq!(
+            Ok(vec![(3, "three".to_string())]),
+            lines("code:x.txt:3"),
+            "row `the last line reads`"
+        );
+        assert_eq!(
+            Ok(vec![
+                (1, "one".to_string()),
+                (2, "two".to_string()),
+                (3, "three".to_string())
+            ]),
+            lines("code:x.txt"),
+            "row `a whole file reads every line`"
+        );
+        for (label, text, range) in [
+            ("a range running past the end", "code:x.txt:2-9", "2-9"),
+            ("a line past the end", "code:x.txt:4", "4"),
+        ] {
+            assert_eq!(
+                Err(Some(ResolveError::LinesMissing {
+                    path: "x.txt".into(),
+                    range: range.into(),
+                    lines: 3,
+                })),
+                lines(text),
+                "row `{label}`"
+            );
         }
     }
 

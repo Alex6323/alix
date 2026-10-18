@@ -78,8 +78,8 @@ void main() {
     File('${root.path}/source.txt').writeAsStringSync('one\ntwo\n');
     writeTestDeck(
       trace,
-      '---\ntrace: path\nexam: source.txt\n---\n'
-      '## Predict\nanswer\n<!-- at: 1 -->\n',
+      '---\ntrace: path\nexam: source.txt\ncite:\n  - src: .\n---\n'
+      '## Predict\nanswer\n<!-- at: src:source.txt:1 -->\n',
     );
     await pumpReview(
       tester,

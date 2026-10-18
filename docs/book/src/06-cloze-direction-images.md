@@ -424,35 +424,44 @@ the fence references on more than one line, where which occurrence is
 
 ## Source citations
 
-A plain fact card can show *where its answer comes from*. Declare the deck's source
-with a `exam:` line in the frontmatter, give the card an `<!-- at: ... -->`
-locator into it, and on reveal the card offers to swap the worded answer for the
+A plain fact card can show *where its answer comes from*. Name the folders a
+citation may point into with a `cite:` list in the frontmatter (each entry is
+one key and one root), give the card an `<!-- at: ... -->` locator under one
+of those keys, and on reveal the card offers to swap the worded answer for the
 exact source lines:
 
 ```
 ---
-exam: src/string.rs
+cite:
+  - code: src
 ---
 
 ## What does the `String` struct hold?
 A `Vec<u8>` (its bytes).
-<!-- at: src/string.rs:1-3 fingerprint: xxh64-0123456789abcdef -->
+<!-- at: code:string.rs:1-3 fingerprint: xxh64-0123456789abcdef -->
 ```
 
-The locator is the same shape a [trace checkpoint](13-trace-decks.md) uses. Its
-fields are named and ordered: `at:` is the source path and line range (e.g.
-`src/string.rs:1-3`, just `lines` when `exam:` is a single file, or a
-range-less path or URL to cite the whole source, the form a frozen URL
-source uses), and
-`fingerprint:` is an `xxh64-<hex>` digest of the displayed source text. alix
+A `cite:` key is lowercase (`[a-z][a-z0-9_-]*`). Its root is a folder, relative
+to the workspace folder (the deck's own folder for a loose deck), or a URL,
+which is never fetched: a URL root only holds frozen passages. A workspace's
+`alix.toml` declares roots every member sees in a `[cite]` table
+(`code = "src"`), and a deck may not repeat a manifest key or declare a root
+inside another root it sees. The locator is the same shape a
+[trace checkpoint](13-trace-decks.md) uses. Its fields are named and ordered:
+`at:` is `<key>:<path>[:<lines>]`, the key, the file's path below that root,
+and a line range (`code:string.rs:1-3`; without a range the whole file is
+cited; a bare `<key>` cites the frozen passage of a URL root), and
+`fingerprint:` is an `xxh64-<hex>` digest of the displayed source text. A
+locator without a key, a key no root declares, or a path that leaves its root
+is an error; nothing searches parent folders or file names on its behalf. alix
 writes the fingerprint when it creates a cited card or when you explicitly
 repair a hand-authored citation. A fact card may repeat the whole directive when
 its answer rests on several disjoint source ranges:
 
 ```markdown
-<!-- at: src/state.rs:64-74 fingerprint: xxh64-0123456789abcdef -->
-<!-- at: src/state.rs:114-118 fingerprint: xxh64-123456789abcdef0 -->
-<!-- at: src/state.rs:152-158 fingerprint: xxh64-23456789abcdef01 -->
+<!-- at: code:state.rs:64-74 fingerprint: xxh64-0123456789abcdef -->
+<!-- at: code:state.rs:114-118 fingerprint: xxh64-123456789abcdef0 -->
+<!-- at: code:state.rs:152-158 fingerprint: xxh64-23456789abcdef01 -->
 ```
 
 Each locator remains one contiguous range; separate directives never imply
@@ -480,7 +489,7 @@ remain untouched for semantic review. Initializing a workspace member goes one
 further and **freezes** its source evidence and local images below
 `assets/deck-<token>/`, so the deck travels without the original source and the
 quotes never shift. Freezing stores only the cited excerpt, never the whole
-file, and leaves the deck's `exam:` pointed at the real material: each frozen
-citation keeps its real path in `at:` and gains an `asset:` field naming the
-content-addressed object, so a drift check can still compare against the live
-source when it is reachable.
+file, and leaves the deck's `cite:` roots pointed at the real material: each
+frozen citation keeps its key and path in `at:` and gains an `asset:` field
+naming the content-addressed object, so a drift check can still compare
+against the live file under that key's root when it is reachable.

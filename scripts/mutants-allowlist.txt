@@ -123,8 +123,8 @@ src/paired.rs:286: replace || with && in check_entry_name
 # `end_line` at 1897, and every trailing machinery comment overwrites it at
 # 1922 before either escape at 1053 or 1622; errors return no table first.
 # Line-pinned because `scan` holds other arithmetic.
-src/parser/mod.rs:1169: replace + with - in scan
-src/parser/mod.rs:1169: replace + with * in scan
+src/parser/mod.rs:1173: replace + with - in scan
+src/parser/mod.rs:1173: replace + with * in scan
 
 # EQUIVALENT, provably. `ground` reaches this comparison only through
 # `hex_color`, so `ink` is always the luminance of an 8-bit RGB triple.

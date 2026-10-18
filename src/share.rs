@@ -410,9 +410,7 @@ fn stage_deck_bundle_with_parts(
 }
 
 fn validate_bundle_material(deck: &crate::deck::Deck, root: &Path) -> Result<()> {
-    if !deck.exam.is_empty() {
-        crate::assets::validate_at_root(deck, root)?;
-    }
+    crate::assets::validate_at_root(deck, root)?;
     let text = std::fs::read_to_string(&deck.path)
         .with_context(|| format!("cannot read {}", deck.path.display()))?;
     for image in crate::parser::image_references(&text) {
@@ -1410,8 +1408,8 @@ mod tests {
         std::fs::write(
             &deck_path,
             format!(
-                "---\nformat-version: 1\nid: deck-deck1\nexam: assets/deck-deck1/{source_name}\n---\n\
-                 ## q\na\n<!-- at: {source_name}:1 -->\n<!-- id: card-card1 -->\n"
+                "---\nformat-version: 1\nid: deck-deck1\nexam: assets/deck-deck1/{source_name}\ncite:\n  - src: assets/deck-deck1\n---\n\
+                 ## q\na\n<!-- at: src:{source_name}:1 -->\n<!-- id: card-card1 -->\n"
             ),
         )
         .unwrap();
@@ -2225,8 +2223,8 @@ mod tests {
         let deck_path = root.join("m.md");
         std::fs::write(
             &deck_path,
-            "---\nformat-version: 1\nid: \"deck-m1\"\nexam: .\n---\n## q\na\n\
-             <!-- at: code.rs:1 fingerprint: xxh64-0000000000000000 \
+            "---\nformat-version: 1\nid: \"deck-m1\"\nexam: .\ncite:\n  - src: .\n---\n## q\na\n\
+             <!-- at: src:code.rs:1 fingerprint: xxh64-0000000000000000 \
              asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.rs -->\n\
              <!-- id: card-m1c1 -->\n",
         )

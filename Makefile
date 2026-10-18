@@ -607,7 +607,7 @@ parser-hostility-test:
 	cargo test --lib parser::tests::one_authored_base_id_remains_legal_for_every_derived_or_inert_shape
 
 locator-hostility-test:
-	cargo test --lib source::tests::parse_locator_fields_rejects_
+	cargo test --lib locator::tests::
 
 zip-receive-fault-test:
 	cargo test --test cli receive_a_zip_folder_refuses_to_clobber_an_existing_dest -- --exact

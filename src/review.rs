@@ -280,7 +280,7 @@ impl CardView {
             citations: card
                 .citations
                 .iter()
-                .map(|citation| citation.locator.clone())
+                .map(|citation| citation.locator.to_string())
                 .collect(),
         }
     }
@@ -1604,11 +1604,11 @@ $$
         let cards = parse(
             "## q\n\
              a\n\
-             <!-- at: src/lib.rs:10-20 -->\n\
-             <!-- at: src/store.rs:30-40 -->\n",
+             <!-- at: src:lib.rs:10-20 -->\n\
+             <!-- at: src:store.rs:30-40 -->\n",
         );
         let view = CardView::from(&cards[0]);
-        assert_eq!(view.citations, ["src/lib.rs:10-20", "src/store.rs:30-40"]);
+        assert_eq!(view.citations, ["src:lib.rs:10-20", "src:store.rs:30-40"]);
     }
 
     const FOUR: &str = "## q1\na1\n## q2\na2\n## q3\na3\n## q4\na4\n";

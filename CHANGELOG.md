@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   an empty root) makes the deck invalid. `alix doctor` reports as errors a
   bad `[cite]` key, a deck key repeating a manifest key, a root that is a
   file, two roots where one contains the other, and a URL root in a deck
-  outside a workspace. Citations do not resolve against these roots yet.
+  outside a workspace.
 
 - The phone's deck list shows a strip of card tiers under each deck and
   workspace member, one cell per card like the web drawer's heatmap, with the
@@ -124,6 +124,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   notice; decks reach the phone through the paired desktop instead.
 
 ### Changed
+
+- Every `<!-- at: -->` locator names a `cite:` key: `<key>:<path>[:<lines>]`,
+  or a bare `<key>` for the frozen passage of a URL root. A locator without a
+  key, a key no root declares, or a path that leaves its root is an error for
+  review, `alix doctor`, and freezing alike; nothing searches parent folders
+  or file names on its behalf. A live range that runs past the end of its
+  file is an error, no longer clamped. The `locator` label in `CitationDto`
+  and `TraceSessionDto` carries the key, as does a tutor card's `at`.
+  Freezing keeps the locator exactly as authored. `alix doctor` no longer
+  nudges a long `exam:` list toward a common root, and it checks every live
+  citation of a workspace member whether or not the deck declares an `exam:`.
 
 - The deck frontmatter key and the workspace manifest key `source` are renamed
   `exam`. A deck or manifest that still uses `source` fails as an unknown key.
@@ -412,13 +423,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Drift was judged against a deck's first local source whatever root a
+  citation came from, so an unchanged file under a later source was reported
+  as gone.
+
+- Freezing collapsed same-named files from different sources into one
+  citation path, so two sources each holding `x.txt` froze as the same file.
+
+- A citation path its source lacked was retried against every parent folder
+  and then by file name, so a mistyped folder could freeze an unrelated file
+  of the same name.
+
 - `alix doctor` warns about each unknown key and each invalid value in
   `alix.toml`'s `[defaults]`, which alix ignores silently, and reports `cite`,
   `exam` or `source` inside `[defaults]` as an error.
 
 - `alix doctor` now reports a live `at:` citation it cannot resolve (a missing
-  file, or a line-only locator on a deck with several sources) as an error in
-  every mode; plain doctor used to pass it with a warning.
+  file, or a key no `cite:` root declares) as an error in every mode; plain
+  doctor used to pass it with a warning.
 
 - `alix doctor` warns about a frozen excerpt or image in a deck's asset folder
   that the deck no longer references, such as the old excerpt left behind

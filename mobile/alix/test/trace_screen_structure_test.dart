@@ -41,13 +41,14 @@ void main() {
         ? ''
         : '\n## Predict the second hop\n'
               'it reads lines two and three\n'
-              '<!-- at: 2-3 -->\n';
+              '<!-- at: src:source.txt:2-3 -->\n';
     writeTestDeck(
       '${root.path}/trace.md',
-      '---\ntrace: how it works${source ? '\nexam: source.txt' : ''}\n---\n'
+      '---\ntrace: how it works'
+          '${source ? '\nexam: source.txt\ncite:\n  - src: .' : ''}\n---\n'
           '## Predict the first hop\n'
           'it reads the first line\n'
-          '<!-- at: 1 -->\n'
+          '<!-- at: src:source.txt:1 -->\n'
           '$second',
     );
     return root;

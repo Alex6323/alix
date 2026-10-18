@@ -7,9 +7,10 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
+    cite::{CitationRoots, Root},
     deck::{AtRewrite, Deck, DeckError},
     profile::{self, Counter},
-    source::{CitationIntegrity, Excerpt, SourceBase},
+    source::{CitationIntegrity, Excerpt},
 };
 
 pub const ROOT: &str = "assets";
@@ -27,17 +28,11 @@ pub enum AssetError {
     NotWorkspaceMember(PathBuf),
     #[error("{0} has no stable deck ID")]
     MissingDeckId(PathBuf),
-    #[error("source `{0}` is missing or is not a regular file or directory")]
-    MissingSource(PathBuf),
     #[error("frozen asset `{0}` is missing")]
     MissingAsset(PathBuf),
-    #[error("source `{0}` is not UTF-8 text")]
-    NonTextSource(PathBuf),
-    #[error("citation `{locator}` is outside every declared source")]
-    CitationOutsideSource { locator: String },
     #[error("cannot freeze citation `{locator}`: {message}")]
     Citation { locator: String, message: String },
-    #[error("image `{0}` is outside the workspace and declared source boundaries")]
+    #[error("image `{0}` is outside the workspace and the deck's local `cite:` roots")]
     ImageOutsideBoundary(PathBuf),
     #[error("image `{0}` is missing or is not a regular file")]
     MissingImage(PathBuf),
@@ -92,11 +87,6 @@ pub struct FreezeReport {
 pub struct InitializeReport {
     pub stamp: crate::stamp::StampOutcome,
     pub freeze: Option<FreezeReport>,
-}
-
-enum SourceInput {
-    File { path: PathBuf },
-    Directory { path: PathBuf },
 }
 
 pub fn deck_dir(workspace_root: &Path, deck_id: &str) -> Result<PathBuf, AssetError> {
@@ -257,8 +247,7 @@ fn freeze_member_inner(
     if deck_dir(workspace_root, deck_id)?.is_dir() {
         validate_owned_dir(workspace_root, deck_id)?;
     }
-    let inputs = declared_source_inputs(workspace_root, deck)?;
-    let source_base = SourceBase::for_deck(deck);
+    let roots = CitationRoots::for_deck(deck);
     let mut evidence: Vec<String> = Vec::new();
     let mut evidence_seen: HashSet<String> = HashSet::new();
     let mut citations = Vec::new();
@@ -271,12 +260,7 @@ fn freeze_member_inner(
                 }
                 continue;
             }
-            let excerpt = citation_excerpt(&source_base, citation)?;
-            let input_index = source_owner(&inputs, &excerpt).ok_or_else(|| {
-                AssetError::CitationOutsideSource {
-                    locator: citation.locator.clone(),
-                }
-            })?;
+            let excerpt = citation_excerpt(&roots, citation)?;
             let bytes = canonical_excerpt_bytes(&excerpt);
             let extension = normalized_extension(&excerpt.path, true);
             let object = write_object(workspace_root, deck_id, &bytes, &extension)?;
@@ -285,7 +269,7 @@ fn freeze_member_inner(
                 evidence.push(asset.clone());
             }
             citations.push(AtRewrite {
-                at: excerpt_provenance(&excerpt, &inputs[input_index]),
+                at: citation.locator.clone(),
                 fingerprint: Some(crate::source::excerpt_fingerprint(&excerpt)),
                 asset: Some(asset),
                 line: citation.line,
@@ -295,7 +279,7 @@ fn freeze_member_inner(
 
     let mut image_rewrites = Vec::new();
     let mut image_objects = HashSet::new();
-    let boundaries = source_boundaries(workspace_root, &inputs);
+    let boundaries = image_boundaries(workspace_root, deck, &roots);
     for image in crate::parser::image_references(&text) {
         if crate::deck::is_url(&image.source) {
             continue;
@@ -830,70 +814,29 @@ fn assign_share(
     None
 }
 
-// A URL source grounds the exam and tutor but holds no freezable bytes;
-// `base_locals` keeps only local sources, layered exactly like citation
-// resolution (ADR 0026).
-fn declared_source_inputs(
-    workspace_root: &Path,
-    deck: &Deck,
-) -> Result<Vec<SourceInput>, AssetError> {
-    let mut inputs = Vec::new();
-    let layers = deck.exam_layers();
-    for source in layers.base_locals() {
-        if let Some(path) = crate::source::source_path(source, Some(workspace_root)) {
-            let path = path
-                .canonicalize()
-                .map_err(|_| AssetError::MissingSource(path.clone()))?;
-            if path.is_file() {
-                let bytes = read_bytes(&path)?;
-                std::str::from_utf8(&bytes).map_err(|_| AssetError::NonTextSource(path.clone()))?;
-                inputs.push(SourceInput::File { path });
-            } else if path.is_dir() {
-                inputs.push(SourceInput::Directory { path });
-            } else {
-                return Err(AssetError::MissingSource(path));
-            }
-        }
-    }
-    Ok(inputs)
-}
-
 fn citation_excerpt(
-    source_base: &SourceBase,
+    roots: &CitationRoots,
     citation: &crate::card::SourceCitation,
 ) -> Result<Excerpt, AssetError> {
-    match source_base
+    let refuse = |message: String| AssetError::Citation {
+        locator: citation.locator.to_string(),
+        message,
+    };
+    match roots
         .inspect_citation(citation)
-        .map_err(|error| AssetError::Citation {
-            locator: citation.locator.clone(),
-            message: format!("{error:#}"),
-        })? {
+        .map_err(|error| refuse(format!("{error:#}")))?
+    {
         CitationIntegrity::Current(excerpt)
         | CitationIntegrity::Unfingerprinted { excerpt, .. } => Ok(excerpt),
-        CitationIntegrity::Relocated { locator, .. } => Err(AssetError::Citation {
-            locator: citation.locator.clone(),
-            message: format!("the excerpt moved to `{locator}`"),
-        }),
-        CitationIntegrity::Changed => Err(AssetError::Citation {
-            locator: citation.locator.clone(),
-            message: "the excerpt changed or disappeared".to_string(),
-        }),
-        CitationIntegrity::Ambiguous { locators } => Err(AssetError::Citation {
-            locator: citation.locator.clone(),
-            message: format!(
-                "the excerpt matches several ranges: {}",
-                locators.join(", ")
-            ),
-        }),
+        CitationIntegrity::Relocated { locator, .. } => {
+            Err(refuse(format!("the excerpt moved to `{locator}`")))
+        }
+        CitationIntegrity::Changed => Err(refuse("the excerpt changed or disappeared".to_string())),
+        CitationIntegrity::Ambiguous { locators } => Err(refuse(format!(
+            "the excerpt matches several ranges: {}",
+            crate::source::labels(&locators)
+        ))),
     }
-}
-
-fn source_owner(inputs: &[SourceInput], excerpt: &Excerpt) -> Option<usize> {
-    let path = excerpt.path.canonicalize().ok()?;
-    inputs.iter().position(|input| match input {
-        SourceInput::File { path: source, .. } => path == *source,
-        SourceInput::Directory { path: source, .. } => path.starts_with(source),
-    })
 }
 
 fn canonical_excerpt_bytes(excerpt: &Excerpt) -> Vec<u8> {
@@ -907,43 +850,19 @@ fn canonical_excerpt_bytes(excerpt: &Excerpt) -> Vec<u8> {
     text.into_bytes()
 }
 
-fn excerpt_provenance(excerpt: &Excerpt, input: &SourceInput) -> String {
-    let first = excerpt.lines.first().map(|line| line.0).unwrap_or(1);
-    let last = excerpt.lines.last().map(|line| line.0).unwrap_or(first);
-    let path = match input {
-        SourceInput::File { path, .. } => path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.display().to_string()),
-        SourceInput::Directory { path, .. } => excerpt
-            .path
-            .canonicalize()
-            .unwrap_or_else(|_| excerpt.path.clone())
-            .strip_prefix(path)
-            .unwrap_or(&excerpt.path)
-            .to_string_lossy()
-            .into_owned(),
-    };
-    if first == last {
-        format!("{path}:{first}")
-    } else {
-        format!("{path}:{first}-{last}")
-    }
-}
-
-fn source_boundaries(workspace_root: &Path, inputs: &[SourceInput]) -> Vec<PathBuf> {
+fn image_boundaries(workspace_root: &Path, deck: &Deck, roots: &CitationRoots) -> Vec<PathBuf> {
     let mut boundaries = vec![
         workspace_root
             .canonicalize()
             .unwrap_or_else(|_| workspace_root.to_path_buf()),
     ];
-    for input in inputs {
-        let boundary = match input {
-            SourceInput::File { path, .. } => path.parent().unwrap_or(path),
-            SourceInput::Directory { path, .. } => path,
+    for (key, _) in &deck.cite {
+        let Some(Root::Local(root)) = roots.root_of(key) else {
+            continue;
         };
-        if !boundaries.contains(&boundary.to_path_buf()) {
-            boundaries.push(boundary.to_path_buf());
+        let boundary = root.canonicalize().unwrap_or_else(|_| root.clone());
+        if !boundaries.contains(&boundary) {
+            boundaries.push(boundary);
         }
     }
     boundaries
@@ -1394,7 +1313,7 @@ mod tests {
         std::fs::write(directory.path().join("old image.png"), [9, 9]).unwrap();
         let path = directory.path().join("decks/facts.md");
         let text = format!(
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n## q\n![d](diagram.PNG)\n![m](<old image.png> \"Old title\")\na\n<!-- at: notes.md:2 -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\ncite:\n  - src: .\n---\n## q\n![d](diagram.PNG)\n![m](<old image.png> \"Old title\")\na\n<!-- at: src:notes.md:2 -->\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();
@@ -1452,7 +1371,7 @@ mod tests {
         );
         let excerpt_name = object_name(b"two\n", "md");
         assert!(
-            frozen.contains("<!-- at: notes.md:2 fingerprint: xxh64-")
+            frozen.contains("<!-- at: src:notes.md:2 fingerprint: xxh64-")
                 && frozen.contains(&format!(" asset: {excerpt_name} -->")),
             "{frozen}"
         );
@@ -1477,7 +1396,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck5\"\nexam: {}\n---\n## q\na\n<!-- at: notes.md:2 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck5\"\nexam: {}\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:notes.md:2 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1487,9 +1406,9 @@ mod tests {
 
         let deck = Deck::load(&path).unwrap();
         let citation = &deck.cards[0].citations[0];
-        assert_eq!("notes.md:2", citation.locator);
+        assert_eq!("src:notes.md:2", citation.locator.to_string());
         assert!(citation.asset.is_some());
-        let CitationIntegrity::Current(excerpt) = SourceBase::for_deck(&deck)
+        let CitationIntegrity::Current(excerpt) = CitationRoots::for_deck(&deck)
             .inspect_citation(citation)
             .unwrap()
         else {
@@ -1509,7 +1428,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck2\"\nexam: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck2\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## q\np\n<!-- at: src:lib.rs:2-3 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1543,7 +1462,7 @@ mod tests {
         assert!(!frozen.contains("uncited.rs"));
         assert!(!frozen.contains("secret"));
         assert!(
-            frozen.contains("<!-- at: lib.rs:2-3 fingerprint: xxh64-")
+            frozen.contains("<!-- at: src:lib.rs:2-3 fingerprint: xxh64-")
                 && frozen.contains(&format!(" asset: {evidence_name} -->")),
             "{frozen}"
         );
@@ -1565,7 +1484,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck6\"\nexam: {}\n---\n## q\np\n<!-- at: lib.rs:2-3 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck6\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## q\np\n<!-- at: src:lib.rs:2-3 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1575,8 +1494,8 @@ mod tests {
 
         let deck = Deck::load(&path).unwrap();
         let citation = &deck.cards[0].citations[0];
-        assert_eq!("lib.rs:2-3", citation.locator);
-        let CitationIntegrity::Current(excerpt) = SourceBase::for_deck(&deck)
+        assert_eq!("src:lib.rs:2-3", citation.locator.to_string());
+        let CitationIntegrity::Current(excerpt) = CitationRoots::for_deck(&deck)
             .inspect_citation(citation)
             .unwrap()
         else {
@@ -1598,7 +1517,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck8\"\nexam: {}\n---\n## q\na\n<!-- at: notes.md:5-104 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck8\"\nexam: {}\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:notes.md:5-104 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1620,14 +1539,14 @@ mod tests {
         );
         let frozen = std::fs::read_to_string(&path).unwrap();
         assert!(
-            frozen.contains("<!-- at: notes.md:5-104 fingerprint: xxh64-")
+            frozen.contains("<!-- at: src:notes.md:5-104 fingerprint: xxh64-")
                 && frozen.contains(&format!(" asset: {evidence_name} -->")),
             "the authored range must survive freezing verbatim: {frozen}"
         );
 
         std::fs::write(&source, "MUTATED\n").unwrap();
         let deck = Deck::load(&path).unwrap();
-        let CitationIntegrity::Current(excerpt) = SourceBase::for_deck(&deck)
+        let CitationIntegrity::Current(excerpt) = CitationRoots::for_deck(&deck)
             .inspect_citation(&deck.cards[0].citations[0])
             .unwrap()
         else {
@@ -1675,12 +1594,16 @@ mod tests {
     #[test]
     fn a_member_with_no_own_source_initializes_and_freezes_from_the_workspace_source() {
         let directory = workspace();
-        std::fs::write(directory.path().join("alix.toml"), "exam = \"notes.md\"\n").unwrap();
+        std::fs::write(
+            directory.path().join("alix.toml"),
+            "exam = \"notes.md\"\n[cite]\nsrc = \".\"\n",
+        )
+        .unwrap();
         std::fs::write(directory.path().join("notes.md"), "one\ntwo\nthree\n").unwrap();
         let path = directory.path().join("decks/facts.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-deck7\"\n---\n## q\na\n<!-- at: notes.md:2 -->\n<!-- id: card-card7 -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck7\"\n---\n## q\na\n<!-- at: src:notes.md:2 -->\n<!-- id: card-card7 -->\n",
         )
         .unwrap();
 
@@ -1708,7 +1631,7 @@ mod tests {
         );
         let frozen = std::fs::read_to_string(&path).unwrap();
         assert!(
-            frozen.contains("<!-- at: notes.md:2 fingerprint: xxh64-")
+            frozen.contains("<!-- at: src:notes.md:2 fingerprint: xxh64-")
                 && frozen.contains(&format!(" asset: {excerpt_name} -->")),
             "{frozen}"
         );
@@ -1784,56 +1707,93 @@ mod tests {
     }
 
     #[test]
-    fn source_owner_finds_the_matching_input_instead_of_assuming_the_first() {
-        let directory = tempfile::tempdir().unwrap();
-        let first = directory.path().join("first.md");
-        let second = directory.path().join("second.md");
-        let outside = directory.path().join("outside.md");
-        for path in [&first, &second, &outside] {
-            std::fs::write(path, "line\n").unwrap();
+    fn freezing_two_roots_that_each_hold_x_txt_keeps_each_citations_key_and_freezes_distinct_objects()
+     {
+        let directory = workspace();
+        for (folder, body) in [("a", "from a\n"), ("b", "from b\n")] {
+            std::fs::create_dir(directory.path().join(folder)).unwrap();
+            std::fs::write(directory.path().join(folder).join("x.txt"), body).unwrap();
         }
-        let inputs = vec![
-            SourceInput::File {
-                path: first.canonicalize().unwrap(),
-            },
-            SourceInput::File {
-                path: second.canonicalize().unwrap(),
-            },
-        ];
-        let excerpt = |path: &Path| Excerpt {
-            path: path.to_path_buf(),
-            lines: vec![(1, "line".to_string())],
-            truncated: false,
-        };
+        std::fs::write(directory.path().join("alix.toml"), "[cite]\na = \"a\"\n").unwrap();
+        let path = directory.path().join("decks/two.md");
+        std::fs::write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-deck9\"\ncite:\n  - b: b\n---\n\
+             ## from a\na\n<!-- at: a:x.txt:1 -->\n\
+             ## from b\nb\n<!-- at: b:x.txt:1 -->\n\
+             ## whole file\nc\n<!-- at: a:x.txt -->\n",
+        )
+        .unwrap();
 
-        assert_eq!(Some(1), source_owner(&inputs, &excerpt(&second)));
-        assert_eq!(None, source_owner(&inputs, &excerpt(&outside)));
+        let report = freeze_member(&path).unwrap();
+
+        assert_eq!(2, report.evidence, "step objects: one per distinct excerpt");
+        let object_a = object_name(b"from a\n", "txt");
+        let object_b = object_name(b"from b\n", "txt");
+        assert_ne!(object_a, object_b);
+        for object in [&object_a, &object_b] {
+            assert!(
+                directory
+                    .path()
+                    .join(format!("assets/deck-deck9/{object}"))
+                    .is_file(),
+                "step objects: {object} is frozen"
+            );
+        }
+        let frozen = std::fs::read_to_string(&path).unwrap();
+        for (key, object) in [("a", &object_a), ("b", &object_b)] {
+            let line = frozen
+                .lines()
+                .find(|line| line.starts_with(&format!("<!-- at: {key}:x.txt:1 fingerprint: ")))
+                .unwrap_or_else(|| panic!("step keys: `{key}:x.txt:1` keeps its key: {frozen}"));
+            assert!(
+                line.ends_with(&format!(" asset: {object} -->")),
+                "step keys: `{key}` freezes its own root's file: {line}"
+            );
+        }
+        assert!(
+            frozen
+                .lines()
+                .any(|line| line.starts_with("<!-- at: a:x.txt fingerprint: ")
+                    && line.ends_with(&format!(" asset: {object_a} -->"))),
+            "step form: a whole-file citation freezes without a `1-N` range: {frozen}"
+        );
+        let deck = Deck::load(&path).unwrap();
+        let roots = CitationRoots::for_deck(&deck);
+        for (card, expected) in deck.cards.iter().zip(["from a", "from b", "from a"]) {
+            let CitationIntegrity::Current(excerpt) =
+                roots.inspect_citation(&card.citations[0]).unwrap()
+            else {
+                panic!("step read: `{}` is current", card.citations[0].locator);
+            };
+            assert_eq!(
+                vec![(1, expected.to_string())],
+                excerpt.lines,
+                "step read: `{}` serves its own root's bytes",
+                card.citations[0].locator
+            );
+        }
     }
 
     #[test]
-    fn source_boundaries_are_ordered_and_unique() {
-        let workspace = workspace();
-        let root = workspace.path().canonicalize().unwrap();
-        let source_file = root.join("source.md");
-        std::fs::write(&source_file, "source").unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        let outside_root = outside.path().canonicalize().unwrap();
-        let inputs = vec![
-            SourceInput::File {
-                path: source_file.canonicalize().unwrap(),
-            },
-            SourceInput::Directory {
-                path: outside_root.clone(),
-            },
-            SourceInput::Directory {
-                path: outside_root.clone(),
-            },
-        ];
+    fn freezing_refuses_a_passage_locator_without_an_asset() {
+        let directory = workspace();
+        let path = directory.path().join("decks/guide.md");
+        std::fs::write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-deck9\"\ncite:\n  - guide: https://example.org/guide\n---\n\
+             ## q\na\n<!-- at: guide -->\n",
+        )
+        .unwrap();
 
-        assert_eq!(
-            vec![root, outside_root],
-            source_boundaries(workspace.path(), &inputs)
-        );
+        let error = freeze_member(&path).unwrap_err();
+
+        let AssetError::Citation { locator, message } = error else {
+            panic!("the freeze refuses the citation: {error}");
+        };
+        assert_eq!("guide", locator);
+        assert!(message.contains("no `asset:`"), "{message}");
+        assert!(!directory.path().join(ROOT).exists());
     }
 
     #[test]
@@ -1841,7 +1801,7 @@ mod tests {
         let directory = workspace();
         let path = directory.path().join("decks/remote.md");
         let original =
-            b"---\nexam: https://example.test/source.md\n---\n## q\na\n<!-- at: notes.md:1 -->\n";
+            b"---\nexam: https://example.test/source.md\n---\n## q\na\n<!-- at: src:notes.md:1 -->\n";
         std::fs::write(&path, original).unwrap();
 
         let error = initialize(&path).unwrap_err();
@@ -1862,8 +1822,8 @@ mod tests {
         let path = directory.path().join("decks/mixed.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam:\n  - https://example.test/page\n  - notes.md\n---\n\
-             ## q\na\n<!-- at: notes.md:2 -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam:\n  - https://example.test/page\n  - notes.md\ncite:\n  - src: .\n---\n\
+             ## q\na\n<!-- at: src:notes.md:2 -->\n",
         )
         .unwrap();
 
@@ -2965,7 +2925,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n## q\n```mermaid\nflowchart LR\n A-->B\n```\na\n<!-- at: notes.md:2 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\ncite:\n  - src: .\n---\n## q\n```mermaid\nflowchart LR\n A-->B\n```\na\n<!-- at: src:notes.md:2 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -3033,7 +2993,7 @@ mod tests {
         std::fs::write(directory.path().join("diagram.png"), [0, 1, 2, 255]).unwrap();
         let path = directory.path().join("decks/facts.md");
         let text = format!(
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n## q\n![d](diagram.png)\na\n<!-- at: notes.md:2 -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\ncite:\n  - src: .\n---\n## q\n![d](diagram.png)\na\n<!-- at: src:notes.md:2 -->\n",
             crate::parser::yaml_quote(&source.display().to_string())
         );
         std::fs::write(&path, &text).unwrap();
@@ -3052,7 +3012,7 @@ mod tests {
             .lines()
             .map(|line| {
                 if line.starts_with("<!-- at: ") {
-                    "<!-- at: notes.md:3 -->".to_string()
+                    "<!-- at: src:notes.md:3 -->".to_string()
                 } else {
                     line.to_string()
                 }

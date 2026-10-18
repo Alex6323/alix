@@ -15,7 +15,7 @@ use crate::{
     library,
     parser::yaml_quote,
     share,
-    source::{self, resolve_source},
+    source::resolve_source,
     store::Store,
     title,
     trace_ai::{build_run_config, clean_to_cards},
@@ -764,9 +764,7 @@ fn slug(title: &str) -> String {
 
 /// The plan's `@source:` line may join several files with ` + ` (first full,
 /// rest relative to its directory); the deck format takes one source per list
-/// entry (ADR 0026), so the scope splits into resolved entries here. Anchors
-/// overlap-aware via [`source::resolve_under_base`]: a plain `root.join(scope)`
-/// can double an already-rooted scope into a dead path.
+/// entry (ADR 0026), so the scope splits into resolved entries here.
 fn rewrite_scope(scope: &str, root: Option<&Path>) -> Vec<String> {
     let scope = scope.trim();
     if is_url(scope) || root.is_none() {
@@ -794,7 +792,7 @@ fn rewrite_scope(scope: &str, root: Option<&Path>) -> Vec<String> {
                 .as_ref()
                 .map(|anchor| anchor.join(part))
                 .filter(|candidate| candidate.exists())
-                .unwrap_or_else(|| source::resolve_under_base(root, part))
+                .unwrap_or_else(|| root.join(part))
         };
         if anchor.is_none() {
             anchor = resolved.parent().map(Path::to_path_buf);
@@ -1567,7 +1565,7 @@ back a
         fs::write(
             dir.join("decks/01-t.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: t\nexam: {}\n---\n## h\np\n<!-- at: a.rs:1-2 -->\n",
+                "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: t\nexam: {0}\ncite:\n  - src: {0}\n---\n## h\np\n<!-- at: src:a.rs:1-2 -->\n",
                 src.display()
             ),
         )
@@ -1575,7 +1573,7 @@ back a
         fs::write(
             dir.join("decks/02-d.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-facts\"\nexam: {}\n---\n## q\na\n<!-- at: a.rs:3 -->\n",
+                "---\nformat-version: 1\nid: \"deck-facts\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## q\na\n<!-- at: src:a.rs:3 -->\n",
                 src.display()
             ),
         )
@@ -1600,9 +1598,9 @@ back a
         );
         assert!(!fact.contains("exam: \"assets/"), "{fact}");
         assert!(!fact.contains("origin:"), "freezing stamps nothing: {fact}");
-        assert!(!fact.contains("<!-- at: a.rs:3 -->"), "{fact}");
+        assert!(!fact.contains("<!-- at: src:a.rs:3 -->"), "{fact}");
         assert!(
-            fact.contains("<!-- at: a.rs:3 fingerprint: xxh64-")
+            fact.contains("<!-- at: src:a.rs:3 fingerprint: xxh64-")
                 && fact.contains(&format!(" asset: {fact_name} -->")),
             "{fact}"
         );
@@ -1619,7 +1617,7 @@ back a
         fs::write(
             dir.join("decks/01-broken.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-broken\"\nexam: {}/does-not-exist\n---\n## q\na\n<!-- at: src/x.rs:1 -->\n",
+                "---\nformat-version: 1\nid: \"deck-broken\"\nexam: {0}/does-not-exist\ncite:\n  - src: {0}/does-not-exist\n---\n## q\na\n<!-- at: src:x.rs:1 -->\n",
                 dir.display()
             ),
         )
@@ -1689,7 +1687,7 @@ back a
         fs::write(
             dir.path().join("decks/both.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck4\"\nexam: {}\n---\n## q\n![diagram](diagram.png)\na\n<!-- at: notes.md:2 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck4\"\nexam: {}\ncite:\n  - src: .\n---\n## q\n![diagram](diagram.png)\na\n<!-- at: src:notes.md:2 -->\n",
                 crate::parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1697,8 +1695,8 @@ back a
 
         let summary = freeze_workspace(dir.path()).unwrap();
 
-        assert_eq!((1, 2), (summary.decks, summary.files));
         assert!(summary.failed.is_empty(), "{:?}", summary.failed);
+        assert_eq!((1, 2), (summary.decks, summary.files));
         assert_eq!(
             2,
             fs::read_dir(dir.path().join("assets/deck-deck4"))
@@ -1730,7 +1728,7 @@ back a
     }
 
     #[test]
-    fn rewrite_scope_anchors_a_repo_relative_scope_without_doubling() {
+    fn rewrite_scope_joins_each_part_onto_the_root_and_never_searches_for_a_mistyped_path() {
         // The property under test is WHICH files get selected, not the
         // separator shape, so compare with separators normalized: on Windows
         // Path::join-built expectations and rewrite_scope's string output mix
@@ -1751,11 +1749,17 @@ back a
 
         assert_eq!(
             slashed(vec![lib.clone()]),
-            slashed(rewrite_scope("crates/mycrate/src/lib.rs", Some(&source)))
+            slashed(rewrite_scope("src/lib.rs", Some(&source)))
         );
         assert_eq!(
-            slashed(vec![lib.clone()]),
-            slashed(rewrite_scope("src/lib.rs", Some(&source)))
+            slashed(vec![
+                source
+                    .join("crates/mycrate/src/lib.rs")
+                    .display()
+                    .to_string()
+            ]),
+            slashed(rewrite_scope("crates/mycrate/src/lib.rs", Some(&source))),
+            "a repo-relative path under a narrower root is joined as written, not rescued"
         );
         assert_eq!(
             slashed(vec![source.display().to_string()]),
@@ -1773,10 +1777,7 @@ back a
                 lib.clone(),
                 crate_src.join("other.rs").display().to_string()
             ]),
-            slashed(rewrite_scope(
-                "crates/mycrate/src/lib.rs + other.rs",
-                Some(&source)
-            ))
+            slashed(rewrite_scope("src/lib.rs + other.rs", Some(&source)))
         );
 
         let _ = fs::remove_dir_all(&root);

@@ -144,11 +144,13 @@ void main() {
         '---\n'
             'trace: a picker-launched trace\n'
             'exam: source.txt\n'
+            'cite:\n'
+            '  - src: .\n'
             'title: T\n'
             '---\n'
             '## Predict\n'
             'it reads line one\n'
-            '<!-- at: 1 -->\n',
+            '<!-- at: src:source.txt:1 -->\n',
       );
       final launchSheet = find.text('Reconstruct');
       final deadlineSheet = find.text('Ready by…');

@@ -1,7 +1,7 @@
 # 0026: Self-describing ids and named locator fields
 
 - Status: Accepted
-- Evidence: parse_locator_fields in src/source.rs
+- Evidence: parse_locator_comment in src/locator.rs
 - Details evolved by
   [ADR 0039](0039-span-blanks-are-the-only-cloze.md): the decimal cloze sub-id
   (`card-<token>-<n>`) retires with the inline `\blank` marker; the id grammar

@@ -8,7 +8,9 @@ use twox_hash::XxHash64;
 
 use crate::{
     card::SourceCitation,
-    deck::{Deck, is_url},
+    cite::{CitationRoots, ResolveError, Resolved, Root},
+    deck::Deck,
+    locator::{Locator, Target, format_range},
 };
 
 /// The display cap: [`Excerpt::capped_for_display`] truncates (with a marker)
@@ -41,9 +43,9 @@ impl Excerpt {
 pub enum CitationIntegrity {
     Current(Excerpt),
     Unfingerprinted { excerpt: Excerpt, fingerprint: u64 },
-    Relocated { excerpt: Excerpt, locator: String },
+    Relocated { excerpt: Excerpt, locator: Locator },
     Changed,
-    Ambiguous { locators: Vec<String> },
+    Ambiguous { locators: Vec<Locator> },
 }
 
 pub fn excerpt_fingerprint(excerpt: &Excerpt) -> u64 {
@@ -82,12 +84,12 @@ pub fn parse_locator_fingerprint(value: &str) -> Option<u64> {
 
 pub fn stamp_citations(path: &Path) -> Result<usize> {
     let deck = Deck::load(path)?;
-    let base = SourceBase::for_deck(&deck);
+    let roots = CitationRoots::for_deck(&deck);
     let mut stamped = 0;
     let mut rewrites = Vec::new();
     for card in &deck.cards {
         for citation in &card.citations {
-            let fingerprint = match base.inspect_citation(citation)? {
+            let fingerprint = match roots.inspect_citation(citation)? {
                 CitationIntegrity::Current(_) => citation.fingerprint,
                 CitationIntegrity::Unfingerprinted { fingerprint, .. } => {
                     stamped += 1;
@@ -101,7 +103,7 @@ pub fn stamp_citations(path: &Path) -> Result<usize> {
                 }
                 CitationIntegrity::Ambiguous { locators } => bail!(
                     "source excerpt matches several ranges before it could be stamped: {}",
-                    locators.join(", ")
+                    labels(&locators)
                 ),
             };
             rewrites.push(crate::deck::AtRewrite {
@@ -118,6 +120,15 @@ pub fn stamp_citations(path: &Path) -> Result<usize> {
     Ok(stamped)
 }
 
+pub fn labels(locators: &[Locator]) -> String {
+    locators
+        .iter()
+        .map(|locator| format!("`{locator}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+#[cfg(feature = "full")]
 /// A URL or absent source yields the deck's own folder as the base and no
 /// source file.
 pub(crate) fn resolve_source(
@@ -128,7 +139,7 @@ pub(crate) fn resolve_source(
     let Some(source) = source else {
         return (deck_dir, None);
     };
-    if is_url(source) {
+    if crate::deck::is_url(source) {
         return (deck_dir, None);
     }
     let path = if Path::new(source).is_absolute() {
@@ -144,152 +155,7 @@ pub(crate) fn resolve_source(
     }
 }
 
-/// Computed once per deck load, so a frontend can read a card's cited
-/// excerpt on reveal without re-loading the deck.
-#[derive(Clone, Debug)]
-pub struct SourceBase {
-    base_dir: PathBuf,
-    source_file: Option<PathBuf>,
-    asset_dir: Option<PathBuf>,
-}
-
-impl SourceBase {
-    pub fn for_deck(deck: &Deck) -> Self {
-        let layers = deck.exam_layers();
-        let locals = layers.base_locals();
-        let first = locals.first().map(|source| source.as_str());
-        // With several local sources a lines-only locator is ambiguous, so no
-        // single source file is exposed.
-        let multi = locals.len() > 1;
-        let content_root = crate::workspace::content_root(&deck.path);
-        let (base_dir, source_file) = resolve_source(Some(&content_root), first);
-        Self {
-            base_dir,
-            source_file: if multi { None } else { source_file },
-            asset_dir: crate::workspace::root_for_deck(&deck.path)
-                .zip(deck.deck_token.as_deref())
-                .and_then(|(root, deck_id)| crate::assets::deck_dir(&root, deck_id).ok()),
-        }
-    }
-
-    pub fn excerpt(&self, locator: &str) -> Result<Excerpt> {
-        excerpt_at(&self.base_dir, self.source_file.as_deref(), locator)
-    }
-
-    /// When the citation is asset-backed, bytes come from the frozen object,
-    /// which holds exactly the excerpt, read in full; `at:` never indexes
-    /// into the asset, it only supplies the real-source path and the display
-    /// numbering (ADR 0026).
-    pub(crate) fn citation_excerpt(&self, citation: &SourceCitation) -> Result<Excerpt> {
-        let Some(asset) = citation.asset.as_deref() else {
-            return self.excerpt(&citation.locator);
-        };
-        if !crate::assets::is_object_name(asset) {
-            bail!("frozen asset `{asset}` is not a content-addressed object name");
-        }
-        let asset_dir = self.asset_dir.as_deref().ok_or_else(|| {
-            anyhow!("citation names frozen asset `{asset}`, but the deck owns no asset directory")
-        })?;
-        let mut excerpt = read_excerpt(&asset_dir.join(asset), None)?;
-        let (_, spec) = parse_locator(&citation.locator);
-        let start = spec
-            .as_deref()
-            .map(|spec| parse_line_range(spec).0)
-            .unwrap_or(1);
-        for (index, line) in excerpt.lines.iter_mut().enumerate() {
-            line.0 = start + index;
-        }
-        Ok(excerpt)
-    }
-
-    pub fn inspect_citation(&self, citation: &SourceCitation) -> Result<CitationIntegrity> {
-        let current = self.citation_excerpt(citation);
-        let Some(expected) = citation.fingerprint else {
-            let excerpt = current?;
-            return Ok(CitationIntegrity::Unfingerprinted {
-                fingerprint: excerpt_fingerprint(&excerpt),
-                excerpt,
-            });
-        };
-        if let Ok(excerpt) = &current
-            && excerpt_fingerprint(excerpt) == expected
-        {
-            return Ok(CitationIntegrity::Current(excerpt.clone()));
-        }
-        // A frozen object is immutable: a mismatch is corrupt evidence, and a
-        // relocation scan against the live `at:` path must never re-derive the
-        // frozen fingerprint (ADR 0026).
-        if citation.asset.is_some() {
-            return Ok(CitationIntegrity::Changed);
-        }
-
-        let (file, spec) = parse_locator(&citation.locator);
-        let Some(spec) = spec else {
-            current?;
-            return Ok(CitationIntegrity::Changed);
-        };
-        let path = self
-            .locator_path(file.as_deref())
-            .ok_or_else(|| anyhow!("cannot resolve source locator `{}`", citation.locator))?;
-        let text = std::fs::read_to_string(&path)
-            .map_err(|error| anyhow!("cannot read the source `{}`: {error}", path.display()))?;
-        let file_lines: Vec<&str> = text.lines().collect();
-        let (range_start, range_end) = parse_line_range(&spec);
-        let range_len = range_end.saturating_sub(range_start) + 1;
-        if file_lines.len() < range_len {
-            return Ok(CitationIntegrity::Changed);
-        }
-
-        let mut matches = Vec::new();
-        for offset in 0..=file_lines.len() - range_len {
-            let window = &file_lines[offset..offset + range_len];
-            if fingerprint_lines(window.iter().copied()) == expected {
-                matches.push((
-                    excerpt_from_lines(&path, &file_lines, offset + 1, range_len),
-                    relocated_locator(file.as_deref(), offset + 1, range_len),
-                ));
-            }
-        }
-        match matches.len() {
-            0 => Ok(CitationIntegrity::Changed),
-            1 => {
-                let (excerpt, locator) = matches.remove(0);
-                Ok(CitationIntegrity::Relocated { excerpt, locator })
-            }
-            _ => Ok(CitationIntegrity::Ambiguous {
-                locators: matches.into_iter().map(|(_, locator)| locator).collect(),
-            }),
-        }
-    }
-
-    pub fn checked_excerpt(&self, citation: &SourceCitation) -> Result<Excerpt> {
-        match self.inspect_citation(citation)? {
-            CitationIntegrity::Current(excerpt) => Ok(excerpt),
-            CitationIntegrity::Unfingerprinted { .. } => bail!(
-                "source excerpt has no fingerprint; review it, then run \
-                 `alix doctor --repair-source-locators`"
-            ),
-            CitationIntegrity::Relocated { locator, .. } => bail!(
-                "source excerpt moved to `{locator}`; run \
-                 `alix doctor --repair-source-locators` to rebase it"
-            ),
-            CitationIntegrity::Changed => {
-                bail!(
-                    "source excerpt changed or disappeared; review the citation before updating it"
-                )
-            }
-            CitationIntegrity::Ambiguous { locators } => bail!(
-                "source excerpt matches several ranges ({}); review the citation before updating it",
-                locators.join(", ")
-            ),
-        }
-    }
-
-    pub(crate) fn locator_path(&self, file: Option<&str>) -> Option<PathBuf> {
-        locator_path(&self.base_dir, self.source_file.as_deref(), file)
-    }
-}
-
+#[cfg(feature = "full")]
 /// A source value is one expression: a URL, a file, or a directory (ADR 0026).
 pub(crate) fn source_path(value: &str, base: Option<&Path>) -> Option<PathBuf> {
     let value = value.trim();
@@ -305,258 +171,227 @@ pub(crate) fn source_path(value: &str, base: Option<&Path>) -> Option<PathBuf> {
     })
 }
 
-/// A locator is a single span, never comma-separated, so a stitched,
-/// misleading excerpt is impossible.
-pub fn parse_locator(locator: &str) -> (Option<String>, Option<String>) {
-    let locator = locator.trim();
-    if let Some((file, spec)) = locator.rsplit_once(':')
-        && is_line_spec(spec)
-    {
-        return (Some(file.trim().to_string()), Some(spec.trim().to_string()));
+impl CitationRoots {
+    pub fn live_excerpt(&self, locator: &Locator) -> Result<Excerpt> {
+        let Resolved::File { path, range, .. } = self.resolve(locator, false)? else {
+            return Err(ResolveError::PassageWithoutAsset {
+                key: locator.key.clone(),
+            }
+            .into());
+        };
+        let text = read_text(&path)?;
+        let file_lines: Vec<&str> = text.lines().collect();
+        Ok(select_lines(&path, locator, &file_lines, range)?)
     }
-    if is_line_spec(locator) {
-        return (None, Some(locator.to_string()));
-    }
-    (Some(locator.to_string()), None)
-}
 
-/// The parsed named-field locator, ADR 0026 ("Locator fields"): `at` is the
-/// real `<src>:<lines>` (or lines-only, or whole-file) form; `fingerprint` is
-/// the `xxh64-<hex>` change-detector; `asset` is the `sha256-<hex>.<ext>`
-/// frozen object name, present only on a frozen citation.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LocatorFields {
-    pub at: String,
-    pub fingerprint: Option<String>,
-    pub asset: Option<String>,
-}
-
-fn take_locator_field(
-    tokens: &[&str],
-    index: &mut usize,
-    key: &str,
-    required: bool,
-    whole: &str,
-) -> Result<Option<String>> {
-    if tokens.get(*index) != Some(&key) {
-        if required {
-            bail!("locator `{whole}` must start with `{key}`");
+    /// A frozen citation reads its object in full; `at:` never indexes into
+    /// the asset, it only supplies the display numbering (ADR 0026).
+    pub(crate) fn citation_excerpt(&self, citation: &SourceCitation) -> Result<Excerpt> {
+        let Some(asset) = citation.asset.as_deref() else {
+            return self.live_excerpt(&citation.locator);
+        };
+        self.check(&citation.locator, true)?;
+        if !crate::assets::is_object_name(asset) {
+            bail!("frozen asset `{asset}` is not a content-addressed object name");
         }
-        return Ok(None);
+        let asset_dir = self.asset_dir().ok_or_else(|| {
+            anyhow!("citation names frozen asset `{asset}`, but the deck owns no asset directory")
+        })?;
+        let path = asset_dir.join(asset);
+        let text = read_text(&path)?;
+        let file_lines: Vec<&str> = text.lines().collect();
+        let start = match &citation.locator.target {
+            Target::File {
+                range: Some((start, _)),
+                ..
+            } => *start as usize,
+            _ => 1,
+        };
+        Ok(excerpt_from_lines(
+            &path,
+            &file_lines,
+            1,
+            file_lines.len(),
+            start,
+        ))
     }
-    let field_value = tokens.get(*index + 1).copied().unwrap_or("");
-    if field_value.is_empty() {
-        bail!("locator `{whole}` has `{key}` with no value");
+
+    pub fn inspect_citation(&self, citation: &SourceCitation) -> Result<CitationIntegrity> {
+        if citation.asset.is_some() {
+            let excerpt = self.citation_excerpt(citation)?;
+            return Ok(match citation.fingerprint {
+                None => CitationIntegrity::Unfingerprinted {
+                    fingerprint: excerpt_fingerprint(&excerpt),
+                    excerpt,
+                },
+                Some(expected) if excerpt_fingerprint(&excerpt) == expected => {
+                    CitationIntegrity::Current(excerpt)
+                }
+                Some(_) => CitationIntegrity::Changed,
+            });
+        }
+        let locator = &citation.locator;
+        let Resolved::File { path, range, .. } = self.resolve(locator, false)? else {
+            return Err(ResolveError::PassageWithoutAsset {
+                key: locator.key.clone(),
+            }
+            .into());
+        };
+        let text = read_text(&path)?;
+        let file_lines: Vec<&str> = text.lines().collect();
+        let current = select_lines(&path, locator, &file_lines, range);
+        let Some(expected) = citation.fingerprint else {
+            let excerpt = current?;
+            return Ok(CitationIntegrity::Unfingerprinted {
+                fingerprint: excerpt_fingerprint(&excerpt),
+                excerpt,
+            });
+        };
+        if let Ok(excerpt) = &current
+            && excerpt_fingerprint(excerpt) == expected
+        {
+            return Ok(CitationIntegrity::Current(excerpt.clone()));
+        }
+        let Some((start, end)) = range else {
+            current?;
+            return Ok(CitationIntegrity::Changed);
+        };
+        let range_len = (end - start) as usize + 1;
+        if file_lines.len() < range_len {
+            return Ok(CitationIntegrity::Changed);
+        }
+        let mut matches = Vec::new();
+        for offset in 0..=file_lines.len() - range_len {
+            let window = &file_lines[offset..offset + range_len];
+            if fingerprint_lines(window.iter().copied()) != expected {
+                continue;
+            }
+            let Some(relocated) = relocated(locator, offset + 1, range_len) else {
+                continue;
+            };
+            matches.push((
+                excerpt_from_lines(&path, &file_lines, offset + 1, range_len, offset + 1),
+                relocated,
+            ));
+        }
+        match matches.len() {
+            0 => Ok(CitationIntegrity::Changed),
+            1 => {
+                let (excerpt, locator) = matches.remove(0);
+                Ok(CitationIntegrity::Relocated { excerpt, locator })
+            }
+            _ => Ok(CitationIntegrity::Ambiguous {
+                locators: matches.into_iter().map(|(_, locator)| locator).collect(),
+            }),
+        }
     }
-    *index += 2;
-    Ok(Some(field_value.to_string()))
+
+    /// The excerpt as a reader sees it: a frozen excerpt's path is the cited
+    /// path (or the url root of a passage), never the asset object.
+    pub fn checked_excerpt(&self, citation: &SourceCitation) -> Result<Excerpt> {
+        match self.inspect_citation(citation)? {
+            CitationIntegrity::Current(mut excerpt) => {
+                if citation.asset.is_some() {
+                    excerpt.path = self.display_path(&citation.locator);
+                }
+                Ok(excerpt)
+            }
+            CitationIntegrity::Unfingerprinted { .. } => bail!(
+                "source excerpt has no fingerprint; review it, then run \
+                 `alix doctor --repair-source-locators`"
+            ),
+            CitationIntegrity::Relocated { locator, .. } => bail!(
+                "source excerpt moved to `{locator}`; run \
+                 `alix doctor --repair-source-locators` to rebase it"
+            ),
+            CitationIntegrity::Changed => {
+                bail!(
+                    "source excerpt changed or disappeared; review the citation before updating it"
+                )
+            }
+            CitationIntegrity::Ambiguous { locators } => bail!(
+                "source excerpt matches several ranges ({}); review the citation before updating it",
+                labels(&locators)
+            ),
+        }
+    }
+
+    fn display_path(&self, locator: &Locator) -> PathBuf {
+        match (&locator.target, self.root_of(&locator.key)) {
+            (Target::File { path, .. }, _) => PathBuf::from(path),
+            (Target::Passage, Some(Root::Url(url))) => PathBuf::from(url),
+            (Target::Passage, _) => PathBuf::from(&locator.key),
+        }
+    }
 }
 
-/// The frozen locator tokenizer (ADR 0026): the value is split on single
-/// spaces into a strictly alternating `at:`/`fingerprint:`/`asset:` key and
-/// value stream, in that canonical order, each key at most once. Any unknown
-/// key, duplicate key, unpaired token, or leftover content is a hard error
-/// with no partial extraction: a locator parses whole against the current
-/// grammar or not at all.
-pub fn parse_locator_fields(value: &str) -> Result<LocatorFields> {
-    let trimmed = value.trim();
-    let tokens: Vec<&str> = trimmed.split(' ').collect();
-    let mut index = 0;
-
-    let at = take_locator_field(&tokens, &mut index, "at:", true, trimmed)?.unwrap_or_default();
-    let fingerprint = take_locator_field(&tokens, &mut index, "fingerprint:", false, trimmed)?;
-    let asset = take_locator_field(&tokens, &mut index, "asset:", false, trimmed)?;
-
-    if index != tokens.len() {
-        bail!(
-            "locator `{trimmed}` has unexpected content starting at `{}`",
-            tokens[index]
-        );
-    }
-
-    Ok(LocatorFields {
-        at,
-        fingerprint,
-        asset,
+pub fn relocated(locator: &Locator, start: usize, len: usize) -> Option<Locator> {
+    let Target::File { path, .. } = &locator.target else {
+        return None;
+    };
+    let start = u32::try_from(start).ok()?;
+    let end = start.checked_add(u32::try_from(len).ok()?.checked_sub(1)?)?;
+    Some(Locator {
+        key: locator.key.clone(),
+        target: Target::File {
+            path: path.clone(),
+            range: Some((start, end)),
+        },
     })
 }
 
-/// Emits the canonical `at: <src>:<lines> fingerprint: xxh64-<hex> asset:
-/// sha256-<hex>.<ext>` form, omitting absent optional fields; round-trips
-/// with `parse_locator_fields`.
-pub fn format_locator_fields(fields: &LocatorFields) -> String {
-    let mut formatted = format!("at: {}", fields.at);
-    if let Some(fingerprint) = &fields.fingerprint {
-        formatted.push_str(&format!(" fingerprint: {fingerprint}"));
-    }
-    if let Some(asset) = &fields.asset {
-        formatted.push_str(&format!(" asset: {asset}"));
-    }
-    formatted
+fn read_text(path: &Path) -> Result<String> {
+    std::fs::read_to_string(path)
+        .map_err(|error| anyhow!("cannot read the source `{}`: {error}", path.display()))
 }
 
-fn is_line_spec(value: &str) -> bool {
-    let value = value.trim();
-    match value.split_once('-') {
-        Some((start, end)) => is_number(start) && is_number(end),
-        None => is_number(value),
-    }
-}
-
-fn is_number(value: &str) -> bool {
-    let value = value.trim();
-    !value.is_empty() && value.chars().all(|character| character.is_ascii_digit())
-}
-
-/// Parses a validated single range into inclusive `(start, end)` (a lone `N` is
-/// `(N, N)`; a reversed range is normalized).
-pub(crate) fn parse_line_range(spec: &str) -> (usize, usize) {
-    let parse = |value: &str| value.trim().parse::<usize>().unwrap_or(1);
-    let (start, end) = match spec.trim().split_once('-') {
-        Some((start, end)) => (parse(start), parse(end)),
-        None => {
-            let line = parse(spec);
-            (line, line)
-        }
-    };
-    if start <= end {
-        (start, end)
-    } else {
-        (end, start)
-    }
-}
-
-pub(crate) fn locator_path(
-    base_dir: &Path,
-    source_file: Option<&Path>,
-    file: Option<&str>,
-) -> Option<PathBuf> {
-    match source_file {
-        Some(source_file) => Some(source_file.to_path_buf()),
-        None => file.map(|file| resolve_under_base(base_dir, file)),
-    }
-}
-
-/// A locator may be written relative to a project root above `base_dir`;
-/// a direct join would double the overlap.
-pub(crate) fn resolve_under_base(base_dir: &Path, file: &str) -> PathBuf {
-    let direct = base_dir.join(file);
-    if direct.exists() {
-        return direct;
-    }
-    let mut ancestor = base_dir.parent();
-    while let Some(directory) = ancestor {
-        let candidate = directory.join(file);
-        if candidate.exists() {
-            return candidate;
-        }
-        ancestor = directory.parent();
-    }
-    if let Some(name) = Path::new(file).file_name()
-        && let Some(found) = find_under(base_dir, name)
-    {
-        return found;
-    }
-    direct
-}
-
-fn find_under(root: &Path, name: &std::ffi::OsStr) -> Option<PathBuf> {
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(directory) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&directory) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
-                let skip = path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| {
-                        name.starts_with('.') || matches!(name, "target" | "node_modules")
-                    });
-                if !skip {
-                    stack.push(path);
-                }
-            } else if path.file_name() == Some(name) {
-                return Some(path);
-            }
-        }
-    }
-    None
-}
-
-/// Repoints a frozen asset's excerpt at the real source path for display, so
-/// the learner sees real source, not the opaque asset path. The reader
-/// already numbered the lines from `at:`, so only the path and label change.
-pub fn relabel_for_display(mut excerpt: Excerpt, at: &str) -> (Excerpt, Option<String>) {
-    let (Some(file), _) = parse_locator(at) else {
-        return (excerpt, None);
-    };
-    excerpt.path = PathBuf::from(&file);
-    let label = match (excerpt.lines.first(), excerpt.lines.last()) {
-        (Some((start, _)), Some((end, _))) if start != end => {
-            format!("{file}:{start}-{end}")
-        }
-        (Some((start, _)), _) => format!("{file}:{start}"),
-        _ => file,
-    };
-    (excerpt, Some(label))
-}
-
-fn excerpt_at(base_dir: &Path, source_file: Option<&Path>, locator: &str) -> Result<Excerpt> {
-    let (file, spec) = parse_locator(locator);
-    let joins_onto_base = source_file.is_none()
-        && file
-            .as_deref()
-            .is_some_and(|file| !Path::new(file).is_absolute());
-    if joins_onto_base && !base_dir.is_dir() {
-        bail!(
-            "the `exam:` base `{}` does not exist; the deck's source path is \
-             likely stale or wrong",
-            base_dir.display()
-        );
-    }
-    let path = locator_path(base_dir, source_file, file.as_deref()).ok_or_else(|| {
-        anyhow!(
-            "locator `{locator}` gives only line numbers, but `exam:` \
-             is not a single file; write it as `file:lines`"
-        )
-    })?;
-    read_excerpt(&path, spec.as_deref())
-}
-
-fn read_excerpt(path: &Path, spec: Option<&str>) -> Result<Excerpt> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|error| anyhow!("cannot read the source `{}`: {error}", path.display()))?;
-    let file_lines: Vec<&str> = text.lines().collect();
-    let (start, end) = match spec {
+fn select_lines(
+    path: &Path,
+    locator: &Locator,
+    file_lines: &[&str],
+    range: Option<(u32, u32)>,
+) -> Result<Excerpt, ResolveError> {
+    let (start, end) = match range {
+        Some((start, end)) => (start as usize, end as usize),
         None => (1, file_lines.len()),
-        Some(spec) => parse_line_range(spec),
     };
-    let start = start.max(1);
-    let end = end.min(file_lines.len());
-
-    let requested = end.saturating_sub(start) + 1;
-    let selected = excerpt_from_lines(path, &file_lines, start, requested);
-
-    if selected.lines.is_empty() {
-        bail!(
-            "locator points outside `{}` ({} lines)",
-            path.display(),
-            file_lines.len()
-        );
+    if end > file_lines.len() || file_lines.is_empty() {
+        let cited = match &locator.target {
+            Target::File { path, .. } => path.clone(),
+            Target::Passage => locator.key.clone(),
+        };
+        let range = match range {
+            Some((start, end)) => format_range(start, end),
+            None => "1".to_string(),
+        };
+        return Err(ResolveError::LinesMissing {
+            path: cited,
+            range,
+            lines: file_lines.len(),
+        });
     }
-    Ok(selected)
+    Ok(excerpt_from_lines(
+        path,
+        file_lines,
+        start,
+        end - start + 1,
+        start,
+    ))
 }
 
-fn excerpt_from_lines(path: &Path, file_lines: &[&str], start: usize, len: usize) -> Excerpt {
+fn excerpt_from_lines(
+    path: &Path,
+    file_lines: &[&str],
+    start: usize,
+    len: usize,
+    numbered_from: usize,
+) -> Excerpt {
     let lines = file_lines
         .iter()
-        .enumerate()
         .skip(start.saturating_sub(1))
         .take(len)
-        .map(|(index, line)| (index + 1, (*line).to_string()))
+        .enumerate()
+        .map(|(index, line)| (numbered_from + index, (*line).to_string()))
         .collect();
     Excerpt {
         path: path.to_path_buf(),
@@ -565,21 +400,10 @@ fn excerpt_from_lines(path: &Path, file_lines: &[&str], start: usize, len: usize
     }
 }
 
-pub fn relocated_locator(file: Option<&str>, start: usize, len: usize) -> String {
-    let range = if len == 1 {
-        start.to_string()
-    } else {
-        format!("{start}-{}", start + len - 1)
-    };
-    match file {
-        Some(file) => format!("{file}:{range}"),
-        None => range,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cite::DeckPlace;
 
     fn write(directory: &Path, name: &str, body: &str) -> PathBuf {
         let path = directory.join(name);
@@ -587,229 +411,515 @@ mod tests {
         path
     }
 
+    fn locator(text: &str) -> Locator {
+        crate::locator::parse_locator_comment(&format!("<!-- at: {text} -->"))
+            .unwrap()
+            .locator
+    }
+
+    /// Roots `src` at `directory`, with frozen objects in `asset_dir` when given.
+    fn roots(directory: &Path, asset_dir: Option<PathBuf>) -> CitationRoots {
+        CitationRoots::from_place(
+            &[("src".to_string(), ".".to_string())],
+            DeckPlace::Loose { folder: directory },
+            asset_dir,
+        )
+    }
+
+    fn live(text: &str, fingerprint: Option<u64>) -> SourceCitation {
+        SourceCitation {
+            locator: locator(text),
+            fingerprint,
+            asset: None,
+            line: 4,
+        }
+    }
+
+    fn excerpt_of(lines: &[&str]) -> Excerpt {
+        Excerpt {
+            path: PathBuf::from("ignored"),
+            lines: lines
+                .iter()
+                .enumerate()
+                .map(|(index, line)| (index + 1, (*line).to_string()))
+                .collect(),
+            truncated: false,
+        }
+    }
+
     #[test]
-    fn excerpt_at_resolves_a_file_and_line_locator() {
+    fn a_live_locator_whose_range_runs_past_the_file_is_an_error_not_a_clamp() {
         let directory = tempfile::tempdir().unwrap();
-        write(directory.path(), "notes.md", "alpha\nbeta\ngamma\ndelta\n");
-        let excerpt = excerpt_at(directory.path(), None, "notes.md:2-3").unwrap();
+        write(directory.path(), "f.txt", "a\nb\nc\n");
+        let roots = roots(directory.path(), None);
+
+        let error = roots.live_excerpt(&locator("src:f.txt:2-99")).unwrap_err();
+        assert_eq!(
+            Some(&ResolveError::LinesMissing {
+                path: "f.txt".into(),
+                range: "2-99".into(),
+                lines: 3,
+            }),
+            error.downcast_ref::<ResolveError>(),
+            "step read: {error:#}"
+        );
+        let error = roots
+            .inspect_citation(&live("src:f.txt:2-99", None))
+            .unwrap_err();
+        assert!(
+            format!("{error:#}").contains("run past its end"),
+            "step inspect without a fingerprint: {error:#}"
+        );
+
+        let fingerprint = excerpt_fingerprint(&excerpt_of(&["b", "c"]));
+        let CitationIntegrity::Relocated { locator, excerpt } = roots
+            .inspect_citation(&live("src:f.txt:3-4", Some(fingerprint)))
+            .unwrap()
+        else {
+            panic!("step inspect with a fingerprint: a stale range past the end still relocates")
+        };
+        assert_eq!("src:f.txt:2-3", locator.to_string());
+        assert_eq!(
+            vec![(2, "b".to_string()), (3, "c".to_string())],
+            excerpt.lines
+        );
+        assert!(
+            matches!(
+                roots
+                    .inspect_citation(&live("src:f.txt:2-99", Some(fingerprint)))
+                    .unwrap(),
+                CitationIntegrity::Changed
+            ),
+            "step inspect with a window longer than the file: changed, never clamped"
+        );
+    }
+
+    #[test]
+    fn a_live_excerpt_reads_a_contiguous_span_and_a_long_source_in_full() {
+        let directory = tempfile::tempdir().unwrap();
+        write(directory.path(), "f.txt", "a\nb\nc\nd\ne\n");
+        let body: String = (1..=100).map(|line| format!("line {line}\n")).collect();
+        write(directory.path(), "big.txt", &body);
+        let roots = roots(directory.path(), None);
+
+        let excerpt = roots.live_excerpt(&locator("src:f.txt:2-4")).unwrap();
+        assert_eq!(
+            vec![
+                (2, "b".to_string()),
+                (3, "c".to_string()),
+                (4, "d".to_string())
+            ],
+            excerpt.lines
+        );
+        assert!(!excerpt.truncated);
+        assert_eq!(
+            vec![(1, "a".to_string())],
+            roots.live_excerpt(&locator("src:f.txt:1")).unwrap().lines
+        );
+
+        let excerpt = roots.live_excerpt(&locator("src:big.txt")).unwrap();
+        assert_eq!(100, excerpt.lines.len());
+        assert!(!excerpt.truncated);
+        let display = excerpt.clone().capped_for_display();
+        assert_eq!(MAX_EXCERPT_LINES, display.lines.len());
+        assert!(display.truncated);
+        assert_eq!(excerpt.lines[..MAX_EXCERPT_LINES], display.lines[..]);
+    }
+
+    #[test]
+    fn stamping_and_drift_detection_cover_lines_beyond_the_display_cap() {
+        let directory = tempfile::tempdir().unwrap();
+        let body: String = (1..=100).map(|line| format!("line {line}\n")).collect();
+        write(directory.path(), "big.rs", &body);
+        let deck_path = write(
+            directory.path(),
+            "deck.md",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\ncite:\n  - src: .\n---\n\
+             ## q\nanswer\n<!-- at: src:big.rs:1-100 -->\n<!-- id: card-card1 -->\n",
+        );
+        assert_eq!(1, stamp_citations(&deck_path).unwrap());
+        let text = std::fs::read_to_string(&deck_path).unwrap();
+        assert!(
+            text.contains("<!-- at: src:big.rs:1-100 fingerprint: xxh64-"),
+            "the authored range must be stamped verbatim: {text}"
+        );
+
+        let drifted: String = (1..=100)
+            .map(|line| {
+                if line == 90 {
+                    "DRIFTED\n".to_string()
+                } else {
+                    format!("line {line}\n")
+                }
+            })
+            .collect();
+        write(directory.path(), "big.rs", &drifted);
+        let deck = Deck::load(&deck_path).unwrap();
+        assert!(matches!(
+            CitationRoots::for_deck(&deck)
+                .inspect_citation(&deck.cards[0].citations[0])
+                .unwrap(),
+            CitationIntegrity::Changed
+        ));
+    }
+
+    #[test]
+    fn a_moved_excerpt_longer_than_the_display_cap_relocates_with_its_full_range() {
+        let directory = tempfile::tempdir().unwrap();
+        let block: Vec<String> = (1..=100).map(|line| format!("line {line}")).collect();
+        let body = format!("inserted\n{}\n", block.join("\n"));
+        write(directory.path(), "code.rs", &body);
+        let roots = roots(directory.path(), None);
+        let citation = live(
+            "src:code.rs:1-100",
+            Some(fingerprint_lines(block.iter().map(String::as_str))),
+        );
+        let CitationIntegrity::Relocated { locator, excerpt } =
+            roots.inspect_citation(&citation).unwrap()
+        else {
+            panic!("the full moved excerpt should relocate");
+        };
+        assert_eq!("src:code.rs:2-101", locator.to_string());
+        assert_eq!(100, excerpt.lines.len());
+        assert_eq!("line 100", excerpt.lines[99].1);
+    }
+
+    #[test]
+    fn excerpt_fingerprints_ignore_line_numbers_and_trailing_whitespace() {
+        let a = Excerpt {
+            path: PathBuf::from("a.rs"),
+            lines: vec![(4, "fn answer() {  ".into()), (5, "    42".into())],
+            truncated: false,
+        };
+        let b = Excerpt {
+            path: PathBuf::from("b.rs"),
+            lines: vec![(40, "fn answer() {".into()), (41, "    42".into())],
+            truncated: false,
+        };
+        assert_eq!(excerpt_fingerprint(&a), excerpt_fingerprint(&b));
+    }
+
+    #[test]
+    fn excerpt_fingerprints_keep_line_boundaries() {
+        assert_ne!(
+            excerpt_fingerprint(&excerpt_of(&["ab", "c"])),
+            excerpt_fingerprint(&excerpt_of(&["a", "bc"])),
+            "the same bytes split at another line boundary are another excerpt"
+        );
+        assert_ne!(
+            excerpt_fingerprint(&excerpt_of(&["ab", "c"])),
+            excerpt_fingerprint(&excerpt_of(&["abc"])),
+            "two lines are not their concatenation"
+        );
+    }
+
+    #[test]
+    fn a_moved_excerpt_is_found_by_fingerprint() {
+        let directory = tempfile::tempdir().unwrap();
+        write(
+            directory.path(),
+            "code.rs",
+            "inserted\nalpha\nfn answer() {\n    42\n}\nomega\n",
+        );
+        let roots = roots(directory.path(), None);
+        let expected = excerpt_of(&["fn answer() {", "    42", "}"]);
+        let citation = live("src:code.rs:2-4", Some(excerpt_fingerprint(&expected)));
+        let CitationIntegrity::Relocated { locator, excerpt } =
+            roots.inspect_citation(&citation).unwrap()
+        else {
+            panic!("the exact excerpt should relocate");
+        };
+        assert_eq!("src:code.rs:3-5", locator.to_string());
+        assert_eq!("fn answer() {", excerpt.lines[0].1);
+    }
+
+    #[test]
+    fn a_changed_excerpt_is_not_relocated() {
+        let directory = tempfile::tempdir().unwrap();
+        write(directory.path(), "code.rs", "alpha\nchanged\nomega\n");
+        let roots = roots(directory.path(), None);
+        let citation = live(
+            "src:code.rs:2",
+            Some(excerpt_fingerprint(&excerpt_of(&["original"]))),
+        );
+        assert!(matches!(
+            roots.inspect_citation(&citation).unwrap(),
+            CitationIntegrity::Changed
+        ));
+    }
+
+    #[test]
+    fn duplicate_exact_excerpts_are_ambiguous() {
+        let directory = tempfile::tempdir().unwrap();
+        write(directory.path(), "code.rs", "same\nother\nsame\n");
+        let roots = roots(directory.path(), None);
+        let citation = live(
+            "src:code.rs:2",
+            Some(excerpt_fingerprint(&excerpt_of(&["same"]))),
+        );
+        let CitationIntegrity::Ambiguous { locators } = roots.inspect_citation(&citation).unwrap()
+        else {
+            panic!("duplicate excerpts should be ambiguous");
+        };
+        assert_eq!("`src:code.rs:1`, `src:code.rs:3`", labels(&locators));
+    }
+
+    /// Roots whose live tree is `directory` and whose frozen objects live in
+    /// `directory/objects`, holding one excerpt-shaped object of `bytes`.
+    fn frozen_roots(directory: &Path, bytes: &str) -> (CitationRoots, String) {
+        let objects = directory.join("objects");
+        std::fs::create_dir_all(&objects).unwrap();
+        let name = crate::assets::object_name(bytes.as_bytes(), "rs");
+        std::fs::write(objects.join(&name), bytes).unwrap();
+        (roots(directory, Some(objects)), name)
+    }
+
+    fn frozen(text: &str, fingerprint: Option<u64>, asset: &str) -> SourceCitation {
+        SourceCitation {
+            locator: locator(text),
+            fingerprint,
+            asset: Some(asset.to_string()),
+            line: 4,
+        }
+    }
+
+    #[test]
+    fn an_asset_backed_citation_reads_the_frozen_bytes_not_the_live_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let (roots, asset) = frozen_roots(directory.path(), "beta\ngamma\n");
+        write(directory.path(), "code.rs", "MUTATED\nLIVE\nFILE\n");
+        let citation = frozen(
+            "src:code.rs:2-3",
+            Some(excerpt_fingerprint(&excerpt_of(&["beta", "gamma"]))),
+            &asset,
+        );
+        let CitationIntegrity::Current(excerpt) = roots.inspect_citation(&citation).unwrap() else {
+            panic!("the frozen citation must verify against the asset bytes");
+        };
         assert_eq!(
             vec![(2, "beta".to_string()), (3, "gamma".to_string())],
             excerpt.lines
         );
-    }
-
-    #[test]
-    fn excerpt_at_resolves_a_line_only_locator_against_the_single_source_file() {
-        let directory = tempfile::tempdir().unwrap();
-        let file = write(directory.path(), "notes.md", "alpha\nbeta\ngamma\n");
-        let excerpt = excerpt_at(directory.path(), Some(&file), "2").unwrap();
-        assert_eq!(vec![(2, "beta".to_string())], excerpt.lines);
-    }
-
-    #[test]
-    fn excerpt_at_rejects_a_line_only_locator_without_a_single_file() {
-        let directory = tempfile::tempdir().unwrap();
-        let error = excerpt_at(directory.path(), None, "2-3").unwrap_err();
-        assert!(format!("{error:#}").contains("only line numbers"));
-    }
-
-    #[test]
-    fn excerpt_at_single_file_source_ignores_a_redundant_file_path() {
-        let directory = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(directory.path().join("src/executor")).unwrap();
-        let file = write(directory.path(), "src/executor/env.rs", "a\nb\nc\nd\n");
-        let excerpt = excerpt_at(
-            file.parent().unwrap(),
-            Some(&file),
-            "src/executor/env.rs:2-3",
-        )
-        .unwrap();
         assert_eq!(
-            vec![(2, "b".to_string()), (3, "c".to_string())],
-            excerpt.lines
+            PathBuf::from("code.rs"),
+            roots.checked_excerpt(&citation).unwrap().path,
+            "a reader sees the cited path, never the object"
         );
     }
 
     #[test]
-    fn excerpt_at_reports_a_missing_source_base_clearly() {
-        let base = std::env::temp_dir().join(format!("alix-nobase-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
-        let error = format!(
-            "{:#}",
-            excerpt_at(&base, None, "src/lib.rs:1-3").unwrap_err()
-        );
-        assert!(error.contains(&base.display().to_string()), "{error}");
-        assert!(error.contains("does not exist"), "{error}");
-        assert!(!error.contains("src/lib.rs"), "{error}");
-    }
-
-    #[test]
-    fn excerpt_at_resolves_an_ancestor_relative_locator_against_a_subdir_source() {
+    fn an_asset_backed_excerpt_is_numbered_from_the_at_start_line() {
         let directory = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(directory.path().join("src/executor")).unwrap();
-        write(directory.path(), "src/executor/local_vm.rs", "a\nb\nc\nd\n");
-        let base_dir = directory.path().join("src/executor");
-        let excerpt = excerpt_at(&base_dir, None, "src/executor/local_vm.rs:2-3").unwrap();
-        assert_eq!(
-            vec![(2, "b".to_string()), (3, "c".to_string())],
-            excerpt.lines
+        let (roots, asset) = frozen_roots(directory.path(), "alpha\nbeta\ngamma\n");
+        let citation = frozen(
+            "src:x.rs:46-48",
+            Some(excerpt_fingerprint(&excerpt_of(&[
+                "alpha", "beta", "gamma",
+            ]))),
+            &asset,
         );
-    }
-
-    #[test]
-    fn excerpt_at_recovers_a_dropped_subdirectory_via_basename_search() {
-        let directory = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(directory.path().join("src")).unwrap();
-        write(directory.path(), "src/chapter.md", "a\nb\nc\nd\n");
-        let excerpt = excerpt_at(directory.path(), None, "chapter.md:2-3").unwrap();
-        assert_eq!(
-            vec![(2, "b".to_string()), (3, "c".to_string())],
-            excerpt.lines
-        );
-    }
-
-    #[test]
-    fn relabel_for_display_repoints_the_path_from_at() {
-        let excerpt = Excerpt {
-            path: PathBuf::from(
-                "/ws/assets/deck-deck1/sha256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.rs",
-            ),
-            lines: vec![
-                (106, "a".to_string()),
-                (107, "b".to_string()),
-                (108, "c".to_string()),
-            ],
-            truncated: false,
+        let CitationIntegrity::Current(excerpt) = roots.inspect_citation(&citation).unwrap() else {
+            panic!("the frozen citation must verify against the asset bytes");
         };
-        let (excerpt, label) = relabel_for_display(excerpt, "src/caching.rs:106-108");
-        assert_eq!("src/caching.rs", excerpt.path.to_str().unwrap());
         assert_eq!(
             vec![
-                (106, "a".to_string()),
-                (107, "b".to_string()),
-                (108, "c".to_string())
+                (46, "alpha".to_string()),
+                (47, "beta".to_string()),
+                (48, "gamma".to_string())
             ],
             excerpt.lines
         );
-        assert_eq!(Some("src/caching.rs:106-108".to_string()), label);
     }
 
     #[test]
-    fn relabel_for_display_is_a_noop_for_a_lines_only_at() {
-        let excerpt = Excerpt {
-            path: PathBuf::from("/src/foo.rs"),
-            lines: vec![(10, "x".to_string())],
-            truncated: false,
+    fn an_asset_backed_whole_file_at_keeps_one_based_numbering() {
+        let directory = tempfile::tempdir().unwrap();
+        let (roots, asset) = frozen_roots(directory.path(), "alpha\nbeta\n");
+        let citation = frozen("src:x.rs", None, &asset);
+        let CitationIntegrity::Unfingerprinted { excerpt, .. } =
+            roots.inspect_citation(&citation).unwrap()
+        else {
+            panic!("an unfingerprinted asset-backed citation still reads the asset");
         };
-        let (same, label) = relabel_for_display(excerpt.clone(), "10-12");
-        assert_eq!(excerpt.path, same.path);
-        assert_eq!(excerpt.lines, same.lines);
-        assert_eq!(None, label);
+        assert_eq!(
+            vec![(1, "alpha".to_string()), (2, "beta".to_string())],
+            excerpt.lines
+        );
     }
 
     #[test]
-    fn source_base_reads_a_fact_cards_citation() {
+    fn an_asset_backed_mismatch_is_changed_never_relocated_from_the_live_tree() {
         let directory = tempfile::tempdir().unwrap();
-        write(directory.path(), "notes.md", "one\ntwo\nthree\nfour\n");
+        let (roots, asset) = frozen_roots(directory.path(), "alpha\nbeta\ngamma\n");
+        write(directory.path(), "code.rs", "inserted\nwanted\n");
+        let citation = frozen(
+            "src:code.rs:1",
+            Some(excerpt_fingerprint(&excerpt_of(&["wanted"]))),
+            &asset,
+        );
+        assert!(matches!(
+            roots.inspect_citation(&citation).unwrap(),
+            CitationIntegrity::Changed
+        ));
+    }
+
+    #[test]
+    fn a_frozen_citation_still_needs_a_visible_key() {
+        let directory = tempfile::tempdir().unwrap();
+        let (roots, asset) = frozen_roots(directory.path(), "a\n");
+        let error = roots
+            .inspect_citation(&frozen("other:code.rs:1", None, &asset))
+            .unwrap_err();
+        assert_eq!(
+            Some(&ResolveError::UnknownKey {
+                key: "other".into()
+            }),
+            error.downcast_ref::<ResolveError>(),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn an_asset_name_that_is_not_content_addressed_is_rejected() {
+        let directory = tempfile::tempdir().unwrap();
+        let (roots, _) = frozen_roots(directory.path(), "a\n");
+        let error = roots
+            .inspect_citation(&frozen("src:code.rs:1", None, "../../escape.rs"))
+            .unwrap_err();
+        assert!(
+            format!("{error:#}").contains("not a content-addressed object name"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn an_asset_backed_citation_without_an_asset_directory_errors() {
+        let directory = tempfile::tempdir().unwrap();
+        let roots = roots(directory.path(), None);
+        let citation = frozen(
+            "src:code.rs:1",
+            None,
+            &crate::assets::object_name(b"a\n", "rs"),
+        );
+        let error = roots.inspect_citation(&citation).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("owns no asset directory"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn stamping_citations_writes_the_current_fingerprint_without_changing_ids() {
+        let directory = tempfile::tempdir().unwrap();
+        write(directory.path(), "code.rs", "alpha\nbeta\ngamma\n");
         let deck_path = write(
             directory.path(),
-            "facts.md",
-            "---\nexam: notes.md\n---\n## q\na\n<!-- at: notes.md:2-3 -->\n",
+            "deck.md",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\ncite:\n  - src: .\n---\n\
+             ## q\nanswer\n<!-- at: src:code.rs:2-3 -->\n<!-- id: card-card1 -->\n",
         );
+        assert_eq!(1, stamp_citations(&deck_path).unwrap());
+        let text = std::fs::read_to_string(&deck_path).unwrap();
+        assert!(text.contains("<!-- at: src:code.rs:2-3 fingerprint: xxh64-"));
         let deck = Deck::load(&deck_path).unwrap();
-        let base = SourceBase::for_deck(&deck);
-        let locator = &deck.cards[0].citations[0].locator;
-        assert_eq!(
-            vec![(2, "two".to_string()), (3, "three".to_string())],
-            base.excerpt(locator).unwrap().lines
+        assert_eq!(Some("card-card1".to_string()), deck.cards[0].id());
+        assert!(matches!(
+            CitationRoots::for_deck(&deck)
+                .inspect_citation(&deck.cards[0].citations[0])
+                .unwrap(),
+            CitationIntegrity::Current(_)
+        ));
+    }
+
+    #[test]
+    fn stamping_a_deck_whose_citations_are_all_current_writes_nothing() {
+        let directory = tempfile::tempdir().unwrap();
+        write(directory.path(), "code.rs", "alpha\nbeta\ngamma\n");
+        let deck_path = write(
+            directory.path(),
+            "deck.md",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\ncite:\n  - src: .\n---\n\
+             ## q\nanswer\n<!-- at: src:code.rs:2-3 -->\n<!-- id: card-card1 -->\n",
         );
+        assert_eq!(1, stamp_citations(&deck_path).unwrap());
+        let stamped = std::fs::read_to_string(&deck_path).unwrap();
+        let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
+        std::fs::File::options()
+            .write(true)
+            .open(&deck_path)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+
+        assert_eq!(0, stamp_citations(&deck_path).unwrap());
+
+        assert_eq!(stamped, std::fs::read_to_string(&deck_path).unwrap());
         assert_eq!(
-            vec![(3, "three".to_string())],
-            base.excerpt("3").unwrap().lines
+            old,
+            std::fs::metadata(&deck_path).unwrap().modified().unwrap(),
+            "a deck with nothing to stamp is not rewritten"
         );
     }
 
     #[test]
-    fn source_base_reads_a_multi_file_citation() {
+    fn a_deck_cites_several_roots_and_a_member_sees_the_manifest_roots() {
         let directory = tempfile::tempdir().unwrap();
-        write(directory.path(), "README.md", "r1\nr2\nr3\n");
-        std::fs::create_dir(directory.path().join("src")).unwrap();
+        std::fs::create_dir_all(directory.path().join("docs")).unwrap();
+        std::fs::create_dir_all(directory.path().join("src")).unwrap();
+        write(directory.path(), "docs/README.md", "r1\nr2\nr3\n");
         write(directory.path(), "src/lib.rs", "l1\nl2\nl3\nl4\n");
-        let readme = directory.path().join("README.md");
         let deck_path = write(
             directory.path(),
             "facts.md",
-            &format!(
-                "---\nexam:\n  - {}\n  - src/lib.rs\n---\n\
-                 ## q1\na1\n<!-- at: README.md:1-2 -->\n\
-                 ## q2\na2\n<!-- at: src/lib.rs:3-4 -->\n",
-                readme.display()
-            ),
+            "---\ncite:\n  - docs: docs\n  - code: src\n---\n\
+             ## q1\na1\n<!-- at: docs:README.md:1-2 -->\n\
+             ## q2\na2\n<!-- at: code:lib.rs:3-4 -->\n",
         );
         let deck = Deck::load(&deck_path).unwrap();
-        let base = SourceBase::for_deck(&deck);
-
+        let roots = CitationRoots::for_deck(&deck);
         assert_eq!(
             vec![(1, "r1".to_string()), (2, "r2".to_string())],
-            base.excerpt(&deck.cards[0].citations[0].locator)
+            roots
+                .live_excerpt(&deck.cards[0].citations[0].locator)
                 .unwrap()
                 .lines
         );
         assert_eq!(
             vec![(3, "l3".to_string()), (4, "l4".to_string())],
-            base.excerpt(&deck.cards[1].citations[0].locator)
+            roots
+                .live_excerpt(&deck.cards[1].citations[0].locator)
                 .unwrap()
                 .lines
         );
-        assert!(base.excerpt("2").is_err());
-    }
+        assert!(roots.live_excerpt(&locator("code:README.md:1")).is_err());
 
-    #[test]
-    fn a_manifest_source_does_not_break_lines_only_locators_of_a_single_file_member() {
-        let directory = tempfile::tempdir().unwrap();
-        std::fs::write(directory.path().join("alix.toml"), "exam = \"ws.md\"\n").unwrap();
+        std::fs::write(
+            directory.path().join("alix.toml"),
+            "[cite]\nws = \"docs\"\n",
+        )
+        .unwrap();
         std::fs::create_dir(directory.path().join("decks")).unwrap();
-        write(directory.path(), "ws.md", "w1\nw2\n");
-        write(directory.path(), "own.md", "o1\no2\no3\n");
-        let deck_path = write(
+        let member = write(
             directory.path(),
             "decks/facts.md",
-            "---\nformat-version: 1\nid: deck-deck1\nexam: own.md\n---\n## q\na\n<!-- at: 2 -->\n<!-- id: card-card1 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\ncite:\n  - own: src\n---\n\
+             ## q\na\n<!-- at: ws:README.md:2 -->\n<!-- at: own:lib.rs:1 -->\n<!-- id: card-card1 -->\n",
         );
-        let deck = Deck::load(&deck_path).unwrap();
-        let base = SourceBase::for_deck(&deck);
+        let deck = Deck::load(&member).unwrap();
+        let roots = CitationRoots::for_deck(&deck);
         assert_eq!(
-            vec![(2, "o2".to_string())],
-            base.excerpt(&deck.cards[0].citations[0].locator)
+            vec![(2, "r2".to_string())],
+            roots
+                .live_excerpt(&deck.cards[0].citations[0].locator)
                 .unwrap()
                 .lines
         );
-    }
-
-    #[test]
-    fn parse_locator_splits_file_and_spec() {
         assert_eq!(
-            (Some("card.rs".to_string()), Some("1-9".to_string())),
-            parse_locator("card.rs:1-9")
-        );
-        assert_eq!(
-            (
-                Some("src/serve.rs".to_string()),
-                Some("682-689".to_string())
-            ),
-            parse_locator("src/serve.rs:682-689")
-        );
-        assert_eq!(
-            (Some("src/serve.rs:544,980".to_string()), None),
-            parse_locator("src/serve.rs:544,980")
-        );
-        assert_eq!(
-            (None, Some("151-158".to_string())),
-            parse_locator("151-158")
-        );
-        assert_eq!(
-            (Some("notes.md".to_string()), None),
-            parse_locator("notes.md")
+            vec![(1, "l1".to_string())],
+            roots
+                .live_excerpt(&deck.cards[0].citations[1].locator)
+                .unwrap()
+                .lines
         );
     }
 
@@ -837,570 +947,7 @@ mod tests {
         assert_eq!(None, parse_locator_fingerprint("0123456789abcdef"));
     }
 
-    #[test]
-    fn parse_locator_fields_parses_the_canonical_three_field_locator() {
-        let fields = parse_locator_fields(
-            "at: notes.md:12-18 fingerprint: xxh64-0123456789abcdef asset: sha256-abc123.rs",
-        )
-        .unwrap();
-        assert_eq!(
-            LocatorFields {
-                at: "notes.md:12-18".to_string(),
-                fingerprint: Some("xxh64-0123456789abcdef".to_string()),
-                asset: Some("sha256-abc123.rs".to_string()),
-            },
-            fields
-        );
-    }
-
-    #[test]
-    fn parse_locator_fields_accepts_at_only() {
-        let fields = parse_locator_fields("at: notes.md:12-18").unwrap();
-        assert_eq!(
-            LocatorFields {
-                at: "notes.md:12-18".to_string(),
-                fingerprint: None,
-                asset: None,
-            },
-            fields
-        );
-    }
-
-    #[test]
-    fn parse_locator_fields_accepts_at_and_fingerprint_without_asset() {
-        let fields =
-            parse_locator_fields("at: notes.md:12-18 fingerprint: xxh64-0123456789abcdef").unwrap();
-        assert_eq!(
-            LocatorFields {
-                at: "notes.md:12-18".to_string(),
-                fingerprint: Some("xxh64-0123456789abcdef".to_string()),
-                asset: None,
-            },
-            fields
-        );
-    }
-
-    #[test]
-    fn parse_locator_fields_accepts_a_lines_only_at_value() {
-        let fields = parse_locator_fields("at: 12-18").unwrap();
-        assert_eq!(
-            LocatorFields {
-                at: "12-18".to_string(),
-                fingerprint: None,
-                asset: None,
-            },
-            fields
-        );
-    }
-
-    #[test]
-    fn parse_locator_fields_accepts_a_whole_file_at_value() {
-        let fields = parse_locator_fields("at: notes.md").unwrap();
-        assert_eq!(
-            LocatorFields {
-                at: "notes.md".to_string(),
-                fingerprint: None,
-                asset: None,
-            },
-            fields
-        );
-    }
-
-    #[test]
-    fn parse_locator_fields_rejects_an_unknown_key() {
-        assert!(parse_locator_fields("foo: bar").is_err());
-    }
-
-    #[test]
-    fn parse_locator_fields_rejects_a_duplicate_key() {
-        assert!(parse_locator_fields("at: a:1 at: b:2").is_err());
-    }
-
-    #[test]
-    fn parse_locator_fields_rejects_a_fingerprint_key_with_no_value() {
-        assert!(parse_locator_fields("at: notes.md:12-18 fingerprint:").is_err());
-    }
-
-    #[test]
-    fn parse_locator_fields_rejects_a_space_in_the_path() {
-        assert!(parse_locator_fields("at: my notes.md:1-2").is_err());
-    }
-
-    #[test]
-    fn parse_locator_fields_rejects_a_missing_at_field() {
-        assert!(parse_locator_fields("fingerprint: xxh64-0123456789abcdef").is_err());
-    }
-
-    #[test]
-    fn parse_locator_fields_rejects_asset_out_of_canonical_order() {
-        assert!(
-            parse_locator_fields(
-                "at: notes.md asset: sha256-abc123.rs fingerprint: xxh64-0123456789abcdef"
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn format_locator_fields_round_trips_the_canonical_form() {
-        let canonical =
-            "at: notes.md:12-18 fingerprint: xxh64-0123456789abcdef asset: sha256-abc123.rs";
-        let fields = parse_locator_fields(canonical).unwrap();
-        assert_eq!(canonical, format_locator_fields(&fields));
-    }
-
-    #[test]
-    fn parse_line_range_handles_single_range_and_reversed() {
-        assert_eq!((1, 9), parse_line_range("1-9"));
-        assert_eq!((5, 5), parse_line_range("5"));
-        assert_eq!((8, 12), parse_line_range("12-8"));
-    }
-
-    #[test]
-    fn read_excerpt_selects_a_contiguous_span_with_line_numbers() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = write(directory.path(), "f.txt", "a\nb\nc\nd\ne\n");
-        let excerpt = read_excerpt(&path, Some("2-4")).unwrap();
-        assert_eq!(
-            vec![
-                (2, "b".to_string()),
-                (3, "c".to_string()),
-                (4, "d".to_string())
-            ],
-            excerpt.lines
-        );
-        assert!(!excerpt.truncated);
-        let excerpt = read_excerpt(&path, Some("1")).unwrap();
-        assert_eq!(vec![(1, "a".to_string())], excerpt.lines);
-    }
-
-    #[test]
-    fn read_excerpt_clamps_out_of_range_lines() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = write(directory.path(), "f.txt", "a\nb\nc\n");
-        let excerpt = read_excerpt(&path, Some("2-99")).unwrap();
-        assert_eq!(
-            vec![(2, "b".to_string()), (3, "c".to_string())],
-            excerpt.lines
-        );
-        assert!(read_excerpt(&path, Some("99")).is_err());
-    }
-
-    #[test]
-    fn read_excerpt_reads_a_long_source_in_full_and_only_display_capping_truncates() {
-        let directory = tempfile::tempdir().unwrap();
-        let body: String = (1..=100).map(|line| format!("line {line}\n")).collect();
-        let path = write(directory.path(), "big.txt", &body);
-        let excerpt = read_excerpt(&path, None).unwrap();
-        assert_eq!(100, excerpt.lines.len());
-        assert!(!excerpt.truncated);
-
-        let display = excerpt.clone().capped_for_display();
-        assert_eq!(MAX_EXCERPT_LINES, display.lines.len());
-        assert!(display.truncated);
-        assert_eq!(excerpt.lines[..MAX_EXCERPT_LINES], display.lines[..]);
-    }
-
-    #[test]
-    fn stamping_and_drift_detection_cover_lines_beyond_the_display_cap() {
-        let directory = tempfile::tempdir().unwrap();
-        let body: String = (1..=100).map(|line| format!("line {line}\n")).collect();
-        write(directory.path(), "big.rs", &body);
-        let deck_path = write(
-            directory.path(),
-            "deck.md",
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: .\n---\n\
-             ## q\nanswer\n<!-- at: big.rs:1-100 -->\n<!-- id: card-card1 -->\n",
-        );
-        assert_eq!(1, stamp_citations(&deck_path).unwrap());
-        let text = std::fs::read_to_string(&deck_path).unwrap();
-        assert!(
-            text.contains("<!-- at: big.rs:1-100 fingerprint: xxh64-"),
-            "the authored range must be stamped verbatim: {text}"
-        );
-
-        let drifted: String = (1..=100)
-            .map(|line| {
-                if line == 90 {
-                    "DRIFTED\n".to_string()
-                } else {
-                    format!("line {line}\n")
-                }
-            })
-            .collect();
-        write(directory.path(), "big.rs", &drifted);
-        let deck = Deck::load(&deck_path).unwrap();
-        assert!(matches!(
-            SourceBase::for_deck(&deck)
-                .inspect_citation(&deck.cards[0].citations[0])
-                .unwrap(),
-            CitationIntegrity::Changed
-        ));
-    }
-
-    #[test]
-    fn a_moved_excerpt_longer_than_the_display_cap_relocates_with_its_full_range() {
-        let directory = tempfile::tempdir().unwrap();
-        let block: Vec<String> = (1..=100).map(|line| format!("line {line}")).collect();
-        let body = format!("inserted\n{}\n", block.join("\n"));
-        write(directory.path(), "code.rs", &body);
-        let source = SourceBase {
-            base_dir: directory.path().to_path_buf(),
-            source_file: None,
-            asset_dir: None,
-        };
-        let citation = SourceCitation {
-            locator: "code.rs:1-100".into(),
-            fingerprint: Some(fingerprint_lines(block.iter().map(String::as_str))),
-            asset: None,
-            line: 4,
-        };
-        let CitationIntegrity::Relocated { locator, excerpt } =
-            source.inspect_citation(&citation).unwrap()
-        else {
-            panic!("the full moved excerpt should relocate");
-        };
-        assert_eq!("code.rs:2-101", locator);
-        assert_eq!(100, excerpt.lines.len());
-        assert_eq!("line 100", excerpt.lines[99].1);
-    }
-
-    #[test]
-    fn excerpt_fingerprints_ignore_line_numbers_and_trailing_whitespace() {
-        let a = Excerpt {
-            path: PathBuf::from("a.rs"),
-            lines: vec![(4, "fn answer() {  ".into()), (5, "    42".into())],
-            truncated: false,
-        };
-        let b = Excerpt {
-            path: PathBuf::from("b.rs"),
-            lines: vec![(40, "fn answer() {".into()), (41, "    42".into())],
-            truncated: false,
-        };
-        assert_eq!(excerpt_fingerprint(&a), excerpt_fingerprint(&b));
-    }
-
-    #[test]
-    fn excerpt_fingerprints_keep_line_boundaries() {
-        let excerpt = |lines: &[&str]| Excerpt {
-            path: PathBuf::from("a.rs"),
-            lines: lines
-                .iter()
-                .enumerate()
-                .map(|(index, line)| (index + 1, (*line).to_string()))
-                .collect(),
-            truncated: false,
-        };
-        assert_ne!(
-            excerpt_fingerprint(&excerpt(&["ab", "c"])),
-            excerpt_fingerprint(&excerpt(&["a", "bc"])),
-            "the same bytes split at another line boundary are another excerpt"
-        );
-        assert_ne!(
-            excerpt_fingerprint(&excerpt(&["ab", "c"])),
-            excerpt_fingerprint(&excerpt(&["abc"])),
-            "two lines are not their concatenation"
-        );
-    }
-
-    #[test]
-    fn a_moved_excerpt_is_found_by_fingerprint() {
-        let directory = tempfile::tempdir().unwrap();
-        write(
-            directory.path(),
-            "code.rs",
-            "inserted\nalpha\nfn answer() {\n    42\n}\nomega\n",
-        );
-        let source = SourceBase {
-            base_dir: directory.path().to_path_buf(),
-            source_file: None,
-            asset_dir: None,
-        };
-        let expected = Excerpt {
-            path: PathBuf::from("code.rs"),
-            lines: vec![
-                (2, "fn answer() {".into()),
-                (3, "    42".into()),
-                (4, "}".into()),
-            ],
-            truncated: false,
-        };
-        let citation = SourceCitation {
-            locator: "code.rs:2-4".into(),
-            fingerprint: Some(excerpt_fingerprint(&expected)),
-            asset: None,
-            line: 4,
-        };
-        let CitationIntegrity::Relocated { locator, excerpt } =
-            source.inspect_citation(&citation).unwrap()
-        else {
-            panic!("the exact excerpt should relocate");
-        };
-        assert_eq!("code.rs:3-5", locator);
-        assert_eq!("fn answer() {", excerpt.lines[0].1);
-    }
-
-    #[test]
-    fn a_changed_excerpt_is_not_relocated() {
-        let directory = tempfile::tempdir().unwrap();
-        write(directory.path(), "code.rs", "alpha\nchanged\nomega\n");
-        let source = SourceBase {
-            base_dir: directory.path().to_path_buf(),
-            source_file: None,
-            asset_dir: None,
-        };
-        let expected = Excerpt {
-            path: PathBuf::from("code.rs"),
-            lines: vec![(2, "original".into())],
-            truncated: false,
-        };
-        let citation = SourceCitation {
-            locator: "code.rs:2".into(),
-            fingerprint: Some(excerpt_fingerprint(&expected)),
-            asset: None,
-            line: 4,
-        };
-        assert!(matches!(
-            source.inspect_citation(&citation).unwrap(),
-            CitationIntegrity::Changed
-        ));
-    }
-
-    #[test]
-    fn duplicate_exact_excerpts_are_ambiguous() {
-        let directory = tempfile::tempdir().unwrap();
-        write(directory.path(), "code.rs", "same\nother\nsame\n");
-        let source = SourceBase {
-            base_dir: directory.path().to_path_buf(),
-            source_file: None,
-            asset_dir: None,
-        };
-        let expected = Excerpt {
-            path: PathBuf::from("code.rs"),
-            lines: vec![(2, "same".into())],
-            truncated: false,
-        };
-        let citation = SourceCitation {
-            locator: "code.rs:2".into(),
-            fingerprint: Some(excerpt_fingerprint(&expected)),
-            asset: None,
-            line: 4,
-        };
-        let CitationIntegrity::Ambiguous { locators } = source.inspect_citation(&citation).unwrap()
-        else {
-            panic!("duplicate excerpts should be ambiguous");
-        };
-        assert_eq!(vec!["code.rs:1", "code.rs:3"], locators);
-    }
-
-    /// A base whose live tree is `directory` and whose frozen objects live in
-    /// `directory/objects`, holding one excerpt-shaped object of `bytes`.
-    fn frozen_base(directory: &Path, bytes: &str) -> (SourceBase, String) {
-        let objects = directory.join("objects");
-        std::fs::create_dir_all(&objects).unwrap();
-        let name = crate::assets::object_name(bytes.as_bytes(), "rs");
-        std::fs::write(objects.join(&name), bytes).unwrap();
-        let base = SourceBase {
-            base_dir: directory.to_path_buf(),
-            source_file: None,
-            asset_dir: Some(objects),
-        };
-        (base, name)
-    }
-
-    #[test]
-    fn an_asset_backed_citation_reads_the_frozen_bytes_not_the_live_file() {
-        let directory = tempfile::tempdir().unwrap();
-        let (base, asset) = frozen_base(directory.path(), "beta\ngamma\n");
-        write(directory.path(), "code.rs", "MUTATED\nLIVE\nFILE\n");
-        let expected = Excerpt {
-            path: PathBuf::from("code.rs"),
-            lines: vec![(2, "beta".into()), (3, "gamma".into())],
-            truncated: false,
-        };
-        let citation = SourceCitation {
-            locator: "code.rs:2-3".into(),
-            fingerprint: Some(excerpt_fingerprint(&expected)),
-            asset: Some(asset),
-            line: 4,
-        };
-        let CitationIntegrity::Current(excerpt) = base.inspect_citation(&citation).unwrap() else {
-            panic!("the frozen citation must verify against the asset bytes");
-        };
-        assert_eq!(
-            vec![(2, "beta".to_string()), (3, "gamma".to_string())],
-            excerpt.lines
-        );
-    }
-
-    #[test]
-    fn an_asset_backed_excerpt_is_numbered_from_the_at_start_line() {
-        let directory = tempfile::tempdir().unwrap();
-        let (base, asset) = frozen_base(directory.path(), "alpha\nbeta\ngamma\n");
-        let content = Excerpt {
-            path: PathBuf::from("x.rs"),
-            lines: vec![
-                (46, "alpha".into()),
-                (47, "beta".into()),
-                (48, "gamma".into()),
-            ],
-            truncated: false,
-        };
-        let citation = SourceCitation {
-            locator: "x.rs:46-48".into(),
-            fingerprint: Some(excerpt_fingerprint(&content)),
-            asset: Some(asset),
-            line: 4,
-        };
-        let CitationIntegrity::Current(excerpt) = base.inspect_citation(&citation).unwrap() else {
-            panic!("the frozen citation must verify against the asset bytes");
-        };
-        assert_eq!(
-            vec![
-                (46, "alpha".to_string()),
-                (47, "beta".to_string()),
-                (48, "gamma".to_string())
-            ],
-            excerpt.lines
-        );
-    }
-
-    #[test]
-    fn an_asset_backed_whole_file_at_keeps_one_based_numbering() {
-        let directory = tempfile::tempdir().unwrap();
-        let (base, asset) = frozen_base(directory.path(), "alpha\nbeta\n");
-        let citation = SourceCitation {
-            locator: "x.rs".into(),
-            fingerprint: None,
-            asset: Some(asset),
-            line: 4,
-        };
-        let CitationIntegrity::Unfingerprinted { excerpt, .. } =
-            base.inspect_citation(&citation).unwrap()
-        else {
-            panic!("an unfingerprinted asset-backed citation still reads the asset");
-        };
-        assert_eq!(
-            vec![(1, "alpha".to_string()), (2, "beta".to_string())],
-            excerpt.lines
-        );
-    }
-
-    #[test]
-    fn an_asset_backed_mismatch_is_changed_never_relocated_from_the_live_tree() {
-        let directory = tempfile::tempdir().unwrap();
-        let (base, asset) = frozen_base(directory.path(), "alpha\nbeta\ngamma\n");
-        // The live file holds the cited excerpt at a shifted position; a live
-        // relocation scan would find it and re-derive the fingerprint.
-        write(directory.path(), "code.rs", "inserted\nwanted\n");
-        let wanted = Excerpt {
-            path: PathBuf::from("code.rs"),
-            lines: vec![(1, "wanted".into())],
-            truncated: false,
-        };
-        let citation = SourceCitation {
-            locator: "code.rs:1".into(),
-            fingerprint: Some(excerpt_fingerprint(&wanted)),
-            asset: Some(asset),
-            line: 4,
-        };
-        assert!(matches!(
-            base.inspect_citation(&citation).unwrap(),
-            CitationIntegrity::Changed
-        ));
-    }
-
-    #[test]
-    fn an_asset_name_that_is_not_content_addressed_is_rejected() {
-        let directory = tempfile::tempdir().unwrap();
-        let (base, _) = frozen_base(directory.path(), "a\n");
-        let citation = SourceCitation {
-            locator: "code.rs:1".into(),
-            fingerprint: None,
-            asset: Some("../../escape.rs".into()),
-            line: 4,
-        };
-        let error = base.inspect_citation(&citation).unwrap_err();
-        assert!(
-            format!("{error:#}").contains("not a content-addressed object name"),
-            "{error:#}"
-        );
-    }
-
-    #[test]
-    fn an_asset_backed_citation_without_an_asset_directory_errors() {
-        let directory = tempfile::tempdir().unwrap();
-        let base = SourceBase {
-            base_dir: directory.path().to_path_buf(),
-            source_file: None,
-            asset_dir: None,
-        };
-        let citation = SourceCitation {
-            locator: "code.rs:1".into(),
-            fingerprint: None,
-            asset: Some(crate::assets::object_name(b"a\n", "rs")),
-            line: 4,
-        };
-        let error = base.inspect_citation(&citation).unwrap_err();
-        assert!(
-            format!("{error:#}").contains("owns no asset directory"),
-            "{error:#}"
-        );
-    }
-
-    #[test]
-    fn stamping_citations_writes_the_current_fingerprint_without_changing_ids() {
-        let directory = tempfile::tempdir().unwrap();
-        write(directory.path(), "code.rs", "alpha\nbeta\ngamma\n");
-        let deck_path = write(
-            directory.path(),
-            "deck.md",
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: .\n---\n\
-             ## q\nanswer\n<!-- at: code.rs:2-3 -->\n<!-- id: card-card1 -->\n",
-        );
-        assert_eq!(1, stamp_citations(&deck_path).unwrap());
-        let text = std::fs::read_to_string(&deck_path).unwrap();
-        assert!(text.contains("<!-- at: code.rs:2-3 fingerprint: xxh64-"));
-        let deck = Deck::load(&deck_path).unwrap();
-        assert_eq!(Some("card-card1".to_string()), deck.cards[0].id());
-        assert!(matches!(
-            SourceBase::for_deck(&deck)
-                .inspect_citation(&deck.cards[0].citations[0])
-                .unwrap(),
-            CitationIntegrity::Current(_)
-        ));
-    }
-
-    #[test]
-    fn stamping_a_deck_whose_citations_are_all_current_writes_nothing() {
-        let directory = tempfile::tempdir().unwrap();
-        write(directory.path(), "code.rs", "alpha\nbeta\ngamma\n");
-        let deck_path = write(
-            directory.path(),
-            "deck.md",
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: .\n---\n\
-             ## q\nanswer\n<!-- at: code.rs:2-3 -->\n<!-- id: card-card1 -->\n",
-        );
-        assert_eq!(1, stamp_citations(&deck_path).unwrap());
-        let stamped = std::fs::read_to_string(&deck_path).unwrap();
-        let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
-        std::fs::File::options()
-            .write(true)
-            .open(&deck_path)
-            .unwrap()
-            .set_modified(old)
-            .unwrap();
-
-        assert_eq!(0, stamp_citations(&deck_path).unwrap());
-
-        assert_eq!(stamped, std::fs::read_to_string(&deck_path).unwrap());
-        assert_eq!(
-            old,
-            std::fs::metadata(&deck_path).unwrap().modified().unwrap(),
-            "a deck with nothing to stamp is not rewritten"
-        );
-    }
-
+    #[cfg(feature = "full")]
     #[test]
     fn source_path_resolves_one_expression_absolute_or_against_the_base() {
         let directory = tempfile::tempdir().unwrap();
@@ -1444,91 +991,22 @@ mod tests {
     }
 
     #[test]
-    fn a_citation_spanning_the_whole_file_is_current_and_a_shrunk_file_reads_changed() {
+    fn a_citation_spanning_the_whole_file_is_current_and_a_shifted_one_relocates() {
         let directory = tempfile::tempdir().unwrap();
         write(directory.path(), "notes.txt", "a\nb\nc\n");
-        write(directory.path(), "short.txt", "a\nb\n");
-        let deck_path = write(
-            directory.path(),
-            "deck.md",
-            "---\nformat-version: 1\nid: \"deck-src1\"\nexam: notes.txt\n---\n## q\na\n<!-- id: card-src1c1 -->\n",
-        );
-        let deck = crate::deck::Deck::load(&deck_path).unwrap();
-        let base = SourceBase::for_deck(&deck);
-
-        let excerpt = excerpt_at(directory.path(), None, "notes.txt:1-3").unwrap();
-        let whole_file = crate::card::SourceCitation {
-            locator: "notes.txt:1-3".into(),
-            fingerprint: Some(excerpt_fingerprint(&excerpt)),
-            asset: None,
-            line: 1,
-        };
+        let roots = roots(directory.path(), None);
+        let fingerprint = excerpt_fingerprint(&excerpt_of(&["a", "b", "c"]));
         assert!(matches!(
-            base.inspect_citation(&whole_file).unwrap(),
+            roots
+                .inspect_citation(&live("src:notes.txt:1-3", Some(fingerprint)))
+                .unwrap(),
             CitationIntegrity::Current(_)
         ));
-
-        let shifted = crate::card::SourceCitation {
-            locator: "notes.txt:2-4".into(),
-            fingerprint: Some(excerpt_fingerprint(&excerpt)),
-            asset: None,
-            line: 1,
-        };
         assert!(matches!(
-            base.inspect_citation(&shifted).unwrap(),
+            roots
+                .inspect_citation(&live("src:notes.txt:2-4", Some(fingerprint)))
+                .unwrap(),
             CitationIntegrity::Relocated { .. }
         ));
-    }
-
-    #[test]
-    fn a_file_inside_a_hidden_directory_is_never_found() {
-        let directory = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(directory.path().join(".hidden")).unwrap();
-        write(&directory.path().join(".hidden"), "target.md", "x\n");
-        assert_eq!(
-            None,
-            find_under(directory.path(), std::ffi::OsStr::new("target.md"))
-        );
-        std::fs::create_dir_all(directory.path().join("sub")).unwrap();
-        write(&directory.path().join("sub"), "target.md", "x\n");
-        assert!(find_under(directory.path(), std::ffi::OsStr::new("target.md")).is_some());
-    }
-
-    #[test]
-    fn display_labels_use_the_single_line_form_for_one_line_excerpts() {
-        let single = Excerpt {
-            path: PathBuf::from("ignored"),
-            lines: vec![(5, "x".into())],
-            truncated: false,
-        };
-        let (_, label) = relabel_for_display(single, "notes.md:5");
-        assert_eq!(Some("notes.md:5".to_string()), label);
-
-        let multi = Excerpt {
-            path: PathBuf::from("ignored"),
-            lines: vec![(1, "a".into()), (2, "b".into()), (3, "c".into())],
-            truncated: false,
-        };
-        let (_, label) = relabel_for_display(multi, "notes.md:1-3");
-        assert_eq!(Some("notes.md:1-3".to_string()), label);
-    }
-
-    #[test]
-    fn a_single_source_file_resolves_even_when_the_base_directory_is_gone() {
-        let directory = tempfile::tempdir().unwrap();
-        let file = write(directory.path(), "notes.md", "a\nb\nc\n");
-        let missing_base = directory.path().join("never-created");
-        let excerpt = excerpt_at(&missing_base, Some(&file), "notes.md:2").unwrap();
-        assert_eq!(vec![(2, "b".to_string())], excerpt.lines);
-    }
-
-    #[test]
-    fn line_specs_require_every_present_bound_to_be_numeric() {
-        for valid in ["1", "1-2", " 1 - 2 "] {
-            assert!(is_line_spec(valid), "{valid:?}");
-        }
-        for invalid in ["", "x", "1-x", "x-2", "1-", "-2", "1-2-3"] {
-            assert!(!is_line_spec(invalid), "{invalid:?}");
-        }
     }
 }

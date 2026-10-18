@@ -742,7 +742,7 @@ fn trace_state(session: &alix::trace::TraceSession) -> TraceSessionState {
                     .iter()
                     .map(|given| projector.project(given))
                     .collect();
-                state.locator = c.locator.clone();
+                state.locator = c.locator.as_ref().map(ToString::to_string);
             }
         }
         TraceSessionPhase::Reveal => {
@@ -755,7 +755,7 @@ fn trace_state(session: &alix::trace::TraceSession) -> TraceSessionState {
                     .iter()
                     .map(|given| projector.project(given))
                     .collect();
-                state.locator = c.locator.clone();
+                state.locator = c.locator.as_ref().map(ToString::to_string);
                 state.points = c.points.clone();
                 state.point_runs = c
                     .points
@@ -765,16 +765,7 @@ fn trace_state(session: &alix::trace::TraceSession) -> TraceSessionState {
                 state.note = c.note.clone();
                 state.note_runs = c.note.as_deref().map(|note| projector.project(note));
                 match trace.excerpt(c) {
-                    Ok(ex) => {
-                        let (ex, label) = alix::source::relabel_for_display(
-                            ex,
-                            c.locator.as_deref().unwrap_or_default(),
-                        );
-                        if let Some(label) = label {
-                            state.locator = Some(label);
-                        }
-                        state.excerpt = Some(trace_excerpt(&ex.capped_for_display()));
-                    }
+                    Ok(ex) => state.excerpt = Some(trace_excerpt(&ex.capped_for_display())),
                     Err(e) => state.excerpt_error = Some(format!("{e:#}")),
                 }
             }
@@ -1120,7 +1111,7 @@ fn tutor_card_of(card: &alix::card::Card) -> Option<TutorCard> {
         at: card
             .citations
             .first()
-            .map(|citation| citation.locator.clone()),
+            .map(|citation| citation.locator.to_string()),
         line: card.line,
     })
 }
@@ -2210,17 +2201,19 @@ mod tests {
             "---\n\
              trace: how `it` works\n\
              exam: source.txt\n\
+             cite:\n\
+               - src: .\n\
              ---\n\
              ## Predict the `first` hop\n\
              it reads the `first` line\n\
              > [!NOTE]\n\
              > call `read`\n\
              <!-- given: line — the `input` line -->\n\
-             <!-- at: 1 -->\n\
+             <!-- at: src:source.txt:1 -->\n\
              \n\
              ## Predict the second hop\n\
              it reads lines two and three\n\
-             <!-- at: 2-3 -->\n",
+             <!-- at: src:source.txt:2-3 -->\n",
         );
         alix::stamp::stamp_deck(&path).unwrap();
         alix::source::stamp_citations(&path).unwrap();
@@ -2377,10 +2370,12 @@ mod tests {
             "---\n\
              trace: a member trace\n\
              exam: source.txt\n\
+             cite:\n\
+               - src: .\n\
              ---\n\
              ## Predict\n\
              it reads line two\n\
-             <!-- at: 2 -->\n",
+             <!-- at: src:source.txt:2 -->\n",
         );
         alix::assets::initialize(&deck_path).unwrap();
         alix::source::stamp_citations(&deck_path).unwrap();
@@ -2412,7 +2407,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
 
-        // No source at all: a bare line-number locator has no file to resolve against.
+        // No `cite:` at all: the locator's key names no root.
         let no_source = root.join("no-source.md");
         write_deck(
             &no_source,
@@ -2421,7 +2416,7 @@ mod tests {
              ---\n\
              ## Predict something\n\
              the answer\n\
-             <!-- at: 1 -->\n",
+             <!-- at: src:readme.md:1 -->\n",
         );
         let mut s = TraceSession::open(
             no_source.to_string_lossy().into_owned(),
@@ -2436,17 +2431,19 @@ mod tests {
         assert!(state.excerpt.is_none(), "no panic, just an honest fallback");
         assert!(state.excerpt_error.is_some());
 
-        // A URL source has no local line ranges either.
+        // A url root is never fetched, so an unfrozen passage cannot reveal.
         let url_source = root.join("url-source.md");
         write_deck(
             &url_source,
             "---\n\
              trace: a path with a URL source\n\
              exam: https://example.com/readme.md\n\
+             cite:\n\
+               - guide: https://example.com/readme.md\n\
              ---\n\
              ## Predict something\n\
              the answer\n\
-             <!-- at: 1 -->\n",
+             <!-- at: guide -->\n",
         );
         let mut s = TraceSession::open(
             url_source.to_string_lossy().into_owned(),

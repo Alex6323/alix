@@ -13,10 +13,11 @@ use crate::{
     assets,
     augment::AugmentCache,
     card::Card,
+    cite::CitationRoots,
     config::{AskConfig, GenerateDeckConfig},
     deck::{AtRewrite, Deck, DeckError},
     parser,
-    source::{CitationIntegrity, SourceBase},
+    source::CitationIntegrity,
     workspace::{self, Workspace, WorkspaceFiles},
 };
 
@@ -929,10 +930,10 @@ fn prune_staged_augmentation(
 }
 
 fn validate_citations(deck: &Deck) -> Result<()> {
-    let source = SourceBase::for_deck(deck);
+    let roots = CitationRoots::for_deck(deck);
     for card in &deck.cards {
         for citation in &card.citations {
-            match source.inspect_citation(citation)? {
+            match roots.inspect_citation(citation)? {
                 CitationIntegrity::Current(_) => {}
                 CitationIntegrity::Unfingerprinted { .. } => {
                     bail!(
@@ -1374,7 +1375,7 @@ mod tests {
         fs::write(
             &deck,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n## Old question\nOld answer\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## Old question\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1386,7 +1387,7 @@ mod tests {
     #[cfg(unix)]
     fn proposal(source: &Path, body: &str) -> String {
         format!(
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {}\n---\n{body}",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {0}\ncite:\n  - src: {0}\n---\n{body}",
             parser::yaml_quote(&source.display().to_string())
         )
     }
@@ -1444,7 +1445,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Rewritten question\nOld answer\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
+                "## Rewritten question\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
         let error = stage(
@@ -1476,7 +1477,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Old question\n- [x] Old answer\n- [ ] New distractor\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
+                "## Old question\n- [x] Old answer\n- [ ] New distractor\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
         let error = stage(
@@ -1501,7 +1502,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Old question\nOld answer\n> [!NOTE]\n> Clearer note.\n<!-- at: code.rs:2 -->\n<!-- id: card-oldcard -->\n",
+                "## Old question\nOld answer\n> [!NOTE]\n> Clearer note.\n<!-- at: src:code.rs:2 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
 
@@ -1552,7 +1553,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## New question\nNew answer\n<!-- at: code.rs:2 -->\n",
+                "## New question\nNew answer\n<!-- at: src:code.rs:2 -->\n",
             ),
         );
 
@@ -1635,7 +1636,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Old question\nOld answer\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
+                "## Old question\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
 
@@ -1806,7 +1807,7 @@ mod tests {
         fs::write(
             &deck,
             format!(
-                "---\nformat-version: 1\nid: \"{deck_id}\"\nexam: {}\n---\n## Other question\nOther answer\n<!-- at: code.rs:1 -->\n<!-- id: {card_id} -->\n",
+                "---\nformat-version: 1\nid: \"{deck_id}\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## Other question\nOther answer\n<!-- at: src:code.rs:1 -->\n<!-- id: {card_id} -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1823,7 +1824,7 @@ mod tests {
         add_member(&root, &source, "other.md", "deck-deck2", "card-othercard");
         let reply = proposal(
             &source,
-            "## New question\nNew answer\n<!-- at: code.rs:1 -->\n",
+            "## New question\nNew answer\n<!-- at: src:code.rs:1 -->\n",
         );
         let command = fake_reply(&root, &reply);
 
@@ -1870,7 +1871,7 @@ mod tests {
             &good,
             proposal(
                 &source,
-                "## New question\nNew answer\n<!-- at: code.rs:1 -->\n",
+                "## New question\nNew answer\n<!-- at: src:code.rs:1 -->\n",
             ),
         )
         .unwrap();
@@ -1918,7 +1919,7 @@ mod tests {
             &good,
             proposal(
                 &source,
-                "## New question\nNew answer\n<!-- at: code.rs:1 -->\n",
+                "## New question\nNew answer\n<!-- at: src:code.rs:1 -->\n",
             ),
         )
         .unwrap();
@@ -2016,7 +2017,7 @@ mod tests {
         let member = add_member(&root, &source, "other.md", "deck-deck2", "card-othercard");
         let reply = proposal(
             &source,
-            "## New question\nNew answer\n<!-- at: code.rs:1 -->\n",
+            "## New question\nNew answer\n<!-- at: src:code.rs:1 -->\n",
         );
         let command = fake_reply(&root, &reply);
         let before = fs::read(&member).unwrap();
@@ -2042,7 +2043,7 @@ mod tests {
         let (_dir, root, source, _) = workspace("first\nsecond\nthird\n");
         let reply = proposal(
             &source,
-            "## New question\nNew answer\n<!-- at: code.rs:2 -->\n\n## Second question\nSecond answer\n<!-- at: code.rs:99 -->\n",
+            "## New question\nNew answer\n<!-- at: src:code.rs:2 -->\n\n## Second question\nSecond answer\n<!-- at: src:code.rs:99 -->\n",
         );
         let command = fake_reply(&root, &reply);
         let owned = |base: &Path| {
@@ -2078,7 +2079,7 @@ mod tests {
         add_member(&root, &source, "other.md", "deck-deck2", "card-othercard");
         let reply = proposal(
             &source,
-            "## New question\nNew answer\n<!-- at: code.rs:1 -->\n",
+            "## New question\nNew answer\n<!-- at: src:code.rs:1 -->\n",
         );
         let command = fake_reply(&root, &reply);
         let staged = stage(&root, &GenerateDeckConfig::default(), &ask_config(&command)).unwrap();
@@ -2133,7 +2134,7 @@ mod tests {
         fs::write(
             root.join(workspace::DECKS).join("live.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck2\"\nexam: {}\n---\n## Live question\nLive answer\n<!-- at: code.rs:1 -->\n<!-- id: card-livecard -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck2\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## Live question\nLive answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-livecard -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -2219,7 +2220,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Old question\nOld answer\n> [!NOTE]\n> reviewed\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
+                "## Old question\nOld answer\n> [!NOTE]\n> reviewed\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
         stage(
@@ -2493,7 +2494,7 @@ mod tests {
         fs::write(
             &raw,
             format!(
-                "---\nformat-version: 1\nid: \"deck-raw\"\nexam: {}\n---\n## Q\nA\n<!-- at: code.rs:1 -->\n<!-- id: card-raw -->\n",
+                "---\nformat-version: 1\nid: \"deck-raw\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## Q\nA\n<!-- at: src:code.rs:1 -->\n<!-- id: card-raw -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -2605,7 +2606,7 @@ mod tests {
             &workspace,
             &proposal(
                 &source,
-                "## Old question\nOld answer\n> [!NOTE]\n> reviewed\n<!-- at: code.rs:1 -->\n<!-- id: card-oldcard -->\n",
+                "## Old question\nOld answer\n> [!NOTE]\n> reviewed\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n",
             ),
         );
         stage(

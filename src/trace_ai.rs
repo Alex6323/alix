@@ -544,9 +544,9 @@ mod tests {
         write(
             &root.join("ws/decks"),
             "t.md",
-            "---\ntrace: how it works\nexam: ../src\n---\n\
-             ## hop 1\nit reads a\n<!-- at: a.rs:2-3 -->\n\
-             ## hop 2\nit reads b\n<!-- at: b.rs:1 -->\n",
+            "---\ntrace: how it works\nexam: ../src\ncite:\n  - src: ../src\n---\n\
+             ## hop 1\nit reads a\n<!-- at: src:a.rs:2-3 -->\n\
+             ## hop 2\nit reads b\n<!-- at: src:b.rs:1 -->\n",
         )
     }
 
@@ -577,12 +577,12 @@ mod tests {
         );
         assert!(!text.contains("origin:"), "freezing stamps nothing: {text}");
         assert!(
-            text.contains("<!-- at: a.rs:2-3 fingerprint: xxh64-")
+            text.contains("<!-- at: src:a.rs:2-3 fingerprint: xxh64-")
                 && text.contains(&format!(" asset: {first} -->\n")),
             "{text}"
         );
         assert!(
-            text.contains("<!-- at: b.rs:1 fingerprint: xxh64-")
+            text.contains("<!-- at: src:b.rs:1 fingerprint: xxh64-")
                 && text.contains(&format!(" asset: {second} -->\n")),
             "{text}"
         );
@@ -621,7 +621,7 @@ mod tests {
         let deck_path = write(
             &root.join("ws/decks"),
             "t.md",
-            "---\ntrace: t\nexam: ../notes.md\n---\n## hop\np\n<!-- at: 2 -->\n",
+            "---\ntrace: t\nexam: ../notes.md\ncite:\n  - src: ..\n---\n## hop\np\n<!-- at: src:notes.md:2 -->\n",
         );
         let report = crate::assets::initialize(&deck_path).unwrap();
         let deck = Deck::load(&deck_path).unwrap();
@@ -645,7 +645,7 @@ mod tests {
             "the live source declaration stays untouched: {text}"
         );
         assert!(
-            text.contains("<!-- at: notes.md:2 fingerprint: xxh64-")
+            text.contains("<!-- at: src:notes.md:2 fingerprint: xxh64-")
                 && text.contains(&format!(" asset: {excerpt_name} -->\n")),
             "{text}"
         );
@@ -668,9 +668,9 @@ mod tests {
         let deck_path = write(
             &root.join("ws/decks"),
             "d.md",
-            "---\nexam:\n  - ../src/a.rs\n  - ../src/b.rs\n---\n\
-             ## q1\np\n<!-- at: a.rs:2-3 -->\n\
-             ## q2\np\n<!-- at: b.rs:1 -->\n",
+            "---\nexam:\n  - ../src/a.rs\n  - ../src/b.rs\ncite:\n  - src: ../src\n---\n\
+             ## q1\np\n<!-- at: src:a.rs:2-3 -->\n\
+             ## q2\np\n<!-- at: src:b.rs:1 -->\n",
         );
         let report = crate::assets::initialize(&deck_path).unwrap();
         let deck = Deck::load(&deck_path).unwrap();
@@ -708,7 +708,7 @@ mod tests {
         let loose = write(
             root,
             "t.md",
-            "---\ntrace: t\nexam: .\n---\n## h\np\n<!-- at: x.rs:1 -->\n",
+            "---\ntrace: t\nexam: .\ncite:\n  - src: .\n---\n## h\np\n<!-- at: src:x.rs:1 -->\n",
         );
         crate::stamp::stamp_deck(&loose).unwrap();
         let err = crate::assets::freeze_member(&loose).unwrap_err();
@@ -716,17 +716,15 @@ mod tests {
 
         std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(&root.join("ws"), "alix.toml", "[defaults]\n");
-        // A URL source holds no freezable bytes, so a citation with no local
-        // source to land in refuses the freeze.
         let url = write(
             &root.join("ws/decks"),
             "u.md",
-            "---\ntrace: t\nexam: https://example.com/p\n---\n## h\np\n<!-- at: 1 -->\n",
+            "---\ntrace: t\nexam: https://example.com/p\ncite:\n  - src: https://example.com/p\n---\n## h\np\n<!-- at: src -->\n",
         );
         let err = crate::assets::initialize(&url).unwrap_err();
         assert!(
-            format!("{err:#}").contains("cannot freeze citation"),
-            "{err:#}"
+            format!("{err:#}").contains("no `asset:`"),
+            "a passage under a url root is never fetched, so an unfrozen one refuses: {err:#}"
         );
     }
 }

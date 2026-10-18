@@ -860,8 +860,12 @@ mod tests {
         std::fs::create_dir(&decks).unwrap();
         std::fs::write(dir.path().join(crate::workspace::MANIFEST), "").unwrap();
 
-        let error =
-            place_deck(&decks, "facts", "---\nexam: missing.md\n---\n## q\na\n").unwrap_err();
+        let error = place_deck(
+            &decks,
+            "facts",
+            "---\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:missing.md:1 -->\n",
+        )
+        .unwrap_err();
 
         assert!(format!("{error:#}").contains("missing.md"));
         assert!(!decks.join("facts.md").exists());
@@ -1045,7 +1049,7 @@ mod tests {
     #[test]
     fn a_replace_that_fails_after_its_renames_restores_the_whole_trio() {
         // A workspace member, because only members freeze their source and a
-        // missing `exam:` is the portable post-rename failure injection.
+        // citation of a missing file is the portable failure injection.
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path().join("ws");
         let members = ws.join("decks");
@@ -1068,7 +1072,7 @@ mod tests {
         let err = replace_deck(
             &members,
             "a",
-            "---\nexam: missing.md\n---\n## new q\nnew ans\n",
+            "---\ncite:\n  - src: .\n---\n## new q\nnew ans\n<!-- at: src:missing.md:1 -->\n",
             &mut store,
         )
         .unwrap_err();

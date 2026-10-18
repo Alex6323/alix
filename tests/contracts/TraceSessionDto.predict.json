@@ -19,7 +19,7 @@
     "a String at capacity"
   ],
   "kind": "trace",
-  "locator": "lib.rs:40-52",
+  "locator": "src:lib.rs:40-52",
   "note": null,
   "note_runs": null,
   "path": [

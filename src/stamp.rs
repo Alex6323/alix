@@ -908,13 +908,13 @@ mod tests {
 
     #[test]
     fn a_standalone_marker_with_card_content_after_it_is_misplaced() {
-        let text = "## q\na\n<!-- id: card-q1 -->\n<!-- at: notes.md:2 -->\n";
+        let text = "## q\na\n<!-- id: card-q1 -->\n<!-- at: src:notes.md:2 -->\n";
         assert_eq!(vec![3], misplaced_id_markers(text));
     }
 
     #[test]
     fn a_marker_closing_its_card_is_canonical() {
-        let text = "## q\na\n<!-- at: notes.md:2 -->\n<!-- id: card-q1 -->\n\n## r\nb\n<!-- id: card-r1 -->\n";
+        let text = "## q\na\n<!-- at: src:notes.md:2 -->\n<!-- id: card-q1 -->\n\n## r\nb\n<!-- id: card-r1 -->\n";
         assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
     }
 

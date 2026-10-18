@@ -22,11 +22,11 @@ use crate::{
     augment::{self, AugmentCache},
     augment_ai,
     card::Card,
+    cite::CitationRoots,
     config::{AiConfig, AskConfig, Audience, GenerateDeckConfig},
     exam, generate, math, parser,
     session::{Session, now_ms},
     share,
-    source::SourceBase,
     trace::{self, TraceSession},
     walk::WalkSession,
 };
@@ -40,7 +40,7 @@ struct TutorInfo {
     links: Vec<String>,
     sources: crate::deck::ExamLayers,
     root: Option<PathBuf>,
-    source_base: Option<SourceBase>,
+    source_base: Option<CitationRoots>,
 }
 
 struct TutorContextData {
@@ -99,7 +99,7 @@ pub(super) struct Reviewing {
     pub(super) links: HashMap<String, Vec<String>>,
     pub(super) exam_layers: HashMap<String, crate::deck::ExamLayers>,
     pub(super) base_roots: HashMap<String, PathBuf>,
-    pub(super) source_bases: HashMap<String, SourceBase>,
+    pub(super) source_bases: HashMap<String, CitationRoots>,
     pub(super) augment: AugmentCache,
     pub(super) present_seq: u64,
     pub(super) original_fronts: HashMap<String, String>,
@@ -338,9 +338,11 @@ fn remote_card(c: &RemoteCard) -> Card {
         Vec::new(),
         0,
     );
-    if let Some(locator) = &c.at {
+    if let Some(at) = &c.at
+        && let Ok(fields) = crate::locator::parse_locator_comment(&format!("<!-- at: {at} -->"))
+    {
         card.citations.push(crate::card::SourceCitation {
-            locator: locator.clone(),
+            locator: fields.locator,
             fingerprint: None,
             asset: None,
             line: 0,

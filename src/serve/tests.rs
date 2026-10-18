@@ -7,7 +7,7 @@ use std::{
 
 use super::*;
 #[cfg(unix)]
-use crate::source::SourceBase;
+use crate::cite::CitationRoots;
 use crate::{
     answer::{Input, Mode, mode_name},
     ask::{self, Reply},
@@ -2300,8 +2300,8 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
     let deck_path = dir.path().join("decks/d.md");
     std::fs::write(
         &deck_path,
-        "---\nformat-version: 1\nid: \"deck-frozendeck1\"\nexam: 29.rs\n---\n## q\na\n\
-         <!-- at: 29.rs:1 -->\n",
+        "---\nformat-version: 1\nid: \"deck-frozendeck1\"\nexam: 29.rs\ncite:\n  - src: .\n---\n## q\na\n\
+         <!-- at: src:29.rs:1 -->\n",
     )
     .unwrap();
     crate::assets::freeze_member(&deck_path).unwrap();
@@ -2329,7 +2329,10 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
         dir.path().join("gone-source"),
     );
     let mut source_bases = HashMap::new();
-    source_bases.insert("deck-frozendeck1".to_string(), SourceBase::for_deck(&deck));
+    source_bases.insert(
+        "deck-frozendeck1".to_string(),
+        CitationRoots::for_deck(&deck),
+    );
     let mut r = Reviewing::new(SessionBuild {
         session,
         label: "d.md".to_string(),
@@ -2384,8 +2387,8 @@ fn a_frozen_review_card_with_a_live_local_source_needs_no_fallback_warning() {
     let deck_path = dir.path().join("decks/d.md");
     std::fs::write(
         &deck_path,
-        "---\nformat-version: 1\nid: \"deck-livefrozen1\"\nexam: source.rs\n---\n\
-         ## q\na\n<!-- at: source.rs:1 -->\n<!-- id: card-livefrozen1 -->\n",
+        "---\nformat-version: 1\nid: \"deck-livefrozen1\"\nexam: source.rs\ncite:\n  - src: .\n---\n\
+         ## q\na\n<!-- at: src:source.rs:1 -->\n<!-- id: card-livefrozen1 -->\n",
     )
     .unwrap();
     crate::assets::freeze_member(&deck_path).unwrap();
@@ -2408,7 +2411,7 @@ fn a_frozen_review_card_with_a_live_local_source_needs_no_fallback_warning() {
     let mut base_roots = HashMap::new();
     base_roots.insert(deck_id.clone(), dir.path().to_path_buf());
     let mut source_bases = HashMap::new();
-    source_bases.insert(deck_id, SourceBase::for_deck(&deck));
+    source_bases.insert(deck_id, CitationRoots::for_deck(&deck));
     let mut reviewing = Reviewing::new(SessionBuild {
         session,
         label: "d.md".to_string(),
@@ -2500,17 +2503,17 @@ fn trace_deck(dir: &Path) -> crate::trace::Trace {
     let path = dir.join("t.md");
     std::fs::write(
         &path,
-        "---\ntrace: how `it` works\nexam: source.txt\n---\n\
+        "---\ntrace: how `it` works\nexam: source.txt\ncite:\n  - src: .\n---\n\
          ## Predict the `first` hop\n\
          it reads the `first` line\n\
          > [!NOTE]\n\
          > call `read`\n\
          <!-- given: line — the `input` line -->\n\
-         <!-- at: 1 -->\n\
+         <!-- at: src:source.txt:1 -->\n\
          <!-- id: card-t1 -->\n\
          ## Predict the second hop\n\
          it reads line two\n\
-         <!-- at: 2 -->\n\
+         <!-- at: src:source.txt:2 -->\n\
          <!-- id: card-t2 -->\n",
     )
     .unwrap();

@@ -12,6 +12,20 @@ pub struct Locator {
     pub target: Target,
 }
 
+impl std::fmt::Display for Locator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.key)?;
+        let Target::File { path, range } = &self.target else {
+            return Ok(());
+        };
+        write!(f, ":{}", quote_if_needed(path))?;
+        match range {
+            Some((start, end)) => write!(f, ":{}", format_range(*start, *end)),
+            None => Ok(()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Target {
     File {
@@ -281,15 +295,12 @@ pub fn format_locator(locator: &Locator) -> Result<String, LocatorError> {
         return Ok(key);
     };
     check_path(path)?;
-    let mut value = format!("{key}:{}", quote_if_needed(path));
-    if let Some((start, end)) = range {
-        if *start < 1 || start > end {
-            return Err(LocatorError::Range(format!("{start}-{end}")));
-        }
-        value.push(':');
-        value.push_str(&format_range(*start, *end));
+    if let Some((start, end)) = range
+        && (*start < 1 || start > end)
+    {
+        return Err(LocatorError::Range(format!("{start}-{end}")));
     }
-    Ok(value)
+    Ok(locator.to_string())
 }
 
 fn quote_if_needed(path: &str) -> String {
@@ -303,7 +314,7 @@ fn quote_if_needed(path: &str) -> String {
     }
 }
 
-fn format_range(start: u32, end: u32) -> String {
+pub(crate) fn format_range(start: u32, end: u32) -> String {
     if start == end {
         start.to_string()
     } else {

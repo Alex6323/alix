@@ -4,10 +4,12 @@ use anyhow::{Result, anyhow, bail};
 
 use crate::{
     card::SourceCitation,
-    deck::{Deck, is_url},
+    cite::{CitationRoots, Resolved, Root},
+    deck::Deck,
     depth::Depth,
+    locator::{Locator, Target},
     scheduler::{Fsrs, Grade, Scheduler},
-    source::{Excerpt, SourceBase, parse_line_range, parse_locator, relabel_for_display},
+    source::Excerpt,
     store::Store,
 };
 
@@ -53,7 +55,7 @@ pub struct Checkpoint {
     pub points: Vec<String>,
     pub givens: Vec<String>,
     pub note: Option<String>,
-    pub locator: Option<String>,
+    pub locator: Option<Locator>,
     pub fingerprint: Option<u64>,
     pub asset: Option<String>,
     pub card_id: String,
@@ -70,7 +72,7 @@ pub struct Trace {
     pub checkpoints: Vec<Checkpoint>,
     pub deck_path: PathBuf,
     pub base_root: Option<PathBuf>,
-    source_base: SourceBase,
+    roots: CitationRoots,
 }
 
 impl Trace {
@@ -122,7 +124,7 @@ impl Trace {
             checkpoints,
             deck_path: deck.path.clone(),
             base_root: deck.base_root(),
-            source_base: SourceBase::for_deck(deck),
+            roots: CitationRoots::for_deck(deck),
         })
     }
 
@@ -138,10 +140,10 @@ impl Trace {
     pub fn excerpt(&self, checkpoint: &Checkpoint) -> Result<Excerpt> {
         let locator = checkpoint
             .locator
-            .as_deref()
+            .as_ref()
             .ok_or_else(|| anyhow!("this checkpoint has no `at:` locator to reveal"))?;
-        self.source_base.checked_excerpt(&SourceCitation {
-            locator: locator.to_string(),
+        self.roots.checked_excerpt(&SourceCitation {
+            locator: locator.clone(),
             fingerprint: checkpoint.fingerprint,
             asset: checkpoint.asset.clone(),
             line: checkpoint.line,
@@ -151,64 +153,34 @@ impl Trace {
     pub fn frozen_block(&self, checkpoint: &Checkpoint) -> Option<String> {
         checkpoint.asset.as_deref()?;
         let excerpt = self.excerpt(checkpoint).ok()?;
-        Some(render_frozen_block(excerpt, checkpoint.locator.as_deref()?))
+        Some(render_frozen_block(excerpt, checkpoint.locator.as_ref()?))
     }
 
     pub fn lint_locators(&self) -> Vec<LocatorIssue> {
         let mut issues = Vec::new();
-        let url_source = self.source.as_deref().is_some_and(is_url);
         for (i, cp) in self.checkpoints.iter().enumerate() {
-            let Some(locator) = cp.locator.as_deref() else {
+            let Some(locator) = cp.locator.as_ref() else {
                 issues.push(LocatorIssue {
                     checkpoint: i,
                     message: "no `at:` locator, so a trace can't reveal its source".to_string(),
                 });
                 continue;
             };
-            if url_source || cp.asset.is_some() {
-                continue;
-            }
-            let (file, spec) = parse_locator(locator);
-            let Some(path) = self.source_base.locator_path(file.as_deref()) else {
-                issues.push(LocatorIssue {
-                    checkpoint: i,
-                    message: format!(
-                        "locator `{locator}` gives only line numbers, but `exam:` \
-                         is not a single file; write it as `file:lines`"
-                    ),
-                });
-                continue;
+            let outcome = if cp.asset.is_some() {
+                self.roots
+                    .check(locator, true)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            } else {
+                self.roots
+                    .live_excerpt(locator)
+                    .map(|_| ())
+                    .map_err(|error| format!("{error:#}"))
             };
-            let Ok(text) = std::fs::read_to_string(&path) else {
+            if let Err(message) = outcome {
                 issues.push(LocatorIssue {
                     checkpoint: i,
-                    message: format!(
-                        "locator `{locator}` → `{}`: file not found or unreadable",
-                        path.display()
-                    ),
-                });
-                continue;
-            };
-            let Some(spec) = spec else { continue };
-            let (start, end) = parse_line_range(&spec);
-            let n = text.lines().count();
-            if start > n {
-                issues.push(LocatorIssue {
-                    checkpoint: i,
-                    message: format!(
-                        "locator `{locator}` starts at line {start}, but `{}` has only {n} \
-                         lines; the source changed, re-point it",
-                        path.display()
-                    ),
-                });
-            } else if end > n {
-                issues.push(LocatorIssue {
-                    checkpoint: i,
-                    message: format!(
-                        "locator `{locator}` ends at line {end}, but `{}` has only {n} lines \
-                         ; the excerpt is clamped short, re-point it",
-                        path.display()
-                    ),
+                    message: format!("locator `{locator}`: {message}"),
                 });
             }
         }
@@ -347,13 +319,8 @@ pub struct Summary {
     pub weak: Vec<usize>,
 }
 
-fn render_frozen_block(excerpt: Excerpt, at: &str) -> String {
-    let (excerpt, label) = relabel_for_display(excerpt, at);
-    let mut s = String::new();
-    if let Some(label) = label {
-        s.push_str(&label);
-        s.push('\n');
-    }
+fn render_frozen_block(excerpt: Excerpt, locator: &Locator) -> String {
+    let mut s = format!("{locator}\n");
     for (n, text) in &excerpt.lines {
         s.push_str(&format!("{n}\t{text}\n"));
     }
@@ -378,28 +345,30 @@ pub enum DriftKind {
 #[derive(Clone, Debug)]
 pub struct Drift {
     pub line: usize,
-    pub at: String,
+    pub at: Locator,
     pub kind: DriftKind,
 }
 
 /// Reports a moved excerpt as well as a lost one: an `at:` range that no longer
 /// holds its own evidence points a reader at unrelated code, and says nothing
-/// while doing it.
+/// while doing it. Each frozen locator is judged against its own key's root;
+/// a passage under a url root has no live side and never drifts.
 pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
-    let Some(base_root) = deck.base_root() else {
-        return Vec::new();
-    };
-    let source_base = SourceBase::for_deck(deck);
+    let roots = CitationRoots::for_deck(deck);
     let mut out = Vec::new();
     for card in &deck.cards {
         for citation in &card.citations {
             if citation.asset.is_none() {
                 continue;
             }
-            let (Some(file), spec) = parse_locator(&citation.locator) else {
+            let locator = &citation.locator;
+            let Ok(root) = roots.check(locator, true) else {
                 continue;
             };
-            let Ok(frozen) = source_base.citation_excerpt(citation) else {
+            if matches!(root.root, Root::Url(_)) {
+                continue;
+            }
+            let Ok(frozen) = roots.citation_excerpt(citation) else {
                 continue;
             };
             let block: Vec<String> = frozen
@@ -410,11 +379,15 @@ pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
             let mut drift = |kind| {
                 out.push(Drift {
                     line: card.line,
-                    at: citation.locator.clone(),
+                    at: locator.clone(),
                     kind,
                 })
             };
-            let Ok(live) = std::fs::read_to_string(base_root.join(&file)) else {
+            let live = match roots.resolve(locator, true) {
+                Ok(Resolved::File { path, .. }) => std::fs::read_to_string(path).ok(),
+                _ => None,
+            };
+            let Some(live) = live else {
                 drift(DriftKind::SourceGone);
                 continue;
             };
@@ -424,7 +397,13 @@ pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
                 Placement::Nowhere => drift(DriftKind::Rewritten),
                 Placement::Many => drift(DriftKind::Ambiguous),
                 Placement::Once(start) => {
-                    let recorded = spec.as_deref().map(|spec| parse_line_range(spec).0);
+                    let recorded = match locator.target {
+                        Target::File {
+                            range: Some((start, _)),
+                            ..
+                        } => Some(start as usize),
+                        _ => None,
+                    };
                     if recorded != Some(start) {
                         drift(DriftKind::Moved {
                             start,
@@ -473,9 +452,9 @@ fn locate_block(block: &[String], live: &[&str]) -> Placement {
     first.map_or(Placement::Nowhere, Placement::Once)
 }
 
-pub fn frozen_excerpt_block(citation: &SourceCitation, source_base: &SourceBase) -> Option<String> {
+pub fn frozen_excerpt_block(citation: &SourceCitation, roots: &CitationRoots) -> Option<String> {
     citation.asset.as_deref()?;
-    let excerpt = source_base.checked_excerpt(citation).ok()?;
+    let excerpt = roots.checked_excerpt(citation).ok()?;
     Some(render_frozen_block(excerpt, &citation.locator))
 }
 
@@ -536,7 +515,7 @@ mod tests {
         std::fs::write(
             &deck_path,
             format!(
-                "---\ntrace: how a moves\nexam: {}\n---\n## what happens?\nit advances\n<!-- at: 1-2 -->\n",
+                "---\ntrace: how a moves\nexam: {}\ncite:\n  - src: .\n---\n## what happens?\nit advances\n<!-- at: src:src.rs:1-2 -->\n",
                 dir.path().join("src.rs").display()
             ),
         )
@@ -576,16 +555,16 @@ mod tests {
             dir,
             "t.md",
             "---\ntrace: how it works\n\
-             exam: source.txt\n---\n\
+             exam: source.txt\ncite:\n  - src: .\n---\n\
              ## Predict the first hop\n\
              it reads the first line\n\
              > [!NOTE]\n\
              > the entry point\n\
              <!-- given: line — the current input line -->\n\
-             <!-- at: 1 -->\n\
+             <!-- at: src:source.txt:1 -->\n\
              ## Predict the second hop\n\
              it reads lines two and three\n\
-             <!-- at: 2-3 -->\n",
+             <!-- at: src:source.txt:2-3 -->\n",
         );
         crate::source::stamp_citations(&path).unwrap();
         Deck::load(&path).unwrap()
@@ -604,7 +583,13 @@ mod tests {
             trace.checkpoints[0].givens
         );
         assert!(trace.checkpoints[1].givens.is_empty());
-        assert_eq!(Some("1".to_string()), trace.checkpoints[0].locator);
+        assert_eq!(
+            Some("src:source.txt:1".to_string()),
+            trace.checkpoints[0]
+                .locator
+                .as_ref()
+                .map(ToString::to_string)
+        );
         assert_eq!(
             Some("the entry point".to_string()),
             trace.checkpoints[0].note
@@ -658,8 +643,8 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: source.txt\n---\n\
-             ## q\na\n<!-- at: 1 -->\n<!-- at: 2 -->\n",
+            "---\ntrace: g\nexam: source.txt\ncite:\n  - src: .\n---\n\
+             ## q\na\n<!-- at: src:source.txt:1 -->\n<!-- at: src:source.txt:2 -->\n",
         );
         write(dir.path(), "source.txt", "one\ntwo\n");
         let err = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap_err();
@@ -694,7 +679,7 @@ mod tests {
         );
         let trace = Trace::from_deck(&deck).unwrap();
         let error = trace.excerpt(&trace.checkpoints[0]).unwrap_err();
-        assert!(format!("{error:#}").contains("moved to `2`"));
+        assert!(format!("{error:#}").contains("moved to `src:source.txt:2`"));
     }
 
     #[test]
@@ -717,18 +702,18 @@ mod tests {
             &dir.path().join("decks"),
             "t.md",
             &format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: src/lib.rs\n---\n\
-                 ## q\na\n<!-- at: src/lib.rs:1 fingerprint: {fingerprint} asset: {name} -->\n"
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: src/lib.rs\ncite:\n  - src: src\n---\n\
+                 ## q\na\n<!-- at: src:lib.rs:1 fingerprint: {fingerprint} asset: {name} -->\n"
             ),
         );
         let deck = Deck::load(&deck_path).unwrap();
         assert!(
-            frozen_excerpt_block(&deck.cards[0].citations[0], &SourceBase::for_deck(&deck))
+            frozen_excerpt_block(&deck.cards[0].citations[0], &CitationRoots::for_deck(&deck))
                 .is_some()
         );
         write(&assets, &name, "fn changed() {}\n");
         let deck = Deck::load(&deck_path).unwrap();
-        let base = SourceBase::for_deck(&deck);
+        let base = CitationRoots::for_deck(&deck);
         assert!(frozen_excerpt_block(&deck.cards[0].citations[0], &base).is_none());
     }
 
@@ -756,14 +741,15 @@ mod tests {
             &dir.path().join("decks"),
             "t.md",
             &format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: src\n---\n\
-                 ## q\na\n<!-- at: src/lib.rs:46-48 fingerprint: {fingerprint} asset: {name} -->\n"
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: src\ncite:\n  - code: .\n---\n\
+                 ## q\na\n<!-- at: code:src/lib.rs:46-48 fingerprint: {fingerprint} asset: {name} -->\n"
             ),
         );
         let deck = Deck::load(&deck_path).unwrap();
-        let block = frozen_excerpt_block(&deck.cards[0].citations[0], &SourceBase::for_deck(&deck))
-            .unwrap();
-        assert!(block.contains("src/lib.rs:46-48"), "{block}");
+        let block =
+            frozen_excerpt_block(&deck.cards[0].citations[0], &CitationRoots::for_deck(&deck))
+                .unwrap();
+        assert!(block.contains("code:src/lib.rs:46-48"), "{block}");
         assert!(block.contains("46\talpha"), "{block}");
         assert!(block.contains("48\tgamma"), "{block}");
         assert!(!block.contains("1\talpha"), "{block}");
@@ -778,22 +764,25 @@ mod tests {
         let trace = Trace::from_deck(&Deck::load(&deck_path).unwrap()).unwrap();
 
         let block = trace.frozen_block(&trace.checkpoints[0]).unwrap();
-        assert!(block.contains("a.rs:2-3"), "{block}");
+        assert!(block.contains("src:a.rs:2-3"), "{block}");
         assert!(block.contains("2\tbeta"), "{block}");
         assert!(block.contains("3\tgamma"), "{block}");
     }
 
     #[test]
-    fn line_only_locator_needs_a_single_source_file() {
+    fn a_checkpoint_under_an_unknown_key_cannot_reveal() {
         let dir = tempfile::tempdir().unwrap();
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: .\n---\n## q\na\n<!-- at: 1 -->\n",
+            "---\ntrace: g\nexam: .\n---\n## q\na\n<!-- at: src:x.txt:1 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let err = trace.excerpt(&trace.checkpoints[0]).unwrap_err();
-        assert!(format!("{err:#}").contains("not a single file"));
+        assert!(
+            format!("{err:#}").contains("names no `cite:` root"),
+            "{err:#}"
+        );
     }
 
     #[test]
@@ -803,7 +792,7 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: src.txt\n---\n## q\na\n<!-- at: 2-3 -->\n",
+            "---\ntrace: g\nexam: src.txt\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:src.txt:2-3 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         assert!(trace.lint_locators().is_empty());
@@ -816,7 +805,7 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: src.txt\n---\n## q\na\n<!-- at: 3 -->\n",
+            "---\ntrace: g\nexam: src.txt\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:src.txt:3 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
 
@@ -824,17 +813,50 @@ mod tests {
     }
 
     #[test]
-    fn lint_locators_does_not_read_a_url_source_as_a_local_file() {
+    fn lint_locators_never_reads_a_url_root_and_wants_its_passage_frozen() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write(
-            dir.path(),
-            "t.md",
-            "---\ntrace: g\nexam: https://example.com/guide\n---\n\
-             ## q\na\n<!-- at: chapter-one -->\n",
+        std::fs::write(dir.path().join("alix.toml"), "").unwrap();
+        let assets = dir.path().join("assets/deck-deck1");
+        std::fs::create_dir_all(&assets).unwrap();
+        std::fs::create_dir_all(dir.path().join("decks")).unwrap();
+        let name = crate::assets::object_name(b"the cited passage\n", "md");
+        write(&assets, &name, "the cited passage\n");
+        let fingerprint = crate::source::format_locator_fingerprint(
+            crate::source::excerpt_fingerprint(&Excerpt {
+                path: PathBuf::new(),
+                lines: vec![(1, "the cited passage".to_string())],
+                truncated: false,
+            }),
         );
-        let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
+        let head = "---\nformat-version: 1\nid: \"deck-deck1\"\ntrace: g\n\
+                    exam: https://example.com/guide\ncite:\n  - guide: https://example.com/guide\n---\n";
+        let frozen = write(
+            &dir.path().join("decks"),
+            "frozen.md",
+            &format!(
+                "{head}## q\na\n<!-- at: guide fingerprint: {fingerprint} asset: {name} -->\n"
+            ),
+        );
+        let trace = Trace::from_deck(&Deck::load(&frozen).unwrap()).unwrap();
+        assert!(
+            trace.lint_locators().is_empty(),
+            "{:?}",
+            trace.lint_locators()
+        );
+        assert!(
+            trace.excerpt(&trace.checkpoints[0]).is_ok(),
+            "the frozen passage reveals without any fetch"
+        );
 
-        assert!(trace.lint_locators().is_empty());
+        let live = write(
+            &dir.path().join("decks"),
+            "live.md",
+            &format!("{head}## q\na\n<!-- at: guide -->\n"),
+        );
+        let trace = Trace::from_deck(&Deck::load(&live).unwrap()).unwrap();
+        let issues = trace.lint_locators();
+        assert_eq!(1, issues.len(), "{issues:?}");
+        assert!(issues[0].message.contains("no `asset:`"), "{issues:?}");
     }
 
     #[cfg(feature = "full")]
@@ -856,31 +878,35 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: src.txt\n---\n## q\na\n<!-- at: 5-6 -->\n",
+            "---\ntrace: g\nexam: src.txt\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:src.txt:5-6 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
         assert_eq!(1, issues.len());
         assert_eq!(0, issues[0].checkpoint);
-        assert!(issues[0].message.contains("starts at line 5"));
-        assert!(issues[0].message.contains("only 3"));
+        assert!(
+            issues[0].message.contains("lines 5-6 run past its end"),
+            "{issues:?}"
+        );
+        assert!(issues[0].message.contains("3 line(s)"), "{issues:?}");
     }
 
-    /// A range whose end runs past EOF is silently clamped at trace time, so
-    /// `check` flags it too.
     #[test]
-    fn lint_locators_flags_a_clamped_end() {
+    fn lint_locators_flags_an_end_past_eof() {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "src.txt", "one\ntwo\nthree\n");
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: src.txt\n---\n## q\na\n<!-- at: 2-9 -->\n",
+            "---\ntrace: g\nexam: src.txt\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:src.txt:2-9 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
         assert_eq!(1, issues.len());
-        assert!(issues[0].message.contains("clamped"));
+        assert!(
+            issues[0].message.contains("lines 2-9 run past its end"),
+            "{issues:?}"
+        );
     }
 
     #[test]
@@ -889,12 +915,12 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: .\n---\n## q\na\n<!-- at: nope.rs:1-2 -->\n",
+            "---\ntrace: g\nexam: .\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:nope.rs:1-2 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
         assert_eq!(1, issues.len());
-        assert!(issues[0].message.contains("not found"));
+        assert!(issues[0].message.contains("not found"), "{issues:?}");
     }
 
     #[test]
@@ -913,17 +939,20 @@ mod tests {
     }
 
     #[test]
-    fn lint_locators_flags_line_only_without_a_single_file() {
+    fn lint_locators_flags_an_unknown_key() {
         let dir = tempfile::tempdir().unwrap();
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: .\n---\n## q\na\n<!-- at: 1 -->\n",
+            "---\ntrace: g\nexam: .\n---\n## q\na\n<!-- at: src:x.txt:1 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
         assert_eq!(1, issues.len());
-        assert!(issues[0].message.contains("not a single file"));
+        assert!(
+            issues[0].message.contains("names no `cite:` root"),
+            "{issues:?}"
+        );
     }
 
     #[test]
@@ -1016,9 +1045,9 @@ mod tests {
             &root.join("ws/decks"),
             "t.md",
             "---\ntrace: how it works\n\
-             exam: ../src\n---\n\
-             ## hop 1\nit reads a\n<!-- at: a.rs:2-3 -->\n\
-             ## hop 2\nit reads b\n<!-- at: b.rs:1 -->\n",
+             exam: ../src\ncite:\n  - src: ../src\n---\n\
+             ## hop 1\nit reads a\n<!-- at: src:a.rs:2-3 -->\n\
+             ## hop 2\nit reads b\n<!-- at: src:b.rs:1 -->\n",
         )
     }
 
@@ -1036,13 +1065,13 @@ mod tests {
         let d = drifted_cards(&Deck::load(&deck_path).unwrap());
         assert_eq!(1, d.len(), "{d:?}");
         assert_eq!(DriftKind::Rewritten, d[0].kind);
-        assert_eq!("a.rs:2-3", d[0].at);
+        assert_eq!("src:a.rs:2-3", d[0].at.to_string());
 
         std::fs::remove_file(root.join("src/a.rs")).unwrap();
         let d = drifted_cards(&Deck::load(&deck_path).unwrap());
         assert!(
             d.iter()
-                .any(|x| x.kind == DriftKind::SourceGone && x.at == "a.rs:2-3"),
+                .any(|x| x.kind == DriftKind::SourceGone && x.at.to_string() == "src:a.rs:2-3"),
             "{d:?}"
         );
     }
@@ -1069,5 +1098,83 @@ mod tests {
             d.iter().map(|x| x.kind.clone()).collect::<Vec<_>>(),
             "an address that no longer holds its own evidence is drift: {d:?}"
         );
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn drift_is_judged_against_each_locators_own_root_and_a_url_passage_never_drifts() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join("other")).unwrap();
+        write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
+        write(&root.join("other"), "x.txt", "one\ntwo\n");
+        write(root, "secret.rs", "alpha\nbeta\ngamma\n");
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
+        write(
+            &root.join("ws"),
+            "alix.toml",
+            "[cite]\ncode = \"../src\"\nother = \"../other\"\nguide = \"https://example.org/guide\"\n",
+        );
+        let assets = root.join("ws/assets/deck-deck1");
+        std::fs::create_dir_all(&assets).unwrap();
+        let passage = crate::assets::object_name(b"the passage\n", "md");
+        write(&assets, &passage, "the passage\n");
+        let deck_path = write(
+            &root.join("ws/decks"),
+            "t.md",
+            &format!(
+                "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n\
+                 ## a\na\n<!-- at: code:a.rs:2-3 -->\n\
+                 ## x\nx\n<!-- at: other:x.txt:1 -->\n\
+                 ## g\ng\n<!-- at: guide asset: {passage} -->\n"
+            ),
+        );
+        crate::assets::initialize(&deck_path).unwrap();
+        let drifts = |label: &str| {
+            let drifts = drifted_cards(&Deck::load(&deck_path).unwrap());
+            let mut found: Vec<(String, DriftKind)> = drifts
+                .into_iter()
+                .map(|drift| (drift.at.to_string(), drift.kind))
+                .collect();
+            found.sort_by(|a, b| a.0.cmp(&b.0));
+            println!("step {label}: {found:?}");
+            found
+        };
+
+        assert!(drifts("frozen").is_empty());
+
+        std::fs::write(root.join("other/x.txt"), "CHANGED\n").unwrap();
+        assert_eq!(
+            vec![("other:x.txt:1".to_string(), DriftKind::Rewritten)],
+            drifts("other rewritten"),
+            "only the locator under the changed root drifts"
+        );
+
+        std::fs::write(root.join("other/x.txt"), "one\ntwo\n").unwrap();
+        std::fs::write(root.join("src/a.rs"), "pushed\nalpha\nbeta\ngamma\n").unwrap();
+        assert_eq!(
+            vec![(
+                "code:a.rs:2-3".to_string(),
+                DriftKind::Moved { start: 3, len: 2 }
+            )],
+            drifts("code moved")
+        );
+
+        std::fs::remove_file(root.join("src/a.rs")).unwrap();
+        assert_eq!(
+            vec![("code:a.rs:2-3".to_string(), DriftKind::SourceGone)],
+            drifts("code gone")
+        );
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.join("secret.rs"), root.join("src/a.rs")).unwrap();
+            assert_eq!(
+                vec![("code:a.rs:2-3".to_string(), DriftKind::SourceGone)],
+                drifts("code escapes"),
+                "a live file escaping its root is drift and is never read"
+            );
+        }
     }
 }

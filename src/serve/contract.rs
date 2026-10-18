@@ -212,7 +212,7 @@ fn statedto_review_phase_wire_shape() {
                 },
             ],
             citations: vec![CitationDto {
-                locator: "string.rs:120-128".to_string(),
+                locator: "src:string.rs:120-128".to_string(),
                 excerpt: Some(ExcerptDto {
                     path: "src/string.rs".to_string(),
                     lines: vec![LineDto {
@@ -331,7 +331,7 @@ fn statedto_review_phase_wire_shape() {
                     {"src": "/img/fedcba9876543210", "alt": null}
                 ],
                 "citations": [{
-                    "locator": "string.rs:120-128",
+                    "locator": "src:string.rs:120-128",
                     "excerpt": {
                         "path": "src/string.rs",
                         "lines": [{"n": 120, "text": "let s = String::new();"}],
@@ -562,7 +562,7 @@ fn tracesessiondto_predict_phase_wire_shape() {
         prompt_runs: Some(crate::inline::parse_inline("what does push do when full?")),
         givens: vec!["a String at capacity".to_string()],
         given_runs: vec![crate::inline::parse_inline("a String at capacity")],
-        locator: Some("lib.rs:40-52".to_string()),
+        locator: Some("src:lib.rs:40-52".to_string()),
         prediction: None,
         excerpt: None,
         excerpt_error: None,
@@ -591,7 +591,7 @@ fn tracesessiondto_predict_phase_wire_shape() {
             "prompt_runs": [{"text": "what does push do when full?"}],
             "givens": ["a String at capacity"],
             "given_runs": [[{"text": "a String at capacity"}]],
-            "locator": "lib.rs:40-52",
+            "locator": "src:lib.rs:40-52",
             "prediction": null,
             "excerpt": null,
             "excerpt_error": null,

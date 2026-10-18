@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn normalizing_a_fence_opener_preserves_card_identity_fingerprint_and_locator() {
-        let text = "## code?\n```rust \nfn main() {}\n```\n<!-- at: code.rs:1 -->\n<!-- id: card-fence1 -->\n";
+        let text = "## code?\n```rust \nfn main() {}\n```\n<!-- at: src:code.rs:1 -->\n<!-- id: card-fence1 -->\n";
         let before = crate::parser::parse("deck.md", text).unwrap();
         let normalized = normalize(text);
         let after = crate::parser::parse("deck.md", &normalized).unwrap();

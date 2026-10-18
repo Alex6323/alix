@@ -128,8 +128,7 @@ pub struct ResolvedDiagram {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceCitation {
-    /// The `at:` field: the real source path and lines, never an asset name.
-    pub locator: String,
+    pub locator: crate::locator::Locator,
     pub fingerprint: Option<u64>,
     /// The `asset:` field: the frozen `sha256-<hex>.<ext>` object name,
     /// present only on a frozen citation.
@@ -818,7 +817,13 @@ mod tests {
             crop: None,
         }];
         a.citations.push(SourceCitation {
-            locator: "card.rs:1-9".to_string(),
+            locator: crate::locator::Locator {
+                key: "src".into(),
+                target: crate::locator::Target::File {
+                    path: "card.rs".into(),
+                    range: Some((1, 9)),
+                },
+            },
             fingerprint: Some(42),
             asset: None,
             line: 4,

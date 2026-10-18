@@ -26,19 +26,21 @@ open *predict* prompt and the key points a good prediction should hit — plus a
 ---
 trace: how `let s2 = s1` moves a String and avoids a double free
 exam: .
+cite:
+  - book: src
 ---
 
 ## You write `let s2 = s1`. What gets copied onto the stack, and what stays shared?
 Only the stack data (pointer, length, capacity) is copied.
 So s1 and s2 point at the *same* heap allocation.
-<!-- at: src/ch04-01-what-is-ownership.md:290-297 fingerprint: xxh64-0123456789abcdef -->
+<!-- at: book:ch04-01-what-is-ownership.md:290-297 fingerprint: xxh64-0123456789abcdef -->
 > [!NOTE]
 > The heap contents themselves are never copied here.
 
 ## So s1 and s2 point at one heap allocation. What breaks when both go out of scope, and how does Rust stop it?
 Both would call drop on that memory (a double free).
 Rust treats the assignment as a move: s1 is invalidated, so only s2 frees it.
-<!-- at: src/ch04-01-what-is-ownership.md:322-343 fingerprint: xxh64-123456789abcdef0 -->
+<!-- at: book:ch04-01-what-is-ownership.md:322-343 fingerprint: xxh64-123456789abcdef0 -->
 > [!NOTE]
 > Using s1 after the move is a compile-time error.
 ```
@@ -50,9 +52,11 @@ they occur in its revealed source excerpt. Matching is exact and case-sensitive,
 so the author controls the emphasis by choosing which terms to put in backticks.
 
 The `<!-- at: -->` locator's `at:` field is a single contiguous range
-`file:start-end` (just line numbers when `exam:` is one file; a range-less
-path or URL cites the whole source, the form frozen URL sources use), never
-comma-separated, since a stitched excerpt makes disjoint code look adjacent. Its
+`key:file:start-end` under one of the deck's `cite:` roots (the keyed form is
+described with [source citations](06-cloze-direction-images.md#source-citations);
+a range-less path cites the whole file, a bare key the frozen passage of a URL
+root), never comma-separated, since a stitched excerpt makes disjoint code look
+adjacent. Its
 `fingerprint: xxh64-...` field fingerprints the displayed lines. A live trace
 reveals the source only while that fingerprint matches, so a shifted numeric
 range cannot silently show unrelated lines. When a
@@ -158,7 +162,7 @@ fixed question (`[exam] retry_cooldown_secs`, default one hour; `0` disables it)
 
 ## Immediate freezing
 
-Because `<!-- at: file:lines -->` reads the **live** source, editing a traced
+Because `<!-- at: key:file:lines -->` reads the **live** source, editing a traced
 file could shift every excerpt to unrelated lines. Initializing any workspace
 member therefore freezes its evidence immediately. Every source, an explicitly
 named file and a directory alike, is reduced to the excerpts cited by its
@@ -166,19 +170,20 @@ cards, so Alix never exports a whole file or an entire repository.
 
 Every copied excerpt lives below `assets/deck-<token>/` and is named
 `sha256-<digest>.<ext>`, where the digest covers its exact stored bytes. Freezing
-leaves the deck's `exam:` pointed at the real material (a path or a URL): it is
-never rewritten to point into `assets/`. Each `<!-- at: -->` keeps its real
-`at:` path and lines, keeps its excerpt `fingerprint:`, and gains an `asset:`
-field naming the content-addressed object:
+leaves the deck's `exam:` and `cite:` roots pointed at the real material (a
+path or a URL): they are never rewritten to point into `assets/`. Each
+`<!-- at: -->` keeps its key, path, and lines, keeps its excerpt
+`fingerprint:`, and gains an `asset:` field naming the content-addressed
+object:
 
 ```markdown
-<!-- at: scheduler.rs:90-98 fingerprint: xxh64-0123456789abcdef asset: sha256-<digest>.rs -->
+<!-- at: code:scheduler.rs:90-98 fingerprint: xxh64-0123456789abcdef asset: sha256-<digest>.rs -->
 ```
 
 Review reveals the frozen excerpt (display evidence, numbered from the `at:`
-start line), and the `fingerprint:` verifies those stored bytes. The `at:` path
-and the deck's `exam:` retain provenance for drift reporting and a future
-deliberate source update. When the live source is available and permitted, the
+start line), and the `fingerprint:` verifies those stored bytes. The `at:` key
+and path retain provenance for drift reporting, judged against that key's own
+root, and a future deliberate source update. When the live source is available and permitted, the
 tutor and exam may consult it for surrounding context and staleness detection;
 offline, they report the missing live source rather than silently degrading. A
 loose trace over a live source is left as-is.

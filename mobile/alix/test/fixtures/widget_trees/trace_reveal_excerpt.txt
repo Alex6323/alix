@@ -19,7 +19,7 @@ Scaffold
                         SizedBox(width=null, height=16.0)
                         Text("THE SOURCE")
                         Padding(EdgeInsets(0.0, 8.0, 0.0, 0.0))
-                          Text("at 1")
+                          Text("at src:source.txt:1")
                         SizedBox(width=null, height=6.0)
                         Container
                           ConstrainedBox

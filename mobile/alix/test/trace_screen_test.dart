@@ -54,14 +54,16 @@ void main() {
       '---\n'
       'trace: how it works\n'
       'exam: source.txt\n'
+      'cite:\n'
+      '  - src: .\n'
       '---\n'
       '## Predict the first hop\n'
       'it reads the first line\n'
-      '<!-- at: 1 fingerprint: xxh64-cc98257fe4be8f5a -->\n'
+      '<!-- at: src:source.txt:1 fingerprint: xxh64-cc98257fe4be8f5a -->\n'
       '\n'
       '## Predict the second hop\n'
       'it reads lines two and three\n'
-      '<!-- at: 2-3 fingerprint: xxh64-c08dd9f69eb16b43 -->\n',
+      '<!-- at: src:source.txt:2-3 fingerprint: xxh64-c08dd9f69eb16b43 -->\n',
     );
     return root;
   }
@@ -76,10 +78,12 @@ void main() {
       '---\n'
       'trace: a short path\n'
       'exam: source.txt\n'
+      'cite:\n'
+      '  - src: .\n'
       '---\n'
       '## Predict the hop\n'
       'it reads the first line\n'
-      '<!-- at: 1 fingerprint: xxh64-cc98257fe4be8f5a -->\n',
+      '<!-- at: src:source.txt:1 fingerprint: xxh64-cc98257fe4be8f5a -->\n',
     );
     return root;
   }
@@ -94,16 +98,18 @@ void main() {
       '---\n'
       'trace: a highlighted path\n'
       'exam: source.txt\n'
+      'cite:\n'
+      '  - src: .\n'
       '---\n'
       '## Predict the source lookup\n'
       '`origin` flows through `resolve_source_root`.\n'
-      '<!-- at: 1 fingerprint: xxh64-8923fa595c31a52f -->\n',
+      '<!-- at: src:source.txt:1 fingerprint: xxh64-8923fa595c31a52f -->\n',
     );
     return root;
   }
 
-  /// A trace whose checkpoint locator has nothing to resolve against (no
-  /// `% exam:` at all): the excerpt-error fallback path.
+  /// A trace whose checkpoint locator names a key with no `cite:` root to
+  /// resolve against: the excerpt-error fallback path.
   Directory noSourceRoot() {
     final root = tempRoot('alix-trace-nosource-');
     writeTestDeck(
@@ -113,7 +119,7 @@ void main() {
       '---\n'
       '## Predict something\n'
       'the answer\n'
-      '<!-- at: 1 -->\n',
+      '<!-- at: src:source.txt:1 -->\n',
     );
     return root;
   }
@@ -145,7 +151,8 @@ void main() {
 
         // Hop 1: reveal shows the real gutter excerpt, not a placeholder.
         expect(find.text('guess one'), findsOneWidget);
-        expect(find.textContaining('source.txt'), findsOneWidget);
+        expect(find.text('at src:source.txt:1'), findsOneWidget);
+        expect(find.textContaining('/source.txt'), findsOneWidget);
         expect(find.text('1'), findsOneWidget);
         expect(find.text('first'), findsOneWidget);
         expect(find.text('it reads the first line'), findsOneWidget);
@@ -207,9 +214,9 @@ void main() {
         // No crash; the reveal still renders with the grade chips available.
         expect(tester.takeException(), isNull);
         expect(find.text('Got it'), findsOneWidget);
-        // The honest excerpt_error fallback (a line-only locator with no
-        // `% exam:` to resolve it against), not a silent gap.
-        expect(find.textContaining('is not a single file'), findsOneWidget);
+        // The honest excerpt_error fallback (a locator whose key has no
+        // `cite:` root to resolve it against), not a silent gap.
+        expect(find.textContaining('names no `cite:` root'), findsOneWidget);
       },
     );
 
@@ -489,11 +496,13 @@ void main() {
           '---\n'
           'trace: a picker-launched trace\n'
           'exam: source.txt\n'
+          'cite:\n'
+          '  - src: .\n'
           'title: T\n'
           '---\n'
           '## Predict\n'
           'it reads line one\n'
-          '<!-- at: 1 -->\n',
+          '<!-- at: src:source.txt:1 -->\n',
         );
 
         await tester.pumpWidget(

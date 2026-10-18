@@ -221,9 +221,7 @@ pub enum ParseError {
         "line {line}: a card heading line takes no `<!-- {key}: ... -->`; comment machinery trails: move it below the card's content"
     )]
     FrontDirective { line: usize, key: String },
-    #[error(
-        "line {line}: `at:` is not a named-field locator (`at: <src>:<lines> fingerprint: xxh64-<hex> asset: <object>`): {message}; fields are `at:`, `fingerprint:`, `asset:`, in that order"
-    )]
+    #[error("line {line}: invalid locator: {message}")]
     InvalidLocator { line: usize, message: String },
     #[error("line {line}: {message}")]
     InvalidRegion { line: usize, message: String },
@@ -646,13 +644,19 @@ fn section_carries_directive(rest: &str, line: usize) -> bool {
         if let Some((key, _)) = directive(&after[..close]) {
             let mut probe = CardDirectives::default();
             let mut probe_lints = Vec::new();
-            let recognized =
-                match apply_directive(&mut probe, &key, "x".to_string(), line, &mut probe_lints) {
-                    Err(_) => true,
-                    Ok(()) => !probe_lints.iter().any(
-                        |lint| matches!(&lint.kind, LintKind::UnknownKey { key: k } if *k == key),
-                    ),
-                };
+            let recognized = match apply_directive(
+                &mut probe,
+                &key,
+                "x".to_string(),
+                &after[..close],
+                line,
+                &mut probe_lints,
+            ) {
+                Err(_) => true,
+                Ok(()) => !probe_lints
+                    .iter()
+                    .any(|lint| matches!(&lint.kind, LintKind::UnknownKey { key: k } if *k == key)),
+            };
             if recognized {
                 return true;
             }
@@ -1514,7 +1518,14 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 if let Some((key, value)) = directive(body) {
                     match current.as_mut() {
                         Some(card) => {
-                            apply_directive(&mut card.directives, &key, value, lineno, lints)?;
+                            apply_directive(
+                                &mut card.directives,
+                                &key,
+                                value,
+                                body,
+                                lineno,
+                                lints,
+                            )?;
                             if matches!(key.as_str(), "blank" | "cover" | "crop") {
                                 match card.above {
                                     Some(above) => {
@@ -1928,7 +1939,7 @@ fn table_line(
             tbl.directives.ignore = true;
         }
         if let Some((key, value)) = directive(body) {
-            apply_directive(&mut tbl.directives, &key, value, lineno, lints)?;
+            apply_directive(&mut tbl.directives, &key, value, body, lineno, lints)?;
         }
         return Ok(true);
     }
@@ -2757,12 +2768,13 @@ fn heading(
         }
         if let Some((key, value)) = directive(&body) {
             let before = lints.len();
-            let recognized = match apply_directive(&mut directives, &key, value, lineno, lints) {
-                Err(_) => true,
-                Ok(()) => !lints[before..]
-                    .iter()
-                    .any(|lint| matches!(&lint.kind, LintKind::UnknownKey { key: k } if *k == key)),
-            };
+            let recognized =
+                match apply_directive(&mut directives, &key, value, &body, lineno, lints) {
+                    Err(_) => true,
+                    Ok(()) => !lints[before..].iter().any(
+                        |lint| matches!(&lint.kind, LintKind::UnknownKey { key: k } if *k == key),
+                    ),
+                };
             if recognized {
                 return Err(ParseError::FrontDirective { line: lineno, key });
             }
@@ -2822,9 +2834,32 @@ fn apply_directive(
     directives: &mut CardDirectives,
     key: &str,
     value: String,
+    body: &str,
     line: usize,
     lints: &mut Vec<Lint>,
 ) -> Result<(), ParseError> {
+    if key == "at" {
+        let bad = |message: String| ParseError::InvalidLocator { line, message };
+        let fields = crate::locator::parse_locator_comment(&format!("<!--{body}-->"))
+            .map_err(|error| bad(error.to_string()))?;
+        let fingerprint = fields
+            .fingerprint
+            .map(|raw| {
+                crate::source::parse_locator_fingerprint(&raw).ok_or_else(|| {
+                    bad(format!(
+                        "fingerprint `{raw}` is not `xxh64-` plus 16 hex digits"
+                    ))
+                })
+            })
+            .transpose()?;
+        directives.citations.push(crate::card::SourceCitation {
+            locator: fields.locator,
+            fingerprint,
+            asset: fields.asset,
+            line,
+        });
+        return Ok(());
+    }
     if value.is_empty() && is_known_card_key(key) {
         lints.push(Lint {
             line,
@@ -2874,29 +2909,6 @@ fn apply_directive(
             }
             None => lints.push(bad_value(line, key, value)),
         },
-        "at" => {
-            let bad = |message: String| ParseError::InvalidLocator { line, message };
-            // `directive` consumed the `at:` key; the tokenizer wants the
-            // whole `at: ...` comment body back.
-            let fields = crate::source::parse_locator_fields(&format!("at: {value}"))
-                .map_err(|error| bad(format!("{error:#}")))?;
-            let fingerprint = fields
-                .fingerprint
-                .map(|raw| {
-                    crate::source::parse_locator_fingerprint(&raw).ok_or_else(|| {
-                        bad(format!(
-                            "fingerprint `{raw}` is not `xxh64-` plus 16 hex digits"
-                        ))
-                    })
-                })
-                .transpose()?;
-            directives.citations.push(crate::card::SourceCitation {
-                locator: fields.at,
-                fingerprint,
-                asset: fields.asset,
-                line,
-            });
-        }
         "diagram" => {
             let bad = |message: String| ParseError::InvalidLocator { line, message };
             directives
@@ -6248,9 +6260,9 @@ a
                 "an editorial comment bounds the runs, so nothing crosses it",
             ),
             (
-                "## q\n- [x] a\n- [ ] b\n<!-- id: card-x -->\n<!-- at: src/x.rs:1-2 -->\n<!-- blank: span hidden=\"a\" -->\n<!-- reveal: line -->\n<!-- choices: single -->\n",
+                "## q\n- [x] a\n- [ ] b\n<!-- id: card-x -->\n<!-- at: src:x.rs:1-2 -->\n<!-- blank: span hidden=\"a\" -->\n<!-- reveal: line -->\n<!-- choices: single -->\n",
                 Reorder::Reordered(
-                    "## q\n- [x] a\n- [ ] b\n<!-- choices: single -->\n<!-- reveal: line -->\n<!-- blank: span hidden=\"a\" -->\n<!-- at: src/x.rs:1-2 -->\n<!-- id: card-x -->\n".into(),
+                    "## q\n- [x] a\n- [ ] b\n<!-- choices: single -->\n<!-- reveal: line -->\n<!-- blank: span hidden=\"a\" -->\n<!-- at: src:x.rs:1-2 -->\n<!-- id: card-x -->\n".into(),
                 ),
                 "the full canonical order: invocation, directives, regions, locator, id",
             ),
@@ -6331,15 +6343,15 @@ a
         let deck = parse(
             "## Complete the sentence\nThe owner is dropped at scope end.\n\
              <!-- blank: span hidden=\"dropped\" -->\n<!-- blank: span hidden=\"scope\" -->\n\
-             <!-- at: src/lib.rs:3-4 -->\n> [!NOTE]\n> deterministic cleanup\n",
+             <!-- at: src:src/lib.rs:3-4 -->\n> [!NOTE]\n> deterministic cleanup\n",
         );
         assert_eq!(2, deck.cards.len(), "one card per span: {deck:?}");
         for card in &deck.cards {
             assert_eq!(
-                vec!["src/lib.rs:3-4"],
+                vec!["src:src/lib.rs:3-4"],
                 card.citations
                     .iter()
-                    .map(|citation| citation.locator.as_str())
+                    .map(|citation| citation.locator.to_string())
                     .collect::<Vec<_>>(),
                 "card {:?} keeps the block's locator: {card:?}",
                 card.back
@@ -6380,7 +6392,7 @@ a
             ("<!-- reveal: line -->", "reveal"),
             ("<!-- input: draw -->", "input"),
             ("<!-- direction: both -->", "direction"),
-            ("<!-- at: src/x.rs:1-2 -->", "at"),
+            ("<!-- at: src:x.rs:1-2 -->", "at"),
             ("<!-- given: a hint -->", "given"),
             ("<!-- sampling: off -->", "sampling"),
             ("<!-- id: card-3g12jfjv4pypppsrx5wvtx65y5 -->", "id"),
@@ -6454,7 +6466,7 @@ a
             ("reveal: line", "reveal"),
             ("input: draw", "input"),
             ("direction: both", "direction"),
-            ("at: src/x.rs:1-2", "at"),
+            ("at: src:x.rs:1-2", "at"),
             ("given: a hint", "given"),
             ("sampling: off", "sampling"),
             ("id: card-3g12jfjv4pypppsrx5wvtx65y5", "id"),
@@ -7530,7 +7542,7 @@ a
         for (comment, recognized, why) in [
             ("<!-- reveal: line -->", true, "a known directive key"),
             ("<!-- direction: both -->", true, "another known key"),
-            ("<!-- at: src/x.rs:1-2 -->", true, "a locator"),
+            ("<!-- at: src:x.rs:1-2 -->", true, "a locator"),
             ("<!-- Transfer -->", false, "a one-word editorial label"),
             (
                 "<!-- ## About Interfaces -->",
@@ -7618,103 +7630,118 @@ a
         );
     }
 
-    #[test]
-    fn at_is_repeatable_and_keeps_each_fingerprint_asset_pair() {
-        let deck = parse(
-            "## q\n---\na\n\
-             <!-- at: src/caching.rs:46-66 fingerprint: xxh64-0123456789abcdef \
-             asset: sha256-abc123.rs -->\n\
-             <!-- at: src/store.rs:10-14 -->\n",
-        );
-        assert_eq!(
-            vec![
-                crate::card::SourceCitation {
-                    locator: "src/caching.rs:46-66".to_string(),
-                    fingerprint: Some(0x0123456789abcdef),
-                    asset: Some("sha256-abc123.rs".to_string()),
-                    line: 4,
-                },
-                crate::card::SourceCitation {
-                    locator: "src/store.rs:10-14".to_string(),
-                    fingerprint: None,
-                    asset: None,
-                    line: 5,
-                },
-            ],
-            deck.cards[0].citations
-        );
-
-        let deck = parse("## q\n---\na\n<!-- at: src/from_x.rs:1-3 -->\n");
-        assert_eq!("src/from_x.rs:1-3", deck.cards[0].citations[0].locator);
-        assert_eq!(None, deck.cards[0].citations[0].fingerprint);
-        assert_eq!(None, deck.cards[0].citations[0].asset);
+    fn caching_locator() -> crate::locator::Locator {
+        crate::locator::Locator {
+            key: "code".into(),
+            target: crate::locator::Target::File {
+                path: "src/caching.rs".into(),
+                range: Some((46, 66)),
+            },
+        }
     }
 
     #[test]
-    fn an_at_locator_with_unexpected_content_is_a_hard_error() {
-        let e = err("## q\n---\na\n\
-             <!-- at: 29.rs @ xxh64:0123456789abcdef from src/caching.rs:46-66 -->\n");
-        assert!(
-            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
-            "{e:?}"
-        );
-        assert!(e.to_string().contains("in that order"), "{e}");
-
-        let e = err("## q\n---\na\n<!-- at: 29.rs:1 from src/caching.rs:46-66 -->\n");
-        assert!(
-            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
-            "{e:?}"
-        );
-    }
-
-    #[test]
-    fn a_reordered_locator_error_carries_the_canonical_order_hint() {
-        let e = err("## q\n---\na\n\
-             <!-- at: notes.md asset: sha256-abc123.rs fingerprint: xxh64-0123456789abcdef -->\n");
-        assert!(
-            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
-            "{e:?}"
-        );
-        let message = e.to_string();
-        assert!(
-            message.contains("fields are `at:`, `fingerprint:`, `asset:`, in that order"),
-            "{message}"
-        );
-    }
-
-    #[test]
-    fn a_fingerprint_without_the_xxh64_dash_prefix_is_a_hard_error() {
-        let e =
-            err("## q\n---\na\n<!-- at: src/lib.rs:1-3 fingerprint: xxh64:0123456789abcdef -->\n");
-        assert!(
-            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
-            "{e:?}"
-        );
-        assert!(e.to_string().contains("in that order"), "{e}");
-    }
-
-    #[test]
-    fn a_malformed_at_fingerprint_is_a_hard_error_not_a_lint() {
-        let e = err("## q\n---\na\n<!-- at: src/lib.rs:1-3 fingerprint: xxh64-ABC -->\n");
-        assert!(
-            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
-            "{e:?}"
-        );
-    }
-
-    #[test]
-    fn an_unknown_or_duplicate_at_field_is_a_hard_error() {
-        let e = err("## q\n---\na\n<!-- at: a.rs:1 flavor: cherry -->\n");
-        assert!(
-            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
-            "{e:?}"
-        );
-
-        let e = err("## q\n---\na\n<!-- at: a.rs:1 at: b.rs:2 -->\n");
-        assert!(
-            matches!(e, ParseError::InvalidLocator { line: 4, .. }),
-            "{e:?}"
-        );
+    fn the_at_directive_parses_the_raw_comment_as_the_locator_table_says() {
+        use crate::locator::{Locator, Target};
+        let file = |key: &str, path: &str, range: Option<(u32, u32)>| Locator {
+            key: key.into(),
+            target: Target::File {
+                path: path.into(),
+                range,
+            },
+        };
+        let citation = |locator: Locator, fingerprint: Option<u64>, asset: Option<&str>| {
+            Ok(crate::card::SourceCitation {
+                locator,
+                fingerprint,
+                asset: asset.map(str::to_string),
+                line: 4,
+            })
+        };
+        let rows: Vec<(&str, Result<crate::card::SourceCitation, ()>)> = vec![
+            (
+                "<!-- at: code:src/caching.rs:46-66 fingerprint: xxh64-0123456789abcdef asset: sha256-abc123.rs -->",
+                citation(
+                    file("code", "src/caching.rs", Some((46, 66))),
+                    Some(0x0123456789abcdef),
+                    Some("sha256-abc123.rs"),
+                ),
+            ),
+            (
+                "<!-- at: code:src/store.rs:10 -->",
+                citation(file("code", "src/store.rs", Some((10, 10))), None, None),
+            ),
+            (
+                "<!-- at: code:notes.md -->",
+                citation(file("code", "notes.md", None), None, None),
+            ),
+            (
+                "<!-- at: code:\"a b.txt\":3 -->",
+                citation(file("code", "a b.txt", Some((3, 3))), None, None),
+            ),
+            (
+                "<!-- at: guide asset: sha256-abc123.md -->",
+                citation(
+                    Locator {
+                        key: "guide".into(),
+                        target: Target::Passage,
+                    },
+                    None,
+                    Some("sha256-abc123.md"),
+                ),
+            ),
+            (
+                "  <!-- at: code:x.txt:1 -->",
+                citation(file("code", "x.txt", Some((1, 1))), None, None),
+            ),
+            ("<!--  at: code:x.txt -->", Err(())),
+            ("<!-- at:  code:x.txt -->", Err(())),
+            ("<!-- at: code:x.txt  -->", Err(())),
+            ("<!-- At: code:x.txt -->", Err(())),
+            ("<!-- at: -->", Err(())),
+            ("<!-- at: x.txt:3 -->", Err(())),
+            ("<!-- at: 1-2 -->", Err(())),
+            ("<!-- at: src/lib.rs:1-3 -->", Err(())),
+            ("<!-- at: Code:x.txt -->", Err(())),
+            ("<!-- at: code:x.txt:0 -->", Err(())),
+            ("<!-- at: code:../x.txt -->", Err(())),
+            ("<!-- at: code:a b.txt -->", Err(())),
+            (
+                "<!-- at: code:x.txt fingerprint: xxh64:0123456789abcdef -->",
+                Err(()),
+            ),
+            ("<!-- at: code:x.txt fingerprint: xxh64-ABC -->", Err(())),
+            (
+                "<!-- at: code:x.txt asset: sha256-abc.rs fingerprint: xxh64-0123456789abcdef -->",
+                Err(()),
+            ),
+            ("<!-- at: code:x.txt flavor: cherry -->", Err(())),
+            ("<!-- at: code:a.rs:1 at: code:b.rs:2 -->", Err(())),
+            (
+                "<!-- at: 29.rs @ xxh64:0123456789abcdef from src/caching.rs:46-66 -->",
+                Err(()),
+            ),
+        ];
+        for (comment, expected) in rows {
+            let text = format!("## q\n---\na\n{comment}\n");
+            let actual = super::parse("deck.md", &text);
+            match expected {
+                Ok(citation) => {
+                    let deck = actual.unwrap_or_else(|e| panic!("row `{comment}`: {e}"));
+                    assert_eq!(vec![citation], deck.cards[0].citations, "row `{comment}`");
+                    assert!(deck.lints.is_empty(), "row `{comment}`: {:?}", deck.lints);
+                }
+                Err(()) => {
+                    let e = actual
+                        .err()
+                        .unwrap_or_else(|| panic!("row `{comment}` parsed"));
+                    assert!(
+                        matches!(e, ParseError::InvalidLocator { line: 4, .. }),
+                        "row `{comment}`: {e:?}"
+                    );
+                }
+            }
+        }
     }
 
     /// A `given:` is stored verbatim and both study phases hand it to
@@ -8612,7 +8639,7 @@ the answer
 <!-- reveal: flip -->
 <!-- input: type -->
 <!-- direction: reverse -->
-<!-- at: src/caching.rs:46-66 fingerprint: xxh64-0123456789abcdef asset: sha256-abc123.rs -->
+<!-- at: code:src/caching.rs:46-66 fingerprint: xxh64-0123456789abcdef asset: sha256-abc123.rs -->
 <!-- given: state - the parser position -->
 <!-- given: partial - the card -->
 <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->
@@ -8659,7 +8686,7 @@ the answer
                 direction_line: Some(32),
                 sampling: None,
                 citations: vec![crate::card::SourceCitation {
-                    locator: "src/caching.rs:46-66".into(),
+                    locator: caching_locator(),
                     fingerprint: Some(0x0123456789abcdef),
                     asset: Some("sha256-abc123.rs".into()),
                     line: 33,
@@ -8686,7 +8713,7 @@ the answer
         assert!(card.images_back.is_empty());
         assert_eq!(
             vec![crate::card::SourceCitation {
-                locator: "src/caching.rs:46-66".into(),
+                locator: caching_locator(),
                 fingerprint: Some(0x0123456789abcdef),
                 asset: Some("sha256-abc123.rs".into()),
                 line: 33,

@@ -9,9 +9,9 @@ use rs_fsrs::Parameters;
 use crate::{
     augment::TopologyOrder,
     card::Card,
+    cite::CitationRoots,
     depth::Depth,
     scheduler::{Grade, Scheduler},
-    source::SourceBase,
     store::Store,
     time,
 };
@@ -23,7 +23,7 @@ pub struct DeckInfo {
     pub exam_layers: crate::deck::ExamLayers,
     pub base_root: Option<PathBuf>,
     pub source_access: bool,
-    pub source_base: SourceBase,
+    pub source_base: CitationRoots,
     pub load_warnings: Vec<String>,
 }
 

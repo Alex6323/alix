@@ -4,8 +4,9 @@ use std::{
 };
 
 use alix::{
+    cite::CitationRoots,
     deck::{AtRewrite, Deck},
-    source::{CitationIntegrity, SourceBase},
+    source::CitationIntegrity,
     trace::{DriftKind, Trace},
     workspace,
 };
@@ -459,9 +460,18 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             ));
         }
     }
+    for (key, root) in &deck.cite {
+        if exam_points_into_assets(root) {
+            report.warn(format!(
+                "{}: `cite:` root `{key}` points into `assets/` (`{root}`); a frozen deck keeps \
+                 its real source, not its asset objects",
+                deck.path.display()
+            ));
+        }
+    }
     let mut frozen_assets_valid = true;
     let mut has_live_citations = false;
-    if managed && !deck.exam.is_empty() {
+    if managed {
         let live = deck
             .cards
             .iter()
@@ -555,7 +565,7 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
         }
     }
     if frozen_assets_valid {
-        let base = SourceBase::for_deck(deck);
+        let roots = CitationRoots::for_deck(deck);
         // One authored `at:` line serves every card its block produced (a
         // table's rows, a cloze block's holes), so the report is per authored
         // citation. Its identity is its own directive line: a card may carry
@@ -569,7 +579,7 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
                 }
 
                 let counted_by_the_live_error = has_live_citations && citation.asset.is_none();
-                let detail = match base.inspect_citation(citation) {
+                let detail = match roots.inspect_citation(citation) {
                     Ok(CitationIntegrity::Current(_)) => None,
                     Ok(CitationIntegrity::Unfingerprinted { .. }) => (!counted_by_the_live_error)
                         .then(|| {
@@ -586,16 +596,15 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
                     }
                     Ok(CitationIntegrity::Ambiguous { locators }) => Some(format!(
                         "the excerpt matches several ranges ({}); review it manually",
-                        locators.join(", ")
+                        alix::source::labels(&locators)
                     )),
-                    Err(error) if citation.asset.is_none() => {
+                    Err(error) => {
                         report.error(format!(
                             "{}: card at line {}: `at: {}` {error:#}",
                             deck.subject, card.line, citation.locator
                         ));
                         None
                     }
-                    Err(error) => Some(format!("{error:#}")),
                 };
                 if let Some(detail) = detail {
                     report.warn(format!(
@@ -605,14 +614,6 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
                 }
             }
         }
-    }
-    if deck.exam.len() > 3 {
-        report.warn(format!(
-            "{}: `exam:` lists {} expressions; point at their common root instead \
-             (a directory source covers its files)",
-            deck.path.display(),
-            deck.exam.len()
-        ));
     }
     for prereq in alix::deck::nongating_prerequisites(deck) {
         report.warn(format!(
@@ -1358,7 +1359,7 @@ fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
     let mut unresolved = 0;
     for path in paths {
         let deck = Deck::load(path)?;
-        let base = SourceBase::for_deck(&deck);
+        let roots = CitationRoots::for_deck(&deck);
         let mut rewrites = Vec::new();
         let mut changed = false;
         // A frozen citation's fingerprint verifies the asset, not the source, so
@@ -1369,15 +1370,15 @@ fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
         let moved: HashMap<String, (usize, usize)> = alix::trace::drifted_cards(&deck)
             .into_iter()
             .filter_map(|drift| match drift.kind {
-                DriftKind::Moved { start, len } => Some((drift.at, (start, len))),
+                DriftKind::Moved { start, len } => Some((drift.at.to_string(), (start, len))),
                 _ => None,
             })
             .collect();
         for card in &deck.cards {
             for citation in &card.citations {
-                if let Some((start, len)) = moved.get(&citation.locator) {
-                    let (file, _) = alix::source::parse_locator(&citation.locator);
-                    let at = alix::source::relocated_locator(file.as_deref(), *start, *len);
+                if let Some((start, len)) = moved.get(&citation.locator.to_string())
+                    && let Some(at) = alix::source::relocated(&citation.locator, *start, *len)
+                {
                     println!(
                         "rebased {}:{} `{}` -> `{at}`",
                         path.display(),
@@ -1393,7 +1394,7 @@ fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
                     });
                     continue;
                 }
-                let (at, fingerprint) = match base.inspect_citation(citation)? {
+                let (at, fingerprint) = match roots.inspect_citation(citation)? {
                     CitationIntegrity::Current(_) => {
                         (citation.locator.clone(), citation.fingerprint)
                     }
@@ -1433,7 +1434,7 @@ fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
                             path.display(),
                             citation.line,
                             citation.locator,
-                            locators.join(", ")
+                            alix::source::labels(&locators)
                         );
                         unresolved += 1;
                         (citation.locator.clone(), citation.fingerprint)
@@ -2243,7 +2244,7 @@ mod tests {
     }
 
     #[test]
-    fn trace_and_source_count_warnings_obey_their_exact_boundaries() {
+    fn an_ordinary_deck_is_not_reported_as_a_trace_and_a_long_exam_list_is_not_a_finding() {
         let dir = tempfile::tempdir().unwrap();
         let ordinary = dir.path().join("ordinary.md");
         w(dir.path(), "ordinary.md", "## q\na\n");
@@ -2258,12 +2259,6 @@ mod tests {
             ordinary_report.warnings
         );
 
-        let three = dir.path().join("three.md");
-        w(
-            dir.path(),
-            "three.md",
-            "---\nexam: [a, b, c]\n---\n## q\na\n",
-        );
         let four = dir.path().join("four.md");
         w(
             dir.path(),
@@ -2271,15 +2266,134 @@ mod tests {
             "---\nexam: [a, b, c, d]\n---\n## q\na\n",
         );
         let mut report = Report::default();
-        deck_findings(&three, &mut report);
         deck_findings(&four, &mut report);
-        let common_root: Vec<&String> = report
-            .warnings
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("common root")),
+            "{:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn repair_rebases_a_moved_frozen_excerpt_and_keeps_its_key() {
+        let dir = tempfile::tempdir().unwrap();
+        w(
+            dir.path(),
+            workspace::MANIFEST,
+            "[cite]\nnotes = \"docs\"\n",
+        );
+        std::fs::create_dir(dir.path().join(workspace::DECKS)).unwrap();
+        std::fs::create_dir(dir.path().join("docs")).unwrap();
+        let docs = dir.path().join("docs");
+        w(&docs, "notes.md", "the cited paragraph\n");
+        let deck_path = dir.path().join(workspace::DECKS).join("member.md");
+        std::fs::write(
+            &deck_path,
+            "---\nformat-version: 1\nid: deck-1xpgnc8f1mypv80cgzyxrn2cqf\n---\n\
+             ## q\na\n<!-- at: notes:notes.md:1 -->\n\
+             <!-- id: card-1xpgnc8f1mypv80cgzyxrn2cqf -->\n",
+        )
+        .unwrap();
+        alix::assets::freeze_member(&deck_path).unwrap();
+        let at_line = |text: &str| {
+            text.lines()
+                .find(|line| line.starts_with("<!-- at: "))
+                .map(str::to_string)
+                .expect("the citation survives")
+        };
+        let frozen = at_line(&std::fs::read_to_string(&deck_path).unwrap());
+        assert!(
+            frozen.starts_with("<!-- at: notes:notes.md:1 fingerprint: "),
+            "{frozen}"
+        );
+
+        w(
+            &docs,
+            "notes.md",
+            "a new first line\nanother\nthe cited paragraph\n",
+        );
+        let mut report = Report::default();
+        deck_findings(&deck_path, &mut report);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("is intact but now at lines 3")),
+            "step drift: {:#?}",
+            report.warnings
+        );
+
+        repair_source_locators(std::slice::from_ref(&deck_path)).unwrap();
+
+        let repaired = at_line(&std::fs::read_to_string(&deck_path).unwrap());
+        assert!(
+            repaired.starts_with("<!-- at: notes:notes.md:3 fingerprint: "),
+            "step rebase keeps the key: {repaired}"
+        );
+        assert_eq!(
+            frozen.split_once(" fingerprint: "),
+            Some((
+                "<!-- at: notes:notes.md:1",
+                repaired.split_once(" fingerprint: ").unwrap().1
+            )),
+            "step evidence: only the address moved"
+        );
+        let mut report = Report::default();
+        deck_findings(&deck_path, &mut report);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("frozen excerpt")),
+            "step settled: {:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn doctor_reports_an_unknown_locator_key_as_an_error_in_plain_and_repair_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "x.txt", "one\n");
+        let deck_path = dir.path().join("d.md");
+        w(
+            dir.path(),
+            "d.md",
+            "---\nformat-version: 1\nid: deck-unknown\ncite:\n  - src: .\n---\n\
+             ## q\na\n<!-- at: nope:x.txt:1 -->\n<!-- id: card-q -->\n\
+             ## frozen\nb\n<!-- at: nope:x.txt:1 fingerprint: xxh64-0000000000000000 asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.txt -->\n<!-- id: card-f -->\n",
+        );
+
+        let mut report = Report::default();
+        deck_findings(&deck_path, &mut report);
+        let unknown: Vec<&String> = report
+            .errors
             .iter()
-            .filter(|warning| warning.contains("point at their common root"))
+            .filter(|error| error.contains("names no `cite:` root"))
             .collect();
-        assert_eq!(1, common_root.len(), "{:#?}", report.warnings);
-        assert!(common_root[0].contains("four.md"), "{common_root:?}");
+        assert_eq!(
+            2,
+            unknown.len(),
+            "plain: live and frozen alike: {:#?} {:#?}",
+            report.errors,
+            report.warnings
+        );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("nope:")),
+            "plain: never a warning: {:#?}",
+            report.warnings
+        );
+
+        let error = repair_source_locators(std::slice::from_ref(&deck_path)).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("names no `cite:` root"),
+            "repair: {error:#}"
+        );
     }
 
     #[test]
@@ -2743,11 +2857,11 @@ mod tests {
         w(
             dir.path(),
             "cloze.md",
-            "---\nformat-version: 1\nid: deck-cloze\nexam: .\n---\n\
+            "---\nformat-version: 1\nid: deck-cloze\ncite:\n  - src: .\n---\n\
              ## q\nthe first and the second\n\
              <!-- blank: span hidden=\"first\" b:a1b2c3 -->\n\
              <!-- blank: span hidden=\"second\" b:d4e5f6 -->\n\
-             <!-- at: source.txt:1-2 -->\n<!-- id: card-q -->\n",
+             <!-- at: src:source.txt:1-2 -->\n<!-- id: card-q -->\n",
         );
         let deck = Deck::load(dir.path().join("cloze.md")).unwrap();
         assert_eq!(2, deck.cards.len(), "one card per span: {deck:?}");
@@ -2758,7 +2872,7 @@ mod tests {
         let citation_warnings = report
             .warnings
             .iter()
-            .filter(|warning| warning.contains("at: source.txt:1-2"))
+            .filter(|warning| warning.contains("at: src:source.txt:1-2"))
             .count();
         assert_eq!(
             1, citation_warnings,
@@ -2777,10 +2891,10 @@ mod tests {
         std::fs::write(
             &deck_path,
             format!(
-                "---\nid: deck-1xpgnc8f1mypv80cgzyxrn2cqf\nexam: ..\n---\n\
-                 ## stale\na\n<!-- at: source.txt:1 fingerprint: {} -->\n\
+                "---\nid: deck-1xpgnc8f1mypv80cgzyxrn2cqf\ncite:\n  - src: .\n---\n\
+                 ## stale\na\n<!-- at: src:source.txt:1 fingerprint: {} -->\n\
                  <!-- id: card-1xpgnc8f1mypv80cgzyxrn2cqf -->\n\n\
-                 ## live\nb\n<!-- at: source.txt:1 -->\n\
+                 ## live\nb\n<!-- at: src:source.txt:1 -->\n\
                  <!-- id: card-2xpgnc8f1mypv80cgzyxrn2cqf -->\n",
                 one_line_fingerprint("gone"),
             ),
@@ -2831,10 +2945,10 @@ mod tests {
         let deck_path = dir.path().join(workspace::DECKS).join("member.md");
         std::fs::write(
             &deck_path,
-            "---\nid: deck-1xpgnc8f1mypv80cgzyxrn2cqf\nexam: ..\n---\n\
-             ## frozen\na\n<!-- at: source.txt:1 -->\n\
+            "---\nid: deck-1xpgnc8f1mypv80cgzyxrn2cqf\ncite:\n  - src: .\n---\n\
+             ## frozen\na\n<!-- at: src:source.txt:1 -->\n\
              <!-- id: card-1xpgnc8f1mypv80cgzyxrn2cqf -->\n\n\
-             ## live\nb\n<!-- at: source.txt:2 -->\n\
+             ## live\nb\n<!-- at: src:source.txt:2 -->\n\
              <!-- id: card-2xpgnc8f1mypv80cgzyxrn2cqf -->\n",
         )
         .unwrap();
@@ -2892,9 +3006,9 @@ mod tests {
             dir.path(),
             "twin.md",
             &format!(
-                "---\nformat-version: 1\nid: deck-twin\nexam: .\n---\n\
-                 ## q\na\n<!-- at: source.txt:1 fingerprint: {} -->\n\
-                 <!-- at: source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
+                "---\nformat-version: 1\nid: deck-twin\ncite:\n  - src: .\n---\n\
+                 ## q\na\n<!-- at: src:source.txt:1 fingerprint: {} -->\n\
+                 <!-- at: src:source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
                 one_line_fingerprint("first"),
                 one_line_fingerprint("gone"),
             ),
@@ -2924,7 +3038,7 @@ mod tests {
             dir.path(),
             "changed.md",
             &format!(
-                "---\nformat-version: 1\nid: deck-changed\nexam: .\n---\n## q\na\n<!-- at: source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
+                "---\nformat-version: 1\nid: deck-changed\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
                 one_line_fingerprint("gone")
             ),
         );
@@ -2948,7 +3062,7 @@ mod tests {
             dir.path(),
             "ambiguous.md",
             &format!(
-                "---\nformat-version: 1\nid: deck-ambiguous\nexam: .\n---\n## q\na\n<!-- at: source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
+                "---\nformat-version: 1\nid: deck-ambiguous\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:source.txt:1 fingerprint: {} -->\n<!-- id: card-q -->\n",
                 one_line_fingerprint("target")
             ),
         );
@@ -3061,7 +3175,7 @@ printf ']}}'
         w(
             dir.path(),
             "facts.md",
-            "---\nformat-version: 1\nid: deck-facts\nexam: .\n---\n## q\na\n<!-- at: source.txt:1 -->\n<!-- id: card-q -->\n<!-- reveal: line -->\n",
+            "---\nformat-version: 1\nid: deck-facts\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:source.txt:1 -->\n<!-- id: card-q -->\n<!-- reveal: line -->\n",
         );
         let before = std::fs::read_to_string(&deck).unwrap();
         let args = |repair_source_locators| DoctorArgs {
@@ -3140,7 +3254,7 @@ printf ']}}'
         let path = decks.join("facts.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: deck-deck1\nexam: notes.md\n---\n## q\na\n<!-- at: notes.md:1 -->\n<!-- id: card-card1 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\nexam: notes.md\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:notes.md:1 -->\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         let before = std::fs::read(&path).unwrap();
@@ -3671,13 +3785,13 @@ printf ']}}'
         w(
             &decks,
             "trace-bad.md",
-            "---\ntrace: a walk\nexam: trace-src.txt\n---\n## hop\nstep\n<!-- id: card-thop1 -->\n<!-- at: 5-6 -->\n",
+            "---\ntrace: a walk\nexam: trace-src.txt\ncite:\n  - src: .\n---\n## hop\nstep\n<!-- id: card-thop1 -->\n<!-- at: src:trace-src.txt:5-6 -->\n",
         );
         w(dir, "trace-src.txt", "one\ntwo\n");
         w(
             &decks,
             "at-dangling.md",
-            "---\nexam: .\n---\n## cited\nb\n<!-- at: missing.rs:1-2 -->\n<!-- id: card-atd1 -->\n",
+            "---\ncite:\n  - src: .\n---\n## cited\nb\n<!-- at: src:missing.rs:1-2 -->\n<!-- id: card-atd1 -->\n",
         );
         w(&decks, "sourceless.md", "## a\n1\n<!-- id: card-sla1 -->\n");
         w(
@@ -3727,11 +3841,11 @@ printf ']}}'
         assert!(warnings.contains("indented `##`"), "{warnings}");
         assert!(warnings.contains("missing image"), "{warnings}");
         assert!(
-            warnings.contains("checkpoint at line") && warnings.contains("has only 2 lines"),
+            warnings.contains("checkpoint at line") && warnings.contains("2 line(s)"),
             "trace-locator: {warnings}"
         );
         assert!(
-            errors.contains("cannot read the source"),
+            errors.contains("is not found under `cite:` root"),
             "dangling live `at:` citation is an error: {errors}"
         );
         assert!(
@@ -3755,7 +3869,7 @@ printf ']}}'
         w(
             dir,
             "facts.md",
-            "---\nformat-version: 1\nid: deck-deck1\n---\n## q\na\n<!-- at: notes.md:1 -->\n<!-- id: card-card1 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:notes.md:1 -->\n<!-- id: card-card1 -->\n",
         );
         w(dir, "notes.md", "one\n");
 
@@ -3936,8 +4050,8 @@ printf ']}}'
             dir.path(),
             "deck.md",
             &format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: .\n---\n\
-                 ## q\nanswer\n<!-- at: code.rs:2-3 fingerprint: {fingerprint} -->\n\
+                "---\nformat-version: 1\nid: \"deck-deck1\"\ncite:\n  - src: .\n---\n\
+                 ## q\nanswer\n<!-- at: src:code.rs:2-3 fingerprint: {fingerprint} -->\n\
                  <!-- id: card-card1 -->\n"
             ),
         );
@@ -3949,7 +4063,7 @@ printf ']}}'
             report
                 .warnings
                 .join("\n")
-                .contains("moved to `code.rs:3-4`"),
+                .contains("moved to `src:code.rs:3-4`"),
             "{:?}",
             report.warnings
         );
@@ -3958,7 +4072,7 @@ printf ']}}'
         repair_source_locators(std::slice::from_ref(&deck_path)).unwrap();
         let after = std::fs::read_to_string(&deck_path).unwrap();
         assert!(after.contains(&format!(
-            "<!-- at: code.rs:3-4 fingerprint: {fingerprint} -->"
+            "<!-- at: src:code.rs:3-4 fingerprint: {fingerprint} -->"
         )));
         assert!(after.contains("<!-- id: card-card1 -->"));
         assert_eq!(

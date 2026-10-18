@@ -46,11 +46,13 @@ void main() {
       '---\n'
           'trace: a paired trace\n'
           'exam: source.txt\n'
+          'cite:\n'
+          '  - src: decks\n'
           'title: Trace\n'
           '---\n'
           '## Predict\n'
           'it reads line one\n'
-          '<!-- at: 1 -->\n',
+          '<!-- at: src:source.txt:1 -->\n',
     );
     writeTestDeck(
       '${workspace.path}/decks/two.md',
@@ -61,15 +63,17 @@ void main() {
       '---\n'
           'trace: a two-hop paired trace\n'
           'exam: source.txt\n'
+          'cite:\n'
+          '  - src: decks\n'
           'title: Trace2\n'
           '---\n'
           '## Predict one\n'
           'it reads line one\n'
-          '<!-- at: 1 -->\n'
+          '<!-- at: src:source.txt:1 -->\n'
           '\n'
           '## Predict two\n'
           'it reads line two\n'
-          '<!-- at: 2 -->\n',
+          '<!-- at: src:source.txt:2 -->\n',
     );
     return (root: root, workspace: workspace, support: support);
   }

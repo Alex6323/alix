@@ -875,10 +875,11 @@ authored `[!NOTE]`. A client that renders no badge styling still renders
 
 ### CitationDto
 
-`locator: string` is the citation's `at:` source label (its real
-`<src>:<lines>`), which for a frozen excerpt is the original source path
-re-pointed from the frozen asset. `excerpt: ExcerptDto?` is that locator's resolved source
-panel. `error: string?` explains why this locator could not resolve or why its
+`locator: string` is the citation's `at:` label as the deck writes it:
+`<key>:<path>[:<lines>]` under one of the deck's `cite:` roots, or the bare
+`<key>` of a frozen URL passage; a frozen excerpt keeps the same label.
+`excerpt: ExcerptDto?` is that locator's resolved source panel (for a frozen
+excerpt its `path` is the cited path, never the asset object). `error: string?` explains why this locator could not resolve or why its
 fingerprint no longer matches. A mismatched, missing, or ambiguous fingerprint
 never returns newly addressed source lines. Exactly one of `excerpt` and
 `error` is normally non-null when source access is configured.
@@ -1447,7 +1448,7 @@ attempted and failed; one target's error doesn't stop the rest from running).
 | `prompt_runs` | [InlineRun]? | Display projection of `prompt`; null with it. |
 | `givens` | [string] | |
 | `given_runs` | [[InlineRun]] | Display projection of `givens`, one run list per given. |
-| `locator` | string? | |
+| `locator` | string? | The checkpoint's `at:` label, `<key>:<path>[:<lines>]` or a bare `<key>`. |
 | `prediction` | string? | Echoed on reveal. |
 | `excerpt` | ExcerptDto? | |
 | `excerpt_error` | string? | |
@@ -1495,7 +1496,9 @@ so, like `CreateCardReq`, they are documented here but not snapshot-pinned
 
 `RemoteCard`: required `deck_id: string`, required `card_id: string`,
 `subject: string`, `front: string`, `back: [string]`, `at: string?`. The text
-fields and optional citation locator are the card-only fallback payload.
+fields and optional citation locator are the card-only fallback payload; `at`
+is the first citation's `<key>:<path>[:<lines>]` label (a label that does not
+parse is dropped, not an error).
 
 `RemoteTurn`: one prior tutor exchange the client re-sends: `q: string`,
 `a: string`.

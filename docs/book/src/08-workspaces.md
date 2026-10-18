@@ -67,8 +67,9 @@ direction = "both"
 reveal = "line"
 ```
 
-Besides `title`, `description`, `icon`, and a shared `exam`, the manifest
-may set a top-level `source_access`, which overrides the global
+Besides `title`, `description`, `icon`, a shared `exam`, and a `[cite]`
+table of [citation roots](06-cloze-direction-images.md#source-citations)
+every member sees, the manifest may set a top-level `source_access`, which overrides the global
 `[ask] source_access` for this workspace's decks in either direction (see
 [the tutor](10-tutor.md)). The manifest travels with the folder when
 shared, so review a received workspace's `alix.toml` before an AI call.

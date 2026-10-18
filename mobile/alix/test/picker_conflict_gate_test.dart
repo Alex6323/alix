@@ -114,11 +114,13 @@ void main() {
       '---\n'
           'trace: a paired trace\n'
           'exam: source.txt\n'
+          'cite:\n'
+          '  - src: decks\n'
           'title: Trace\n'
           '---\n'
           '## Predict\n'
           'it reads line one\n'
-          '<!-- at: 1 -->\n',
+          '<!-- at: src:source.txt:1 -->\n',
     );
     final port = FakeSyncPort(rootDir: fixture.root.path);
     port.pairedEntriesImpl = () => const [

@@ -837,7 +837,7 @@ fn replace_after_header(text: &str, fronts: &[usize], cards: &str) -> String {
 }
 
 pub struct AtRewrite {
-    pub at: String,
+    pub at: crate::locator::Locator,
     pub fingerprint: Option<u64>,
     pub asset: Option<String>,
     pub line: usize,
@@ -849,7 +849,7 @@ pub fn set_source_citations(path: &Path, ats: &[AtRewrite]) -> Result<(), DeckEr
         source,
     };
     let existing = std::fs::read_to_string(path).map_err(io_err)?;
-    let (new_text, rewritten) = rewrite_source_citations(&existing, ats);
+    let (new_text, rewritten) = rewrite_source_citations(&existing, ats)?;
     if rewritten != ats_by_line(ats).len() {
         return Err(io_err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -871,18 +871,20 @@ fn at_indent(line: &str) -> Option<&str> {
         .then(|| &line[..line.len() - trimmed.len()])
 }
 
-fn format_at_rewrite(indent: &str, rewrite: &AtRewrite) -> String {
-    let fields = crate::source::LocatorFields {
-        at: rewrite.at.clone(),
+fn format_at_rewrite(indent: &str, rewrite: &AtRewrite) -> Result<String, DeckError> {
+    let fields = crate::locator::LocatorFields {
+        locator: rewrite.at.clone(),
         fingerprint: rewrite
             .fingerprint
             .map(crate::source::format_locator_fingerprint),
         asset: rewrite.asset.clone(),
     };
-    format!(
-        "{indent}<!-- {} -->",
-        crate::source::format_locator_fields(&fields)
-    )
+    let comment =
+        crate::locator::format_locator_comment(&fields).map_err(|error| DeckError::Io {
+            path: PathBuf::from("deck.md"),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()),
+        })?;
+    Ok(format!("{indent}{comment}"))
 }
 
 /// Addressed by line, never by position. A deck's cards do not arrive in file
@@ -894,7 +896,7 @@ fn ats_by_line(ats: &[AtRewrite]) -> HashMap<usize, &AtRewrite> {
     ats.iter().map(|at| (at.line, at)).collect()
 }
 
-fn rewrite_source_citations(text: &str, ats: &[AtRewrite]) -> (String, usize) {
+fn rewrite_source_citations(text: &str, ats: &[AtRewrite]) -> Result<(String, usize), DeckError> {
     let by_line = ats_by_line(ats);
     let mut rewritten = 0;
     let mut out = Vec::new();
@@ -902,7 +904,7 @@ fn rewrite_source_citations(text: &str, ats: &[AtRewrite]) -> (String, usize) {
         if let Some(rewrite) = by_line.get(&(index + 1))
             && let Some(indent) = at_indent(line)
         {
-            out.push(format_at_rewrite(indent, rewrite));
+            out.push(format_at_rewrite(indent, rewrite)?);
             rewritten += 1;
         } else {
             out.push(line.to_string());
@@ -912,7 +914,7 @@ fn rewrite_source_citations(text: &str, ats: &[AtRewrite]) -> (String, usize) {
     if text.ends_with('\n') && !joined.ends_with('\n') {
         joined.push('\n');
     }
-    (joined, rewritten)
+    Ok((joined, rewritten))
 }
 
 pub fn with_exam(text: &str, entries: &[String]) -> Result<String, DeckError> {
@@ -997,7 +999,7 @@ pub(crate) fn rewrite_frozen_assets(
 ) -> Result<String, DeckError> {
     let text = replace_ranges(text, replacements)?;
     let Some((open, close)) = frontmatter_span else {
-        return Ok(rewrite_source_citations(&text, ats).0);
+        return rewrite_source_citations(&text, ats).map(|(text, _)| text);
     };
     let by_line = ats_by_line(ats);
     let mut inserted = exam.is_none();
@@ -1033,7 +1035,7 @@ pub(crate) fn rewrite_frozen_assets(
         if let Some(rewrite) = by_line.get(&line_number)
             && let Some(indent) = at_indent(line)
         {
-            out.push(format_at_rewrite(indent, rewrite));
+            out.push(format_at_rewrite(indent, rewrite)?);
             at_index += 1;
         } else {
             out.push(line.to_string());
@@ -1212,6 +1214,12 @@ mod tests {
     use std::io::Write;
 
     use super::*;
+
+    fn locator(text: &str) -> crate::locator::Locator {
+        crate::locator::parse_locator_comment(&format!("<!-- at: {text} -->"))
+            .unwrap()
+            .locator
+    }
 
     #[test]
     fn a_both_direction_cards_reverse_half_keeps_its_section_context() {
@@ -1527,11 +1535,11 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "t.md",
-            "---\ntrace: how it works\nexam: .\n---\n\n## old question\nold point\n<!-- at: 1 -->\n",
+            "---\ntrace: how it works\nexam: .\n---\n\n## old question\nold point\n<!-- at: src:x.txt:1 -->\n",
         );
         set_trace_checkpoints(
             &path,
-            "## new q1\np1\n<!-- at: 2 -->\n## new q2\np2\n<!-- at: 3 -->\n",
+            "## new q1\np1\n<!-- at: src:x.txt:2 -->\n## new q2\np2\n<!-- at: src:x.txt:3 -->\n",
         )
         .unwrap();
 
@@ -2498,50 +2506,50 @@ mod tests {
     /// every citation.
     #[test]
     fn every_citation_stamps_whatever_order_the_cards_supply_them() {
-        let text = "---\nexam: ../src\n---\n## one\na\n<!-- at: src/lib.rs:1 -->\n## two\nb\n<!-- at: src/lib.rs:2 -->\n";
+        let text = "---\nexam: ../src\n---\n## one\na\n<!-- at: src:src/lib.rs:1 -->\n## two\nb\n<!-- at: src:src/lib.rs:2 -->\n";
         let ats = [
             AtRewrite {
-                at: "src/lib.rs:2".into(),
+                at: locator("src:src/lib.rs:2"),
                 fingerprint: Some(2),
                 asset: None,
                 line: 9,
             },
             AtRewrite {
-                at: "src/lib.rs:1".into(),
+                at: locator("src:src/lib.rs:1"),
                 fingerprint: Some(1),
                 asset: None,
                 line: 6,
             },
         ];
 
-        let (out, rewritten) = rewrite_source_citations(text, &ats);
+        let (out, rewritten) = rewrite_source_citations(text, &ats).unwrap();
         assert_eq!(2, rewritten, "both citations stamp out of order: {out}");
 
         // A card table's rows are several cards sharing ONE `at:` line, so the
         // work is counted in lines, not in cards.
         let shared = [
             AtRewrite {
-                at: "src/lib.rs:1".into(),
+                at: locator("src:src/lib.rs:1"),
                 fingerprint: Some(1),
                 asset: None,
                 line: 6,
             },
             AtRewrite {
-                at: "src/lib.rs:1".into(),
+                at: locator("src:src/lib.rs:1"),
                 fingerprint: Some(1),
                 asset: None,
                 line: 6,
             },
         ];
-        let (shared_out, shared_rewritten) = rewrite_source_citations(text, &shared);
+        let (shared_out, shared_rewritten) = rewrite_source_citations(text, &shared).unwrap();
         assert_eq!(
             ats_by_line(&shared).len(),
             shared_rewritten,
             "two cards citing one line is one rewrite, and satisfied: {shared_out}"
         );
         for expected in [
-            "<!-- at: src/lib.rs:1 fingerprint: xxh64-0000000000000001 -->",
-            "<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000002 -->",
+            "<!-- at: src:src/lib.rs:1 fingerprint: xxh64-0000000000000001 -->",
+            "<!-- at: src:src/lib.rs:2 fingerprint: xxh64-0000000000000002 -->",
         ] {
             assert!(out.contains(expected), "missing {expected}: {out}");
         }
@@ -2549,8 +2557,8 @@ mod tests {
         let parsed = parser::parse("t.md", text).unwrap();
         let frozen = rewrite_frozen_assets(text, parsed.frontmatter_span, None, &ats, &[]).unwrap();
         for expected in [
-            "<!-- at: src/lib.rs:1 fingerprint: xxh64-0000000000000001 -->",
-            "<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000002 -->",
+            "<!-- at: src:src/lib.rs:1 fingerprint: xxh64-0000000000000001 -->",
+            "<!-- at: src:src/lib.rs:2 fingerprint: xxh64-0000000000000002 -->",
         ] {
             assert!(frozen.contains(expected), "missing {expected}: {frozen}");
         }
@@ -2558,11 +2566,11 @@ mod tests {
 
     #[test]
     fn frozen_asset_rewrite_replaces_yaml_lists_and_image_destinations() {
-        let text = "---\nexam:\n  - ../README.md\n  - ../src/lib.rs\ntitle: kept\n---\n\n## q\n![diagram](<old image.png>)\na\n<!-- at: src/lib.rs:2 -->\n";
+        let text = "---\nexam:\n  - ../README.md\n  - ../src/lib.rs\ntitle: kept\n---\n\n## q\n![diagram](<old image.png>)\na\n<!-- at: src:src/lib.rs:2 -->\n";
         let parsed = parser::parse("t.md", text).unwrap();
         let image = parser::image_references(text).remove(0);
         let ats = [AtRewrite {
-            at: "src/lib.rs:2".into(),
+            at: locator("src:src/lib.rs:2"),
             fingerprint: Some(7),
             asset: Some("sha256-source.rs".into()),
             line: 11,
@@ -2578,17 +2586,17 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            "---\nexam: \"../source tree\"\ntitle: kept\n---\n\n## q\n![diagram](<assets/deck/sha256-image.png>)\na\n<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->\n",
+            "---\nexam: \"../source tree\"\ntitle: kept\n---\n\n## q\n![diagram](<assets/deck/sha256-image.png>)\na\n<!-- at: src:src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->\n",
             out
         );
     }
 
     #[test]
     fn frozen_asset_rewrite_without_a_source_preserves_the_source_yaml_and_stamps_nothing() {
-        let text = "---\nexam: ../src\n---\n## q\na\n<!-- at: src/lib.rs:2 -->\n";
+        let text = "---\nexam: ../src\n---\n## q\na\n<!-- at: src:src/lib.rs:2 -->\n";
         let parsed = parser::parse("t.md", text).unwrap();
         let ats = [AtRewrite {
-            at: "src/lib.rs:2".into(),
+            at: locator("src:src/lib.rs:2"),
             fingerprint: Some(7),
             asset: Some("sha256-source.rs".into()),
             line: 6,
@@ -2599,7 +2607,7 @@ mod tests {
         assert!(out.contains("exam: ../src\n"), "{out}");
         assert!(!out.contains("origin:"), "freezing stamps nothing: {out}");
         assert!(out.contains(
-            "<!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->"
+            "<!-- at: src:src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->"
         ));
     }
 
@@ -2643,17 +2651,18 @@ mod tests {
     #[test]
     fn source_citation_rewrites_preserve_target_indent_and_final_newline() {
         let rewrite = AtRewrite {
-            at: "src/lib.rs:2".to_string(),
+            at: locator("src:src/lib.rs:2"),
             fingerprint: Some(7),
             asset: None,
             line: 3,
         };
-        let without_newline = "## q\na\n  <!-- at: old.rs:1 -->";
-        let expected = "## q\na\n  <!-- at: src/lib.rs:2 fingerprint: xxh64-0000000000000007 -->";
+        let without_newline = "## q\na\n  <!-- at: src:old.rs:1 -->";
+        let expected =
+            "## q\na\n  <!-- at: src:src/lib.rs:2 fingerprint: xxh64-0000000000000007 -->";
 
         assert_eq!(
             (expected.to_string(), 1),
-            rewrite_source_citations(without_newline, std::slice::from_ref(&rewrite))
+            rewrite_source_citations(without_newline, std::slice::from_ref(&rewrite)).unwrap()
         );
         assert_eq!(
             (format!("{expected}\n"), 1),
@@ -2661,6 +2670,7 @@ mod tests {
                 &format!("{without_newline}\n"),
                 std::slice::from_ref(&rewrite)
             )
+            .unwrap()
         );
     }
 

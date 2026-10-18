@@ -437,15 +437,15 @@ fn choice_answer(front: &str) -> &'static str {
 /// (trace) exam endpoint families — mirrors `src/serve/tests.rs`'s
 /// `trace_deck` fixture in miniature (kept to two hops; that's enough to
 /// exercise a hop transition without a bigger fixture to maintain).
-const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nexam: source.txt\n---\n\
+const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nexam: source.txt\ncite:\n  - src: .\n---\n\
 ## Predict the first hop\n\
 it reads the first line\n\
 <!-- given: line — the input line -->\n\
-<!-- at: 1 fingerprint: xxh64-cc98257fe4be8f5a -->\n\
+<!-- at: src:source.txt:1 fingerprint: xxh64-cc98257fe4be8f5a -->\n\
 <!-- id: card-t1 -->\n\
 ## Predict the second hop\n\
 it reads line two\n\
-<!-- at: 2 fingerprint: xxh64-ca7ffbd94d5e0037 -->\n\
+<!-- at: src:source.txt:2 fingerprint: xxh64-ca7ffbd94d5e0037 -->\n\
 <!-- id: card-t2 -->\n";
 const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 
@@ -647,9 +647,9 @@ fn add_grounded_tutor_fixture(dir: &Path) {
     std::fs::write(dir.join("source.txt"), "source context\n").unwrap();
     std::fs::write(
         &deck_path,
-        "---\nformat-version: 1\nid: \"deck-grounded\"\nexam: source.txt\n---\n\
+        "---\nformat-version: 1\nid: \"deck-grounded\"\nexam: source.txt\ncite:\n  - src: .\n---\n\
          ## server authored front\nserver authored back\n> [!NOTE]\n> authored note sentinel\n\
-         <!-- at: 1 -->\n<!-- id: card-grounded -->\n",
+         <!-- at: src:source.txt:1 -->\n<!-- id: card-grounded -->\n",
     )
     .unwrap();
     let deck = alix::deck::Deck::load(&deck_path).unwrap();
@@ -690,9 +690,9 @@ fn add_frozen_tutor_fixture(dir: &Path) {
     std::fs::write(
         decks.join("frozen.md"),
         format!(
-            "---\nformat-version: 1\nid: \"deck-frozen\"\nexam: missing-source-root\n---\n\
+            "---\nformat-version: 1\nid: \"deck-frozen\"\nexam: missing-source-root\ncite:\n  - src: missing-source-root\n---\n\
              ## frozen front\nfrozen back\n\
-             <!-- at: src/lib.rs:1 fingerprint: {fingerprint} asset: {object} -->\n\
+             <!-- at: src:src/lib.rs:1 fingerprint: {fingerprint} asset: {object} -->\n\
              <!-- id: card-frozen -->\n"
         ),
     )

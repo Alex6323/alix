@@ -42,7 +42,7 @@
           "path": "src/string.rs",
           "truncated": false
         },
-        "locator": "string.rs:120-128"
+        "locator": "src:string.rs:120-128"
       }
     ],
     "context": [

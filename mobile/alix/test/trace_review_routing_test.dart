@@ -18,14 +18,16 @@ const traceDeck = '''
 ---
 trace: Parser trace
 exam: source.txt
+cite:
+  - src: .
 ---
 ## A `ReadingCloze` block just ended. What is handed to `parse_cloze_cards`?
 The accumulated cloze `text` plus the block's start and end line numbers.
-<!-- at: 1 -->
+<!-- at: src:source.txt:1 -->
 
 ## Why does this scan use bytes rather than chars?
 Cloze `start`/`end` are byte positions, so counting must be in bytes.
-<!-- at: 2 -->
+<!-- at: src:source.txt:2 -->
 ''';
 
 Directory traceRoot() {

@@ -7,6 +7,7 @@ use crate::{
     answer::{Input, Mode, mode_name},
     augment::AugmentCache,
     card::Card,
+    cite::CitationRoots,
     config::{AskConfig, Bindings, BrowseBindings, Key, KeyPattern, PickerKeys, Strictness},
     deck::{self, Deck, DeckState},
     depth::{Depth, depth_name},
@@ -15,7 +16,7 @@ use crate::{
     render::ContentUnit,
     review::{self, CardView},
     session::{Cell, now_ms},
-    source::{Excerpt, SourceBase, relabel_for_display},
+    source::Excerpt,
     store::Store,
     trace::{Delta, Phase},
     walk,
@@ -1031,7 +1032,7 @@ pub(super) fn trace_dto(w: &Tracing) -> TraceSessionDto {
                     .iter()
                     .map(|given| projector.project(given))
                     .collect();
-                dto.locator = c.locator.clone();
+                dto.locator = c.locator.as_ref().map(ToString::to_string);
             }
         }
         Phase::Reveal => {
@@ -1044,7 +1045,7 @@ pub(super) fn trace_dto(w: &Tracing) -> TraceSessionDto {
                     .iter()
                     .map(|given| projector.project(given))
                     .collect();
-                dto.locator = c.locator.clone();
+                dto.locator = c.locator.as_ref().map(ToString::to_string);
                 dto.points = c.points.clone();
                 dto.point_runs = c
                     .points
@@ -1054,21 +1055,7 @@ pub(super) fn trace_dto(w: &Tracing) -> TraceSessionDto {
                 dto.note = c.note.clone();
                 dto.note_runs = c.note.as_deref().map(|note| projector.project(note));
                 match trace.excerpt(c) {
-                    Ok(ex) => {
-                        // Repoint a frozen excerpt's asset path at the real
-                        // `at:` source path for display.
-                        let ex =
-                            if let Some(at) = c.locator.as_deref().filter(|_| c.asset.is_some()) {
-                                let (ex, label) = relabel_for_display(ex, at);
-                                if let Some(label) = label {
-                                    dto.locator = Some(label);
-                                }
-                                ex
-                            } else {
-                                ex
-                            };
-                        dto.excerpt = Some(excerpt_dto(&ex.capped_for_display()));
-                    }
+                    Ok(ex) => dto.excerpt = Some(excerpt_dto(&ex.capped_for_display())),
                     Err(e) => dto.excerpt_error = Some(format!("{e:#}")),
                 }
             }
@@ -1264,32 +1251,18 @@ pub(super) fn review_state(
     }
 }
 
-fn resolved_citations(card: &Card, base: Option<&SourceBase>) -> Vec<CitationDto> {
+fn resolved_citations(card: &Card, roots: Option<&CitationRoots>) -> Vec<CitationDto> {
     card.citations
         .iter()
         .map(|citation| {
             let mut resolved = CitationDto {
-                locator: citation.locator.clone(),
+                locator: citation.locator.to_string(),
                 excerpt: None,
                 error: None,
             };
-            if let Some(base) = base {
-                match base.checked_excerpt(citation) {
-                    Ok(ex) => {
-                        // Repoint a frozen excerpt's asset path at the real
-                        // `at:` source path, so the citation reads
-                        // `store.rs:36-66`, not the asset object's path.
-                        let ex = if citation.asset.is_some() {
-                            let (ex, label) = relabel_for_display(ex, &citation.locator);
-                            if let Some(label) = label {
-                                resolved.locator = label;
-                            }
-                            ex
-                        } else {
-                            ex
-                        };
-                        resolved.excerpt = Some(excerpt_dto(&ex.capped_for_display()));
-                    }
+            if let Some(roots) = roots {
+                match roots.checked_excerpt(citation) {
+                    Ok(ex) => resolved.excerpt = Some(excerpt_dto(&ex.capped_for_display())),
                     Err(e) => resolved.error = Some(format!("{e:#}")),
                 }
             }

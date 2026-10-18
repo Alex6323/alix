@@ -1638,7 +1638,7 @@ mod tests {
         let path = members.join("d.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\nexam: https://example.org/source\n---\n## q\na\n<!-- at: source.md:1 fingerprint: xxh64-0000000000000007 asset: missing.txt -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
+            "---\nformat-version: 1\nid: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\nexam: https://example.org/source\ncite:\n  - src: https://example.org/source\n---\n## q\na\n<!-- at: src fingerprint: xxh64-0000000000000007 asset: missing.txt -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();

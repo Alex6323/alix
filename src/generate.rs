@@ -973,11 +973,12 @@ mod tests {
         let cited = parser::parse(
             "deck.md",
             "| front | back |\n| --- | --- |\n| a | b |\n<!-- cards -->\n\
-             <!-- at: src/lib.rs:1-2 -->\n",
+             <!-- at: src:src/lib.rs:1-2 -->\n",
         )
         .expect("a table invocation carries the locator the prompt requires");
         assert_eq!(
-            "src/lib.rs:1-2", cited.cards[0].citations[0].locator,
+            "src:src/lib.rs:1-2",
+            cited.cards[0].citations[0].locator.to_string(),
             "the citation survives on a row card: {cited:?}"
         );
 
@@ -1022,7 +1023,7 @@ mod tests {
         let choice = parser::parse(
             "deck.md",
             "## Pick one\n- [x] right\n- [ ] wrong\n- [ ] also wrong\n\
-             <!-- choices: single -->\n<!-- at: src/lib.rs:1-2 -->\n\
+             <!-- choices: single -->\n<!-- at: src:src/lib.rs:1-2 -->\n\
              > [!NOTE]\n> why the alternatives fail\n",
         )
         .expect("a choice invocation carries a locator and then its taught note");
@@ -1033,7 +1034,8 @@ mod tests {
             "the note survives two directives above it: {card:?}"
         );
         assert_eq!(
-            "src/lib.rs:1-2", card.citations[0].locator,
+            "src:src/lib.rs:1-2",
+            card.citations[0].locator.to_string(),
             "so does the locator: {card:?}"
         );
         assert_eq!(

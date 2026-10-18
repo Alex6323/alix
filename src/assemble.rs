@@ -12,12 +12,12 @@ use crate::{
     augment::{AugmentCache, Topology, TopologyOrder},
     card::Card,
     choice::ColumnPools,
+    cite::CitationRoots,
     config::{AskConfig, ReviewConfig},
     deck::{Deck, DeckSettings, ExamLayers},
     depth::{Depth, default_depth},
     scheduler::Fsrs,
     session::{DeckInfo, Order, Session, SessionOptions},
-    source::SourceBase,
     stamp, state,
     store::Store,
     time::now_ms,
@@ -95,7 +95,7 @@ pub struct SessionBuild {
     pub links: HashMap<String, Vec<String>>,
     pub exam_layers: HashMap<String, ExamLayers>,
     pub base_roots: HashMap<String, PathBuf>,
-    pub source_bases: HashMap<String, SourceBase>,
+    pub source_bases: HashMap<String, CitationRoots>,
     pub topology_name: Option<String>,
     pub region_name: Option<String>,
     pub augment: AugmentCache,
@@ -229,7 +229,7 @@ pub fn load_decks(
                 exam_layers: deck.exam_layers(),
                 base_root: deck.base_root(),
                 source_access: false,
-                source_base: SourceBase::for_deck(&deck),
+                source_base: CitationRoots::for_deck(&deck),
                 load_warnings: deck.load_warnings.clone(),
             },
         );
@@ -1542,14 +1542,14 @@ mod tests {
         assert_eq!(None, store_path_for(&[]));
     }
 
-    const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nexam: source.txt\n---\n\
+    const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nexam: source.txt\ncite:\n  - src: .\n---\n\
 ## Predict the first hop\n\
 it reads the first line\n\
-<!-- at: 1 -->\n\
+<!-- at: src:source.txt:1 -->\n\
 <!-- id: card-qhop1 -->\n\
 ## Predict the second hop\n\
 it reads line two\n\
-<!-- at: 2 -->\n\
+<!-- at: src:source.txt:2 -->\n\
 <!-- id: card-qhop2 -->\n";
 
     fn test_config() -> AssembleConfig {
@@ -1937,7 +1937,7 @@ it reads line two\n\
         let trace = dir.path().join("t.md");
         std::fs::write(
             &trace,
-            "---\ntrace: how it works\nexam: .\n---\n\n## q\npoint\n<!-- at: 1 -->\n<!-- id: card-qq -->\n",
+            "---\ntrace: how it works\nexam: .\ncite:\n  - src: .\n---\n\n## q\npoint\n<!-- at: src:notes.txt:1 -->\n<!-- id: card-qq -->\n",
         )
         .unwrap();
         let fact = dir.path().join("f.md");

@@ -231,7 +231,7 @@ proptest! {
                 Just("\\## escaped heading".to_string()),
                 Just("\\> escaped note".to_string()),
                 Just("\\---".to_string()),
-                Just("<!-- at: src/lib.rs:1-2 fingerprint: xxh64-0011223344556677 -->".to_string()),
+                Just("<!-- at: src:src/lib.rs:1-2 fingerprint: xxh64-0011223344556677 -->".to_string()),
                 Just("<!-- direction: both -->".to_string()),
             ],
             0..14,
