@@ -192,7 +192,8 @@ Locators are written into deck files, so their grammar is decided here.
   which does not exist yet.
 - A frozen URL passage is the model's copy of the page as its fetch tool
   returned it, not a byte-exact excerpt.
-- Citing always makes the cited text exam evidence.
+- Citing never makes text exam evidence: material the exam should read is
+  listed under `exam:`.
 
 ## Alternatives considered
 
