@@ -1121,11 +1121,15 @@ fn findings_in(dir: &Path) -> Report {
 
 fn check(decks: Vec<PathBuf>) -> Result<()> {
     let mut report = Report::default();
+    let mut manifests_reported = std::collections::HashSet::new();
     for path in &decks {
         // Deck::load would error on a directory, so a workspace target is
         // handled separately here.
         if path.is_dir() && path.join(alix::workspace::MANIFEST).is_file() {
-            workspace_manifest_findings(path, &mut report);
+            if manifests_reported.insert(std::path::absolute(path).unwrap_or_else(|_| path.clone()))
+            {
+                workspace_manifest_findings(path, &mut report);
+            }
             if let Some(rel) = alix::workspace::manifest_icon(path)
                 && !path.join(&rel).is_file()
             {
@@ -1138,6 +1142,11 @@ fn check(decks: Vec<PathBuf>) -> Result<()> {
                 report.warn(format!("{}: {complaint}", path.display()));
             }
             continue;
+        }
+        if let Some(workspace) = alix::workspace::root_for_deck(path)
+            && manifests_reported.insert(workspace.clone())
+        {
+            workspace_manifest_findings(&workspace, &mut report);
         }
         if let Ok(deck) = Deck::load(path) {
             println!("{}: {} cards", deck.subject, deck.cards.len());
@@ -2116,6 +2125,37 @@ mod tests {
                 .all(|warning| !warning.contains("deck-like Markdown is not initialized")),
             "{:#?}",
             report.warnings
+        );
+    }
+
+    #[test]
+    fn explicit_member_deck_doctor_reports_manifest_cite_violations() {
+        let mut missed = Vec::new();
+        for (label, manifest) in [
+            ("invalid key", "[cite]\nCode = \"source\"\n"),
+            (
+                "nested roots",
+                "[cite]\nouter = \"source\"\ninner = \"source/inner\"\n",
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let decks = root.path().join(workspace::DECKS);
+            std::fs::create_dir_all(root.path().join("source/inner")).unwrap();
+            std::fs::create_dir_all(&decks).unwrap();
+            w(root.path(), workspace::MANIFEST, manifest);
+            w(
+                &decks,
+                "ready.md",
+                "---\nformat-version: 1\nid: deck-00000000000000000000000001\n---\n## q\na\n<!-- id: card-00000000000000000000000002 -->\n",
+            );
+
+            if check(vec![decks.join("ready.md")]).is_ok() {
+                missed.push(label);
+            }
+        }
+        assert!(
+            missed.is_empty(),
+            "checking a member directly missed manifest cite violations: {missed:?}"
         );
     }
 
