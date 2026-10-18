@@ -317,7 +317,16 @@ declare exactly one; otherwise none. A URL root is never browsed, and an
 `src/cite.rs`). A root may be any local directory the deck or manifest
 declares, absolute ones included, so a received deck can name a wide root;
 inspect a received workspace's `cite:` roots before enabling source access.
-The exam reads only `exam:` entries, never `cite:` roots or cited text. This is the boundary for Alix's built-in grant. A user can
+The exam reads only `exam:` entries, never `cite:` roots or cited text.
+
+A citation reads only inside its key's root. A locator path is relative and
+normalized (no absolute path, drive letter, `..`, `.` or empty segment), and
+the symlink-resolved file must lie inside the symlink-resolved root, so
+neither a crafted locator nor a symlink in a received tree reads outside it
+(`CitationRoots::resolve` in `src/cite.rs`). There is no ancestor retry and no
+search for a bare file name, so a mistyped path fails instead of resolving to
+a same-named file elsewhere. A URL root is provenance only: alix never fetches
+it, and a passage under it is served from its frozen object. This is the boundary for Alix's built-in grant. A user can
 deliberately widen the provider CLI's permissions through `permission_mode`,
 `allowed_tools`, or provider-specific configuration, and then owns that wider
 trust decision.
@@ -523,6 +532,8 @@ The most relevant deterministic checks currently live beside their controls:
   identity, byte-preserving refusal, and initialized-only discovery;
 - `src/source.rs` and `src/cli/doctor.rs`: fail-closed citation integrity and
   explicit exact locator repair;
+- `src/locator.rs` and `src/cite.rs`: locator grammar (relative, normalized
+  paths only) and containment of every resolved citation inside its root;
 - `src/workspace_update.rs`: update-manifest member containment, accepting a
   member path only when every component is `Normal`, so a rooted or
   Windows-prefixed member cannot survive the join onto the workspace root;
