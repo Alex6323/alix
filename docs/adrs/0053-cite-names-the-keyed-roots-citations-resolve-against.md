@@ -154,7 +154,9 @@ Locators are written into deck files, so their grammar is decided here.
 14. The exam grounds only in `exam:`, the deck's own and the manifest's, as
     `source:` is read today. It never reads `cite:` roots or cited text. A
     deck is exam-eligible only when it or its manifest declares `exam:`. To
-    examine a cited file, list it under `exam:` too.
+    examine a cited file, list it under `exam:` too. A trace deck's exam
+    grades a retrace against its own checkpoints and reads no source, so it
+    stays outside this rule until traces are redesigned.
 
 15. With `source_access` on, the tutor browses the root of the first local
     key among the card's locators. A card without a local locator browses a
