@@ -130,8 +130,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   manifest and cites `src:<path>:<lines>`. A trace build and
   `alix deck generate --trace` add `- src: <dir>` to the deck's `cite:` (for a
   file, its folder), unless a root the deck already sees holds the input, in
-  which case they reuse that key. An input outside every root while `src` is
-  taken stops the build before the model is called. `alix workspace update`
+  which case they reuse that key. `alix deck generate` from a local file or
+  folder does the same for its facts deck, beside the unchanged `exam:` line.
+  An input outside every root while `src` is taken stops the build before the
+  model is called. Prompts quote a locator path that contains a space. `alix workspace update`
   refuses a proposal that changes the deck's `cite:`.
 
 - Every `<!-- at: -->` locator names a `cite:` key: `<key>:<path>[:<lines>]`,
@@ -432,8 +434,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- A URL trace build outside a workspace now stops before calling the model
-  instead of writing a deck that does not parse.
+- A URL trace build wrote each cited sentence into its `at:` locator, which
+  does not parse. Inside a workspace the build now asks the model to copy each
+  passage verbatim between two marker lines carrying a token minted per build,
+  freezes it as a `sha256-<hex>.txt` object in the deck's asset folder, and
+  cites it as `<!-- at: src fingerprint: ... asset: ... -->` under the `cite:`
+  root `src` naming the URL. A missing, unclosed, or altered marker, or a
+  checkpoint without a passage, fails the build naming the checkpoint, and
+  nothing is written. Outside a workspace the build stops before calling the
+  model.
 
 - Drift was judged against a deck's first local source whatever root a
   citation came from, so an unchanged file under a later source was reported

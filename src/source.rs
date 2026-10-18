@@ -52,6 +52,10 @@ pub fn excerpt_fingerprint(excerpt: &Excerpt) -> u64 {
     fingerprint_lines(excerpt.lines.iter().map(|(_, line)| line.as_str()))
 }
 
+pub fn text_fingerprint(text: &str) -> u64 {
+    fingerprint_lines(text.lines())
+}
+
 fn fingerprint_lines<'a>(lines: impl IntoIterator<Item = &'a str>) -> u64 {
     let mut hasher = XxHash64::default();
     for (index, line) in lines.into_iter().enumerate() {

@@ -83,8 +83,14 @@ the `exam:` directory, or the folder holding an `exam:` file (so a file is cited
 as `src:<file name>:<lines>`). When a `cite:` root the deck already sees holds
 the input, the build reuses that key instead; when none does and `src` is
 already taken, it stops before calling the model. A URL trace build works only
-in a workspace member deck. Alix fingerprints those locators before placing the
-result. The result is
+in a workspace member deck: the URL becomes the `cite:` root `src`, and the
+model copies each checkpoint's passage verbatim between a `PASSAGE <token>`
+line and an `END PASSAGE <token>` line, with a token alix mints for that build.
+Alix freezes each passage as a `sha256-<hex>.txt` object in the deck's asset
+folder and cites it as `<!-- at: src fingerprint: ... asset: ... -->`. A
+missing or altered marker, or a checkpoint without a passage, fails the build
+naming the checkpoint, and nothing is written. Alix fingerprints those locators
+before placing the result. The result is
 cached and version-controlled there, so review it (especially the locators) and
 edit freely; re-run it to regenerate.
 

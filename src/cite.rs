@@ -184,8 +184,15 @@ pub const GENERATED_KEY: &str = "src";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedRoot {
     pub key: String,
-    pub locator_prefix: String,
+    pub path_prefix: String,
     pub declare: Option<String>,
+}
+
+impl GeneratedRoot {
+    pub fn locator(&self, file: &str, range: &str) -> String {
+        let path = crate::locator::quote_if_needed(&format!("{}{file}", self.path_prefix));
+        format!("{}:{path}:{range}", self.key)
+    }
 }
 
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
@@ -224,23 +231,52 @@ pub fn generated_root(
         else {
             continue;
         };
-        let under: String = under
+        let path_prefix: String = under
             .components()
             .map(|component| format!("{}/", component.as_os_str().to_string_lossy()))
             .collect();
         return Ok(GeneratedRoot {
             key: root.key.clone(),
-            locator_prefix: format!("{}:{under}", root.key),
+            path_prefix,
             declare: None,
         });
     }
+    declare_src(deck_cite, place, &roots, input_dir, declare_as)
+}
+
+pub fn generated_url_root(
+    deck_cite: &[(String, String)],
+    place: DeckPlace,
+    url: &str,
+) -> Result<GeneratedRoot, GeneratedRootError> {
+    let roots = visible_roots(deck_cite, place).map_err(GeneratedRootError::InvalidRoots)?;
+    if let Some(root) = roots
+        .iter()
+        .find(|root| root.root == Root::Url(url.to_string()))
+    {
+        return Ok(GeneratedRoot {
+            key: root.key.clone(),
+            path_prefix: String::new(),
+            declare: None,
+        });
+    }
+    declare_src(deck_cite, place, &roots, Path::new(url), url)
+}
+
+fn declare_src(
+    deck_cite: &[(String, String)],
+    place: DeckPlace,
+    roots: &[VisibleRoot],
+    input: &Path,
+    declare_as: &str,
+) -> Result<GeneratedRoot, GeneratedRootError> {
     if let Some(taken) = roots.iter().find(|root| root.key == GENERATED_KEY) {
         let taken = match &taken.root {
             Root::Local(path) => path.clone(),
             Root::Url(url) => PathBuf::from(url),
         };
         return Err(GeneratedRootError::SrcTaken {
-            input: input_dir.to_path_buf(),
+            input: input.to_path_buf(),
             taken,
         });
     }
@@ -249,7 +285,7 @@ pub fn generated_root(
     visible_roots(&declared, place).map_err(GeneratedRootError::InvalidRoots)?;
     Ok(GeneratedRoot {
         key: GENERATED_KEY.to_string(),
-        locator_prefix: format!("{GENERATED_KEY}:"),
+        path_prefix: String::new(),
         declare: Some(declare_as.to_string()),
     })
 }
@@ -260,6 +296,20 @@ pub fn generated_root_for_deck(
     input_dir: &Path,
     declare_as: &str,
 ) -> Result<GeneratedRoot, GeneratedRootError> {
+    with_deck_place(deck_path, |place| {
+        generated_root(deck_cite, place, input_dir, declare_as)
+    })
+}
+
+pub fn generated_url_root_for_deck(
+    deck_path: &Path,
+    deck_cite: &[(String, String)],
+    url: &str,
+) -> Result<GeneratedRoot, GeneratedRootError> {
+    with_deck_place(deck_path, |place| generated_url_root(deck_cite, place, url))
+}
+
+fn with_deck_place<T>(deck_path: &Path, act: impl FnOnce(DeckPlace) -> T) -> T {
     let deck_path = std::path::absolute(deck_path).unwrap_or_else(|_| deck_path.to_path_buf());
     let folder = deck_path
         .parent()
@@ -268,18 +318,12 @@ pub fn generated_root_for_deck(
     match crate::workspace::root_for_deck(&deck_path) {
         Some(workspace) => {
             let manifest_cite = crate::workspace::manifest_cite(&workspace);
-            let place = DeckPlace::Member {
+            act(DeckPlace::Member {
                 workspace: &workspace,
                 manifest_cite: &manifest_cite,
-            };
-            generated_root(deck_cite, place, input_dir, declare_as)
+            })
         }
-        None => generated_root(
-            deck_cite,
-            DeckPlace::Loose { folder: &folder },
-            input_dir,
-            declare_as,
-        ),
+        None => act(DeckPlace::Loose { folder: &folder }),
     }
 }
 
@@ -762,24 +806,146 @@ mod tests {
         }
     }
 
+    fn reused(key: &str, path_prefix: &str) -> Result<GeneratedRoot, GeneratedRootError> {
+        Ok(GeneratedRoot {
+            key: key.into(),
+            path_prefix: path_prefix.into(),
+            declare: None,
+        })
+    }
+
+    fn declared(value: &str) -> Result<GeneratedRoot, GeneratedRootError> {
+        Ok(GeneratedRoot {
+            key: GENERATED_KEY.into(),
+            path_prefix: String::new(),
+            declare: Some(value.into()),
+        })
+    }
+
+    #[test]
+    fn a_url_trace_reuses_the_key_naming_its_url_or_declares_src_or_refuses() {
+        let fx = fixture();
+        let ws = fx.workspace.clone();
+        let url = "https://example.com/guide";
+        type Row = (
+            &'static str,
+            Entries,
+            Option<Entries>,
+            Result<GeneratedRoot, GeneratedRootError>,
+        );
+        let rows: Vec<Row> = vec![
+            (
+                "a member deck without roots declares src",
+                vec![],
+                Some(vec![]),
+                declared(url),
+            ),
+            (
+                "the deck's own src naming the url is reused, so a rebuild declares nothing",
+                vec![("src", url)],
+                Some(vec![]),
+                reused("src", ""),
+            ),
+            (
+                "a manifest key naming the url is reused",
+                vec![],
+                Some(vec![("guide", url)]),
+                reused("guide", ""),
+            ),
+            (
+                "a manifest src naming a directory is taken",
+                vec![],
+                Some(vec![("src", "docs")]),
+                Err(GeneratedRootError::SrcTaken {
+                    input: PathBuf::from(url),
+                    taken: ws.join("docs"),
+                }),
+            ),
+            (
+                "a deck src naming another url is taken",
+                vec![("src", "https://example.com/other")],
+                Some(vec![]),
+                Err(GeneratedRootError::SrcTaken {
+                    input: PathBuf::from(url),
+                    taken: PathBuf::from("https://example.com/other"),
+                }),
+            ),
+            (
+                "a loose deck cannot declare a url root",
+                vec![],
+                None,
+                Err(GeneratedRootError::InvalidRoots(vec![
+                    CiteViolation::UrlRootInLooseDeck { key: "src".into() },
+                ])),
+            ),
+        ];
+        for (label, deck, manifest, expected) in rows {
+            let deck_cite = pairs(&deck);
+            let manifest_cite: Option<BTreeMap<String, String>> =
+                manifest.map(|entries| pairs(&entries).into_iter().collect());
+            let place = match &manifest_cite {
+                Some(manifest_cite) => DeckPlace::Member {
+                    workspace: &ws,
+                    manifest_cite,
+                },
+                None => DeckPlace::Loose { folder: &fx.loose },
+            };
+            assert_eq!(
+                expected,
+                generated_url_root(&deck_cite, place, url),
+                "row `{label}`"
+            );
+        }
+    }
+
+    #[test]
+    fn a_generated_locator_quotes_its_path_by_the_writer_rule_and_parses_back() {
+        for (label, path_prefix, file, range, expected) in [
+            ("a bare root", "", "a.rs", "3", "src:a.rs:3"),
+            ("a prefix", "inner/", "a.rs", "3-4", "src:inner/a.rs:3-4"),
+            (
+                "a prefix with a space",
+                "my dir/",
+                "a.rs",
+                "3",
+                "src:\"my dir/a.rs\":3",
+            ),
+            ("a file with a space", "", "a b.rs", "3", "src:\"a b.rs\":3"),
+            (
+                "a file ending in a range-shaped tail",
+                "",
+                "x.txt:3",
+                "1",
+                "src:\"x.txt:3\":1",
+            ),
+        ] {
+            let root = GeneratedRoot {
+                key: "src".into(),
+                path_prefix: path_prefix.into(),
+                declare: None,
+            };
+            let written = root.locator(file, range);
+            assert_eq!(expected, written, "row `{label}`");
+            let parsed = crate::locator::parse_locator_comment(&format!("<!-- at: {written} -->"))
+                .unwrap_or_else(|error| panic!("row `{label}` parses back: {error}"));
+            assert_eq!(
+                Target::File {
+                    path: format!("{path_prefix}{file}"),
+                    range: Some(match range.split_once('-') {
+                        Some((start, end)) => (start.parse().unwrap(), end.parse().unwrap()),
+                        None => (range.parse().unwrap(), range.parse().unwrap()),
+                    }),
+                },
+                parsed.locator.target,
+                "row `{label}` names the prefixed path"
+            );
+        }
+    }
+
     #[test]
     fn a_generator_reuses_the_root_holding_its_input_or_declares_src_or_refuses() {
         let fx = fixture();
         let ws = fx.workspace.clone();
-        let reused = |key: &str, prefix: &str| {
-            Ok(GeneratedRoot {
-                key: key.into(),
-                locator_prefix: prefix.into(),
-                declare: None,
-            })
-        };
-        let declared = |value: &str| {
-            Ok(GeneratedRoot {
-                key: GENERATED_KEY.into(),
-                locator_prefix: "src:".into(),
-                declare: Some(value.into()),
-            })
-        };
         type Row = (
             &'static str,
             Entries,
@@ -800,21 +966,21 @@ mod tests {
                 vec![],
                 Some(vec![("code", "crates/core")]),
                 "crates/core/inner",
-                reused("code", "code:inner/"),
+                reused("code", "inner/"),
             ),
             (
                 "a manifest root equal to the input is reused bare",
                 vec![],
                 Some(vec![("code", "crates/core")]),
                 "crates/core",
-                reused("code", "code:"),
+                reused("code", ""),
             ),
             (
                 "the deck's own src holding the input is reused, so a rebuild declares nothing",
                 vec![("src", "docs")],
                 Some(vec![]),
                 "docs",
-                reused("src", "src:"),
+                reused("src", ""),
             ),
             (
                 "an input outside every root while the manifest declares src",

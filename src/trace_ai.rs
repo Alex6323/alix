@@ -17,6 +17,13 @@ use crate::{
 pub struct BuiltTrace {
     pub cards: String,
     pub cite: Option<(String, String)>,
+    pub passages: Vec<FrozenPassage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrozenPassage {
+    pub object: String,
+    pub text: String,
 }
 
 impl BuiltTrace {
@@ -27,24 +34,90 @@ impl BuiltTrace {
             None => text,
         })
     }
+
+    pub fn write_passages(&self, deck_path: &Path) -> Result<()> {
+        if self.passages.is_empty() {
+            return Ok(());
+        }
+        let workspace = crate::workspace::root_for_deck(deck_path).ok_or_else(|| {
+            anyhow!(
+                "{} is not a workspace member, so its passages have no asset folder",
+                deck_path.display()
+            )
+        })?;
+        let deck = Deck::load(deck_path)?;
+        let deck_id = deck
+            .deck_token
+            .as_deref()
+            .ok_or_else(|| anyhow!("{} has no deck id to own its passages", deck_path.display()))?;
+        for passage in &self.passages {
+            crate::assets::write_object(&workspace, deck_id, passage.text.as_bytes(), "txt")?;
+        }
+        Ok(())
+    }
 }
 
 pub(crate) struct TraceRoot {
-    pub url: bool,
     pub cwd: Option<PathBuf>,
-    pub root: Option<GeneratedRoot>,
+    pub root: GeneratedRoot,
+    pub passage_token: Option<String>,
+}
+
+pub(crate) enum Citing<'a> {
+    Lines(&'a GeneratedRoot),
+    Passages { key: &'a str, token: &'a str },
+}
+
+impl Citing<'_> {
+    pub(crate) fn is_url(&self) -> bool {
+        matches!(self, Citing::Passages { .. })
+    }
+}
+
+pub(crate) fn passage_rule(key: &str, token: &str) -> String {
+    format!(
+        "exactly `{key}`, the page's citation key. The passage itself goes on the \
+         lines directly below that locator line: first a line `PASSAGE {token}`, then \
+         the passage the key points rest on, copied VERBATIM from the page as one or \
+         more whole lines, then a line `END PASSAGE {token}`. Write both marker lines \
+         exactly as shown, each alone on its line. Every checkpoint carries one such \
+         passage, placed before its `> [!NOTE]` note"
+    )
 }
 
 impl TraceRoot {
-    pub(crate) fn locator_prefix(&self) -> &str {
-        self.root
-            .as_ref()
-            .map_or("", |root| root.locator_prefix.as_str())
+    pub(crate) fn url(&self) -> bool {
+        self.passage_token.is_some()
+    }
+
+    pub(crate) fn citing(&self) -> Citing<'_> {
+        match &self.passage_token {
+            Some(token) => Citing::Passages {
+                key: &self.root.key,
+                token,
+            },
+            None => Citing::Lines(&self.root),
+        }
     }
 
     pub(crate) fn cite(&self) -> Option<(String, String)> {
-        let root = self.root.as_ref()?;
-        Some((root.key.clone(), root.declare.clone()?))
+        Some((self.root.key.clone(), self.root.declare.clone()?))
+    }
+
+    pub(crate) fn finish(&self, raw: &str, empty: &str) -> Result<BuiltTrace> {
+        let (text, passages) = match &self.passage_token {
+            Some(token) => cut_passages(raw, &self.root.key, token)?,
+            None => (raw.to_string(), Vec::new()),
+        };
+        let cards = clean_to_cards(&text);
+        if cards.trim().is_empty() {
+            bail!("{empty}");
+        }
+        Ok(BuiltTrace {
+            cards,
+            cite: self.cite(),
+            passages,
+        })
     }
 }
 
@@ -60,10 +133,13 @@ pub(crate) fn trace_root(
                 deck_path.display()
             );
         }
+        let root = crate::cite::generated_url_root_for_deck(deck_path, deck_cite, source)?;
+        let token = crate::token::mint()
+            .map_err(|error| anyhow!("cannot mint a passage token: {error}"))?;
         return Ok(TraceRoot {
-            url: true,
             cwd: None,
-            root: None,
+            root,
+            passage_token: Some(token),
         });
     }
     let content_root = crate::workspace::content_root(deck_path);
@@ -78,10 +154,94 @@ pub(crate) fn trace_root(
     };
     let root = crate::cite::generated_root_for_deck(deck_path, deck_cite, &base_dir, &declare_as)?;
     Ok(TraceRoot {
-        url: false,
         cwd: Some(base_dir),
-        root: Some(root),
+        root,
+        passage_token: None,
     })
+}
+
+pub(crate) fn cut_passages(
+    raw: &str,
+    key: &str,
+    token: &str,
+) -> Result<(String, Vec<FrozenPassage>)> {
+    let locator_line = format!("<!-- at: {key} -->");
+    let open = format!("PASSAGE {token}");
+    let close = format!("END PASSAGE {token}");
+    let content = |line: &'_ str| -> String {
+        let line = line.strip_suffix('\n').unwrap_or(line);
+        line.strip_suffix('\r').unwrap_or(line).to_string()
+    };
+    let mut kept = String::new();
+    let mut passages = Vec::new();
+    let mut card: Option<String> = None;
+    let mut card_cited = true;
+    let mut lines = raw.split_inclusive('\n');
+    while let Some(line) = lines.next() {
+        let text = content(line);
+        if let Some(front) = text.strip_prefix("## ") {
+            if let Some(previous) = &card
+                && !card_cited
+            {
+                bail!("checkpoint `{previous}` has no `PASSAGE {token}` passage");
+            }
+            card = Some(front.trim().to_string());
+            card_cited = false;
+            kept.push_str(line);
+            continue;
+        }
+        let name = card
+            .clone()
+            .unwrap_or_else(|| "(before the first checkpoint)".to_string());
+        if text == open || text == close {
+            bail!("checkpoint `{name}`: a passage marker stands outside a passage");
+        }
+        if text != locator_line {
+            kept.push_str(line);
+            continue;
+        }
+        if card.is_none() {
+            bail!("a `{locator_line}` passage sits before the first checkpoint");
+        }
+        if lines.next().map(content).as_deref() != Some(open.as_str()) {
+            bail!("checkpoint `{name}`: the line after `{locator_line}` is not `{open}`");
+        }
+        let mut passage = String::new();
+        loop {
+            match lines.next() {
+                None => bail!("checkpoint `{name}`: its passage never reaches an `{close}` line"),
+                Some(line) if content(line) == close => break,
+                Some(line) => passage.push_str(line),
+            }
+        }
+        if passage.trim().is_empty() {
+            bail!("checkpoint `{name}`: its passage is empty");
+        }
+        let object = crate::assets::object_name(passage.as_bytes(), "txt");
+        let comment = crate::locator::format_locator_comment(&crate::locator::LocatorFields {
+            locator: crate::locator::Locator {
+                key: key.to_string(),
+                target: crate::locator::Target::Passage,
+            },
+            fingerprint: Some(crate::source::format_locator_fingerprint(
+                crate::source::text_fingerprint(&passage),
+            )),
+            asset: Some(object.clone()),
+        })?;
+        kept.push_str(&comment);
+        kept.push('\n');
+        passages.push(FrozenPassage {
+            object,
+            text: passage,
+        });
+        card_cited = true;
+    }
+    if let Some(last) = &card
+        && !card_cited
+    {
+        bail!("checkpoint `{last}` has no `PASSAGE {token}` passage");
+    }
+    Ok((kept, passages))
 }
 
 pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<BuiltTrace> {
@@ -94,18 +254,11 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Buil
         .first()
         .ok_or_else(|| anyhow!("{} declares no `exam:` scope to trace", deck.subject))?;
     let root = trace_root(&deck.path, &deck.cite, source)?;
-    ensure_source_reachable(ask_cfg, root.url)?;
-    let prompt = build_prompt(description, source, root.url, root.locator_prefix(), cfg);
-    let run_cfg = build_run_config(cfg, ask_cfg, root.cwd.clone(), root.url);
+    ensure_source_reachable(ask_cfg, root.url())?;
+    let prompt = build_prompt(description, source, &root.citing(), cfg);
+    let run_cfg = build_run_config(cfg, ask_cfg, root.cwd.clone(), root.url());
     let raw = ask::run(&run_cfg, &prompt, &[])?;
-    let cards = clean_to_cards(&raw);
-    if cards.trim().is_empty() {
-        bail!("the build produced no checkpoints");
-    }
-    Ok(BuiltTrace {
-        cards,
-        cite: root.cite(),
-    })
+    root.finish(&raw, "the build produced no checkpoints")
 }
 
 pub fn suggest(source: &str, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<String> {
@@ -157,14 +310,8 @@ pub(crate) fn build_run_config(
     }
 }
 
-fn build_prompt(
-    description: &str,
-    source: &str,
-    url: bool,
-    locator_prefix: &str,
-    cfg: &TraceConfig,
-) -> String {
-    let explore = if url {
+fn build_prompt(description: &str, source: &str, citing: &Citing, cfg: &TraceConfig) -> String {
+    let explore = if citing.is_url() {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
     } else {
         "Your working directory is the source root. Explore it with the Read, Glob \
@@ -173,16 +320,18 @@ fn build_prompt(
          write or shell access."
             .to_string()
     };
-    let locator = if url {
-        "a short quoted span from the page — the exact sentence(s) the key points rest on"
-            .to_string()
-    } else {
-        format!(
-            "ONE contiguous range, `{locator_prefix}<file>:start-end` (or \
-             `{locator_prefix}<file>:N` for a single line) where `<file>` is relative to \
-             the source root, e.g. `{locator_prefix}src/session.rs:682-689`. Write the \
-             `{locator_prefix}` part exactly as given, and NEVER comma-separated ranges"
-        )
+    let locator = match citing {
+        Citing::Passages { key, token } => passage_rule(key, token),
+        Citing::Lines(root) => format!(
+            "ONE contiguous range, `{}` (or `{}` for a single line) where `<file>` is \
+             relative to the source root, e.g. `{}`. Write everything around `<file>` \
+             exactly as given; a path containing a space is wrapped in double quotes, \
+             e.g. `{}`. NEVER comma-separated ranges",
+            root.locator("<file>", "start-end"),
+            root.locator("<file>", "N"),
+            root.locator("src/session.rs", "682-689"),
+            root.locator("my notes.md", "3-4"),
+        ),
     };
     let mut p = format!(
         "You are tracing ONE path through a source so a learner can UNDERSTAND it by \
@@ -420,13 +569,133 @@ mod tests {
         path
     }
 
+    fn root(key: &str, path_prefix: &str) -> GeneratedRoot {
+        GeneratedRoot {
+            key: key.into(),
+            path_prefix: path_prefix.into(),
+            declare: None,
+        }
+    }
+
+    #[test]
+    fn cut_passages_freezes_each_passage_verbatim_or_fails_naming_its_card() {
+        let card = |front: &str, body: &str| {
+            format!("## {front}\npoint\n<!-- at: src -->\nPASSAGE tok\n{body}END PASSAGE tok\n")
+        };
+        type Row = (
+            &'static str,
+            String,
+            Result<Vec<&'static str>, &'static str>,
+        );
+        let rows: Vec<Row> = vec![
+            (
+                "a passage containing code fences",
+                card("Q", "```rust\nfn a() {}\n```\n"),
+                Ok(vec!["```rust\nfn a() {}\n```\n"]),
+            ),
+            (
+                "a passage of `>` lines and a heading",
+                card("Q", "> quoted\n## not a card\n"),
+                Ok(vec!["> quoted\n## not a card\n"]),
+            ),
+            (
+                "an END PASSAGE line with a different token is content",
+                card("Q", "a\nEND PASSAGE other\nb\n"),
+                Ok(vec!["a\nEND PASSAGE other\nb\n"]),
+            ),
+            (
+                "blank lines inside and around the passage are kept",
+                card("Q", "\nfirst\n\nsecond\n\n"),
+                Ok(vec!["\nfirst\n\nsecond\n\n"]),
+            ),
+            (
+                "two checkpoints each freeze their own passage",
+                format!("preamble\n{}\n{}", card("Q1", "one\n"), card("Q2", "two\n")),
+                Ok(vec!["one\n", "two\n"]),
+            ),
+            (
+                "a passage that never ends",
+                "## Q\npoint\n<!-- at: src -->\nPASSAGE tok\nbody\nEND PASSAGE tox\n".into(),
+                Err("checkpoint `Q`: its passage never reaches an `END PASSAGE tok` line"),
+            ),
+            (
+                "a wrong token on the opening line",
+                "## Q\npoint\n<!-- at: src -->\nPASSAGE tox\nbody\nEND PASSAGE tok\n".into(),
+                Err("checkpoint `Q`: the line after `<!-- at: src -->` is not `PASSAGE tok`"),
+            ),
+            (
+                "a checkpoint without a passage",
+                format!("{}## Q2\npoint\n", card("Q1", "one\n")),
+                Err("checkpoint `Q2` has no `PASSAGE tok` passage"),
+            ),
+            (
+                "an empty passage",
+                card("Q", "\n"),
+                Err("checkpoint `Q`: its passage is empty"),
+            ),
+            (
+                "a marker line outside a passage",
+                format!("{}END PASSAGE tok\n", card("Q", "one\n")),
+                Err("checkpoint `Q`: a passage marker stands outside a passage"),
+            ),
+        ];
+        for (label, raw, expected) in rows {
+            let cut = cut_passages(&raw, "src", "tok");
+            match expected {
+                Err(message) => assert_eq!(
+                    Some(message.to_string()),
+                    cut.err().map(|error| error.to_string()),
+                    "row `{label}`"
+                ),
+                Ok(texts) => {
+                    let (kept, passages) =
+                        cut.unwrap_or_else(|error| panic!("row `{label}`: {error:#}"));
+                    assert_eq!(
+                        texts,
+                        passages
+                            .iter()
+                            .map(|passage| passage.text.as_str())
+                            .collect::<Vec<_>>(),
+                        "row `{label}` passages"
+                    );
+                    assert!(!kept.contains("PASSAGE tok"), "row `{label}`: {kept}");
+                    for passage in &passages {
+                        assert_eq!(
+                            crate::assets::object_name(passage.text.as_bytes(), "txt"),
+                            passage.object,
+                            "row `{label}` object is content-addressed"
+                        );
+                        let locator = format!(
+                            "<!-- at: src fingerprint: {} asset: {} -->\n",
+                            crate::source::format_locator_fingerprint(
+                                crate::source::text_fingerprint(&passage.text)
+                            ),
+                            passage.object
+                        );
+                        assert!(kept.contains(&locator), "row `{label}`: {kept}");
+                    }
+                    let parsed = crate::parser::parse("t.md", &clean_to_cards(&kept))
+                        .unwrap_or_else(|error| panic!("row `{label}` parses: {error}"));
+                    assert_eq!(
+                        passages.len(),
+                        parsed
+                            .cards
+                            .iter()
+                            .map(|card| card.citations.len())
+                            .sum::<usize>(),
+                        "row `{label}` every passage is a citation"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn build_prompt_carries_goal_source_format_and_rules() {
         let p = build_prompt(
             "how X becomes Y",
             ".",
-            false,
-            "code:crates/core/",
+            &Citing::Lines(&root("code", "crates/core/")),
             &TraceConfig::default(),
         );
         assert!(p.contains("how X becomes Y"));
@@ -459,8 +728,7 @@ mod tests {
         let prompt = build_prompt(
             "how X becomes Y",
             ".",
-            false,
-            "src:",
+            &Citing::Lines(&root("src", "")),
             &TraceConfig::default(),
         );
 
@@ -510,11 +778,33 @@ mod tests {
     }
 
     #[test]
-    fn build_prompt_url_uses_webfetch_and_quoted_span() {
-        let p = build_prompt("how X", "https://x", true, "", &TraceConfig::default());
+    fn build_prompt_url_uses_webfetch_and_token_marked_passages() {
+        let p = build_prompt(
+            "how X",
+            "https://x",
+            &Citing::Passages {
+                key: "src",
+                token: "tok",
+            },
+            &TraceConfig::default(),
+        );
         assert!(p.contains("WebFetch"));
-        assert!(p.contains("quoted span"));
+        assert!(p.contains("exactly `src`"));
+        assert!(p.contains("a line `PASSAGE tok`"));
+        assert!(p.contains("a line `END PASSAGE tok`"));
         assert!(!p.contains("Glob"));
+    }
+
+    #[test]
+    fn build_prompt_quotes_a_prefix_containing_a_space() {
+        let p = build_prompt(
+            "how X",
+            ".",
+            &Citing::Lines(&root("code", "my dir/")),
+            &TraceConfig::default(),
+        );
+        assert!(p.contains("`code:\"my dir/<file>\":start-end`"), "{p}");
+        assert!(p.contains("`code:\"my dir/my notes.md\":3-4`"), "{p}");
     }
 
     #[test]
@@ -523,7 +813,7 @@ mod tests {
             extra: Some("trace the read path".to_string()),
             ..TraceConfig::default()
         };
-        let p = build_prompt("g", ".", false, "src:", &cfg);
+        let p = build_prompt("g", ".", &Citing::Lines(&root("src", "")), &cfg);
         assert!(p.contains("Additional instructions:"));
         assert!(p.contains("trace the read path"));
     }

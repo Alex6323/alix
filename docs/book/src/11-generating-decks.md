@@ -50,7 +50,11 @@ How the source is recorded depends on its kind, and it matters later:
   specific lines also gets a fingerprinted
   [`<!-- at: -->` citation](06-cloze-direction-images.md#source-citations), so
   you can flip the card to its source on reveal without trusting a shifted
-  numeric range.
+  numeric range. The deck declares the source's folder (a folder source itself)
+  under `cite:` as the key `src`, and its locators read `src:<file>:<lines>`.
+  With `--into <workspace>`, a manifest `[cite]` root that already holds the
+  source is reused instead; when none does and the manifest already names
+  `src`, generation stops before calling the model.
 
 ## Useful flags
 

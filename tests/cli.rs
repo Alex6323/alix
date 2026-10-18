@@ -4212,6 +4212,319 @@ fn a_url_trace_build_outside_a_workspace_is_refused_before_the_backend() {
     );
 }
 
+fn passage_echoing_claude(dir: &Path, reply: &str) -> (String, PathBuf) {
+    let reply = write(dir, "passage-reply.txt", reply);
+    let request = dir.join("request.txt");
+    let cli = write(
+        dir,
+        "fake-claude",
+        &format!(
+            "#!/bin/sh\ncat > {request}\ntoken=$(grep -o 'PASSAGE [0-9a-z]\\{{26\\}}' {request} | head -n 1 | cut -d' ' -f2)\nsed \"s/TOKEN/$token/g\" {reply}\n",
+            request = request.display()
+        ),
+    );
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    (cli, request)
+}
+
+fn url_trace_member(dir: &Path) -> (PathBuf, String) {
+    let ws = dir.join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    write(&ws, "alix.toml", "");
+    let stub = write(
+        &ws.join("decks"),
+        "t.md",
+        "---\ntrace: how a guard gates the body\nexam: https://example.com/guide\n---\n",
+    );
+    (ws, stub)
+}
+
+#[test]
+fn a_url_trace_build_freezes_each_passage_verbatim_under_the_src_root() {
+    let dir = TempDir::new().unwrap();
+    let (ws, stub) = url_trace_member(dir.path());
+    let first = "The guard runs before the body.\n\n```text\n## not a card\n```\n> quoted line\nEND PASSAGE someothertoken\n";
+    let second = "Only then does the body run.\n";
+    let (cli, request) = passage_echoing_claude(
+        dir.path(),
+        &format!(
+            "Here is the trace:\n## What happens before the body runs?\nthe guard is checked first\n<!-- at: src -->\nPASSAGE TOKEN\n{first}END PASSAGE TOKEN\n> [!NOTE]\n> guards come first\n\n## And after the guard passes?\nthe body runs\n<!-- at: src -->\nPASSAGE TOKEN\n{second}END PASSAGE TOKEN\n"
+        ),
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
+    let built = std::fs::read_to_string(&stub).unwrap();
+    assert!(
+        out.status.success(),
+        "step build: exit {:?}\nstderr: {}\ndeck:\n{built}",
+        out.status.code(),
+        stderr(&out)
+    );
+    assert!(
+        std::fs::read_to_string(&request)
+            .unwrap()
+            .contains("END PASSAGE "),
+        "step prompt: the prompt teaches the passage markers"
+    );
+    assert!(
+        built.contains("cite:\n  - src: \"https://example.com/guide\"\n"),
+        "step cite: the url is declared as the `src` root: {built}"
+    );
+    assert!(
+        !built.contains("PASSAGE"),
+        "step cut: no marker line survives: {built}"
+    );
+    let deck = alix::deck::Deck::load(Path::new(&stub)).unwrap();
+    let deck_id = deck.deck_token.clone().unwrap();
+    for (label, passage) in [("first", first), ("second", second)] {
+        let object = alix::assets::object_name(passage.as_bytes(), "txt");
+        assert!(
+            built.contains(&format!(" asset: {object} -->")),
+            "step {label} locator names its object {object}: {built}"
+        );
+        assert_eq!(
+            passage,
+            std::fs::read_to_string(ws.join("assets").join(&deck_id).join(&object)).unwrap(),
+            "step {label} object holds the exact passage bytes"
+        );
+    }
+    assert_eq!(
+        2,
+        built.matches("<!-- at: src fingerprint: xxh64-").count(),
+        "step fingerprint: each passage locator is fingerprinted: {built}"
+    );
+    let doctor = alix(&["doctor", &stub]);
+    assert!(
+        doctor.status.success(),
+        "step doctor: {}{}",
+        stdout(&doctor),
+        stderr(&doctor)
+    );
+
+    std::fs::remove_dir_all(ws.join("assets")).unwrap();
+    let out = alix(&[
+        "deck", "generate", &stub, "--config", &config, "--yes", "--force",
+    ]);
+    let rebuilt = std::fs::read_to_string(&stub).unwrap();
+    assert!(
+        out.status.success(),
+        "step rebuild: {}\ndeck:\n{rebuilt}",
+        stderr(&out)
+    );
+    assert_eq!(
+        1,
+        rebuilt.matches("  - src:").count(),
+        "step rebuild: the deck's own `src` names the url, so it is reused: {rebuilt}"
+    );
+    let rebuilt_id = alix::deck::Deck::load(Path::new(&stub))
+        .unwrap()
+        .deck_token
+        .unwrap();
+    for passage in [first, second] {
+        let object = alix::assets::object_name(passage.as_bytes(), "txt");
+        assert!(
+            ws.join("assets").join(&rebuilt_id).join(&object).is_file(),
+            "step rebuild: {object} is written again"
+        );
+    }
+}
+
+#[test]
+fn a_url_trace_build_with_an_altered_passage_token_fails_naming_the_card_and_writes_nothing() {
+    let dir = TempDir::new().unwrap();
+    let (ws, stub) = url_trace_member(dir.path());
+    let original = std::fs::read_to_string(&stub).unwrap();
+    let (cli, _) = passage_echoing_claude(
+        dir.path(),
+        "## What happens before the body runs?\nthe guard is checked first\n<!-- at: src -->\nPASSAGE TOKEN\nThe guard runs first.\nEND PASSAGE TOKEN\n\n## And after the guard passes?\nthe body runs\n<!-- at: src -->\nPASSAGE TOKEN\nThe body runs.\nEND PASSAGE TOKEX\n",
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
+
+    assert!(!out.status.success(), "the build fails");
+    assert!(
+        stderr(&out).contains("And after the guard passes?"),
+        "the error names the card: {}",
+        stderr(&out)
+    );
+    assert_eq!(original, std::fs::read_to_string(&stub).unwrap());
+    assert!(!ws.join("assets").exists(), "no object is written");
+}
+
+#[test]
+fn a_local_facts_deck_declares_its_input_folder_as_the_src_root_and_its_locator_resolves() {
+    let dir = TempDir::new().unwrap();
+    let docs = dir.path().join("docs");
+    std::fs::create_dir_all(&docs).unwrap();
+    write(&docs, "notes.md", "first line\nsecond line\n");
+    let decks = dir.path().join("decks");
+    std::fs::create_dir_all(&decks).unwrap();
+    let (cli, request) = passage_echoing_claude(
+        dir.path(),
+        &format!(
+            "---\nexam: {}\nchoices: single\n---\n## What is the second line?\nsecond line\n<!-- at: src:notes.md:2 -->\n",
+            docs.join("notes.md").display()
+        ),
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!(
+            "decks_dir = {:?}\n[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n",
+            decks.as_os_str()
+        ),
+    );
+
+    let out = alix(&[
+        "deck",
+        "generate",
+        docs.join("notes.md").to_str().unwrap(),
+        "--config",
+        &config,
+        "--yes",
+    ]);
+
+    let deck = std::fs::read_to_string(decks.join("notes.md")).unwrap_or_default();
+    assert!(
+        out.status.success(),
+        "stderr: {}\ndeck:\n{deck}",
+        stderr(&out)
+    );
+    let root = docs.canonicalize().unwrap();
+    assert!(
+        deck.contains(&format!("cite:\n  - src: \"{}\"\n", root.display())),
+        "the input's folder is the `src` root: {deck}"
+    );
+    assert!(
+        deck.contains(&format!("exam: {}", docs.join("notes.md").display())),
+        "`exam:` stays: {deck}"
+    );
+    assert!(
+        deck.contains("<!-- at: src:notes.md:2 fingerprint: xxh64-"),
+        "the keyed locator resolves and is stamped: {deck}"
+    );
+    assert!(
+        std::fs::read_to_string(&request)
+            .unwrap()
+            .contains("`src:<file>:start-end`"),
+        "the prompt teaches the keyed locator"
+    );
+}
+
+#[test]
+fn a_member_facts_deck_reuses_the_manifest_key_holding_its_input_and_quotes_a_spaced_prefix() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::create_dir_all(ws.join("repo/my dir")).unwrap();
+    write(&ws.join("repo/my dir"), "lib.rs", "fn one() {}\n");
+    write(&ws, "alix.toml", "[cite]\ncode = \"repo\"\n");
+    let (cli, request) = passage_echoing_claude(
+        dir.path(),
+        &format!(
+            "---\nexam: \"{}\"\n---\n## What does lib.rs define?\none\n<!-- at: code:\"my dir/lib.rs\":1 -->\n",
+            ws.join("repo/my dir").display()
+        ),
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&[
+        "deck",
+        "generate",
+        ws.join("repo/my dir").to_str().unwrap(),
+        "--config",
+        &config,
+        "--into",
+        ws.to_str().unwrap(),
+        "--output",
+        "gen",
+        "--yes",
+    ]);
+
+    let deck = std::fs::read_to_string(ws.join("decks/gen.md")).unwrap_or_default();
+    assert!(
+        out.status.success(),
+        "stderr: {}\ndeck:\n{deck}",
+        stderr(&out)
+    );
+    assert!(!deck.contains("cite:"), "no `src` is declared: {deck}");
+    assert!(
+        deck.contains("<!-- at: code:\"my dir/lib.rs\":1 fingerprint: xxh64-"),
+        "the reused key's locator freezes: {deck}"
+    );
+    assert!(
+        std::fs::read_to_string(&request)
+            .unwrap()
+            .contains("`code:\"my dir/<file>\":start-end`"),
+        "the prompt quotes a prefix containing a space"
+    );
+}
+
+#[test]
+fn a_member_facts_deck_refuses_an_input_outside_every_root_while_src_is_taken() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::create_dir_all(ws.join("elsewhere")).unwrap();
+    std::fs::create_dir_all(ws.join("input")).unwrap();
+    write(&ws.join("input"), "notes.md", "a line\n");
+    write(&ws, "alix.toml", "[cite]\nsrc = \"elsewhere\"\n");
+    let called = dir.path().join("called");
+    let cli = write(
+        dir.path(),
+        "fake-claude",
+        &format!("#!/bin/sh\ntouch {}\ncat >/dev/null\n", called.display()),
+    );
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&[
+        "deck",
+        "generate",
+        ws.join("input").to_str().unwrap(),
+        "--config",
+        &config,
+        "--into",
+        ws.to_str().unwrap(),
+        "--yes",
+    ]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("outside every `cite:` root"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        !called.exists(),
+        "the refusal comes before any backend call"
+    );
+}
+
 #[test]
 fn generate_refuses_to_rebuild_trace_checkpoints_without_force() {
     let dir = TempDir::new().unwrap();
@@ -4360,8 +4673,12 @@ fn ordinary_text_and_markdown_files_never_enter_trace_building() {
         let out = alix(&["deck", "generate", &source, "--config", &config, "--print"]);
 
         assert!(out.status.success(), "{name}: {}", stderr(&out));
+        let root = dir.path().canonicalize().unwrap();
         assert_eq!(
-            "## Generated question\nGenerated answer\n",
+            format!(
+                "---\ncite:\n  - src: \"{}\"\n---\n\n## Generated question\nGenerated answer\n",
+                root.display()
+            ),
             stdout(&out),
             "{name}"
         );

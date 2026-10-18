@@ -316,9 +316,18 @@ fn generate_single_deck(
         )?)
     };
 
+    let root = if alix::deck::is_url(&source) {
+        None
+    } else {
+        let deck_path = destination
+            .as_ref()
+            .map_or_else(|| PathBuf::from(&name), |(_, target)| target.clone());
+        Some(facts_root(&deck_path, &source)?)
+    };
+
     preflight_source(&source, config.ask.preflight_threshold, args.common.yes)?;
     eprintln!("Generating a deck from {source} (this can take a minute)…");
-    let mut text = generate::generate_deck(&source, &gen_cfg, &config.ask, spec)?;
+    let mut text = generate::generate_deck(&source, root.as_ref(), &gen_cfg, &config.ask, spec)?;
     if let Some(url) = &args.common.source_url {
         text = alix::deck::with_added_exam(&text, url)?;
     }
@@ -326,6 +335,9 @@ fn generate_single_deck(
     if args.review || gen_cfg.review {
         eprintln!("Reviewing the deck to remove redundant cards…");
         text = generate::review_deck(&text, &gen_cfg, &config.ask, spec)?;
+    }
+    if let Some(root) = &root {
+        text = generate::declare_root(&text, root)?;
     }
 
     // Parse against the final name (part of every card's id hash); a parse
@@ -393,6 +405,21 @@ fn generate_single_deck(
     }
 }
 
+fn facts_root(deck_path: &Path, source: &str) -> Result<alix::cite::GeneratedRoot> {
+    let input = Path::new(source);
+    let input_dir = if input.is_file() {
+        input.parent().unwrap_or(input)
+    } else {
+        input
+    };
+    Ok(alix::cite::generated_root_for_deck(
+        deck_path,
+        &[],
+        input_dir,
+        &input_dir.display().to_string(),
+    )?)
+}
+
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
@@ -454,6 +481,7 @@ fn trace_build(
             .unwrap_or("trace.md");
         let mut store = store_for(std::slice::from_ref(&deck_path.to_path_buf()))?;
         let report = library::replace_deck(dir, name, &new_text, &mut store)?;
+        built.write_passages(deck_path)?;
         println!(
             "Rebuilt {}: {} checkpoints, wiped progress for {} card(s). Review them \
              and their `at:` locators, then trace it from the picker.",
@@ -466,6 +494,7 @@ fn trace_build(
 
     alix::deck::write_deck_text(deck_path, &new_text)?;
     let initialized = alix::assets::initialize(deck_path)?;
+    built.write_passages(deck_path)?;
     if initialized.freeze.is_none() {
         alix::source::stamp_citations(deck_path)?;
     }
@@ -558,6 +587,7 @@ fn generate_trace(
     if out.exists() {
         let mut store = store_for(std::slice::from_ref(&out))?;
         let report = library::replace_deck(&out_dir, &name, &deck_text, &mut store)?;
+        built.write_passages(&out)?;
         println!(
             "Rebuilt the explore trace at {}: {} checkpoints, wiped progress for {} card(s).",
             out.display(),
@@ -569,6 +599,8 @@ fn generate_trace(
     let placed = library::place_deck(&out_dir, &name, &deck_text)?;
     if let Some(e) = &placed.parse_error {
         eprintln!("warning: the explore trace does not parse yet: {e}");
+    } else {
+        built.write_passages(&placed.path)?;
     }
     println!(
         "Wrote the explore trace to {} — trace it from the picker: run `alix` and \

@@ -303,7 +303,7 @@ pub fn format_locator(locator: &Locator) -> Result<String, LocatorError> {
     Ok(locator.to_string())
 }
 
-fn quote_if_needed(path: &str) -> String {
+pub(crate) fn quote_if_needed(path: &str) -> String {
     let range_tail = path
         .rsplit_once(':')
         .is_some_and(|(_, tail)| is_range_shaped(tail));

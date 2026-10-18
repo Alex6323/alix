@@ -6,6 +6,7 @@ use crate::{
     ask,
     backend::{ensure_source_reachable, supports_structured_progress},
     choice,
+    cite::GeneratedRoot,
     config::{AskConfig, GenerateCardStyle, GenerateDeckConfig},
     deck::is_url,
     parser,
@@ -238,9 +239,11 @@ two short lines, never just restating the answer. A blockquote whose first \
 line is NOT one of `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, \
 `[!CAUTION]` is a QUOTATION and belongs to the answer, so never write a bare \
 `> ` note.
-- A `<!-- at: file:start-end -->` line under a card cites where its answer \
-lives in the source (e.g. `<!-- at: src/string.rs:120-128 -->`; the path is \
-relative to the source root — your working directory). Add one to every card \
+- A `<!-- at: ... -->` line under a card cites where its answer lives in the \
+source. Its locator is `{locator}`, e.g. `<!-- at: {locator_example} -->`, where \
+`<file>` is relative to the source root (your working directory) and everything \
+around it is written exactly as given; a path containing a space is wrapped in \
+double quotes, e.g. `{locator_spaced}`. Add one to every card \
 whose answer maps to a specific, contiguous range of lines — read the real \
 lines, never guess the numbers — so the learner can flip the card to its \
 source on reveal. Omit it for a card that synthesizes across several places.
@@ -327,11 +330,17 @@ Output ONLY the improved deck — no commentary, no markdown code fences.
 
 pub fn generate_deck(
     source: &str,
+    root: Option<&GeneratedRoot>,
     cfg: &GenerateDeckConfig,
     ask_cfg: &AskConfig,
     spec: &GenerationSpec,
 ) -> Result<String> {
     let url = is_url(source);
+    let root = match (url, root) {
+        (true, _) => None,
+        (false, Some(root)) => Some(root),
+        (false, None) => bail!("a deck from the local source {source} needs a `cite:` root"),
+    };
     ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
         None
@@ -339,7 +348,7 @@ pub fn generate_deck(
         let (base_dir, _) = resolve_source(None, Some(source));
         Some(base_dir)
     };
-    let prompt = build_prompt(source, url, cfg, spec);
+    let prompt = build_prompt(source, root, cfg, spec);
     let raw = ask::run(&run_config(cfg, ask_cfg, url, cwd), &prompt, &[])?;
     let deck = clean_output(&raw);
     if deck.trim().is_empty() {
@@ -357,7 +366,8 @@ pub fn spawn(
     let spec = GenerationSpec::from_config(DEFAULT_GOAL, &cfg);
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let _ = tx.send(generate_deck(&source, &cfg, &ask, &spec).map_err(|e| format!("{e:#}")));
+        let _ =
+            tx.send(generate_deck(&source, None, &cfg, &ask, &spec).map_err(|e| format!("{e:#}")));
     });
     rx
 }
@@ -443,20 +453,32 @@ fn review_mapping(style: GenerateCardStyle) -> &'static str {
 
 fn build_prompt(
     source: &str,
-    url: bool,
+    root: Option<&GeneratedRoot>,
     cfg: &GenerateDeckConfig,
     spec: &GenerationSpec,
 ) -> String {
-    let template = cfg.prompt.as_deref().unwrap_or(if url {
-        DEFAULT_PROMPT
-    } else {
-        DEFAULT_SOURCE_PROMPT
+    let template = cfg.prompt.as_deref().unwrap_or(match root {
+        None => DEFAULT_PROMPT,
+        Some(_) => DEFAULT_SOURCE_PROMPT,
     });
     let card_format = card_format(spec.card_style);
     let has_card_format = template.contains("{card_format}");
+    let locator = |file: &str, range: &str| root.map(|root| root.locator(file, range));
     let mut prompt = template
         .replace("{url}", source)
         .replace("{source}", source)
+        .replace(
+            "{locator}",
+            &locator("<file>", "start-end").unwrap_or_default(),
+        )
+        .replace(
+            "{locator_example}",
+            &locator("src/string.rs", "120-128").unwrap_or_default(),
+        )
+        .replace(
+            "{locator_spaced}",
+            &locator("my notes.md", "3-4").unwrap_or_default(),
+        )
         .replace("{max_cards}", &cfg.max_cards.to_string())
         .replace("{card_format}", card_format.as_ref());
     if let Some(extra) = cfg
@@ -479,6 +501,31 @@ fn build_prompt(
     prompt.push_str("\n\nNOTE SAFETY:\n- ");
     prompt.push_str(choice::NOTE_POSITION_INSTRUCTION);
     prompt
+}
+
+pub fn declare_root(text: &str, root: &GeneratedRoot) -> Result<String> {
+    let Some(value) = &root.declare else {
+        return Ok(text.to_string());
+    };
+    let Ok(parsed) = parser::parse("generated.md", text) else {
+        return Ok(text.to_string());
+    };
+    if parsed.frontmatter_span.is_none() {
+        return Ok(format!(
+            "---\ncite:\n  - {}: {}\n---\n\n{text}",
+            root.key,
+            parser::yaml_quote(value)
+        ));
+    }
+    if parsed
+        .frontmatter
+        .cite
+        .iter()
+        .any(|(key, declared)| key == &root.key && declared == value)
+    {
+        return Ok(text.to_string());
+    }
+    Ok(crate::deck::with_added_cite(text, &root.key, value)?)
 }
 
 pub(crate) fn validate_card_style(deck: &str, spec: &GenerationSpec) -> Result<()> {
@@ -653,6 +700,14 @@ mod tests {
         }
     }
 
+    fn src_root() -> GeneratedRoot {
+        GeneratedRoot {
+            key: "src".into(),
+            path_prefix: String::new(),
+            declare: None,
+        }
+    }
+
     fn spec() -> GenerationSpec {
         GenerationSpec::from_config(DEFAULT_GOAL, &GenerateDeckConfig::default())
     }
@@ -764,7 +819,7 @@ mod tests {
 
     #[test]
     fn prompt_substitutes_url_and_card_count() {
-        let p = build_prompt("https://example.org/page", true, &cfg(12), &spec());
+        let p = build_prompt("https://example.org/page", None, &cfg(12), &spec());
         assert!(p.contains("https://example.org/page"));
         assert!(p.contains("aiming for at most 12 cards"));
         assert!(p.contains("link: https://example.org/page"));
@@ -817,7 +872,7 @@ mod tests {
 
     #[test]
     fn mixed_prompt_embeds_the_shared_card_shape_guide_and_its_syntax() {
-        let prompt = build_prompt("https://example.org/page", true, &cfg(12), &spec());
+        let prompt = build_prompt("https://example.org/page", None, &cfg(12), &spec());
         let guide = card_shape_guide();
 
         assert!(
@@ -855,7 +910,7 @@ mod tests {
         for (card_style, contract) in cases {
             let prompt = build_prompt(
                 "https://example.org/page",
-                true,
+                None,
                 &cfg(12),
                 &GenerationSpec {
                     card_style,
@@ -882,7 +937,7 @@ mod tests {
             ..spec()
         };
         for (source, url) in [("https://example.org/page", true), ("src/lib.rs", false)] {
-            let prompt = build_prompt(source, url, &cfg(12), &choices);
+            let prompt = build_prompt(source, (!url).then(src_root).as_ref(), &cfg(12), &choices);
 
             assert!(
                 !prompt.contains("Nothing belonging to the card may follow a directive"),
@@ -955,8 +1010,8 @@ mod tests {
         }
 
         for prompt in [
-            build_prompt("https://example.org/page", true, &cfg(12), &spec()),
-            build_prompt("src/lib.rs", false, &cfg(12), &spec()),
+            build_prompt("https://example.org/page", None, &cfg(12), &spec()),
+            build_prompt("src/lib.rs", Some(&src_root()), &cfg(12), &spec()),
         ] {
             assert!(
                 prompt.contains("A card table's note is that column"),
@@ -985,11 +1040,11 @@ mod tests {
         for (surface, prompt) in [
             (
                 "the local-source generation prompt",
-                build_prompt("src/lib.rs", false, &cfg(12), &spec()),
+                build_prompt("src/lib.rs", Some(&src_root()), &cfg(12), &spec()),
             ),
             (
                 "the URL generation prompt",
-                build_prompt("https://example.org/page", true, &cfg(12), &spec()),
+                build_prompt("https://example.org/page", None, &cfg(12), &spec()),
             ),
         ] {
             assert!(
@@ -1078,7 +1133,8 @@ mod tests {
                 ..spec()
             };
             for url in [true, false] {
-                let prompt = build_prompt("src", url, &cfg(12), &style_spec);
+                let prompt =
+                    build_prompt("src", (!url).then(src_root).as_ref(), &cfg(12), &style_spec);
                 crate::testutil::assert_teaches_answerless_cloze(
                     &format!("{} generate prompt (url {url})", card_style.as_str()),
                     &prompt,
@@ -1116,7 +1172,7 @@ mod tests {
     fn extra_guidance_is_appended() {
         let mut g = cfg(10);
         g.extra = Some("Focus on the public API.".to_string());
-        let p = build_prompt("u", true, &g, &spec());
+        let p = build_prompt("u", None, &g, &spec());
         assert!(p.contains("Additional instructions:"));
         assert!(p.contains("Focus on the public API."));
     }
@@ -1129,7 +1185,7 @@ mod tests {
             audience: Some("German high-school students".to_string()),
             card_style: GenerateCardStyle::AuthoredChoices,
         };
-        let p = build_prompt("u", true, &cfg(10), &spec);
+        let p = build_prompt("u", None, &cfg(10), &spec);
 
         assert!(p.contains("recognize the constitutional institutions"));
         assert!(p.contains("German"));
@@ -1150,7 +1206,7 @@ mod tests {
             card_style: GenerateCardStyle::AuthoredChoices,
         };
 
-        let prompt = build_prompt("https://example.org", true, &cfg(10), &spec);
+        let prompt = build_prompt("https://example.org", None, &cfg(10), &spec);
 
         assert!(
             prompt.contains("<!-- choices: single -->"),
@@ -1207,7 +1263,7 @@ mod tests {
             card_style: GenerateCardStyle::AuthoredChoices,
         };
 
-        let prompt = build_prompt(".", false, &cfg(10), &spec);
+        let prompt = build_prompt(".", Some(&src_root()), &cfg(10), &spec);
 
         assert!(prompt.contains("choices: single"));
         assert!(
@@ -1261,7 +1317,7 @@ mod tests {
         ];
 
         for spec in cases {
-            let prompt = build_prompt("notes.md", false, &config, &spec);
+            let prompt = build_prompt("notes.md", Some(&src_root()), &config, &spec);
             assert!(prompt.starts_with("Custom prompt for notes.md."));
             assert!(prompt.contains("GENERATION REQUIREMENTS"));
             assert!(prompt.contains(&spec.goal));
@@ -1301,7 +1357,7 @@ mod tests {
         let mut config = cfg(5);
         config.prompt = Some("Custom prompt for {source}.".to_string());
 
-        let prompt = build_prompt("notes.md", false, &config, &spec());
+        let prompt = build_prompt("notes.md", Some(&src_root()), &config, &spec());
 
         assert!(prompt.contains(choice::NOTE_POSITION_INSTRUCTION));
     }
@@ -1348,8 +1404,14 @@ mod tests {
             card_style: GenerateCardStyle::AuthoredChoices,
         };
 
-        let err =
-            generate_deck("https://example.org", &cfg(10), &ask_config(&cli), &spec).unwrap_err();
+        let err = generate_deck(
+            "https://example.org",
+            None,
+            &cfg(10),
+            &ask_config(&cli),
+            &spec,
+        )
+        .unwrap_err();
 
         assert!(format!("{err:#}").contains("authored multiple-choice"));
     }
@@ -1501,7 +1563,7 @@ mod tests {
     fn full_prompt_override_replaces_template_but_keeps_note_safety() {
         let mut g = cfg(5);
         g.prompt = Some("Make {max_cards} cards from {url}.".to_string());
-        let p = build_prompt("U", true, &g, &spec());
+        let p = build_prompt("U", None, &g, &spec());
         assert!(p.starts_with("Make 5 cards from U."));
         assert!(p.contains(choice::NOTE_POSITION_INSTRUCTION));
         assert!(!p.contains("four layers"));
@@ -1509,22 +1571,68 @@ mod tests {
 
     #[test]
     fn source_prompt_explores_locally_and_ties_to_source() {
-        let p = build_prompt("src/scheduler.rs", false, &cfg(8), &spec());
+        let p = build_prompt("src/scheduler.rs", Some(&src_root()), &cfg(8), &spec());
         assert!(p.contains("src/scheduler.rs"));
         assert!(p.contains("Read, Glob and Grep"));
         assert!(p.contains("exam: src/scheduler.rs"));
         assert!(p.contains("aiming for at most 8 cards"));
         assert!(!p.contains("WebFetch"));
         assert!(!p.contains("{source}"));
-        assert!(p.contains("<!-- at: file:start-end -->"));
+        assert!(p.contains("`src:<file>:start-end`"));
+        assert!(p.contains("`<!-- at: src:src/string.rs:120-128 -->`"));
+        assert!(p.contains("`src:\"my notes.md\":3-4`"));
         assert!(p.contains("never guess"));
         assert!(p.contains("one row per pair"));
         assert!(!p.contains("indented answer"));
     }
 
     #[test]
+    fn declare_root_adds_the_generated_root_once_and_keeps_every_other_line() {
+        let declaring = GeneratedRoot {
+            declare: Some("/in".into()),
+            ..src_root()
+        };
+        for (label, root, text, expected) in [
+            (
+                "a reused root declares nothing",
+                src_root(),
+                "---\nexam: x\n---\n## Q\nA\n",
+                "---\nexam: x\n---\n## Q\nA\n",
+            ),
+            (
+                "a deck with frontmatter gains the cite entry",
+                declaring.clone(),
+                "---\nexam: x\n---\n## Q\nA\n",
+                "---\nexam: x\ncite:\n  - src: \"/in\"\n---\n## Q\nA\n",
+            ),
+            (
+                "a deck without frontmatter gains one",
+                declaring.clone(),
+                "## Q\nA\n",
+                "---\ncite:\n  - src: \"/in\"\n---\n\n## Q\nA\n",
+            ),
+            (
+                "a deck already declaring the root is unchanged",
+                declaring.clone(),
+                "---\ncite:\n  - src: /in\n---\n## Q\nA\n",
+                "---\ncite:\n  - src: /in\n---\n## Q\nA\n",
+            ),
+        ] {
+            let out = declare_root(text, &root).unwrap();
+            assert_eq!(expected, out, "row `{label}`");
+            if root.declare.is_some() {
+                assert_eq!(
+                    vec![("src".to_string(), "/in".to_string())],
+                    parser::parse("d.md", &out).unwrap().frontmatter.cite,
+                    "row `{label}` parses back"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn url_prompt_does_not_ask_for_line_citations() {
-        let p = build_prompt("https://example.org/page", true, &cfg(8), &spec());
+        let p = build_prompt("https://example.org/page", None, &cfg(8), &spec());
         assert!(!p.contains("<!-- at:"));
     }
 

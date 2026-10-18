@@ -27,6 +27,14 @@ use alix::{
 };
 
 /// Write a source file into a temp dir and generate a deck from it.
+fn src_root(dir: &std::path::Path) -> alix::cite::GeneratedRoot {
+    alix::cite::GeneratedRoot {
+        key: "src".into(),
+        path_prefix: String::new(),
+        declare: Some(dir.display().to_string()),
+    }
+}
+
 fn deck_from(source_text: &str) -> String {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("source.md");
@@ -39,8 +47,14 @@ fn deck_from(source_text: &str) -> String {
     let ask_cfg = AskConfig::default();
     let spec = GenerationSpec::from_config("learn this material", &cfg);
 
-    generate::generate_deck(source.to_str().unwrap(), &cfg, &ask_cfg, &spec)
-        .expect("the generator returned no deck")
+    generate::generate_deck(
+        source.to_str().unwrap(),
+        Some(&src_root(dir.path())),
+        &cfg,
+        &ask_cfg,
+        &spec,
+    )
+    .expect("the generator returned no deck")
 }
 
 const VOCABULARY: &str = "\
@@ -103,9 +117,14 @@ fn an_explicit_style_still_overrules_the_rule() {
         ..Default::default()
     };
     let spec = GenerationSpec::from_config("learn this material", &cfg);
-    let deck =
-        generate::generate_deck(source.to_str().unwrap(), &cfg, &AskConfig::default(), &spec)
-            .expect("the generator returned no deck");
+    let deck = generate::generate_deck(
+        source.to_str().unwrap(),
+        Some(&src_root(dir.path())),
+        &cfg,
+        &AskConfig::default(),
+        &spec,
+    )
+    .expect("the generator returned no deck");
 
     let cards = alix::parser::parse_str("generated.md", &deck).expect("the generated deck parses");
     assert!(

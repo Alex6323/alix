@@ -18,7 +18,7 @@ use crate::{
     source::resolve_source,
     store::Store,
     title,
-    trace_ai::{BuiltTrace, build_run_config, clean_to_cards, trace_root},
+    trace_ai::{BuiltTrace, Citing, build_run_config, passage_rule, trace_root},
     workspace,
 };
 
@@ -141,29 +141,16 @@ pub fn trace(
     ask_cfg: &AskConfig,
 ) -> Result<BuiltTrace> {
     let root = trace_root(out, &[], source)?;
-    ensure_source_reachable(ask_cfg, root.url)?;
-    let prompt = trace_prompt(source, spec, root.url, root.locator_prefix(), cfg);
-    let run_cfg = build_run_config(cfg, ask_cfg, root.cwd.clone(), root.url);
+    ensure_source_reachable(ask_cfg, root.url())?;
+    let prompt = trace_prompt(source, spec, &root.citing(), cfg);
+    let run_cfg = build_run_config(cfg, ask_cfg, root.cwd.clone(), root.url());
     let raw = ask::run(&run_cfg, &prompt, &[])?;
-    let cards = clean_to_cards(&raw);
-    if cards.trim().is_empty() {
-        bail!("the explore trace produced no checkpoints");
-    }
-    Ok(BuiltTrace {
-        cards,
-        cite: root.cite(),
-    })
+    root.finish(&raw, "the explore trace produced no checkpoints")
 }
 
-fn trace_prompt(
-    source: &str,
-    spec: &GenerationSpec,
-    url: bool,
-    locator_prefix: &str,
-    cfg: &TraceConfig,
-) -> String {
+fn trace_prompt(source: &str, spec: &GenerationSpec, citing: &Citing, cfg: &TraceConfig) -> String {
     let goal = &spec.goal;
-    let explore = if url {
+    let explore = if citing.is_url() {
         format!("Read the source page at {source} with the WebFetch tool (fetch it once).")
     } else {
         "Your working directory is the source root. Explore it with the Read, Glob \
@@ -171,15 +158,18 @@ fn trace_prompt(
          and the most central file. You have no write or shell access."
             .to_string()
     };
-    let locator = if url {
-        "a short quoted span from the page — the exact words the answer rests on".to_string()
-    } else {
-        format!(
-            "ONE contiguous range, `{locator_prefix}<file>:start-end` where `<file>` is \
-             relative to the source root (e.g. `{locator_prefix}Cargo.toml:8-20` or \
-             `{locator_prefix}src/lib.rs:12-33`), with the `{locator_prefix}` part written \
-             exactly as given; never comma-separated"
-        )
+    let locator = match citing {
+        Citing::Passages { key, token } => passage_rule(key, token),
+        Citing::Lines(root) => format!(
+            "ONE contiguous range, `{}` where `<file>` is relative to the source root \
+             (e.g. `{}` or `{}`), with everything around `<file>` written exactly as \
+             given; a path containing a space is wrapped in double quotes, e.g. `{}`; \
+             never comma-separated",
+            root.locator("<file>", "start-end"),
+            root.locator("Cargo.toml", "8-20"),
+            root.locator("src/lib.rs", "12-33"),
+            root.locator("my notes.md", "3-4"),
+        ),
     };
     let mut p = format!(
         "You are building an EXPLORE trace: a short predict-and-verify trace deck that \
@@ -869,13 +859,37 @@ mod tests {
         assert!(!p.contains("Glob"));
     }
 
+    fn src_root() -> crate::cite::GeneratedRoot {
+        crate::cite::GeneratedRoot {
+            key: "src".into(),
+            path_prefix: String::new(),
+            declare: None,
+        }
+    }
+
+    #[test]
+    fn trace_prompt_with_passages_teaches_the_token_markers() {
+        let p = trace_prompt(
+            "https://x",
+            &spec("understand the page"),
+            &Citing::Passages {
+                key: "src",
+                token: "tok",
+            },
+            &TraceConfig::default(),
+        );
+        assert!(p.contains("WebFetch"));
+        assert!(p.contains("a line `PASSAGE tok`"));
+        assert!(p.contains("a line `END PASSAGE tok`"));
+        assert!(!p.contains("Glob"));
+    }
+
     #[test]
     fn trace_prompt_example_writes_a_badged_note() {
         let prompt = trace_prompt(
             ".",
             &spec("understand the source"),
-            false,
-            "src:",
+            &Citing::Lines(&src_root()),
             &TraceConfig::default(),
         );
 
@@ -983,8 +997,11 @@ mod tests {
         let p = trace_prompt(
             ".",
             &spec,
-            false,
-            "code:crates/core/",
+            &Citing::Lines(&crate::cite::GeneratedRoot {
+                key: "code".into(),
+                path_prefix: "crates/core/".into(),
+                declare: None,
+            }),
             &TraceConfig::default(),
         );
         assert!(p.contains("EXPLORE trace"));
@@ -1021,8 +1038,7 @@ mod tests {
                 trace_prompt(
                     ".",
                     &spec("understand the repo"),
-                    false,
-                    "src:",
+                    &Citing::Lines(&src_root()),
                     &TraceConfig {
                         extra: Some("  Focus on state transitions.  ".to_string()),
                         ..TraceConfig::default()
@@ -1058,8 +1074,7 @@ mod tests {
                 trace_prompt(
                     ".",
                     &spec("understand the repo"),
-                    false,
-                    "src:",
+                    &Citing::Lines(&src_root()),
                     &TraceConfig {
                         extra: Some("   \n\t".to_string()),
                         ..TraceConfig::default()
