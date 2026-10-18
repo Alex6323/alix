@@ -334,7 +334,7 @@ fn stage_members(
     for member in &eligible {
         let against = MemberBaseline::take(root, member)?;
         let snapshot = MemberSnapshot::take(staging, &member.relative, deck_id(&member.deck))?;
-        match stage_member(staging, workspace, member, against, generate, ask) {
+        match stage_member(root, staging, workspace, member, against, generate, ask) {
             Ok((staged, report)) => {
                 staged_decks.push(staged);
                 reports.push(report);
@@ -480,6 +480,7 @@ fn directory_names(path: &Path) -> Result<BTreeSet<OsString>> {
 }
 
 fn stage_member(
+    root: &Path,
     staging: &Path,
     workspace: &Workspace,
     member: &EligibleMember,
@@ -519,7 +520,7 @@ fn stage_member(
     validate_proposal_metadata(deck, &candidate, live_source)?;
     let identity = validate_unstamped_proposal(deck, &candidate)?;
 
-    let initialized = assets::initialize(&staged_path)
+    let initialized = assets::initialize_staged(&staged_path, root)
         .with_context(|| format!("cannot freeze proposal {}", staged_path.display()))?;
     let staged_deck = Deck::load_with_defaults(&staged_path, &workspace.settings)?;
     assets::validate_member(&staged_deck)?;
@@ -2209,6 +2210,91 @@ mod tests {
             applied.cards[0].citations[0].locator.to_string(),
             "apply: the applied card cites through the manifest key"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn every_cite_root_spelling_resolves_against_the_real_workspace_while_staging() {
+        let _lock = exec_lock();
+        type RootSpelling = fn(&Path) -> Option<String>;
+        let rows: Vec<(&str, RootSpelling, RootSpelling)> = vec![
+            (
+                "a relative manifest root",
+                |_| Some("source".into()),
+                |_| None,
+            ),
+            ("a relative deck root", |_| None, |_| Some("source".into())),
+            (
+                "an absolute manifest root",
+                |source| Some(source.display().to_string()),
+                |_| None,
+            ),
+            (
+                "an absolute deck root",
+                |_| None,
+                |source| Some(source.display().to_string()),
+            ),
+        ];
+        for (label, manifest_root, deck_root) in rows {
+            let (_dir, root, source, deck) = workspace("Old answer\nNew answer\n");
+            let manifest_text = match manifest_root(&source) {
+                Some(value) => format!("# roots\n[cite]\nsrc = {value:?}\n"),
+                None => "# roots\n".to_string(),
+            };
+            fs::write(root.join(workspace::MANIFEST), &manifest_text).unwrap();
+            let exam = parser::yaml_quote(&source.display().to_string());
+            let cite = deck_root(&source)
+                .map(|value| format!("cite:\n  - src: {}\n", parser::yaml_quote(&value)))
+                .unwrap_or_default();
+            let head =
+                format!("---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {exam}\n{cite}---\n");
+            fs::write(
+                &deck,
+                format!("{head}## Old question\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n"),
+            )
+            .unwrap();
+            fs::remove_dir_all(root.join("assets")).unwrap();
+            assets::freeze_member(&deck).unwrap();
+            let command = fake_reply(
+                &root,
+                &format!("{head}## New question\nNew answer\n<!-- at: src:code.rs:2 -->\n"),
+            );
+
+            let staged =
+                stage(&root, &GenerateDeckConfig::default(), &ask_config(&command)).unwrap();
+            assert!(
+                staged.failed.is_empty(),
+                "{label}: stage resolves the root as the real workspace does: {:?}",
+                staged.failed
+            );
+            assert_eq!(
+                manifest_text,
+                fs::read_to_string(staged.staging.join(workspace::MANIFEST)).unwrap(),
+                "{label}: the proposal's manifest"
+            );
+
+            apply(&root).unwrap();
+
+            assert_eq!(
+                manifest_text,
+                fs::read_to_string(root.join(workspace::MANIFEST)).unwrap(),
+                "{label}: the workspace manifest after apply"
+            );
+            let applied = Deck::load(&deck).unwrap();
+            let citation = &applied.cards[0].citations[0];
+            assert!(citation.asset.is_some(), "{label}: the citation is frozen");
+            let CitationIntegrity::Current(excerpt) = CitationRoots::for_deck(&applied)
+                .inspect_citation(citation)
+                .unwrap()
+            else {
+                panic!("{label}: the applied citation must be current");
+            };
+            assert_eq!(
+                vec![(2, "New answer".to_string())],
+                excerpt.lines,
+                "{label}: the excerpt froze from the real source"
+            );
+        }
     }
 
     #[test]

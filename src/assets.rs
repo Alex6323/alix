@@ -167,6 +167,14 @@ pub(crate) fn freeze_member_with(
     path: &Path,
     diagram_command: Option<&str>,
 ) -> Result<FreezeReport, AssetError> {
+    freeze_member_resolving_in(path, diagram_command, None)
+}
+
+fn freeze_member_resolving_in(
+    path: &Path,
+    diagram_command: Option<&str>,
+    real_workspace: Option<&Path>,
+) -> Result<FreezeReport, AssetError> {
     let workspace_root = crate::workspace::root_for_deck(path)
         .ok_or_else(|| AssetError::NotWorkspaceMember(path.to_path_buf()))?;
     let (_, _, defaults, _, _) =
@@ -182,7 +190,8 @@ pub(crate) fn freeze_member_with(
     let owned_dir = deck_dir(&workspace_root, deck_id)?;
     let owned_dir_existed = owned_dir.exists();
     let root_existed = workspace_root.join(ROOT).exists();
-    let result = freeze_member_inner(&workspace_root, &deck, diagram_command);
+    let roots = CitationRoots::for_deck_resolving_in(&deck, real_workspace);
+    let result = freeze_member_inner(&workspace_root, &deck, &roots, diagram_command);
     if result.is_err() && !owned_dir_existed {
         let _ = std::fs::remove_dir_all(&owned_dir);
         if !root_existed {
@@ -193,6 +202,21 @@ pub(crate) fn freeze_member_with(
 }
 
 pub fn initialize(path: &Path) -> Result<InitializeReport, InitializeError> {
+    initialize_resolving_in(path, None)
+}
+
+#[cfg(feature = "full")]
+pub(crate) fn initialize_staged(
+    path: &Path,
+    real_workspace: &Path,
+) -> Result<InitializeReport, InitializeError> {
+    initialize_resolving_in(path, Some(real_workspace))
+}
+
+fn initialize_resolving_in(
+    path: &Path,
+    real_workspace: Option<&Path>,
+) -> Result<InitializeReport, InitializeError> {
     if path
         .file_name()
         .and_then(|name| name.to_str())
@@ -208,7 +232,7 @@ pub fn initialize(path: &Path) -> Result<InitializeReport, InitializeError> {
     })?;
     let stamp = crate::stamp::stamp_deck(path)?;
     let freeze = if crate::workspace::root_for_deck(path).is_some() {
-        match freeze_member(path) {
+        match freeze_member_resolving_in(path, default_diagram_command(), real_workspace) {
             Ok(report) => Some(report),
             Err(error) => {
                 let tmp = path.with_extension("md.restore.tmp");
@@ -230,6 +254,7 @@ pub fn initialize(path: &Path) -> Result<InitializeReport, InitializeError> {
 fn freeze_member_inner(
     workspace_root: &Path,
     deck: &Deck,
+    roots: &CitationRoots,
     diagram_command: Option<&str>,
 ) -> Result<FreezeReport, AssetError> {
     let text = read_text(&deck.path)?;
@@ -247,7 +272,6 @@ fn freeze_member_inner(
     if deck_dir(workspace_root, deck_id)?.is_dir() {
         validate_owned_dir(workspace_root, deck_id)?;
     }
-    let roots = CitationRoots::for_deck(deck);
     let mut evidence: Vec<String> = Vec::new();
     let mut evidence_seen: HashSet<String> = HashSet::new();
     let mut citations = Vec::new();
@@ -260,7 +284,7 @@ fn freeze_member_inner(
                 }
                 continue;
             }
-            let excerpt = citation_excerpt(&roots, citation)?;
+            let excerpt = citation_excerpt(roots, citation)?;
             let bytes = canonical_excerpt_bytes(&excerpt);
             let extension = normalized_extension(&excerpt.path, true);
             let object = write_object(workspace_root, deck_id, &bytes, &extension)?;
@@ -279,7 +303,7 @@ fn freeze_member_inner(
 
     let mut image_rewrites = Vec::new();
     let mut image_objects = HashSet::new();
-    let boundaries = image_boundaries(workspace_root, deck, &roots);
+    let boundaries = image_boundaries(workspace_root, deck, roots);
     for image in crate::parser::image_references(&text) {
         if crate::deck::is_url(&image.source) {
             continue;

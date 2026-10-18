@@ -491,6 +491,15 @@ fn violations(violations: &[CiteViolation]) -> String {
 
 impl CitationRoots {
     pub fn for_deck(deck: &crate::deck::Deck) -> Self {
+        Self::for_deck_resolving_in(deck, None)
+    }
+
+    /// `real_workspace` replaces only the base of relative roots; the manifest
+    /// and the asset folder stay those of the deck's own workspace.
+    pub(crate) fn for_deck_resolving_in(
+        deck: &crate::deck::Deck,
+        real_workspace: Option<&Path>,
+    ) -> Self {
         let deck_path = std::path::absolute(&deck.path).unwrap_or_else(|_| deck.path.clone());
         let folder = deck_path
             .parent()
@@ -507,7 +516,7 @@ impl CitationRoots {
                 Self::from_place(
                     &deck.cite,
                     DeckPlace::Member {
-                        workspace,
+                        workspace: real_workspace.unwrap_or(workspace),
                         manifest_cite: &manifest_cite,
                     },
                     asset_dir,
