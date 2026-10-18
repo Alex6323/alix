@@ -754,7 +754,8 @@ fn doctor_does_not_report_a_personal_cards_progress_as_orphaned() {
 }
 
 #[test]
-fn doctor_reports_a_moved_excerpt_and_repair_rebases_it_without_touching_the_evidence() {
+fn doctor_reports_a_moved_excerpt_only_on_request_and_repair_rebases_it_without_touching_the_evidence()
+ {
     // The frozen bytes are intact, only further down the file. Nothing about
     // the evidence changed, so the address is the only thing to correct.
     let dir = TempDir::new().unwrap();
@@ -805,8 +806,19 @@ the cited paragraph
 
     let out = alix_bin(&["doctor", ws.to_str().unwrap()]);
     assert!(
-        stderr(&out).contains("is intact but now at lines 3"),
-        "a moved excerpt must be reported, not silently tolerated: {}",
+        out.status.success() && !stderr(&out).contains("frozen excerpt"),
+        "plain doctor is quiet about frozen drift: {}",
+        stderr(&out)
+    );
+
+    let out = alix_bin(&[
+        "doctor",
+        ws.to_str().unwrap(),
+        "--warn-on-source-locator-drift",
+    ]);
+    assert!(
+        out.status.success() && stderr(&out).contains("is intact but now at lines 3"),
+        "the flag reports a moved excerpt as a warning: {}",
         stderr(&out)
     );
 
@@ -828,7 +840,12 @@ the cited paragraph
         "the evidence must be byte-identical; only the address may move"
     );
     assert!(
-        !stderr(&alix_bin(&["doctor", ws.to_str().unwrap()])).contains("frozen excerpt"),
+        !stderr(&alix_bin(&[
+            "doctor",
+            ws.to_str().unwrap(),
+            "--warn-on-source-locator-drift"
+        ]))
+        .contains("frozen excerpt"),
         "the drift is gone after the repair"
     );
 }

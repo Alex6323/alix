@@ -230,6 +230,12 @@ struct DoctorArgs {
     #[arg(long)]
     repair_source_locators: bool,
 
+    /// Warn where a frozen source excerpt no longer matches its live source
+    /// (file gone, text changed, moved, or ambiguous). Off by default: a
+    /// frozen copy going stale is normal.
+    #[arg(long)]
+    warn_on_source_locator_drift: bool,
+
     /// Rewrite each diverged span `position:` anchor to where the span's
     /// authored occurrence binds today (the keep-authored-occurrence edit).
     #[arg(long)]

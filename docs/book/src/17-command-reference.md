@@ -242,8 +242,8 @@ notes it.
   current profile's local log path is named, the progress store is readable,
   the decks dir scans, and the backend CLI, the `share` helper (`wormhole`),
   and the `diagrams` renderer (`sekien`) are on your PATH. Name a **deck
-  file** instead to lint it in depth (syntax, named-field `at:` locators, and
-  frozen cards that have drifted from their live source); that form runs the
+  file** instead to lint it in depth (syntax and named-field `at:` locators);
+  that form runs the
   deck lint only, none of the environment rows. It withholds stale excerpts and reports
   a unique exact relocation, changed content, ambiguity, or a missing
   fingerprint. alix does not recognize or rewrite old deck formats; a deck
@@ -298,10 +298,19 @@ notes it.
   trailing blanks on every line it owns, opener and closer included. alix normalizes every deck it writes anyway, so this is for
   a deck an editor changed after it was initialized. A rewrite that would stop
   the deck parsing is refused.
+- `alix doctor [dir-or-deck] --warn-on-source-locator-drift`: also warn where
+  a frozen excerpt no longer matches its live source: the root or file is
+  gone, the text changed, it occurs more than once, or it moved to other
+  lines. Frozen evidence going stale is normal (a shared frozen deck works
+  without its sources), so without this flag doctor says nothing about it,
+  and with it the finding is a warning, never an error. A live citation that
+  does not resolve is an error either way.
 - `alix doctor [dir-or-deck] --repair-source-locators`: after you review the
   reported citations, stamp fingerprints on currently addressed excerpts and
   rebase any whose lines moved while their content stayed identical, frozen
-  excerpts included. A rebase corrects the `at:` line numbers only; the frozen
+  excerpts included (it finds moved frozen excerpts itself, with or without
+  `--warn-on-source-locator-drift`). A whole-file citation is never narrowed
+  to a range. A rebase corrects the `at:` line numbers only; the frozen
   evidence and its fingerprint are never rewritten. Changed or multiply
   matching excerpts remain untouched and make the command fail, because whether
   such a card still teaches the truth is a reader's call. Deck and card IDs are

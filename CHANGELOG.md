@@ -125,6 +125,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `alix doctor` reports drift of frozen citations (the live root or file
+  gone, the text changed, moved, or ambiguous) only with the new
+  `--warn-on-source-locator-drift` flag, and only as a warning. A live
+  citation that does not resolve is still an error. An unchanged frozen
+  whole-file citation no longer reads as moved, and
+  `--repair-source-locators` rebases each frozen citation to its own lines
+  when several share one locator.
+
 - Generators that write locators declare their input under the `cite:` key
   `src`. `alix workspace generate` writes `[cite] src = "<source>"` into the
   manifest and cites `src:<path>:<lines>`. A trace build and

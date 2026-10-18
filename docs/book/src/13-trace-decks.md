@@ -212,7 +212,8 @@ rebase. After reviewing it, run
 `alix doctor <deck> --repair-source-locators` to stamp missing fingerprints and
 apply only unique exact rebases. Changed and ambiguous excerpts remain
 untouched. Frozen assets do not move, but doctor still verifies their
-captured text and separately reports live-source drift.
+captured text, and with `--warn-on-source-locator-drift` it also warns about
+live-source drift.
 
 A trace deck degrades gracefully — even when it is not being traced it's a valid deck of
 `explain` cards. See `docs/examples/workspace-showcase/decks/ownership-move.md`

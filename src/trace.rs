@@ -347,6 +347,7 @@ pub enum DriftKind {
 #[derive(Clone, Debug)]
 pub struct Drift {
     pub line: usize,
+    pub at_line: usize,
     pub at: Locator,
     pub kind: DriftKind,
 }
@@ -381,6 +382,7 @@ pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
             let mut drift = |kind| {
                 out.push(Drift {
                     line: card.line,
+                    at_line: citation.line,
                     at: locator.clone(),
                     kind,
                 })
@@ -394,19 +396,26 @@ pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
                 continue;
             };
             let live_lines: Vec<&str> = live.lines().collect();
+            let Target::File {
+                range: Some((recorded, _)),
+                ..
+            } = locator.target
+            else {
+                if !block
+                    .iter()
+                    .map(String::as_str)
+                    .eq(live_lines.iter().map(|line| line.trim_end()))
+                {
+                    drift(DriftKind::Rewritten);
+                }
+                continue;
+            };
             match locate_block(&block, &live_lines) {
                 Placement::Everywhere => {}
                 Placement::Nowhere => drift(DriftKind::Rewritten),
                 Placement::Many => drift(DriftKind::Ambiguous),
                 Placement::Once(start) => {
-                    let recorded = match locator.target {
-                        Target::File {
-                            range: Some((start, _)),
-                            ..
-                        } => Some(start as usize),
-                        _ => None,
-                    };
-                    if recorded != Some(start) {
+                    if recorded as usize != start {
                         drift(DriftKind::Moved {
                             start,
                             len: block.len(),
@@ -1075,6 +1084,60 @@ mod tests {
             d.iter()
                 .any(|x| x.kind == DriftKind::SourceGone && x.at.to_string() == "src:a.rs:2-3"),
             "{d:?}"
+        );
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn an_unchanged_frozen_whole_file_citation_does_not_drift() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
+        write(&root.join("ws"), "alix.toml", "title = \"W\"\n");
+        let deck_path = write(
+            &root.join("ws/decks"),
+            "whole.md",
+            "---\ncite:\n  - src: ../src\n---\n\
+             ## whole file\nit cites all of a.rs\n<!-- at: src:a.rs -->\n",
+        );
+
+        crate::assets::initialize(&deck_path).unwrap();
+
+        let drift = drifted_cards(&Deck::load(&deck_path).unwrap());
+        assert!(
+            drift.is_empty(),
+            "an unchanged whole-file citation is current, not moved: {drift:?}"
+        );
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn a_grown_frozen_whole_file_citation_is_rewritten_never_moved_to_a_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        write(&root.join("src"), "a.rs", "alpha\nbeta\n");
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
+        write(&root.join("ws"), "alix.toml", "title = \"W\"\n");
+        let deck_path = write(
+            &root.join("ws/decks"),
+            "whole.md",
+            "---\ncite:\n  - src: ../src\n---\n\
+             ## whole file\nit cites all of a.rs\n<!-- at: src:a.rs -->\n",
+        );
+        crate::assets::initialize(&deck_path).unwrap();
+        write(&root.join("src"), "a.rs", "new\nalpha\nbeta\n");
+
+        let kinds: Vec<DriftKind> = drifted_cards(&Deck::load(&deck_path).unwrap())
+            .into_iter()
+            .map(|drift| drift.kind)
+            .collect();
+        assert_eq!(
+            vec![DriftKind::Rewritten],
+            kinds,
+            "a whole-file citation's text changed; a range would narrow it"
         );
     }
 
