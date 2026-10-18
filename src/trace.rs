@@ -397,7 +397,7 @@ pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
             };
             let live_lines: Vec<&str> = live.lines().collect();
             let Target::File {
-                range: Some((recorded, _)),
+                range: Some((recorded, recorded_end)),
                 ..
             } = locator.target
             else {
@@ -415,7 +415,8 @@ pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
                 Placement::Nowhere => drift(DriftKind::Rewritten),
                 Placement::Many => drift(DriftKind::Ambiguous),
                 Placement::Once(start) => {
-                    if recorded as usize != start {
+                    let recorded_len = (recorded_end - recorded) as usize + 1;
+                    if recorded as usize != start || recorded_len != block.len() {
                         drift(DriftKind::Moved {
                             start,
                             len: block.len(),
@@ -1138,6 +1139,37 @@ mod tests {
             vec![DriftKind::Rewritten],
             kinds,
             "a whole-file citation's text changed; a range would narrow it"
+        );
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn a_frozen_range_whose_authored_length_no_longer_matches_its_asset_drifts() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
+        write(&root.join("ws"), "alix.toml", "title = \"W\"\n");
+        let deck_path = write(
+            &root.join("ws/decks"),
+            "range.md",
+            "---\ncite:\n  - src: ../src\n---\n\
+             ## range\nit cites two lines\n<!-- at: src:a.rs:1-2 -->\n",
+        );
+        crate::assets::initialize(&deck_path).unwrap();
+
+        let frozen = std::fs::read_to_string(&deck_path).unwrap();
+        std::fs::write(&deck_path, frozen.replace("src:a.rs:1-2", "src:a.rs:1-3")).unwrap();
+
+        let kinds: Vec<DriftKind> = drifted_cards(&Deck::load(&deck_path).unwrap())
+            .into_iter()
+            .map(|drift| drift.kind)
+            .collect();
+        assert_eq!(
+            vec![DriftKind::Moved { start: 1, len: 2 }],
+            kinds,
+            "the authored three-line range does not hold its two-line frozen evidence"
         );
     }
 

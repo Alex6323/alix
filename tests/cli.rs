@@ -851,6 +851,46 @@ the cited paragraph
 }
 
 #[test]
+fn doctor_drift_flag_reports_a_frozen_range_whose_length_no_longer_matches_its_asset() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    std::fs::create_dir(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("notes.md"), "one\ntwo\nthree\n").unwrap();
+    let deck = ws.join("decks/d.md");
+    std::fs::write(
+        &deck,
+        "---\nformat-version: 1\ncite:\n  - src: .\n---\n\
+         ## q\na\n<!-- at: src:notes.md:1-2 -->\n",
+    )
+    .unwrap();
+    let initialized = alix(&["deck", "init", deck.to_str().unwrap()]);
+    assert!(
+        initialized.status.success(),
+        "stderr: {}",
+        stderr(&initialized)
+    );
+
+    let frozen = std::fs::read_to_string(&deck).unwrap();
+    std::fs::write(
+        &deck,
+        frozen.replace("src:notes.md:1-2", "src:notes.md:1-3"),
+    )
+    .unwrap();
+
+    let out = alix(&[
+        "doctor",
+        ws.to_str().unwrap(),
+        "--warn-on-source-locator-drift",
+    ]);
+    assert!(
+        out.status.success() && stderr(&out).contains("frozen excerpt"),
+        "the frozen object has two lines but its locator now claims three: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
 fn workspace_init_writes_both_documented_manifests() {
     let dir = TempDir::new().unwrap();
     let ws = dir.path().join("fresh");
