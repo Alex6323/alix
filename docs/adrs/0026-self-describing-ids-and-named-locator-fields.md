@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Evidence: parse_locator_comment in src/locator.rs
+- Amended by: 0053 (in "Locator fields": the single-space tokenizing, the
+  rule that no field value may contain a space, and the unkeyed lines-only
+  and whole-file `at:` forms; field order, `fingerprint:` and `asset:` stand)
 - Details evolved by
   [ADR 0039](0039-span-blanks-are-the-only-cloze.md): the decimal cloze sub-id
   (`card-<token>-<n>`) retires with the inline `\blank` marker; the id grammar

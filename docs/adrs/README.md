@@ -46,6 +46,12 @@ the architecture changes. Add a new ADR, mark the old one as superseded, and
 link the two records. Small clarifications that do not alter the decision are
 fine.
 
+When a later ADR replaces only some clauses of an Accepted record, the record
+stays Accepted and gains an `- Amended by: NNNN (<the replaced clauses>)`
+line. The clauses named there are no longer binding; the replacing ADR is
+authoritative for them, and every other clause still binds. Mark the record
+superseded instead when nothing of its decision remains in force.
+
 ## Template
 
 ```markdown
