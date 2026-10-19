@@ -473,7 +473,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the message itself names what is wrong.
 - `alix doctor <deck>` labeled the deck's `exam:` entries `sources:` and did not
   show its `cite:` roots. It now prints an `exam:` line and a `cite:` line
-  listing each root by key.
+  listing each root by key, and its `settings:`, `exam:` and `cite:` lines
+  include what a member deck inherits from its workspace, tagged
+  `(workspace)`.
 - A URL trace build wrote each cited sentence into its `at:` locator, which
   does not parse. Inside a workspace the build now asks the model to copy each
   passage verbatim between two marker lines carrying a token minted per build,

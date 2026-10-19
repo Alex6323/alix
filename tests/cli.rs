@@ -6532,6 +6532,41 @@ fn doctor_names_a_decks_exam_entries_and_cite_roots_by_their_keys() {
 }
 
 #[test]
+fn doctor_shows_what_a_member_deck_inherits_from_its_workspace() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::create_dir_all(ws.join("sources")).unwrap();
+    std::fs::create_dir_all(ws.join("own")).unwrap();
+    std::fs::write(
+        ws.join("alix.toml"),
+        "title = \"W\"\nexam = \"sources\"\n[defaults]\nreveal = \"line\"\n[cite]\nsrc = \"sources\"\n",
+    )
+    .unwrap();
+    let path = write(
+        &ws.join("decks"),
+        "deck.md",
+        "---\nexam: notes.md\ncite:\n  - mine: own\n---\n## q\nanswer\n",
+    );
+
+    let out = alix(&["doctor", &path]);
+
+    let printed = stdout(&out);
+    assert!(
+        printed.contains("  settings: reveal: line (workspace)"),
+        "settings line: {printed}"
+    );
+    assert!(
+        printed.contains("  exam:     notes.md, sources (workspace)"),
+        "exam line: {printed}"
+    );
+    assert!(
+        printed.contains("  cite:     mine: own, src: sources (workspace)"),
+        "cite line: {printed}"
+    );
+}
+
+#[test]
 fn deck_import_writes_a_deck_from_tsv() {
     let dir = TempDir::new().unwrap();
     let tsv = write(

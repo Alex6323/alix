@@ -1193,31 +1193,71 @@ fn check_report(decks: Vec<PathBuf>, source_locator_drift: bool) -> Report {
                     path.display()
                 ));
             }
-            let s = &deck.settings;
-            let declared: Vec<String> = [
-                s.reveal.map(|r| format!("reveal: {}", val_name(r))),
-                s.order.map(|o| format!("review: {}", val_name(o))),
-                s.exam_strictness
-                    .map(|v| format!("strictness: {}", val_name(v))),
+            let workspace = alix::workspace::root_for_deck(path);
+            let inherited = workspace
+                .as_deref()
+                .and_then(|root| alix::workspace::Workspace::load(root).ok())
+                .map(|loaded| loaded.settings)
+                .unwrap_or_default();
+            let either = |own: Option<String>, from_workspace: Option<String>| {
+                own.or(from_workspace.map(|value| format!("{value} (workspace)")))
+            };
+            let (s, d) = (&deck.settings, &inherited);
+            let settings: Vec<String> = [
+                either(
+                    s.reveal.map(|r| format!("reveal: {}", val_name(r))),
+                    d.reveal.map(|r| format!("reveal: {}", val_name(r))),
+                ),
+                either(
+                    s.order.map(|o| format!("review: {}", val_name(o))),
+                    d.order.map(|o| format!("review: {}", val_name(o))),
+                ),
+                either(
+                    s.exam_strictness
+                        .map(|v| format!("strictness: {}", val_name(v))),
+                    d.exam_strictness
+                        .map(|v| format!("strictness: {}", val_name(v))),
+                ),
             ]
             .into_iter()
             .flatten()
             .collect();
-            if !declared.is_empty() {
-                println!("  settings: {}", declared.join(", "));
+            if !settings.is_empty() {
+                println!("  settings: {}", settings.join(", "));
             }
             if !deck.requires.is_empty() {
                 println!("  requires: {}", deck.requires.join(", "));
             }
-            if !deck.exam.is_empty() {
-                println!("  exam:     {}", deck.exam.join(", "));
+            let layers = deck.exam_layers();
+            let exam: Vec<String> = layers
+                .own
+                .iter()
+                .cloned()
+                .chain(
+                    layers
+                        .workspace
+                        .iter()
+                        .map(|entry| format!("{entry} (workspace)")),
+                )
+                .collect();
+            if !exam.is_empty() {
+                println!("  exam:     {}", exam.join(", "));
             }
-            if !deck.cite.is_empty() {
-                let roots: Vec<String> = deck
-                    .cite
-                    .iter()
-                    .map(|(key, root)| format!("{key}: {root}"))
-                    .collect();
+            let manifest_roots = workspace
+                .as_deref()
+                .map(alix::workspace::manifest_cite)
+                .unwrap_or_default();
+            let roots: Vec<String> = deck
+                .cite
+                .iter()
+                .map(|(key, root)| format!("{key}: {root}"))
+                .chain(
+                    manifest_roots
+                        .iter()
+                        .map(|(key, root)| format!("{key}: {root} (workspace)")),
+                )
+                .collect();
+            if !roots.is_empty() {
                 println!("  cite:     {}", roots.join(", "));
             }
             if let Some(desc) = &deck.trace {
