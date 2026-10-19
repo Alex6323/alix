@@ -102,6 +102,10 @@ pub trait Backend: Send + Sync {
         false
     }
 
+    fn confines_file_reads(&self) -> bool {
+        false
+    }
+
     fn name(&self) -> &'static str;
 
     fn required_help_flags(&self) -> &'static [&'static str];

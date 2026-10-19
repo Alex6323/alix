@@ -177,6 +177,10 @@ impl Backend for ClaudeBackend {
         "claude"
     }
 
+    fn confines_file_reads(&self) -> bool {
+        true
+    }
+
     fn supports_session(&self) -> bool {
         // Claude's `--session-id`/`--resume` give the tutor multi-turn memory.
         true

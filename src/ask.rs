@@ -556,7 +556,11 @@ fn run_supervised_inner(
     };
     let model = crate::backend::resolved_ask_model(config);
     let effort = crate::backend::resolved_ask_effort(config);
-    let (access, file_root) = rooted_access(config);
+    let (access, file_root) = if backend.confines_file_reads() {
+        rooted_access(config)
+    } else {
+        (Access::from_allowed_tools(&config.allowed_tools), None)
+    };
     let opts = RunOpts {
         file_root: file_root.as_deref(),
         model: model.as_deref(),
@@ -1641,6 +1645,33 @@ mod tests {
         };
         let answer = run(&config, "x", &[]).unwrap();
         assert!(answer.contains("--effort high"), "args were: {answer}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_non_claude_grounded_call_keeps_file_tools_for_a_claude_pattern_root() {
+        use crate::config::BackendKind;
+
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("source[1]");
+        std::fs::create_dir(&root).unwrap();
+        let cli = fake_cli(dir.path(), "echo \"$@\"; cat > /dev/null");
+        let config = AskConfig {
+            backend: BackendKind::Gemini,
+            command: cli.to_str().unwrap().to_string(),
+            allowed_tools: vec!["Read".to_string()],
+            cwd: Some(root),
+            timeout_secs: 10,
+            ..AskConfig::default()
+        };
+
+        let answer = run(&config, "inspect the source", &[]).unwrap();
+
+        assert!(
+            answer.contains("--allowed-tools read_file"),
+            "a Claude permission-rule limitation must not remove Gemini's file tools: {answer}"
+        );
     }
 
     #[test]
