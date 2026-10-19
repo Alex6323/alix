@@ -1,6 +1,9 @@
 # 0024: Deck transfer reuses public bundles
 
 - Status: Accepted
+- Amended by: 0053 (copy and move no longer materialize the deck's origin;
+  they refuse a `cite:` root or `exam:` entry that resolves differently in
+  the destination)
 - Evidence: copy_uses_the_public_bundle_without_copying_progress in src/deck_transfer.rs
 - Recorded: 2026-07-27
 - Retrospective: No

@@ -1,6 +1,16 @@
 # 0053: `cite:` names the keyed roots that card citations resolve against
 
-- Status: Proposed
+- Status: Accepted
+- Evidence: fn formatting_then_parsing_any_valid_locator_returns_it_unchanged in src/locator.rs
+- Evidence: fn every_locator_resolves_inside_its_root_or_fails_as_the_table_says in src/cite.rs
+- Evidence: fn every_visible_root_case_resolves_or_names_its_violations in src/cite.rs
+- Evidence: fn doctor_drift_flag_reports_a_frozen_range_whose_length_no_longer_matches_its_asset in tests/cli.rs
+- Evidence: fn the_exam_reads_only_exam_entries_never_cite_roots_or_cited_text in src/exam.rs
+- Evidence: fn the_tutor_browses_the_first_local_cited_root_else_the_deck_s_only_local_root in src/cite.rs
+- Evidence: fn a_generator_reuses_the_root_holding_its_input_or_declares_src_or_refuses in src/cite.rs
+- Evidence: fn cut_passages_freezes_each_passage_verbatim_or_fails_naming_its_card in src/trace_ai.rs
+- Evidence: fn a_transfer_is_refused_for_every_used_key_whose_root_differs_in_the_destination in src/cite.rs
+- Evidence: fn a_transfer_is_refused_for_every_exam_entry_that_resolves_differently_in_the_destination in src/cite.rs
 - Recorded: 2026-10-17
 - Retrospective: No
 - Refines: [ADR 0024](0024-deck-transfer-reuses-public-bundles.md)
