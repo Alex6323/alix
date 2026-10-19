@@ -6508,6 +6508,30 @@ fn doctor_recommends_initializing_deck_like_markdown() {
 }
 
 #[test]
+fn doctor_names_a_decks_exam_entries_and_cite_roots_by_their_keys() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join("book")).unwrap();
+    let path = write(
+        dir.path(),
+        "deck.md",
+        "---\nexam: notes.md\ncite:\n  - rbe: book\n---\n## q\nanswer\n",
+    );
+
+    let out = alix(&["doctor", &path]);
+
+    let printed = stdout(&out);
+    assert!(
+        printed.contains("  exam:     notes.md"),
+        "exam line: {printed}"
+    );
+    assert!(
+        printed.contains("  cite:     rbe: book"),
+        "cite line: {printed}"
+    );
+    assert!(!printed.contains("sources:"), "no sources label: {printed}");
+}
+
+#[test]
 fn deck_import_writes_a_deck_from_tsv() {
     let dir = TempDir::new().unwrap();
     let tsv = write(

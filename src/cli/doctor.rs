@@ -1210,7 +1210,15 @@ fn check_report(decks: Vec<PathBuf>, source_locator_drift: bool) -> Report {
                 println!("  requires: {}", deck.requires.join(", "));
             }
             if !deck.exam.is_empty() {
-                println!("  sources:  {}", deck.exam.join(", "));
+                println!("  exam:     {}", deck.exam.join(", "));
+            }
+            if !deck.cite.is_empty() {
+                let roots: Vec<String> = deck
+                    .cite
+                    .iter()
+                    .map(|(key, root)| format!("{key}: {root}"))
+                    .collect();
+                println!("  cite:     {}", roots.join(", "));
             }
             if let Some(desc) = &deck.trace {
                 println!("  trace:    {desc}");
@@ -3270,7 +3278,7 @@ mod tests {
             "{stdout}"
         );
         assert_eq!(1, stdout.matches("  requires:").count(), "{stdout}");
-        assert_eq!(1, stdout.matches("  sources:").count(), "{stdout}");
+        assert_eq!(1, stdout.matches("  exam:").count(), "{stdout}");
         assert!(stderr.contains("points at a missing file"), "{stderr}");
     }
 
