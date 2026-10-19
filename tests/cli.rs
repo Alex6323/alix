@@ -891,6 +891,94 @@ fn doctor_drift_flag_reports_a_frozen_range_whose_length_no_longer_matches_its_a
 }
 
 #[test]
+fn doctor_repair_restores_the_frozen_width_for_an_all_blank_range() {
+    for authored_range in ["2", "2-4"] {
+        let dir = TempDir::new().unwrap();
+        let ws = dir.path();
+        std::fs::write(ws.join("alix.toml"), "").unwrap();
+        std::fs::create_dir(ws.join("decks")).unwrap();
+        std::fs::write(ws.join("notes.md"), "heading\n\n\nfooter\n").unwrap();
+        let deck = ws.join("decks/d.md");
+        std::fs::write(
+            &deck,
+            "---\nformat-version: 1\ncite:\n  - src: .\n---\n\
+             ## q\na\n<!-- at: src:notes.md:2-3 -->\n",
+        )
+        .unwrap();
+        let initialized = alix(&["deck", "init", deck.to_str().unwrap()]);
+        assert!(initialized.status.success(), "stderr: {}", stderr(&initialized));
+
+        let frozen = std::fs::read_to_string(&deck).unwrap();
+        std::fs::write(
+            &deck,
+            frozen.replace("src:notes.md:2-3", &format!("src:notes.md:{authored_range}")),
+        )
+        .unwrap();
+
+        let repaired = alix(&[
+            "doctor",
+            ws.to_str().unwrap(),
+            "--repair-source-locators",
+        ]);
+        assert!(repaired.status.success(), "stderr: {}", stderr(&repaired));
+        assert!(
+            std::fs::read_to_string(&deck)
+                .unwrap()
+                .contains("at: src:notes.md:2-3 "),
+            "repair must restore the two-line frozen width"
+        );
+
+        let checked = alix(&[
+            "doctor",
+            ws.to_str().unwrap(),
+            "--warn-on-source-locator-drift",
+        ]);
+        assert!(
+            checked.status.success() && !stderr(&checked).contains("frozen excerpt"),
+            "the repaired valid range must be drift-clean: {}",
+            stderr(&checked)
+        );
+    }
+}
+
+#[test]
+fn doctor_repair_does_not_hide_an_all_blank_range_that_runs_past_eof() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    std::fs::create_dir(ws.join("decks")).unwrap();
+    let source = ws.join("notes.md");
+    std::fs::write(&source, "heading\n\n\n").unwrap();
+    let deck = ws.join("decks/d.md");
+    std::fs::write(
+        &deck,
+        "---\nformat-version: 1\ncite:\n  - src: .\n---\n\
+         ## q\na\n<!-- at: src:notes.md:2-3 -->\n",
+    )
+    .unwrap();
+    let initialized = alix(&["deck", "init", deck.to_str().unwrap()]);
+    assert!(initialized.status.success(), "stderr: {}", stderr(&initialized));
+
+    let frozen = std::fs::read_to_string(&deck).unwrap();
+    std::fs::write(&deck, frozen.replace("src:notes.md:2-3", "src:notes.md:2"))
+        .unwrap();
+    std::fs::write(&source, "heading\n\n").unwrap();
+
+    let repaired = alix(&[
+        "doctor",
+        ws.to_str().unwrap(),
+        "--repair-source-locators",
+    ]);
+    assert!(repaired.status.success(), "stderr: {}", stderr(&repaired));
+    assert!(
+        !std::fs::read_to_string(&deck)
+            .unwrap()
+            .contains("at: src:notes.md:2-3 "),
+        "repair must not write a range whose last line does not exist"
+    );
+}
+
+#[test]
 fn workspace_init_writes_both_documented_manifests() {
     let dir = TempDir::new().unwrap();
     let ws = dir.path().join("fresh");

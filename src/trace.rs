@@ -413,7 +413,10 @@ pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
             let recorded_len = (recorded_end - recorded) as usize + 1;
             match locate_block(&block, &live_lines) {
                 Placement::Everywhere => {
-                    if recorded_len != block.len() {
+                    let fits = recorded as usize - 1 + block.len() <= live_lines.len();
+                    if !fits {
+                        drift(DriftKind::Rewritten);
+                    } else if recorded_len != block.len() {
                         drift(DriftKind::Moved {
                             start: recorded as usize,
                             len: block.len(),
