@@ -410,12 +410,19 @@ pub fn drifted_cards(deck: &Deck) -> Vec<Drift> {
                 }
                 continue;
             };
+            let recorded_len = (recorded_end - recorded) as usize + 1;
             match locate_block(&block, &live_lines) {
-                Placement::Everywhere => {}
+                Placement::Everywhere => {
+                    if recorded_len != block.len() {
+                        drift(DriftKind::Moved {
+                            start: recorded as usize,
+                            len: block.len(),
+                        });
+                    }
+                }
                 Placement::Nowhere => drift(DriftKind::Rewritten),
                 Placement::Many => drift(DriftKind::Ambiguous),
                 Placement::Once(start) => {
-                    let recorded_len = (recorded_end - recorded) as usize + 1;
                     if recorded as usize != start || recorded_len != block.len() {
                         drift(DriftKind::Moved {
                             start,
@@ -1170,6 +1177,37 @@ mod tests {
             vec![DriftKind::Moved { start: 1, len: 2 }],
             kinds,
             "the authored three-line range does not hold its two-line frozen evidence"
+        );
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn a_blank_frozen_range_whose_authored_length_changed_still_drifts() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        write(&root.join("src"), "a.rs", "\n\n");
+        std::fs::create_dir_all(root.join("ws/decks")).unwrap();
+        write(&root.join("ws"), "alix.toml", "title = \"W\"\n");
+        let deck_path = write(
+            &root.join("ws/decks"),
+            "range.md",
+            "---\ncite:\n  - src: ../src\n---\n\
+             ## range\nit cites two blank lines\n<!-- at: src:a.rs:1-2 -->\n",
+        );
+        crate::assets::initialize(&deck_path).unwrap();
+
+        let frozen = std::fs::read_to_string(&deck_path).unwrap();
+        std::fs::write(&deck_path, frozen.replace("src:a.rs:1-2", "src:a.rs:1")).unwrap();
+
+        let kinds: Vec<DriftKind> = drifted_cards(&Deck::load(&deck_path).unwrap())
+            .into_iter()
+            .map(|drift| drift.kind)
+            .collect();
+        assert_eq!(
+            vec![DriftKind::Moved { start: 1, len: 2 }],
+            kinds,
+            "a single-line locator cannot claim a two-line frozen blank excerpt"
         );
     }
 
