@@ -107,6 +107,13 @@ access on, the tutor browses one local `cite:` root, chosen per card:
 This keeps every live-source grant reviewable: the grant is on in your config
 or a manifest you can read, and the folder is a root the deck declares.
 
+With the Claude backend, the tutor reads only inside that root: its file tools
+are allowed under the root's resolved path alone, and the call loads none of
+your Claude settings files, whose own allow rules would otherwise widen it. A
+root whose path contains `(`, `)`, `*`, `?`, `[`, `]`, `{` or `}`, or any
+root on Windows, gets no file tools. Gemini, Codex and Copilot do not confine
+reads to the root this way.
+
 When no usable source is available, the tutor still works from the frozen
 excerpt and card context. The Ask status warns that it lacks the full current
 source, so the learner can distinguish an evidence-grounded explanation from a

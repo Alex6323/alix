@@ -17,6 +17,7 @@ pub enum PromptDelivery {
     ExecArg,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum Access {
     None,
     ReadOnly {
@@ -45,6 +46,7 @@ impl Access {
 }
 
 pub struct RunOpts<'a> {
+    pub file_root: Option<&'a std::path::Path>,
     pub model: Option<&'a str>,
     pub effort: Option<&'a str>,
     pub permission_mode: Option<&'a str>,
@@ -198,6 +200,7 @@ mod tests {
     #[test]
     fn every_backend_that_can_isolate_operator_instructions_does() {
         let opts = || RunOpts {
+            file_root: None,
             model: None,
             effort: None,
             permission_mode: None,

@@ -319,6 +319,18 @@ declares, absolute ones included, so a received deck can name a wide root;
 inspect a received workspace's `cite:` roots before enabling source access.
 The exam reads only `exam:` entries, never `cite:` roots or cited text.
 
+With the Claude backend, a call holding file tools and a working folder (the
+grounded tutor, a trace build) reads only under that folder's canonical path:
+`Read`, `Glob` and `Grep` are allowed by path-scoped rules, and the call runs
+with `--setting-sources ""`, so no user, project or local Claude settings file,
+including one shipped inside a received tree, can add an unscoped allow rule.
+A folder whose path a rule cannot name literally (pattern characters, or any
+path on Windows) gets no file tools (`ask::rooted_access`,
+`src/backend/claude.rs`). Canary probes against Claude Code 2.1.303 confirmed
+that reads outside the folder, through a symlink inside it, and by `Grep`
+across another folder are denied. Gemini, Codex and Copilot do not receive
+this confinement.
+
 A citation reads only inside its key's root. A locator path is relative and
 normalized (no absolute path, drive letter, `..`, `.` or empty segment), and
 the symlink-resolved file must lie inside the symlink-resolved root, so

@@ -43,12 +43,22 @@ impl Backend for ClaudeBackend {
                 tools.push("WebSearch");
             }
         }
+        let file_root = opts.file_root.filter(|_| tools.contains(&"Read"));
+        if file_root.is_some() {
+            argv.push("--setting-sources".to_string());
+            argv.push(String::new());
+        }
         // `--allowedTools` only permits; `--tools` is what bounds the set.
         argv.push("--tools".to_string());
         argv.push(tools.join(","));
         if !tools.is_empty() {
             argv.push("--allowedTools".to_string());
-            argv.extend(tools.into_iter().map(String::from));
+            argv.extend(tools.into_iter().map(|tool| match file_root {
+                Some(root) if matches!(tool, "Read" | "Glob" | "Grep") => {
+                    format!("{tool}(/{}/**)", root.display())
+                }
+                _ => tool.to_string(),
+            }));
         }
         if let Some(mode) = opts.permission_mode {
             argv.push("--permission-mode".to_string());
@@ -153,6 +163,7 @@ impl Backend for ClaudeBackend {
         &[
             "-p",
             "--safe-mode",
+            "--setting-sources",
             "--tools",
             "--allowedTools",
             "--permission-mode",
@@ -236,6 +247,7 @@ mod tests {
 
     fn opts<'a>(access: Access, session_args: &'a [String]) -> RunOpts<'a> {
         RunOpts {
+            file_root: None,
             model: None,
             effort: None,
             permission_mode: None,
@@ -248,6 +260,7 @@ mod tests {
     #[test]
     fn claude_grant_maps_to_canonical_flags() {
         let argv = ClaudeBackend.build_argv(&RunOpts {
+            file_root: None,
             model: Some("opus"),
             effort: Some("high"),
             permission_mode: Some("dontAsk"),
@@ -282,6 +295,59 @@ mod tests {
             ],
             argv
         );
+    }
+
+    #[test]
+    fn a_file_grant_with_a_root_reads_only_under_it_and_loads_no_settings() {
+        let root = std::path::Path::new("/srv/notes");
+        let argv = ClaudeBackend.build_argv(&RunOpts {
+            file_root: Some(root),
+            ..opts(
+                Access::ReadOnly {
+                    files: true,
+                    fetch: true,
+                    search: false,
+                },
+                &[],
+            )
+        });
+        let after = |flag: &str| -> Vec<&str> {
+            let at = argv.iter().position(|a| a == flag).unwrap_or(argv.len());
+            argv[at + 1..]
+                .iter()
+                .take_while(|a| !a.starts_with("--"))
+                .map(String::as_str)
+                .collect()
+        };
+        assert_eq!(vec![""], after("--setting-sources"), "{argv:?}");
+        assert_eq!(
+            vec!["Read,Glob,Grep,WebFetch"],
+            after("--tools"),
+            "{argv:?}"
+        );
+        assert_eq!(
+            vec![
+                "Read(//srv/notes/**)",
+                "Glob(//srv/notes/**)",
+                "Grep(//srv/notes/**)",
+                "WebFetch",
+            ],
+            after("--allowedTools"),
+            "{argv:?}"
+        );
+    }
+
+    #[test]
+    fn a_grant_without_a_root_keeps_the_operators_settings() {
+        let argv = ClaudeBackend.build_argv(&opts(
+            Access::ReadOnly {
+                files: true,
+                fetch: false,
+                search: false,
+            },
+            &[],
+        ));
+        assert!(!argv.iter().any(|a| a == "--setting-sources"), "{argv:?}");
     }
 
     #[test]
@@ -397,6 +463,7 @@ mod tests {
     #[test]
     fn claude_emits_permission_mode_independent_of_grant() {
         let argv = ClaudeBackend.build_argv(&RunOpts {
+            file_root: None,
             model: None,
             effort: None,
             permission_mode: Some("dontAsk"),
@@ -409,6 +476,7 @@ mod tests {
         assert!(argv.iter().any(|a| a == "dontAsk"));
 
         let argv = ClaudeBackend.build_argv(&RunOpts {
+            file_root: None,
             model: None,
             effort: None,
             permission_mode: Some("bypassPermissions"),
@@ -425,6 +493,7 @@ mod tests {
         assert_eq!(argv[pm_pos + 1], "bypassPermissions");
 
         let argv = ClaudeBackend.build_argv(&RunOpts {
+            file_root: None,
             model: None,
             effort: None,
             permission_mode: None,
@@ -438,6 +507,7 @@ mod tests {
     #[test]
     fn claude_progress_uses_stream_json_and_extracts_the_result() {
         let argv = ClaudeBackend.build_argv(&RunOpts {
+            file_root: None,
             model: None,
             effort: None,
             permission_mode: Some("dontAsk"),
@@ -601,6 +671,7 @@ mod tests {
             &[
                 "-p",
                 "--safe-mode",
+                "--setting-sources",
                 "--tools",
                 "--allowedTools",
                 "--permission-mode",

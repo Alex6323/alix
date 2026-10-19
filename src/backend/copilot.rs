@@ -91,6 +91,7 @@ mod tests {
 
     fn opts<'a>(access: Access, session_args: &'a [String]) -> RunOpts<'a> {
         RunOpts {
+            file_root: None,
             model: None,
             effort: None,
             permission_mode: None,
@@ -273,6 +274,7 @@ mod tests {
     #[test]
     fn copilot_model_flag_uses_equals_form() {
         let argv = CopilotBackend.build_argv(&RunOpts {
+            file_root: None,
             model: Some("claude-sonnet-4-6"),
             effort: Some("high"),
             permission_mode: Some("x"),

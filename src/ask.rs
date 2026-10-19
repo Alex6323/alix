@@ -275,6 +275,46 @@ fn question_context(
     p
 }
 
+fn rooted_access(config: &AskConfig) -> (Access, Option<PathBuf>) {
+    let access = Access::from_allowed_tools(&config.allowed_tools);
+    let Access::ReadOnly {
+        files: true,
+        fetch,
+        search,
+    } = access
+    else {
+        return (access, None);
+    };
+    let Some(dir) = &config.cwd else {
+        return (access, None);
+    };
+    match dir
+        .canonicalize()
+        .ok()
+        .filter(|root| expressible_root(root))
+    {
+        Some(root) => (access, Some(root)),
+        None if fetch || search => (
+            Access::ReadOnly {
+                files: false,
+                fetch,
+                search,
+            },
+            None,
+        ),
+        None => (Access::None, None),
+    }
+}
+
+/// A root a path-scoped permission rule can name literally: pattern
+/// characters could match beyond it, and Windows paths are unverified.
+fn expressible_root(root: &Path) -> bool {
+    cfg!(unix)
+        && root
+            .to_str()
+            .is_some_and(|text| !text.contains(['(', ')', '*', '?', '[', ']', '{', '}']))
+}
+
 pub fn with_source_root(cfg: &AskConfig, root: &Path) -> AskConfig {
     let mut grounded = cfg.clone();
     grounded.cwd = Some(root.to_path_buf());
@@ -516,7 +556,9 @@ fn run_supervised_inner(
     };
     let model = crate::backend::resolved_ask_model(config);
     let effort = crate::backend::resolved_ask_effort(config);
+    let (access, file_root) = rooted_access(config);
     let opts = RunOpts {
+        file_root: file_root.as_deref(),
         model: model.as_deref(),
         effort: effort.as_deref(),
         permission_mode: if config.permission_mode.is_empty() {
@@ -524,7 +566,7 @@ fn run_supervised_inner(
         } else {
             Some(config.permission_mode.as_str())
         },
-        access: Access::from_allowed_tools(&config.allowed_tools),
+        access,
         session_args,
         progress: config.progress,
     };
@@ -1393,6 +1435,80 @@ mod tests {
             (58.0..=66.0).contains(&mean),
             "successive UUIDs changed {mean:.2} of 128 bits on average"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_grant_is_rooted_at_its_canonical_folder_or_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("plain");
+        std::fs::create_dir(&plain).unwrap();
+        let canonical = plain.canonicalize().unwrap();
+        std::os::unix::fs::symlink(&plain, dir.path().join("link")).unwrap();
+        let starred = dir.path().join("a*b");
+        std::fs::create_dir(&starred).unwrap();
+        let files = |fetch| Access::ReadOnly {
+            files: true,
+            fetch,
+            search: false,
+        };
+        type Row<'a> = (
+            &'a str,
+            &'a [&'a str],
+            Option<PathBuf>,
+            Access,
+            Option<PathBuf>,
+        );
+        let rows: [Row; 6] = [
+            (
+                "plain folder",
+                &["Read"],
+                Some(plain.clone()),
+                files(false),
+                Some(canonical.clone()),
+            ),
+            (
+                "symlinked folder",
+                &["Read"],
+                Some(dir.path().join("link")),
+                files(false),
+                Some(canonical),
+            ),
+            (
+                "pattern character",
+                &["Read"],
+                Some(starred.clone()),
+                Access::None,
+                None,
+            ),
+            (
+                "pattern character keeps fetch",
+                &["Read", "WebFetch"],
+                Some(starred),
+                Access::ReadOnly {
+                    files: false,
+                    fetch: true,
+                    search: false,
+                },
+                None,
+            ),
+            (
+                "missing folder",
+                &["Read"],
+                Some(dir.path().join("gone")),
+                Access::None,
+                None,
+            ),
+            ("no folder", &["Read"], None, files(false), None),
+        ];
+        for (label, tools, cwd, access, root) in rows {
+            let config = AskConfig {
+                allowed_tools: tools.iter().map(|t| t.to_string()).collect(),
+                cwd,
+                ..AskConfig::default()
+            };
+            assert_eq!((access, root), rooted_access(&config), "{label}");
+        }
     }
 
     #[test]

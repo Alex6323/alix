@@ -463,6 +463,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Security: with `source_access` on, the Claude tutor could read any file the
+  user can read, not only the deck's `cite:` root. A grounded Claude call now
+  allows `Read`, `Glob` and `Grep` only under the root's resolved path and
+  loads no Claude settings files (`--setting-sources ""`), so your own
+  Claude allow rules no longer apply to it. A root path with pattern
+  characters, or any root on Windows, gets no file tools.
 - Locator errors no longer start with an ADR rule number (`rule 3: key ...`);
   the message itself names what is wrong.
 - `alix doctor <deck>` labeled the deck's `exam:` entries `sources:` and did not

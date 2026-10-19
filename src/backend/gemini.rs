@@ -82,6 +82,7 @@ mod tests {
 
     fn opts<'a>(access: Access, session_args: &'a [String]) -> RunOpts<'a> {
         RunOpts {
+            file_root: None,
             model: None,
             effort: None,
             permission_mode: None,
@@ -212,6 +213,7 @@ mod tests {
     #[test]
     fn gemini_model_flag() {
         let argv = GeminiBackend.build_argv(&RunOpts {
+            file_root: None,
             model: Some("gemini-2.5-pro"),
             effort: Some("high"),
             permission_mode: Some("dontAsk"),

@@ -150,6 +150,7 @@ mod tests {
 
     fn opts<'a>(access: Access, session_args: &'a [String]) -> RunOpts<'a> {
         RunOpts {
+            file_root: None,
             model: None,
             effort: None,
             permission_mode: None,
@@ -197,6 +198,7 @@ mod tests {
     #[test]
     fn codex_model_flag_uses_short_form() {
         let argv = CodexBackend.build_argv(&RunOpts {
+            file_root: None,
             model: Some("gpt-5"),
             effort: None,
             permission_mode: Some("dontAsk"), // Claude-only, must be dropped
@@ -216,6 +218,7 @@ mod tests {
     #[test]
     fn codex_effort_maps_to_the_reasoning_config_key() {
         let argv = CodexBackend.build_argv(&RunOpts {
+            file_root: None,
             model: None,
             effort: Some("minimal"),
             permission_mode: None,
@@ -271,6 +274,7 @@ mod tests {
     #[test]
     fn codex_progress_uses_json_events_and_extracts_the_agent_message() {
         let argv = CodexBackend.build_argv(&RunOpts {
+            file_root: None,
             model: None,
             effort: None,
             permission_mode: None,
