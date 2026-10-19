@@ -1157,6 +1157,7 @@ fn check(decks: Vec<PathBuf>, source_locator_drift: bool) -> Result<()> {
 fn check_report(decks: Vec<PathBuf>, source_locator_drift: bool) -> Report {
     let mut report = Report::new(source_locator_drift);
     let mut manifests_reported = std::collections::HashSet::new();
+    let mut inherited_settings: HashMap<PathBuf, alix::deck::DeckSettings> = HashMap::new();
     for path in &decks {
         // Deck::load would error on a directory, so a workspace target is
         // handled separately here.
@@ -1195,9 +1196,17 @@ fn check_report(decks: Vec<PathBuf>, source_locator_drift: bool) -> Report {
             }
             let workspace = alix::workspace::root_for_deck(path);
             let inherited = workspace
-                .as_deref()
-                .and_then(|root| alix::workspace::Workspace::load(root).ok())
-                .map(|loaded| loaded.settings)
+                .as_ref()
+                .map(|root| {
+                    inherited_settings
+                        .entry(root.clone())
+                        .or_insert_with(|| {
+                            alix::workspace::Workspace::load(root)
+                                .map(|loaded| loaded.settings)
+                                .unwrap_or_default()
+                        })
+                        .clone()
+                })
                 .unwrap_or_default();
             let either = |own: Option<String>, from_workspace: Option<String>| {
                 own.or(from_workspace.map(|value| format!("{value} (workspace)")))
@@ -3173,6 +3182,33 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         assert!(check(vec![dir.path().to_path_buf()], false).is_err());
+    }
+
+    #[test]
+    fn inherited_header_settings_do_not_rescan_every_workspace_member_per_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let decks_dir = workspace.join(alix::workspace::DECKS);
+        std::fs::create_dir_all(&decks_dir).unwrap();
+        w(
+            &workspace,
+            alix::workspace::MANIFEST,
+            "[defaults]\nreveal = \"line\"\n",
+        );
+        let decks: Vec<PathBuf> = (0..4)
+            .map(|index| {
+                w(&decks_dir, &format!("d{index}.md"), "## q\na\n");
+                decks_dir.join(format!("d{index}.md"))
+            })
+            .collect();
+
+        let (_, counts) = alix::profile::collect(|| check_report(decks.clone(), false));
+
+        assert!(
+            counts.canonicalize_calls <= decks.len() as u64,
+            "printing one inherited setting must stay linear in deck count, not reload every \
+             workspace member for every deck: {counts:?}"
+        );
     }
 
     #[test]
