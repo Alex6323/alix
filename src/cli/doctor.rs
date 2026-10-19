@@ -2645,19 +2645,34 @@ mod tests {
         }
         const ASSET: &str = " fingerprint: xxh64-0000000000000000 asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.txt";
         let rows: [(&str, &str, &str, Place); 13] = [
-            ("missing key", "x.txt:1", "rule 3", Place::Anywhere),
-            ("rule 7 spacing", "src:x.txt:1 ", "rule 7", Place::Anywhere),
             (
-                "rule 8 unquoted space",
-                "src:a b.txt:1",
-                "rule 8",
+                "missing key",
+                "x.txt:1",
+                "key `x.txt` must match",
                 Place::Anywhere,
             ),
-            ("rule 9 range", "src:x.txt:2-1", "rule 9", Place::Anywhere),
             (
-                "rule 10 parent segment",
+                "double space",
+                "src:x.txt:1 ",
+                "has a double space",
+                Place::Anywhere,
+            ),
+            (
+                "unquoted space",
+                "src:a b.txt:1",
+                "contains a space and is not quoted",
+                Place::Anywhere,
+            ),
+            (
+                "descending range",
+                "src:x.txt:2-1",
+                "range `2-1` must be",
+                Place::Anywhere,
+            ),
+            (
+                "parent segment",
                 "src:../x.txt:1",
-                "rule 10",
+                "has a `..` segment",
                 Place::Anywhere,
             ),
             (

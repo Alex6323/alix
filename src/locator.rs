@@ -44,17 +44,17 @@ pub struct LocatorFields {
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum LocatorError {
-    #[error("rule 7: `{text}` {problem}")]
+    #[error("`{text}` {problem}")]
     Spelling { text: String, problem: &'static str },
-    #[error("rule 3: key `{0}` must match `[a-z][a-z0-9_-]*` and not be `true`, `false` or `null`")]
+    #[error("key `{0}` must match `[a-z][a-z0-9_-]*` and not be `true`, `false` or `null`")]
     Key(String),
-    #[error("rule 8: path `{path}` {problem}")]
+    #[error("path `{path}` {problem}")]
     Path { path: String, problem: &'static str },
     #[error(
-        "rule 9: range `{0}` must be `N` or `N-M` in decimal digits without leading zeros, `N` at least 1 and not greater than `M`"
+        "range `{0}` must be `N` or `N-M` in decimal digits without leading zeros, `N` at least 1 and not greater than `M`"
     )]
     Range(String),
-    #[error("rule 10: path `{path}` {problem}")]
+    #[error("path `{path}` {problem}")]
     PathShape { path: String, problem: &'static str },
 }
 

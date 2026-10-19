@@ -463,6 +463,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Locator errors no longer start with an ADR rule number (`rule 3: key ...`);
+  the message itself names what is wrong.
 - `alix doctor <deck>` labeled the deck's `exam:` entries `sources:` and did not
   show its `cite:` roots. It now prints an `exam:` line and a `cite:` line
   listing each root by key.
