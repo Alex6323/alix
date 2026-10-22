@@ -69,6 +69,7 @@ pub struct PullReportDto {
     pub conflicts: Vec<String>,
     pub phone_only: Vec<String>,
     pub removed: Vec<String>,
+    pub replaced: Vec<String>,
 }
 
 pub struct RenamedEntry {
@@ -151,6 +152,7 @@ impl From<paired::PullReport> for PullReportDto {
             conflicts: report.conflicts,
             phone_only: report.phone_only,
             removed: report.removed,
+            replaced: report.replaced,
         }
     }
 }

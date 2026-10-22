@@ -480,6 +480,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A phone sync no longer stops at a deck whose progress file on the phone
+  cannot be read: that file is not pushed, the pull replaces it with the
+  desktop's copy, and the sync report lists the deck as replaced.
+
 - A walk honors `reveal: line`: on the web and the phone, such a card shows
   one answer line per **Reveal** instead of the whole answer at once.
 

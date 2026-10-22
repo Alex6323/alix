@@ -119,7 +119,9 @@ conflict that a background sync records while a review or a trace is
 running does not interrupt it: the choice opens when that session ends,
 whether you finish it or leave early. An entry
 the desktop no longer serves stays on the phone, reviewable, listed as
-orphaned, with a Remove action once you're done with it.
+orphaned, with a Remove action once you're done with it. A deck whose
+progress file on the phone cannot be read is not pushed, and the next pull
+puts the desktop's copy in its place, listed as replaced.
 
 A desktop entry the phone has never pulled shows below the phone's own
 entries: its name and size only, in a subdued row with no `⋮` menu and no
@@ -128,7 +130,7 @@ becomes an ordinary entry, reviewable like any other.
 
 Tapping the status line above the deck list (shown while a cycle runs, or
 its last report is unread) opens the full report: landed, pushed, kept,
-phone-only, removed, renamed, and refused categories, plus **left out on
+phone-only, removed, replaced, renamed, and refused categories, plus **left out on
 the desktop** (members inside an entry the desktop could not load) and
 **not on this phone** (entries the desktop serves that this phone has
 never pulled, the same ones shown as rows below the deck list).

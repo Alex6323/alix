@@ -133,6 +133,10 @@ class _SyncReportSheetState extends State<SyncReportSheet> {
                 _Section(title: 'Kept (unpushed)', lines: report.kept),
                 _Section(title: 'Phone-only', lines: report.phoneOnly),
                 _Section(title: 'Removed', lines: report.removed),
+                _Section(
+                  title: 'Replaced (unreadable on this phone)',
+                  lines: report.replaced,
+                ),
                 _Section(title: 'Renamed', lines: report.renamed),
                 _Section(
                   title: 'Left out on the desktop',

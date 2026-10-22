@@ -167,6 +167,7 @@ pub struct PullReport {
     pub conflicts: Vec<String>,
     pub phone_only: Vec<String>,
     pub removed: Vec<String>,
+    pub replaced: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -502,15 +503,24 @@ fn write_conflicts(root: &PairedRoot, decks: &BTreeMap<String, Conflict>) -> Res
     )
 }
 
+/// An unreadable document reads as absent: it holds nothing to push, and a
+/// pull lands the desktop copy over it.
 fn document_head(path: &Path, deck_id: &str) -> Result<Option<DocumentHead>> {
     if !path.is_file() {
         return Ok(None);
     }
-    let (revision, _, data) = store::read_deck_data(path, deck_id, None)?;
-    Ok(Some(DocumentHead {
-        revision,
-        writer: data.writer,
-    }))
+    match store::read_deck_data(path, deck_id, None) {
+        Ok((revision, _, data)) => Ok(Some(DocumentHead {
+            revision,
+            writer: data.writer,
+        })),
+        Err(
+            store::StoreError::Format { .. }
+            | store::StoreError::Version { .. }
+            | store::StoreError::DeckOwner { .. },
+        ) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn document_plan(
@@ -725,7 +735,11 @@ pub fn apply_unpacked(
     let mut keep_docs = BTreeSet::new();
     for deck in &manifest.decks {
         let rel = document_rel(&deck.deck_id);
-        let head = document_head(&rel_path(&entry_root, &rel), &deck.deck_id)?;
+        let live = rel_path(&entry_root, &rel);
+        let head = document_head(&live, &deck.deck_id)?;
+        if head.is_none() && live.is_file() && deck.revision.is_some() {
+            report.replaced.push(deck.deck_id.clone());
+        }
         let plan = document_plan(head.as_ref(), pushed.get(&deck.deck_id), deck.revision);
         match plan {
             DocumentPlan::Land => report.landed.push(deck.deck_id.clone()),
@@ -1706,6 +1720,33 @@ mod tests {
         assert!(
             !report.kept.contains(&DECK_A.to_string()),
             "clean deleted member was reported as kept"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_progress_document_is_not_pushed_and_the_next_pull_replaces_it() {
+        let (_tmp, root) = fresh_root();
+        apply(&root, &workspace_bundle());
+        let document = root.document_path(KIND_WORKSPACE, "Biology", DECK_A);
+        std::fs::write(&document, br#"{"version":1,"not_a_progress_field":true}"#).unwrap();
+
+        let pushes =
+            plan_pushes(&root).expect("planning: an unreadable document does not fail the sync");
+        assert!(
+            pushes.iter().all(|item| item.deck_id != DECK_A),
+            "planning: the unreadable document is not pushed: {pushes:?}"
+        );
+
+        let report = apply(&root, &workspace_bundle());
+        assert_eq!(
+            vec![DECK_A.to_string()],
+            report.replaced,
+            "pull: the unreadable document is reported as replaced"
+        );
+        assert_eq!(
+            Some(3),
+            revision(&document, DECK_A),
+            "pull: the desktop copy now stands in its place"
         );
     }
 

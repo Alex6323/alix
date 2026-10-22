@@ -3243,8 +3243,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PullReportDto dco_decode_pull_report_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
     return PullReportDto(
       entry: dco_decode_String(arr[0]),
       kind: dco_decode_String(arr[1]),
@@ -3253,6 +3253,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       conflicts: dco_decode_list_String(arr[4]),
       phoneOnly: dco_decode_list_String(arr[5]),
       removed: dco_decode_list_String(arr[6]),
+      replaced: dco_decode_list_String(arr[7]),
     );
   }
 
@@ -5005,6 +5006,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_conflicts = sse_decode_list_String(deserializer);
     var var_phoneOnly = sse_decode_list_String(deserializer);
     var var_removed = sse_decode_list_String(deserializer);
+    var var_replaced = sse_decode_list_String(deserializer);
     return PullReportDto(
       entry: var_entry,
       kind: var_kind,
@@ -5013,6 +5015,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       conflicts: var_conflicts,
       phoneOnly: var_phoneOnly,
       removed: var_removed,
+      replaced: var_replaced,
     );
   }
 
@@ -6741,6 +6744,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_String(self.conflicts, serializer);
     sse_encode_list_String(self.phoneOnly, serializer);
     sse_encode_list_String(self.removed, serializer);
+    sse_encode_list_String(self.replaced, serializer);
   }
 
   @protected

@@ -121,6 +121,7 @@ class SyncBridgePort implements SyncPort {
       conflicts: report.conflicts,
       phoneOnly: report.phoneOnly,
       removed: report.removed,
+      replaced: report.replaced,
     );
   }
 

@@ -4075,6 +4075,7 @@ impl SseDecode for crate::api::sync::PullReportDto {
         let mut var_conflicts = <Vec<String>>::sse_decode(deserializer);
         let mut var_phoneOnly = <Vec<String>>::sse_decode(deserializer);
         let mut var_removed = <Vec<String>>::sse_decode(deserializer);
+        let mut var_replaced = <Vec<String>>::sse_decode(deserializer);
         return crate::api::sync::PullReportDto {
             entry: var_entry,
             kind: var_kind,
@@ -4083,6 +4084,7 @@ impl SseDecode for crate::api::sync::PullReportDto {
             conflicts: var_conflicts,
             phone_only: var_phoneOnly,
             removed: var_removed,
+            replaced: var_replaced,
         };
     }
 }
@@ -5495,6 +5497,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::PullReportDto {
             self.conflicts.into_into_dart().into_dart(),
             self.phone_only.into_into_dart().into_dart(),
             self.removed.into_into_dart().into_dart(),
+            self.replaced.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -7065,6 +7068,7 @@ impl SseEncode for crate::api::sync::PullReportDto {
         <Vec<String>>::sse_encode(self.conflicts, serializer);
         <Vec<String>>::sse_encode(self.phone_only, serializer);
         <Vec<String>>::sse_encode(self.removed, serializer);
+        <Vec<String>>::sse_encode(self.replaced, serializer);
     }
 }
 

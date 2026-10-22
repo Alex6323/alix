@@ -138,7 +138,12 @@ ship (`SyncEntryDto.digest`), so a phone skips an entry whose digest equals
 the manifest it holds; the digest is computed by the same walk that sizes
 the projection, never over a private file the sanitizer excludes, and the
 `sync::server` tests pin it against a real staging of a workspace with an
-excluded deck, a personal sidecar, assets, and augmentation files.
+excluded deck, a personal sidecar, assets, and augmentation files. A phone
+progress document that fails to parse is never pushed, and a pull overwrites
+it with the desktop's copy and reports it as replaced, so unreadable local
+progress is discarded rather than sent
+(`an_unreadable_progress_document_is_not_pushed_and_the_next_pull_replaces_it`,
+`src/paired.rs`).
 
 ### Browser and LAN client
 

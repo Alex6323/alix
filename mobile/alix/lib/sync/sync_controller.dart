@@ -208,6 +208,7 @@ class SyncController extends ChangeNotifier {
     final conflictDeckIds = <String>[];
     final phoneOnly = <String>[];
     final removed = <String>[];
+    final replaced = <String>[];
     final refused = <String>[];
     final pushed = <String>[];
     final pushedEntries = <String>{};
@@ -219,6 +220,7 @@ class SyncController extends ChangeNotifier {
       conflictDeckIds: conflictDeckIds,
       phoneOnly: phoneOnly,
       removed: removed,
+      replaced: replaced,
       refused: refused,
       pushed: pushed,
       error: error,
@@ -324,6 +326,9 @@ class SyncController extends ChangeNotifier {
       conflictDeckIds.addAll(pullReport.conflicts);
       phoneOnly.addAll(pullReport.phoneOnly.map((rel) => '$name/$rel'));
       removed.addAll(pullReport.removed.map((rel) => '$name/$rel'));
+      replaced.addAll(
+        pullReport.replaced.map((id) => entryLabels[id] ?? '$name/$id'),
+      );
     }
 
     final renamed = [
@@ -354,6 +359,7 @@ class SyncController extends ChangeNotifier {
       conflictDeckIds: conflictDeckIds,
       phoneOnly: phoneOnly,
       removed: removed,
+      replaced: replaced,
       leftOut: leftOut,
       notOnPhone: notOnPhone,
       renamed: renamed,
@@ -563,6 +569,9 @@ class SyncController extends ChangeNotifier {
         conflictDeckIds: pullReport.conflicts,
         phoneOnly: [for (final rel in pullReport.phoneOnly) '$entry/$rel'],
         removed: [for (final rel in pullReport.removed) '$entry/$rel'],
+        replaced: [
+          for (final id in pullReport.replaced) entryLabels[id] ?? '$entry/$id',
+        ],
       );
     } on PairingExpired {
       report = const SyncReport(error: syncPairingExpiredMessage);

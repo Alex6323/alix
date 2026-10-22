@@ -479,6 +479,46 @@ void main() {
       expect(seenZipPath, namedZip);
     });
 
+    test('a deck whose unreadable phone progress the pull replaced is '
+        'reported and marks the report unread', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.entriesImpl = () async => const SyncEntries(
+        rootId: 'root-a',
+        entries: [
+          SyncEntry(
+            name: 'Biology',
+            kind: 'workspace',
+            members: 1,
+            unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
+            leftOut: [],
+          ),
+        ],
+      );
+      port.applyPullImpl = (entry, zipPath) async => const SyncPullReport(
+        entry: 'Biology',
+        kind: 'workspace',
+        landed: ['deck-a'],
+        kept: [],
+        conflicts: [],
+        phoneOnly: [],
+        removed: [],
+        replaced: ['deck-a'],
+      );
+      final controller = SyncController(port: port);
+
+      await controller.cycle(entry: 'Biology');
+
+      final report = controller.lastReport!;
+      expect(report.replaced, ['Biology/deck-a'], reason: 'report: replaced');
+      expect(report.isEmpty, isFalse, reason: 'report: unread');
+      expect(
+        report.summary(),
+        contains('1 replaced'),
+        reason: 'status line: names the replacement',
+      );
+    });
+
     test('an orphan the lib reports is used as-is, not re-derived by the '
         'controller', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);

@@ -205,6 +205,7 @@ class PullReportDto {
   final List<String> conflicts;
   final List<String> phoneOnly;
   final List<String> removed;
+  final List<String> replaced;
 
   const PullReportDto({
     required this.entry,
@@ -214,6 +215,7 @@ class PullReportDto {
     required this.conflicts,
     required this.phoneOnly,
     required this.removed,
+    required this.replaced,
   });
 
   @override
@@ -224,7 +226,8 @@ class PullReportDto {
       kept.hashCode ^
       conflicts.hashCode ^
       phoneOnly.hashCode ^
-      removed.hashCode;
+      removed.hashCode ^
+      replaced.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -237,7 +240,8 @@ class PullReportDto {
           kept == other.kept &&
           conflicts == other.conflicts &&
           phoneOnly == other.phoneOnly &&
-          removed == other.removed;
+          removed == other.removed &&
+          replaced == other.replaced;
 }
 
 @freezed

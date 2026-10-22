@@ -159,7 +159,8 @@ class SyncResolutionPull extends SyncResolution {
 }
 
 /// One entry's pull outcome (mirrors `PullReportDto`). `landed`/`kept`/
-/// `conflicts` are deck ids; `phoneOnly`/`removed` are entry-relative paths.
+/// `conflicts`/`replaced` are deck ids; `phoneOnly`/`removed` are
+/// entry-relative paths.
 class SyncPullReport {
   const SyncPullReport({
     required this.entry,
@@ -169,6 +170,7 @@ class SyncPullReport {
     required this.conflicts,
     required this.phoneOnly,
     required this.removed,
+    this.replaced = const [],
   });
 
   final String entry;
@@ -178,6 +180,7 @@ class SyncPullReport {
   final List<String> conflicts;
   final List<String> phoneOnly;
   final List<String> removed;
+  final List<String> replaced;
 }
 
 /// Mirrors `RenamedEntry`.
@@ -199,6 +202,7 @@ class SyncReport {
     this.conflictDeckIds = const [],
     this.phoneOnly = const [],
     this.removed = const [],
+    this.replaced = const [],
     this.leftOut = const [],
     this.notOnPhone = const [],
     this.renamed = const [],
@@ -220,6 +224,10 @@ class SyncReport {
   final List<String> conflictDeckIds;
   final List<String> phoneOnly;
   final List<String> removed;
+
+  /// Deck labels whose phone progress was unreadable and was replaced by
+  /// the desktop copy.
+  final List<String> replaced;
 
   /// Deck labels the desktop accepted this cycle (`SyncPushAccepted`). No
   /// "unchanged" counterpart: silence is the calm default when nothing
@@ -250,6 +258,7 @@ class SyncReport {
       conflicts.isEmpty &&
       phoneOnly.isEmpty &&
       removed.isEmpty &&
+      replaced.isEmpty &&
       leftOut.isEmpty &&
       renamed.isEmpty &&
       orphaned.isEmpty &&
@@ -267,6 +276,7 @@ class SyncReport {
       conflictDeckIds: conflictDeckIds,
       phoneOnly: phoneOnly,
       removed: removed,
+      replaced: replaced,
       leftOut: leftOut,
       notOnPhone: notOnPhone,
       renamed: renamed,
@@ -304,6 +314,7 @@ class SyncReport {
       conflictDeckIds: keptIds,
       phoneOnly: phoneOnly,
       removed: removed,
+      replaced: replaced,
       leftOut: leftOut,
       notOnPhone: notOnPhone,
       renamed: renamed,
@@ -325,6 +336,7 @@ class SyncReport {
       if (pushed.isNotEmpty) '${pushed.length} pushed',
       if (conflicts.isNotEmpty)
         '${conflicts.length} conflict${conflicts.length == 1 ? '' : 's'}',
+      if (replaced.isNotEmpty) '${replaced.length} replaced',
       if (refused.isNotEmpty) '${refused.length} refused',
       if (orphaned.isNotEmpty) '${orphaned.length} orphaned',
     ];
