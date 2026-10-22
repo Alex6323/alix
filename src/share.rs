@@ -1246,6 +1246,7 @@ mod tests {
         assert_eq!(expected, synced, "sync lists only alix files");
     }
 
+    #[cfg(unix)]
     fn walk_relative(root: &Path) -> Vec<String> {
         let mut out = Vec::new();
         let mut pending = vec![root.to_path_buf()];
