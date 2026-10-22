@@ -245,14 +245,16 @@ export function createPicker({
     // not a workspace/folder — that isn't exam-primary, has a remembered depth,
     // and isn't a trace (traced — depths don't apply).
     const hasDepthSplit = (row) => !!(row && row._item && !row._open
-      && row._item.state !== "examdue" && row._item.last_depth && !row._item.is_trace);
+      && row._item.state !== "examdue" && row._item.last_launch && !row._item.is_trace);
 
     // The plain Learn/primary button's gate: a trace always traces and an
     // exam-due deck's primary is its exam (both non-depth, via `canStart`);
     // otherwise it reviews at the deck's own last-used depth.
+    const walksFirst = (it) => it.last_launch === "walk" && !it.is_trace && it.state !== "examdue";
     const canStartPrimary = (it, gated) =>
       (it.is_trace || it.state === "examdue") ? canStart(it, gated)
-        : (canDoDepth(it, it.last_depth) && canStartAt(it, gated, it.last_depth));
+        : walksFirst(it) ? canWalk(it)
+        : (canDoDepth(it, it.last_launch) && canStartAt(it, gated, it.last_launch));
 
     // Launch one deck/member. An exam-due deck sits its exam; a trace will trace
     // once the web hosts traces (for now it reviews its explain cards — the single
@@ -260,6 +262,7 @@ export function createPicker({
     // session returns here.
     function launch(it, wsName, gated) {
       if (!canStartPrimary(it, gated)) return;
+      if (walksFirst(it)) { launchWalk(it, wsName); return; }
       lastWorkspace = wsName || null;
       // A trace's primary action is always the TRACE (its exam is reached via the
       // "Take exam" button, or the trace's capstone). An exam-due fact deck sits its
@@ -507,14 +510,14 @@ export function createPicker({
           // so keys[d] is each chip's binding (1/2/3 by default). With cram on,
           // every depth is startable — cram serves cards that aren't due.
           for (const d of DEPTHS) {
-            const b = el("button", "chip" + (d === it.last_depth ? " primary" : ""), d[0].toUpperCase() + d.slice(1));
+            const b = el("button", "chip" + (d === it.last_launch ? " primary" : ""), d[0].toUpperCase() + d.slice(1));
             b.appendChild(el("span", "k", label(keys[d])));
             b.disabled = !canDoDepth(it, d) || (!cramOn && !canStartAt(it, f._gated, d));
             b.addEventListener("mousedown", e => e.preventDefault());
             b.addEventListener("click", () => { depthMenuOpen = false; launchDepth(it, f._wsName, f._gated, d); });
             legend.appendChild(b);
           }
-          const walk = el("button", "chip walk", "Walk");
+          const walk = el("button", "chip walk" + (it.last_launch === "walk" ? " primary" : ""), "Walk");
           walk.appendChild(el("span", "k", "w"));
           walk.disabled = !canWalk(it);
           walk.addEventListener("mousedown", e => e.preventDefault());
@@ -583,11 +586,11 @@ export function createPicker({
         } else if (f && f._item) {
           const it = f._item;
           const examPrimary = it.state === "examdue"; // a drilled deck's main action is its exam
-          primary = el("button", "chip primary", examPrimary ? "Take exam" : "Learn");
+          primary = el("button", "chip primary", examPrimary ? "Take exam" : walksFirst(it) ? "Walk" : "Learn");
           // A plain Learn subtly names the depth it'll resume at (the deck's own
           // remembered last depth); an exam-due deck's primary names its exam instead.
           // A trace has no depth (it's traced — depths don't apply), so it never gets a tag.
-          if (!examPrimary && it.last_depth && !it.is_trace) primary.appendChild(el("span", "depth-tag", " ·" + it.last_depth));
+          if (!examPrimary && !walksFirst(it) && it.last_launch && !it.is_trace) primary.appendChild(el("span", "depth-tag", " ·" + it.last_launch));
           // Learn (facts → review, trace → tracing) is Enter; an exam-due deck's
           // primary is its exam (also enter, or 🔒 when that exam is locked).
           primary.appendChild(el("span", "k", examPrimary && !it.examable ? "\u{1F512}" : "enter"));

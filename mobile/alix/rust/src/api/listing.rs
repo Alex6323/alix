@@ -9,7 +9,6 @@ pub struct DeckEntry {
     pub due: bool,
     pub can_recognize: bool,
     pub is_trace: bool,
-    pub last_depth: alix::depth::Depth,
     pub mastered: bool,
     pub exam_due: bool,
     pub has_exam: bool,
@@ -48,7 +47,6 @@ impl From<alix::listing::DeckSummary> for DeckEntry {
             due: s.due,
             can_recognize: s.can_recognize,
             is_trace: s.is_trace,
-            last_depth: s.last_depth,
             mastered: s.mastered,
             exam_due: s.exam_due,
             has_exam: s.has_exam,
@@ -555,30 +553,6 @@ mod tests {
                 .deadline
                 .is_none()
         );
-    }
-
-    #[test]
-    fn last_depth_crosses_the_boundary_remembered_then_falls_back_to_default() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        write_deck(root.join("d.md"), "## q\na\n");
-
-        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0), false).entries;
-        let row = rows.iter().find(|r| r.title == "d").expect("listed");
-        assert_eq!(alix::depth::Depth::default(), row.last_depth);
-
-        let deck_id = alix::deck::Deck::load(root.join("d.md"))
-            .unwrap()
-            .deck_token
-            .unwrap();
-        let store_path = alix::workspace::root_store_path(root);
-        let mut store = alix::state::open_store(&root.join("d.md"), &store_path).unwrap();
-        store.set_last_depth(&deck_id, alix::depth::Depth::Reconstruct);
-        store.save().unwrap();
-
-        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0), false).entries;
-        let row = rows.iter().find(|r| r.title == "d").expect("listed");
-        assert_eq!(alix::depth::Depth::Reconstruct, row.last_depth);
     }
 
     #[test]

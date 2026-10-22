@@ -58,7 +58,9 @@ A **walk** reads a deck once, card by card, with an attempt before each
 answer and no grading. It is meant for material you want to go through rather
 than drill: preparing a talk or a code review, or re-reading a deck now and
 then. Start it from the focused deck's **Depth…** menu with **Walk** (key
-`w` while the menu is open). It is not offered for a trace deck.
+`w` while the menu is open). After that, the deck's main button is **Walk**
+until you start a session at a depth again. It is not offered for a trace
+deck.
 
 Each item shows its front first. A card with authored choices is answered by
 picking (the pick shows right or wrong); every other item is a flip: try to

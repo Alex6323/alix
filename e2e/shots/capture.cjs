@@ -737,7 +737,7 @@ function fabricateGraduation() {
         },
       ]),
     ),
-    deck: { last_depth: "recall" },
+    deck: { last_launch: "recall" },
     writer: { device: "shots", at_ms: now },
   };
   const progressDir = path.join(DEMO_DIR, "progress");

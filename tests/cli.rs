@@ -1956,7 +1956,7 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
     let ghost = write_progress_document(&store_path, "deck-ghost", "ghost.md", "");
     let ghost_text = std::fs::read_to_string(&ghost).unwrap().replace(
         "\"cards\":{}",
-        "\"cards\":{},\"deck\":{\"last_depth\":\"recall\"}",
+        "\"cards\":{},\"deck\":{\"last_launch\":\"recall\"}",
     );
     std::fs::write(&ghost, ghost_text).unwrap();
 
@@ -1976,7 +1976,7 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
     assert!(
         std::fs::read_to_string(&ghost)
             .unwrap()
-            .contains("last_depth"),
+            .contains("last_launch"),
         "the orphaned deck's document must survive a normal reset"
     );
 
@@ -1996,7 +1996,7 @@ fn orphans_are_never_auto_pruned_and_reset_orphans_clears_them() {
     assert!(
         !std::fs::read_to_string(&ghost)
             .unwrap()
-            .contains("last_depth"),
+            .contains("last_launch"),
         "orphan deck document not cleared"
     );
 }

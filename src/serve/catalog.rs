@@ -21,7 +21,7 @@ use crate::{
     card::Card,
     config::{Config, ReviewConfig},
     deck,
-    depth::{Depth, depth_name},
+    depth::{Depth, Launch, depth_name},
     picker,
     recent::RecentDecks,
     store::Store,
@@ -276,17 +276,17 @@ pub(super) fn deck_item_dto(
         Ok(deck) => {
             let s = picker::deck_status(&deck, store, augment, Some(decks_dir), with_lock, review);
             let deck_tokens: HashSet<String> = deck.deck_token.iter().cloned().collect();
-            let last_depth = depth_name(
-                store
-                    .last_depth(deck.deck_token.as_deref().unwrap_or_default())
-                    .unwrap_or_else(|| {
-                        crate::depth::default_depth(
-                            &deck.cards,
-                            augment,
-                            &crate::choice::ColumnPools::new(&deck.cards),
-                        )
-                    }),
-            );
+            let last_launch = store
+                .last_launch(deck.deck_token.as_deref().unwrap_or_default())
+                .unwrap_or_else(|| {
+                    crate::depth::default_depth(
+                        &deck.cards,
+                        augment,
+                        &crate::choice::ColumnPools::new(&deck.cards),
+                    )
+                    .into()
+                })
+                .name();
             DeckItemDto {
                 name: e.name.clone(),
                 selectable: assemble::selectable(&e.path),
@@ -323,7 +323,7 @@ pub(super) fn deck_item_dto(
                 badge_dotted: s.badge_dotted,
                 new_cards: s.new_cards,
                 crammable: s.crammable,
-                last_depth,
+                last_launch,
                 deadline: None, // a deadline is a workspace-level setting, not a deck's
             }
         }
@@ -358,7 +358,7 @@ pub(super) fn deck_item_dto(
             badge_dotted: false,
             new_cards: false,
             crammable: false,
-            last_depth: depth_name(Depth::default()),
+            last_launch: Launch::default().name(),
             deadline: None,
         },
     }
@@ -463,19 +463,20 @@ pub(super) fn workspace_members(
                 }
                 _ => false,
             };
-            let last_depth = match (store, augment.as_ref(), deck.as_ref()) {
+            let last_launch = match (store, augment.as_ref(), deck.as_ref()) {
                 (Some(st), Some(ag), Some(d)) => st
-                    .last_depth(d.deck_token.as_deref().unwrap_or_default())
+                    .last_launch(d.deck_token.as_deref().unwrap_or_default())
                     .unwrap_or_else(|| {
                         crate::depth::default_depth(
                             &d.cards,
                             ag,
                             &crate::choice::ColumnPools::new(&d.cards),
                         )
+                        .into()
                     }),
-                _ => Depth::default(),
+                _ => Launch::default(),
             };
-            (status, has_topology, depth_name(last_depth), deck)
+            (status, has_topology, last_launch.name(), deck)
         })
         .collect();
     // A member whose deck failed to load counts toward neither `ready` nor
@@ -515,7 +516,7 @@ pub(super) fn workspace_members(
             // Each tree branch segment is three columns wide (see picker).
             let indent = prefix.chars().count() / 3;
             let has_topology = loaded[i].1;
-            let last_depth = loaded[i].2;
+            let last_launch = loaded[i].2;
             match &loaded[i].0 {
                 Some(s) => MemberDto {
                     name: m.name.clone(),
@@ -548,7 +549,7 @@ pub(super) fn workspace_members(
                     badge_dotted: s.badge_dotted,
                     new_cards: s.new_cards,
                     crammable: s.crammable,
-                    last_depth,
+                    last_launch,
                 },
                 // Mirrors deck_item_dto's failed-load fallback: still
                 // selectable, nothing reviewable. Whole-root store damage
@@ -576,7 +577,7 @@ pub(super) fn workspace_members(
                     badge_dotted: false,
                     new_cards: false,
                     crammable: false,
-                    last_depth,
+                    last_launch,
                 },
             }
         })
@@ -701,7 +702,7 @@ pub(super) fn deck_catalog(
                 badge_dotted: false,
                 new_cards: false,
                 crammable: false,
-                last_depth: depth_name(Depth::default()),
+                last_launch: Launch::default().name(),
                 deadline,
             };
             if is_ws {

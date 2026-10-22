@@ -10,7 +10,7 @@ use crate::{
     card::Card,
     config::ReviewConfig,
     deck::{self, Deck, DeckState},
-    depth::{self, Depth},
+    depth::{self, Depth, Launch},
     profile::{self, Counter},
     scheduler::Fsrs,
     session,
@@ -28,7 +28,7 @@ pub struct DeckSummary {
     pub ready: bool,
     pub deadline: Option<DeckDeadline>,
     pub is_trace: bool,
-    pub last_depth: Depth,
+    pub last_launch: Launch,
     pub mastered: bool,
     pub exam_due: bool,
     pub has_exam: bool,
@@ -451,7 +451,7 @@ fn folder_summary(
         ready: false,
         deadline,
         is_trace: false,
-        last_depth: Depth::default(),
+        last_launch: Launch::default(),
         mastered: false,
         exam_due: false,
         has_exam: false,
@@ -510,11 +510,11 @@ fn deck_summary(
         }
         _ => (false, false, false, false),
     };
-    let last_depth = match (deck, store, augment, &pools) {
+    let last_launch = match (deck, store, augment, &pools) {
         (Some(d), Some(s), Some(a), Some(p)) => s
-            .last_depth(d.deck_token.as_deref().unwrap_or_default())
-            .unwrap_or_else(|| depth::default_depth(&d.cards, a, p)),
-        _ => Depth::default(),
+            .last_launch(d.deck_token.as_deref().unwrap_or_default())
+            .unwrap_or_else(|| depth::default_depth(&d.cards, a, p).into()),
+        _ => Launch::default(),
     };
     let progress_error = health.error_for(deck);
     // An error row makes NO progress-derived claims: even "due" would be a
@@ -528,7 +528,7 @@ fn deck_summary(
         ready: ready && !progress_error,
         deadline: None,
         is_trace,
-        last_depth,
+        last_launch,
         mastered: mastered && !progress_error,
         exam_due: exam_due && !progress_error,
         has_exam,
@@ -1781,23 +1781,23 @@ mod tests {
     }
 
     #[test]
-    fn last_depth_falls_back_to_default_then_remembers_after_being_set() {
+    fn last_launch_falls_back_to_the_default_depth_then_remembers_after_being_set() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         write(&root.join("d.md"), "## q\na\n<!-- id: card-qd -->\n");
 
         let rows = list_root(root, &ReviewConfig::default(), T0);
         let row = rows.iter().find(|r| r.title == "d").expect("listed");
-        assert_eq!(Depth::default(), row.last_depth);
+        assert_eq!(Launch::default(), row.last_launch);
 
         let store_path = workspace::root_store_path(root);
         let mut store = crate::state::open_store(&root.join("d.md"), &store_path).unwrap();
-        store.set_last_depth("deck-d", Depth::Reconstruct);
+        store.set_last_launch("deck-d", Launch::Reconstruct);
         store.save().unwrap();
 
         let rows = list_root(root, &ReviewConfig::default(), T0);
         let row = rows.iter().find(|r| r.title == "d").expect("listed");
-        assert_eq!(Depth::Reconstruct, row.last_depth);
+        assert_eq!(Launch::Reconstruct, row.last_launch);
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]

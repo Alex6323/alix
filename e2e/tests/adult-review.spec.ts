@@ -180,7 +180,7 @@ test("the exam chip stays put when focus moves between ready and locked exams", 
       reviewable_recognize: true,
       reviewable_recall: true,
       reviewable_reconstruct: false,
-      last_depth: null,
+      last_launch: null,
     };
     Object.assign(wild, shared, { examable: true });
     Object.assign(cats, shared, { examable: false });

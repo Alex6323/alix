@@ -967,7 +967,7 @@ impl WalkSession {
             instance_store: None,
         };
         let now = now_ms.unwrap_or_else(alix::time::now_ms);
-        let build = alix::assemble::walk(&deck, &store, &cfg, now)?;
+        let build = alix::assemble::walk(&deck, &mut store, &cfg, now)?;
         let deck_token = build.info.deck_token.unwrap_or_default();
         Ok(WalkSession {
             session: build.session,

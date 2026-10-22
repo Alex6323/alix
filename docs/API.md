@@ -545,9 +545,10 @@ opened with `POST /api/walk/reveal`. A pick on a flip item, a second pick, or
 a body with both or neither shape is a 400; a reveal on a choice item changes
 nothing. Nothing about the attempt is recorded.
 
-`POST /api/walk/next` moves past an open answer: it records the item's
-`walked_ms` in the deck's progress document and saves it before replying,
-the only write a walk makes. On the front it changes nothing. After the last
+Opening a walk records `walk` as the deck's last launch (`last_launch` in
+`DeckItemDto`). `POST /api/walk/next` moves past an open answer: it records
+the item's `walked_ms` in the deck's progress document and saves it before
+replying. On the front it changes nothing. After the last
 item the phase is `"done"`; `POST /api/walk/restart` starts the next walk
 from the store, and `POST /api/walk/leave` returns the picker `StateDto`.
 `section_first` is true on the first item of each section in every walk, so
@@ -1055,7 +1056,7 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `badge_dotted` | bool | The badge lapsed (render dotted) *(presentational)*. |
 | `new_cards` | bool | Fresh material since badging. |
 | `crammable` | bool | The row has at least one card a cram could serve: an authored **or personal** card that has not retired, with a readable progress document (a session serves both, so both count). Independent of due-ness: it stays true while every depth sits in a cooldown, which is when a cram is wanted. Gate the depth control on `reviewable || crammable`, and each depth chip on its own `reviewable_*` unless cram is on. Group rows report `false` (they are not selectable). |
-| `last_depth` | string | The deck's remembered session depth (default `recall`). |
+| `last_launch` | string | How the deck was last launched: `recognize`, `recall`, `reconstruct`, or `walk`. Before any launch, the deck's default depth. A client offers this launch as the deck's primary action. |
 | `deadline` | DeadlineDto? | A workspace's "ready by" target ({#deadlines}). Present only on a workspace row whose `alix.local.toml` sets one; `null` on every deck/folder row and on a workspace with none set. **Additive**: clients must tolerate its absence/null, same as any other optional field here. |
 
 ### DeadlineDto

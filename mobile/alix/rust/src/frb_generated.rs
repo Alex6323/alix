@@ -3139,7 +3139,6 @@ impl SseDecode for crate::api::listing::DeckEntry {
         let mut var_due = <bool>::sse_decode(deserializer);
         let mut var_canRecognize = <bool>::sse_decode(deserializer);
         let mut var_isTrace = <bool>::sse_decode(deserializer);
-        let mut var_lastDepth = <crate::api::review::Depth>::sse_decode(deserializer);
         let mut var_mastered = <bool>::sse_decode(deserializer);
         let mut var_examDue = <bool>::sse_decode(deserializer);
         let mut var_hasExam = <bool>::sse_decode(deserializer);
@@ -3156,7 +3155,6 @@ impl SseDecode for crate::api::listing::DeckEntry {
             due: var_due,
             can_recognize: var_canRecognize,
             is_trace: var_isTrace,
-            last_depth: var_lastDepth,
             mastered: var_mastered,
             exam_due: var_examDue,
             has_exam: var_hasExam,
@@ -5052,7 +5050,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::listing::DeckEntry {
             self.due.into_into_dart().into_dart(),
             self.can_recognize.into_into_dart().into_dart(),
             self.is_trace.into_into_dart().into_dart(),
-            self.last_depth.into_into_dart().into_dart(),
             self.mastered.into_into_dart().into_dart(),
             self.exam_due.into_into_dart().into_dart(),
             self.has_exam.into_into_dart().into_dart(),
@@ -6318,7 +6315,6 @@ impl SseEncode for crate::api::listing::DeckEntry {
         <bool>::sse_encode(self.due, serializer);
         <bool>::sse_encode(self.can_recognize, serializer);
         <bool>::sse_encode(self.is_trace, serializer);
-        <crate::api::review::Depth>::sse_encode(self.last_depth, serializer);
         <bool>::sse_encode(self.mastered, serializer);
         <bool>::sse_encode(self.exam_due, serializer);
         <bool>::sse_encode(self.has_exam, serializer);

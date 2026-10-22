@@ -14,7 +14,7 @@ use thiserror::Error;
 use crate::{
     card::Card,
     deck::Deck,
-    depth::Depth,
+    depth::{Depth, Launch},
     profile::{self, Counter},
     scheduler::Grade,
 };
@@ -190,7 +190,7 @@ pub struct DeckProgress {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exam_failed_at_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_depth: Option<Depth>,
+    pub last_launch: Option<Launch>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recognized_at_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1221,15 +1221,15 @@ impl Store {
         self.decks.remove(deck_id).is_some()
     }
 
-    pub fn last_depth(&self, deck_id: &str) -> Option<Depth> {
-        self.decks.get(deck_id).and_then(|d| d.last_depth)
+    pub fn last_launch(&self, deck_id: &str) -> Option<Launch> {
+        self.decks.get(deck_id).and_then(|d| d.last_launch)
     }
 
-    pub fn set_last_depth(&mut self, deck_id: &str, depth: Depth) {
+    pub fn set_last_launch(&mut self, deck_id: &str, launch: Launch) {
         self.decks
             .entry(deck_id.to_string())
             .or_default()
-            .last_depth = Some(depth);
+            .last_launch = Some(launch);
     }
 
     pub fn badge_earned(&self, deck_id: &str, depth: Depth) -> Option<u64> {
@@ -1841,8 +1841,8 @@ mod tests {
         store.get_or_insert("live").introduced_ms = Some(0);
         store.get_or_insert("gone").introduced_ms = Some(0);
         store.get_or_insert("card-vq").introduced_ms = Some(0);
-        store.set_last_depth("d1", Depth::Recall);
-        store.set_last_depth("d2", Depth::Recall);
+        store.set_last_launch("d1", Launch::Recall);
+        store.set_last_launch("d2", Launch::Recall);
 
         let known_cards: HashSet<String> = ["live".to_string(), "card-vq".to_string()]
             .into_iter()
@@ -1856,9 +1856,9 @@ mod tests {
         assert_eq!(2, store.prune_orphans(&orphans));
         assert!(store.get("live").is_some());
         assert!(store.get("card-vq").is_some());
-        assert_eq!(Some(Depth::Recall), store.last_depth("d1"));
+        assert_eq!(Some(Launch::Recall), store.last_launch("d1"));
         assert!(store.get("gone").is_none());
-        assert_eq!(None, store.last_depth("d2"));
+        assert_eq!(None, store.last_launch("d2"));
     }
 
     #[test]
@@ -2649,18 +2649,22 @@ mod tests {
     }
 
     #[test]
-    fn last_depth_roundtrips_through_save() {
+    fn every_last_launch_roundtrips_through_save() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("p.json");
         let mut store = Store::open(&path).unwrap();
-        assert_eq!(None, store.last_depth("p"));
-
-        store.set_last_depth("p", Depth::Reconstruct);
-        assert_eq!(Some(Depth::Reconstruct), store.last_depth("p"));
-        store.save().unwrap();
-
-        let reloaded = Store::open(&path).unwrap();
-        assert_eq!(Some(Depth::Reconstruct), reloaded.last_depth("p"));
+        assert_eq!(None, store.last_launch("p"));
+        for launch in [
+            Launch::Recognize,
+            Launch::Recall,
+            Launch::Reconstruct,
+            Launch::Walk,
+        ] {
+            store.set_last_launch("p", launch);
+            store.save().unwrap();
+            let reloaded = Store::open(&path).unwrap();
+            assert_eq!(Some(launch), reloaded.last_launch("p"), "{launch:?}");
+        }
     }
 
     #[test]
@@ -3235,8 +3239,8 @@ mod tests {
                 .unwrap();
             }
             let mut store = Store::open(dir.path()).unwrap();
-            store.set_last_depth("deck-a", Depth::Recall);
-            store.set_last_depth("deck-b", Depth::Reconstruct);
+            store.set_last_launch("deck-a", Launch::Recall);
+            store.set_last_launch("deck-b", Launch::Reconstruct);
 
             let fault = crate::fsio::fault::fail_on_nth_operation(nth);
             let result = store.save();
@@ -3276,13 +3280,13 @@ mod tests {
             });
             let reopened = Store::open(dir.path()).unwrap();
             assert_eq!(
-                Some(Depth::Recall),
-                reopened.last_depth("deck-a"),
+                Some(Launch::Recall),
+                reopened.last_launch("deck-a"),
                 "operation {nth} ({operation:?}): deck-a change was lost"
             );
             assert_eq!(
-                Some(Depth::Reconstruct),
-                reopened.last_depth("deck-b"),
+                Some(Launch::Reconstruct),
+                reopened.last_launch("deck-b"),
                 "operation {nth} ({operation:?}): deck-b change was lost"
             );
         }
@@ -3324,7 +3328,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             dir.path().join("deck-b.json"),
-            r#"{"version":1,"deck_id":"deck-b","subject":"b.md","revision":1,"cards":{"card-b1":{}},"deck":{"last_depth":"recall"}}"#,
+            r#"{"version":1,"deck_id":"deck-b","subject":"b.md","revision":1,"cards":{"card-b1":{}},"deck":{"last_launch":"recall"}}"#,
         )
         .unwrap();
         let replacement_path = dir.path().join("a2.md");
@@ -3340,12 +3344,12 @@ mod tests {
         store.save().unwrap();
 
         assert!(store.get("card-b1").is_some());
-        assert_eq!(Some(Depth::Recall), store.last_depth("deck-b"));
+        assert_eq!(Some(Launch::Recall), store.last_launch("deck-b"));
 
-        store.set_last_depth("deck-b", Depth::Reconstruct);
+        store.set_last_launch("deck-b", Launch::Reconstruct);
         store.save().unwrap();
         let reloaded = Store::open(dir.path()).unwrap();
-        assert_eq!(Some(Depth::Reconstruct), reloaded.last_depth("deck-b"));
+        assert_eq!(Some(Launch::Reconstruct), reloaded.last_launch("deck-b"));
     }
 
     #[test]

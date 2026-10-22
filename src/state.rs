@@ -288,7 +288,7 @@ mod tests {
         let mut store = open_store(&old_path, dir.path()).unwrap();
         store.set_deck_mastered("deck-deck1", 1);
         store.set_exam_failed("deck-deck1", 42);
-        store.set_last_depth("deck-deck1", crate::depth::Depth::Recall);
+        store.set_last_launch("deck-deck1", crate::depth::Launch::Recall);
         store.save().unwrap();
 
         let new_path = dir.path().join("new.md");
@@ -305,9 +305,9 @@ mod tests {
             "exam-failed state must survive a rename, found by the deck id"
         );
         assert_eq!(
-            Some(crate::depth::Depth::Recall),
-            aggregate.last_depth("deck-deck1"),
-            "last-depth state must survive a rename, found by the deck id"
+            Some(crate::depth::Launch::Recall),
+            aggregate.last_launch("deck-deck1"),
+            "last-launch state must survive a rename, found by the deck id"
         );
 
         let known_deck_ids: HashSet<String> = std::iter::once("deck-deck1".to_string()).collect();
@@ -418,7 +418,7 @@ mod tests {
     fn progress_with_any_single_kind_of_state_is_never_retired() {
         let filled = [
             ("cards", r#""cards":{"card-r1":{}}"#),
-            ("deck", r#""cards":{},"deck":{"last_depth":"recall"}"#),
+            ("deck", r#""cards":{},"deck":{"last_launch":"recall"}"#),
         ];
         for (kind, body) in filled {
             let dir = tempfile::tempdir().unwrap();

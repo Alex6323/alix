@@ -4340,7 +4340,7 @@ printf ']}}'
         )
         .unwrap();
         store.get_or_insert("orphancard");
-        store.set_last_depth("orphan-owner", alix::depth::Depth::Recall);
+        store.set_last_launch("orphan-owner", alix::depth::Launch::Recall);
         store.save().unwrap();
 
         let report = workspace_findings(dir, false);

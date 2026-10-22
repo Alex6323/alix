@@ -1463,7 +1463,7 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
         .unwrap()
         .deck_token
         .unwrap();
-    ws_store.set_last_depth(&one_token, crate::depth::Depth::Reconstruct);
+    ws_store.set_last_launch(&one_token, crate::depth::Launch::Reconstruct);
     ws_store.save().unwrap();
 
     let recent = RecentDecks::load(dir.path().join("recent.json"));
@@ -1503,7 +1503,7 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
         .find(|m| m.name.contains("one"))
         .expect("member one");
     assert_eq!(
-        "reconstruct", one.last_depth,
+        "reconstruct", one.last_launch,
         "a member row reads the workspace store's recorded depth, not the default"
     );
     let two = animals
@@ -1512,7 +1512,7 @@ fn a_group_row_aggregates_member_reviewability_instead_of_hardcoding_true() {
         .find(|m| m.name.contains("two"))
         .expect("member two");
     assert_eq!(
-        "recall", two.last_depth,
+        "recall", two.last_launch,
         "no recorded depth and nothing recognizable falls to the recall default"
     );
 }

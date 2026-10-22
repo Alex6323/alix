@@ -1551,7 +1551,7 @@ fn decklistdto_wire_shape() {
                 badge_dotted: false,
                 new_cards: false,
                 crammable: true,
-                last_depth: "recall",
+                last_launch: "recall",
             }],
             path: Some("~/decks".to_string()),
             icon: Some("/img/0123456789abcdef".to_string()),
@@ -1561,7 +1561,7 @@ fn decklistdto_wire_shape() {
             badge_dotted: true,
             new_cards: true,
             crammable: true,
-            last_depth: "recall",
+            last_launch: "recall",
             deadline: Some(DeadlineDto {
                 date: "2026-09-01".to_string(),
                 days_left: 23,
@@ -1597,7 +1597,7 @@ fn decklistdto_wire_shape() {
             badge_dotted: false,
             new_cards: true,
             crammable: true,
-            last_depth: "recall",
+            last_launch: "recall",
             // A loose deck row never carries a deadline: that's a workspace
             // setting only.
             deadline: None,
@@ -1650,7 +1650,7 @@ fn decklistdto_wire_shape() {
                     "badge_dotted": false,
                     "new_cards": false,
                     "crammable": true,
-                    "last_depth": "recall"
+                    "last_launch": "recall"
                 }],
                 "path": "~/decks",
                 "icon": "/img/0123456789abcdef",
@@ -1660,7 +1660,7 @@ fn decklistdto_wire_shape() {
                 "badge_dotted": true,
                 "new_cards": true,
                 "crammable": true,
-                "last_depth": "recall",
+                "last_launch": "recall",
                 "deadline": {
                     "date": "2026-09-01",
                     "days_left": 23,
@@ -1696,7 +1696,7 @@ fn decklistdto_wire_shape() {
                 "badge_dotted": false,
                 "new_cards": true,
                 "crammable": true,
-                "last_depth": "recall",
+                "last_launch": "recall",
                 "deadline": null
             }],
             "folders": []

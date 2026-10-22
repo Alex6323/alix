@@ -38,6 +38,44 @@ impl Depth {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Launch {
+    Recognize,
+    #[default]
+    Recall,
+    Reconstruct,
+    Walk,
+}
+
+impl Launch {
+    pub fn name(self) -> &'static str {
+        match self {
+            Launch::Walk => "walk",
+            other => other.depth().map(depth_name).unwrap_or_default(),
+        }
+    }
+
+    pub fn depth(self) -> Option<Depth> {
+        match self {
+            Launch::Recognize => Some(Depth::Recognize),
+            Launch::Recall => Some(Depth::Recall),
+            Launch::Reconstruct => Some(Depth::Reconstruct),
+            Launch::Walk => None,
+        }
+    }
+}
+
+impl From<Depth> for Launch {
+    fn from(depth: Depth) -> Self {
+        match depth {
+            Depth::Recognize => Launch::Recognize,
+            Depth::Recall => Launch::Recall,
+            Depth::Reconstruct => Launch::Reconstruct,
+        }
+    }
+}
+
 pub fn depth_name(depth: Depth) -> &'static str {
     match depth {
         Depth::Recognize => "recognize",

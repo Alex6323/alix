@@ -1610,7 +1610,7 @@ impl StudyState {
         if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
             return Transition::FlushFailed;
         }
-        let candidate = match assemble::store_for(
+        let mut candidate = match assemble::store_for(
             std::slice::from_ref(&path),
             self.config.cfg.instance_store.as_deref(),
         ) {
@@ -1620,7 +1620,7 @@ impl StudyState {
                 return Transition::Rejected;
             }
         };
-        match assemble::walk(&path, &candidate, &self.config.cfg, now_ms()) {
+        match assemble::walk(&path, &mut candidate, &self.config.cfg, now_ms()) {
             Ok(build) => {
                 self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);

@@ -125,6 +125,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Progress files record a deck's last launch as `last_launch` (`recognize`,
+  `recall`, `reconstruct`, or `walk`) instead of `last_depth`, and the picker
+  API's `DeckItemDto.last_depth` is now `last_launch`. A progress file that
+  still carries `last_depth` no longer loads; rename the key in the file's
+  `deck` object. The phone app needs a matching update.
+
 - Sharing a workspace (`alix share`, the web Share dialog) and the phone's
   paired sync send only its alix files: the `alix.toml` manifest, `decks/`, the
   `assets/` its decks own, and their augmentation. Source trees under `cite:`
@@ -469,6 +475,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Pre-1.0: re-pair once after upgrading.
 
 ### Fixed
+
+- The web picker remembers a walk: after walking a deck, its main button is
+  **Walk** instead of falling back to **Learn** at the last depth.
 
 - The web picker keeps its search text after you leave a session, so a
   filtered list stays filtered instead of showing every deck again.

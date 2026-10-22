@@ -15,7 +15,7 @@ use crate::{
     cite::CitationRoots,
     config::{AskConfig, ReviewConfig},
     deck::{Deck, DeckSettings, ExamLayers},
-    depth::{Depth, default_depth},
+    depth::{Depth, Launch, default_depth},
     scheduler::Fsrs,
     session::{DeckInfo, Order, Session, SessionOptions},
     stamp, state,
@@ -556,7 +556,7 @@ pub fn select(
     );
 
     let depth = depth_sel
-        .or_else(|| store.last_depth(deck_id.as_ref()))
+        .or_else(|| store.last_launch(deck_id.as_ref()).and_then(Launch::depth))
         .unwrap_or_else(|| default_depth(&cards, &augment, &ColumnPools::new(&cards)));
     let options = SessionOptions {
         max_session: opts.session.unwrap_or(cfg.pacing.max_session),
@@ -606,7 +606,7 @@ pub fn select(
     // Quirk: this write always fires even when the built session has nothing
     // due, so a restart still reopens at the last-chosen depth.
     let resolved_depth = session.depth();
-    store.set_last_depth(deck_id.as_ref(), resolved_depth);
+    store.set_last_launch(deck_id.as_ref(), resolved_depth.into());
     if let Err(e) = store.save() {
         eprintln!("warning: could not save progress: {e}");
     }
@@ -664,7 +664,12 @@ pub fn select(
     }))
 }
 
-pub fn walk(path: &Path, store: &Store, cfg: &AssembleConfig, now_ms: u64) -> Result<WalkBuild> {
+pub fn walk(
+    path: &Path,
+    store: &mut Store,
+    cfg: &AssembleConfig,
+    now_ms: u64,
+) -> Result<WalkBuild> {
     if !selectable(path) {
         bail!(
             "`{}` is a folder; serve it (`alix {}`) and pick a deck inside it",
@@ -682,8 +687,13 @@ pub fn walk(path: &Path, store: &Store, cfg: &AssembleConfig, now_ms: u64) -> Re
     let TutorDeck {
         cards, info, label, ..
     } = tutor_deck(path, cfg)?;
+    let session = WalkSession::new(cards, store, now_ms);
+    store.set_last_launch(info.deck_token.as_deref().unwrap_or_default(), Launch::Walk);
+    if let Err(e) = store.save() {
+        eprintln!("warning: could not save progress: {e}");
+    }
     Ok(WalkBuild {
-        session: WalkSession::new(cards, store, now_ms),
+        session,
         info,
         label,
     })
@@ -2031,7 +2041,7 @@ it reads line two\n\
         let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
         write_personal_card(&mut store, &path, "deck-rust");
 
-        let walk = walk(&path, &store, &test_config(), 0).unwrap().session;
+        let walk = walk(&path, &mut store, &test_config(), 0).unwrap().session;
         let Selected::Review(build) = select(
             vec![path],
             &mut store,
@@ -2072,8 +2082,8 @@ it reads line two\n\
              ## Predict the hop\nit reads\n<!-- id: card-t1 -->\n",
         )
         .unwrap();
-        let store = store_for(std::slice::from_ref(&trace), None).unwrap();
-        let refused = walk(&trace, &store, &test_config(), 0)
+        let mut store = store_for(std::slice::from_ref(&trace), None).unwrap();
+        let refused = walk(&trace, &mut store, &test_config(), 0)
             .err()
             .map(|error| error.to_string());
         assert_eq!(
@@ -2089,7 +2099,7 @@ it reads line two\n\
              ## q\na\n<!-- id: card-q1 -->\n",
         )
         .unwrap();
-        let build = walk(&fact, &store, &test_config(), 0).unwrap();
+        let build = walk(&fact, &mut store, &test_config(), 0).unwrap();
         assert_eq!(
             (
                 1,
@@ -2519,7 +2529,7 @@ it reads line two\n\
     }
 
     #[test]
-    fn select_falls_back_to_the_stored_last_depth_before_the_default() {
+    fn select_falls_back_to_the_stored_last_launch_depth_before_the_default() {
         use crate::depth::Depth;
 
         let dir = tempfile::tempdir().unwrap();
@@ -2533,7 +2543,7 @@ it reads line two\n\
             ..Default::default()
         };
         select(vec![deck.clone()], &mut store, &cfg, &explicit).unwrap();
-        assert_eq!(Some(Depth::Recognize), store.last_depth("deck-d"));
+        assert_eq!(Some(Launch::Recognize), store.last_launch("deck-d"));
 
         let Selected::Review(build) =
             select(vec![deck], &mut store, &cfg, &SelectOptions::default()).unwrap()
@@ -2541,6 +2551,26 @@ it reads line two\n\
             panic!("a fact deck must review");
         };
         assert_eq!(Depth::Recognize, build.session.depth());
+    }
+
+    #[test]
+    fn opening_a_walk_is_remembered_as_the_last_launch_and_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("d.md");
+        write_initialized(&deck, "## q\na\n<!-- id: card-q1 -->\n");
+        let mut store = store_for(std::slice::from_ref(&deck), None).unwrap();
+        let cfg = test_config();
+        let recall = SelectOptions {
+            depth: Some(Depth::Recall),
+            ..Default::default()
+        };
+        select(vec![deck.clone()], &mut store, &cfg, &recall).unwrap();
+
+        walk(&deck, &mut store, &cfg, 0).unwrap();
+
+        assert_eq!(Some(Launch::Walk), store.last_launch("deck-d"), "in memory");
+        let reopened = store_for(std::slice::from_ref(&deck), None).unwrap();
+        assert_eq!(Some(Launch::Walk), reopened.last_launch("deck-d"), "saved");
     }
 
     #[test]

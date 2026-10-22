@@ -5,7 +5,6 @@
 
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-import 'review.dart';
 
 // These functions are ignored because they are not marked as `pub`: `new`, `profiled`, `with_listing_cache`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`, `from`
@@ -93,7 +92,6 @@ class DeckEntry {
   final bool due;
   final bool canRecognize;
   final bool isTrace;
-  final Depth lastDepth;
   final bool mastered;
   final bool examDue;
   final bool hasExam;
@@ -111,7 +109,6 @@ class DeckEntry {
     required this.due,
     required this.canRecognize,
     required this.isTrace,
-    required this.lastDepth,
     required this.mastered,
     required this.examDue,
     required this.hasExam,
@@ -131,7 +128,6 @@ class DeckEntry {
       due.hashCode ^
       canRecognize.hashCode ^
       isTrace.hashCode ^
-      lastDepth.hashCode ^
       mastered.hashCode ^
       examDue.hashCode ^
       hasExam.hashCode ^
@@ -153,7 +149,6 @@ class DeckEntry {
           due == other.due &&
           canRecognize == other.canRecognize &&
           isTrace == other.isTrace &&
-          lastDepth == other.lastDepth &&
           mastered == other.mastered &&
           examDue == other.examDue &&
           hasExam == other.hasExam &&
