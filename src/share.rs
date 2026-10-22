@@ -25,6 +25,16 @@ struct DeckBundleParts {
     has_assets: bool,
 }
 
+fn travels_from_a_workspace_root(name: &str) -> bool {
+    [
+        crate::workspace::MANIFEST,
+        crate::workspace::DECKS,
+        crate::assets::ROOT,
+        "augment",
+    ]
+    .contains(&name)
+}
+
 fn stays_home(name: &str) -> bool {
     crate::workspace::is_private_name(name)
         || name.starts_with('.')
@@ -226,7 +236,8 @@ fn visit_staged_dir_excluding(
     excluded_deck_ids: &HashSet<String>,
     visit: Visit,
 ) -> Result<()> {
-    if crate::workspace::is_workspace(dir) {
+    let workspace_root = crate::workspace::is_workspace(dir);
+    if workspace_root {
         validate_workspace_material_excluding(dir, excluded_decks, excluded_deck_ids)?;
     }
     let deck_ids: HashSet<String> = crate::workspace::deck_files(dir)
@@ -238,7 +249,10 @@ fn visit_staged_dir_excluding(
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = entry.path();
-        if stays_home(&name) || excluded_decks.contains(&path) {
+        if stays_home(&name)
+            || excluded_decks.contains(&path)
+            || (workspace_root && !travels_from_a_workspace_root(&name))
+        {
             continue;
         }
         refuse_link(&path)?;
@@ -497,7 +511,8 @@ fn stage_dir_excluding(
     excluded_decks: &HashSet<PathBuf>,
     excluded_deck_ids: &HashSet<String>,
 ) -> Result<usize> {
-    if crate::workspace::is_workspace(dir) {
+    let workspace_root = crate::workspace::is_workspace(dir);
+    if workspace_root {
         validate_workspace_material_excluding(dir, excluded_decks, excluded_deck_ids)?;
     }
     std::fs::create_dir_all(stage).with_context(|| format!("cannot create {}", stage.display()))?;
@@ -511,7 +526,10 @@ fn stage_dir_excluding(
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
         let from = entry.path();
-        if stays_home(&name) || excluded_decks.contains(&from) {
+        if stays_home(&name)
+            || excluded_decks.contains(&from)
+            || (workspace_root && !travels_from_a_workspace_root(&name))
+        {
             continue;
         }
         refuse_link(&from)?;
@@ -1184,6 +1202,67 @@ mod tests {
         crate::assets::write_object(root, "deck-m1", b"excerpt\n", "md").unwrap();
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_workspace_root_sends_only_its_manifest_decks_assets_and_augmentation() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("ws");
+        workspace_with_one_deck(&root);
+        std::fs::create_dir_all(root.join("augment")).unwrap();
+        touch(&root.join("augment"), "deck-m1.json");
+        touch(&root.join("assets"), "icon.svg");
+        std::fs::create_dir_all(root.join("sources/repo")).unwrap();
+        touch(&root.join("sources/repo"), "LICENSE");
+        std::os::unix::fs::symlink("LICENSE", root.join("sources/repo/LICENSE-MIT")).unwrap();
+        touch(&root, "README.md");
+        touch(&root, "recent.json");
+
+        let stage = dir.path().join("stage");
+        stage_dir(&root, &stage).unwrap();
+        let mut shared = walk_relative(&stage);
+        shared.sort();
+        let mut synced: Vec<String> =
+            staged_workspace_files_excluding(&root, &HashSet::new(), &HashSet::new())
+                .unwrap()
+                .into_iter()
+                .map(|file| file.relative.to_string_lossy().into_owned())
+                .collect();
+        synced.sort();
+
+        let object = std::fs::read_dir(root.join("assets/deck-m1"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .file_name();
+        let expected = vec![
+            "alix.toml".to_string(),
+            format!("assets/deck-m1/{}", object.to_string_lossy()),
+            "assets/icon.svg".to_string(),
+            "augment/deck-m1.json".to_string(),
+            "decks/m.md".to_string(),
+        ];
+        assert_eq!(expected, shared, "share stages only alix files");
+        assert_eq!(expected, synced, "sync lists only alix files");
+    }
+
+    fn walk_relative(root: &Path) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(dir) = pending.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else {
+                    let relative = path.strip_prefix(root).unwrap();
+                    out.push(relative.to_string_lossy().into_owned());
+                }
+            }
+        }
+        out
+    }
+
     /// A link in a deck's owned assets is refused before `copy_tree` reaches
     /// it, because an object whose name is not its content address is already
     /// invalid material to bundle.
@@ -1329,7 +1408,7 @@ mod tests {
     }
 
     #[test]
-    fn staging_excludes_private_state_and_keeps_unknown_old_names() {
+    fn staging_excludes_private_state_and_unknown_root_names() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("ws");
         std::fs::create_dir_all(src.join("assets")).unwrap();
@@ -1355,17 +1434,14 @@ mod tests {
         let stage = dir.path().join("stage");
         let n = stage_dir(&src, &stage).unwrap();
 
-        assert_eq!(
-            6, n,
-            "content plus the retired root progress and recent names"
-        );
+        assert_eq!(4, n, "manifest, deck, augmentation and icon only");
         assert!(stage.join("decks/deck.md").exists());
         assert!(stage.join("alix.toml").exists());
         assert!(stage.join("augment/deck-deck1.json").exists());
         assert!(!stage.join("augment/orphan.json").exists());
         assert!(stage.join("assets/icon.svg").exists());
-        assert!(stage.join("progress/deck-deck1.json").exists());
-        assert!(stage.join("recent.json").exists());
+        assert!(!stage.join("progress").exists());
+        assert!(!stage.join("recent.json").exists());
         assert!(!stage.join(".alix").exists());
         assert!(!stage.join("alix.local.toml").exists());
     }

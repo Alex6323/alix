@@ -383,7 +383,11 @@ data rather than executable HTML.
 `magic-wormhole` CLI for transfer. That executable and its protocol
 implementation are part of the sharing trust boundary. Staging excludes the
 private `.alix/` and `*.local.*` set, temporary and backup-shaped files, hidden
-files, and synchronization conflicts. Receive
+files, and synchronization conflicts. From a workspace root only the manifest,
+`decks/`, `assets/` and `augment/` are staged, for share and paired sync alike,
+so cited source trees and other root files never leave the machine
+(`a_workspace_root_sends_only_its_manifest_decks_assets_and_augmentation`,
+`src/share.rs`). Receive
 strips private state recursively even if the sender used another tool
 (`src/share.rs`). Matching `augment/<deck-id>.json`
 documents are intentionally shareable generated deck material; unrelated or

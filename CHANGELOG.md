@@ -125,6 +125,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Sharing a workspace (`alix share`, the web Share dialog) and the phone's
+  paired sync send only its alix files: the `alix.toml` manifest, `decks/`, the
+  `assets/` its decks own, and their augmentation. Source trees under `cite:`
+  roots, notes, and any other file at the workspace root stay home, so a
+  workspace holding cloned repositories no longer ships them, and a symbolic
+  link inside them no longer fails the share or the sync.
+
 - `alix doctor` reports drift of frozen citations (the live root or file
   gone, the text changed, moved, or ambiguous) only with the new
   `--warn-on-source-locator-drift` flag, and only as a warning. A live

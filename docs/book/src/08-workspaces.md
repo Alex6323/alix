@@ -332,8 +332,12 @@ just applies no shared directives.
 
 ## Sharing a workspace
 
-A workspace is a self-contained folder, so sharing one is sending the folder
-with its `decks/` structure intact.
+Sharing a workspace sends its alix files, not the whole folder: the
+`alix.toml` manifest, `decks/`, the `assets/` its decks own, and their
+augmentation. Everything else at the workspace root, such as the source trees
+your `cite:` roots point at, notes, or a README, stays home: the frozen
+excerpts in `assets/` already carry what the cards show. The phone's paired
+sync sends the same set.
 `alix share <dir>` does that over magic-wormhole with the personal files
 (`.alix/`, `*.local.*`, backups, and conflict copies) left home; the
 other side runs `alix receive <code>` and gets it beside their own decks, ready

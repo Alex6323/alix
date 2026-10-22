@@ -203,7 +203,9 @@ notes it.
   someone over [magic-wormhole](https://magic-wormhole.readthedocs.io) (the
   `wormhole` binary must be installed, `alix doctor` checks). A folder is
   staged first so your personal state stays home: `.alix/`, `*.local.*`,
-  temporary files, and conflict or backup files never travel.
+  temporary files, and conflict or backup files never travel. From a
+  workspace only its alix files go: the manifest, `decks/`, owned `assets/`,
+  and augmentation; source trees and other files at its root stay home.
   Matching `augment/deck-<token>.json` documents do travel, including when sharing
   one deck. A single frozen deck also carries its complete
   `assets/deck-<token>/` directory. A symbolic link inside what you share is
