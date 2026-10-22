@@ -33,6 +33,7 @@ class WalkController extends ChangeNotifier {
   final Set<int> _multiSelected = {};
   final Sketch _sketch = Sketch();
   bool _serverLive = false;
+  int _revealedLines = 0;
 
   WalkStateModel get state {
     final state = _state;
@@ -48,6 +49,7 @@ class WalkController extends ChangeNotifier {
   bool get serverLive => _serverLive;
   bool get hasChoices => state.choices?.isNotEmpty ?? false;
   bool get revealed => state.phase == WalkPhase.answer && !hasChoices;
+  int get revealedLines => _revealedLines;
   ReviewTutorCardModel? get tutorCard => _requirePort().tutorCard;
 
   void setServerLive(bool live) {
@@ -77,6 +79,16 @@ class WalkController extends ChangeNotifier {
 
   void reveal() {
     _state = _requirePort().reveal();
+    notifyListeners();
+  }
+
+  void revealNextLine() {
+    final card = state.card;
+    _revealedLines++;
+    if (card == null || _revealedLines >= revealStepCount(card)) {
+      reveal();
+      return;
+    }
     notifyListeners();
   }
 
@@ -160,5 +172,6 @@ class WalkController extends ChangeNotifier {
     _multiChoice = null;
     _multiSelected.clear();
     _sketch.reset();
+    _revealedLines = 0;
   }
 }

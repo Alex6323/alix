@@ -73,7 +73,7 @@ introduction do not apply to it. A walk is an ungraded read-through of the deck,
 the same walk the web app runs (see
 [Walking a deck](15-the-web-app.md#walking-a-deck)). Tapping a trace deck
 opens the trace itself, never this sheet. Each item shows its front; pick an
-authored choice or **Reveal**, then **Next**. The section sheet opens by itself the first time each walk
+authored choice or **Reveal** (one line at a time on a `reveal: line` card), then **Next**. The section sheet opens by itself the first time each walk
 reaches a section, **Ask** reaches the tutor once an answer shows (when paired
 with a desktop that can run it), and the done screen's **Next walk** starts
 the next pass.

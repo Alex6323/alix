@@ -224,6 +224,8 @@ class _WalkScreenState extends State<WalkScreen> {
           onToggleChoice: _controller.toggleChoice,
           onSubmitChoices: _controller.submitChoices,
           onReveal: _controller.reveal,
+          revealedLines: _controller.revealedLines,
+          onRevealNextLine: _controller.revealNextLine,
           onNext: _controller.next,
           onNextWalk: _nextWalk,
           onOpenTutor: _openTutor,

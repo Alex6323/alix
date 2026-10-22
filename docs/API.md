@@ -540,8 +540,10 @@ Each item cycles `phase` `"front"` → `"answer"` *(closed, with `"done"`)*.
 An item whose card has authored choices (`mode: "choice"`) is answered with
 `POST /api/walk/choose {index}`, or `{indices}` when `choices_multiple` is
 set, which returns the same `ChooseFeedbackDto` / `MultiChooseFeedbackDto`
-as `/api/choose` and opens the answer. Every other item (`mode: "flip"`) is
-opened with `POST /api/walk/reveal`. A pick on a flip item, a second pick, or
+as `/api/choose` and opens the answer. Every other item (`mode: "flip"`, or
+`mode: "line"` for a `reveal: line` card) is opened with
+`POST /api/walk/reveal`. A `"line"` item's client reveals its steps one per
+press, as in a review, and sends the reveal with the last one. A pick on a flip item, a second pick, or
 a body with both or neither shape is a 400; a reveal on a choice item changes
 nothing. Nothing about the attempt is recorded.
 

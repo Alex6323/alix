@@ -64,7 +64,8 @@ deck.
 
 Each item shows its front first. A card with authored choices is answered by
 picking (the pick shows right or wrong); every other item is a flip: try to
-recall it, then **Reveal** (`space`). **Next** (`space` again) moves on.
+recall it, then **Reveal** (`space`). A `reveal: line` card shows one answer
+line per **Reveal next** instead. **Next** (`space` again) moves on.
 Each direction of a two-way card and each blank of a cloze is its own item.
 The section's context sheet opens by itself the first time a walk reaches
 that section, and the tutor is available once an answer shows.

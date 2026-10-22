@@ -4,6 +4,7 @@ use crate::{
     answer::Mode,
     card::Card,
     choice::{self, ChoiceQuestion},
+    depth::Reveal,
     review::{self, ChoiceFeedback, MultiChoiceFeedback},
     session,
     store::Store,
@@ -86,6 +87,8 @@ impl WalkSession {
     pub fn mode(&self) -> Mode {
         if self.question().is_some() {
             Mode::Choice
+        } else if self.current().and_then(|card| card.reveal) == Some(Reveal::Line) {
+            Mode::LineByLine
         } else {
             Mode::Flip
         }
@@ -543,10 +546,11 @@ mod tests {
     }
 
     #[test]
-    fn law_authored_choice_items_are_picked_and_every_other_item_flips() {
+    fn law_authored_choice_items_are_picked_line_cards_reveal_by_line_and_the_rest_flip() {
         let text = "## pick one capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices: single -->\n\n\
                     ## pick every even\n- [x] 2\n- [x] 4\n- [ ] 3\n<!-- choices: multiple -->\n\n\
                     ## plain question\nplain answer\n\n\
+                    ## lines question\nfirst line\nsecond line\n<!-- reveal: line -->\n\n\
                     ## both ways\nthe other way\n<!-- direction: both -->\n\n\
                     ## cloze\none and two\n<!-- blank: span hidden=\"one\" b:a1b2c3 -->\n<!-- blank: span hidden=\"two\" b:d4e5f6 -->\n";
         let (mut store, dir) = store();
@@ -555,7 +559,7 @@ mod tests {
         crate::stamp::stamp_deck(&path).unwrap();
         let cards = crate::deck::Deck::load(&path).unwrap().cards;
         assert_eq!(
-            7,
+            8,
             cards.iter().filter_map(Card::id).count(),
             "the fixture expands its directions and blanks into stamped items"
         );
@@ -565,11 +569,18 @@ mod tests {
             let card = walk.current().unwrap().clone();
             let label = format!("{} ({})", card.front, id(&card));
             let authored = card.front.starts_with("pick");
+            let expected = if authored {
+                Mode::Choice
+            } else if card.front.starts_with("lines") {
+                Mode::LineByLine
+            } else {
+                Mode::Flip
+            };
             let question = walk.question();
             assert_eq!(
-                (authored, if authored { Mode::Choice } else { Mode::Flip }),
+                (authored, expected),
                 (question.is_some(), walk.mode()),
-                "{label}: authored choices pick, everything else flips"
+                "{label}: authored choices pick, `reveal: line` reveals by line, everything else flips"
             );
             if let Some(question) = question {
                 assert!(

@@ -32,6 +32,10 @@ const _choice =
     '## capital of france?\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n'
     '<!-- choices: single -->\n';
 
+const _lines =
+    '## how does a tide pool form?\nThe tide rises\nThe tide falls\n'
+    'Water stays behind\n<!-- reveal: line -->\n';
+
 void main() {
   setUpAll(() async => RustLib.init());
 
@@ -122,6 +126,30 @@ void main() {
     await tap(tester, 'Next');
     expect(find.text('WALK COMPLETE'), findsOneWidget, reason: 'done');
     expect(find.text('1'), findsOneWidget, reason: 'done: one item walked');
+  });
+
+  testWidgets('a reveal: line item opens one line per press, then Next', (
+    tester,
+  ) async {
+    await pumpWalk(tester, _lines);
+    final lines = ['The tide rises', 'The tide falls', 'Water stays behind'];
+    for (var press = 1; press <= lines.length; press++) {
+      await tap(tester, press == 1 ? 'Reveal' : 'Reveal next');
+      for (var line = 0; line < lines.length; line++) {
+        expect(
+          find.text(lines[line]),
+          line < press ? findsOneWidget : findsNothing,
+          reason: 'press $press: line ${line + 1} shown only once reached',
+        );
+      }
+      expect(
+        chip('Next'),
+        press == lines.length ? findsOneWidget : findsNothing,
+        reason: 'press $press: Next only after the last line',
+      );
+    }
+    await tap(tester, 'Next');
+    expect(find.text('WALK COMPLETE'), findsOneWidget, reason: 'done');
   });
 
   testWidgets('law: the bar names the deck on one truncated line and no '

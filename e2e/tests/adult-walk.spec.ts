@@ -133,6 +133,49 @@ test("a walk serves the unwalked rest, then a full pass, with the section sheet 
   await expect(walked.locator("span"), "every item walked: no hint").toHaveCount(1);
 });
 
+const LINE_DECK = `---
+id: "deck-000000000000000000000000w1"
+title: Tide pools
+---
+
+# Tide pools
+
+Rock pools hold water when the tide goes out.
+
+## How does a tide pool form, step by step?
+The tide rises over the rocks
+The tide falls again
+Water stays behind in the hollows
+<!-- reveal: line -->
+<!-- id: card-walklines -->
+`;
+
+test("a walk reveals a reveal: line card one line at a time", async ({ page }) => {
+  fs.writeFileSync(path.join(WALK_WORKSPACE, "decks", "tide.md"), LINE_DECK);
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Walk Tour").click();
+  const walk = await openWalkMenu(page);
+  await walk.click();
+  await closeSectionSheet(page, "line walk");
+  const shown = page.locator("#ansRegion .reveal.line .answer:not(.pending):not(.line-reserve)");
+  const reveals: string[] = [];
+  page.on("request", (r) => { if (r.url().endsWith("/api/walk/reveal")) reveals.push(r.url()); });
+
+  await page.keyboard.press(" ");
+  await expect(shown, "first press: one line").toHaveCount(1);
+  await expect(page.getByRole("button", { name: /^Reveal next/ }), "first press: more lines to come").toBeVisible();
+  await page.keyboard.press(" ");
+  await expect(shown, "second press: two lines").toHaveCount(2);
+  expect(reveals, "partial lines stay on the client").toHaveLength(0);
+
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/reveal") && r.ok()),
+    page.keyboard.press(" "),
+  ]);
+  await expect(shown, "last press: every line").toHaveCount(3);
+  await expect(page.getByRole("button", { name: /^Next/ }), "last line opens the answer").toBeVisible();
+});
+
 test("at phone width the Depth menu footer chips never overlap", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".deckrow").first()).toBeFocused();

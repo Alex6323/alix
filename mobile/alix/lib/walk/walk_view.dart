@@ -30,6 +30,8 @@ class WalkView extends StatelessWidget {
     required this.onToggleChoice,
     required this.onSubmitChoices,
     required this.onReveal,
+    required this.revealedLines,
+    required this.onRevealNextLine,
     required this.onNext,
     required this.onNextWalk,
     required this.onOpenTutor,
@@ -55,6 +57,8 @@ class WalkView extends StatelessWidget {
   final ValueChanged<int> onToggleChoice;
   final VoidCallback onSubmitChoices;
   final VoidCallback onReveal;
+  final int revealedLines;
+  final VoidCallback onRevealNextLine;
   final VoidCallback onNext;
   final VoidCallback onNextWalk;
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
@@ -98,7 +102,9 @@ class WalkView extends StatelessWidget {
         : ReviewCardView(
             state: view,
             revealed: state.phase == WalkPhase.answer && !hasChoices,
-            revealedLines: 0,
+            revealedLines: state.phase == WalkPhase.answer
+                ? revealStepCount(card)
+                : revealedLines,
             choice: choice,
             multiChoice: multiChoice,
             multiSelected: multiSelected,
@@ -125,7 +131,7 @@ class WalkView extends StatelessWidget {
             onOpenAttempt: () {},
             onToggleKeypoint: (_) {},
             onReveal: onReveal,
-            onRevealNextLine: () {},
+            onRevealNextLine: onRevealNextLine,
             onIntroduce: () {},
             onGrade: (_) {},
             onOpenTutor: onOpenTutor,

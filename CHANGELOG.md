@@ -476,6 +476,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A walk honors `reveal: line`: on the web and the phone, such a card shows
+  one answer line per **Reveal** instead of the whole answer at once.
+
 - The web picker remembers a walk: after walking a deck, its main button is
   **Walk** instead of falling back to **Learn** at the last depth.
 

@@ -159,6 +159,12 @@ export function createStudy({
     return api("/api/walk", post({ deck })).then(apply);
   }
   function walkReveal() {
+    if (state.mode === "line" && revealed + 1 < stepCount()) {
+      revealed += 1;
+      fillBottom();
+      renderLegend();
+      return;
+    }
     api("/api/walk/reveal", post({})).then(w => {
       replaceState(w);
       revealed = Math.max(1, stepCount());
@@ -720,7 +726,10 @@ export function createStudy({
     }
     else if (isChoice()) { renderChoices(a); setNote(false); }
     else if (effectiveDraw()) { renderDrawCanvas(a); setNote(false); }
-    else setNote(false);
+    else {
+      if (state.mode === "line" && revealed > 0 && !answerInQuestion()) fillAnswer(a);
+      setNote(false);
+    }
   }
 
   function hasSection() {
@@ -1720,7 +1729,8 @@ export function createStudy({
     } else if (isMultiChoice()) {
       chip("Submit", "primary", submitMultiChoice, label(keys.submit)).disabled = selectedChoices.size === 0;
     } else if (!isChoice()) {
-      chip("Reveal", "primary", effectiveDraw() ? walkDrawReveal : walkReveal, label(keys.reveal));
+      const next = state.mode === "line" && revealed > 0 && !effectiveDraw();
+      chip(next ? "Reveal next" : "Reveal", "primary", effectiveDraw() ? walkDrawReveal : walkReveal, label(keys.reveal));
     }
     chip("Leave", "", leaveWalk, label(keys.quit), legendLeft);
   }

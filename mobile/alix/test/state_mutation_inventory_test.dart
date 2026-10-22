@@ -69,11 +69,11 @@ void main() {
     expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
     expect(
       _linesContaining('lib/walk/walk_controller.dart', 'notifyListeners();'),
-      [56, 63, 68, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 131],
+      [58, 65, 70, 77, 82, 92, 97, 102, 107, 112, 117, 122, 127, 132, 143],
       reason:
-          'setServerLive, choose, toggleChoice, submitChoices, reveal, next, '
-          'nextWalk, the six sketch transitions, and applyCardNote own every '
-          'WalkController mutation',
+          'setServerLive, choose, toggleChoice, submitChoices, reveal, '
+          'revealNextLine, next, nextWalk, the six sketch transitions, and '
+          'applyCardNote own every WalkController mutation',
     );
     expect(
       [
