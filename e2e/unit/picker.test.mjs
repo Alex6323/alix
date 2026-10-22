@@ -33,6 +33,7 @@ function harness(responses) {
     notice: () => {},
     timers: { setTimeout: () => {} },
     ui: {
+      barFilter: { value: "ledger" },
       navRefresh: { addEventListener: () => {} },
       window: { addEventListener: () => {} },
     },
@@ -50,6 +51,7 @@ test("picker owns review and trace launch transitions", async () => {
   assert.deepEqual(run.applied, [review]);
   assert.deepEqual(run.traces, []);
   assert.equal(run.stored.get("alix.lastDeck"), "facts.md");
+  assert.equal(run.stored.get("alix.lastFilter"), "ledger");
   assert.deepEqual(run.calls[0], {
     path: "/api/select",
     options: {

@@ -71,6 +71,7 @@ export function createPicker({
 
   function rememberLaunch(name) {
     if (name) sessionStorage.setItem("alix.lastDeck", name);
+    sessionStorage.setItem("alix.lastFilter", barFilter.value);
   }
 
   function isTraceSession(next) {
@@ -447,7 +448,8 @@ export function createPicker({
         // The picker's search and Mastered jump live in the header; no in-content box.
         headerSearch();
         filter = barFilter;
-        filter.value = "";
+        filter.value = sessionStorage.getItem("alix.lastFilter") || "";
+        sessionStorage.removeItem("alix.lastFilter");
         if (opts.allowMastered && mastered.length) {
           masteredBtn.style.display = "";
           masteredBtn.onclick = renderMastered;

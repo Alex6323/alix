@@ -470,6 +470,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The web picker keeps its search text after you leave a session, so a
+  filtered list stays filtered instead of showing every deck again.
+
 - Security: with `source_access` on, the Claude tutor could read any file the
   user can read, not only the deck's `cite:` root. A grounded Claude call now
   allows `Read`, `Glob` and `Grep` only under the root's resolved path and
