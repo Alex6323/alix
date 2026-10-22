@@ -31,6 +31,7 @@ badly exactly where thought was needed.
 | An answer that cannot be typed: a diagram, a circuit, a glyph, notation. | `input: draw` | structural | The learner sketches and self-grades against the reveal. Typing a diagram is not a check, it is a workaround. |
 | A statement turning on one term, where the sentence around it is the cue. | Cloze: write the whole sentence on the `## ` line and hide the span with `<!-- blank: span hidden="..." -->` on its own line directly below it, above any note. A cloze card has no answer lines and no `---`. | judgement | The context does the cueing, so recall is anchored where it will be used. If nothing in the sentence is a natural target, this is a plain card wearing a disguise. |
 | A fact whose common confusions are known and nameable. | Authored choice: a task list with one `- [x]` and one or more `- [ ]`, closed by `<!-- choices: single -->` on the line below it, ideally two or three (or `choices: single` in frontmatter, once for the deck). | judgement | The distractors are the teaching. Write them only if you can say what mistaken belief each one represents; if you cannot, the shape is doing nothing. |
+| Several items that share a property, out of a set where the rest do not: which of these are X, which statements are false. | Select-all: a task list with a `- [x]` on every correct option and a `- [ ]` on every other, closed by `<!-- choices: multiple -->` on the line below it. | judgement | Only the exact set passes, so every option is judged on its own; a single-answer card lets the learner stop at the first match. Use it when several answers are genuinely correct, not to pad a one-answer question. |
 | A term that must be recalled from either side: vocabulary, symbols, names. | `direction: both` | judgement | One authoring act, two cards. Reach for it when both directions are genuinely useful, not by default: it doubles the review load. |
 | Anything else: a definition, an explanation, a cause, a comparison. | A plain card: `## ` front, answer lines below. | judgement | The default, and not a failure. Most material has no structure to exploit, and a plain card drilled well beats a clever shape drilled badly. |
 
@@ -52,8 +53,8 @@ Rules that hold whatever the shape:
 - An invocation binds the block directly above it, so it sits on the line
   immediately below the last option or row. `<!-- cards -->` takes card
   directives after it, an `at:` locator or a reveal mode, but never a
-  blockquote: a card table's note is its note column. `<!-- choices: single -->`
-  takes a `> [!NOTE]` note after it.
+  blockquote: a card table's note is its note column. `<!-- choices: single -->` and
+  `<!-- choices: multiple -->` take a `> [!NOTE]` note after them.
 - One idea per card. Split compound facts rather than nesting them.
 - No two cards may test the same fact. Vary what is asked; do not
   rephrase.

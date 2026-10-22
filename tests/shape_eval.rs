@@ -75,6 +75,14 @@ Opening a TCP connection, in order:
 Only then may either side send data.
 ";
 
+const SET_MEMBERSHIP: &str = "\
+The eight planets of the solar system and their kind:
+Mercury, Venus, Earth and Mars are rocky planets.
+Jupiter and Saturn are gas giants.
+Uranus and Neptune are ice giants.
+Only Earth is known to have liquid water on its surface.
+";
+
 /// Paired material must become a card table. This is the structural row with
 /// the clearest payoff: a table's rows sample their own column for Recognize
 /// options, which no other shape gets for free.
@@ -134,5 +142,17 @@ fn an_explicit_style_still_overrules_the_rule() {
     assert!(
         !deck.contains("\\blank{"),
         "a cloze deck hides text with span directives, never inline marker syntax, got:\n{deck}"
+    );
+}
+
+/// Several members sharing a property must become a select-all card, so each
+/// option is judged on its own instead of stopping at the first match.
+#[test]
+#[ignore = "costed: real model call, run via `make shape-eval`"]
+fn a_set_with_several_members_generates_a_select_all() {
+    let deck = deck_from(SET_MEMBERSHIP);
+    assert!(
+        deck.contains("choices: multiple"),
+        "a set with several members sharing a property must generate a select-all card, got:\n{deck}"
     );
 }

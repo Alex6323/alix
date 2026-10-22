@@ -125,6 +125,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The deck generator and the manual's card-shape guide now name select-all
+  cards (`choices: multiple`) for material where several items share a
+  property, such as "which of these statements are false".
+
 - Progress files record a deck's last launch as `last_launch` (`recognize`,
   `recall`, `reconstruct`, or `walk`) instead of `last_depth`, and the picker
   API's `DeckItemDto.last_depth` is now `last_launch`. A progress file that
