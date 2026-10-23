@@ -176,6 +176,46 @@ test("a walk reveals a reveal: line card one line at a time", async ({ page }) =
   await expect(page.getByRole("button", { name: /^Next/ }), "last line opens the answer").toBeVisible();
 });
 
+test("the section sheet fits its content and closes from its own button", async ({ page }) => {
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Walk Tour").click();
+  await (await openWalkMenu(page)).click();
+  const panel = page.locator(".section-drawer-panel");
+  await expect(panel, "open: the sheet shows on first contact").toBeVisible();
+  await panel.evaluate((node) => Promise.all(node.getAnimations().map((motion) => motion.finished)));
+  const box = (await panel.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(
+    box.y + box.height,
+    `open: a one-sentence section ends well above the window bottom (${viewport.height}px)`,
+  ).toBeLessThan(viewport.height - 100);
+  await page.getByRole("button", { name: "Close section context" }).click();
+  await expect(page.locator(".section-drawer"), "close: the button removes the sheet").toHaveCount(0);
+
+  const long = DECK.replace(
+    "Rock pools hold water when the tide goes out.",
+    Array.from({ length: 60 }, (_, i) => `Paragraph ${i + 1} about rock pools.\n`).join("\n"),
+  );
+  fs.writeFileSync(path.join(WALK_WORKSPACE, "decks", "tide.md"), long);
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/leave") && r.ok()),
+    page.keyboard.press("Escape"),
+  ]);
+  await (await openWalkMenu(page)).click();
+  await expect(panel, "long: the sheet shows").toBeVisible();
+  await panel.evaluate((node) => Promise.all(node.getAnimations().map((motion) => motion.finished)));
+  expect(
+    await panel.evaluate((node) => node.scrollHeight > node.clientHeight),
+    "long: the section overflows, so the sheet scrolls",
+  ).toBe(true);
+  const tall = (await panel.boundingBox())!;
+  expect(tall.y + tall.height, "long: the sheet stops at the window bottom").toBeLessThanOrEqual(viewport.height + 1);
+  await expect(
+    page.getByRole("button", { name: "Close section context" }),
+    "long: Close stays reachable",
+  ).toBeInViewport();
+});
+
 test("at phone width the Depth menu footer chips never overlap", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".deckrow").first()).toBeFocused();

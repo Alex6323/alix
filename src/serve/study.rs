@@ -417,6 +417,10 @@ pub(super) enum StudyCommand {
         reply: Reply<Option<AskDto>>,
     },
     WalkAskPoll(Reply<Option<AskDto>>),
+    WalkAskCreate {
+        req: CreateCardReq,
+        reply: Reply<CreateOutcome>,
+    },
     TutorStart {
         action: Option<AskAction>,
         ask_cfg: crate::config::AskConfig,
@@ -740,6 +744,9 @@ impl StudyHandle {
     }
     pub(super) fn walk_ask_poll(&self) -> Option<Option<AskDto>> {
         self.call(StudyCommand::WalkAskPoll)
+    }
+    pub(super) fn walk_ask_create(&self, req: CreateCardReq) -> Option<CreateOutcome> {
+        self.call(|reply| StudyCommand::WalkAskCreate { req, reply })
     }
     pub(super) fn image_path(&self, key: String) -> Option<ImageSource> {
         self.call(|reply| StudyCommand::ImagePath { key, reply })
@@ -1389,6 +1396,9 @@ impl StudyState {
                 });
                 let _ = reply.send(dto);
             }
+            StudyCommand::WalkAskCreate { req, reply } => {
+                let _ = reply.send(self.walk_ask_create(req));
+            }
             StudyCommand::WalkAskPoll(reply) => {
                 let dto = self.walking.as_mut().map(|w| {
                     let (status, error) = w.poll_ask();
@@ -1935,13 +1945,43 @@ impl StudyState {
             .iter()
             .map(|c| c.block_fingerprint)
             .collect();
+        self.mint_tutor_card(&deck_path, &deck_id, req, &deck_fingerprints)
+    }
+
+    fn walk_ask_create(&mut self, req: CreateCardReq) -> CreateOutcome {
+        let Some(w) = self.walking.as_ref() else {
+            return CreateOutcome::NoSession;
+        };
+        if w.session.current().is_none() {
+            return CreateOutcome::NoSession;
+        }
+        let Some(deck_id) = w.info.deck_token.clone() else {
+            return CreateOutcome::NoSession;
+        };
+        let deck_path = w.info.path.clone();
+        let deck_fingerprints: std::collections::HashSet<u64> = w
+            .session
+            .cards()
+            .iter()
+            .map(|c| c.block_fingerprint)
+            .collect();
+        self.mint_tutor_card(&deck_path, &deck_id, req, &deck_fingerprints)
+    }
+
+    fn mint_tutor_card(
+        &mut self,
+        deck_path: &Path,
+        deck_id: &str,
+        req: CreateCardReq,
+        deck_fingerprints: &std::collections::HashSet<u64>,
+    ) -> CreateOutcome {
         match store::mint_tutor_card(
             &mut self.store,
-            &deck_path,
-            &deck_id,
+            deck_path,
+            deck_id,
             &req.front,
             &req.back,
-            &deck_fingerprints,
+            deck_fingerprints,
         ) {
             Ok(id) => {
                 flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);

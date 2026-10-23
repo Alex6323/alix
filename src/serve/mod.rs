@@ -1702,6 +1702,34 @@ pub fn run_review(
                     Some(Some(dto)) => respond_json(request, &dto),
                 }
             }
+            (Method::Post, "/api/walk/ask/card/draft") => {
+                if audience == Audience::Kids {
+                    respond_status(request, 403);
+                    continue;
+                }
+                match study.walk_ask(Some(AskAction::DraftCard), ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                }
+            }
+            (Method::Post, "/api/walk/ask/card/create") => {
+                if audience == Audience::Kids {
+                    respond_status(request, 403);
+                    continue;
+                }
+                let Some(req) = json_body::<CreateCardReq>(&mut request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.walk_ask_create(req) {
+                    None => respond_status(request, 503),
+                    Some(CreateOutcome::NoSession) => respond_status(request, 409),
+                    Some(CreateOutcome::Invalid) => respond_status(request, 422),
+                    Some(CreateOutcome::MintFailed) => respond_status(request, 500),
+                    Some(CreateOutcome::Ok(resp)) => respond_json(request, &resp),
+                }
+            }
             (Method::Get, "/api/walk/ask") => match study.walk_ask_poll() {
                 None => respond_status(request, 503),
                 Some(None) => respond_status(request, 409),

@@ -1805,7 +1805,10 @@ test("the section title and review menu both open the drawer", async ({ page }) 
   expect(bounds.overBar, `the header sits behind the dim: ${JSON.stringify(bounds)}`).toBe("section-drawer-scrim");
   expect(bounds.overQuestion, `the question sits behind the dim: ${JSON.stringify(bounds)}`).toBe("section-drawer-scrim");
   near(bounds.panel?.top, bounds.question?.bottom ?? -1, "the panel starts at the question's bottom edge");
-  near(bounds.panel?.bottom, bounds.viewport.height, "the panel reaches the page bottom");
+  expect(
+    bounds.panel?.bottom ?? Number.MAX_SAFE_INTEGER,
+    `a short section ends above the page bottom: ${JSON.stringify(bounds)}`,
+  ).toBeLessThan(bounds.viewport.height - 100);
   near(bounds.panel?.left, bounds.question?.left ?? -1, "the panel's left edge is the question column's");
   near(bounds.panel?.right, bounds.question?.right ?? -1, "the panel's right edge is the question column's");
   expect(

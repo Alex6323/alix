@@ -147,6 +147,7 @@ During an Ask exchange, if the tutor's reply answers a question about a concept
 you'd like to drill, click **Make this a card**.
 The tutor distills the conversation into a draft front/back for you to edit.
 Once you're satisfied, click **Add** to land it as a new card on the current deck.
+It works the same during a walk; the new card joins the deck's next walk.
 
 The card goes into the deck's [personal file](03-the-deck-format.md#your-personal-file)
 (`<deck>.local.md`), not the deck itself, so the authored `.md` is left

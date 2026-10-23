@@ -25,6 +25,18 @@ test("adult select-all toggles independently and submits the exact set", async (
   const chosenIndices = () => page.locator(".option").evaluateAll((rows) => rows.flatMap(
     (row, index) => row.getAttribute("aria-pressed") === "true" ? [index] : [],
   ));
+  const looks = () => page.locator(".option").evaluateAll((rows) => rows.map((row) => ({
+    focused: row.classList.contains("focused"),
+    selected: row.getAttribute("aria-pressed") === "true",
+    background: getComputedStyle(row).backgroundColor,
+    mark: getComputedStyle(row, "::after").content,
+  })));
+  const fresh = await looks();
+  expect(fresh.filter((row) => row.focused), "fresh card: the cursor sits on one option").toHaveLength(1);
+  expect(
+    new Set(fresh.map((row) => `${row.background}|${row.mark}`)).size,
+    `fresh card: the cursor alone does not look selected: ${JSON.stringify(fresh)}`,
+  ).toBe(1);
   const chooseRequests: string[] = [];
   page.on("request", (outgoing) => {
     if (outgoing.url().includes("/api/choose")) chooseRequests.push(outgoing.url());
@@ -33,6 +45,13 @@ test("adult select-all toggles independently and submits the exact set", async (
   await option("Dolphin").click();
   await expect(option("Dolphin")).toHaveAttribute("aria-pressed", "true");
   await expect(option("Otter")).toHaveAttribute("aria-pressed", "false");
+  const picked = await looks();
+  const chosen = picked.find((row) => row.selected)!;
+  const unchosen = picked.filter((row) => !row.selected);
+  expect(
+    unchosen.every((row) => row.background !== chosen.background && row.mark !== chosen.mark),
+    `one pick: the chosen option differs in fill and mark from every other, focused or not: ${JSON.stringify(picked)}`,
+  ).toBe(true);
   await option("Otter").click();
   await option("Dolphin").click();
   await expect(option("Dolphin")).toHaveAttribute("aria-pressed", "false");

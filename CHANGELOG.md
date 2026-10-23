@@ -480,6 +480,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The web tutor offers **Make this a card** during a walk too, minting into
+  the walked deck's personal file (`/api/walk/ask/card/draft` and
+  `/api/walk/ask/card/create`).
+
+- The web section sheet sizes to its content instead of filling the window
+  below the question, and has a **Close** button.
+
+- A select-all card no longer makes the keyboard cursor look like a pick: the
+  cursor is an outline ring, and a picked option is filled and marked with a
+  check.
+
 - A phone sync no longer stops at a deck whose progress file on the phone
   cannot be read: that file is not pushed, the pull replaces it with the
   desktop's copy, and the sync report lists the deck as replaced.

@@ -79,7 +79,7 @@ test("tutor owns its transcript and chooses the trace endpoint explicitly", asyn
 
   transcript.can_distill = true;
   await tutor.draftCard();
-  assert.equal(calls[1].path, "/api/ask/card/draft");
+  assert.equal(calls.length, 1, "a trace drafts no card");
 
   tracing = false;
   calls.length = 0;
@@ -90,7 +90,7 @@ test("tutor owns its transcript and chooses the trace endpoint explicitly", asyn
   assert.equal(calls.length, 0);
 });
 
-test("during a walk the tutor asks the walk endpoint and drafts no card", async () => {
+test("during a walk the tutor asks, notes, and drafts cards through the walk endpoints", async () => {
   const calls = [];
   const replaced = [];
   const transcript = {
@@ -124,10 +124,13 @@ test("during a walk the tutor asks the walk endpoint and drafts no card", async 
   assert.equal(calls[0], "/api/walk/ask", "step: open; calls: " + calls.join(","));
 
   await tutor.draftCard();
-  assert.equal(calls.length, 1, "step: draft; a walk has no card-draft route; calls: " + calls.join(","));
+  assert.equal(calls[1], "/api/walk/ask/card/draft", "step: draft; calls: " + calls.join(","));
+
+  await tutor.createCard("f", ["b"]);
+  assert.equal(calls[2], "/api/walk/ask/card/create", "step: create; calls: " + calls.join(","));
 
   await tutor.saveNote();
-  assert.equal(calls[1], "/api/walk/ask/note", "step: note; calls: " + calls.join(","));
+  assert.equal(calls[3], "/api/walk/ask/note", "step: note; calls: " + calls.join(","));
 
   tutor.data().transcript.length = 0;
   await tutor.close();

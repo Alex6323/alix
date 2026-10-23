@@ -7603,6 +7603,68 @@ fn get_api_receive_with_no_receive_in_flight_yields_409() {
     assert_eq!(409, resp.status);
 }
 
+#[test]
+fn walk_ask_card_draft_then_create_mints_into_the_walked_decks_sidecar() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "## term?\ndefinition\n");
+    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_walk_deck, |_| {});
+    assert_eq!(
+        (409, 409),
+        (
+            post_json(&base, "/api/walk/ask/card/draft", "{}").status,
+            post_json(
+                &base,
+                "/api/walk/ask/card/create",
+                r#"{"front":"f","back":["b"]}"#
+            )
+            .status,
+        ),
+        "no walk: draft and create are 409"
+    );
+    post_json(&base, "/api/walk", r#"{"deck":"walk.md"}"#);
+    assert_eq!(
+        200,
+        post_json(&base, "/api/walk/ask", r#"{"question":"why?"}"#).status,
+        "ask"
+    );
+    poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
+
+    let resp = post_json(&base, "/api/walk/ask/card/draft", "{}");
+    assert_eq!(200, resp.status, "draft: starts");
+    let body = poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
+    assert_eq!(
+        ("term?", serde_json::json!(["definition"])),
+        (
+            body["draft"]["front"].as_str().unwrap_or_default(),
+            body["draft"]["back"].clone()
+        ),
+        "draft: the drafted card is on the walk's tutor: {body}"
+    );
+
+    let resp = post_json(
+        &base,
+        "/api/walk/ask/card/create",
+        r#"{"front":"edited term?","back":["edited definition"]}"#,
+    );
+    assert_eq!(
+        200,
+        resp.status,
+        "create: {}",
+        String::from_utf8_lossy(&resp.body)
+    );
+    let deck = std::fs::read_to_string(guard.dir().join("walk.md")).unwrap();
+    let sidecar = std::fs::read_to_string(guard.dir().join("walk.local.md")).unwrap_or_default();
+    assert_eq!(
+        (false, true),
+        (
+            deck.contains("edited term?"),
+            sidecar.contains("edited term?")
+        ),
+        "create: the posted card lands in the walked deck's sidecar, never the deck: {sidecar}"
+    );
+}
+
 // ── Ask: tutor "make this a card" (draft → create round-trip) ────────────
 
 /// Like [`spawn_test_server`], but serves `[serve] audience = "kids"`, for the
@@ -7779,6 +7841,17 @@ fn ask_card_draft_and_create_are_refused_for_a_kids_audience() {
         r#"{"front":"f","back":["b"]}"#,
     );
     assert_eq!(403, create_resp.status);
+
+    for (path, body) in [
+        ("/api/walk/ask/card/draft", "{}"),
+        ("/api/walk/ask/card/create", r#"{"front":"f","back":["b"]}"#),
+    ] {
+        assert_eq!(
+            403,
+            post_json(&base, path, body).status,
+            "{path}: kids are refused"
+        );
+    }
 }
 
 // ── Workspace deadline ───────────────────────────────────────────────────

@@ -228,7 +228,10 @@ opening a review, browse, or walk ends one). Target names are an open set
 `POST /api/ask/note` condenses the exchange into a deck note. The trace has its
 own mirror: `/api/trace/ask`, `/api/trace/ask/note`, `GET /api/trace/ask`, and
 so does the walk (§4.13): `/api/walk/ask`, `/api/walk/ask/note`,
-`GET /api/walk/ask`, always about the walk's current item.
+`/api/walk/ask/card/draft`, `/api/walk/ask/card/create`, `GET /api/walk/ask`,
+always about the walk's current item and minting into the walked deck. The
+walk's card routes take no `X-Alix-Study-Revision` and `403` for a kids
+audience like their review counterparts.
 Frozen excerpts are always supplied as evidence. When no usable live
 `exam:` (deck or workspace) is available, `status` carries a deterministic
 warning that the tutor has only the frozen evidence rather than the full
@@ -722,6 +725,8 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 | POST | `/api/walk/ask` | `{question}` | `AskDto` (empty question: 200, no call started) | 409 |
 | GET | `/api/walk/ask` | – | `AskDto` | 409 |
 | POST | `/api/walk/ask/note` | – | `AskDto` | 409 |
+| POST | `/api/walk/ask/card/draft` | – | `AskDto` | 409, 403 (kids) |
+| POST | `/api/walk/ask/card/create` | `CreateCardReq` | `CreateCardResp` | 400, 409, 422, 500, 403 (kids) |
 | POST | `/api/walk/leave` | – | `StateDto` | 500 progress flush failure |
 
 ### Remote (paired clients) (since 0.6.0)

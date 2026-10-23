@@ -752,6 +752,11 @@ export function createStudy({
     drawer.appendChild(scrim);
     const panel = el("section", "section-drawer-panel");
     panel.tabIndex = -1;
+    const closer = el("button", "section-drawer-close", "Close");
+    closer.type = "button";
+    closer.setAttribute("aria-label", "Close section context");
+    closer.addEventListener("click", closeSection);
+    panel.appendChild(closer);
     appendSectionContext(
       panel,
       state.card.section_context,
@@ -784,6 +789,7 @@ export function createStudy({
     if (!panel || !question) return;
     const box = question.getBoundingClientRect();
     panel.style.top = `${Math.round(box.bottom)}px`;
+    panel.style.maxHeight = `calc(100% - ${Math.round(box.bottom)}px)`;
     panel.style.left = `${Math.round(box.left)}px`;
     panel.style.width = `${Math.round(box.width)}px`;
   }
