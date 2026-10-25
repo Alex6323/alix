@@ -77,16 +77,16 @@
   .answer .mark { margin-left: 10px; font-weight: 700; }   /* ✓ / ✗ after the line */
   .expected { color: var(--good); font-family: var(--mono); font-size: clamp(1.02rem, 2.9vw, 1.22rem); line-height: 1.5; margin: 2px 0 8px; }
 
-  /* A note is prose under the answer, dimmer than it and marked by a bar in
-     its badge's colour with the badge word above the text: no box, no wash,
+  /* A note is prose under the answer, dimmer than it and marked by a hairline
+     in its badge's colour with the badge word above the text: no box, no wash,
      nothing that competes with the answer for attention. The five colours
      are GitHub's own, the light set on light palettes and the dark set on
      dark ones (`light-dark()` reads the palette's `color-scheme`). */
   .note {
     box-sizing: border-box; width: 100%; max-width: var(--measure);
     text-align: start; margin: 18px auto 0;
-    border-left: 4px solid var(--badge-ink);
-    padding: 2px 0 2px 14px; color: var(--dim);
+    border-left: 1px solid var(--badge-ink);
+    padding: 2px 0 2px 17px; color: var(--dim);
     font-size: clamp(1.02rem, 2.9vw, 1.22rem);
   }
   .card:has(.region.a.choices) .note { font-size: 1.05rem; }

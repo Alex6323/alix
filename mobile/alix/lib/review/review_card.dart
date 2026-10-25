@@ -17,7 +17,7 @@ const _sans = 'IBM Plex Sans';
 // wrap on the same column instead of each finding its own.
 const _cardMeasure = 560.0;
 
-/// A note is prose dimmer than the answer, marked by a bar in its badge's
+/// A note is prose dimmer than the answer, marked by a hairline in its badge's
 /// colour with the badge word above the text: no box, no wash, nothing that
 /// competes with the answer for attention.
 class NoteBlock extends StatelessWidget {
@@ -31,9 +31,9 @@ class NoteBlock extends StatelessWidget {
     final accent = badgeColour(badge, Theme.of(context).brightness);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 2, 0, 2),
+      padding: const EdgeInsets.fromLTRB(17, 2, 0, 2),
       decoration: BoxDecoration(
-        border: Border(left: BorderSide(color: accent, width: 4)),
+        border: Border(left: BorderSide(color: accent, width: 1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

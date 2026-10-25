@@ -744,13 +744,13 @@ test("a source answer and its note read as separate blocks", async ({ page }, te
   // word mark it off, so the bar must visibly contrast with the ground beside
   // it, measured on the rendered pixels rather than on a style value.
   await expect(card.locator("#noteDivider")).toHaveCount(0);
-  await expect(note).toHaveCSS("border-left-width", "4px");
+  await expect(note).toHaveCSS("border-left-width", "1px");
   const cardBox = await card.boundingBox();
   const noteBox = await note.boundingBox();
   expect(cardBox).not.toBeNull();
   expect(noteBox).not.toBeNull();
   const screenshot = await card.screenshot({ path: testInfo.outputPath("source-note-bar.png") });
-  const contrast = await page.evaluate(async ({ png, barX, groundX, y }) => {
+  const contrast = await page.evaluate(async ({ png, barXs, groundX, y }) => {
     const image = new Image();
     image.src = `data:image/png;base64,${png}`;
     await image.decode();
@@ -765,12 +765,15 @@ test("a source answer and its note read as separate blocks", async ({ page }, te
       const pixels = context.getImageData(Math.round(x * canvas.width), row, 1, 1).data;
       return [pixels[0], pixels[1], pixels[2]];
     };
-    const bar = sample(barX);
     const ground = sample(groundX);
-    return Math.hypot(...bar.map((value, index) => value - ground[index]));
+    const distance = (bar: number[]) =>
+      Math.hypot(...bar.map((value, index) => value - ground[index]));
+    return Math.max(...barXs.map((barX: number) => distance(sample(barX))));
   }, {
     png: screenshot.toString("base64"),
-    barX: ((noteBox?.x ?? 0) - (cardBox?.x ?? 0) + 2) / (cardBox?.width ?? 1),
+    // A 1px bar lands on the note's first or second device pixel, depending
+    // on where its fractional left edge rounds.
+    barXs: [0, 1].map((offset) => ((noteBox?.x ?? 0) - (cardBox?.x ?? 0) + offset) / (cardBox?.width ?? 1)),
     groundX: ((noteBox?.x ?? 0) - (cardBox?.x ?? 0) + 9) / (cardBox?.width ?? 1),
     y: ((noteBox?.y ?? 0) - (cardBox?.y ?? 0) + (noteBox?.height ?? 0) / 2) / (cardBox?.height ?? 1),
   });

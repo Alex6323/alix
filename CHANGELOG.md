@@ -125,6 +125,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A note's coloured left bar is a 1px hairline on the web and on the phone,
+  where it was 4px; the badge word keeps the colour and the text keeps its
+  place. A quotation's dim bar is unchanged.
+
 - A card's section heading no longer shows on the card face: the phone's
   pill above the question and the web's dim title line with its key cap are
   gone. A tap or click on the question opens the section sheet instead; a

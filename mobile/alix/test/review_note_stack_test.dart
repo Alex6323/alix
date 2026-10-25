@@ -474,7 +474,7 @@ void main() {
         final name = badge.name.toUpperCase();
         expect(find.text(name), findsOneWidget, reason: '$badge names itself');
         final bar = _bar(tester, 'Body.');
-        expect(bar.width, 4, reason: '$brightness $badge: the bar is 4 wide');
+        expect(bar.width, 1, reason: '$brightness $badge: the bar is a hairline');
         expect(
           bar.color,
           colours[badge],
