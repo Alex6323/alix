@@ -429,6 +429,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
           onGrade: _grade,
           onOpenTutor: _openTutor,
           onOpenSection: _openSection,
+          answerHidden: _controller.answerHidden,
+          onToggleHidden: _controller.toggleAnswerHidden,
           onRestart: _restart,
           onOpenExam: _openExam,
         );

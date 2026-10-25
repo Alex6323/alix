@@ -98,7 +98,12 @@ Nothing on the card face names the section, and the card never moves to make
 room. The first card you ever meet from a section opens that sheet by itself,
 once; swipe it away and a tap on the question brings it back. Every later
 card from the section, in this sitting or any later one, waits for the tap. A
-tap on the question of a card without a section does nothing.
+tap on the question of a card without a section does nothing. A tap on a
+revealed answer hides it for a self-test, exactly as `h` does on the web:
+every word keeps its first letter, and its last past two letters, the rest
+is drawn transparent in place, the note disappears, and nothing moves; a
+second tap shows it all again. A choice pick, a typed check and a sketch
+have nothing to hide.
 
 The bar at the top names the deck, cut to one line, and counts the cards
 left. **New session** on the summary starts the next sitting with the same

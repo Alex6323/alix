@@ -79,10 +79,12 @@
                       border-radius: 5px; padding: 1px 5px; }
   .region-toggle:hover { color: var(--bolt); }
   .region-toggle:hover .k { border-color: var(--bolt); }
-  /* Hide (introduction self-test): conceal ONLY the answer's content, visibility-only so
-     its box keeps its exact size and position — the note, the footer, and the layout
-     never move. The corner cue is excluded so you can still un-hide. */
-  .region.a.concealed > *:not(.region-toggles) { visibility: hidden; }
+  /* Hide (self-test): veiled letters are drawn transparent in place, so every
+     word keeps its width; what is not text is invisible with its box kept, and
+     the note is invisible with its box kept. Nothing moves. */
+  .region.a.concealed .veiled { color: transparent; }
+  .region.a.concealed img, .region.a.concealed .math-run, .region.a.concealed canvas { visibility: hidden; }
+  .card.concealing .region.n > *, .card.concealing .note-hint { visibility: hidden; }
   .cite-err { color: var(--warn); font-style: italic; font-size: 0.8rem; padding-left: 6px; }
 
   /* The topological orientation breadcrumb: each region is its name over a thin

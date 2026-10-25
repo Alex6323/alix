@@ -991,10 +991,110 @@ test("concealing a new card restores its diagram mask and masked alt", async ({ 
   await expect(askedMask).toBeHidden();
   await expect(diagram).toHaveAttribute("alt", "diagram labels: …, Cache");
 
-  await page.locator("#ansRegion .cite-toggle").click();
+  await page.locator("#ansRegion .hide-toggle").click();
   await expect(page.locator("#ansRegion")).toHaveClass(/concealed/);
   await expect(askedMask).toBeVisible();
   await expect(diagram).toHaveAttribute("alt", "diagram labels: …, …");
+});
+
+test("every revealed answer hides for a self-test: letters veiled in place, the note invisible, nothing moves", async ({ page }) => {
+  const answerLines = ["An immutable binding: the name cannot be reassigned.", "Shadow it with `let` instead."];
+  const base = longContentState({
+    answerLines,
+    note: [{ kind: "sentence", text: "Immutability is the default so a reader knows a name keeps its value." }],
+    citations: [{
+      locator: "source.md:1",
+      excerpt: { path: "source.md", lines: [{ n: 1, text: "source evidence" }], truncated: false },
+      error: null,
+    }],
+  });
+  const state = {
+    ...base,
+    card: {
+      ...base.card,
+      back_units: [
+        { kind: "sentence", text: answerLines[0], runs: [{ text: answerLines[0] }] },
+        {
+          kind: "sentence",
+          text: answerLines[1],
+          runs: [{ text: "Shadow it with " }, { text: "let", code: true }, { text: " instead." }],
+        },
+      ],
+    },
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+  await openApp(page);
+  const answer = page.locator("#ansRegion");
+  const note = page.locator("#noteRegion");
+  const hideCue = answer.locator(".hide-toggle");
+  const transparent = "rgba(0, 0, 0, 0)";
+  const geometry = () =>
+    page.evaluate(async () => {
+      await Promise.all(document.getAnimations().map((animation) => animation.finished));
+      const rect = (selector: string) => {
+        const node = document.querySelector(selector);
+        if (!node) throw new Error(`missing ${selector}`);
+        const box = node.getBoundingClientRect();
+        return [box.left, box.top, box.width, box.height].map((value) => Math.round(value * 2) / 2);
+      };
+      return {
+        question: rect("#card .region.q"),
+        answer: rect("#ansRegion"),
+        reveal: rect("#ansRegion .reveal"),
+        code: rect("#ansRegion code"),
+        note: rect("#noteRegion"),
+        noteBlock: rect("#noteRegion .note"),
+      };
+    });
+  const colours = () =>
+    page.evaluate(() => {
+      const all = (selector: string) =>
+        Array.from(document.querySelectorAll(selector)).map((node) => getComputedStyle(node).color);
+      return { veiled: all("#ansRegion .veiled"), kept: all("#ansRegion .kept"), codeVeiled: all("#ansRegion code .veiled") };
+    });
+
+  await expect(hideCue, "before reveal: nothing to hide").toHaveCount(0);
+  await page.getByRole("button", { name: /^Reveal/ }).click();
+  await expect(page.getByRole("button", { name: /^Got it/ }), "a seen card, not an introduction").toBeVisible();
+  await expect(hideCue, "a seen card offers the hide cue").toHaveCount(1);
+  await expect(answer.locator(".cite-toggle"), "beside the source cue on a cited card").toHaveCount(1);
+  await expect(hideCue, "the cue names what the next press does").toHaveAttribute("title", "hide the answer to self-test");
+  const shown = await geometry();
+  await expect(note.locator(".note p").first(), "shown: the note reads").toBeVisible();
+
+  await page.keyboard.press("h");
+  await expect(answer, "h hides").toHaveClass(/concealed/);
+  await expect(hideCue).toHaveAttribute("title", "show answer");
+  const first = await answer
+    .locator(".veil")
+    .first()
+    .evaluate((node) => Array.from(node.children).map((child) => [child.className, child.textContent]));
+  expect(first.slice(0, 4), "An immutable: first and last letters kept, the middle veiled").toEqual([
+    ["kept", "A"],
+    ["veiled", "n"],
+    ["kept", " i"],
+    ["veiled", "mmutabl"],
+  ]);
+  expect(await answer.locator(".reveal").textContent(), "the text is still there, drawn in place").toContain(answerLines[0]);
+  const hidden = await colours();
+  expect(hidden.veiled.length, "veiled runs exist").toBeGreaterThan(0);
+  expect(hidden.veiled.every((colour) => colour === transparent), `every veiled run is transparent: ${hidden.veiled}`).toBe(true);
+  expect(hidden.kept.every((colour) => colour !== transparent), `no kept run is transparent: ${hidden.kept}`).toBe(true);
+  expect(hidden.codeVeiled.length, "the code run is veiled by the same rule").toBeGreaterThan(0);
+  await expect(note.locator(".note p").first(), "hidden: the note is invisible").toBeHidden();
+  expect(await geometry(), "hidden: question, answer, code and note boxes are where they were").toEqual(shown);
+
+  await page.keyboard.press("h");
+  await expect(answer, "h again shows").not.toHaveClass(/concealed/);
+  const again = await colours();
+  expect(again.veiled.every((colour) => colour !== transparent), "shown: the veiled runs read again").toBe(true);
+  await expect(note.locator(".note p").first(), "shown: the note is back").toBeVisible();
+  expect(await geometry(), "shown again: nothing moved").toEqual(shown);
+
+  await answer.click({ position: { x: 12, y: 12 } });
+  await expect(answer, "a click on the answer hides").toHaveClass(/concealed/);
+  await hideCue.click();
+  await expect(answer, "the cue shows").not.toHaveClass(/concealed/);
 });
 
 test("a revealed new card does not repeat when it will be quizzed", async ({ page }) => {

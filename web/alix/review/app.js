@@ -70,7 +70,7 @@ study = createStudy({
   sessionStorage,
   lastDeck: () => sessionStorage.getItem("alix.lastDeck"),
   openAugment: (deck) => augment.open(deck),
-  model: { create: createModel, applyStudyState, enterPicker, currentScreen, filledSteps, questionAt, revealStepCount },
+  model: { create: createModel, applyStudyState, enterPicker, currentScreen, filledSteps, questionAt, revealStepCount, veilRuns },
   rerender: render,
   traceData: () => trace.data(),
   replaceTraceSession: (next) => trace.replace(next),

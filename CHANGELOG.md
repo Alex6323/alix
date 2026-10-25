@@ -125,6 +125,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Every revealed answer can be hidden for a self-test, not only a new card's:
+  `h` or a click on the answer on the web, a tap on the answer on the phone.
+  The hidden look is new: each word keeps its first letter, and its last past
+  two letters, the rest is drawn transparent in place so nothing moves; the
+  note disappears while the answer is hidden. On a cited card the hide marker
+  sits beside the source marker, and a click on the answer hides it rather
+  than swapping in the source (the marker and `s` still do).
+
 - A note's coloured left bar is a 1px hairline on the web and on the phone,
   where it was 4px; the badge word keeps the colour and the text keeps its
   place. A quotation's dim bar is unchanged.

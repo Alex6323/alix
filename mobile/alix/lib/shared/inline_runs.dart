@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:alix_mobile/shared/blank_pill.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
+import 'package:alix_mobile/shared/veil.dart';
 import 'package:alix_mobile/theme.dart';
 
 const _mono = 'IBM Plex Mono';
@@ -28,12 +29,13 @@ class InlineRuns extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final codeColor = Theme.of(context).alix.code;
+    final veiled = VeilScope.of(context);
     final blocks = <Widget>[];
     var inline = <InlineRunModel>[];
 
     void flushInline() {
       if (inline.isEmpty) return;
-      blocks.add(_inlineText(inline, codeColor));
+      blocks.add(_inlineText(inline, codeColor, veiled));
       inline = <InlineRunModel>[];
     }
 
@@ -61,7 +63,11 @@ class InlineRuns extends StatelessWidget {
     );
   }
 
-  Widget _inlineText(List<InlineRunModel> inline, Color codeColor) {
+  Widget _inlineText(
+    List<InlineRunModel> inline,
+    Color codeColor,
+    bool veiled,
+  ) {
     final standaloneMath = inline.length == 1 && inline.single.math != null;
     return Text.rich(
       TextSpan(
@@ -72,6 +78,7 @@ class InlineRuns extends StatelessWidget {
               run,
               standaloneMath: standaloneMath,
               codeColor: codeColor,
+              veiled: veiled,
             ),
         ],
       ),
@@ -80,10 +87,15 @@ class InlineRuns extends StatelessWidget {
     );
   }
 
+  TextSpan _text(String text, TextStyle style, bool veiled) => veiled
+      ? TextSpan(children: veilSpans(text, style))
+      : TextSpan(text: text, style: style);
+
   List<InlineSpan> _inlineSpans(
     InlineRunModel run, {
     required bool standaloneMath,
     required Color codeColor,
+    required bool veiled,
   }) {
     final math = run.math;
     if (math != null) {
@@ -93,17 +105,20 @@ class InlineRuns extends StatelessWidget {
           WidgetSpan(
             alignment: PlaceholderAlignment.baseline,
             baseline: TextBaseline.alphabetic,
-            child: Semantics(
-              label: run.text,
-              child: ExcludeSemantics(
-                child: SvgPicture.string(
-                  svg,
-                  height:
-                      (style.fontSize ?? 14) * (standaloneMath ? 1.45 : 1.2),
-                  fit: BoxFit.contain,
-                  colorFilter: ColorFilter.mode(
-                    style.color ?? Colors.black,
-                    BlendMode.srcIn,
+            child: VeilInvisible(
+              child: Semantics(
+                label: run.text,
+                child: ExcludeSemantics(
+                  child: SvgPicture.string(
+                    svg,
+                    height:
+                        (style.fontSize ?? 14) *
+                        (standaloneMath ? 1.45 : 1.2),
+                    fit: BoxFit.contain,
+                    colorFilter: ColorFilter.mode(
+                      style.color ?? Colors.black,
+                      BlendMode.srcIn,
+                    ),
                   ),
                 ),
               ),
@@ -114,21 +129,24 @@ class InlineRuns extends StatelessWidget {
       return _mathErrorSpans(run);
     }
     if (run.sub || run.sup) {
-      return [_scriptSpan(run, codeColor)];
+      return [_scriptSpan(run, codeColor, veiled)];
     }
     if (!contextHoles) {
-      return [TextSpan(text: run.text, style: _runStyle(run, codeColor))];
+      return [_text(run.text, _runStyle(run, codeColor), veiled)];
     }
-    return _contextSpans(run, codeColor);
+    return _contextSpans(run, codeColor, veiled);
   }
 
-  InlineSpan _scriptSpan(InlineRunModel run, Color codeColor) {
+  InlineSpan _scriptSpan(InlineRunModel run, Color codeColor, bool veiled) {
     final Widget text = contextHoles && _holeMarker.hasMatch(run.text)
         ? Text.rich(
-            TextSpan(children: _contextSpans(run, codeColor)),
+            TextSpan(children: _contextSpans(run, codeColor, veiled)),
             softWrap: false,
           )
-        : Text(run.text, style: _runStyle(run, codeColor), softWrap: false);
+        : Text.rich(
+            _text(run.text, _runStyle(run, codeColor), veiled),
+            softWrap: false,
+          );
     if (run.sup) {
       return WidgetSpan(
         alignment: PlaceholderAlignment.aboveBaseline,
@@ -148,16 +166,21 @@ class InlineRuns extends StatelessWidget {
 
   static final _holeMarker = RegExp('⍰|⬚');
 
-  List<InlineSpan> _contextSpans(InlineRunModel run, Color codeColor) {
+  List<InlineSpan> _contextSpans(
+    InlineRunModel run,
+    Color codeColor,
+    bool veiled,
+  ) {
     final spans = <InlineSpan>[];
     final marker = _holeMarker;
     var start = 0;
     for (final match in marker.allMatches(run.text)) {
       if (match.start > start) {
         spans.add(
-          TextSpan(
-            text: run.text.substring(start, match.start),
-            style: _runStyle(run, codeColor),
+          _text(
+            run.text.substring(start, match.start),
+            _runStyle(run, codeColor),
+            veiled,
           ),
         );
       }
@@ -176,10 +199,7 @@ class InlineRuns extends StatelessWidget {
     }
     if (start < run.text.length) {
       spans.add(
-        TextSpan(
-          text: run.text.substring(start),
-          style: _runStyle(run, codeColor),
-        ),
+        _text(run.text.substring(start), _runStyle(run, codeColor), veiled),
       );
     }
     return spans;
@@ -210,27 +230,29 @@ class InlineRuns extends StatelessWidget {
         textAlign: textAlign,
       );
     }
-    return Semantics(
-      label: run.text,
-      child: ExcludeSemantics(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: constraints.maxWidth),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: SvgPicture.string(
-                    svg,
-                    colorFilter: ColorFilter.mode(
-                      style.color ?? Colors.black,
-                      BlendMode.srcIn,
+    return VeilInvisible(
+      child: Semantics(
+        label: run.text,
+        child: ExcludeSemantics(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: SvgPicture.string(
+                      svg,
+                      colorFilter: ColorFilter.mode(
+                        style.color ?? Colors.black,
+                        BlendMode.srcIn,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );

@@ -565,9 +565,17 @@ export function createStudy({
       mode: state.mode,
       revealed,
       answered: isAnswered(),
-      concealed: isIntroducing() && answerConcealed,
+      concealed: concealedNow(),
     });
   }
+  // Every revealed text answer can be hidden for a self-test; a sketch, a
+  // choice pick, a typed check and an unrevealed card have nothing to veil.
+  function hidableNow() {
+    if (!state || !state.card || revealed === 0 || feedback) return false;
+    if (effectiveDraw() || isIntroChoice() || isChoice() || isInput() || isTypeLine()) return false;
+    return !(isWalking() && state.choices);
+  }
+  function concealedNow() { return answerConcealed && hidableNow(); }
   function rectsLiftedNow() {
     return isAnswered() || Boolean(model.questionAt(state.card, filledNow()).rects_revealed);
   }
@@ -660,26 +668,22 @@ export function createStudy({
           : `show ${citations.length} sources`;
       appendRegionToggle(toggles, "cite-toggle", title, citationView ? "¶" : "</>", "s", toggleCitation);
     }
-    // Introduction recall: the same corner-cue mechanism as the source swap, here hiding /
-    // un-hiding the revealed answer in place so you can self-test the encoding. `h` (or
-    // a tap on the region) flips it both ways. Shown only once the answer is revealed
-    // (nothing to hide before then), and never on a cited card — citation owns the corner.
-    const hidable = isIntroducing() && !effectiveDraw() && !isIntroChoice()
-      && citations.length === 0 && revealed > 0;
+    const hidable = hidableNow();
     a.classList.toggle("hidable", hidable);
     a.classList.toggle("concealed", hidable && answerConcealed);
     if (hidable) {
-      a.onclick = onIntroToggleClick;
+      a.onclick = onHideClick;
       appendRegionToggle(
         toggles,
-        "cite-toggle",
+        "hide-toggle",
         answerConcealed ? "show answer" : "hide the answer to self-test",
         answerConcealed ? "⊙" : "⊘",
         "h",
-        introToggle,
+        toggleHide,
       );
     }
     if (toggles.childElementCount) a.appendChild(toggles);
+    if (hidable && answerConcealed) applyVeil(a);
     // keep the newest visible line in view without scrolling into the hidden
     // footprint reserved for later lines
     if (state.mode === "line" && revealed > 0) {
@@ -1857,6 +1861,7 @@ export function createStudy({
 
   function reveal() {
     const firstLook = revealed === 0;
+    answerConcealed = false;
     revealed = state.mode === "line" ? Math.min(revealed + 1, stepCount()) : stepCount();
     // Seeing a new card's answer IS the encounter: record it server-side so
     // abandoning the session here does not re-introduce the card as new.
@@ -1864,38 +1869,53 @@ export function createStudy({
     fillBottom();
     renderLegend();
   }
-  // Introduction only: hide / un-hide the revealed answer so you can self-test the fresh
-  // encoding (conceal it, try to recall, show it to check) before acknowledging with
-  // "Seen". Deliberately does ONE thing — flips the answer text's visibility in place.
-  // It does NOT re-render: the card stays fully revealed, so the note, the footer, the
-  // answer's own box, everything holds its exact position. Nothing reflows or jumps.
-  // A first-encounter aid: there's no spaced schedule to lean on yet, so an ordinary
-  // review has no such toggle — it drills a card by failing it, which brings it back spaced.
-  function introToggle() {
-    if (revealed === 0) { reveal(); return; } // first look: reveal (same as the Reveal key)
+  // Hiding flips classes and wraps text in place: the card is not re-rendered,
+  // so the note, the footer and the answer's own box hold their positions.
+  function toggleHide() {
+    if (revealed === 0 && isIntroducing()) { reveal(); return; }
+    if (!hidableNow()) return;
     answerConcealed = !answerConcealed;
     const a = doc.getElementById("ansRegion");
     if (!a) return;
-    a.classList.toggle("concealed", answerConcealed); // visibility only — no reflow, no movement
+    a.classList.toggle("concealed", answerConcealed);
+    if (answerConcealed) applyVeil(a);
     syncQuestion();
     const cardEl = doc.getElementById("card");
     if (cardEl) syncDiagramAnswerState(cardEl);
-    paintIntroCue(a);
+    paintHideCue(a);
+  }
+
+  // Wraps every text node of the region once (a wrapped node stays wrapped
+  // and is inert while shown); the toggles, math and blank pills are left as
+  // they are.
+  function applyVeil(root) {
+    const walker = doc.createTreeWalker(root, 4);
+    const nodes = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node);
+    for (const node of nodes) {
+      const parent = node.parentElement;
+      if (!parent || !/\S/.test(node.data)) continue;
+      if (parent.closest(".region-toggles, .math-run, .blank-pill, .veil")) continue;
+      const veil = el("span", "veil");
+      for (const run of model.veilRuns(node.data)) {
+        veil.appendChild(el("span", run.kept ? "kept" : "veiled", run.text));
+      }
+      parent.replaceChild(veil, node);
+    }
   }
 
   // The self-test conceal owns the diagram answer too: re-masking rides a
   // class (visibility only, no reflow) and the accessible name follows.
   function syncDiagramAnswerState(cardEl) {
-    const showAnswer = isAnswered() && !answerConcealed;
-    cardEl.classList.toggle("concealing", isAnswered() && answerConcealed);
+    const concealed = concealedNow();
+    const showAnswer = isAnswered() && !concealed;
+    cardEl.classList.toggle("concealing", concealed);
     for (const img of cardEl.querySelectorAll("img.diagram[data-revealed-alt]")) {
       img.alt = showAnswer ? img.dataset.revealedAlt : img.dataset.maskedAlt;
     }
   }
-  // Point the corner cue's glyph/title at what the next press does. A textContent swap
-  // only — no layout change.
-  function paintIntroCue(a) {
-    const cue = a.querySelector(".cite-toggle");
+  function paintHideCue(a) {
+    const cue = a.querySelector(".hide-toggle");
     if (!cue) return;
     cue.title = answerConcealed ? "show answer" : "hide the answer to self-test";
     cue.setAttribute("aria-label", cue.title);
@@ -1903,9 +1923,9 @@ export function createStudy({
     if (ci) ci.textContent = answerConcealed ? "⊙" : "⊘";
   }
   // A tap on the answer region toggles too, but don't hijack a text-selection drag.
-  function onIntroToggleClick() {
+  function onHideClick() {
     if (win.getSelection && String(win.getSelection())) return;
-    introToggle();
+    toggleHide();
   }
 
 
@@ -2030,9 +2050,7 @@ export function createStudy({
           }
           return;
         }
-        // `h` toggles the answer hidden ⟷ shown, both directions on one key (the
-        // source⟷answer swap's principle).
-        if (e.key.toLowerCase() === "h" && !e.ctrlKey) { e.preventDefault(); introToggle(); return; }
+        if (e.key.toLowerCase() === "h" && !e.ctrlKey) { e.preventDefault(); toggleHide(); return; }
         if (revealed === 0) {
           if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
           if (hit(e, keys.reveal)) { e.preventDefault(); reveal(); return; }
@@ -2084,6 +2102,7 @@ export function createStudy({
         return;
       }
       if (hit(e, keys.remove)) { e.preventDefault(); remove(); return; }
+      if (hidableNow() && !e.ctrlKey && e.key.toLowerCase() === "h") { e.preventDefault(); toggleHide(); return; }
       if (isChoice()) {
         if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
         handleChoiceKey(e);
@@ -2145,6 +2164,7 @@ export function createStudy({
       if ((state.card.citations || []).length && !e.ctrlKey && e.key.toLowerCase() === "s") {
         e.preventDefault(); toggleCitation(); return;
       }
+      if (hidableNow() && !e.ctrlKey && e.key.toLowerCase() === "h") { e.preventDefault(); toggleHide(); return; }
       if (hit(e, keys.ask)) { e.preventDefault(); openTutor(); return; }
       if (hit(e, keys.cont)) { e.preventDefault(); walkNext(); }
       return;

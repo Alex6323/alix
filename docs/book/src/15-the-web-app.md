@@ -210,6 +210,17 @@ restarting (scoped `alix <dir>` instances stay pinned to their folder), and
 re-fetches workspace icon images, so a regenerated emblem shows without a
 reload.
 
+Once an answer is on screen you can **hide it to self-test** before you grade:
+press `h` or click the answer. Every word keeps its first letter, and its last
+letter past two letters; the other letters are drawn transparent in place, so
+the word shapes stay where they are and the line keeps its width. Inline code,
+tables and lists follow the same rule; an image or a diagram goes invisible
+with its space kept. The note disappears while the answer is hidden and comes
+back when you show it. Nothing on the card moves. `h` or a click shows the
+answer again, and the corner marker names what the next press does; on a
+cited card it sits beside the `</>` source marker. A choice pick, a typed
+check and a sketch have nothing to hide. The next card always starts shown.
+
 The AI features come along too: the [tutor](10-tutor.md), the
 [AI exam](12-the-ai-exam.md), and [traces](13-trace-decks.md) all have a web
 surface, each running its model call on a background thread while the page polls,

@@ -9,6 +9,7 @@ import {
   filledSteps,
   questionAt,
   revealStepCount,
+  veilRuns,
 } from "../../web/alix/review/model.js";
 import { createStudy, modeTag } from "../../web/alix/review/study.js";
 import { hit, hitOutsideField, label } from "../../web/alix/review/dom.js";
@@ -20,7 +21,7 @@ function harness() {
     api: async () => ({}),
     post: (body) => ({ method: "POST", body }),
     storage: { getItem: () => null, setItem: () => {} },
-    model: { create: createModel, applyStudyState, currentScreen, enterPicker, filledSteps, questionAt, revealStepCount },
+    model: { create: createModel, applyStudyState, currentScreen, enterPicker, filledSteps, questionAt, revealStepCount, veilRuns },
     rerender: () => renders++,
     traceData: () => null,
     replaceTraceSession: (trace) => traces.push(trace),
@@ -69,7 +70,7 @@ function summaryHarness(state, pending) {
     },
     post: (body) => ({ method: "POST", body }),
     storage: { getItem: () => null, setItem: () => {} },
-    model: { create: createModel, applyStudyState, currentScreen, enterPicker, filledSteps, questionAt, revealStepCount },
+    model: { create: createModel, applyStudyState, currentScreen, enterPicker, filledSteps, questionAt, revealStepCount, veilRuns },
     rerender: () => study.render(),
     traceData: () => null,
     replaceTraceSession: () => {},
@@ -188,7 +189,7 @@ test("the same load warning surfaces again for a later deck", () => {
     api: async () => ({}),
     post: (body) => ({ method: "POST", body }),
     storage: { getItem: () => null, setItem: () => {} },
-    model: { create: createModel, applyStudyState, currentScreen, enterPicker, filledSteps, questionAt, revealStepCount },
+    model: { create: createModel, applyStudyState, currentScreen, enterPicker, filledSteps, questionAt, revealStepCount, veilRuns },
     rerender: () => {},
     traceData: () => null,
     replaceTraceSession: () => {},
@@ -291,7 +292,7 @@ function keyHarness(state, keys, browseKeys) {
     },
     post: (body) => ({ method: "POST", body }),
     storage: { getItem: () => null, setItem: () => {} },
-    model: { create: createModel, applyStudyState, currentScreen, enterPicker, filledSteps, questionAt, revealStepCount },
+    model: { create: createModel, applyStudyState, currentScreen, enterPicker, filledSteps, questionAt, revealStepCount, veilRuns },
     rerender: () => {},
     traceData: () => null,
     replaceTraceSession: () => {},

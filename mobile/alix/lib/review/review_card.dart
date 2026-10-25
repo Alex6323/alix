@@ -9,6 +9,7 @@ import 'package:alix_mobile/review/sketch.dart';
 import 'package:alix_mobile/review/sketch_canvas.dart';
 import 'package:alix_mobile/review/unit_widgets.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
+import 'package:alix_mobile/shared/veil.dart';
 import 'package:alix_mobile/theme.dart';
 
 const _sans = 'IBM Plex Sans';
@@ -116,6 +117,8 @@ class ReviewCardView extends StatelessWidget {
     required this.onOpenTutor,
     required this.onOpenSection,
     this.onWalkNext,
+    this.answerHidden = false,
+    this.onToggleHidden,
   });
 
   final ReviewStateModel state;
@@ -156,6 +159,11 @@ class ReviewCardView extends StatelessWidget {
   final ValueChanged<ReviewCardModel> onOpenSection;
   final VoidCallback? onWalkNext;
 
+  /// The self-test veil over a revealed answer; a tap on the answer region
+  /// flips it through [onToggleHidden].
+  final bool answerHidden;
+  final VoidCallback? onToggleHidden;
+
   bool get _hasChoices => state.choices?.isNotEmpty ?? false;
   bool get _isMulti => state.choicesMultiple == true;
   bool get _isTyping =>
@@ -176,6 +184,8 @@ class ReviewCardView extends StatelessWidget {
     final tokens = Theme.of(context).alix;
     final answered = _answered(card);
     final showNote = answered && card.note.isNotEmpty;
+    final hideable = _hideable(card);
+    final hidden = hideable && answerHidden;
     return Column(
       children: [
         Expanded(
@@ -204,19 +214,25 @@ class ReviewCardView extends StatelessWidget {
                         return Column(
                           children: [
                             Expanded(
-                              child: _region(
-                                key: const ValueKey('answer-region'),
-                                padding: const EdgeInsets.fromLTRB(
-                                  20,
-                                  22,
-                                  20,
-                                  8,
-                                ),
-                                child: _answer(
-                                  context,
-                                  card,
-                                  tokens,
-                                  answered: answered,
+                              child: _answerTap(
+                                hideable,
+                                VeilScope(
+                                  veiled: hidden,
+                                  child: _region(
+                                    key: const ValueKey('answer-region'),
+                                    padding: const EdgeInsets.fromLTRB(
+                                      20,
+                                      22,
+                                      20,
+                                      8,
+                                    ),
+                                    child: _answer(
+                                      context,
+                                      card,
+                                      tokens,
+                                      answered: answered,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -232,7 +248,13 @@ class ReviewCardView extends StatelessWidget {
                                     20,
                                     8,
                                   ),
-                                  child: _note(context, card, tokens),
+                                  child: Visibility(
+                                    visible: !hidden,
+                                    maintainSize: true,
+                                    maintainState: true,
+                                    maintainAnimation: true,
+                                    child: _note(context, card, tokens),
+                                  ),
                                 ),
                               ),
                           ],
@@ -256,6 +278,25 @@ class ReviewCardView extends StatelessWidget {
       choice != null ||
       multiChoice != null ||
       _lineDone(card);
+
+  /// Every revealed text answer can be hidden for a self-test; a sketch, a
+  /// choice pick and a typed check have nothing to veil.
+  bool _hideable(ReviewCardModel card) =>
+      (revealed || revealedLines > 0) &&
+      !_hasChoices &&
+      !_isDrawing &&
+      checkFeedback == null;
+
+  Widget _answerTap(bool hideable, Widget region) {
+    final toggle = onToggleHidden;
+    if (!hideable || toggle == null) return region;
+    return GestureDetector(
+      key: const ValueKey('answer-tap'),
+      behavior: HitTestBehavior.opaque,
+      onTap: toggle,
+      child: region,
+    );
+  }
 
   /// One scrolling region of the card, its content on the reading measure.
   Widget _region({
@@ -334,7 +375,7 @@ class ReviewCardView extends StatelessWidget {
         if (answered)
           for (final image in card.imagesBack) ...[
             const SizedBox(height: 12),
-            _cardImage(context, image, answered),
+            VeilInvisible(child: _cardImage(context, image, answered)),
           ],
       ],
     );

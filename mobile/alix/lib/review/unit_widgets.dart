@@ -9,6 +9,7 @@ import 'package:alix_mobile/review/masked_image.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/shared/inline_runs.dart';
+import 'package:alix_mobile/shared/veil.dart';
 import 'package:alix_mobile/theme.dart';
 
 const monoFontFamily = 'IBM Plex Mono';
@@ -30,7 +31,9 @@ Widget unitWidget(
       lines,
       style.color ?? tokens.text,
     ),
-    ReviewDiagramModel() => diagramWidget(unit, answered: true),
+    ReviewDiagramModel() => VeilInvisible(
+      child: diagramWidget(unit, answered: true),
+    ),
     ReviewChecklistModel(:final items) => checklistWidget(
       items,
       tokens,
@@ -161,7 +164,7 @@ Widget runsOrText(
 }) {
   final effectiveStyle = style ?? const TextStyle();
   if (runs == null) {
-    return Text(text, textAlign: textAlign, style: effectiveStyle);
+    return VeilText(text, style: effectiveStyle, textAlign: textAlign);
   }
   return InlineRuns(
     runs: runs,
@@ -238,7 +241,7 @@ Widget codeBlock(
       borderRadius: BorderRadius.circular(8),
     ),
     child: blankTokens == null
-        ? Text(text, style: style)
+        ? VeilText(text, style: style)
         : runsOrText(
             [
               InlineRunModel(

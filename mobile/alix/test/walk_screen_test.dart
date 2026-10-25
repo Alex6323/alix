@@ -124,6 +124,40 @@ void main() {
     expect(sheetTitle, findsOneWidget, reason: 'the question reopens it');
   });
 
+  testWidgets('a tap on the revealed answer veils it in a walk, and a second tap shows it', (
+    tester,
+  ) async {
+    await pumpWalk(tester, _oneSection);
+    await dismissSheetIfOpen(tester);
+    final answerTap = find.byKey(const ValueKey('answer-tap'));
+    expect(answerTap, findsNothing, reason: 'nothing to hide before the reveal');
+    await tap(tester, 'Reveal');
+    expect(answerTap, findsOneWidget, reason: 'the revealed answer is the tap target');
+    List<Color?> colours() {
+      final out = <Color?>[];
+      tester.widget<Text>(find.text('Rome')).textSpan!.visitChildren((span) {
+        if (span is TextSpan && (span.text ?? '').isNotEmpty) out.add(span.style?.color);
+        return true;
+      });
+      return out;
+    }
+
+    await tester.tap(answerTap);
+    await tester.pumpAndSettle();
+    expect(
+      colours().map((colour) => colour == Colors.transparent).toList(),
+      [false, true, false],
+      reason: 'Rome hidden: R and e kept, om veiled',
+    );
+    await tester.tap(answerTap);
+    await tester.pumpAndSettle();
+    expect(
+      colours().any((colour) => colour == Colors.transparent),
+      isFalse,
+      reason: 'shown again',
+    );
+  });
+
   testWidgets('a choice item is answered by a pick, then Next', (tester) async {
     await pumpWalk(tester, _choice);
     expect(
