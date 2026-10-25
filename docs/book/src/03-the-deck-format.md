@@ -409,15 +409,13 @@ Pressure rises by about one atmosphere per ten metres.
 About 4 atmospheres.
 ```
 
-The web app shows a card's section heading as a dim one-line title above the
-question. The first card you ever meet from a section opens the whole section
-in a sheet under the question, once; after that, in this sitting and every
-later one, the title line, the `c` key, or the review menu's **Context** entry
-opens it. The Android app shows the heading as a tappable pill
-that opens the section in a sheet, and opens that sheet by itself under the
-same rule (see
-[The mobile app](18-the-mobile-app.md#reviewing)). The kids client does not
-expose section context.
+A card's section is never on the card face. The first card you ever meet from
+a section opens the whole section in a sheet under the question, once; after
+that, in this sitting and every later one, a click on the question opens it,
+as do the `c` key and the review menu's **Context** entry. The Android app
+opens the sheet on a tap on the question, and opens it by itself under the
+same rule (see [The mobile app](18-the-mobile-app.md#reviewing)). The kids
+client does not expose section context.
 
 A section heading is a heading, nothing more. It takes no directives and no card
 ID, because a section owns no card to bind either to.

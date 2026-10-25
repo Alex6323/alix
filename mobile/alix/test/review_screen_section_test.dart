@@ -1,9 +1,9 @@
-// The section affordance on the phone: a card with a section carries a
-// tappable one-line title pill above the prompt that opens the section in a
-// bottom sheet; the sitting's first introduction from a section opens that
-// sheet by itself, once. A section-less card carries neither. No pairing and
-// no server are involved: the section rides in the deck. ReviewScreen calls
-// the real bridge, so RustLib.init() is required.
+// The section affordance on the phone: a card with a section carries no
+// heading on its face; a tap on the question opens the section in a bottom
+// sheet, and the sitting's first introduction from a section opens that
+// sheet by itself, once. A section-less card has no tap target. No pairing
+// and no server are involved: the section rides in the deck. ReviewScreen
+// calls the real bridge, so RustLib.init() is required.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -19,8 +19,6 @@ import 'support/deck_fixture.dart';
 
 const _heading = 'Vehicle safety';
 const _prose = 'Applies on public roads.';
-const _longHeading =
-    'A heading long enough that one phone line cannot hold it without an ellipsis at the end';
 
 void main() {
   setUpAll(() async => RustLib.init());
@@ -65,8 +63,9 @@ void main() {
   }
 
   final sheetTitle = find.byKey(const ValueKey('section-sheet-title'));
+  final questionTap = find.byKey(const ValueKey('question-tap'));
+  final questionRegion = find.byKey(const ValueKey('question-region'));
   final pill = find.byKey(const ValueKey('section-pill'));
-  final title = find.byKey(const ValueKey('section-title'));
 
   Future<void> dismissSheet(WidgetTester tester) async {
     expect(sheetTitle, findsOneWidget, reason: 'a sheet is open to dismiss');
@@ -74,8 +73,14 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> tapQuestion(WidgetTester tester) async {
+    expect(questionTap, findsOneWidget, reason: 'the question is the tap target');
+    await tester.tap(questionTap);
+    await tester.pumpAndSettle();
+  }
+
   // Card 1 introduces the section this sitting and opens the sheet by
-  // itself; card 2 is the steady state: the pill alone.
+  // itself; card 2 is the steady state: the sheet waits for a tap.
   Future<void> advanceToSecondCard(WidgetTester tester) async {
     await dismissSheet(tester);
     await tapChip(tester, 'Reveal');
@@ -86,16 +91,16 @@ void main() {
       '---\ntitle: Roads\n---\n# $heading\n$_prose\n\n## q1?\na1\n\n## q2?\na2\n';
 
   testWidgets(
-    'a sectioned card shows the title pill and no Context chip, and keeps the prose off the card',
+    'a sectioned card names its section nowhere on its face: no pill, no heading, no Context chip, no prose',
     (tester) async {
       await pumpReview(tester, sectioned());
       await advanceToSecondCard(tester);
 
-      expect(pill, findsOneWidget, reason: 'the title pill is on the card');
+      expect(pill, findsNothing, reason: 'the title pill is gone');
       expect(
-        (tester.widget(title) as Text).data,
-        _heading,
-        reason: 'the pill carries the section heading text',
+        find.text(_heading),
+        findsNothing,
+        reason: 'the heading shows only inside the sheet',
       );
       expect(find.text('Context'), findsNothing, reason: 'no chip');
       expect(
@@ -103,45 +108,37 @@ void main() {
         findsNothing,
         reason: 'a card after the first shows the section only on demand',
       );
+      expect(questionTap, findsOneWidget, reason: 'the question is tappable');
     },
   );
 
-  testWidgets('a section-less card shows neither the title pill nor a sheet', (
+  testWidgets('a section-less card has no tap target and a tap on its question opens nothing', (
     tester,
   ) async {
     await pumpReview(tester, '---\ntitle: Plain\n---\n## q?\na\n');
 
+    expect(questionTap, findsNothing, reason: 'nothing to open');
     expect(pill, findsNothing);
-    expect(sheetTitle, findsNothing);
     expect(find.text('Context'), findsNothing);
+    await tester.tap(questionRegion);
+    await tester.pumpAndSettle();
+    expect(sheetTitle, findsNothing, reason: 'no sheet opened');
   });
 
-  testWidgets('tapping the title pill opens the section sheet with heading and prose', (
+  testWidgets('tapping the question opens the section sheet with heading and prose', (
     tester,
   ) async {
     await pumpReview(tester, sectioned());
     await advanceToSecondCard(tester);
-    await tester.tap(pill);
-    await tester.pumpAndSettle();
+    await tapQuestion(tester);
 
     expect(sheetTitle, findsOneWidget, reason: 'the sheet opened');
     expect((tester.widget(sheetTitle) as Text).data, _heading);
     expect(find.text(_prose), findsOneWidget, reason: 'the prose is in the sheet');
   });
 
-  testWidgets('the title pill is one line that truncates, never wraps', (
-    tester,
-  ) async {
-    await pumpReview(tester, sectioned(heading: _longHeading));
-    await advanceToSecondCard(tester);
-
-    final text = tester.widget<Text>(title);
-    expect(text.maxLines, 1, reason: 'one line');
-    expect(text.overflow, TextOverflow.ellipsis, reason: 'ellipsis, no wrap');
-  });
-
   testWidgets(
-    'the first introduction from a section opens the sheet by itself once; reveal does not reopen it and the second card does not open it',
+    'the first introduction from a section opens the sheet by itself once; the question reopens it, reveal does not, and the second card waits for a tap',
     (tester) async {
       await pumpReview(tester, sectioned());
 
@@ -155,15 +152,18 @@ void main() {
 
       await dismissSheet(tester);
       expect(sheetTitle, findsNothing, reason: 'dismissed');
-      expect(pill, findsOneWidget, reason: 'the pill stays as the reopen route');
       expect(find.text(_prose), findsNothing, reason: 'the prose is never on the card face');
+      await tapQuestion(tester);
+      expect(sheetTitle, findsOneWidget, reason: 'the question is the reopen route');
+      await dismissSheet(tester);
 
       await tapChip(tester, 'Reveal');
       expect(sheetTitle, findsNothing, reason: 'a state rebuild on the same card does not reopen the sheet');
 
       await tapChip(tester, 'Seen');
       expect(sheetTitle, findsNothing, reason: 'card 2 from the same section does not open the sheet');
-      expect(pill, findsOneWidget, reason: 'card 2 keeps the pill');
+      await tapQuestion(tester);
+      expect(sheetTitle, findsOneWidget, reason: 'card 2 opens its section on the tap');
     },
   );
 
@@ -183,10 +183,7 @@ void main() {
       await tapChip(tester, 'Seen');
 
       final openedAutomatically = sheetTitle.evaluate().isNotEmpty;
-      if (!openedAutomatically) {
-        await tester.tap(pill);
-        await tester.pumpAndSettle();
-      }
+      if (!openedAutomatically) await tapQuestion(tester);
       expect(
         find.text('Second section.'),
         findsOneWidget,

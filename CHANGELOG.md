@@ -125,6 +125,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A card's section heading no longer shows on the card face: the phone's
+  pill above the question and the web's dim title line with its key cap are
+  gone. A tap or click on the question opens the section sheet instead; a
+  card without a section ignores it. The first-introduction auto-open, the
+  `c` key, and the review menu's **Context** entry are unchanged.
+
 - Question and answer prose on the web and on the phone is left-aligned
   inside a block that shrinks to its content and is centred in the card: a
   short question or answer sits in the middle, a wrapped paragraph reads as a

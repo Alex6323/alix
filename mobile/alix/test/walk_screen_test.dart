@@ -114,6 +114,16 @@ void main() {
     ], reason: 'two sections: each opens on its first item');
   });
 
+  testWidgets('a tap on the question reopens the section sheet in a walk', (
+    tester,
+  ) async {
+    await pumpWalk(tester, _oneSection);
+    expect(await dismissSheetIfOpen(tester), isTrue, reason: 'first contact');
+    await tester.tap(find.byKey(const ValueKey('question-tap')));
+    await tester.pumpAndSettle();
+    expect(sheetTitle, findsOneWidget, reason: 'the question reopens it');
+  });
+
   testWidgets('a choice item is answered by a pick, then Next', (tester) async {
     await pumpWalk(tester, _choice);
     expect(

@@ -92,13 +92,13 @@ rule: left-aligned inside a block that shrinks to its content and is centred
 in the card, so a short question or answer sits in the middle and a wrapped
 paragraph reads as a left-aligned block; a note is always left-aligned at the
 full width. A card that sits under a `#` section in its deck (see
-[Sections and sub-cards](03-the-deck-format.md#sections-and-sub-cards)) shows
-the section's heading as a one-line pill above the question; tapping the pill
-opens the whole section, heading and prose, in a sheet. Neither appears on a
-card without a section, and the card itself never moves to make room. The
-first card you ever meet from a section opens that sheet by itself, once;
-swipe it away and the pill stays as the way back in. Every later card from
-the section, in this sitting or any later one, shows the pill only.
+[Sections and sub-cards](03-the-deck-format.md#sections-and-sub-cards)) opens
+the whole section, heading and prose, in a sheet when you tap the question.
+Nothing on the card face names the section, and the card never moves to make
+room. The first card you ever meet from a section opens that sheet by itself,
+once; swipe it away and a tap on the question brings it back. Every later
+card from the section, in this sitting or any later one, waits for the tap. A
+tap on the question of a card without a section does nothing.
 
 The bar at the top names the deck, cut to one line, and counts the cards
 left. **New session** on the summary starts the next sitting with the same

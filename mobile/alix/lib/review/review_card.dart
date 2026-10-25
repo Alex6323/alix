@@ -308,15 +308,11 @@ class ReviewCardView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        if (card.hasSection) ...[
-          _sectionTitle(card, theme, tokens),
-          const SizedBox(height: 12),
-        ],
         ..._contextLines(
           card,
           style: theme.textTheme.labelMedium?.copyWith(color: tokens.dim),
         ),
-        _front(context, card, tokens, answered: answered),
+        _questionTap(card, _front(context, card, tokens, answered: answered)),
         for (final image in card.images) ...[
           const SizedBox(height: 12),
           _cardImage(context, image, rectsLifted),
@@ -344,46 +340,13 @@ class ReviewCardView extends StatelessWidget {
     );
   }
 
-  Widget _sectionTitle(
-    ReviewCardModel card,
-    ThemeData theme,
-    AlixTokens tokens,
-  ) {
-    return Center(
-      child: Material(
-        color: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: BorderSide(color: tokens.line),
-        ),
-        child: InkWell(
-          key: const ValueKey('section-pill'),
-          onTap: () => onOpenSection(card),
-          borderRadius: BorderRadius.circular(10),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    card.sectionTitle,
-                    key: const ValueKey('section-title'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: tokens.text,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Icon(Icons.expand_more, size: 16, color: tokens.dim),
-              ],
-            ),
-          ),
-        ),
-      ),
+  Widget _questionTap(ReviewCardModel card, Widget front) {
+    if (!card.hasSection) return front;
+    return GestureDetector(
+      key: const ValueKey('question-tap'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onOpenSection(card),
+      child: SizedBox(width: double.infinity, child: Center(child: front)),
     );
   }
 

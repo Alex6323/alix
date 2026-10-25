@@ -1672,7 +1672,7 @@ test("the first section introduction auto-opens without inline and the next sect
     "first section card: prose follows the heading",
   ).toBeVisible();
   await expect(page.locator(".section-inline"), "first section card: inline context is absent").toHaveCount(0);
-  await expect(page.locator(".section-title"), "first section card: title stays available").toHaveText("Ocean depths");
+  await expect(page.locator(".section-title"), "first section card: no heading on the card face").toHaveCount(0);
   await page.evaluate(async () => {
     await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
   });
@@ -1698,6 +1698,10 @@ test("the first section introduction auto-opens without inline and the next sect
 
   await page.keyboard.press("Escape");
   await expect(drawer, "first section card: Escape closes the automatic drawer").toHaveCount(0);
+  await page.locator("#card .region.q").click();
+  await expect(drawer, "first section card: a click on the question reopens the drawer").toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(drawer, "first section card: Escape closes the reopened drawer").toHaveCount(0);
   await page.getByRole("button", { name: "Reveal" }).click();
   await expect(drawer, "first section card after reveal: drawer stays closed").toHaveCount(0);
   await Promise.all([
@@ -1711,7 +1715,12 @@ test("the first section introduction auto-opens without inline and the next sect
   ).not.toHaveText(firstFront ?? "");
   await expect(page.locator(".section-inline"), "second section card: inline context is absent").toHaveCount(0);
   await expect(drawer, "second section card: drawer does not auto-open").toHaveCount(0);
-  await expect(page.locator(".section-title"), "second section card: title remains available").toHaveText("Ocean depths");
+  await expect(page.locator(".section-title"), "second section card: no heading on the card face").toHaveCount(0);
+  await page.locator("#card .region.q").click();
+  await expect(drawer, "second section card: a click on the question opens the drawer").toBeVisible();
+  await expect(drawer.getByRole("heading", { name: "Ocean depths" }), "second section card: the sheet names the section").toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(drawer, "second section card: Escape closes the drawer").toHaveCount(0);
 });
 
 test("same-heading same-prompt sections each auto-open once by exact section identity", async ({ page }) => {
@@ -1781,7 +1790,7 @@ test("an open section drawer swallows every review key", async ({ page }) => {
   });
   await openApp(page);
 
-  await page.locator(".section-title").click();
+  await page.locator("#card .region.q").click();
   await expect(page.locator(".section-drawer"), "key sweep start: drawer is open").toBeVisible();
   const before = await page.evaluate(() => fetch("/api/state").then((response) => response.json()));
   for (const key of ["Space", "Control+s", "1", "2", "3", "a", "Control+x", "r", "s", "h"]) {
@@ -1800,48 +1809,24 @@ test("an open section drawer swallows every review key", async ({ page }) => {
   await expect(page.locator(".section-drawer"), "key sweep Escape: drawer closes").toHaveCount(0);
 });
 
-test("the section title truncates a long heading to one line", async ({ page }) => {
-  const heading = "A deliberately long section heading that cannot fit within a narrow review card without truncation";
-  await page.setViewportSize({ width: 420, height: 760 });
-  await page.route("**/api/state", (route) => route.fulfill({
-    json: longContentState({
-      answerLines: ["Answer"],
-      sectionLines: [heading, "Supporting prose."],
-    }),
-  }));
-  await openApp(page);
-
-  const title = page.locator(".section-title");
-  await expect(title, `long title text: ${heading}`).toHaveText(heading);
-  const metrics = await title.evaluate((element) => {
-    const style = window.getComputedStyle(element);
-    return {
-      clientWidth: element.clientWidth,
-      overflow: style.overflow,
-      scrollWidth: element.scrollWidth,
-      textOverflow: style.textOverflow,
-      whiteSpace: style.whiteSpace,
-    };
-  });
-  expect(metrics.whiteSpace, `long title white-space: ${JSON.stringify(metrics)}`).toBe("nowrap");
-  expect(metrics.overflow, `long title overflow: ${JSON.stringify(metrics)}`).toBe("hidden");
-  expect(metrics.textOverflow, `long title ellipsis: ${JSON.stringify(metrics)}`).toBe("ellipsis");
-  expect(metrics.scrollWidth, `long title width: ${JSON.stringify(metrics)}`).toBeGreaterThan(metrics.clientWidth);
-  if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
-    await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-title-mobile.png` });
-  }
-});
-
-test("a sectionless card shows no section title", async ({ page }) => {
+test("a sectionless card shows no section title and ignores a click on the question", async ({ page }) => {
   await page.route("**/api/state", (route) => route.fulfill({
     json: longContentState({ answerLines: ["Answer"] }),
   }));
   await openApp(page);
 
   await expect(page.locator(".section-title"), "sectionless card: title is absent").toHaveCount(0);
+  const question = page.locator("#card .region.q");
+  await expect(question, "sectionless card: the question is not marked as an opener").not.toHaveClass(/sectioned/);
+  expect(
+    await question.evaluate((element) => window.getComputedStyle(element).cursor),
+    "sectionless card: the question does not read as clickable",
+  ).not.toBe("pointer");
+  await question.click();
+  await expect(page.locator(".section-drawer"), "sectionless card: a click on the question opens nothing").toHaveCount(0);
 });
 
-test("the section title and review menu both open the drawer", async ({ page }) => {
+test("a click on the question and the review menu both open the drawer", async ({ page }) => {
   await page.route("**/api/state", (route) => route.fulfill({
     json: longContentState({
       answerLines: ["Answer"],
@@ -1851,6 +1836,11 @@ test("the section title and review menu both open the drawer", async ({ page }) 
   await openApp(page);
 
   await expect(page.locator(".section-drawer"), "non-first section: drawer starts closed").toHaveCount(0);
+  await expect(page.locator(".section-title"), "non-first section: no heading on the card face").toHaveCount(0);
+  expect(
+    await page.locator("#card .region.q").evaluate((element) => window.getComputedStyle(element).cursor),
+    "sectioned card: the question reads as clickable",
+  ).toBe("pointer");
   await page.evaluate(() => {
     const animated: string[] = [];
     const original = Element.prototype.animate;
@@ -1860,12 +1850,12 @@ test("the section title and review menu both open the drawer", async ({ page }) 
     };
     (window as unknown as { animated: string[] }).animated = animated;
   });
-  await page.locator(".section-title").click();
+  await page.locator("#card .region.q").click();
   const drawer = page.locator(".section-drawer");
-  await expect(drawer, "title route: drawer opens").toBeVisible();
+  await expect(drawer, "question route: drawer opens").toBeVisible();
   const panel = drawer.locator(".section-drawer-panel");
-  await expect(panel, "title route: focus enters the drawer").toBeFocused();
-  await expect(panel.getByRole("heading", { name: "Drawer routes" }), "title route: heading renders").toBeVisible();
+  await expect(panel, "question route: focus enters the drawer").toBeFocused();
+  await expect(panel.getByRole("heading", { name: "Drawer routes" }), "question route: heading renders").toBeVisible();
   await drawer.evaluate(async (element) => {
     await Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished));
   });
@@ -1888,7 +1878,6 @@ test("the section title and review menu both open the drawer", async ({ page }) 
       overQuestion: covering("#card .region.q"),
       panel: rect(".section-drawer-panel"),
       question: rect("#card .region.q"),
-      title: rect(".section-title"),
       viewport: { height: window.innerHeight, width: window.innerWidth },
     };
   });
@@ -1907,10 +1896,6 @@ test("the section title and review menu both open the drawer", async ({ page }) 
   ).toBeLessThan(bounds.viewport.height - 100);
   near(bounds.panel?.left, bounds.question?.left ?? -1, "the panel's left edge is the question column's");
   near(bounds.panel?.right, bounds.question?.right ?? -1, "the panel's right edge is the question column's");
-  expect(
-    bounds.title?.bottom,
-    `the title stays above the panel: ${JSON.stringify(bounds)}`,
-  ).toBeLessThanOrEqual((bounds.panel?.top ?? 0) + 1);
   if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
     await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-drawer.png` });
   }
@@ -1926,19 +1911,15 @@ test("the section title and review menu both open the drawer", async ({ page }) 
 
   await page.keyboard.press("c");
   await expect(drawer, "context key route: drawer closes").toHaveCount(0);
-  await expect(page.locator(".section-title"), "context key route: focus returns to the title").toBeFocused();
-  expect(
-    await page.locator(".section-title").evaluate((element) => window.getComputedStyle(element).outlineStyle),
-    "context key route: the returned focus draws no ring",
-  ).toBe("none");
-  await expect(page.locator(".section-title-key .k"), "title legend: names the context key").toHaveText("c");
-  await page.locator(".section-title").click();
-  await expect(drawer, "title route again: drawer reopens").toBeVisible();
-  await expect(page.locator(".section-title"), "title route again: aria-expanded true").toHaveAttribute("aria-expanded", "true");
-  const dimmedTitle = (await page.locator(".section-title").boundingBox())!;
-  await page.mouse.click(dimmedTitle.x + dimmedTitle.width / 2, dimmedTitle.y + dimmedTitle.height / 2);
-  await expect(drawer, "title route: a click on the dimmed title closes the drawer").toHaveCount(0);
-  await expect(page.locator(".section-title"), "title route: aria-expanded false").toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("c");
+  await expect(drawer, "context key route: the key reopens it with focus on the page").toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(drawer, "context key route: Escape closes it again").toHaveCount(0);
+  await page.locator("#card .region.q").click();
+  await expect(drawer, "question route again: drawer reopens").toBeVisible();
+  const dimmedQuestion = (await page.locator("#card .region.q").boundingBox())!;
+  await page.mouse.click(dimmedQuestion.x + dimmedQuestion.width / 2, dimmedQuestion.y + dimmedQuestion.height / 2);
+  await expect(drawer, "question route: a click on the dimmed question closes the drawer").toHaveCount(0);
   await page.getByRole("button", { name: "Menu" }).click();
   await page.getByRole("menuitem", { name: /^Context/ }).click();
   await expect(drawer, "menu route: drawer opens").toBeVisible();
@@ -1969,12 +1950,12 @@ test("a state applied while the sheet is open tears the sheet down", async ({ pa
     await route.fulfill({ json: second });
   });
   await page.getByRole("button", { name: "Got it" }).click();
-  await page.locator(".section-title").click();
+  await page.locator("#card .region.q").click();
   await expect(page.locator(".section-drawer"), "grade in flight: the sheet opens").toBeVisible();
   release();
   await expect(page.locator(".front-text"), "grade lands: the next card renders").toHaveText("The next card arrives.");
   await expect(page.locator(".section-drawer"), "grade lands: the sheet is torn down with the old card").toHaveCount(0);
-  await expect(page.locator(".section-title"), "grade lands: the title reports closed").toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#card .region.q"), "grade lands: the new card's question is an opener").toHaveClass(/sectioned/);
   await page.keyboard.press("c");
   await expect(page.locator(".section-drawer"), "context key after the apply: exactly one sheet").toHaveCount(1);
   await page.keyboard.press("Escape");
@@ -1989,7 +1970,7 @@ test("the sheet follows the question when the question changes height", async ({
     }),
   }));
   await openApp(page);
-  await page.locator(".section-title").click();
+  await page.locator("#card .region.q").click();
   const drawer = page.locator(".section-drawer");
   await expect(drawer, "sheet opens").toBeVisible();
   await drawer.evaluate(async (element) => {

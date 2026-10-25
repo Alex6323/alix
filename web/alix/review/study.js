@@ -479,22 +479,8 @@ export function createStudy({
       crumbStrip.appendChild(bc);
     }
     if (hasSection()) {
-      const row = el("div", "section-title-row");
-      const title = el("button", "context label section-title", c.section_context[0]);
-      title.type = "button";
-      title.title = c.section_context[0];
-      title.setAttribute("aria-label", `Section context: ${c.section_context[0]}`);
-      title.setAttribute("aria-expanded", sectionView ? "true" : "false");
-      title.addEventListener("click", toggleSection);
-      row.appendChild(title);
-      const key = label(keys.context);
-      if (key) {
-        const pill = el("span", "section-title-key");
-        pill.appendChild(el("span", "ci", "§"));
-        pill.appendChild(el("span", "k", key));
-        row.appendChild(pill);
-      }
-      card.insertBefore(row, q);
+      q.classList.add("sectioned");
+      q.addEventListener("click", openSection);
     }
     // A context line labels the front (a card table's title) above it.
     appendContext(q, c.context, c.context_runs, [], "context label", contextDiagram);
@@ -738,11 +724,8 @@ export function createStudy({
 
   function openSection() {
     if (!hasSection() || sectionView) return;
-    const card = doc.getElementById("card");
-    if (!card) return;
+    if (!doc.getElementById("card")) return;
     sectionView = true;
-    const opener = card.querySelector(".section-title");
-    if (opener) opener.setAttribute("aria-expanded", "true");
     const drawer = el("div", "section-drawer");
     drawer.setAttribute("role", "dialog");
     drawer.setAttribute("aria-modal", "true");
@@ -815,32 +798,16 @@ export function createStudy({
   function closeSection() {
     if (!sectionView) return;
     const drawer = doc.querySelector(".section-drawer");
-    const title = doc.querySelector(".section-title");
-    const done = () => {
-      removeSectionSheet();
-      if (title && title.isConnected) {
-        title.setAttribute("aria-expanded", "false");
-        // A ring on the title after every close reads as a highlight.
-        title.dataset.quietFocus = "";
-        title.addEventListener("blur", () => { delete title.dataset.quietFocus; }, { once: true });
-        title.focus({ preventScroll: true });
-      }
-    };
     const panel = drawer && drawer.querySelector(".section-drawer-panel");
     if (panel && panel.offsetHeight && panel.animate) {
       const animation = panel.animate(
         [{ transform: "translateY(0)" }, { transform: "translateY(100%)" }],
         { duration: 170, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" },
       );
-      animation.onfinish = done;
+      animation.onfinish = removeSectionSheet;
     } else {
-      done();
+      removeSectionSheet();
     }
-  }
-
-  function toggleSection() {
-    if (sectionView) closeSection();
-    else openSection();
   }
 
   // Swap the answer region between the worded answer and the cited source excerpt.
