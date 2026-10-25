@@ -480,6 +480,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On the web, a tutor note still being made when you move to the next card
+  is no longer dropped: it lands on the card you asked it on, the panel says
+  the tutor is still working on the previous card until it does, and a note
+  saved after the panel was closed is announced on the page (`AskDto` gains
+  `previous_card`). A question or card draft left behind by an advance is
+  still dropped, and the leave prompt now says so.
+
 - A condensed tutor note no longer refers to an example that exists only in
   the conversation: the condense prompt requires every key point to read with
   only the card in front of the learner, an example a point depends on is

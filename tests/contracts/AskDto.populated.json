@@ -2,6 +2,7 @@
   "can_distill": false,
   "draft": null,
   "error": null,
+  "previous_card": false,
   "status": "asking claude",
   "thinking": true,
   "transcript": [

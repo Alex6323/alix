@@ -230,6 +230,7 @@ const tutor = createTutor({
     keys: study.keys,
     label,
     legend,
+    notice,
     stage,
   },
 });

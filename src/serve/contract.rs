@@ -1917,6 +1917,7 @@ fn askdto_populated_wire_shape() {
             units: crate::render::tutor_answer_units("so drops are deterministic"),
         }],
         thinking: true,
+        previous_card: false,
         can_distill: false,
         status: Some("asking claude".to_string()),
         error: None,
@@ -1936,6 +1937,7 @@ fn askdto_populated_wire_shape() {
                 }]
             }],
             "thinking": true,
+            "previous_card": false,
             "can_distill": false,
             "status": "asking claude",
             "error": null,
@@ -1949,6 +1951,7 @@ fn askdto_empty_wire_shape() {
     let dto = AskDto {
         transcript: Vec::new(),
         thinking: false,
+        previous_card: false,
         can_distill: false,
         status: None,
         error: None,
@@ -1960,6 +1963,7 @@ fn askdto_empty_wire_shape() {
         json!({
             "transcript": [],
             "thinking": false,
+            "previous_card": false,
             "can_distill": false,
             "status": null,
             "error": null,
@@ -1977,6 +1981,7 @@ fn askdto_with_draft_wire_shape() {
             units: crate::render::tutor_answer_units("so drops are deterministic"),
         }],
         thinking: false,
+        previous_card: false,
         can_distill: false,
         status: None,
         error: None,
@@ -1999,6 +2004,7 @@ fn askdto_with_draft_wire_shape() {
                 }]
             }],
             "thinking": false,
+            "previous_card": false,
             "can_distill": false,
             "status": null,
             "error": null,

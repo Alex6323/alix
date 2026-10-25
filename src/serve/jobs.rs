@@ -111,12 +111,14 @@ pub(super) struct Pending {
     pub(super) rx: Receiver<Reply>,
     pub(super) purpose: Purpose,
     pub(super) card: Card,
+    pub(super) subject: Option<String>,
     pub(super) job: ask::AskJob,
 }
 
-// A dropped pending exchange is ineligible (card advance, tutor replaced,
-// owner shutdown): reap its subprocess synchronously so no AI child ever
-// outlives its owner or keeps burning quota for an answer nobody applies.
+// A dropped pending exchange is ineligible (a question or draft left behind
+// by a card advance, tutor replaced, owner shutdown): reap its subprocess
+// synchronously so no AI child ever outlives its owner or keeps burning quota
+// for an answer nobody applies.
 impl Drop for Pending {
     fn drop(&mut self) {
         self.job.cancel();
@@ -167,13 +169,20 @@ impl Ask {
             self.noted_through = 0;
             self.draft = None;
             self.context_warning = None;
-            // Advancing makes an in-flight completion ineligible (ADR 0027):
-            // dropping the receiver discards the late answer, and a pending
-            // note or draft is never applied to either card. The worker's
-            // send fails harmlessly.
-            self.pending = None;
+            // A note still condensing settles on the card it was asked on
+            // (ADR 0056); a late answer or draft is dropped (ADR 0027).
+            self.pending = self
+                .pending
+                .take()
+                .filter(|p| matches!(p.purpose, Purpose::Condense));
             self.subject = subject;
         }
+    }
+
+    fn previous_card(&self) -> bool {
+        self.pending
+            .as_ref()
+            .is_some_and(|p| p.subject != self.subject)
     }
 
     fn dto(&self, status: Option<String>, error: Option<String>) -> AskDto {
@@ -193,6 +202,7 @@ impl Ask {
                 })
                 .collect(),
             thinking: self.pending.is_some(),
+            previous_card: self.previous_card(),
             can_distill: self.can_distill(),
             status: status.or_else(|| self.context_warning.clone()),
             error,
@@ -228,7 +238,7 @@ impl Ask {
         if self.pending.is_some() {
             return false;
         }
-        self.align(subject);
+        self.align(subject.clone());
         if matches!(action, AskAction::Condense | AskAction::DraftCard) && !self.can_distill() {
             return false;
         }
@@ -265,14 +275,17 @@ impl Ask {
             rx,
             purpose,
             card: card.clone(),
+            subject,
             job,
         });
         true
     }
 
+    // `save` receives the subject the exchange was started on: the id the
+    // note is addressed to, which a trace checkpoint's card does not carry.
     fn poll(
         &mut self,
-        save: impl FnOnce(&Card, &[String]) -> Result<(), String>,
+        save: impl FnOnce(&Card, Option<&str>, &[String]) -> Result<(), String>,
     ) -> (Option<String>, Option<String>) {
         let reply = match &self.pending {
             None => return (None, None),
@@ -287,6 +300,8 @@ impl Ask {
         let mut pending = self.pending.take().expect("pending was present");
         let purpose = std::mem::replace(&mut pending.purpose, Purpose::Condense);
         let pending_card = pending.card.clone();
+        let pending_subject = pending.subject.take();
+        let on_current = pending_subject == self.subject;
         drop(pending);
         match (reply, purpose) {
             (Reply::Answer(answer), Purpose::Question(question)) => {
@@ -302,9 +317,11 @@ impl Ask {
                 if notes.is_empty() {
                     return (Some("nothing to save".to_string()), None);
                 }
-                match save(&pending_card, &notes) {
+                match save(&pending_card, pending_subject.as_deref(), &notes) {
                     Ok(()) => {
-                        self.noted_through = self.transcript.len();
+                        if on_current {
+                            self.noted_through = self.transcript.len();
+                        }
                         (Some("note saved".to_string()), None)
                     }
                     Err(e) => (None, Some(e)),
@@ -864,7 +881,7 @@ impl Reviewing {
             session,
             ..
         } = self;
-        ask.poll(|card, notes| {
+        ask.poll(|card, _, notes| {
             let card_id = card
                 .id()
                 .ok_or_else(|| "the card carries no id to attach a note to".to_string())?;
@@ -1646,12 +1663,11 @@ impl Tracing {
             .align(self.session.checkpoint().map(|c| c.card_id.clone()));
         let deck_path = self.session.trace().deck_path.clone();
         // A checkpoint card is built for the trace and carries no token of its
-        // own; the checkpoint holds the id the note is addressed to.
-        let checkpoint = self.session.checkpoint().map(|c| c.card_id.clone());
-        self.ask.poll(|card, notes| {
+        // own; the subject is the checkpoint id the note is addressed to.
+        self.ask.poll(|card, checkpoint, notes| {
             let card_id = checkpoint
                 .ok_or_else(|| "the trace is on no checkpoint to attach a note to".to_string())?;
-            crate::personal::append_note(&deck_path, &card.deck_id, &card_id, notes)
+            crate::personal::append_note(&deck_path, &card.deck_id, card_id, notes)
                 .map_err(|e| e.to_string())
         })
     }
@@ -1719,7 +1735,7 @@ impl Walking {
         let Self {
             ask, session, info, ..
         } = self;
-        ask.poll(|card, notes| {
+        ask.poll(|card, _, notes| {
             let card_id = card
                 .id()
                 .ok_or_else(|| "the card carries no id to attach a note to".to_string())?;

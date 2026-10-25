@@ -1140,11 +1140,19 @@ deduplicated; `chosen` echoes the submission after that normalization, and
 
 ### AskDto / ExchangeDto / AskInfoDto / DraftCardDto
 
-`AskDto`: `transcript: [{q, a, units}]`, `thinking: bool`, `can_distill:
-bool`, `status: string?`, `error: string?`, `draft: DraftCardDto?`.
+`AskDto`: `transcript: [{q, a, units}]`, `thinking: bool`, `previous_card:
+bool`, `can_distill: bool`, `status: string?`, `error: string?`, `draft:
+DraftCardDto?`.
 `can_distill` is true only when the transcript has an answer newer than the
 last note or card made from it and no tutor call is running. Clients use this
-server-owned gate for both distillation actions. `status` may report that only
+server-owned gate for both distillation actions. `previous_card` is true
+while the running call belongs to a card the learner has left: a note still
+condensing when the card advances keeps running and is written to the card
+it was asked on (ADR 0056), the slot stays held until it settles, and the
+next poll then carries `status: "note saved"` beside the new card's empty
+transcript; a question or draft left behind by an advance is dropped
+(ADR 0027). A client shows the held slot as the tutor still working on the
+previous card. `status` may report that only
 frozen evidence is available when the live source cannot be used. `draft` is
 the last card the tutor drafted from the conversation (`POST
 /api/ask/card/draft`, §4.5); it persists until the subject changes.

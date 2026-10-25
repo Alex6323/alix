@@ -1,6 +1,9 @@
 # 0027: Capability-owned application state
 
 - Status: Accepted
+- Amended by: 0056 (in "Keep tutor identity with Study and tutor execution
+  with Jobs": advancing the card no longer makes a pending note ineligible;
+  it settles on the card it was asked on)
 - Evidence: pub(super) struct CatalogHandle in src/serve/catalog_owner.rs
 - Recorded: 2026-07-29
 - Retrospective: No

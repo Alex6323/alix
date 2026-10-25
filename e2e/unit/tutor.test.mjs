@@ -137,3 +137,62 @@ test("during a walk the tutor asks, notes, and drafts cards through the walk end
   assert.equal(calls.at(-1), "/api/walk", "step: close refreshes the walk, not the drill state; calls: " + calls.join(","));
   assert.deepEqual(replaced, [walk], "step: close; the refreshed walk replaces the state");
 });
+
+test("a closed tutor keeps polling a note still being made and announces where it landed", async () => {
+  let tick = null;
+  let cleared = 0;
+  const notices = [];
+  let reply = {
+    transcript: [{ q: "Why?", a: "Because." }],
+    thinking: false,
+    previous_card: false,
+    can_distill: true,
+    status: null,
+    error: null,
+  };
+  const tutor = createTutor({
+    api: async () => reply,
+    post: (body) => ({ method: "POST", body }),
+    rerender: () => {},
+    updateBusy: () => {},
+    timers: {
+      setInterval: (fn) => {
+        tick = fn;
+        return 1;
+      },
+      clearInterval: () => {
+        cleared += 1;
+      },
+    },
+    trace: { isOpen: () => false, replace: () => {} },
+    study: {
+      state: () => ({ card: null }),
+      isWalking: () => false,
+      replaceState: () => {},
+      load: () => Promise.resolve(),
+    },
+    ui: {
+      document: { querySelector: () => null },
+      notice: (msg) => notices.push(msg),
+    },
+  });
+
+  await tutor.show();
+  reply = { ...reply, thinking: true, previous_card: true, can_distill: false };
+  await tutor.saveNote();
+  assert.ok(tick, "step: note; the poll is armed");
+  assert.equal(tutor.isPolling(), true, "step: note; polling");
+
+  const clearedBeforeClose = cleared;
+  tutor.data().transcript.length = 0;
+  await tutor.close();
+  assert.equal(tutor.isOpen(), false, "step: close");
+  assert.equal(cleared, clearedBeforeClose, "step: close keeps the poll while a note is still being made");
+  assert.equal(tutor.isPolling(), true, "step: close; still polling");
+
+  reply = { ...reply, thinking: false, previous_card: false, status: "note saved" };
+  tick();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(tutor.isPolling(), false, "step: settle stops the poll");
+  assert.deepEqual(notices, ["note saved"], "step: settle; the closed tutor announces the landing");
+});

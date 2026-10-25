@@ -1971,3 +1971,32 @@ test("a gated sub-card's cell is outlined, not filled, and its parent's is not",
   await expect(drawer.locator(".crumb-cell").first()).not.toHaveClass(/locked/);
   await expect(drawer.locator(".crumb-cell").last()).toHaveClass(/locked/);
 });
+
+// ADR 0056: a note still condensing when the learner moves on settles on the
+// card it was asked on; the panel says so while the slot is held, and the
+// leave prompt no longer promises that a note being made is lost.
+test("the tutor names the previous card while its note settles and the leave prompt says a note still lands", async ({ page }) => {
+  await openWildCram(page, "Recall");
+  await answerCurrentWildCard(page);
+  await page.route("**/api/ask", (route) =>
+    route.fulfill({
+      json: {
+        transcript: [{ q: "Why?", a: "Because the source says so." }],
+        thinking: true,
+        previous_card: true,
+        can_distill: false,
+        status: null,
+        error: null,
+        draft: null,
+      },
+    }),
+  );
+  await page.getByRole("button", { name: /^Ask/ }).click();
+  await expect(page.locator(".ask-thinking")).toHaveText(/Claude is still working on the previous card/);
+
+  await page.getByRole("button", { name: /^Close/ }).click();
+  await expect(page.locator(".leave-msg")).toHaveText(/a note being made still lands on this card/);
+  await expect(page.locator(".leave-msg")).toHaveText(/drops this conversation and any answer still coming/);
+  await page.getByRole("button", { name: /^Stay/ }).click();
+  await expect(page.locator(".ask-thinking")).toBeVisible();
+});

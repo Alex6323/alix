@@ -726,6 +726,11 @@ fn poll_until(
     panic!("{path} did not settle within the poll budget");
 }
 
+fn get_json(base: &str, path: &str) -> serde_json::Value {
+    let resp = http(base, "GET", path, &[], &[]);
+    serde_json::from_slice(&resp.body).unwrap()
+}
+
 /// Serializes tests that pin `PATH` (magic-wormhole's install-hint tests):
 /// `wormhole` is installed on some dev machines but not in CI, so
 /// `POST /api/share`/`/api/receive` must see a deliberately empty `PATH` for
@@ -6971,10 +6976,11 @@ fn server_shutdown_cancels_the_in_flight_remote_tutor_worker() {
     );
 }
 
-/// The note variant of the same staleness: a condense completing after the
-/// card advanced must not write into the deck file.
+/// ADR 0056: a condense completing after the card advanced lands on the card
+/// it was asked on, never on the new card. While it settles the slot is held
+/// and reports the previous card; the new card's transcript stays empty.
 #[test]
-fn a_tutor_note_arriving_after_a_card_advance_is_not_written() {
+fn a_tutor_note_arriving_after_a_card_advance_lands_on_the_card_it_was_asked_on() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
     let started = scripts.path().join("started");
@@ -6997,6 +7003,7 @@ fn a_tutor_note_arriving_after_a_card_advance_is_not_written() {
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
     let (base, guard) = spawn_full_server(Some(&fake));
     select_fixture(&base);
+    let sidecar = alix::personal::sidecar_path(&guard.dir().join("sample.md"));
 
     post_gated(&base, "/api/ask", r#"{"question":"why?"}"#);
     poll_until(&base, "/api/ask", |b| b["thinking"] == false);
@@ -7010,15 +7017,116 @@ fn a_tutor_note_arriving_after_a_card_advance_is_not_written() {
         );
         thread::sleep(Duration::from_millis(5));
     }
+    let left = get_json(&base, "/api/state")["card"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     post_gated(&base, "/api/skip", "{}");
-    release_fifo(&fifo);
-    poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+    let next = get_json(&base, "/api/state")["card"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_ne!(left, next, "the skip must advance to another card");
+    let held = get_json(&base, "/api/ask");
+    assert_eq!(true, held["thinking"], "the slot stays held: {held}");
+    assert_eq!(
+        true, held["previous_card"],
+        "the held slot names the previous card: {held}"
+    );
+    assert_eq!(
+        0,
+        held["transcript"].as_array().unwrap().len(),
+        "the new card starts with an empty transcript: {held}"
+    );
+    assert_eq!(false, held["can_distill"], "nothing to distill yet: {held}");
+    assert!(
+        !sidecar.exists(),
+        "nothing is written before the condense settles"
+    );
 
+    release_fifo(&fifo);
+    let settled = poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+    assert_eq!("note saved", settled["status"], "settled: {settled}");
+    assert_eq!(false, settled["previous_card"], "settled: {settled}");
+    assert_eq!(
+        0,
+        settled["transcript"].as_array().unwrap().len(),
+        "the settled note leaves the new card's transcript alone: {settled}"
+    );
+    let text = std::fs::read_to_string(&sidecar)
+        .unwrap_or_else(|e| panic!("{} unreadable: {e}", sidecar.display()));
+    assert!(
+        text.contains(&format!(
+            "<!-- note: {left} -->\n> [!NOTE]\n> NOTE: a very late note\n"
+        )),
+        "the note is addressed to the card it was asked on:\n{text}"
+    );
+    assert!(
+        !text.contains(&format!("note: {next}")),
+        "the new card gets nothing:\n{text}"
+    );
     let deck = std::fs::read_to_string(guard.dir().join("sample.md")).unwrap();
     assert!(
         !deck.contains("a very late note"),
-        "the stale note must not land in the deck file: {deck}"
+        "the authored deck is never written: {deck}"
+    );
+}
+
+/// The draft keeps ADR 0027's rule: a card drafted after the card advanced
+/// belongs to a transcript that is gone, so it is dropped, never offered under
+/// the new card.
+#[test]
+fn a_tutor_draft_arriving_after_a_card_advance_is_dropped() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let started = scripts.path().join("started");
+    let fifo = scripts.path().join("release.fifo");
+    mkfifo_at(&fifo);
+    let count = scripts.path().join("calls");
+    let fake = scripts.path().join("parked-draft");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ncat >/dev/null\necho x >> {count}\nif [ \"$(wc -l < {count})\" -gt 1 ]; then : > {started}; read _ < {fifo}; printf '## a late front\\na late back\\n'; else echo 'an answer'; fi\n",
+            count = count.display(),
+            started = started.display(),
+            fifo = fifo.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (base, guard) = spawn_full_server(Some(&fake));
+    select_fixture(&base);
+
+    post_gated(&base, "/api/ask", r#"{"question":"why?"}"#);
+    poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+    assert_eq!(200, post_gated(&base, "/api/ask/card/draft", "{}").status);
+    let probe_started = Instant::now();
+    while !started.exists() {
+        assert!(
+            probe_started.elapsed() < HANG_BUDGET,
+            "the draft never reached the fake backend"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+
+    post_gated(&base, "/api/skip", "{}");
+    let dropped = get_json(&base, "/api/ask");
+    assert_eq!(
+        false, dropped["thinking"],
+        "a late draft is dropped at once: {dropped}"
+    );
+    release_fifo(&fifo);
+    let body = poll_until(&base, "/api/ask", |b| b["thinking"] == false);
+    assert_eq!(
+        serde_json::Value::Null,
+        body["draft"],
+        "no draft under the new card: {body}"
+    );
+    assert!(
+        !alix::personal::sidecar_path(&guard.dir().join("sample.md")).exists(),
+        "a dropped draft writes nothing"
     );
 }
 

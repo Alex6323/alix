@@ -7,6 +7,7 @@
     "front": "Why does Rust use one owner per value?"
   },
   "error": null,
+  "previous_card": false,
   "status": null,
   "thinking": false,
   "transcript": [

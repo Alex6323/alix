@@ -23,6 +23,7 @@ export function createTutor({
     keys,
     label,
     legend,
+    notice,
     stage,
   } = ui;
   // The tutor reference shows what the learner is being asked about with
@@ -40,6 +41,7 @@ export function createTutor({
   let data = {
     transcript: [],
     thinking: false,
+    previous_card: false,
     can_distill: false,
     status: null,
     error: null,
@@ -93,7 +95,7 @@ export function createTutor({
     }
     confirmingClose = false;
     open = false;
-    stopPoll();
+    if (!data.thinking) stopPoll();
     if (trace.isOpen() && needsStateRefresh) {
       return api("/api/trace").then((next) => {
         trace.replace(next);
@@ -179,6 +181,7 @@ export function createTutor({
         if (!next.thinking) {
           stopPoll();
           refreshInfo();
+          if (!open && next.status && notice) notice(next.status);
         }
         if (open) sync();
       });
@@ -208,6 +211,7 @@ export function createTutor({
     const signature = JSON.stringify([
       data.transcript,
       data.thinking,
+      data.previous_card,
       data.status,
       data.error,
     ]);
@@ -227,7 +231,11 @@ export function createTutor({
       logo.setAttribute("height", "18");
       logo.setAttribute("loop", "");
       thinking.appendChild(logo);
-      thinking.appendChild(doc.createTextNode("Thinking…"));
+      thinking.appendChild(doc.createTextNode(
+        data.previous_card
+          ? `${backendName()} is still working on the previous card…`
+          : "Thinking…",
+      ));
       log.appendChild(thinking);
     }
     if (data.status) log.appendChild(el("div", "ask-status", data.status));
@@ -394,7 +402,7 @@ export function createTutor({
     legend.appendChild(el(
       "span",
       "leave-msg",
-      "Leave the tutor? Moving on to the next card drops this conversation. Making a note or a card keeps it.",
+      "Leave the tutor? Moving on to the next card drops this conversation and any answer still coming; a note being made still lands on this card.",
     ));
     chip("Leave anyway", "again", close, "enter");
     chip("Stay", "primary", cancelClose, "esc");

@@ -2102,6 +2102,7 @@ fn poll_ask_records_answer_in_transcript() {
     r.ask.pending = Some(Pending {
         rx,
         job: ask::AskJob::default(),
+        subject: r.ask.subject.clone(),
         purpose: Purpose::Question("why is s1 invalid?".to_string()),
         card,
     });
@@ -2181,6 +2182,7 @@ fn poll_ask_condense_appends_note_to_sidecar_and_live_card() {
     r.ask.pending = Some(Pending {
         rx,
         job: ask::AskJob::default(),
+        subject: r.ask.subject.clone(),
         purpose: Purpose::Condense,
         card,
     });
@@ -2217,6 +2219,7 @@ fn poll_ask_condense_appends_note_to_sidecar_and_live_card() {
     r.ask.pending = Some(Pending {
         rx,
         job: ask::AskJob::default(),
+        subject: r.ask.subject.clone(),
         purpose: Purpose::Question("next question".to_string()),
         card: r.session.current().unwrap().clone(),
     });
@@ -2277,6 +2280,7 @@ fn poll_ask_error_resets_session() {
     r.ask.pending = Some(Pending {
         rx,
         job: ask::AskJob::default(),
+        subject: r.ask.subject.clone(),
         purpose: Purpose::Question("q".to_string()),
         card,
     });
@@ -2443,6 +2447,7 @@ fn poll_ask_draft_surfaces_a_parsed_card() {
     r.ask.pending = Some(Pending {
         rx,
         job: ask::AskJob::default(),
+        subject: r.ask.subject.clone(),
         purpose: Purpose::DraftCard,
         card,
     });
@@ -2609,6 +2614,7 @@ fn trace_ask_condense_appends_a_note_to_the_checkpoint() {
     w.ask.pending = Some(Pending {
         rx,
         job: ask::AskJob::default(),
+        subject: w.ask.subject.clone(),
         purpose: Purpose::Condense,
         card,
     });
