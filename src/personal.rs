@@ -273,6 +273,53 @@ mod tests {
     }
 
     #[test]
+    fn a_fenced_code_block_in_a_note_survives_the_sidecar_and_renders_as_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = deck(dir.path());
+        let lines: Vec<String> = [
+            "Shadowing creates a new binding.",
+            "```rust",
+            "let x = 1;",
+            "let x = x + 1;",
+            "```",
+        ]
+        .iter()
+        .map(|l| l.to_string())
+        .collect();
+
+        append_note(&deck, "deck-abc", "card-one", &lines).unwrap();
+
+        let personal = read(&deck, "spanish.md");
+        let note = &personal.notes[0];
+        assert_eq!("card-one", note.card);
+        assert_eq!(
+            lines.join("\n"),
+            note.note.body,
+            "the fence lines come back verbatim"
+        );
+        let card = Card::plain(
+            std::sync::Arc::from("spanish.md"),
+            "front".to_string(),
+            vec!["back".to_string()],
+            vec![note.note.clone()],
+            1,
+        );
+        let units = crate::render::note_views(&card)
+            .into_iter()
+            .next()
+            .map(|view| view.units)
+            .unwrap_or_default();
+        assert!(
+            units.iter().any(|unit| matches!(
+                unit,
+                crate::render::ContentUnit::Code { lines }
+                    if lines == &["let x = 1;".to_string(), "let x = x + 1;".to_string()]
+            )),
+            "the fence renders as one code unit: {units:?}"
+        );
+    }
+
+    #[test]
     fn every_note_written_to_a_block_stays_below_its_opening_marker() {
         let dir = tempfile::tempdir().unwrap();
         let deck = deck(dir.path());

@@ -480,6 +480,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A condensed tutor note no longer refers to an example that exists only in
+  the conversation: the condense prompt requires every key point to read with
+  only the card in front of the learner, an example a point depends on is
+  carried into the note as a short fenced code block or dropped, and the note
+  extraction keeps such a block intact (a bullet inside it is no longer
+  stripped, and the three-line cap counts key points, not code).
+
 - A tutor note made on the phone now lands on the desktop too: a remote note
   whose card the desktop serves is appended to that deck's personal sidecar
   (`<deck>.local.md`), so the next sync pull carries it back instead of

@@ -280,6 +280,69 @@ fn copilot_formats_tutor_code_as_a_code_unit() {
     assert_tutor_formats_code(BackendKind::Copilot);
 }
 
+// The reported case: the card never names `Meters`, `setup` or `helper`; the
+// conversation introduces all three. A saved note that names them without
+// carrying the example is unreadable once the conversation is gone.
+#[test]
+#[ignore = "real Claude CLI call; costed condense probe"]
+fn a_condensed_note_never_leans_on_an_example_that_lives_only_in_the_conversation() {
+    let card = Card::plain(
+        std::sync::Arc::from("calibrate.md"),
+        "Which items declared inside a block can still be used from outer scopes?".to_string(),
+        vec![
+            "Associated items of an `impl` in the block, as long as the item and, if any, the \
+             trait are accessible."
+                .to_string(),
+        ],
+        vec![alix::card::Note::plain(
+            "Otherwise, the Reference says, the item means exactly what it would mean declared \
+             inside a module."
+                .to_string(),
+        )],
+        1,
+    );
+    let transcript = vec![(
+        "Can you show me a concrete example?".to_string(),
+        "Sure. Say `fn setup()` declares `struct Meters(u32);` at module level and, inside its \
+         body, writes `impl Meters { fn double(&self) -> u32 { self.0 * 2 } }`. That impl is an \
+         item declared in a block, so `main` can still call `m.double()` on a `Meters` value \
+         even though `setup` never ran. A plain nested `fn helper() {}` in the same block is \
+         different: it is only visible inside that block. For a trait impl, the trait must \
+         also be in scope at the call site."
+            .to_string(),
+    )];
+    let prompt = ask::condense_prompt(&card, &transcript);
+    let mut config = AskConfig {
+        backend: BackendKind::Claude,
+        ..AskConfig::default()
+    };
+    config.command = backend_for(&config)
+        .expect("the Claude backend is wired")
+        .command()
+        .to_string();
+    let (rx, _job) = ask::spawn(config, prompt, Vec::new());
+    let answer = match rx.recv().expect("the tutor backend must reply") {
+        Reply::Answer(answer) => answer,
+        Reply::Error(error) => panic!("condense probe failed: {error}"),
+    };
+    let lines = ask::extract_note_lines(&answer);
+    println!(
+        "calibrate: condense observed={} answer={answer:?} lines={lines:?}",
+        observed_model("claude").unwrap_or_else(|| "unreported".to_string())
+    );
+    let names_the_example = lines
+        .iter()
+        .any(|l| l.contains("Meters") || l.contains("helper") || l.contains("setup"));
+    let carries_the_example = lines
+        .iter()
+        .any(|l| l.starts_with("```") || l.starts_with("~~~"))
+        && lines.iter().any(|l| l.contains("impl Meters"));
+    assert!(
+        !names_the_example || carries_the_example,
+        "the note names the conversation's example without carrying it: {lines:?}"
+    );
+}
+
 #[test]
 #[ignore = "real backend CLIs; run with `make calibrate`"]
 fn confident_but_wrong_is_never_a_pass() {

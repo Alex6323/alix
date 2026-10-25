@@ -331,10 +331,16 @@ pub fn condense_prompt(card: &Card, transcript: &[Exchange]) -> String {
         "Below is a flashcard and a conversation the learner had about it. \
          Extract the key points from the conversation that are worth rereading \
          the next time this card comes up. Output each key point as one short line \
-         under 100 characters, at most three lines. Do not repeat anything the \
+         under 100 characters, at most three lines. Every key point must read on its \
+         own with only the flashcard in front of the learner: never refer to an \
+         example, a name or code that appears only in the conversation. If a point \
+         rests on such an example, put the example in the note as one short fenced \
+         code block of a few lines, or leave the point out; nothing beats a \
+         reference the learner cannot follow. Do not repeat anything the \
          flashcard's existing notes already say. If the existing notes already \
-         cover every key point, output nothing. Output ONLY the key-point lines: \
-         plain text, no markdown, no bullets, no numbering.\n\n",
+         cover every key point, output nothing. Output ONLY the key-point lines and \
+         that code block: no bullets, no numbering, no headings; backticks for \
+         inline code are fine.\n\n",
     );
     push_card(&mut p, card);
     for (q, a) in transcript {
@@ -365,16 +371,55 @@ fn push_card(p: &mut String, card: &Card) {
 }
 
 pub fn extract_note_lines(text: &str) -> Vec<String> {
-    text.lines()
-        .map(|l| {
-            l.trim()
-                .trim_start_matches(['!', '-', '*', '•'])
-                .trim()
-                .to_string()
-        })
-        .filter(|l| !l.is_empty())
-        .take(3)
-        .collect()
+    const KEY_POINT_CAP: usize = 3;
+    let mut lines = Vec::new();
+    let mut key_points = 0;
+    let mut open_fence: Option<&str> = None;
+    for raw in text.lines() {
+        let trimmed = raw.trim();
+        if let Some(fence) = open_fence {
+            if closes_fence(trimmed, fence) {
+                lines.push(fence.to_string());
+                open_fence = None;
+            } else {
+                lines.push(raw.to_string());
+            }
+            continue;
+        }
+        if let Some(fence) = fence_marker(trimmed) {
+            open_fence = Some(fence);
+            lines.push(trimmed.to_string());
+            continue;
+        }
+        if key_points == KEY_POINT_CAP {
+            continue;
+        }
+        let point = trimmed.trim_start_matches(['!', '-', '*', '•']).trim();
+        if point.is_empty() {
+            continue;
+        }
+        lines.push(point.to_string());
+        key_points += 1;
+    }
+    if let Some(fence) = open_fence {
+        lines.push(fence.to_string());
+    }
+    lines
+}
+
+fn fence_marker(line: &str) -> Option<&str> {
+    let marker = line
+        .as_bytes()
+        .first()
+        .filter(|b| matches!(b, b'`' | b'~'))?;
+    let run = line.bytes().take_while(|b| b == marker).count();
+    (run >= 3).then(|| &line[..run])
+}
+
+fn closes_fence(line: &str, fence: &str) -> bool {
+    let marker = fence.as_bytes()[0];
+    let run = line.bytes().take_while(|b| *b == marker).count();
+    run >= fence.len() && line[run..].trim().is_empty()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1573,6 +1618,47 @@ mod tests {
         assert!(!p.contains("Condense the key insight"), "{p}");
         assert!(p.contains("Question: q"));
         assert!(p.contains("Answer: a"));
+        assert!(
+            p.contains("must read on its own with only the flashcard in front of the learner"),
+            "{p}"
+        );
+        assert!(
+            p.contains(
+                "never refer to an example, a name or code that appears only in the conversation"
+            ),
+            "{p}"
+        );
+        assert!(p.contains("one short fenced code block"), "{p}");
+        assert!(p.contains("or leave the point out"), "{p}");
+        assert!(p.contains("no bullets, no numbering, no headings"), "{p}");
+        assert!(!p.contains("no markdown"), "{p}");
+    }
+
+    #[test]
+    fn extract_note_lines_keeps_a_fence_intact_and_counts_only_key_points() {
+        let text = "Binding shadows the outer name.\n```rust\nfn setup() {\n    impl Meters { fn double(&self) -> u32 { self.0 * 2 } }\n}\n```\n- A nested fn is block-local.\n";
+        assert_eq!(
+            vec![
+                "Binding shadows the outer name.",
+                "```rust",
+                "fn setup() {",
+                "    impl Meters { fn double(&self) -> u32 { self.0 * 2 } }",
+                "}",
+                "```",
+                "A nested fn is block-local.",
+            ],
+            extract_note_lines(text)
+        );
+        assert_eq!(
+            vec!["a", "b", "c", "```", "x", "```"],
+            extract_note_lines("a\nb\nc\nd\n  ```  \nx\n```\n"),
+            "the cap counts key points, never fence lines"
+        );
+        assert_eq!(
+            vec!["a", "~~~", "- kept verbatim", "~~~"],
+            extract_note_lines("a\n~~~\n- kept verbatim\n"),
+            "an unclosed fence is closed"
+        );
     }
 
     #[test]

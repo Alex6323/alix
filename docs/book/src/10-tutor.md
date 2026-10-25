@@ -50,9 +50,12 @@ to three key points from the exchanges since the last note, one short line
 each, and appends them, addressed to the card, to the deck's personal sidecar
 (`<deck>.local.md`); the deck file itself is untouched. It does not repeat
 what the card's existing notes already say, and saves nothing when those
-notes cover every new point. Notes aren't part of the card's identity, so its
-progress is untouched: you just keep the insight. The action has no default
-key; bind one with `make_note` in `[keys.review]` (see
+notes cover every new point. Each point has to stand on its own with only the
+card in front of you: an example that exists only in the conversation is
+either carried into the note as a short code block or left out, so a saved
+note never points at a chat that is gone. Notes aren't part of the card's
+identity, so its progress is untouched: you just keep the insight. The action
+has no default key; bind one with `make_note` in `[keys.review]` (see
 [Configuration](16-configuration.md)).
 
 **Make this a note** and **Make this a card** stay disabled until the tutor
