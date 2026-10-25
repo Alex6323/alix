@@ -1,6 +1,8 @@
 # 0055: A resolved remote note is written on the desktop
 
 - Status: Accepted
+- Amended by: 0057 (clause 4 for card creates on a served deck: a
+  phone-drafted card is minted into the desktop's sidecar)
 - Recorded: 2026-10-25
 - Retrospective: No
 - Evidence: fn a_grounded_remote_note_lands_in_the_desktop_sidecar_and_a_card_only_one_writes_nothing in tests/api.rs

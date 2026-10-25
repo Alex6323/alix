@@ -27,6 +27,8 @@ class FakeServerClient implements ServerClient {
     Map<int, Completer<RemoteAsk?>>? getAskGates,
     List<bool>? postDraftReplies,
     List<bool>? postNoteReplies,
+    List<MintedCard?>? postCardReplies,
+    this.expireOnPostCard = false,
     this.examStartReply = true,
     this.expireOnExamStart = false,
     List<RemoteExam>? examGetReplies,
@@ -46,6 +48,7 @@ class FakeServerClient implements ServerClient {
         getAskGates = getAskGates ?? const {},
         postDraftReplies = postDraftReplies ?? const [true],
         postNoteReplies = postNoteReplies ?? const [true],
+        postCardReplies = postCardReplies ?? const [],
         examGetReplies = examGetReplies ?? const [],
         examGetGates = examGetGates ?? const {},
         examGradeReplies = examGradeReplies ?? const [true],
@@ -82,6 +85,11 @@ class FakeServerClient implements ServerClient {
   final List<bool> postDraftReplies;
   final List<bool> postNoteReplies;
 
+  /// Replies to `postCard`, one per call, the last repeating; empty reads
+  /// as null (the desktop kept nothing).
+  final List<MintedCard?> postCardReplies;
+  final bool expireOnPostCard;
+
   // ── exam (examStart / examGet / examGrade / examRemediate) ─────────────
   final bool examStartReply;
   final bool expireOnExamStart;
@@ -113,6 +121,7 @@ class FakeServerClient implements ServerClient {
   final List<List<TutorTurn>> postAskHistories = [];
   final List<List<TutorTurn>> postDraftHistories = [];
   final List<List<TutorTurn>> postNoteHistories = [];
+  final List<PostCardCall> postCardCalls = [];
 
   /// The deck argument of the most recent `examStart` call.
   String? startedDeck;
@@ -129,6 +138,7 @@ class FakeServerClient implements ServerClient {
   int _pollCall = 0;
   int _draftCall = 0;
   int _noteCall = 0;
+  int _cardCall = 0;
   int _examGetCall = 0;
   int _gradeCall = 0;
   int _remediateCall = 0;
@@ -185,6 +195,16 @@ class FakeServerClient implements ServerClient {
     postNoteHistories.add(history);
     final reply = postNoteReplies[_noteCall.clamp(0, postNoteReplies.length - 1)];
     _noteCall++;
+    return reply;
+  }
+
+  @override
+  Future<MintedCard?> postCard(String deckId, String front, List<String> back) async {
+    postCardCalls.add(PostCardCall(deckId: deckId, front: front, back: back));
+    if (expireOnPostCard) throw const PairingExpired();
+    if (postCardReplies.isEmpty) return null;
+    final reply = postCardReplies[_cardCall.clamp(0, postCardReplies.length - 1)];
+    _cardCall++;
     return reply;
   }
 
@@ -251,4 +271,13 @@ class FakeServerClient implements ServerClient {
 
   @override
   void close() => closed = true;
+}
+
+/// One `postCard` call as the fake saw it.
+class PostCardCall {
+  const PostCardCall({required this.deckId, required this.front, required this.back});
+
+  final String deckId;
+  final String front;
+  final List<String> back;
 }

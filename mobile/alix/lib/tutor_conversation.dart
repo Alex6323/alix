@@ -71,6 +71,7 @@ class TutorConversation extends ChangeNotifier {
     required this.client,
     required this.slot,
     required this.mint,
+    required this.record,
     required this.onNote,
     required this.onMessage,
     this.pollInterval = const Duration(milliseconds: 400),
@@ -93,6 +94,11 @@ class TutorConversation extends ChangeNotifier {
   /// bridge session's `mintTutorCard`). Throws on a rejected mint (e.g. a
   /// duplicate); the thrown message is shown verbatim.
   final Future<String> Function(String front, List<String> back) mint;
+
+  /// Appends a block the desktop minted, under its id (a closure over the
+  /// bridge session's `recordMintedCard`). Throws on a rejected record,
+  /// shown verbatim like [mint].
+  final Future<String> Function(String block) record;
 
   /// Applies the condensed note lines the desktop hands back to the deck (a
   /// closure over the bridge session's `applyCardNote`). Synchronous, unlike
@@ -131,6 +137,10 @@ class TutorConversation extends ChangeNotifier {
   /// The drafted card awaiting the learner's edit, null when none.
   DraftCard? _draft;
   DraftCard? get draft => _draft;
+
+  /// Whether the desktop answered the draft from the card alone: such a
+  /// deck is not served, so the card can only be minted on the phone.
+  bool _draftCardOnly = false;
 
   bool _notePending = false;
   bool get notePending => _notePending;
@@ -362,17 +372,39 @@ class TutorConversation extends ChangeNotifier {
     }
     _draftPending = false;
     _draft = draft;
+    _draftCardOnly = dto.cardOnly;
     // A draft consumes the exchanges it was made from, as on the desktop.
     _notedThrough = _transcript.length;
     _changed();
     return false;
   }
 
-  /// Mints the edited draft; on a rejected mint the message is shown and the
-  /// draft stays open for another try.
+  /// Adds the edited draft: minted on the desktop and recorded here under
+  /// the id it hands back, or on the phone alone when the desktop does not
+  /// serve the deck. On a refusal the message is shown and the draft stays
+  /// open for another try; the phone never keeps a card the desktop did not.
   Future<bool> confirmDraft(String front, List<String> back) async {
+    if (_draftCardOnly) return _add(() => mint(front, back));
+    MintedCard? minted;
     try {
-      await mint(front, back);
+      minted = await client.postCard(card.deckId, front, back);
+    } on PairingExpired {
+      if (_disposed) return false;
+      _say(pairingExpiredMessage);
+      return false;
+    }
+    if (_disposed) return false;
+    if (minted == null) {
+      _say('The desktop did not keep the card.');
+      return false;
+    }
+    final block = minted.block;
+    return _add(() => record(block));
+  }
+
+  Future<bool> _add(Future<String> Function() write) async {
+    try {
+      await write();
     } on AnyhowException catch (e) {
       if (_disposed) return false;
       _say(bridgeErrorText(e));

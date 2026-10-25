@@ -218,6 +218,10 @@ class ReviewController extends ChangeNotifier {
     return _requirePort().mintTutorCard(front: front, back: back);
   }
 
+  String recordMintedCard({required String block}) {
+    return _requirePort().recordMintedCard(block: block);
+  }
+
   void applyCardNote({required String id, required List<String> notes}) {
     _requirePort().applyCardNote(id: id, notes: notes);
     _state = _requirePort().state;

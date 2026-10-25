@@ -199,13 +199,17 @@ the local `cite:` root chosen for a served card when that deck's effective
 override. Unknown, ambiguous, unreadable, or unmatched cards stay card-only,
 and no phone-supplied path is used. The same pairing token already authorizes
 `/api/remote/ask`; there is no additional per-deck authorization boundary.
-A remote note whose card resolved is the one remote call that writes a
-desktop file: the condensed lines are appended to the served deck's personal
-sidecar (`<deck>.local.md`), never the authored deck, the store, or any
-phone-supplied path; a card-only call writes nothing. A pairing-token holder
-can therefore append model-condensed text, steered by the history it sends,
-to a served deck's sidecar. Regression evidence:
-`a_grounded_remote_note_lands_in_the_desktop_sidecar_and_a_card_only_one_writes_nothing`
+Two remote calls write a desktop file, both bounded to the served deck's
+personal sidecar (`<deck>.local.md`), never the authored deck, the store, or
+any phone-supplied path: a remote note whose card resolved appends its
+condensed lines, and a remote card create (`POST /api/remote/ask/card`) on a
+served deck appends one card after the local create's validation and dedup
+(ADR 0057). A card-only note and a create for an unserved deck write
+nothing. A pairing-token holder can therefore append model-condensed text,
+steered by the history it sends, and cards of its own wording to a served
+deck's sidecar. Regression evidence:
+`a_grounded_remote_note_lands_in_the_desktop_sidecar_and_a_card_only_one_writes_nothing`,
+`a_phone_drafted_card_is_minted_in_the_desktop_sidecar_and_handed_back_with_its_id`
 and `remote_endpoints_never_write_the_server_store` (`tests/api.rs`).
 
 Remote exams resolve a selected desktop deck, and remote generation accepts

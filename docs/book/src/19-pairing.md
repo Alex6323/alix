@@ -84,7 +84,13 @@ Once paired, review gains things it doesn't have offline:
   personal sidecar, `<deck>.local.md`, on the phone and, when the desktop
   serves that deck, on the desktop too, so the next sync pull carries the
   same note back rather than a sidecar without it (an empty result says so
-  rather than doing nothing silently). Every question re-sends the whole
+  rather than doing nothing silently). A card you add from a draft is
+  minted on the desktop the same way when it serves the deck, and the phone
+  records it under the id the desktop hands back, so the next pull keeps
+  it; the desktop refusing the card (a duplicate, or an unreachable
+  desktop) adds nothing on the phone either, and the draft stays open. For
+  a deck the desktop does not serve, the card is minted on the phone alone
+  and stays there. Every question re-sends the whole
   exchange to the paired desktop (the server keeps no session of its own
   for a remote turn). The
   conversation belongs to the card, not the sheet: closing the sheet while

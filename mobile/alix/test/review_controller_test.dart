@@ -316,4 +316,7 @@ class _FakeReviewPort implements ReviewPort {
   @override
   String mintTutorCard({required String front, required List<String> back}) =>
       'minted';
+
+  @override
+  String recordMintedCard({required String block}) => 'recorded';
 }

@@ -2028,6 +2028,22 @@ fn createcardresp_wire_shape() {
 }
 
 #[test]
+fn remotecreatecardresp_wire_shape() {
+    let dto = RemoteCreateCardResp {
+        id: "card-9w2c7xkq4m".to_string(),
+        block: "## capital of spain?\nMadrid\n<!-- id: card-9w2c7xkq4m -->\n".to_string(),
+    };
+    pin(
+        "RemoteCreateCardResp",
+        &dto,
+        json!({
+            "id": "card-9w2c7xkq4m",
+            "block": "## capital of spain?\nMadrid\n<!-- id: card-9w2c7xkq4m -->\n"
+        }),
+    );
+}
+
+#[test]
 fn askinfodto_and_versiondto_wire_shape() {
     let info = AskInfoDto {
         backend: "claude",

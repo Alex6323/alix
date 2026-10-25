@@ -1803,6 +1803,27 @@ pub fn run_review(
                     Some(Started::Dto(dto)) => respond_json(request, &dto),
                 }
             }
+            (Method::Post, "/api/remote/ask/card") => {
+                if audience == Audience::Kids {
+                    respond_status(request, 403);
+                    continue;
+                }
+                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Ok(req) = serde_json::from_slice::<RemoteCreateCardReq>(&bytes) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match jobs.remote_create_card(req) {
+                    None => respond_status(request, 503),
+                    Some(RemoteCreateOutcome::Missing) => respond_status(request, 404),
+                    Some(RemoteCreateOutcome::Invalid) => respond_status(request, 422),
+                    Some(RemoteCreateOutcome::MintFailed) => respond_status(request, 500),
+                    Some(RemoteCreateOutcome::Ok(resp)) => respond_json(request, &resp),
+                }
+            }
             // The requires-lock and the trace re-sit cooldown are the
             // browser's own truth; both are deliberately skipped here.
             (Method::Post, "/api/remote/exam/start") => {

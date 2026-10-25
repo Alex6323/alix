@@ -795,6 +795,20 @@ pub(super) struct RemoteNoteReq {
     pub(super) history: Vec<RemoteTurn>,
 }
 
+#[derive(Debug, Deserialize)]
+pub(super) struct RemoteCreateCardReq {
+    pub(super) deck_id: String,
+    pub(super) front: String,
+    pub(super) back: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct RemoteCreateCardResp {
+    pub(super) id: String,
+    /// The stamped block the desktop appended, for the phone to append unchanged.
+    pub(super) block: String,
+}
+
 #[derive(Debug, Serialize)]
 pub(super) struct RemoteAskDto {
     pub(super) thinking: bool,

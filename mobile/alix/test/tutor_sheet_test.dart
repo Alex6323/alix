@@ -60,6 +60,7 @@ void main() {
       client: client,
       slot: TutorSlot(),
       mint: mint ?? (front, back) async => 'card-1',
+      record: (block) async => 'card-1',
       onNote: onNote ?? (_) {},
       onMessage: (text) => harness.messages.add(text),
       pollInterval: pollInterval,
@@ -231,16 +232,18 @@ void main() {
     );
   });
 
-  testWidgets('draft -> edit -> mint: the mint callback gets the edited front and the drafted back',
+  testWidgets('draft -> edit -> mint: a card-only draft hands the mint callback the edited front and the drafted back',
       (tester) async {
     // Ask and draft share the one poll endpoint (the server's single ask
     // slot): the ask settles on the first getAsk() call, the draft on the
-    // second.
+    // second. Card-only, so the mint stays on the phone (a served deck mints
+    // on the desktop instead; tutor_conversation_test covers that path).
     final client = FakeServerClient(
       getAskReplies: const [
-        RemoteAsk(thinking: false, answer: 'first answer'),
+        RemoteAsk(thinking: false, answer: 'first answer', cardOnly: true),
         RemoteAsk(
           thinking: false,
+          cardOnly: true,
           draft: DraftCard(front: 'Why one owner per value?', back: ['so drops are deterministic']),
         ),
       ],

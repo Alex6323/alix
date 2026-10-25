@@ -92,6 +92,11 @@ class WalkBridgePort implements WalkPort {
   }
 
   @override
+  String recordMintedCard({required String block}) {
+    return _session.recordMintedCard(block: block);
+  }
+
+  @override
   void applyCardNote({required String id, required List<String> notes}) {
     _session.applyCardNote(id: id, notes: notes);
   }

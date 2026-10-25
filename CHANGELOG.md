@@ -506,6 +506,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A card drafted on a paired phone no longer vanishes at the next sync
+  pull: the phone sends the accepted draft to the desktop
+  (`POST /api/remote/ask/card`), which mints it into the served deck's
+  personal sidecar and hands back the stamped block, and the phone records
+  that block under the same id. A deck the desktop does not serve is still
+  minted on the phone alone; a refused create adds nothing on the phone.
+
 - On the web, a tutor note still being made when you move to the next card
   is no longer dropped: it lands on the card you asked it on, the panel says
   the tutor is still working on the previous card until it does, and a note

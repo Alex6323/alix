@@ -311,6 +311,24 @@ class DraftCard {
   }
 }
 
+/// A card the desktop minted into its own sidecar (`POST
+/// /api/remote/ask/card`). Mirrors `RemoteCreateCardResp`: [block] is the
+/// stamped text the desktop appended, for the phone to append unchanged.
+class MintedCard {
+  const MintedCard({required this.id, required this.block});
+
+  final String id;
+  final String block;
+
+  static MintedCard? fromJson(dynamic json) {
+    if (json is! Map) return null;
+    final id = _asString(json['id']);
+    final block = _asString(json['block']);
+    if (id == null || block == null) return null;
+    return MintedCard(id: id, block: block);
+  }
+}
+
 /// The reply to a remote tutor call (`POST`/`GET /api/remote/ask`,
 /// `POST /api/remote/ask/draft`). Mirrors `RemoteAskDto`; unknown wire
 /// fields are ignored and absent ones read as their default, so the reader
@@ -543,6 +561,11 @@ abstract class ServerClient {
   /// this returns true, poll [getAsk] and read its `note`.
   Future<bool> postNote(TutorCardContext card, List<TutorTurn> history);
 
+  /// `POST /api/remote/ask/card`: mints the learner's edited draft on the
+  /// desktop, into the served deck's own sidecar. Null when the desktop
+  /// does not serve [deckId], refuses the content, or cannot be reached.
+  Future<MintedCard?> postCard(String deckId, String front, List<String> back);
+
   /// `POST /api/remote/exam/start`: opens a sitting on [deck] (a bare name
   /// or `<workspace>/<file>`, resolved the same way `/api/select` does).
   Future<bool> examStart(String deck);
@@ -675,6 +698,16 @@ class HttpServerClient implements ServerClient {
       'history': history.map((t) => t.toJson()).toList(),
     });
     return json != null;
+  }
+
+  @override
+  Future<MintedCard?> postCard(String deckId, String front, List<String> back) async {
+    final json = await _post('/api/remote/ask/card', {
+      'deck_id': deckId,
+      'front': front,
+      'back': back,
+    });
+    return json == null ? null : MintedCard.fromJson(json);
   }
 
   @override

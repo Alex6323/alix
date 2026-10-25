@@ -237,6 +237,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       slot: _tutorSlot,
       mint: (front, back) async =>
           _controller.mintTutorCard(front: front, back: back),
+      record: (block) async => _controller.recordMintedCard(block: block),
       onNote: (notes) => _controller.applyCardNote(id: tutor.id, notes: notes),
       onMessage: _tutorMessage,
     );

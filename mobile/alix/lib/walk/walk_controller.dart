@@ -136,6 +136,10 @@ class WalkController extends ChangeNotifier {
     return _requirePort().mintTutorCard(front: front, back: back);
   }
 
+  String recordMintedCard({required String block}) {
+    return _requirePort().recordMintedCard(block: block);
+  }
+
   void applyCardNote({required String id, required List<String> notes}) {
     final port = _requirePort();
     port.applyCardNote(id: id, notes: notes);

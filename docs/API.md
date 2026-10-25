@@ -417,6 +417,17 @@ pull carries the note back to the phone instead of replacing the phone's
 sidecar without it; a card-only call writes nothing on the server. A failed
 sidecar write comes back as `error` with no `note`.
 
+`POST /api/remote/ask/card {deck_id, front, back}` (`RemoteCreateCardReq`)
+mints the learner's edited draft on the desktop: when `deck_id` resolves
+against the served catalog, the server validates and dedups exactly as
+`/api/ask/card/create` does, appends the stamped block to that deck's
+personal sidecar (never the authored deck, never the store) and answers
+`200` with `{id, block}` (`RemoteCreateCardResp`), where `block` is the
+exact text appended, for the phone to append unchanged to its own copy. It
+is synchronous, holds no slot, and is adult-only (`403`). A deck the desktop
+does not serve is `404` with nothing written (the phone then mints the card
+alone); a duplicate or malformed card is `422`, as on the local route.
+
 A remote exam sitting starts with `POST /api/remote/exam/start {deck}`: the
 server resolves **its own copy** of the named deck, by the same resolution
 `/api/select` uses (a bare name, or a qualified `<workspace>/<file>`). A
@@ -748,6 +759,7 @@ first, same as a double `POST`.
 | GET | `/api/remote/ask` | – | `RemoteAskDto` (poll) | – |
 | POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 403 kids; 409 a turn is already thinking |
 | POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 409 a turn is already thinking |
+| POST | `/api/remote/ask/card` | `{deck_id, front, back}` (`RemoteCreateCardReq`) | `RemoteCreateCardResp` | 400 bad/oversized body; 403 kids; 404 the desktop does not serve `deck_id`; 422 duplicate or malformed; 500 the id could not be minted |
 | POST | `/api/remote/exam/start` | `{deck}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / a non-trace deck with no deck or workspace source / a trace deck with no checkpoints / the backend can't reach a non-trace deck's grounding |
 | GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when no sitting is open) | – |
 | POST | `/api/remote/exam/grade` | `{answers: [string]}` | `RemoteExamDto` | 400 bad/oversized body / wrong number of answers; 409 no sitting open / not in the answering phase |
@@ -1536,9 +1548,23 @@ parse is dropped, not an error).
 RemoteCard`, `history: [RemoteTurn]` (the same shape as `RemoteDraftReq`,
 kept as its own type so the name matches its own endpoint).
 
+`RemoteCreateCardReq` (`POST /api/remote/ask/card`): `deck_id: string`,
+`front: string`, `back: [string]`, the learner's edited draft for the served
+deck; no card id, since the new card belongs to the deck, not to the card
+the conversation started from.
+
 Example `RemoteAskReq` body (a real request from `tests/api.rs`'s remote
 round-trip suite):
 `{"card":{"deck_id":"deck-d1","card_id":"card-q1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},"history":[],"question":"why does this matter?"}`.
+
+### RemoteCreateCardResp
+
+The reply to `POST /api/remote/ask/card` (§4.11): `id: string`, the minted
+card's prefixed id (`card-<token>`), and `block: string`, the exact stamped
+text the desktop appended to its sidecar (`## front`, the back lines, the
+`<!-- id: ... -->` line, each newline-terminated). The phone appends the
+block as it is, so the next pull's copy of the sidecar is identical to what
+the phone already holds.
 
 ### RemoteAskDto
 

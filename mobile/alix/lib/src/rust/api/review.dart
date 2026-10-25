@@ -68,6 +68,8 @@ abstract class ReviewSession implements RustOpaqueInterface {
     device: device,
   );
 
+  String recordMintedCard({required String block});
+
   ReviewState state({BigInt? nowMs});
 
   TutorCard? tutorCard();
@@ -125,6 +127,8 @@ abstract class WalkSession implements RustOpaqueInterface {
     nowMs: nowMs,
     device: device,
   );
+
+  String recordMintedCard({required String block});
 
   WalkState restart({BigInt? nowMs});
 

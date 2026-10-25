@@ -26,6 +26,8 @@ abstract interface class WalkPort {
 
   String mintTutorCard({required String front, required List<String> back});
 
+  String recordMintedCard({required String block});
+
   void applyCardNote({required String id, required List<String> notes});
 }
 

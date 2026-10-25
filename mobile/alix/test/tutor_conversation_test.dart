@@ -27,18 +27,32 @@ void main() {
     TutorSlot slot,
     String cardId, {
     void Function(List<String> notes)? onNote,
+    Future<String> Function(String front, List<String> back)? mint,
+    Future<String> Function(String block)? record,
   }) {
     final built = TutorConversation(
       card: _card(cardId),
       client: client,
       slot: slot,
-      mint: (front, back) async => 'card-1',
+      mint: mint ?? (front, back) async => 'card-1',
+      record: record ?? (block) async => 'card-1',
       onNote: onNote ?? (_) {},
       onMessage: (_) {},
       pollInterval: _pollInterval,
     );
     addTearDown(built.dispose);
     return built;
+  }
+
+  /// Sends one question and polls its answer, then asks for a draft and
+  /// polls it: the two getAsk replies a draft flow consumes.
+  Future<void> drafted(WidgetTester tester, TutorConversation subject) async {
+    await subject.send('q');
+    await tester.pump(_pollInterval);
+    expect(subject.transcript, hasLength(1));
+    await subject.makeCard();
+    await tester.pump(_pollInterval);
+    expect(subject.draft, isNotNull, reason: 'the draft settled');
   }
 
   testWidgets('a poll still in flight is never joined by a second GET', (tester) async {
@@ -159,5 +173,110 @@ void main() {
     await expired.send('q');
     expect(slot.owner, isNull);
     expect(expired.message, pairingExpiredMessage);
+  });
+
+  testWidgets('a grounded draft is minted on the desktop and recorded under the returned block',
+      (tester) async {
+    const block = '## f edited\nb\n<!-- id: card-desk -->\n';
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'an answer'),
+        RemoteAsk(thinking: false, draft: DraftCard(front: 'f', back: ['b'])),
+      ],
+      postCardReplies: const [MintedCard(id: 'card-desk', block: block)],
+    );
+    var mintCalls = 0;
+    final recorded = <String>[];
+    final subject = conversation(
+      client,
+      TutorSlot(),
+      'card-a',
+      mint: (_, _) async {
+        mintCalls++;
+        return 'card-phone';
+      },
+      record: (block) async {
+        recorded.add(block);
+        return 'card-desk';
+      },
+    );
+    await drafted(tester, subject);
+
+    expect(await subject.confirmDraft('f edited', ['b']), isTrue);
+
+    final call = client.postCardCalls.single;
+    expect(call.deckId, 'deck-rust', reason: 'the create names the served deck');
+    expect(call.front, 'f edited', reason: 'the edited front goes to the desktop');
+    expect(call.back, ['b']);
+    expect(recorded, [block], reason: 'the phone records the desktop block unchanged');
+    expect(mintCalls, 0, reason: 'a grounded draft is never minted on the phone alone');
+    expect(subject.message, 'Card added.');
+    expect(subject.draft, isNull);
+  });
+
+  testWidgets('a draft the desktop does not keep is minted nowhere and stays open', (tester) async {
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'an answer'),
+        RemoteAsk(thinking: false, draft: DraftCard(front: 'f', back: ['b'])),
+      ],
+      postCardReplies: const [null],
+    );
+    var mintCalls = 0;
+    var recordCalls = 0;
+    final subject = conversation(
+      client,
+      TutorSlot(),
+      'card-a',
+      mint: (_, _) async {
+        mintCalls++;
+        return 'card-phone';
+      },
+      record: (_) async {
+        recordCalls++;
+        return 'card-desk';
+      },
+    );
+    await drafted(tester, subject);
+
+    expect(await subject.confirmDraft('f', ['b']), isFalse);
+
+    expect(client.postCardCalls, hasLength(1));
+    expect(mintCalls, 0, reason: 'the phone never holds a card the desktop did not keep');
+    expect(recordCalls, 0);
+    expect(subject.message, 'The desktop did not keep the card.');
+    expect(subject.draft, isNotNull, reason: 'the draft stays open for another try');
+  });
+
+  testWidgets('a card-only draft is minted on the phone alone', (tester) async {
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'an answer', cardOnly: true),
+        RemoteAsk(thinking: false, cardOnly: true, draft: DraftCard(front: 'f', back: ['b'])),
+      ],
+    );
+    String? mintedFront;
+    var recordCalls = 0;
+    final subject = conversation(
+      client,
+      TutorSlot(),
+      'card-a',
+      mint: (front, back) async {
+        mintedFront = front;
+        return 'card-phone';
+      },
+      record: (_) async {
+        recordCalls++;
+        return 'card-desk';
+      },
+    );
+    await drafted(tester, subject);
+
+    expect(await subject.confirmDraft('f', ['b']), isTrue);
+
+    expect(client.postCardCalls, isEmpty, reason: 'the desktop does not serve this deck');
+    expect(mintedFront, 'f');
+    expect(recordCalls, 0);
+    expect(subject.message, 'Card added.');
   });
 }

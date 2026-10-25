@@ -1362,6 +1362,12 @@ pub enum MintError {
     Mint(String),
 }
 
+pub struct MintedCard {
+    pub id: String,
+    /// The exact text appended to the sidecar, stamped with `id`.
+    pub block: String,
+}
+
 // Dedup is by content, not id: every mint gets a fresh random token, so
 // identical content would otherwise mint a duplicate.
 pub fn mint_tutor_card(
@@ -1372,6 +1378,19 @@ pub fn mint_tutor_card(
     back: &[String],
     deck_fingerprints: &std::collections::HashSet<u64>,
 ) -> Result<String, MintError> {
+    let minted = mint_personal_card(deck_path, deck_id, front, back, deck_fingerprints)?;
+    store.get_or_insert(&minted.id);
+    Ok(minted.id)
+}
+
+/// Mints and appends to the sidecar only; the store is the caller's.
+pub fn mint_personal_card(
+    deck_path: &Path,
+    deck_id: &str,
+    front: &str,
+    back: &[String],
+    deck_fingerprints: &std::collections::HashSet<u64>,
+) -> Result<MintedCard, MintError> {
     let front = front.trim();
     let back: Vec<String> = back
         .iter()
@@ -1399,6 +1418,28 @@ pub fn mint_tutor_card(
         text.push('\n');
     }
     text.push_str(&format!("<!-- id: {token} -->\n"));
+    append_checked_card(deck_path, deck_id, text, deck_fingerprints)
+}
+
+/// Appends a block another device already minted, keeping its id.
+pub fn record_minted_card(
+    store: &mut Store,
+    deck_path: &Path,
+    deck_id: &str,
+    block: &str,
+    deck_fingerprints: &std::collections::HashSet<u64>,
+) -> Result<String, MintError> {
+    let minted = append_checked_card(deck_path, deck_id, block.to_string(), deck_fingerprints)?;
+    store.get_or_insert(&minted.id);
+    Ok(minted.id)
+}
+
+fn append_checked_card(
+    deck_path: &Path,
+    deck_id: &str,
+    text: String,
+    deck_fingerprints: &std::collections::HashSet<u64>,
+) -> Result<MintedCard, MintError> {
     let cards = crate::parser::parse_str(deck_id, &text)
         .map_err(|e| MintError::Malformed(e.to_string()))?;
     let [card] = cards.as_slice() else {
@@ -1417,8 +1458,7 @@ pub fn mint_tutor_card(
     }
     crate::personal::append_cards(deck_path, deck_id, &text)
         .map_err(|e| MintError::Malformed(e.to_string()))?;
-    store.get_or_insert(&id);
-    Ok(id)
+    Ok(MintedCard { id, block: text })
 }
 
 pub fn badge_solid(cards: &[Card], store: &Store, depth: Depth) -> bool {
@@ -2821,6 +2861,99 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, MintError::Malformed(_)));
+    }
+
+    #[test]
+    fn mint_personal_card_hands_back_the_block_it_appended() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("geo.md");
+        let minted = mint_personal_card(
+            &deck,
+            "geo.md",
+            "capital of spain?",
+            &["Madrid".to_string()],
+            &HashSet::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            format!("## capital of spain?\nMadrid\n<!-- id: {} -->\n", minted.id),
+            minted.block,
+            "the block is the stamped card text"
+        );
+        let text =
+            std::fs::read_to_string(crate::personal::sidecar_path(&deck)).expect("a sidecar");
+        assert!(
+            text.ends_with(&minted.block),
+            "the sidecar ends with that exact block:\n{text}"
+        );
+    }
+
+    #[test]
+    fn record_minted_card_keeps_the_given_id_and_dedups_against_the_deck_and_the_sidecar() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let deck = dir.path().join("geo.md");
+        let authored = crate::parser::parse_str(
+            "geo.md",
+            "## capital of france?\nParis\n<!-- id: card-france -->\n",
+        )
+        .unwrap();
+        let deck_fingerprints = HashSet::from([authored[0].block_fingerprint]);
+        let block = "## capital of spain?\nMadrid\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n";
+
+        let id =
+            record_minted_card(&mut store, &deck, "geo.md", block, &deck_fingerprints).unwrap();
+        assert_eq!(
+            "card-6v3c7x4k1m8q3z5t0b2n4d8f9w", id,
+            "the block's id is kept"
+        );
+        assert_eq!(
+            vec![Some(id.clone())],
+            sidecar_ids(&deck, "geo.md")
+                .into_iter()
+                .map(Some)
+                .collect::<Vec<_>>(),
+            "the sidecar holds the card under that id"
+        );
+        assert!(store.get(&id).is_some(), "the store holds its entry");
+
+        let again =
+            record_minted_card(&mut store, &deck, "geo.md", block, &deck_fingerprints).unwrap_err();
+        assert!(
+            matches!(again, MintError::Duplicate),
+            "sidecar dedup: {again:?}"
+        );
+        let deck_dup = record_minted_card(
+            &mut store,
+            &deck,
+            "geo.md",
+            "## capital of france?\nParis\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9x -->\n",
+            &deck_fingerprints,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(deck_dup, MintError::Duplicate),
+            "deck dedup: {deck_dup:?}"
+        );
+        let unstamped = record_minted_card(
+            &mut store,
+            &deck,
+            "geo.md",
+            "## capital of italy?\nRome\n",
+            &deck_fingerprints,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(unstamped, MintError::Malformed(_)),
+            "no id: {unstamped:?}"
+        );
+        assert_eq!(
+            1,
+            sidecar_ids(&deck, "geo.md").len(),
+            "nothing else reached the sidecar"
+        );
     }
 
     /// Spec law 2, the block-splitter's row: a deck holding every

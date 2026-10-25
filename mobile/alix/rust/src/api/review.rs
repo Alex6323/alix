@@ -589,6 +589,25 @@ impl ReviewSession {
     }
 
     #[flutter_rust_bridge::frb(sync)]
+    pub fn record_minted_card(&mut self, block: String) -> Result<String> {
+        let deck_fingerprints: HashSet<u64> = self
+            .session
+            .cards()
+            .iter()
+            .map(|c| c.content_fingerprint)
+            .collect();
+        let id = alix::store::record_minted_card(
+            &mut self.store,
+            &self.deck_path,
+            &self.deck_token,
+            &block,
+            &deck_fingerprints,
+        )?;
+        self.store.save()?;
+        Ok(id)
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
     pub fn apply_card_note(&mut self, id: String, notes: Vec<String>) -> Result<()> {
         if notes.is_empty() {
             return Ok(());
@@ -1070,6 +1089,25 @@ impl WalkSession {
             &self.deck_token,
             &front,
             &back,
+            &deck_fingerprints,
+        )?;
+        self.store.save()?;
+        Ok(id)
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn record_minted_card(&mut self, block: String) -> Result<String> {
+        let deck_fingerprints: HashSet<u64> = self
+            .session
+            .cards()
+            .iter()
+            .map(|c| c.content_fingerprint)
+            .collect();
+        let id = alix::store::record_minted_card(
+            &mut self.store,
+            &self.deck_path,
+            &self.deck_token,
+            &block,
             &deck_fingerprints,
         )?;
         self.store.save()?;
@@ -1646,6 +1684,51 @@ mod tests {
         assert!(
             reopened_store(root, "d.md").get(&id).is_some(),
             "and its schedule is in the store"
+        );
+    }
+
+    #[test]
+    fn record_minted_card_keeps_the_desktop_id_and_dedups_against_the_deck_and_the_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("d.md"),
+            "## capital of france?\nParis\n\n## capital of germany?\nBerlin\n",
+        );
+        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
+        let block = "## capital of spain?\nMadrid\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n";
+
+        let id = s
+            .record_minted_card(block.to_string())
+            .expect("a block the desktop minted is recorded");
+        assert_eq!("card-6v3c7x4k1m8q3z5t0b2n4d8f9w", id, "the desktop's id is kept");
+        let personal = alix::personal::read(&root.join("d.md"), "d.md");
+        assert_eq!(
+            vec![Some(id.clone())],
+            personal.cards.iter().map(|c| c.id()).collect::<Vec<_>>(),
+            "the personal file holds the card under that id"
+        );
+        assert!(
+            reopened_store(root, "d.md").get(&id).is_some(),
+            "and its schedule is in the store"
+        );
+
+        assert!(
+            s.record_minted_card(block.to_string()).is_err(),
+            "the same block again is a duplicate of the sidecar"
+        );
+        assert!(
+            s.record_minted_card(
+                "## capital of france?\nParis\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9x -->\n"
+                    .to_string()
+            )
+            .is_err(),
+            "content the deck holds is a duplicate of the deck"
+        );
+        assert_eq!(
+            1,
+            alix::personal::read(&root.join("d.md"), "d.md").cards.len(),
+            "neither refusal reached the personal file"
         );
     }
 

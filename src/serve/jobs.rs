@@ -392,21 +392,73 @@ pub(super) fn resolve_remote_card(
     cfg: &AssembleConfig,
     requested: &RemoteCard,
 ) -> RemoteCardResolution {
+    match remote_deck_path(catalog, &requested.deck_id) {
+        Ok(path) => resolve_remote_target(&path, cfg, requested),
+        Err(cause) => remote_resolution_failure(requested, cause),
+    }
+}
+
+fn remote_deck_path(catalog: &CatalogHandle, deck_id: &str) -> Result<PathBuf, String> {
     let snapshot = match catalog.sync_snapshot() {
         Some(Ok(snapshot)) => snapshot,
-        Some(Err(error)) => return remote_resolution_failure(requested, error),
-        None => return remote_resolution_failure(requested, "catalog owner is unavailable"),
+        Some(Err(error)) => return Err(error.to_string()),
+        None => return Err("catalog owner is unavailable".to_string()),
     };
-    let path = match snapshot.catalog.deck(&requested.deck_id) {
-        crate::sync::DeckLookup::One(target) => target.path.clone(),
-        crate::sync::DeckLookup::Ambiguous => {
-            return remote_resolution_failure(requested, "deck id is ambiguous");
-        }
-        crate::sync::DeckLookup::Missing => {
-            return remote_resolution_failure(requested, "deck id is missing");
-        }
+    match snapshot.catalog.deck(deck_id) {
+        crate::sync::DeckLookup::One(target) => Ok(target.path.clone()),
+        crate::sync::DeckLookup::Ambiguous => Err("deck id is ambiguous".to_string()),
+        crate::sync::DeckLookup::Missing => Err("deck id is missing".to_string()),
+    }
+}
+
+pub(super) enum RemoteCreateOutcome {
+    Ok(RemoteCreateCardResp),
+    Missing,
+    Invalid,
+    MintFailed,
+}
+
+// Sidecar only; the store entry arrives with the phone's progress push.
+pub(super) fn remote_create_card(
+    catalog: &CatalogHandle,
+    cfg: &AssembleConfig,
+    req: &RemoteCreateCardReq,
+) -> RemoteCreateOutcome {
+    let missing = |cause: &dyn std::fmt::Display| {
+        eprintln!(
+            "error: remote card create could not resolve deck `{}`: {cause}; nothing written",
+            req.deck_id
+        );
+        RemoteCreateOutcome::Missing
     };
-    resolve_remote_target(&path, cfg, requested)
+    let path = match remote_deck_path(catalog, &req.deck_id) {
+        Ok(path) => path,
+        Err(cause) => return missing(&cause),
+    };
+    let deck = match tutor_deck(&path, cfg) {
+        Ok(deck) => deck,
+        Err(error) => return missing(&error),
+    };
+    let Some(deck_id) = deck.info.deck_token.clone() else {
+        return missing(&"the served deck carries no id");
+    };
+    let deck_fingerprints: HashSet<u64> = deck.cards.iter().map(|c| c.block_fingerprint).collect();
+    match crate::store::mint_personal_card(
+        &path,
+        &deck_id,
+        &req.front,
+        &req.back,
+        &deck_fingerprints,
+    ) {
+        Ok(minted) => RemoteCreateOutcome::Ok(RemoteCreateCardResp {
+            id: minted.id,
+            block: minted.block,
+        }),
+        Err(crate::store::MintError::Duplicate | crate::store::MintError::Malformed(_)) => {
+            RemoteCreateOutcome::Invalid
+        }
+        Err(crate::store::MintError::Mint(_)) => RemoteCreateOutcome::MintFailed,
+    }
 }
 
 fn resolve_remote_target(

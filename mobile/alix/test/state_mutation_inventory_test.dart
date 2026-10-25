@@ -28,7 +28,7 @@ void main() {
         193,
         198,
         203,
-        224,
+        228,
       ],
       reason:
           'setServerLive, install, choose, toggleChoice, submitChoices, '
@@ -69,7 +69,7 @@ void main() {
     expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
     expect(
       _linesContaining('lib/walk/walk_controller.dart', 'notifyListeners();'),
-      [58, 65, 70, 77, 82, 92, 97, 102, 107, 112, 117, 122, 127, 132, 143],
+      [58, 65, 70, 77, 82, 92, 97, 102, 107, 112, 117, 122, 127, 132, 147],
       reason:
           'setServerLive, choose, toggleChoice, submitChoices, reveal, '
           'revealNextLine, next, nextWalk, the six sketch transitions, and '
@@ -84,11 +84,11 @@ void main() {
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
-        'lib/review_screen.dart:369',
+        'lib/review_screen.dart:370',
         'lib/picker_screen.dart:650',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:225',
-        'lib/walk_screen.dart:202',
+        'lib/walk_screen.dart:203',
       ],
       reason:
           'sync wiring added imports, fields, and methods above build() in '

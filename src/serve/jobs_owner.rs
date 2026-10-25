@@ -101,6 +101,10 @@ pub(super) enum JobsCommand {
         reply: Reply<Started<RemoteAskDto>>,
     },
     RemoteAskPoll(Reply<RemoteAskDto>),
+    RemoteCreateCard {
+        req: RemoteCreateCardReq,
+        reply: Reply<RemoteCreateOutcome>,
+    },
     RemoteExamStart {
         path: PathBuf,
         exam_cfg: ExamConfig,
@@ -229,6 +233,12 @@ impl JobsHandle {
     }
     pub(super) fn remote_ask_poll(&self) -> Option<RemoteAskDto> {
         self.call(JobsCommand::RemoteAskPoll)
+    }
+    pub(super) fn remote_create_card(
+        &self,
+        req: RemoteCreateCardReq,
+    ) -> Option<RemoteCreateOutcome> {
+        self.call(|reply| JobsCommand::RemoteCreateCard { req, reply })
     }
     pub(super) fn remote_exam_start(
         &self,
@@ -495,6 +505,9 @@ impl JobsState {
                     },
                 };
                 let _ = reply.send(dto);
+            }
+            JobsCommand::RemoteCreateCard { req, reply } => {
+                let _ = reply.send(remote_create_card(&self.catalog, &self.config, &req));
             }
             JobsCommand::RemoteExamStart {
                 path,

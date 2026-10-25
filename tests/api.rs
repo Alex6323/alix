@@ -2450,6 +2450,91 @@ fn a_grounded_remote_note_lands_in_the_desktop_sidecar_and_a_card_only_one_write
 }
 
 #[test]
+fn a_phone_drafted_card_is_minted_in_the_desktop_sidecar_and_handed_back_with_its_id() {
+    let (base, guard) = spawn_full_server(None);
+    let sidecar = alix::personal::sidecar_path(&guard.dir().join("sample.md"));
+    let _ = sync_root_id(&base);
+    let decks_before = snapshot_dir(guard.dir());
+
+    let response = post_json(
+        &base,
+        "/api/remote/ask/card",
+        r#"{"deck_id":"deck-nope","front":"capital of spain?","back":["Madrid"]}"#,
+    );
+    assert_eq!(
+        404, response.status,
+        "an unserved deck: {:?}",
+        response.body
+    );
+    assert!(
+        decks_before == snapshot_dir(guard.dir()),
+        "an unserved deck writes nothing under the decks dir"
+    );
+
+    let response = post_json(
+        &base,
+        "/api/remote/ask/card",
+        r#"{"deck_id":"deck-sample","front":" capital of spain? ","back":["Madrid",""]}"#,
+    );
+    assert_eq!(200, response.status, "body: {:?}", response.body);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    let id = body["id"].as_str().expect("an id").to_string();
+    let block = body["block"].as_str().expect("a block").to_string();
+    assert_eq!(
+        format!("## capital of spain?\nMadrid\n<!-- id: {id} -->\n"),
+        block,
+        "the block is the trimmed card stamped with the id"
+    );
+    let text = std::fs::read_to_string(&sidecar)
+        .unwrap_or_else(|e| panic!("{} unreadable: {e}", sidecar.display()));
+    assert!(
+        text.ends_with(&block),
+        "the desktop sidecar ends with that exact block:\n{text}"
+    );
+    let minted = alix::parser::parse_str("deck-sample", &block).unwrap();
+    assert_eq!(
+        vec![Some(id.clone())],
+        minted.iter().map(|card| card.id()).collect::<Vec<_>>(),
+        "the block parses to one card under the returned id"
+    );
+
+    let response = post_json(
+        &base,
+        "/api/remote/ask/card",
+        r#"{"deck_id":"deck-sample","front":"capital of spain?","back":["Madrid"]}"#,
+    );
+    assert_eq!(
+        422, response.status,
+        "a second mint of the same content is refused"
+    );
+    assert_eq!(
+        text,
+        std::fs::read_to_string(&sidecar).unwrap(),
+        "the refused duplicate left the sidecar as it was"
+    );
+    let response = post_json(
+        &base,
+        "/api/remote/ask/card",
+        r#"{"deck_id":"deck-sample","front":"2 + 2","back":["4"]}"#,
+    );
+    assert_eq!(
+        422, response.status,
+        "content the authored deck holds is refused"
+    );
+    let response = post_json(
+        &base,
+        "/api/remote/ask/card",
+        r#"{"deck_id":"deck-sample","front":"","back":["x"]}"#,
+    );
+    assert_eq!(422, response.status, "an empty front is malformed");
+    assert_eq!(
+        text,
+        std::fs::read_to_string(&sidecar).unwrap(),
+        "no refusal touched the sidecar"
+    );
+}
+
+#[test]
 fn a_grounded_remote_question_uses_all_notes_and_the_allowed_source_root() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
@@ -8408,13 +8493,14 @@ fn remote_ask_answers_409_while_a_turn_is_thinking_and_the_loop_stays_live() {
 }
 
 #[test]
-fn remote_draft_is_refused_for_the_kids_audience() {
+fn remote_draft_and_card_create_are_refused_for_the_kids_audience() {
     let (base, _guard) = spawn_kids_server();
 
-    let resp = post_json(&base, "/api/remote/ask/draft", "{}");
-
-    assert_eq!(403, resp.status);
-    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+    for path in ["/api/remote/ask/draft", "/api/remote/ask/card"] {
+        let resp = post_json(&base, path, "{}");
+        assert_eq!(403, resp.status, "{path}");
+        assert!(resp.body.is_empty(), "{path}: body: {:?}", resp.body);
+    }
 }
 
 /// A note-condense round trip: the fake CLI's reply carries bullet prefixes
@@ -9105,6 +9191,31 @@ fn remote_endpoints_never_write_the_server_store() {
     assert_eq!(
         decks_before, decks_after,
         "no card-only /api/remote/* call may place a file into the server's decks dir; a resolved remote note's sidecar append is the one exception, covered by its own law"
+    );
+
+    // (g) a remote card create on a served deck: the other bounded write.
+    let response = post_json(
+        &base,
+        "/api/remote/ask/card",
+        r#"{"deck_id":"deck-examdeck","front":"term?","back":["definition"]}"#,
+    );
+    assert_eq!(200, response.status, "body: {:?}", response.body);
+    assert_eq!(
+        before,
+        snapshot_dir(&fixture_state),
+        "a remote card create never writes the server's own store"
+    );
+    let sidecar = alix::personal::sidecar_path(&guard.dir().join("examdeck.md"));
+    let mut decks_now = snapshot_dir(guard.dir());
+    assert!(
+        decks_now
+            .remove(sidecar.strip_prefix(guard.dir()).unwrap())
+            .is_some(),
+        "the create appended the served deck's sidecar"
+    );
+    assert_eq!(
+        decks_before, decks_now,
+        "a remote card create touches no file but that sidecar"
     );
 }
 
