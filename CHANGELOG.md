@@ -480,6 +480,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A tutor note made on the phone now lands on the desktop too: a remote note
+  whose card the desktop serves is appended to that deck's personal sidecar
+  (`<deck>.local.md`), so the next sync pull carries it back instead of
+  replacing the phone's sidecar without it. A card the desktop does not
+  serve still gets the note on the phone only.
+
 - The web tutor offers **Make this a card** during a walk too, minting into
   the walked deck's personal file (`/api/walk/ask/card/draft` and
   `/api/walk/ask/card/create`).

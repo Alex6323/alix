@@ -2391,6 +2391,60 @@ fn a_grounded_remote_card_uses_the_server_copy_for_questions_drafts_and_notes() 
 }
 
 #[test]
+fn a_grounded_remote_note_lands_in_the_desktop_sidecar_and_a_card_only_one_writes_nothing() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "first insight\nsecond insight\n");
+    let (base, guard) = spawn_full_server(Some(&fake));
+    let sidecar = alix::personal::sidecar_path(&guard.dir().join("sample.md"));
+    let note_request = |deck_id: &str, card_id: &str| {
+        format!(
+            r#"{{"card":{{"deck_id":"{deck_id}","card_id":"{card_id}","subject":"phone.md","front":"phone fallback front","back":["phone fallback back"],"at":null}},"history":[{{"q":"why?","a":"because"}}]}}"#
+        )
+    };
+    let lines = serde_json::json!(["first insight", "second insight"]);
+
+    let response = post_json(
+        &base,
+        "/api/remote/ask/note",
+        &note_request("deck-d1", "card-q1"),
+    );
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(Some(true), body["card_only"].as_bool(), "card-only: {body}");
+    let body = poll_until(&base, "/api/remote/ask", |body| {
+        !body["thinking"].as_bool().unwrap()
+    });
+    assert_eq!(
+        lines, body["note"],
+        "card-only still hands the lines back: {body}"
+    );
+    assert!(
+        !sidecar.exists(),
+        "card-only: no desktop sidecar at {}",
+        sidecar.display()
+    );
+
+    let response = post_json(
+        &base,
+        "/api/remote/ask/note",
+        &note_request("deck-sample", "card-s1"),
+    );
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(Some(false), body["card_only"].as_bool(), "grounded: {body}");
+    let body = poll_until(&base, "/api/remote/ask", |body| {
+        !body["thinking"].as_bool().unwrap()
+    });
+    assert_eq!(lines, body["note"], "grounded hands the lines back: {body}");
+    assert_eq!(serde_json::Value::Null, body["error"], "grounded: {body}");
+    let text = std::fs::read_to_string(&sidecar)
+        .unwrap_or_else(|e| panic!("grounded: {} unreadable: {e}", sidecar.display()));
+    assert!(
+        text.contains("<!-- note: card-s1 -->\n> [!NOTE]\n> first insight\n> second insight\n"),
+        "grounded: the sidecar holds the note addressed to the card:\n{text}"
+    );
+}
+
+#[test]
 fn a_grounded_remote_question_uses_all_notes_and_the_allowed_source_root() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
@@ -8942,7 +8996,7 @@ fn remote_endpoints_never_write_the_server_store() {
     let decks_after = snapshot_dir(guard.dir());
     assert_eq!(
         decks_before, decks_after,
-        "no /api/remote/* call may place a file into the server's decks dir"
+        "no card-only /api/remote/* call may place a file into the server's decks dir; a resolved remote note's sidecar append is the one exception, covered by its own law"
     );
 }
 

@@ -81,10 +81,12 @@ Once paired, review gains things it doesn't have offline:
   and **Make this a card** and **Make this a note** enable once an answer
   exists that nothing was made from yet. A note condenses the exchanges
   since the last note into key points and appends them to the deck's
-  personal sidecar, `<deck>.local.md`, on the phone (sync that file
-  alongside the deck; an empty result says so rather than doing nothing
-  silently). Every question re-sends the whole exchange to the paired
-  desktop (the server keeps no session of its own for a remote turn). The
+  personal sidecar, `<deck>.local.md`, on the phone and, when the desktop
+  serves that deck, on the desktop too, so the next sync pull carries the
+  same note back rather than a sidecar without it (an empty result says so
+  rather than doing nothing silently). Every question re-sends the whole
+  exchange to the paired desktop (the server keeps no session of its own
+  for a remote turn). The
   conversation belongs to the card, not the sheet: closing the sheet while
   the desktop is still working loses nothing, the answer or note lands
   anyway, a note saved with the sheet closed is announced on the review

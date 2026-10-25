@@ -372,7 +372,9 @@ backend for the tutor, the AI exam, and deck generation over
 no endpoint under `/api/remote/*` ever writes the server's own store,
 session, decks, or recent list.** These handlers only compute an answer and
 hand it back: a result leaves the server only as the HTTP response, never
-onto disk.
+onto disk, with one exception: a remote note whose card the desktop serves
+is also appended to that deck's personal sidecar (see the note call below),
+so the desktop holds it and the next sync pull carries it to the phone.
 
 A remote tutor turn is stateless on the server: `POST /api/remote/ask
 {card, history, question}` re-sends the card's required stable `deck_id` and
@@ -407,9 +409,13 @@ the same way `/api/ask/note` does; unlike the draft call it carries no kids
 gate, matching the web's own note route. An empty `history` is refused
 (400): there is nothing to condense. All three share the `remote_ask` slot,
 so a call into any one while another is thinking answers 409. The server
-only returns the condensed lines (`RemoteAskDto.note`); it never appends
-them to a deck file, same iron rule as everything else here, and the client
-owns placing them.
+returns the condensed lines (`RemoteAskDto.note`) and the client places them
+on its own copy. When the card resolved against the served catalog
+(`card_only` false), the server also appends the same lines to that deck's
+personal sidecar (`<deck>.local.md`, never the authored deck), so a later
+pull carries the note back to the phone instead of replacing the phone's
+sidecar without it; a card-only call writes nothing on the server. A failed
+sidecar write comes back as `error` with no `note`.
 
 A remote exam sitting starts with `POST /api/remote/exam/start {deck}`: the
 server resolves **its own copy** of the named deck, by the same resolution

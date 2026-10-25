@@ -1,6 +1,8 @@
 # 0042: A paired device pulls entries and pushes progress over the pairing
 
 - Status: Accepted
+- Amended by: 0055 (clause 3 for tutor notes: a resolved remote note is
+  appended to the desktop's sidecar, which the next pull mirrors)
 - Evidence: sync_wire_shapes in src/serve/contract.rs
 - Details evolved 2026-09-12: Syncthing as phase 2 is off the table for
   now; reaching the desktop beyond the LAN goes first through a Tailscale

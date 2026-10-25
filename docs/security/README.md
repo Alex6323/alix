@@ -199,6 +199,14 @@ the local `cite:` root chosen for a served card when that deck's effective
 override. Unknown, ambiguous, unreadable, or unmatched cards stay card-only,
 and no phone-supplied path is used. The same pairing token already authorizes
 `/api/remote/ask`; there is no additional per-deck authorization boundary.
+A remote note whose card resolved is the one remote call that writes a
+desktop file: the condensed lines are appended to the served deck's personal
+sidecar (`<deck>.local.md`), never the authored deck, the store, or any
+phone-supplied path; a card-only call writes nothing. A pairing-token holder
+can therefore append model-condensed text, steered by the history it sends,
+to a served deck's sidecar. Regression evidence:
+`a_grounded_remote_note_lands_in_the_desktop_sidecar_and_a_card_only_one_writes_nothing`
+and `remote_endpoints_never_write_the_server_store` (`tests/api.rs`).
 
 Remote exams resolve a selected desktop deck, and remote generation accepts
 web URLs rather than a client-selected desktop path. The remote exam handlers

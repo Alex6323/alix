@@ -440,10 +440,17 @@ enum RemoteAskOutcome {
     Error(String),
 }
 
+struct NoteTarget {
+    deck_path: PathBuf,
+    deck_id: String,
+    card_id: String,
+}
+
 pub(super) struct RemoteAsk {
     rx: Receiver<Reply>,
     purpose: RemoteAskPurpose,
     card_only: bool,
+    note_target: Option<NoteTarget>,
     status: Option<String>,
     started_ms: u64,
     outcome: Option<RemoteAskOutcome>,
@@ -503,6 +510,7 @@ impl RemoteAsk {
             prompt,
             RemoteAskPurpose::Question,
             card_only,
+            None,
             status,
         )
     }
@@ -515,7 +523,7 @@ impl RemoteAsk {
         let (card, card_only) = resolution.into_card();
         let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
         let prompt = ask::draft_card_prompt(&card, &prior);
-        Self::spawn(cfg, prompt, RemoteAskPurpose::Draft, card_only, None)
+        Self::spawn(cfg, prompt, RemoteAskPurpose::Draft, card_only, None, None)
     }
 
     pub(super) fn note(
@@ -523,10 +531,27 @@ impl RemoteAsk {
         resolution: RemoteCardResolution,
         history: Vec<RemoteTurn>,
     ) -> Self {
-        let (card, card_only) = resolution.into_card();
+        let (card, card_only, note_target) = match resolution {
+            RemoteCardResolution::Grounded { card, info } => {
+                let note_target = card.id().map(|card_id| NoteTarget {
+                    deck_path: info.path.clone(),
+                    deck_id: card.deck_id.to_string(),
+                    card_id,
+                });
+                (card, false, note_target)
+            }
+            RemoteCardResolution::CardOnly(card) => (card, true, None),
+        };
         let prior: Vec<Exchange> = history.into_iter().map(|t| (t.q, t.a)).collect();
         let prompt = ask::condense_prompt(&card, &prior);
-        Self::spawn(cfg, prompt, RemoteAskPurpose::Note, card_only, None)
+        Self::spawn(
+            cfg,
+            prompt,
+            RemoteAskPurpose::Note,
+            card_only,
+            note_target,
+            None,
+        )
     }
 
     fn spawn(
@@ -534,6 +559,7 @@ impl RemoteAsk {
         prompt: String,
         purpose: RemoteAskPurpose,
         card_only: bool,
+        note_target: Option<NoteTarget>,
         status: Option<String>,
     ) -> Self {
         let (rx, job) = ask::spawn(cfg.clone(), prompt, Vec::new());
@@ -541,6 +567,7 @@ impl RemoteAsk {
             rx,
             purpose,
             card_only,
+            note_target,
             status,
             started_ms: now_ms(),
             outcome: None,
@@ -575,7 +602,19 @@ impl RemoteAsk {
                 }
             }
             (Reply::Answer(text), RemoteAskPurpose::Note) => {
-                RemoteAskOutcome::Note(ask::extract_note_lines(&text))
+                let notes = ask::extract_note_lines(&text);
+                let written = self.note_target.as_ref().map(|target| {
+                    crate::personal::append_note(
+                        &target.deck_path,
+                        &target.deck_id,
+                        &target.card_id,
+                        &notes,
+                    )
+                });
+                match written {
+                    Some(Err(e)) => RemoteAskOutcome::Error(e.to_string()),
+                    _ => RemoteAskOutcome::Note(notes),
+                }
             }
             (Reply::Error(e), _) => RemoteAskOutcome::Error(e),
         });
@@ -1743,6 +1782,7 @@ mod tests {
             rx: ask_rx,
             purpose: RemoteAskPurpose::Question,
             card_only: false,
+            note_target: None,
             status: None,
             started_ms: now_ms().saturating_sub(2_500),
             outcome: None,
