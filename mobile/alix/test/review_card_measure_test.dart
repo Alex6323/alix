@@ -22,7 +22,7 @@ const _question =
 // The suite loads no fonts, so every glyph measures the same fixed width.
 // This has to stay short enough to leave slack on ONE line at the narrowest
 // measure under test, or it wraps, fills the column, and the assertion that
-// an answer unit does not shrink-wrap can no longer fail.
+// a one-line unit keeps to its own width inside the block can no longer fail.
 const _short = 'Recall flips.';
 const _answer =
     'The chosen depth decides it, never the deck: Recognize is always a '
@@ -166,13 +166,22 @@ void main() {
         expect(question.width, lessThanOrEqualTo(_measure));
         for (final (label, rect) in [
           ('a wrapping answer unit', answer),
-          ('a one-line answer unit', short),
           ('a WARNING note block', block(_warning)),
           ('a NOTE note block', block(_plain)),
         ]) {
           expect(rect.left, question.left, reason: '$label left edge');
           expect(rect.right, question.right, reason: '$label right edge');
         }
+        expect(
+          short.left,
+          question.left,
+          reason: 'a one-line answer unit starts at the left edge of its block',
+        );
+        expect(
+          short.right,
+          lessThan(question.right),
+          reason: 'a one-line answer unit keeps its own width inside the block',
+        );
         expect(
           plain.left,
           block(_plain).left + _bar + _barGap,

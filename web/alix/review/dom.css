@@ -1,8 +1,11 @@
-  /* The question, the answer and the note all wrap on `--measure`; the
-     question is centred in it, the prose below it is set ragged right. */
-  .front-text { box-sizing: border-box; width: 100%; max-width: var(--measure); margin-inline: auto; font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; color: var(--ink); }
-  /* A multi-line front (a reversed card's alternatives) reads as centred lines
-     rather than one run-on where the browser collapsed the newlines. */
+  /* The question, the answer and the note all wrap on `--measure`. Question
+     and answer prose is left-aligned inside a block that shrinks to its
+     content and is centred while narrower than the measure; a note keeps
+     the full measure. */
+  .front-text { box-sizing: border-box; width: max-content; max-width: min(100%, var(--measure)); margin-inline: auto; text-align: start; font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; color: var(--ink); }
+  .front-text:has(pre, .checklist, .unit-table, blockquote, img, .math-display) { width: 100%; }
+  /* A multi-line front (a reversed card's alternatives) reads as separate
+     lines rather than one run-on where the browser collapsed the newlines. */
   .front-text.multi { display: flex; flex-direction: column; gap: 0.4em; }
   .front-text .checklist { display: grid; gap: 6px; margin: 4px auto 0; text-align: left; }
   .front-text .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
@@ -37,7 +40,8 @@
   .card.answered.concealing .img-mask.reveals { display: flex; }
 
   .reveal { animation: revealIn 0.24s cubic-bezier(.2,.7,.3,1) both; }
-  .reveal { text-align: start; box-sizing: border-box; width: 100%; max-width: var(--measure); margin-inline: auto; }
+  .reveal { text-align: start; box-sizing: border-box; width: max-content; max-width: min(100%, var(--measure)); margin-inline: auto; }
+  .reveal:has(.code-block, .unit-table, .checklist, blockquote, .kp-list, input, img, .math-display) { width: 100%; }
   /* A fenced code snippet in a reshaped answer: monospace, indentation kept. */
   .code-block { text-align: left; font: 0.86rem/1.5 var(--mono); color: var(--ink); background: rgba(0,0,0,0.28); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin: 5px 0; overflow-x: auto; white-space: pre; }
   .table-scroll { overflow-x: auto; margin: 8px 0; }

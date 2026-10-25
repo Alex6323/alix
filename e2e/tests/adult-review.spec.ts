@@ -2096,3 +2096,106 @@ test("the tutor names the previous card while its note settles and the leave pro
   await page.getByRole("button", { name: /^Stay/ }).click();
   await expect(page.locator(".ask-thinking")).toBeVisible();
 });
+
+// Question and answer prose are left-aligned text inside a block that is
+// centred while its natural width is under the column; a block as wide as the
+// column fills it. A note stays left-aligned at its full measure.
+test("question and answer prose sit in a centred block, left-aligned inside it; a note keeps its measure", async ({ page }) => {
+  const long =
+    "Which of the statements an expression statement may hold is complete by itself, without any trailing expression, in the grammar of the language as the reference describes it?";
+  const longAnswer = [
+    "The empty statement, a lone semicolon, is complete by itself; everything else in the statement grammar needs an expression, a declaration or a block to carry it.",
+  ];
+  const cases = [
+    { name: "one-word question, one-glyph answer", front: "Why?", answerLines: [";"], code: true, wide: false },
+    { name: "three-line question, three-line answer", front: long, answerLines: longAnswer, code: false, wide: true },
+  ];
+  const renderDir = process.env.ALIX_RENDER_DIR;
+  for (const viewport of [{ width: 1200, height: 800 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    for (const item of cases) {
+      const state = {
+        ...longContentState({
+          answerLines: item.answerLines,
+          front: item.front,
+          note: [{ kind: "sentence", text: "A note stays at the left edge of its region, whatever its width." }],
+        }),
+        introducing: true,
+      };
+      if (item.code) {
+        state.card.back_runs = [[{ text: ";", code: true }]];
+        state.card.back_units = [{ kind: "sentence", text: ";", runs: [{ text: ";", code: true }] }];
+      }
+      await page.unroute("**/api/state");
+      await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+      await openApp(page);
+      await page.getByRole("button", { name: "Reveal" }).click();
+      await expect(page.getByRole("button", { name: "Seen" })).toBeVisible();
+      if (renderDir) {
+        await page.screenshot({ path: `${renderDir}/web-${viewport.width}-${item.wide ? "wide" : "narrow"}.png` });
+      }
+
+      const boxes = await page.evaluate(() => {
+        const pick = (selector: string) => {
+          const node = document.querySelector(selector);
+          if (!(node instanceof HTMLElement)) throw new Error(`missing ${selector}`);
+          return node;
+        };
+        const column = (node: HTMLElement) => {
+          const rect = node.getBoundingClientRect();
+          const style = getComputedStyle(node);
+          const left = rect.left + parseFloat(style.paddingLeft);
+          const right = rect.right - parseFloat(style.paddingRight);
+          return { left, right, width: right - left, centre: (left + right) / 2 };
+        };
+        const block = (node: HTMLElement) => {
+          const rect = node.getBoundingClientRect();
+          return {
+            width: rect.width,
+            centre: (rect.left + rect.right) / 2,
+            textAlign: getComputedStyle(node).textAlign,
+          };
+        };
+        const probe = document.createElement("div");
+        probe.style.width = "var(--measure)";
+        document.body.append(probe);
+        const measure = probe.getBoundingClientRect().width;
+        probe.remove();
+        return {
+          measure,
+          question: { column: column(pick("#card .region.q")), block: block(pick("#card .region.q .front-text")) },
+          answer: { column: column(pick("#ansRegion")), block: block(pick("#ansRegion .reveal")) },
+          note: { column: column(pick("#noteRegion")), block: block(pick("#noteRegion .note")) },
+          noteAlign: getComputedStyle(pick("#noteRegion .note > p")).textAlign,
+        };
+      });
+      const label = `${item.name} at ${viewport.width}px`;
+      expect(boxes.measure, `${label}: the measure resolves`).toBeGreaterThan(0);
+      for (const [side, geometry] of [["question", boxes.question], ["answer", boxes.answer]] as const) {
+        expect(geometry.block.textAlign, `${label}: the ${side} text is start-aligned`).toBe("start");
+        expect(
+          Math.abs(geometry.block.centre - geometry.column.centre),
+          `${label}: the ${side} block centre ${geometry.block.centre} sits on the column centre ${geometry.column.centre}`,
+        ).toBeLessThanOrEqual(2);
+        if (item.wide) {
+          const expected = Math.min(geometry.column.width, boxes.measure);
+          expect(
+            Math.abs(geometry.block.width - expected),
+            `${label}: the ${side} block ${geometry.block.width} fills its column ${expected}`,
+          ).toBeLessThanOrEqual(2);
+        } else {
+          expect(
+            geometry.block.width,
+            `${label}: the ${side} block ${geometry.block.width} is narrower than half the column ${geometry.column.width}`,
+          ).toBeLessThan(geometry.column.width / 2);
+        }
+      }
+      expect(boxes.noteAlign, `${label}: the note is start-aligned`).toBe("start");
+      const noteWidth = Math.min(boxes.note.column.width, boxes.measure);
+      expect(
+        Math.abs(boxes.note.block.width - noteWidth),
+        `${label}: the note ${boxes.note.block.width} keeps its full measure ${noteWidth}`,
+      ).toBeLessThanOrEqual(2);
+    }
+  }
+});

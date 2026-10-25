@@ -125,6 +125,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Question and answer prose on the web and on the phone is left-aligned
+  inside a block that shrinks to its content and is centred in the card: a
+  short question or answer sits in the middle, a wrapped paragraph reads as a
+  left-aligned block, and a block holding code, a table, a checklist or a
+  quotation spans the whole column. Before, both clients centred the question
+  line by line and set the answer at the column's left edge. A note stays
+  left-aligned at the full column width.
+
 - The note region sits at the bottom of the card, directly above the buttons,
   sized to its content, on the web and on the phone alike: a long note takes
   room from the answer down to a third of the card, past which the note

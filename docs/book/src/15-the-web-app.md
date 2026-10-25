@@ -174,7 +174,12 @@ Recognize-session question. Pick-one cards submit when you tap an option;
 select-all cards let you toggle each answer independently, then submit the
 whole set at once. A correct pick offers the quiet "I guessed" undo. A
 revealed note uses the same content-column width and text size as the answer
-or choices above it. The note sits at the bottom of the card, directly above
+or choices above it. Question and answer prose is left-aligned inside a block
+that shrinks to its content and sits centred in the card: a one-word question
+or a one-glyph answer lands in the middle, a wrapped paragraph reads as a
+left-aligned block, and a block holding code, a table, a checklist or a
+quotation spans the whole column. A note is always left-aligned at the full
+column width. The note sits at the bottom of the card, directly above
 the buttons, and takes only the height its text needs; a long note takes room
 from the answer, which keeps at least a third of the card, and past that the
 note scrolls inside its own region. When an answer or a note is taller than

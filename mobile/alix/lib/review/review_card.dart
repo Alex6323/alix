@@ -439,13 +439,12 @@ class ReviewCardView extends StatelessWidget {
         question.frontRuns,
         question.front,
         style: style,
-        textAlign: TextAlign.center,
         contextHoles: true,
         tokens: tokens,
       );
     }
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: _blockAlignment(units),
       children: [
         for (final (index, unit) in units.indexed) ...[
           if (index > 0) const SizedBox(height: 10),
@@ -455,7 +454,6 @@ class ReviewCardView extends StatelessWidget {
               runs,
               text,
               style: style,
-              textAlign: TextAlign.center,
               contextHoles: true,
               tokens: tokens,
             ),
@@ -464,12 +462,19 @@ class ReviewCardView extends StatelessWidget {
               style.color ?? tokens.text,
               blankTokens: tokens,
             ),
-            _ => unitWidget(unit, tokens, style, TextAlign.center),
+            _ => unitWidget(unit, tokens, style, TextAlign.start),
           },
         ],
       ],
     );
   }
+
+  /// Prose shrinks to its widest line and the region centres it; a block
+  /// holding anything else spans the measure, as on the web.
+  CrossAxisAlignment _blockAlignment(Iterable<ReviewContentUnitModel> units) =>
+      units.every((unit) => unit is ReviewSentenceModel)
+      ? CrossAxisAlignment.start
+      : CrossAxisAlignment.stretch;
 
   Widget _divider(AlixTokens tokens) {
     return FractionallySizedBox(
@@ -536,7 +541,7 @@ class ReviewCardView extends StatelessWidget {
         children: [
           box,
           const SizedBox(height: 12),
-          _answerUnits(context, card.backUnits, tokens),
+          Center(child: _answerUnits(context, card.backUnits, tokens)),
         ],
       );
     }
@@ -640,7 +645,7 @@ class ReviewCardView extends StatelessWidget {
       color: Theme.of(context).colorScheme.onSurface,
     );
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: _blockAlignment(units),
       children: [
         for (final (index, unit) in units.indexed) ...[
           if (index > 0) const SizedBox(height: 10),
@@ -673,11 +678,13 @@ class ReviewCardView extends StatelessWidget {
 
     var fenceIndex = 0;
     var index = 0;
+    var prose = true;
     while (index < visible && index < card.answerSteps.length) {
       final step = card.answerSteps[index];
       if (step is ReviewAnswerQuoteModel) {
         addGap();
         children.add(quoteWidget(step.units, tokens, style, TextAlign.start));
+        prose = false;
         index++;
         continue;
       }
@@ -688,6 +695,7 @@ class ReviewCardView extends StatelessWidget {
             children.add(tableWidget(unit, tokens, style));
           }
         }
+        prose = false;
         index++;
         continue;
       }
@@ -708,6 +716,7 @@ class ReviewCardView extends StatelessWidget {
         fenceStart: fenceIndex,
         onFence: (code, unit, closed) {
           addGap();
+          prose = false;
           if (closed && unit is ReviewDiagramModel) {
             children.add(diagramWidget(unit, answered: true));
           } else {
@@ -727,7 +736,9 @@ class ReviewCardView extends StatelessWidget {
       );
     }
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: prose
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.stretch,
       children: children,
     );
   }

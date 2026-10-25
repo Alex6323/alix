@@ -87,7 +87,11 @@ the top, the answer below it, and a revealed note at the bottom, directly
 above the legend row, taking only the height its text needs; a long note
 takes room from the answer down to a third of the card, and each of the
 three scrolls on its own past its space, with a "more" marker at the edge
-that hides something. A card that sits under a `#` section in its deck (see
+that hides something. Question and answer prose follows the web's alignment
+rule: left-aligned inside a block that shrinks to its content and is centred
+in the card, so a short question or answer sits in the middle and a wrapped
+paragraph reads as a left-aligned block; a note is always left-aligned at the
+full width. A card that sits under a `#` section in its deck (see
 [Sections and sub-cards](03-the-deck-format.md#sections-and-sub-cards)) shows
 the section's heading as a one-line pill above the question; tapping the pill
 opens the whole section, heading and prose, in a sheet. Neither appears on a
