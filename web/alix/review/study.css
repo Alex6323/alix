@@ -56,19 +56,16 @@
      and answer is ALWAYS present — even when the answer overflows and top-aligns,
      the case where centring alone left it flush under the prompt. */
   .region.q { flex: 0 0 auto; max-height: 38%; padding-bottom: 30px; }   /* question */
-  /* The answer fills the slack between the question and the bottom-pinned note.
-     A short answer that fits still centres (it settles near the note rather than
-     leaving a mid-card void); a long one top-aligns below the reserved gap and
-     scrolls inside its own region (fade masks + more-hint, driven by updateFade). */
-  .region.a { flex: 1 1 auto; max-height: 82%; position: relative; }
-  .region.a.withnote { max-height: 52%; }
-  /* An MC card's options fill the height down toward the note instead of
-     leaving a big gap above the bottom-pinned note; they use the room well. */
-  .region.a.choices.withnote { max-height: 74%; }
+  /* The note sits at the card bottom, sized to its content; the answer takes
+     the rest and yields to a long note down to a third of the card, past which
+     the note scrolls inside itself. A short answer that fits centres in its
+     region; a long one top-aligns and scrolls (fade masks + more-hint, driven
+     by updateFade). Without a note the answer region keeps its old cap. */
+  .region.a { flex: 1 1 0%; max-height: 82%; position: relative; }
+  .region.a.withnote { max-height: none; min-height: 33.333%; }
   .region.a.balanced { justify-content: safe center; }
   .region.a.filled { justify-content: flex-start; }
-  /* the note, pinned to the bottom of the card */
-  .region.n { flex: 0 0 auto; max-height: 30%; margin-top: auto; }
+  .region.n { flex: 0 1 auto; max-height: 66.667%; margin-top: auto; }
   .region.a.citable, .region.a.hidable { cursor: pointer; }
   .region-toggles { position: absolute; top: 6px; right: 10px; z-index: 2;
                     display: flex; align-items: center; gap: 10px;

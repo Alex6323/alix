@@ -173,23 +173,76 @@ class ReviewCardView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final card = state.card!;
+    final tokens = Theme.of(context).alix;
+    final answered = _answered(card);
+    final showNote = answered && card.note.isNotEmpty;
     return Column(
       children: [
         Expanded(
-          child: ScrollWithMoreHint(
-            child: SingleChildScrollView(
-              primary: true,
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: _cardMeasure),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: _face(context, card),
+          child: LayoutBuilder(
+            builder: (context, box) {
+              final body = box.maxHeight;
+              return Column(
+                key: const ValueKey('card-body'),
+                children: [
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: body * 0.38),
+                    child: _region(
+                      key: const ValueKey('question-region'),
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+                      child: _head(context, card, tokens, answered: answered),
+                    ),
                   ),
-                ),
-              ),
-            ),
+                  _measured(_divider(tokens)),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, rest) {
+                        final noteMax = (rest.maxHeight - body / 3).clamp(
+                          0.0,
+                          rest.maxHeight,
+                        );
+                        return Column(
+                          children: [
+                            Expanded(
+                              child: _region(
+                                key: const ValueKey('answer-region'),
+                                padding: const EdgeInsets.fromLTRB(
+                                  20,
+                                  22,
+                                  20,
+                                  8,
+                                ),
+                                child: _answer(
+                                  context,
+                                  card,
+                                  tokens,
+                                  answered: answered,
+                                ),
+                              ),
+                            ),
+                            if (showNote)
+                              ConstrainedBox(
+                                constraints: BoxConstraints(maxHeight: noteMax),
+                                child: _region(
+                                  key: const ValueKey('note-region'),
+                                  contentKey: const ValueKey('note-content'),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    20,
+                                    12,
+                                    20,
+                                    8,
+                                  ),
+                                  child: _note(context, card, tokens),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
         _legend(context, card),
@@ -197,16 +250,49 @@ class ReviewCardView extends StatelessWidget {
     );
   }
 
+  bool _answered(ReviewCardModel card) =>
+      revealed ||
+      checkFeedback != null ||
+      choice != null ||
+      multiChoice != null ||
+      _lineDone(card);
 
-  Widget _face(BuildContext context, ReviewCardModel card) {
+  /// One scrolling region of the card, its content on the reading measure.
+  Widget _region({
+    required Key key,
+    Key? contentKey,
+    required EdgeInsets padding,
+    required Widget child,
+  }) {
+    return KeyedSubtree(
+      key: key,
+      child: ScrollWithMoreHint(
+        child: SingleChildScrollView(
+          primary: true,
+          child: _measured(
+            Padding(key: contentKey, padding: padding, child: child),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _measured(Widget child) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _cardMeasure),
+        child: SizedBox(width: double.infinity, child: child),
+      ),
+    );
+  }
+
+  Widget _head(
+    BuildContext context,
+    ReviewCardModel card,
+    AlixTokens tokens, {
+    required bool answered,
+  }) {
     final theme = Theme.of(context);
-    final tokens = theme.alix;
-    final answered =
-        revealed ||
-        checkFeedback != null ||
-        choice != null ||
-        multiChoice != null ||
-        _lineDone(card);
     final rectsLifted =
         answered ||
         questionAt(
@@ -235,17 +321,25 @@ class ReviewCardView extends StatelessWidget {
           const SizedBox(height: 12),
           _cardImage(context, image, rectsLifted),
         ],
-        const SizedBox(height: 14),
-        _divider(tokens),
-        const SizedBox(height: 22),
+      ],
+    );
+  }
+
+  Widget _answer(
+    BuildContext context,
+    ReviewCardModel card,
+    AlixTokens tokens, {
+    required bool answered,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
         _body(context, card, tokens),
         if (answered)
           for (final image in card.imagesBack) ...[
             const SizedBox(height: 12),
             _cardImage(context, image, answered),
           ],
-        if (answered && card.note.isNotEmpty)
-          _note(context, card, tokens),
       ],
     );
   }
@@ -1135,7 +1229,6 @@ class ReviewCardView extends StatelessWidget {
   ) {
     return Column(
       children: [
-        const SizedBox(height: 22),
         for (final (index, note) in card.note.indexed) ...[
           if (index > 0) const SizedBox(height: 10),
           _noteBlock(context, note, tokens),

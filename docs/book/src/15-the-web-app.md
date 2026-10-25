@@ -174,10 +174,13 @@ Recognize-session question. Pick-one cards submit when you tap an option;
 select-all cards let you toggle each answer independently, then submit the
 whole set at once. A correct pick offers the quiet "I guessed" undo. A
 revealed note uses the same content-column width and text size as the answer
-or choices above it. When an answer or a note is taller than its region, a
-"more below" or "more above" marker appears at that edge; clicking it scrolls
-that region by most of its height, so you can walk a long answer without
-reaching for the wheel. Controls are big tap targets and
+or choices above it. The note sits at the bottom of the card, directly above
+the buttons, and takes only the height its text needs; a long note takes room
+from the answer, which keeps at least a third of the card, and past that the
+note scrolls inside its own region. When an answer or a note is taller than
+its region, a "more below" or "more above" marker appears at that edge;
+clicking it scrolls that region by most of its height, so you can walk a long
+answer without reaching for the wheel. Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server).
 A card under a section keeps its section heading above the question as a dim,
 one-line title. On the first card you ever meet from that section, the

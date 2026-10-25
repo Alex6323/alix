@@ -125,6 +125,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The note region sits at the bottom of the card, directly above the buttons,
+  sized to its content, on the web and on the phone alike: a long note takes
+  room from the answer down to a third of the card, past which the note
+  scrolls inside its own region. The web's fixed 30% note cap and the phone's
+  single scrolling column (the note following the answer) are gone; the
+  phone's question, answer and note are now three regions that scroll on
+  their own.
+
 - The deck generator and the manual's card-shape guide now name select-all
   cards (`choices: multiple`) for material where several items share a
   property, such as "which of these statements are false".

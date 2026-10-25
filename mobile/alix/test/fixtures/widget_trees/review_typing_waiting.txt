@@ -7,29 +7,46 @@ Scaffold
           Expanded
             Column
               Expanded
-                Stack
-                  SingleChildScrollView
-                    Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
+                Column key=[<'card-body'>]
+                  ConstrainedBox
+                    Stack
+                      SingleChildScrollView
+                        Center
+                          ConstrainedBox
+                            SizedBox(width=Infinity, height=null)
+                              Padding(EdgeInsets(20.0, 8.0, 20.0, 14.0))
+                                Column
+                                  Text("Atomic?")
                       Center
-                        ConstrainedBox
-                          SizedBox(width=Infinity, height=null)
-                            Column
-                              Text("Atomic?")
-                              SizedBox(width=null, height=14.0)
-                              Container
-                                ConstrainedBox
-                                  Padding(EdgeInsets.zero)
-                                    ConstrainedBox
-                              SizedBox(width=null, height=22.0)
-                              Column
-                                ConstrainedBox
-                                  TextField(enabled=true, label="", hint="", value="")
-                                    SizedBox(width=0.0, height=0.0)
-                                    CustomPaint
+                        Container
+                          Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
+                            Text("⌵ more")
                   Center
-                    Container
-                      Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
-                        Text("⌵ more")
+                    ConstrainedBox
+                      SizedBox(width=Infinity, height=null)
+                        Container
+                          ConstrainedBox
+                            Padding(EdgeInsets.zero)
+                              ConstrainedBox
+                  Expanded
+                    Column
+                      Expanded
+                        Stack
+                          SingleChildScrollView
+                            Center
+                              ConstrainedBox
+                                SizedBox(width=Infinity, height=null)
+                                  Padding(EdgeInsets(20.0, 22.0, 20.0, 8.0))
+                                    Column
+                                      Column
+                                        ConstrainedBox
+                                          TextField(enabled=true, label="", hint="", value="")
+                                            SizedBox(width=0.0, height=0.0)
+                                            CustomPaint
+                          Center
+                            Container
+                              Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
+                                Text("⌵ more")
               Padding(EdgeInsets(12.0, 10.0, 12.0, 12.0))
                 Wrap
                   Material

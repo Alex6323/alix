@@ -7,25 +7,42 @@ Scaffold
           Expanded
             Column
               Expanded
-                Stack
-                  SingleChildScrollView
-                    Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
+                Column key=[<'card-body'>]
+                  ConstrainedBox
+                    Stack
+                      SingleChildScrollView
+                        Center
+                          ConstrainedBox
+                            SizedBox(width=Infinity, height=null)
+                              Padding(EdgeInsets(20.0, 8.0, 20.0, 14.0))
+                                Column
+                                  Text("First question?")
                       Center
-                        ConstrainedBox
-                          SizedBox(width=Infinity, height=null)
-                            Column
-                              Text("First question?")
-                              SizedBox(width=null, height=14.0)
-                              Container
-                                ConstrainedBox
-                                  Padding(EdgeInsets.zero)
-                                    ConstrainedBox
-                              SizedBox(width=null, height=22.0)
-                              SizedBox(width=0.0, height=0.0)
+                        Container
+                          Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
+                            Text("⌵ more")
                   Center
-                    Container
-                      Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
-                        Text("⌵ more")
+                    ConstrainedBox
+                      SizedBox(width=Infinity, height=null)
+                        Container
+                          ConstrainedBox
+                            Padding(EdgeInsets.zero)
+                              ConstrainedBox
+                  Expanded
+                    Column
+                      Expanded
+                        Stack
+                          SingleChildScrollView
+                            Center
+                              ConstrainedBox
+                                SizedBox(width=Infinity, height=null)
+                                  Padding(EdgeInsets(20.0, 22.0, 20.0, 8.0))
+                                    Column
+                                      SizedBox(width=0.0, height=0.0)
+                          Center
+                            Container
+                              Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
+                                Text("⌵ more")
               Padding(EdgeInsets(12.0, 10.0, 12.0, 12.0))
                 Wrap
                   Material

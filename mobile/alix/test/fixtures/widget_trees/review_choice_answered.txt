@@ -7,64 +7,81 @@ Scaffold
           Expanded
             Column
               Expanded
-                Stack
-                  SingleChildScrollView
-                    Padding(EdgeInsets(20.0, 8.0, 20.0, 8.0))
+                Column key=[<'card-body'>]
+                  ConstrainedBox
+                    Stack
+                      SingleChildScrollView
+                        Center
+                          ConstrainedBox
+                            SizedBox(width=Infinity, height=null)
+                              Padding(EdgeInsets(20.0, 8.0, 20.0, 14.0))
+                                Column
+                                  Text("Capital of France?")
                       Center
-                        ConstrainedBox
-                          SizedBox(width=Infinity, height=null)
-                            Column
-                              Text("Capital of France?")
-                              SizedBox(width=null, height=14.0)
-                              Container
-                                ConstrainedBox
-                                  Padding(EdgeInsets.zero)
-                                    ConstrainedBox
-                              SizedBox(width=null, height=22.0)
-                              Column
-                                Opacity(<choice-state>) key=[<'option-<index>'>]
-                                  Container
-                                    ConstrainedBox
-                                      Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
-                                        Row
-                                          Text("<choice-option>")
-                                          SizedBox(width=14.0, height=null)
-                                          Expanded
-                                            Text("<choice-option>")
-                                SizedBox(width=null, height=10.0)
-                                Opacity(<choice-state>) key=[<'option-<index>'>]
-                                  Container
-                                    ConstrainedBox
-                                      Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
-                                        Row
-                                          Text("<choice-option>")
-                                          SizedBox(width=14.0, height=null)
-                                          Expanded
-                                            Text("<choice-option>")
-                                SizedBox(width=null, height=10.0)
-                                Opacity(<choice-state>) key=[<'option-<index>'>]
-                                  Container
-                                    ConstrainedBox
-                                      Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
-                                        Row
-                                          Text("<choice-option>")
-                                          SizedBox(width=14.0, height=null)
-                                          Expanded
-                                            Text("<choice-option>")
-                                SizedBox(width=null, height=10.0)
-                                Opacity(<choice-state>) key=[<'option-<index>'>]
-                                  Container
-                                    ConstrainedBox
-                                      Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
-                                        Row
-                                          Text("<choice-option>")
-                                          SizedBox(width=14.0, height=null)
-                                          Expanded
-                                            Text("<choice-option>")
+                        Container
+                          Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
+                            Text("⌵ more")
                   Center
-                    Container
-                      Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
-                        Text("⌵ more")
+                    ConstrainedBox
+                      SizedBox(width=Infinity, height=null)
+                        Container
+                          ConstrainedBox
+                            Padding(EdgeInsets.zero)
+                              ConstrainedBox
+                  Expanded
+                    Column
+                      Expanded
+                        Stack
+                          SingleChildScrollView
+                            Center
+                              ConstrainedBox
+                                SizedBox(width=Infinity, height=null)
+                                  Padding(EdgeInsets(20.0, 22.0, 20.0, 8.0))
+                                    Column
+                                      Column
+                                        Opacity(<choice-state>) key=[<'option-<index>'>]
+                                          Container
+                                            ConstrainedBox
+                                              Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
+                                                Row
+                                                  Text("<choice-option>")
+                                                  SizedBox(width=14.0, height=null)
+                                                  Expanded
+                                                    Text("<choice-option>")
+                                        SizedBox(width=null, height=10.0)
+                                        Opacity(<choice-state>) key=[<'option-<index>'>]
+                                          Container
+                                            ConstrainedBox
+                                              Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
+                                                Row
+                                                  Text("<choice-option>")
+                                                  SizedBox(width=14.0, height=null)
+                                                  Expanded
+                                                    Text("<choice-option>")
+                                        SizedBox(width=null, height=10.0)
+                                        Opacity(<choice-state>) key=[<'option-<index>'>]
+                                          Container
+                                            ConstrainedBox
+                                              Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
+                                                Row
+                                                  Text("<choice-option>")
+                                                  SizedBox(width=14.0, height=null)
+                                                  Expanded
+                                                    Text("<choice-option>")
+                                        SizedBox(width=null, height=10.0)
+                                        Opacity(<choice-state>) key=[<'option-<index>'>]
+                                          Container
+                                            ConstrainedBox
+                                              Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
+                                                Row
+                                                  Text("<choice-option>")
+                                                  SizedBox(width=14.0, height=null)
+                                                  Expanded
+                                                    Text("<choice-option>")
+                          Center
+                            Container
+                              Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
+                                Text("⌵ more")
               Padding(EdgeInsets(12.0, 10.0, 12.0, 12.0))
                 Wrap
                   Material

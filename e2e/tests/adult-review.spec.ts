@@ -514,6 +514,102 @@ test("a long introduction note shows overflow hints at both edges", async ({ pag
   await expect(below).not.toHaveClass(/show/);
 });
 
+test("the note region takes the space above the answer floor, sized to its content, at the card bottom", async ({ page }) => {
+  const paragraphs = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      kind: "sentence",
+      text: `Note paragraph ${index + 1} explains one more thing the learner asked about.`,
+    }));
+  const cases = [
+    { name: "short answer, long note", answerLines: ["A short answer."], note: paragraphs(16) },
+    {
+      name: "long answer, long note",
+      answerLines: Array.from(
+        { length: 40 },
+        (_, index) => `Answer line ${index + 1} keeps the explanation long enough to overflow its region.`,
+      ),
+      note: paragraphs(16),
+    },
+    { name: "short answer, short note", answerLines: ["A short answer."], note: paragraphs(1) },
+  ];
+  for (const viewport of [{ width: 1200, height: 800 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    for (const item of cases) {
+      const state = {
+        ...longContentState({ answerLines: item.answerLines, note: item.note }),
+        introducing: true,
+      };
+      await page.unroute("**/api/state");
+      await page.route("**/api/state", (route) => route.fulfill({ json: state }));
+      await openApp(page);
+      await page.getByRole("button", { name: "Reveal" }).click();
+      await expect(page.getByRole("button", { name: "Seen" })).toBeVisible();
+
+      const boxes = await page.evaluate(() => {
+        const card = document.querySelector("#card");
+        const question = document.querySelector("#card .region.q");
+        const answer = document.querySelector("#ansRegion");
+        const note = document.querySelector("#noteRegion");
+        if (![card, question, answer, note].every((node) => node instanceof HTMLElement)) {
+          throw new Error("missing card geometry");
+        }
+        const rect = (node: Element) => node.getBoundingClientRect();
+        const inner = (node: Element) => {
+          const style = getComputedStyle(node);
+          return rect(node).height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+        };
+        return {
+          cardInner: inner(card),
+          cardBottom: rect(card).bottom - parseFloat(getComputedStyle(card).paddingBottom),
+          questionHeight: rect(question).height,
+          answer: {
+            top: rect(answer).top,
+            bottom: rect(answer).bottom,
+            height: rect(answer).height,
+            overflows: answer.scrollHeight > answer.clientHeight + 2,
+          },
+          note: {
+            top: rect(note).top,
+            bottom: rect(note).bottom,
+            height: rect(note).height,
+            content: note.scrollHeight,
+            overflows: note.scrollHeight > note.clientHeight + 2,
+          },
+        };
+      });
+      const label = `${item.name} at ${viewport.width}x${viewport.height}`;
+      const floor = boxes.cardInner / 3;
+      expect(
+        Math.abs(boxes.note.bottom - boxes.cardBottom),
+        `${label}: the note bottom ${boxes.note.bottom} sits at the card bottom ${boxes.cardBottom}`,
+      ).toBeLessThanOrEqual(2);
+      expect(
+        Math.abs(boxes.note.top - boxes.answer.bottom),
+        `${label}: no band between the answer bottom ${boxes.answer.bottom} and the note top ${boxes.note.top}`,
+      ).toBeLessThanOrEqual(2);
+      expect(
+        boxes.answer.height,
+        `${label}: the answer region ${boxes.answer.height}px keeps a third of the card ${floor}px`,
+      ).toBeGreaterThanOrEqual(floor - 3);
+      if (item.note.length === 1) {
+        expect(
+          Math.abs(boxes.note.height - boxes.note.content),
+          `${label}: a short note region ${boxes.note.height}px equals its content ${boxes.note.content}px`,
+        ).toBeLessThanOrEqual(3);
+      } else {
+        expect(boxes.note.overflows, `${label}: a long note scrolls inside its region`).toBe(true);
+        expect(
+          Math.abs(boxes.answer.height - floor),
+          `${label}: a long note pushes the answer region ${boxes.answer.height}px down to the floor ${floor}px`,
+        ).toBeLessThanOrEqual(3);
+      }
+      if (item.answerLines.length > 1) {
+        expect(boxes.answer.overflows, `${label}: a long answer scrolls inside its region`).toBe(true);
+      }
+    }
+  }
+});
+
 test("a tall review window keeps the card close to both shell edges", async ({ page }) => {
   await page.setViewportSize({ width: 1800, height: 1200 });
   const state = {

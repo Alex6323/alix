@@ -82,7 +82,12 @@ the next pass.
 
 The review screen is the web app's loop on a phone: reveal, then grade, or
 pick a choice, with the legend row at the bottom holding the primary action
-and the quiet extras. A card that sits under a `#` section in its deck (see
+and the quiet extras. The card is laid out as on the web: the question at
+the top, the answer below it, and a revealed note at the bottom, directly
+above the legend row, taking only the height its text needs; a long note
+takes room from the answer down to a third of the card, and each of the
+three scrolls on its own past its space, with a "more" marker at the edge
+that hides something. A card that sits under a `#` section in its deck (see
 [Sections and sub-cards](03-the-deck-format.md#sections-and-sub-cards)) shows
 the section's heading as a one-line pill above the question; tapping the pill
 opens the whole section, heading and prose, in a sheet. Neither appears on a
