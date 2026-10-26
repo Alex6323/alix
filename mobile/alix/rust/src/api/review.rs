@@ -413,7 +413,7 @@ impl ReviewSession {
         let loaded = alix::deck::Deck::load(&deck)?;
         let deck_token = loaded.deck_token.clone().unwrap_or_default();
         let deck_fingerprints: HashSet<u64> =
-            loaded.cards.iter().map(|c| c.content_fingerprint).collect();
+            loaded.cards.iter().map(|c| c.block_fingerprint).collect();
         let has_exam = loaded.has_exam();
         // Captured before `deck` moves into `assemble::select` below.
         let deck_path = deck.clone();
@@ -574,7 +574,7 @@ impl ReviewSession {
             .session
             .cards()
             .iter()
-            .map(|c| c.content_fingerprint)
+            .map(|c| c.block_fingerprint)
             .collect();
         let id = alix::store::mint_tutor_card(
             &mut self.store,
@@ -594,7 +594,7 @@ impl ReviewSession {
             .session
             .cards()
             .iter()
-            .map(|c| c.content_fingerprint)
+            .map(|c| c.block_fingerprint)
             .collect();
         let id = alix::store::record_minted_card(
             &mut self.store,
@@ -841,7 +841,7 @@ impl TraceSession {
         let loaded = alix::deck::Deck::load(&deck)?;
         let deck_token = loaded.deck_token.clone().unwrap_or_default();
         let deck_fingerprints: HashSet<u64> =
-            loaded.cards.iter().map(|c| c.content_fingerprint).collect();
+            loaded.cards.iter().map(|c| c.block_fingerprint).collect();
         let has_exam = loaded.has_exam();
         let deck_path = deck.clone();
 
@@ -1081,7 +1081,7 @@ impl WalkSession {
             .session
             .cards()
             .iter()
-            .map(|c| c.content_fingerprint)
+            .map(|c| c.block_fingerprint)
             .collect();
         let id = alix::store::mint_tutor_card(
             &mut self.store,
@@ -1101,7 +1101,7 @@ impl WalkSession {
             .session
             .cards()
             .iter()
-            .map(|c| c.content_fingerprint)
+            .map(|c| c.block_fingerprint)
             .collect();
         let id = alix::store::record_minted_card(
             &mut self.store,
@@ -1730,6 +1730,67 @@ mod tests {
             alix::personal::read(&root.join("d.md"), "d.md").cards.len(),
             "neither refusal reached the personal file"
         );
+    }
+
+    #[test]
+    fn the_phone_dedup_refuses_a_draft_that_duplicates_a_cloze_block_as_the_desktop_does() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = root.join("d.md");
+        write(
+            &deck,
+            "## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" -->\n",
+        );
+        let mut s = opened_after_introduction(&deck, root, None);
+        let loaded = alix::deck::Deck::load(&deck).unwrap();
+        let cloze = &loaded.cards[0];
+        assert_ne!(
+            cloze.content_fingerprint, cloze.block_fingerprint,
+            "fixture precondition: the cloze card's own question and its block key differ \
+             (content {}, block {})",
+            cloze.content_fingerprint, cloze.block_fingerprint
+        );
+
+        let tutor = s.mint_tutor_card(
+            "Complete the quote".to_string(),
+            vec!["To be or not to be".to_string()],
+        );
+        assert!(
+            tutor.is_err(),
+            "mint_tutor_card: a draft equal to the cloze block is a duplicate"
+        );
+        let recorded = s.record_minted_card(
+            "## Complete the quote\nTo be or not to be\n\
+             <!-- blank: span hidden=\"be\" b:a1b2c3 -->\n\
+             <!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9y -->\n"
+                .to_string(),
+        );
+        assert!(
+            matches!(&recorded, Err(e) if e.to_string().contains("already exists")),
+            "record_minted_card: a block equal to the cloze block is a duplicate, got {recorded:?}"
+        );
+        let remediated = s
+            .apply_remediation(
+                "## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" -->\n"
+                    .to_string(),
+            )
+            .unwrap();
+        assert_eq!(
+            0, remediated,
+            "apply_remediation: a block equal to the cloze block creates nothing"
+        );
+        assert!(
+            !alix::personal::sidecar_path(&deck).exists(),
+            "no refusal reached disk"
+        );
+
+        s.mint_tutor_card("capital of spain?".to_string(), vec!["Madrid".to_string()])
+            .expect("mint_tutor_card: genuinely new content still mints");
+        s.record_minted_card(
+            "## capital of peru?\nLima\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9z -->\n"
+                .to_string(),
+        )
+        .expect("record_minted_card: genuinely new content still records");
     }
 
     #[test]
@@ -2629,6 +2690,45 @@ mod tests {
             None,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn the_walk_dedup_refuses_a_draft_that_duplicates_a_cloze_block_as_the_desktop_does() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = root.join("walk.md");
+        write_deck(
+            &deck,
+            "# Quotes\nA line from a play.\n\n\
+             ## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" -->\n",
+        );
+        let mut walk = opened_walk(&deck, root);
+
+        let tutor = walk.mint_tutor_card(
+            "Complete the quote".to_string(),
+            vec!["To be or not to be".to_string()],
+        );
+        assert!(
+            tutor.is_err(),
+            "walk mint_tutor_card: a draft equal to the cloze block is a duplicate"
+        );
+        let recorded = walk.record_minted_card(
+            "## Complete the quote\nTo be or not to be\n\
+             <!-- blank: span hidden=\"be\" b:a1b2c3 -->\n\
+             <!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9y -->\n"
+                .to_string(),
+        );
+        assert!(
+            matches!(&recorded, Err(e) if e.to_string().contains("already exists")),
+            "walk record_minted_card: a block equal to the cloze block is a duplicate, got {recorded:?}"
+        );
+        assert!(
+            !alix::personal::sidecar_path(&deck).exists(),
+            "no refusal reached disk"
+        );
+
+        walk.mint_tutor_card("capital of spain?".to_string(), vec!["Madrid".to_string()])
+            .expect("walk mint_tutor_card: genuinely new content still mints");
     }
 
     #[test]

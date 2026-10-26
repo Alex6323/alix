@@ -520,6 +520,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On the phone, a tutor draft that duplicates a cloze card (or any other
+  block that yields several cards) is now refused as a duplicate, as on the
+  desktop: the phone's dedup compared the wrong fingerprint, so such a draft
+  was minted twice. Remediation cards after a failed exam are checked the
+  same way.
+
 - A short answer over a long note no longer leaves a gap between them while
   the note scrolls: on both clients the note takes the room the answer is not
   using, and the answer keeps a third of the card only when its own content
