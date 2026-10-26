@@ -85,9 +85,9 @@ pick a choice, with the legend row at the bottom holding the primary action
 and the quiet extras. The card is laid out as on the web: the question at
 the top, the answer below it, and a revealed note at the bottom, directly
 above the legend row, taking only the height its text needs; a long note
-takes room from the answer down to a third of the card, and each of the
-three scrolls on its own past its space, with a "more" marker at the edge
-that hides something. Question and answer prose follows the web's alignment
+takes the room the answer is not using, and room the answer is using only
+down to a third of the card, and each of the three scrolls on its own past
+its space, with a "more" marker at the edge that hides something. Question and answer prose follows the web's alignment
 rule: left-aligned inside a block that shrinks to its content and is centred
 in the card, so a short question or answer sits in the middle and a wrapped
 paragraph reads as a left-aligned block; a note is always left-aligned at the

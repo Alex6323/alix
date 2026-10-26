@@ -520,6 +520,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A short answer over a long note no longer leaves a gap between them while
+  the note scrolls: on both clients the note takes the room the answer is not
+  using, and the answer keeps a third of the card only when its own content
+  needs it. A long answer under a long note still keeps that third.
+
 - On the phone, a question typed into the tutor sheet but not yet sent
   survives closing the sheet: reopening it on the same card shows the text
   again. Sending it, or moving to another card, clears it.

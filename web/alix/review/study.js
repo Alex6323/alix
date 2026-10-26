@@ -703,7 +703,27 @@ export function createStudy({
     // body to center.
     a.classList.toggle("has-body", !!a.querySelector(
       ".reveal, .options, .inputs, .source-excerpt, .kp-list, .explain-answer, img.card-img, .cite-err"));
+    fitAnswerFloor(a);
     updateFade(a);
+  }
+
+  // The answer's floor under a note is min(its content, a third of the card),
+  // which CSS cannot express: measured here, so the note takes only the room
+  // the answer is not using. A late image load re-measures.
+  function fitAnswerFloor(a) {
+    if (!a || !a.classList.contains("withnote")) return;
+    const card = a.parentElement;
+    if (!card) return;
+    const cardStyle = computedStyle(card);
+    const inner = card.clientHeight - parseFloat(cardStyle.paddingTop) - parseFloat(cardStyle.paddingBottom);
+    a.style.minHeight = "0px";
+    a.style.flex = "0 0 auto";
+    const need = a.getBoundingClientRect().height;
+    a.style.flex = "";
+    a.style.minHeight = Math.min(need, inner / 3) + "px";
+    a.querySelectorAll("img").forEach((image) => {
+      if (!image.complete) image.addEventListener("load", () => fitAnswerFloor(a), { once: true });
+    });
   }
 
   function fillWalk(a) {
@@ -2170,6 +2190,13 @@ export function createStudy({
     syncDrawMenu();
     closeMenu();
     rerender();
+  }
+
+  if (win && typeof win.addEventListener === "function") {
+    win.addEventListener("resize", () => {
+      fitAnswerFloor(doc.getElementById("ansRegion"));
+      updateFade(doc.getElementById("ansRegion"));
+    });
   }
 
   return {

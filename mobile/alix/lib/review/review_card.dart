@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import 'package:alix_mobile/review/masked_image.dart';
 import 'package:alix_mobile/review/review_models.dart';
@@ -205,61 +206,39 @@ class ReviewCardView extends StatelessWidget {
                   ),
                   _measured(_divider(tokens)),
                   Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, rest) {
-                        final noteMax = (rest.maxHeight - body / 3).clamp(
-                          0.0,
-                          rest.maxHeight,
-                        );
-                        return Column(
-                          children: [
-                            Expanded(
-                              child: _answerTap(
-                                hideable,
-                                VeilScope(
-                                  veiled: hidden,
-                                  child: _region(
-                                    key: const ValueKey('answer-region'),
-                                    padding: const EdgeInsets.fromLTRB(
-                                      20,
-                                      22,
-                                      20,
-                                      8,
-                                    ),
-                                    child: _answer(
-                                      context,
-                                      card,
-                                      tokens,
-                                      answered: answered,
-                                    ),
-                                  ),
-                                ),
-                              ),
+                    child: _AnswerNoteLayout(
+                      floor: body / 3,
+                      answer: _answerTap(
+                        hideable,
+                        VeilScope(
+                          veiled: hidden,
+                          child: _region(
+                            key: const ValueKey('answer-region'),
+                            contentKey: const ValueKey('answer-content'),
+                            padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
+                            child: _answer(
+                              context,
+                              card,
+                              tokens,
+                              answered: answered,
                             ),
-                            if (showNote)
-                              ConstrainedBox(
-                                constraints: BoxConstraints(maxHeight: noteMax),
-                                child: _region(
-                                  key: const ValueKey('note-region'),
-                                  contentKey: const ValueKey('note-content'),
-                                  padding: const EdgeInsets.fromLTRB(
-                                    20,
-                                    12,
-                                    20,
-                                    8,
-                                  ),
-                                  child: Visibility(
-                                    visible: !hidden,
-                                    maintainSize: true,
-                                    maintainState: true,
-                                    maintainAnimation: true,
-                                    child: _note(context, card, tokens),
-                                  ),
-                                ),
+                          ),
+                        ),
+                      ),
+                      note: showNote
+                          ? _region(
+                              key: const ValueKey('note-region'),
+                              contentKey: const ValueKey('note-content'),
+                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                              child: Visibility(
+                                visible: !hidden,
+                                maintainSize: true,
+                                maintainState: true,
+                                maintainAnimation: true,
+                                child: _note(context, card, tokens),
                               ),
-                          ],
-                        );
-                      },
+                            )
+                          : null,
                     ),
                   ),
                 ],
@@ -1647,6 +1626,97 @@ class ReviewChip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The room under the divider, shared by the answer and the note: the note
+/// takes what it needs out of the space the answer is not using, and the
+/// answer yields only down to [floor] when its own content needs more.
+class _AnswerNoteLayout extends MultiChildRenderObjectWidget {
+  _AnswerNoteLayout({
+    required this.floor,
+    required Widget answer,
+    Widget? note,
+  }) : super(children: [answer, ?note]);
+
+  final double floor;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderAnswerNote(floor);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderAnswerNote renderObject,
+  ) {
+    renderObject.floor = floor;
+  }
+}
+
+class _AnswerNoteParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderAnswerNote extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _AnswerNoteParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _AnswerNoteParentData> {
+  _RenderAnswerNote(this._floor);
+
+  double _floor;
+  set floor(double value) {
+    if (value == _floor) return;
+    _floor = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _AnswerNoteParentData) {
+      child.parentData = _AnswerNoteParentData();
+    }
+  }
+
+  // Each child is laid out loose first to learn what it needs, then tight
+  // to its share; a dry layout would do, but the content holds a
+  // LayoutBuilder, which cannot be dry-laid.
+  @override
+  void performLayout() {
+    final width = constraints.maxWidth;
+    final rest = constraints.maxHeight;
+    final answer = firstChild!;
+    final note = childAfter(answer);
+    final loose = BoxConstraints(
+      minWidth: width,
+      maxWidth: width,
+      maxHeight: rest,
+    );
+    var noteHeight = 0.0;
+    if (note != null) {
+      answer.layout(loose, parentUsesSize: true);
+      note.layout(loose, parentUsesSize: true);
+      final answerFloor = answer.size.height.clamp(0.0, _floor);
+      final room = (rest - answerFloor).clamp(0.0, rest);
+      noteHeight = note.size.height.clamp(0.0, room);
+    }
+    final answerHeight = rest - noteHeight;
+    answer.layout(BoxConstraints.tight(Size(width, answerHeight)));
+    (answer.parentData! as _AnswerNoteParentData).offset = Offset.zero;
+    if (note != null) {
+      note.layout(BoxConstraints.tight(Size(width, noteHeight)));
+      (note.parentData! as _AnswerNoteParentData).offset = Offset(
+        0,
+        answerHeight,
+      );
+    }
+    size = Size(width, rest);
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
 }
 
 /// Overlays a quiet "more" pill while its scrollable child extends below the

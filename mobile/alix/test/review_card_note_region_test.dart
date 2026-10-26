@@ -110,20 +110,56 @@ Widget _card({
 Rect _rect(WidgetTester tester, String key) =>
     tester.getRect(find.byKey(ValueKey(key)));
 
+bool _moreHintShown(WidgetTester tester, String regionKey) {
+  final hint = tester.widget<AnimatedOpacity>(
+    find.descendant(
+      of: find.byKey(ValueKey(regionKey)),
+      matching: find.byType(AnimatedOpacity),
+    ),
+  );
+  return hint.opacity > 0;
+}
+
+/// How the room under the divider is shared: the note takes what it needs
+/// out of the space the answer is not using, and the answer yields only
+/// down to a third of the body when its own content needs more.
+enum _Rule {
+  /// The answer region equals its content; the note takes the rest and
+  /// still scrolls.
+  answerContent,
+
+  /// The note fits the room the answer freed, so neither scrolls; the old
+  /// fixed cap would have cut it.
+  noteFitsFreedRoom,
+
+  /// Both need more than there is: the answer keeps a third of the body.
+  floor,
+
+  /// The note is short: it takes its content and the answer fills the rest.
+  noteContent,
+}
+
 void main() {
   const shortAnswer = ['A short answer.'];
   final longAnswer = _lines(
     40,
     (n) => 'Answer line $n keeps the explanation long enough to overflow.',
   );
-  for (final (name, answer, paragraphs) in [
-    ('a short answer and a long note', shortAnswer, 16),
-    ('a long answer and a long note', longAnswer, 16),
-    ('a short answer and a short note', shortAnswer, 1),
+  for (final (name, answer, paragraphs, rule) in [
+    ('a short answer and a long note', shortAnswer, 16, _Rule.answerContent),
+    (
+      'a short answer and a note that fits the freed room',
+      shortAnswer,
+      3,
+      _Rule.noteFitsFreedRoom,
+    ),
+    ('a long answer and a long note', longAnswer, 16, _Rule.floor),
+    ('a long answer and a short note', longAnswer, 1, _Rule.noteContent),
+    ('a short answer and a short note', shortAnswer, 1, _Rule.noteContent),
   ]) {
     testWidgets(
-      'with $name the note region sits at the body bottom, sized to its '
-      'content, and the answer region keeps a third of the body',
+      'with $name the note region sits at the body bottom and takes only the '
+      'room the answer is not using, down to a third of the body',
       (tester) async {
         addTearDown(tester.view.reset);
         tester.view.physicalSize = const Size(1080, 2280);
@@ -139,9 +175,11 @@ void main() {
         final body = _rect(tester, 'card-body');
         final question = _rect(tester, 'question-region');
         final answerRegion = _rect(tester, 'answer-region');
+        final answerContent = _rect(tester, 'answer-content');
         final noteRegion = _rect(tester, 'note-region');
         final noteContent = _rect(tester, 'note-content');
         final floor = body.height / 3;
+        final rest = body.bottom - answerRegion.top;
 
         expect(
           (noteRegion.bottom - body.bottom).abs(),
@@ -160,37 +198,89 @@ void main() {
         expect(
           question.height,
           lessThanOrEqualTo(body.height * 0.38 + 1),
-          reason: 'the question region ${question.height} stays under 38% of '
+          reason:
+              'the question region ${question.height} stays under 38% of '
               'the body ${body.height}',
         );
-        expect(
-          answerRegion.height,
-          greaterThanOrEqualTo(floor - 1),
-          reason:
-              'the answer region ${answerRegion.height} keeps a third of the '
-              'body $floor',
-        );
-        if (paragraphs == 1) {
-          expect(
-            (noteRegion.height - noteContent.height).abs(),
-            lessThanOrEqualTo(1),
-            reason:
-                'a short note region ${noteRegion.height} equals its content '
-                '${noteContent.height}',
-          );
-        } else {
-          expect(
-            noteContent.height,
-            greaterThan(noteRegion.height + 1),
-            reason: 'a long note scrolls inside its region',
-          );
-          expect(
-            (answerRegion.height - floor).abs(),
-            lessThanOrEqualTo(1),
-            reason:
-                'a long note pushes the answer region ${answerRegion.height} '
-                'down to the floor $floor',
-          );
+        switch (rule) {
+          case _Rule.answerContent:
+            expect(
+              (answerRegion.height - answerContent.height).abs(),
+              lessThanOrEqualTo(1),
+              reason:
+                  'the answer region ${answerRegion.height} is its content '
+                  '${answerContent.height}, no free room kept',
+            );
+            expect(
+              noteContent.height,
+              greaterThan(noteRegion.height + 1),
+              reason: 'a long note still scrolls inside its region',
+            );
+            expect(
+              _moreHintShown(tester, 'note-region'),
+              isTrue,
+              reason: 'the scrolling note shows its more hint',
+            );
+          case _Rule.noteFitsFreedRoom:
+            expect(
+              noteContent.height,
+              greaterThan(rest - floor + 1),
+              reason:
+                  'fixture: the note ${noteContent.height} does not fit the '
+                  'fixed cap ${rest - floor} (rest $rest, floor $floor)',
+            );
+            expect(
+              noteContent.height,
+              lessThanOrEqualTo(rest - answerContent.height),
+              reason:
+                  'fixture: the note ${noteContent.height} fits the room the '
+                  'answer frees ${rest - answerContent.height}',
+            );
+            expect(
+              (noteRegion.height - noteContent.height).abs(),
+              lessThanOrEqualTo(1),
+              reason:
+                  'the note region ${noteRegion.height} equals its content '
+                  '${noteContent.height}',
+            );
+            expect(
+              _moreHintShown(tester, 'note-region'),
+              isFalse,
+              reason: 'a note that fits shows no more hint',
+            );
+          case _Rule.floor:
+            expect(
+              (answerRegion.height - floor).abs(),
+              lessThanOrEqualTo(1),
+              reason:
+                  'a long answer under a long note keeps a third of the body: '
+                  'region ${answerRegion.height}, floor $floor',
+            );
+            expect(
+              noteContent.height,
+              greaterThan(noteRegion.height + 1),
+              reason: 'the note scrolls inside its region',
+            );
+            expect(
+              answerContent.height,
+              greaterThan(answerRegion.height + 1),
+              reason: 'the answer scrolls inside its region',
+            );
+          case _Rule.noteContent:
+            expect(
+              (noteRegion.height - noteContent.height).abs(),
+              lessThanOrEqualTo(1),
+              reason:
+                  'a short note region ${noteRegion.height} equals its '
+                  'content ${noteContent.height}',
+            );
+            expect(
+              (answerRegion.height - (rest - noteRegion.height)).abs(),
+              lessThanOrEqualTo(1),
+              reason:
+                  'the answer region ${answerRegion.height} fills the rest '
+                  '${rest - noteRegion.height}',
+            );
         }
       },
     );

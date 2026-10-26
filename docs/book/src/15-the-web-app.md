@@ -180,9 +180,9 @@ or a one-glyph answer lands in the middle, a wrapped paragraph reads as a
 left-aligned block, and a block holding code, a table, a checklist or a
 quotation spans the whole column. A note is always left-aligned at the full
 column width. The note sits at the bottom of the card, directly above
-the buttons, and takes only the height its text needs; a long note takes room
-from the answer, which keeps at least a third of the card, and past that the
-note scrolls inside its own region. When an answer or a note is taller than
+the buttons, and takes only the height its text needs; a long note takes the
+room the answer is not using, and room the answer is using only down to a
+third of the card, past which the note scrolls inside its own region. When an answer or a note is taller than
 its region, a "more below" or "more above" marker appears at that edge;
 clicking it scrolls that region by most of its height, so you can walk a long
 answer without reaching for the wheel. Controls are big tap targets and

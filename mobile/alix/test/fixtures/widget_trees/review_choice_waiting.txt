@@ -29,63 +29,61 @@ Scaffold
                             Padding(EdgeInsets.zero)
                               ConstrainedBox
                   Expanded
-                    Column
-                      Expanded
-                        Stack
-                          SingleChildScrollView
-                            Center
-                              ConstrainedBox
-                                SizedBox(width=Infinity, height=null)
-                                  Padding(EdgeInsets(20.0, 22.0, 20.0, 8.0))
-                                    Column
-                                      Column
-                                        Material key=[<'option-<index>'>]
-                                          InkWell(tap=true, longPress=false)
-                                            Container
-                                              ConstrainedBox
-                                                Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
-                                                  Row
-                                                    Text("<choice-option>")
-                                                    SizedBox(width=14.0, height=null)
-                                                    Expanded
-                                                      Text("<choice-option>")
-                                        SizedBox(width=null, height=10.0)
-                                        Material key=[<'option-<index>'>]
-                                          InkWell(tap=true, longPress=false)
-                                            Container
-                                              ConstrainedBox
-                                                Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
-                                                  Row
-                                                    Text("<choice-option>")
-                                                    SizedBox(width=14.0, height=null)
-                                                    Expanded
-                                                      Text("<choice-option>")
-                                        SizedBox(width=null, height=10.0)
-                                        Material key=[<'option-<index>'>]
-                                          InkWell(tap=true, longPress=false)
-                                            Container
-                                              ConstrainedBox
-                                                Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
-                                                  Row
-                                                    Text("<choice-option>")
-                                                    SizedBox(width=14.0, height=null)
-                                                    Expanded
-                                                      Text("<choice-option>")
-                                        SizedBox(width=null, height=10.0)
-                                        Material key=[<'option-<index>'>]
-                                          InkWell(tap=true, longPress=false)
-                                            Container
-                                              ConstrainedBox
-                                                Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
-                                                  Row
-                                                    Text("<choice-option>")
-                                                    SizedBox(width=14.0, height=null)
-                                                    Expanded
-                                                      Text("<choice-option>")
-                          Center
-                            Container
-                              Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
-                                Text("⌵ more")
+                    Stack
+                      SingleChildScrollView
+                        Center
+                          ConstrainedBox
+                            SizedBox(width=Infinity, height=null)
+                              Padding(EdgeInsets(20.0, 22.0, 20.0, 8.0)) key=[<'answer-content'>]
+                                Column
+                                  Column
+                                    Material key=[<'option-<index>'>]
+                                      InkWell(tap=true, longPress=false)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
+                                              Row
+                                                Text("<choice-option>")
+                                                SizedBox(width=14.0, height=null)
+                                                Expanded
+                                                  Text("<choice-option>")
+                                    SizedBox(width=null, height=10.0)
+                                    Material key=[<'option-<index>'>]
+                                      InkWell(tap=true, longPress=false)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
+                                              Row
+                                                Text("<choice-option>")
+                                                SizedBox(width=14.0, height=null)
+                                                Expanded
+                                                  Text("<choice-option>")
+                                    SizedBox(width=null, height=10.0)
+                                    Material key=[<'option-<index>'>]
+                                      InkWell(tap=true, longPress=false)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
+                                              Row
+                                                Text("<choice-option>")
+                                                SizedBox(width=14.0, height=null)
+                                                Expanded
+                                                  Text("<choice-option>")
+                                    SizedBox(width=null, height=10.0)
+                                    Material key=[<'option-<index>'>]
+                                      InkWell(tap=true, longPress=false)
+                                        Container
+                                          ConstrainedBox
+                                            Padding(EdgeInsets(17.0, 14.0, 17.0, 14.0))
+                                              Row
+                                                Text("<choice-option>")
+                                                SizedBox(width=14.0, height=null)
+                                                Expanded
+                                                  Text("<choice-option>")
+                      Center
+                        Container
+                          Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
+                            Text("⌵ more")
               SizedBox(width=null, height=12.0)
     ConstrainedBox
       AppBar

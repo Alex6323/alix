@@ -514,26 +514,31 @@ test("a long introduction note shows overflow hints at both edges", async ({ pag
   await expect(below).not.toHaveClass(/show/);
 });
 
-test("the note region takes the space above the answer floor, sized to its content, at the card bottom", async ({ page }) => {
+test("the note region takes only the room the answer is not using, down to a third of the card, at the card bottom", async ({ page }) => {
   const paragraphs = (count: number) =>
     Array.from({ length: count }, (_, index) => ({
       kind: "sentence",
       text: `Note paragraph ${index + 1} explains one more thing the learner asked about.`,
     }));
-  const cases = [
-    { name: "short answer, long note", answerLines: ["A short answer."], note: paragraphs(16) },
-    {
-      name: "long answer, long note",
-      answerLines: Array.from(
-        { length: 40 },
-        (_, index) => `Answer line ${index + 1} keeps the explanation long enough to overflow its region.`,
-      ),
-      note: paragraphs(16),
-    },
-    { name: "short answer, short note", answerLines: ["A short answer."], note: paragraphs(1) },
-  ];
+  const shortAnswer = ["A short answer."];
+  const longAnswer = Array.from(
+    { length: 40 },
+    (_, index) => `Answer line ${index + 1} keeps the explanation long enough to overflow its region.`,
+  );
+  // How the room under the divider is shared: the note takes what it needs
+  // out of the space the answer is not using; the answer yields only down to
+  // a third of the card when its own content needs more.
+  type Rule = "answerContent" | "noteFitsFreedRoom" | "floor" | "noteContent";
   for (const viewport of [{ width: 1200, height: 800 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
+    const fitting = viewport.width > 600 ? 5 : 6;
+    const cases: Array<{ name: string; answerLines: string[]; note: ReturnType<typeof paragraphs>; rule: Rule }> = [
+      { name: "short answer, long note", answerLines: shortAnswer, note: paragraphs(16), rule: "answerContent" },
+      { name: "short answer, note that fits the freed room", answerLines: shortAnswer, note: paragraphs(fitting), rule: "noteFitsFreedRoom" },
+      { name: "long answer, long note", answerLines: longAnswer, note: paragraphs(16), rule: "floor" },
+      { name: "long answer, short note", answerLines: longAnswer, note: paragraphs(1), rule: "noteContent" },
+      { name: "short answer, short note", answerLines: shortAnswer, note: paragraphs(1), rule: "noteContent" },
+    ];
     for (const item of cases) {
       const state = {
         ...longContentState({ answerLines: item.answerLines, note: item.note }),
@@ -544,6 +549,7 @@ test("the note region takes the space above the answer floor, sized to its conte
       await openApp(page);
       await page.getByRole("button", { name: "Reveal" }).click();
       await expect(page.getByRole("button", { name: "Seen" })).toBeVisible();
+      await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));
 
       const boxes = await page.evaluate(() => {
         const card = document.querySelector("#card");
@@ -554,18 +560,28 @@ test("the note region takes the space above the answer floor, sized to its conte
           throw new Error("missing card geometry");
         }
         const rect = (node: Element) => node.getBoundingClientRect();
-        const inner = (node: Element) => {
+        const padding = (node: Element) => {
           const style = getComputedStyle(node);
-          return rect(node).height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+          return parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
         };
+        // The content's own height: the flow children's extent plus the
+        // region's padding, independent of how the region is sized.
+        const contentHeight = (region: HTMLElement) => {
+          const flow = [...region.children].filter((child) => getComputedStyle(child).position !== "absolute");
+          const top = Math.min(...flow.map((child) => rect(child).top));
+          const bottom = Math.max(...flow.map((child) => rect(child).bottom));
+          return bottom - top + padding(region);
+        };
+        const noteHint = document.querySelector("#card .note-hint:not(.top)");
         return {
-          cardInner: inner(card),
+          cardInner: rect(card).height - padding(card),
           cardBottom: rect(card).bottom - parseFloat(getComputedStyle(card).paddingBottom),
           questionHeight: rect(question).height,
           answer: {
             top: rect(answer).top,
             bottom: rect(answer).bottom,
             height: rect(answer).height,
+            content: contentHeight(answer as HTMLElement),
             overflows: answer.scrollHeight > answer.clientHeight + 2,
           },
           note: {
@@ -574,11 +590,13 @@ test("the note region takes the space above the answer floor, sized to its conte
             height: rect(note).height,
             content: note.scrollHeight,
             overflows: note.scrollHeight > note.clientHeight + 2,
+            hint: noteHint instanceof HTMLElement && noteHint.classList.contains("show"),
           },
         };
       });
       const label = `${item.name} at ${viewport.width}x${viewport.height}`;
       const floor = boxes.cardInner / 3;
+      const rest = boxes.cardBottom - boxes.answer.top;
       expect(
         Math.abs(boxes.note.bottom - boxes.cardBottom),
         `${label}: the note bottom ${boxes.note.bottom} sits at the card bottom ${boxes.cardBottom}`,
@@ -587,24 +605,48 @@ test("the note region takes the space above the answer floor, sized to its conte
         Math.abs(boxes.note.top - boxes.answer.bottom),
         `${label}: no band between the answer bottom ${boxes.answer.bottom} and the note top ${boxes.note.top}`,
       ).toBeLessThanOrEqual(2);
-      expect(
-        boxes.answer.height,
-        `${label}: the answer region ${boxes.answer.height}px keeps a third of the card ${floor}px`,
-      ).toBeGreaterThanOrEqual(floor - 3);
-      if (item.note.length === 1) {
-        expect(
-          Math.abs(boxes.note.height - boxes.note.content),
-          `${label}: a short note region ${boxes.note.height}px equals its content ${boxes.note.content}px`,
-        ).toBeLessThanOrEqual(3);
-      } else {
-        expect(boxes.note.overflows, `${label}: a long note scrolls inside its region`).toBe(true);
-        expect(
-          Math.abs(boxes.answer.height - floor),
-          `${label}: a long note pushes the answer region ${boxes.answer.height}px down to the floor ${floor}px`,
-        ).toBeLessThanOrEqual(3);
-      }
-      if (item.answerLines.length > 1) {
-        expect(boxes.answer.overflows, `${label}: a long answer scrolls inside its region`).toBe(true);
+      switch (item.rule) {
+        case "answerContent":
+          expect(
+            Math.abs(boxes.answer.height - boxes.answer.content),
+            `${label}: the answer region ${boxes.answer.height}px is its content ${boxes.answer.content}px, no free room kept`,
+          ).toBeLessThanOrEqual(3);
+          expect(boxes.note.overflows, `${label}: a long note still scrolls inside its region`).toBe(true);
+          expect(boxes.note.hint, `${label}: the scrolling note shows its more hint`).toBe(true);
+          break;
+        case "noteFitsFreedRoom":
+          expect(
+            boxes.note.content,
+            `${label}: fixture: the note ${boxes.note.content}px does not fit the fixed cap ${rest - floor}px (rest ${rest}, floor ${floor})`,
+          ).toBeGreaterThan(rest - floor + 3);
+          expect(
+            boxes.note.content,
+            `${label}: fixture: the note ${boxes.note.content}px fits the room the answer frees ${rest - boxes.answer.content}px`,
+          ).toBeLessThanOrEqual(rest - boxes.answer.content);
+          expect(
+            Math.abs(boxes.note.height - boxes.note.content),
+            `${label}: the note region ${boxes.note.height}px equals its content ${boxes.note.content}px`,
+          ).toBeLessThanOrEqual(3);
+          expect(boxes.note.hint, `${label}: a note that fits shows no more hint`).toBe(false);
+          break;
+        case "floor":
+          expect(
+            Math.abs(boxes.answer.height - floor),
+            `${label}: a long answer under a long note keeps a third of the card: region ${boxes.answer.height}px, floor ${floor}px`,
+          ).toBeLessThanOrEqual(3);
+          expect(boxes.note.overflows, `${label}: the note scrolls inside its region`).toBe(true);
+          expect(boxes.answer.overflows, `${label}: the answer scrolls inside its region`).toBe(true);
+          break;
+        case "noteContent":
+          expect(
+            Math.abs(boxes.note.height - boxes.note.content),
+            `${label}: a short note region ${boxes.note.height}px equals its content ${boxes.note.content}px`,
+          ).toBeLessThanOrEqual(3);
+          expect(
+            Math.abs(boxes.answer.height - (rest - boxes.note.height)),
+            `${label}: the answer region ${boxes.answer.height}px fills the rest ${rest - boxes.note.height}px`,
+          ).toBeLessThanOrEqual(3);
+          break;
       }
     }
   }

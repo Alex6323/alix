@@ -57,15 +57,17 @@
      the case where centring alone left it flush under the prompt. */
   .region.q { flex: 0 0 auto; max-height: 38%; padding-bottom: 30px; }   /* question */
   /* The note sits at the card bottom, sized to its content; the answer takes
-     the rest and yields to a long note down to a third of the card, past which
-     the note scrolls inside itself. A short answer that fits centres in its
-     region; a long one top-aligns and scrolls (fade masks + more-hint, driven
-     by updateFade). Without a note the answer region keeps its old cap. */
+     the rest and yields only the room its content is not using, down to a
+     third of the card (its min-height, set from measurement by fitAnswerFloor
+     since CSS cannot express min(content, 33%)), past which the note scrolls
+     inside itself. A short answer that fits centres in its region; a long one
+     top-aligns and scrolls (fade masks + more-hint, driven by updateFade).
+     Without a note the answer region keeps its old cap. */
   .region.a { flex: 1 1 0%; max-height: 82%; position: relative; }
-  .region.a.withnote { max-height: none; min-height: 33.333%; }
+  .region.a.withnote { max-height: none; }
   .region.a.balanced { justify-content: safe center; }
   .region.a.filled { justify-content: flex-start; }
-  .region.n { flex: 0 1 auto; max-height: 66.667%; margin-top: auto; }
+  .region.n { flex: 0 1 auto; margin-top: auto; }
   .region.a.citable, .region.a.hidable { cursor: pointer; }
   .region-toggles { position: absolute; top: 6px; right: 10px; z-index: 2;
                     display: flex; align-items: center; gap: 10px;
