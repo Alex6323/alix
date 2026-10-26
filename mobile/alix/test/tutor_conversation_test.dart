@@ -279,4 +279,24 @@ void main() {
     expect(recordCalls, 0);
     expect(subject.message, 'Card added.');
   });
+
+  testWidgets('the unsent text belongs to the conversation: a send clears it, a refused send keeps it',
+      (tester) async {
+    final client = FakeServerClient(
+      getAskReplies: const [RemoteAsk(thinking: false, answer: 'an answer')],
+    );
+    final slot = TutorSlot();
+    final subject = conversation(client, slot, 'card-a');
+
+    subject.unsentQuestion = '   ';
+    await subject.send('   ');
+    expect(subject.unsentQuestion, '   ',
+        reason: 'a blank send is refused and changes nothing');
+
+    subject.unsentQuestion = 'why one owner';
+    await subject.send('why one owner');
+    expect(subject.unsentQuestion, '', reason: 'the accepted send consumed the text');
+    await tester.pump(_pollInterval);
+    expect(subject.transcript.single.q, 'why one owner');
+  });
 }

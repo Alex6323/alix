@@ -548,4 +548,115 @@ void main() {
     expect(find.text('note saved'), findsOneWidget);
     expect(onPressedOf(tester, 'tutor-make-note-button'), isNull);
   });
+
+  /// The scrim tap: how a learner dismisses the sheet by accident.
+  Future<void> dismissSheet(WidgetTester tester) async {
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tutor-question-field')), findsNothing,
+        reason: 'the scrim tap closed the sheet');
+  }
+
+  String fieldText(WidgetTester tester) => tester
+      .widget<TextField>(find.byKey(const ValueKey('tutor-question-field')))
+      .controller!
+      .text;
+
+  testWidgets('an unsent question survives dismissing and reopening the sheet', (tester) async {
+    final harness = await pumpSheet(tester, client: FakeServerClient());
+
+    await tester.enterText(
+        find.byKey(const ValueKey('tutor-question-field')), 'half a thought');
+    await dismissSheet(tester);
+    expect(harness.conversation.unsentQuestion, 'half a thought',
+        reason: 'the conversation holds the unsent text, not the dead sheet');
+
+    await reopenSheet(tester);
+    expect(fieldText(tester), 'half a thought',
+        reason: 'the reopened composer shows what was typed');
+    expect(harness.messages, isEmpty);
+  });
+
+  testWidgets('sending clears the unsent question: a reopened sheet starts empty', (tester) async {
+    final client = FakeServerClient(
+      getAskReplies: const [RemoteAsk(thinking: false, answer: 'an answer')],
+    );
+    final harness = await pumpSheet(tester, client: client);
+
+    await ask(tester, 'a whole thought');
+    expect(harness.conversation.unsentQuestion, '',
+        reason: 'the sent question is no longer unsent');
+
+    await dismissSheet(tester);
+    await reopenSheet(tester);
+    expect(fieldText(tester), '', reason: 'nothing unsent is left to restore');
+    expect(find.text('a whole thought'), findsOneWidget,
+        reason: 'the question lives in the transcript now');
+  });
+
+  testWidgets('another card starts with an empty composer: the unsent text belongs to its own card',
+      (tester) async {
+    final first = TutorConversation(
+      card: _card,
+      client: FakeServerClient(),
+      slot: TutorSlot(),
+      mint: (front, back) async => 'card-1',
+      record: (block) async => 'card-1',
+      onNote: (_) {},
+      onMessage: (_) {},
+      pollInterval: _pollInterval,
+    );
+    final second = TutorConversation(
+      card: const TutorCardContext(
+        deckId: 'deck-rust',
+        cardId: 'card-borrowing',
+        subject: 'Rust',
+        front: 'What does a shared borrow forbid?',
+        back: ['mutation through any path'],
+      ),
+      client: FakeServerClient(),
+      slot: TutorSlot(),
+      mint: (front, back) async => 'card-2',
+      record: (block) async => 'card-2',
+      onNote: (_) {},
+      onMessage: (_) {},
+      pollInterval: _pollInterval,
+    );
+    addTearDown(first.dispose);
+    addTearDown(second.dispose);
+    var conversation = first;
+    await tester.pumpWidget(MaterialApp(
+      theme: alixDark(),
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => Center(
+            child: ElevatedButton(
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                builder: (_) => TutorSheet(conversation: conversation),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    ));
+
+    await reopenSheet(tester);
+    await tester.enterText(
+        find.byKey(const ValueKey('tutor-question-field')), 'for the first card');
+    await dismissSheet(tester);
+
+    conversation = second;
+    await reopenSheet(tester);
+    expect(fieldText(tester), '',
+        reason: 'the second card has its own conversation and no unsent text');
+    await dismissSheet(tester);
+
+    conversation = first;
+    await reopenSheet(tester);
+    expect(fieldText(tester), 'for the first card',
+        reason: 'the first card still holds its own unsent text');
+  });
 }

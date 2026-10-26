@@ -121,6 +121,10 @@ class TutorConversation extends ChangeNotifier {
   int? _pendingElapsed;
   int? get pendingElapsed => _pendingElapsed;
 
+  /// The composer's typed, unsent text, kept here so a dismissed sheet
+  /// loses nothing and the next open shows it; a send clears it.
+  String unsentQuestion = '';
+
   /// The question a failed turn hands back to the composer, taken once.
   String? _restoredQuestion;
   String? takeRestoredQuestion() {
@@ -255,6 +259,7 @@ class TutorConversation extends ChangeNotifier {
     _pendingQuestion = text;
     _pendingElapsed = null;
     _message = null;
+    unsentQuestion = '';
     _changed();
 
     bool ok;

@@ -96,7 +96,8 @@ Once paired, review gains things it doesn't have offline:
   conversation belongs to the card, not the sheet: closing the sheet while
   the desktop is still working loses nothing, the answer or note lands
   anyway, a note saved with the sheet closed is announced on the review
-  screen, and reopening the sheet shows the whole transcript. Moving to
+  screen, and reopening the sheet shows the whole transcript and a question
+  you had typed but not yet sent. Moving to
   another card starts a fresh conversation; while the previous card's note
   or card draft is still being made, the new card's tutor says so and
   waits, since the desktop makes one thing at a time. A desktop restarted

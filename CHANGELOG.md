@@ -520,6 +520,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On the phone, a question typed into the tutor sheet but not yet sent
+  survives closing the sheet: reopening it on the same card shows the text
+  again. Sending it, or moving to another card, clears it.
+
 - A card drafted on a paired phone no longer vanishes at the next sync
   pull: the phone sends the accepted draft to the desktop
   (`POST /api/remote/ask/card`), which mints it into the served deck's

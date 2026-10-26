@@ -39,12 +39,15 @@ class _TutorSheetState extends State<TutorSheet> {
   void initState() {
     super.initState();
     _conversation.addListener(_onConversation);
+    _question.text = _conversation.unsentQuestion;
+    _question.addListener(_keepUnsent);
     _syncFields();
   }
 
   @override
   void dispose() {
     _conversation.removeListener(_onConversation);
+    _question.removeListener(_keepUnsent);
     _question.dispose();
     _draftFront.dispose();
     _draftBack.dispose();
@@ -54,6 +57,10 @@ class _TutorSheetState extends State<TutorSheet> {
   void _onConversation() {
     _syncFields();
     if (mounted) setState(() {});
+  }
+
+  void _keepUnsent() {
+    _conversation.unsentQuestion = _question.text;
   }
 
   /// Pulls what the conversation holds for the composer and the draft
