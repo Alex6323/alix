@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core lean-check mobile-unit mobile-test-one windows-check test parser-hostility-test locator-hostility-test zip-receive-fault-test store-fault-test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap risk-matrix-check check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants fuzz-stamp bump-rust gfm-measure package-verify publish
+.PHONY: build build-core lean-check mobile-unit mobile-test-one windows-check test parser-hostility-test locator-hostility-test zip-receive-fault-test store-fault-test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap risk-matrix-check check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants mutants-pins fuzz-stamp bump-rust gfm-measure package-verify publish
 
 # Compile the workspace.
 build:
@@ -197,7 +197,7 @@ roadmap:
 
 # The gates that must stay green before work is done. (fmt is intentionally
 # separate — formatting uses nightly and is run deliberately, not as a gate.)
-check: fmt-check pre-1-0-check deps-check changelog-check adr-check risk-matrix-check gate-coverage lint lean-check test site-media-check example-media-check docs-audit-manifest-check toolchain-check tooling-test
+check: fmt-check pre-1-0-check deps-check changelog-check adr-check risk-matrix-check gate-coverage mutants-pins lint lean-check test site-media-check example-media-check docs-audit-manifest-check toolchain-check tooling-test
 
 # Bump the Rust toolchain across the repo
 bump-rust:
@@ -220,12 +220,22 @@ MUTANTS_SHARD ?=
 # than only what changed.
 MUTANTS_ALL ?=
 
-mutants: gate-guard
-	@mkdir -p target; \
-	mutants_list=$$(mktemp target/mutants-list.XXXXXX); \
-	trap 'rm -f "$$mutants_list"' EXIT HUP INT TERM; \
-	cargo mutants --list --colors never >"$$mutants_list" && \
-	python3 scripts/mutants_allowed.py --check-pins "$$mutants_list" scripts/mutants-allowlist.txt
+# A source-only list pass (no build, about a second): a line-pinned allowlist
+# entry whose code moved fails here, before a push, instead of killing every
+# nightly rotation shard at its precheck. Skipped where cargo-mutants is not
+# installed, which is CI's check job; the mutation workflows check the pins.
+mutants-pins:
+	@if command -v cargo-mutants > /dev/null; then \
+		mkdir -p target; \
+		mutants_list=$$(mktemp target/mutants-list.XXXXXX); \
+		trap 'rm -f "$$mutants_list"' EXIT HUP INT TERM; \
+		cargo mutants --list --colors never >"$$mutants_list" && \
+		python3 scripts/mutants_allowed.py --check-pins "$$mutants_list" scripts/mutants-allowlist.txt; \
+	else \
+		echo "mutants-pins: cargo-mutants not installed, skipped (cargo install cargo-mutants)"; \
+	fi
+
+mutants: gate-guard mutants-pins
 	@if [ -z "$$TMPDIR" ] && [ -d "$$HOME/tmp" ]; then TMPDIR="$$HOME/tmp"; export TMPDIR; fi; \
 	shard=""; [ -z "$(MUTANTS_SHARD)" ] || shard="--shard $(MUTANTS_SHARD)"; \
 	if [ -n "$(MUTANTS_ALL)" ]; then \
