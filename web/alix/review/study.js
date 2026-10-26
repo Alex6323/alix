@@ -76,7 +76,6 @@ export function createStudy({
   let questionFilled = 0;
   let citationView = clientModel.citationView;
   let sectionView = clientModel.sectionView;
-  let questionWatch = null;
   let autoOpenedSection = null;
   let answerConcealed = clientModel.answerConcealed;
   let feedback = clientModel.feedback;
@@ -739,7 +738,7 @@ export function createStudy({
     drawer.appendChild(scrim);
     const panel = el("section", "section-drawer-panel");
     panel.tabIndex = -1;
-    const closer = el("button", "section-drawer-close", "Close");
+    const closer = el("button", "section-drawer-close", "×");
     closer.type = "button";
     closer.setAttribute("aria-label", "Close section context");
     closer.addEventListener("click", closeSection);
@@ -754,13 +753,6 @@ export function createStudy({
     drawer.appendChild(panel);
     doc.body.appendChild(drawer);
     if (legend && legend.parentElement) legend.parentElement.inert = true;
-    placeSection();
-    win.addEventListener("resize", placeSection);
-    const question = doc.querySelector("#card .region.q");
-    if (question && win.ResizeObserver) {
-      questionWatch = new win.ResizeObserver(placeSection);
-      questionWatch.observe(question);
-    }
     panel.focus({ preventScroll: true });
     if (panel.animate) {
       panel.animate(
@@ -770,23 +762,10 @@ export function createStudy({
     }
   }
 
-  function placeSection() {
-    const panel = doc.querySelector(".section-drawer-panel");
-    const question = doc.querySelector("#card .region.q");
-    if (!panel || !question) return;
-    const box = question.getBoundingClientRect();
-    panel.style.top = `${Math.round(box.bottom)}px`;
-    panel.style.maxHeight = `calc(100% - ${Math.round(box.bottom)}px)`;
-    panel.style.left = `${Math.round(box.left)}px`;
-    panel.style.width = `${Math.round(box.width)}px`;
-  }
-
   // The sheet lives on the body, so a rerender that rebuilds the card must
   // take it down itself.
   function removeSectionSheet() {
     doc.querySelectorAll(".section-drawer").forEach((stale) => stale.remove());
-    win.removeEventListener("resize", placeSection);
-    if (questionWatch) { questionWatch.disconnect(); questionWatch = null; }
     if (legend && legend.parentElement) legend.parentElement.inert = false;
     sectionView = false;
   }

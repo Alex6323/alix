@@ -139,20 +139,26 @@
   .region.q.sectioned { cursor: pointer; }
   .section-drawer { position: fixed; inset: 0; z-index: 12; overflow: hidden; }
   .section-drawer-scrim { position: absolute; inset: 0; background: rgba(0,0,0,0.52); cursor: pointer; }
+  /* A bottom sheet, as on the phone: it rests on the page bottom, sized to its
+     content up to most of the page, full width on a phone and capped on a
+     desktop. */
   .section-drawer-panel {
-    position: absolute; top: 0; left: 0; width: 100%; max-height: 100%;
+    position: absolute; bottom: 0; left: 0; right: 0; margin: 0 auto;
+    width: min(100%, 760px); max-height: 85%; box-sizing: border-box;
     overflow: auto; user-select: text;
     padding: 22px 24px calc(22px + env(safe-area-inset-bottom)); text-align: left; color: var(--ink);
-    background: var(--menu-bg); border: 1px solid var(--line); border-radius: 12px;
+    background: var(--menu-bg); border: 1px solid var(--line); border-bottom: 0;
+    border-radius: 14px 14px 0 0;
     box-shadow: 0 -12px 34px -12px rgba(0,0,0,0.8);
   }
   .section-drawer-panel:focus { outline: none; }
   .section-drawer-close {
-    position: sticky; top: 0; float: right; margin: -8px -10px 0 12px;
-    background: none; border: 1px solid var(--line); border-radius: 8px;
-    color: var(--dim); font: inherit; font-size: 0.8rem; padding: 4px 10px; cursor: pointer;
+    position: sticky; top: 0; float: right; margin: -12px -12px 0 12px;
+    width: 36px; height: 36px; display: grid; place-items: center;
+    background: none; border: 0; border-radius: 18px;
+    color: var(--dim); font: inherit; font-size: 1.5rem; line-height: 1; cursor: pointer;
   }
-  .section-drawer-close:hover { color: var(--ink); }
+  .section-drawer-close:hover { color: var(--ink); background: color-mix(in srgb, var(--line) 50%, transparent); }
 
   /* ── summary ──────────────────────────────────────────────────────── */
   .summary { width: var(--card-w); text-align: left; animation: deal 0.3s both; }

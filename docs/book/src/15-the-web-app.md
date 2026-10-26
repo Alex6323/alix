@@ -190,14 +190,15 @@ follow *your* configured key bindings (the page reads them from the server).
 A card under a section names the section nowhere on its face. On the first
 card you ever meet from that section, the section sheet opens by itself
 once: the page dims at once and the sheet slides up from the bottom of the
-page to just under the question, as wide as the card, so the question stays
-legible above it. Dismiss it and it stays closed through reveal or answer
+page, as on the phone, taking only the room its prose needs; a long section
+scrolls inside it. Dismiss it and it stays closed through reveal or answer
 input; later cards from the same section, in this sitting or any later one,
 do not open it automatically. The full section never appears inline. Click
 the question (the pointer shows it is clickable), press `c`, or use
 **Context** beside **Ask** in the review menu to open the sheet on demand.
 While the sheet is open, the card and its review keys are inert; a click on
-the dimmed page, `c`, or Escape closes it.
+the dimmed page, the `×` in the sheet's top-right corner, `c`, or Escape
+closes it.
 A dim **"N left"** count in the header shows how many cards the session still
 holds; it can tick up when a card you missed cools back in for its retry. The
 **☰ menu** is context-aware: during review it holds **Ask** and,

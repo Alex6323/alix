@@ -137,6 +137,40 @@ void main() {
     expect(find.text(_prose), findsOneWidget, reason: 'the prose is in the sheet');
   });
 
+  testWidgets('the open sheet carries a close mark in its top-right corner, and a tap on it closes the sheet', (
+    tester,
+  ) async {
+    await pumpReview(tester, sectioned());
+    await advanceToSecondCard(tester);
+    await tapQuestion(tester);
+
+    final closeMark = find.byKey(const ValueKey('section-sheet-close'));
+    expect(closeMark, findsOneWidget, reason: 'the sheet shows a close mark');
+    final sheet = tester.getRect(find.byType(SectionSheet));
+    final mark = tester.getRect(closeMark);
+    expect(
+      sheet.right - mark.right,
+      lessThanOrEqualTo(24),
+      reason: 'the mark sits at the sheet\'s right edge: sheet=$sheet mark=$mark',
+    );
+    expect(
+      mark.top - sheet.top,
+      lessThanOrEqualTo(24),
+      reason: 'the mark sits at the sheet\'s top edge: sheet=$sheet mark=$mark',
+    );
+    expect(
+      mark.left,
+      greaterThan(tester.getRect(sheetTitle).left),
+      reason: 'the mark is right of the heading, not above it',
+    );
+
+    await tester.tap(closeMark);
+    await tester.pumpAndSettle();
+    expect(sheetTitle, findsNothing, reason: 'the close mark dismissed the sheet');
+    await tapQuestion(tester);
+    expect(sheetTitle, findsOneWidget, reason: 'the question reopens it afterwards');
+  });
+
   testWidgets(
     'the first introduction from a section opens the sheet by itself once; the question reopens it, reveal does not, and the second card waits for a tap',
     (tester) async {

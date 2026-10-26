@@ -96,7 +96,8 @@ full width. A card that sits under a `#` section in its deck (see
 the whole section, heading and prose, in a sheet when you tap the question.
 Nothing on the card face names the section, and the card never moves to make
 room. The first card you ever meet from a section opens that sheet by itself,
-once; swipe it away and a tap on the question brings it back. Every later
+once; swipe it away or tap the `×` in its top-right corner, and a tap on the
+question brings it back. Every later
 card from the section, in this sitting or any later one, waits for the tap. A
 tap on the question of a card without a section does nothing. A tap on a
 revealed answer hides it for a self-test, exactly as `h` does on the web:

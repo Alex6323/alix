@@ -1784,15 +1784,15 @@ test("the first section introduction auto-opens without inline and the next sect
       const value = document.querySelector(selector)?.getBoundingClientRect();
       return value ? { bottom: value.bottom, top: value.top } : null;
     };
-    return { panel: rect(".section-drawer-panel"), question: rect("#card .region.q") };
+    return { panel: rect(".section-drawer-panel"), question: rect("#card .region.q"), height: window.innerHeight };
   });
   expect(
-    autoBounds.panel?.top,
-    `automatic sheet sits just under the question once the card has dealt in: ${JSON.stringify(autoBounds)}`,
-  ).toBeLessThanOrEqual((autoBounds.question?.bottom ?? 0) + 1);
+    Math.abs((autoBounds.panel?.bottom ?? Number.MAX_SAFE_INTEGER) - autoBounds.height),
+    `automatic sheet rests on the page bottom once the card has dealt in: ${JSON.stringify(autoBounds)}`,
+  ).toBeLessThanOrEqual(1);
   expect(
     autoBounds.panel?.top,
-    `automatic sheet starts under the question: ${JSON.stringify(autoBounds)}`,
+    `automatic sheet leaves the question visible above it: ${JSON.stringify(autoBounds)}`,
   ).toBeGreaterThanOrEqual((autoBounds.question?.bottom ?? Number.MAX_SAFE_INTEGER) - 1);
   if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
     await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-drawer-auto-open.png` });
@@ -1976,6 +1976,7 @@ test("a click on the question and the review menu both open the drawer", async (
       return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.className ?? null;
     };
     return {
+      closer: rect(".section-drawer-close"),
       drawer: rect(".section-drawer"),
       overBar: covering(".bar"),
       overQuestion: covering("#card .region.q"),
@@ -1992,13 +1993,33 @@ test("a click on the question and the review menu both open the drawer", async (
   near(bounds.drawer?.bottom, bounds.viewport.height, "the dim reaches the page bottom");
   expect(bounds.overBar, `the header sits behind the dim: ${JSON.stringify(bounds)}`).toBe("section-drawer-scrim");
   expect(bounds.overQuestion, `the question sits behind the dim: ${JSON.stringify(bounds)}`).toBe("section-drawer-scrim");
-  near(bounds.panel?.top, bounds.question?.bottom ?? -1, "the panel starts at the question's bottom edge");
+  near(bounds.panel?.bottom, bounds.viewport.height, "the sheet rests on the page bottom");
   expect(
-    bounds.panel?.bottom ?? Number.MAX_SAFE_INTEGER,
-    `a short section ends above the page bottom: ${JSON.stringify(bounds)}`,
-  ).toBeLessThan(bounds.viewport.height - 100);
-  near(bounds.panel?.left, bounds.question?.left ?? -1, "the panel's left edge is the question column's");
-  near(bounds.panel?.right, bounds.question?.right ?? -1, "the panel's right edge is the question column's");
+    bounds.panel?.top ?? -1,
+    `a short section takes only the room it needs: ${JSON.stringify(bounds)}`,
+  ).toBeGreaterThan(bounds.viewport.height / 2);
+  near(
+    (bounds.panel?.left ?? 0) - 0,
+    bounds.viewport.width - (bounds.panel?.right ?? 0),
+    "the sheet is centred on the page",
+  );
+  expect(
+    (bounds.panel?.right ?? 0) - (bounds.panel?.left ?? 0),
+    `the sheet is no wider than the page: ${JSON.stringify(bounds)}`,
+  ).toBeLessThanOrEqual(bounds.viewport.width);
+  expect(bounds.closer, `the sheet carries a close mark: ${JSON.stringify(bounds)}`).not.toBeNull();
+  expect(
+    (bounds.panel?.right ?? 0) - (bounds.closer?.right ?? 0),
+    `the close mark sits at the sheet's right edge: ${JSON.stringify(bounds)}`,
+  ).toBeLessThanOrEqual(24);
+  expect(
+    (bounds.closer?.top ?? 0) - (bounds.panel?.top ?? 0),
+    `the close mark sits at the sheet's top edge: ${JSON.stringify(bounds)}`,
+  ).toBeLessThanOrEqual(24);
+  await page.getByRole("button", { name: "Close section context" }).click();
+  await expect(drawer, "close mark route: the sheet closes").toHaveCount(0);
+  await page.locator("#card .region.q").click();
+  await expect(drawer, "question route after the close mark: the sheet reopens").toBeVisible();
   if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
     await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-drawer.png` });
   }
@@ -2065,39 +2086,49 @@ test("a state applied while the sheet is open tears the sheet down", async ({ pa
   await expect(page.locator(".section-drawer"), "Escape: the sheet closes").toHaveCount(0);
 });
 
-test("the sheet follows the question when the question changes height", async ({ page }) => {
+test("the sheet overlays the card at the page bottom and stays put when the question grows", async ({ page }) => {
   await page.route("**/api/state", (route) => route.fulfill({
     json: longContentState({
       answerLines: ["Answer"],
       sectionLines: ["Follows", "Prose behind the sheet."],
     }),
   }));
+  await page.setViewportSize({ width: 390, height: 844 });
   await openApp(page);
+  await page.locator("#card .region.q").waitFor();
+  await page.evaluate(async () => {
+    await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
+  });
+  const questionRect = () =>
+    page.evaluate(() => {
+      const box = document.querySelector("#card .region.q")!.getBoundingClientRect();
+      return { bottom: box.bottom, left: box.left, right: box.right, top: box.top };
+    });
+  const closed = await questionRect();
   await page.locator("#card .region.q").click();
   const drawer = page.locator(".section-drawer");
   await expect(drawer, "sheet opens").toBeVisible();
   await drawer.evaluate(async (element) => {
     await Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished));
   });
-  const before = await page.evaluate(() => ({
-    question: document.querySelector("#card .region.q")!.getBoundingClientRect().bottom,
-    sheet: document.querySelector(".section-drawer-panel")!.getBoundingClientRect().top,
-  }));
-  expect(before.sheet, `before: sheet sits under the question ${JSON.stringify(before)}`).toBeGreaterThanOrEqual(before.question - 1);
+  expect(await questionRect(), "open: the sheet overlays the card, the question does not move").toEqual(closed);
+  const sheetRect = () =>
+    page.evaluate(() => {
+      const box = document.querySelector(".section-drawer-panel")!.getBoundingClientRect();
+      return { bottom: box.bottom, left: box.left, right: box.right, top: box.top, width: window.innerWidth, height: window.innerHeight };
+    });
+  const before = await sheetRect();
+  expect(Math.abs(before.bottom - before.height), `phone width: the sheet rests on the page bottom ${JSON.stringify(before)}`).toBeLessThanOrEqual(1);
+  expect(Math.abs(before.left), `phone width: the sheet starts at the left edge ${JSON.stringify(before)}`).toBeLessThanOrEqual(1);
+  expect(Math.abs(before.right - before.width), `phone width: the sheet reaches the right edge ${JSON.stringify(before)}`).toBeLessThanOrEqual(1);
   await page.evaluate(() => {
     const question = document.querySelector<HTMLElement>("#card .region.q")!;
     question.style.paddingBottom = "150px";
   });
-  const after = await page.evaluate(() => ({
-    question: document.querySelector("#card .region.q")!.getBoundingClientRect().bottom,
-    sheet: document.querySelector(".section-drawer-panel")!.getBoundingClientRect().top,
-  }));
-  expect(after.question, `after: the question grew ${JSON.stringify({ before, after })}`).toBeGreaterThan(before.question + 40);
-  await expect
-    .poll(async () => page.evaluate(() => document.querySelector(".section-drawer-panel")!.getBoundingClientRect().top), {
-      message: `after: the sheet top follows the question bottom ${JSON.stringify({ before, after })}`,
-    })
-    .toBeGreaterThanOrEqual(after.question - 1);
+  const grown = await questionRect();
+  expect(grown.bottom, `after: the question grew ${JSON.stringify({ closed, grown })}`).toBeGreaterThan(closed.bottom + 40);
+  const after = await sheetRect();
+  expect(after, "after: a taller question leaves the sheet where it was").toEqual(before);
 });
 
 test("section prose joins hard wraps and preserves paragraph breaks", async ({ page }) => {

@@ -124,6 +124,18 @@ void main() {
     expect(sheetTitle, findsOneWidget, reason: 'the question reopens it');
   });
 
+  testWidgets('the section sheet of a walk closes from its close mark', (
+    tester,
+  ) async {
+    await pumpWalk(tester, _oneSection);
+    expect(sheetTitle, findsOneWidget, reason: 'first contact opens the sheet');
+    final closeMark = find.byKey(const ValueKey('section-sheet-close'));
+    expect(closeMark, findsOneWidget, reason: 'the sheet shows a close mark');
+    await tester.tap(closeMark);
+    await tester.pumpAndSettle();
+    expect(sheetTitle, findsNothing, reason: 'the close mark dismissed the sheet');
+  });
+
   testWidgets('a tap on the revealed answer veils it in a walk, and a second tap shows it', (
     tester,
   ) async {

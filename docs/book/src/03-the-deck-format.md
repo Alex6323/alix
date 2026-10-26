@@ -410,7 +410,7 @@ About 4 atmospheres.
 ```
 
 A card's section is never on the card face. The first card you ever meet from
-a section opens the whole section in a sheet under the question, once; after
+a section opens the whole section in a sheet that slides up from the bottom, once; after
 that, in this sitting and every later one, a click on the question opens it,
 as do the `c` key and the review menu's **Context** entry. The Android app
 opens the sheet on a tap on the question, and opens it by itself under the

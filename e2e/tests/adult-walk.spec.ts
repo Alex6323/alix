@@ -189,11 +189,17 @@ test("the section sheet fits its content and closes from its own button", async 
   const box = (await panel.boundingBox())!;
   const viewport = page.viewportSize()!;
   expect(
-    box.y + box.height,
-    `open: a one-sentence section ends well above the window bottom (${viewport.height}px)`,
-  ).toBeLessThan(viewport.height - 100);
+    Math.abs(box.y + box.height - viewport.height),
+    `open: the sheet rests on the window bottom (${viewport.height}px)`,
+  ).toBeLessThanOrEqual(1);
+  expect(box.y, `open: a one-sentence section takes only the room it needs (${viewport.height}px)`).toBeGreaterThan(
+    viewport.height / 2,
+  );
+  const closer = (await page.getByRole("button", { name: "Close section context" }).boundingBox())!;
+  expect(box.x + box.width - (closer.x + closer.width), "open: the close mark sits at the sheet's right edge").toBeLessThanOrEqual(24);
+  expect(closer.y - box.y, "open: the close mark sits at the sheet's top edge").toBeLessThanOrEqual(24);
   await page.getByRole("button", { name: "Close section context" }).click();
-  await expect(page.locator(".section-drawer"), "close: the button removes the sheet").toHaveCount(0);
+  await expect(page.locator(".section-drawer"), "close: the mark removes the sheet").toHaveCount(0);
 
   const long = DECK.replace(
     "Rock pools hold water when the tide goes out.",

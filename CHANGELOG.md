@@ -125,6 +125,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- On the web, a card's section context opens as a sheet that slides up from
+  the bottom of the page, as on the phone, in place of the panel that sat
+  under the question; it takes only the room its prose needs. The sheet
+  carries a `×` in its top-right corner on both clients; a click on the dimmed
+  page, `c`, Escape (web) and a swipe down (phone) still close it.
+
 - Every revealed answer can be hidden for a self-test, not only a new card's:
   `h` or a click on the answer on the web, a tap on the answer on the phone.
   The hidden look is new: each word keeps its first letter, and its last past

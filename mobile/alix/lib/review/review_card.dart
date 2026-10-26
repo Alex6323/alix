@@ -1870,7 +1870,8 @@ List<InlineRunModel> _joinRunLines(List<List<InlineRunModel>> lines) {
 }
 
 /// The card's section on demand: a modal bottom sheet with the heading as
-/// its title and the prose below, the tutor sheet's shape.
+/// its title, a close mark in the top-right corner, and the prose below,
+/// the tutor sheet's shape.
 class SectionSheet extends StatelessWidget {
   const SectionSheet({super.key, required this.card});
 
@@ -1882,18 +1883,38 @@ class SectionSheet extends StatelessWidget {
     final tokens = theme.alix;
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+        padding: const EdgeInsets.fromLTRB(20, 8, 8, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              card.sectionTitle,
-              key: const ValueKey('section-sheet-title'),
-              style: theme.textTheme.titleMedium,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      card.sectionTitle,
+                      key: const ValueKey('section-sheet-title'),
+                      style: theme.textTheme.titleMedium,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey('section-sheet-close'),
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: Icon(
+                    Icons.close,
+                    color: tokens.dim,
+                    semanticLabel: 'Close',
+                  ),
+                ),
+              ],
             ),
             Flexible(
               child: SingleChildScrollView(
+                padding: const EdgeInsets.only(right: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: _sectionProse(
