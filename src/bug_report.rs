@@ -508,7 +508,7 @@ mod tests {
         let mut all = String::new();
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index).unwrap();
-            names.push(entry.name().to_string());
+            names.push(entry.name().unwrap().to_string());
             let mut text = String::new();
             entry.read_to_string(&mut text).unwrap();
             all.push_str(&text);

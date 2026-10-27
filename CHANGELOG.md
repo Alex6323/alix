@@ -520,6 +520,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix receive`, the web app's ZIP receive, and the phone's paired pull now
+  extract archives with `zip` 9.1.2, clearing three advisories against the
+  8.6.0 extractor (RUSTSEC-2026-0367, -0368, -0369: setuid bits kept, link
+  entries pointing outside the destination, modes applied through links). No
+  exploit against alix was reproduced: its extraction already refused writes
+  through such links, and every receive path refuses a link before reading or
+  moving anything. A received archive carrying a link is now refused before
+  anything is extracted, still naming the entry.
+
 - On the phone, a tutor draft that duplicates a cloze card (or any other
   block that yields several cards) is now refused as a duplicate, as on the
   desktop: the phone's dedup compared the wrong fingerprint, so such a draft

@@ -444,6 +444,13 @@ relying on its current callers (Codex). Refusing first also removes an earlier
 dependence on whether the extraction directory and the decks directory shared a
 filesystem. The command-line folder clobber refusal is pinned by
 `receive_a_zip_folder_refuses_to_clobber_an_existing_dest` (`tests/cli.rs`).
+Extraction itself never writes, or changes a mode, through a link entry to a
+path outside the destination: two laws in `src/share.rs`,
+`unzipping_never_writes_through_a_link_entry_to_a_path_outside_the_destination`
+and `unzipping_never_changes_the_mode_of_a_file_a_link_entry_points_outside_to`,
+each over a relative and an absolute link target; both fail against a
+link-following extractor. The `zip` crate is held at 9.0.0 or later, the
+release that fixed RUSTSEC-2026-0367, -0368 and -0369 in `ZipArchive::extract`.
 
 Received archives, decks, images, URLs, manifests, and source locators remain
 untrusted. Sanitizing personal state does not certify the remaining content as
@@ -464,7 +471,7 @@ safe or accurate.
 | A support archive leaks credentials or unintended learning content | Token and prompt keys are dropped, generated text is redacted, deck identities are hashed, and personal sidecars are never read into the archive. `--include-deck` deliberately includes the one named deck verbatim. Deterministic tests open and inspect every archive entry. | Stable hashes, operational history, and any explicitly included deck can identify a learner or subject. Review the local archive before attaching it. |
 | Ordinary Markdown resembles a deck | Discovery requires a valid opening-frontmatter `id` (`deck-<token>`); the retired `alix-id` is an ordinary unknown key that lints and grants nothing, and automatic stamping refuses an uninitialized file without writing. | Run `alix deck init <file>` only for an intended deck. Doctor reports deck-like files that remain ignored. |
 | A numeric source range slides onto unrelated text | Every complete citation fingerprints the normalized excerpt and source consumers fail closed on a mismatch. | Review doctor findings before using explicit locator repair; fingerprints detect drift but do not prove semantic support. |
-| A received ZIP attempts path traversal | The `zip` crate's extraction rejects unsafe enclosed paths, which bounds where an entry is written but not where a link entry points, so alix itself refuses a received archive carrying a symbolic link before the sanitizer walks and before anything is moved; receive then strips personal-state files. | Treat the archive and external transfer tool as untrusted; inspect received content before opening or enabling AI. |
+| A received ZIP attempts path traversal | The `zip` crate's extraction rejects unsafe enclosed paths and link targets that leave the destination; alix itself refuses a received archive carrying any link entry before extracting it, and again before the sanitizer walks and before anything is moved; receive then strips personal-state files. | Treat the archive and external transfer tool as untrusted; inspect received content before opening or enabling AI. |
 | Malformed or hostile input exhausts resources | JSON bodies share one central cap, and excerpts, remote AI bodies, and ZIP uploads have targeted caps; authored text is rendered as data and generated math SVG passes an allowlist. | Not every API route, local file, or operation has a global resource quota; avoid untrusted oversized collections. |
 | A release or dependency is compromised | CI tests source changes; production toolchains are exact and direct Action references use immutable SHAs. Desktop and Android release assets upload with per-asset SHA-256 checksums, and RustSec advisories are scanned nightly (advisory-drift) plus as a blocking `make audit` step at tag time, over both lockfiles. | Hosted runner images, operating-system packages, transitive Action behavior, signed artifacts, SBOMs, and full provenance are not yet a complete release guarantee. |
 

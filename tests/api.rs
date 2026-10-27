@@ -923,7 +923,7 @@ fn sync_entries_and_pull_carry_one_root_and_exact_rootless_manifest() {
     assert_eq!(Some(content_length.as_str()), pull.header("Content-Length"));
     let mut archive = zip::ZipArchive::new(Cursor::new(&pull.body)).unwrap();
     let mut names: Vec<String> = (0..archive.len())
-        .map(|index| archive.by_index(index).unwrap().name().to_string())
+        .map(|index| archive.by_index(index).unwrap().name().unwrap().to_string())
         .collect();
     names.sort();
     assert!(names.contains(&"sample.md".to_string()), "{names:?}");

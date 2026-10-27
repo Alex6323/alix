@@ -7415,7 +7415,7 @@ fn the_verbose_log_contains_ids_but_no_learning_content_names_titles_or_paths() 
     for index in 0..zip.len() {
         use std::io::Read;
         let mut entry = zip.by_index(index).unwrap();
-        if entry.name().starts_with("log/") {
+        if entry.name().unwrap().starts_with("log/") {
             entry.read_to_string(&mut archived).unwrap();
         }
     }

@@ -460,13 +460,16 @@ fn refuse_link(path: &Path) -> Result<()> {
 
 pub fn refuse_received_link(path: &Path, shown: &str) -> Result<()> {
     if is_link(path)? {
-        bail!(
-            "the received archive carries `{shown}` as a link rather than a file, and alix \
-             lands what the archive carries; ask the sender for one that carries the file \
-             itself"
-        );
+        return Err(received_link_error(shown));
     }
     Ok(())
+}
+
+fn received_link_error(shown: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "the received archive carries `{shown}` as a link rather than a file, and alix lands \
+         what the archive carries; ask the sender for one that carries the file itself"
+    )
 }
 
 fn count_files(dir: &Path) -> Result<usize> {
@@ -800,6 +803,12 @@ pub fn unzip_to(zip_path: &Path, dest: &Path) -> Result<()> {
         .with_context(|| format!("cannot open {}", zip_path.display()))?;
     let mut archive = zip::ZipArchive::new(file)
         .with_context(|| format!("{} is not a readable zip archive", zip_path.display()))?;
+    for index in 0..archive.len() {
+        let entry = archive.by_index_raw(index)?;
+        if entry.is_symlink() {
+            return Err(received_link_error(entry.name()?.trim_end_matches('/')));
+        }
+    }
     archive
         .extract(dest)
         .with_context(|| format!("cannot extract {}", zip_path.display()))?;
@@ -1687,7 +1696,7 @@ mod tests {
         assert_eq!(2, n);
         let mut archive = zip::ZipArchive::new(std::fs::File::open(&out).unwrap()).unwrap();
         let names: Vec<String> = (0..archive.len())
-            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .map(|i| archive.by_index(i).unwrap().name().unwrap().to_string())
             .collect();
         assert!(names.contains(&"ws/a.txt".to_string()), "{names:?}");
         assert!(
@@ -1710,7 +1719,7 @@ mod tests {
 
         let mut archive = zip::ZipArchive::new(std::fs::File::open(&out).unwrap()).unwrap();
         let mut names: Vec<String> = (0..archive.len())
-            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .map(|i| archive.by_index(i).unwrap().name().unwrap().to_string())
             .collect();
         names.sort();
         assert_eq!(
@@ -1872,6 +1881,68 @@ mod tests {
 
         assert!(out.join("ws/a.txt").exists());
         assert!(out.join("ws/assets/icon.svg").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unzipping_never_writes_through_a_link_entry_to_a_path_outside_the_destination() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        let absolute = outside.to_string_lossy().into_owned();
+        for (label, target) in [("relative", "../outside"), ("absolute", absolute.as_str())] {
+            let archive = dir.path().join(format!("{label}.zip"));
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            zip.add_symlink("escape", target, options).unwrap();
+            zip.start_file("escape/planted.txt", options).unwrap();
+            zip.write_all(b"planted").unwrap();
+            zip.finish().unwrap();
+            let dest = dir.path().join(format!("dest-{label}"));
+            std::fs::create_dir_all(&dest).unwrap();
+
+            let _ = unzip_to(&archive, &dest);
+
+            assert!(
+                !outside.join("planted.txt").exists(),
+                "{label} link target `{target}`: extraction wrote planted.txt outside {}",
+                dest.display()
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unzipping_never_changes_the_mode_of_a_file_a_link_entry_points_outside_to() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside.txt");
+        std::fs::write(&outside, "kept").unwrap();
+        std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let absolute = outside.to_string_lossy().into_owned();
+        for (label, target) in [
+            ("relative", "../outside.txt"),
+            ("absolute", absolute.as_str()),
+        ] {
+            let archive = dir.path().join(format!("{label}.zip"));
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default().unix_permissions(0o777);
+            zip.add_symlink("escape", target, options).unwrap();
+            zip.finish().unwrap();
+            let dest = dir.path().join(format!("dest-{label}"));
+            std::fs::create_dir_all(&dest).unwrap();
+
+            let _ = unzip_to(&archive, &dest);
+            let mode = std::fs::metadata(&outside).unwrap().permissions().mode() & 0o7777;
+
+            assert_eq!(
+                0o600,
+                mode,
+                "{label} link target `{target}`: extraction changed the mode of {} to {mode:o}",
+                outside.display()
+            );
+        }
     }
 
     #[test]
