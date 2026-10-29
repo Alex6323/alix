@@ -86,11 +86,11 @@ void main() {
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
-        'lib/review_screen.dart:370',
+        'lib/review_screen.dart:366',
         'lib/picker_screen.dart:650',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:225',
-        'lib/walk_screen.dart:203',
+        'lib/walk_screen.dart:199',
       ],
       reason:
           'sync wiring added imports, fields, and methods above build() in '
@@ -101,8 +101,9 @@ void main() {
           'ownership added an import, four fields, and three methods to '
           'review_screen.dart; the walk launch added an import and a method '
           'to picker_screen.dart; the session-end conflict check added '
-          'imports, a field, and methods to trace_screen.dart; '
-          'generate_sheet.dart is unchanged',
+          'imports, a field, and methods to trace_screen.dart; the shared '
+          'showSectionSheet shortened the opener in review_screen.dart and '
+          'walk_screen.dart by four lines; generate_sheet.dart is unchanged',
     );
   });
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:alix_mobile/review/review_card.dart' show SectionSheet;
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/walk_screen.dart';
@@ -134,6 +135,32 @@ void main() {
     await tester.tap(closeMark);
     await tester.pumpAndSettle();
     expect(sheetTitle, findsNothing, reason: 'the close mark dismissed the sheet');
+  });
+
+  testWidgets('a section too long for the screen keeps the walk sheet and its close mark below the status bar', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.padding = const FakeViewPadding(top: 24 * 3);
+    final longProse = List.filled(60, 'Where the government sits and meets.').join('\n\n');
+    await pumpWalk(tester, '# Capitals\n$longProse\n\n## capital of italy?\nRome\n');
+    expect(sheetTitle, findsOneWidget, reason: 'first contact opens the sheet');
+
+    final toolbarTop = tester.getRect(find.byType(AppBar)).bottom - kToolbarHeight;
+    final sheet = tester.getRect(find.byType(SectionSheet));
+    final mark = tester.getRect(find.byKey(const ValueKey('section-sheet-close')));
+    expect(
+      sheet.top,
+      greaterThanOrEqualTo(toolbarTop),
+      reason: 'the sheet stops at the walk header\'s top edge: sheet=$sheet header top=$toolbarTop',
+    );
+    expect(
+      mark.top,
+      greaterThanOrEqualTo(toolbarTop),
+      reason: 'the close mark is below the status bar: mark=$mark header top=$toolbarTop',
+    );
   });
 
   testWidgets('a tap on the revealed answer veils it in a walk, and a second tap shows it', (

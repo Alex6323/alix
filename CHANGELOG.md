@@ -520,6 +520,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On the phone, a section too long for the screen no longer pushes its sheet
+  under the status bar, where its close mark could not be reached; the sheet
+  now stops at the top of the review or walk header.
 - `alix receive`, the web app's ZIP receive, and the phone's paired pull now
   extract archives with `zip` 9.1.2, clearing three advisories against the
   8.6.0 extractor (RUSTSEC-2026-0367, -0368, -0369: setuid bits kept, link

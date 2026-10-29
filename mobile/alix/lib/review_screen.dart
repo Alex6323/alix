@@ -8,7 +8,7 @@ import 'package:alix_mobile/bridge/review_bridge.dart';
 import 'package:alix_mobile/exam_screen.dart';
 import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
-import 'package:alix_mobile/review/review_card.dart' show SectionSheet;
+import 'package:alix_mobile/review/review_card.dart' show showSectionSheet;
 import 'package:alix_mobile/review/review_controller.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/review_view.dart';
@@ -270,11 +270,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   void _openSection(ReviewCardModel card) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => SectionSheet(card: card),
-    );
+    showSectionSheet(context, card);
   }
 
   void _autoOpenSection(ReviewStateModel state, ReviewCardModel? card) {

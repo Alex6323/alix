@@ -1939,6 +1939,15 @@ List<InlineRunModel> _joinRunLines(List<List<InlineRunModel>> lines) {
   ];
 }
 
+Future<void> showSectionSheet(BuildContext context, ReviewCardModel card) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => SectionSheet(card: card),
+  );
+}
+
 /// The card's section on demand: a modal bottom sheet with the heading as
 /// its title, a close mark in the top-right corner, and the prose below,
 /// the tutor sheet's shape.

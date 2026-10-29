@@ -171,6 +171,36 @@ void main() {
     expect(sheetTitle, findsOneWidget, reason: 'the question reopens it afterwards');
   });
 
+  testWidgets('a section too long for the screen keeps the sheet and its close mark below the status bar', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.padding = const FakeViewPadding(top: 24 * 3);
+    final longProse = List.filled(60, 'Applies on public roads and private ones.').join('\n\n');
+    await pumpReview(
+      tester,
+      '---\ntitle: Roads\n---\n# $_heading\n$longProse\n\n## q1?\na1\n\n## q2?\na2\n',
+    );
+    await advanceToSecondCard(tester);
+    await tapQuestion(tester);
+
+    final toolbarTop = tester.getRect(find.byType(AppBar)).bottom - kToolbarHeight;
+    final sheet = tester.getRect(find.byType(SectionSheet));
+    final mark = tester.getRect(find.byKey(const ValueKey('section-sheet-close')));
+    expect(
+      sheet.top,
+      greaterThanOrEqualTo(toolbarTop),
+      reason: 'the sheet stops at the session header\'s top edge: sheet=$sheet header top=$toolbarTop',
+    );
+    expect(
+      mark.top,
+      greaterThanOrEqualTo(toolbarTop),
+      reason: 'the close mark is below the status bar: mark=$mark header top=$toolbarTop',
+    );
+  });
+
   testWidgets(
     'the first introduction from a section opens the sheet by itself once; the question reopens it, reveal does not, and the second card waits for a tap',
     (tester) async {

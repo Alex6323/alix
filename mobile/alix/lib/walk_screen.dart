@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/bridge/walk_bridge.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
-import 'package:alix_mobile/review/review_card.dart' show SectionSheet;
+import 'package:alix_mobile/review/review_card.dart' show showSectionSheet;
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/review_view.dart' show ReviewCantOpenView;
 import 'package:alix_mobile/server_client.dart';
@@ -173,11 +173,7 @@ class _WalkScreenState extends State<WalkScreen> {
   }
 
   void _openSection(ReviewCardModel card) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => SectionSheet(card: card),
-    );
+    showSectionSheet(context, card);
   }
 
   void _autoOpenSection(bool sectionFirst, ReviewCardModel? card) {
