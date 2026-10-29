@@ -227,8 +227,6 @@ class _WalkScreenState extends State<WalkScreen> {
           onNextWalk: _nextWalk,
           onOpenTutor: _openTutor,
           onOpenSection: _openSection,
-          answerHidden: _controller.answerHidden,
-          onToggleHidden: _controller.toggleAnswerHidden,
         );
       },
     );

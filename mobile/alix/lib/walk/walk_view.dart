@@ -36,8 +36,6 @@ class WalkView extends StatelessWidget {
     required this.onNextWalk,
     required this.onOpenTutor,
     required this.onOpenSection,
-    this.answerHidden = false,
-    this.onToggleHidden,
   });
 
   final WalkStateModel state;
@@ -65,8 +63,6 @@ class WalkView extends StatelessWidget {
   final VoidCallback onNextWalk;
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
   final ValueChanged<ReviewCardModel> onOpenSection;
-  final bool answerHidden;
-  final VoidCallback? onToggleHidden;
 
   @override
   Widget build(BuildContext context) {
@@ -141,8 +137,6 @@ class WalkView extends StatelessWidget {
             onOpenTutor: onOpenTutor,
             onOpenSection: onOpenSection,
             onWalkNext: onNext,
-            answerHidden: answerHidden,
-            onToggleHidden: onToggleHidden,
           );
   }
 }

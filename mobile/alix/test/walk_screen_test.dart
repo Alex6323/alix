@@ -167,38 +167,24 @@ void main() {
     );
   });
 
-  testWidgets('a tap on the revealed answer veils it in a walk, and a second tap shows it', (
+  testWidgets('a tap on the revealed answer covers it with the hide sheet in a walk, and its close mark shows it', (
     tester,
   ) async {
     await pumpWalk(tester, _oneSection);
     await dismissSheetIfOpen(tester);
     final answerTap = find.byKey(const ValueKey('answer-tap'));
+    final hideSheet = find.byKey(const ValueKey('hide-sheet'));
     expect(answerTap, findsNothing, reason: 'nothing to hide before the reveal');
     await tap(tester, 'Reveal');
     expect(answerTap, findsOneWidget, reason: 'the revealed answer is the tap target');
-    List<Color?> colours() {
-      final out = <Color?>[];
-      tester.widget<Text>(find.text('Rome')).textSpan!.visitChildren((span) {
-        if (span is TextSpan && (span.text ?? '').isNotEmpty) out.add(span.style?.color);
-        return true;
-      });
-      return out;
-    }
 
     await tester.tap(answerTap);
     await tester.pumpAndSettle();
-    expect(
-      colours().map((colour) => colour == Colors.transparent).toList(),
-      [false, true, false],
-      reason: 'Rome hidden: R and e kept, om veiled',
-    );
-    await tester.tap(answerTap);
+    expect(hideSheet, findsOneWidget, reason: 'the tap opened the hide sheet');
+    await tester.tap(find.byKey(const ValueKey('hide-sheet-close')));
     await tester.pumpAndSettle();
-    expect(
-      colours().any((colour) => colour == Colors.transparent),
-      isFalse,
-      reason: 'shown again',
-    );
+    expect(hideSheet, findsNothing, reason: 'the close mark dismissed it');
+    expect(find.text('Rome'), findsOneWidget, reason: 'the answer shows again');
   });
 
   testWidgets('a choice item is answered by a pick, then Next', (tester) async {

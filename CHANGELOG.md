@@ -125,6 +125,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- On the phone, a tap on a revealed answer hides it under a **Hide** sheet
+  that rises from the answer's top edge, leaving the question in view; its
+  close mark shows the answer again. It replaces the in-place look that kept
+  each word's first and last letters.
+
 - On the phone, a card's section opens from a quiet **Context** chip left of
   Reveal, shown only before the reveal; a tap on the question no longer opens
   it, and the section is not offered once the answer shows.

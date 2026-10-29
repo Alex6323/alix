@@ -1,8 +1,3 @@
-// Hiding a revealed answer for a self-test on the phone: a tap on the answer
-// region veils every word in place (first and last letters kept, the rest
-// transparent, inline code too), the note is invisible with its size kept,
-// nothing moves, and a second tap shows everything again. A card with
-// nothing to veil has no tap target.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -69,7 +64,7 @@ ReviewStateModel _state({List<String>? choices}) => ReviewStateModel(
   choiceRuns: choices?.map((text) => [_run(text)]).toList(),
 );
 
-class _Harness extends StatefulWidget {
+class _Harness extends StatelessWidget {
   const _Harness({required this.state, required this.revealed, required this.attempt});
 
   final ReviewStateModel state;
@@ -77,20 +72,13 @@ class _Harness extends StatefulWidget {
   final TextEditingController attempt;
 
   @override
-  State<_Harness> createState() => _HarnessState();
-}
-
-class _HarnessState extends State<_Harness> {
-  bool hidden = false;
-
-  @override
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: alixDark(),
       home: Scaffold(
         body: ReviewCardView(
-          state: widget.state,
-          revealed: widget.revealed,
+          state: state,
+          revealed: revealed,
           revealedLines: 0,
           choice: null,
           multiChoice: null,
@@ -106,13 +94,11 @@ class _HarnessState extends State<_Harness> {
           onSketchUndo: () {},
           onSketchClear: () {},
           attemptOpen: false,
-          attemptController: widget.attempt,
+          attemptController: attempt,
           typedControllers: const [],
           serverLive: false,
           tutorCard: null,
           verdictGrade: ReviewGrade.pass,
-          answerHidden: hidden,
-          onToggleHidden: () => setState(() => hidden = !hidden),
           onChoose: (_) {},
           onToggleChoice: (_) {},
           onSubmitChoices: () {},
@@ -134,21 +120,6 @@ class _HarnessState extends State<_Harness> {
 final _answerTap = find.byKey(const ValueKey('answer-tap'));
 final _questionRegion = find.byKey(const ValueKey('question-region'));
 final _answerRegion = find.byKey(const ValueKey('answer-region'));
-final _noteRegion = find.byKey(const ValueKey('note-region'));
-final _noteContent = find.byKey(const ValueKey('note-content'));
-
-/// The painted runs of a rich text, flattened: (text, colour) per span.
-List<(String, Color?)> _spans(WidgetTester tester, String plain) {
-  final text = tester.widget<Text>(find.text(plain));
-  final out = <(String, Color?)>[];
-  text.textSpan!.visitChildren((span) {
-    if (span is TextSpan && span.text != null && span.text!.isNotEmpty) {
-      out.add((span.text!, span.style?.color));
-    }
-    return true;
-  });
-  return out;
-}
 
 Future<void> _pump(WidgetTester tester, {bool revealed = true, List<String>? choices}) async {
   addTearDown(tester.view.reset);
@@ -162,103 +133,52 @@ Future<void> _pump(WidgetTester tester, {bool revealed = true, List<String>? cho
   await tester.pumpAndSettle();
 }
 
+final _hideSheet = find.byKey(const ValueKey('hide-sheet'));
+final _hideClose = find.byKey(const ValueKey('hide-sheet-close'));
+
 void main() {
   testWidgets(
-    'law: a tap on the answer veils every word in place, hides the note with its box kept, and a second tap shows it all again',
+    'law: a tap on the answer covers it with a sheet from the answer\'s top edge, the question stays visible, and the close mark shows the answer again',
     (tester) async {
       await _pump(tester);
       expect(_answerTap, findsOneWidget, reason: 'a revealed answer is the tap target');
-      final before = {
-        for (final (name, finder) in [
-          ('question', _questionRegion),
-          ('answer', _answerRegion),
-          ('note', _noteRegion),
-          ('note content', _noteContent),
-          ('line 1', find.text(_line1)),
-          ('line 2', find.text(_line2)),
-        ])
-          name: tester.getRect(finder),
-      };
-      expect(
-        _spans(tester, _line1).every((span) => span.$2 != Colors.transparent),
-        isTrue,
-        reason: 'shown: no run is transparent',
-      );
+      final answerTop = tester.getRect(_answerRegion).top;
+      final question = tester.getRect(_questionRegion);
 
       await tester.tap(_answerTap);
       await tester.pumpAndSettle();
 
-      final spans = _spans(tester, _line1);
+      expect(_hideSheet, findsOneWidget, reason: 'the tap opened the hide sheet');
+      final sheet = tester.getRect(_hideSheet);
       expect(
-        spans.take(4).map((span) => span.$1).toList(),
-        ['A', 'n', ' i', 'mmutabl'],
-        reason: 'An immutable: the runs split at the first and last letters',
+        (sheet.top - answerTop).abs(),
+        lessThanOrEqualTo(1),
+        reason: 'the sheet starts at the answer region\'s top edge: sheet=$sheet answer top=$answerTop',
+      );
+      expect(sheet.bottom, 760, reason: 'the sheet reaches the bottom of the screen');
+      expect(question.bottom, lessThanOrEqualTo(sheet.top), reason: 'the question stays visible');
+      expect(
+        find.descendant(of: _hideSheet, matching: find.byIcon(Icons.visibility_off_outlined)),
+        findsOneWidget,
+        reason: 'the sheet shows the eye-off glyph',
       );
       expect(
-        spans.take(4).map((span) => span.$2 == Colors.transparent).toList(),
-        [false, true, false, true],
-        reason: 'An immutable: first and last letters kept, the middle veiled',
+        find.descendant(of: _hideSheet, matching: find.text('Hide')),
+        findsOneWidget,
+        reason: 'the header names the view',
       );
       expect(
-        spans.map((span) => span.$1).join(),
-        _line1,
-        reason: 'hidden: the whole line is still drawn, in place',
+        find.descendant(of: _hideSheet, matching: find.text(_line1)),
+        findsNothing,
+        reason: 'the sheet does not show the answer',
       );
-      final code = _spans(tester, _line2);
-      expect(
-        code.map((span) => span.$1).join(),
-        _line2,
-        reason: 'hidden: the line with the code run is whole',
-      );
-      final at = code.indexWhere((span) => span.$1 == 'l');
-      final codeRuns = code.sublist(at, at + 3);
-      expect(codeRuns.map((span) => span.$1).toList(), ['l', 'e', 't']);
-      expect(
-        codeRuns.map((span) => span.$2 == Colors.transparent).toList(),
-        [false, true, false],
-        reason: 'the code run let is veiled by the same rule: $codeRuns',
-      );
-      final noteText = find.text(_note);
-      expect(noteText, findsOneWidget, reason: 'hidden: the note is still laid out');
-      expect(
-        tester
-            .widget<Visibility>(
-              find.ancestor(of: noteText, matching: find.byType(Visibility)).first,
-            )
-            .visible,
-        isFalse,
-        reason: 'hidden: the note is invisible',
-      );
-      for (final (name, finder) in [
-        ('question', _questionRegion),
-        ('answer', _answerRegion),
-        ('note', _noteRegion),
-        ('note content', _noteContent),
-        ('line 1', find.text(_line1)),
-        ('line 2', find.text(_line2)),
-      ]) {
-        expect(tester.getRect(finder), before[name], reason: 'hidden: $name did not move');
-      }
+      final close = tester.getRect(_hideClose);
+      expect(sheet.right - close.right, lessThanOrEqualTo(24), reason: 'the close mark sits right');
 
-      await tester.tap(_answerTap);
+      await tester.tap(_hideClose);
       await tester.pumpAndSettle();
-      expect(
-        _spans(tester, _line1).every((span) => span.$2 != Colors.transparent),
-        isTrue,
-        reason: 'shown again: every run reads',
-      );
-      expect(
-        tester
-            .widget<Visibility>(
-              find.ancestor(of: find.text(_note), matching: find.byType(Visibility)).first,
-            )
-            .visible,
-        isTrue,
-        reason: 'shown again: the note is back',
-      );
-      for (final (name, finder) in [('answer', _answerRegion), ('note', _noteRegion)]) {
-        expect(tester.getRect(finder), before[name], reason: 'shown again: $name did not move');
-      }
+      expect(_hideSheet, findsNothing, reason: 'the close mark dismissed the sheet');
+      expect(find.text(_line1), findsOneWidget, reason: 'the answer shows again');
     },
   );
 

@@ -98,8 +98,6 @@ class ReviewView extends StatelessWidget {
     required this.onGrade,
     required this.onOpenTutor,
     required this.onOpenSection,
-    this.answerHidden = false,
-    this.onToggleHidden,
     required this.onRestart,
     required this.onOpenExam,
   });
@@ -143,8 +141,6 @@ class ReviewView extends StatelessWidget {
   final ValueChanged<ReviewGrade> onGrade;
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
   final ValueChanged<ReviewCardModel> onOpenSection;
-  final bool answerHidden;
-  final VoidCallback? onToggleHidden;
   final VoidCallback onRestart;
   final VoidCallback onOpenExam;
 
@@ -225,8 +221,6 @@ class ReviewView extends StatelessWidget {
                         onGrade: onGrade,
                         onOpenTutor: onOpenTutor,
                         onOpenSection: onOpenSection,
-                        answerHidden: answerHidden,
-                        onToggleHidden: onToggleHidden,
                       ),
               ),
             ],

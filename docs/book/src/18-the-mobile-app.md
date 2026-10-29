@@ -101,11 +101,11 @@ meet from a section opens that sheet by itself, once; swipe it away or tap the
 `×` in its top-right corner, and the chip brings it back. Every later card from
 the section, in this sitting or any later one, waits for the chip. A tap on the
 question does nothing. A tap on a
-revealed answer hides it for a self-test, exactly as `h` does on the web:
-every word keeps its first letter, and its last past two letters, the rest
-is drawn transparent in place, the note disappears, and nothing moves; a
-second tap shows it all again. A choice pick, a typed check and a sketch
-have nothing to hide.
+revealed answer hides it for a self-test: a sheet titled **Hide** rises from
+the answer's top edge to the bottom of the screen, covering the answer, the
+note and the grade buttons while the question stays in view; the `×` in its
+top-right corner, or a swipe down, shows it all again. A choice pick, a typed
+check and a sketch have nothing to hide.
 
 The bar at the top names the deck, cut to one line, and counts the cards
 left. **New session** on the summary starts the next sitting with the same

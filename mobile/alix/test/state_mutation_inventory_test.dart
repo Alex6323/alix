@@ -11,29 +11,28 @@ void main() {
         'notifyListeners();',
       ),
       [
-        109,
-        114,
-        119,
-        124,
-        129,
-        150,
-        155,
-        160,
-        165,
-        170,
-        175,
-        180,
-        185,
-        190,
-        195,
-        200,
-        206,
-        211,
-        236,
+        107,
+        112,
+        117,
+        122,
+        127,
+        148,
+        153,
+        158,
+        163,
+        168,
+        173,
+        178,
+        183,
+        188,
+        193,
+        198,
+        203,
+        228,
       ],
       reason:
           'setServerLive, install, choose, toggleChoice, submitChoices, '
-          'check, openAttempt, toggleKeypoint, reveal, toggleAnswerHidden, '
+          'check, openAttempt, toggleKeypoint, reveal, '
           'the six sketch transitions (tool, begin, extend, end, undo, '
           'clear), revealNextLine, restart, and applyCardNote own every '
           'ReviewController mutation',
@@ -70,10 +69,10 @@ void main() {
     expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
     expect(
       _linesContaining('lib/walk/walk_controller.dart', 'notifyListeners();'),
-      [60, 67, 72, 79, 84, 89, 100, 105, 110, 115, 120, 125, 130, 135, 140, 155],
+      [58, 65, 70, 77, 82, 92, 97, 102, 107, 112, 117, 122, 127, 132, 147],
       reason:
           'setServerLive, choose, toggleChoice, submitChoices, reveal, '
-          'toggleAnswerHidden, revealNextLine, next, nextWalk, the six '
+          'revealNextLine, next, nextWalk, the six '
           'sketch transitions, and applyCardNote own every WalkController '
           'mutation',
     );

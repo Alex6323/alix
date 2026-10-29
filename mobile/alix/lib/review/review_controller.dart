@@ -51,7 +51,6 @@ class ReviewController extends ChangeNotifier {
   String? _openError;
   bool _revealed = false;
   int _revealedLines = 0;
-  bool _answerHidden = false;
   ReviewChoiceFeedbackModel? _choice;
   ReviewMultiChoiceFeedbackModel? _multiChoice;
   final Set<int> _multiSelected = {};
@@ -71,7 +70,6 @@ class ReviewController extends ChangeNotifier {
   String? get openError => _openError;
   bool get revealed => _revealed;
   int get revealedLines => _revealedLines;
-  bool get answerHidden => _answerHidden;
   ReviewChoiceFeedbackModel? get choice => _choice;
   ReviewMultiChoiceFeedbackModel? get multiChoice => _multiChoice;
   Set<int> get multiSelected => Set.unmodifiable(_multiSelected);
@@ -165,11 +163,6 @@ class ReviewController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleAnswerHidden() {
-    _answerHidden = !_answerHidden;
-    notifyListeners();
-  }
-
   void selectSketchTool(SketchTool tool) {
     _sketch.selectTool(tool);
     notifyListeners();
@@ -202,7 +195,6 @@ class ReviewController extends ChangeNotifier {
 
   void revealNextLine() {
     _revealedLines++;
-    _answerHidden = false;
     notifyListeners();
   }
 
@@ -272,7 +264,6 @@ class ReviewController extends ChangeNotifier {
     _state = next;
     _revealed = false;
     _revealedLines = 0;
-    _answerHidden = false;
     _choice = null;
     _multiChoice = null;
     _multiSelected.clear();
