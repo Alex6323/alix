@@ -15,7 +15,6 @@ const {
   appendQuote,
   appendRuns,
   appendTable,
-  contextLine,
   document: doc,
   el,
   frontPrompt,
@@ -87,7 +86,6 @@ function renderReview() {
   const cloze = (card.front_steps || []).length > 0;
   const question = model.questionAt(card, model.filled(studyModel));
   cardEl.appendChild(frontPrompt(question, (unit) => frontDiagram(unit, done)));
-  appendContextLines(cardEl, card);
   appendImages(cardEl, card.images, done);
 
   if (choiceMode) {
@@ -380,14 +378,6 @@ function frontDiagram(unit, done) {
   if (done && unit.revealed_alt) img.alt = unit.revealed_alt;
   const kept = keptRegions(unit.regions || [], done);
   return kept.length ? maskedImage(img, kept, "rev-img") : img;
-}
-
-// `context` is a card table's title.
-function appendContextLines(parent, card) {
-  const lines = card.context || [];
-  for (let i = 0; i < lines.length; i++) {
-    parent.appendChild(contextLine(lines[i], card.context_runs && card.context_runs[i]));
-  }
 }
 
 // Tap-the-answer options. Single: a tap is the pick; after it (chosen =

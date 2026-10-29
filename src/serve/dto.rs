@@ -36,8 +36,6 @@ pub(super) struct CardDto {
     pub(super) section_context_runs: Vec<Vec<InlineRun>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) section_context_units: Vec<ContentUnit>,
-    pub(super) context: Vec<String>,
-    pub(super) context_runs: Vec<Vec<InlineRun>>,
     pub(super) back: Vec<String>,
     pub(super) back_runs: Vec<Vec<InlineRun>>,
     pub(super) back_units: Vec<ContentUnit>,
@@ -1457,8 +1455,6 @@ pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
         section_context: view.section_context,
         section_context_runs: view.section_context_runs,
         section_context_units: web_units(view.section_context_units),
-        context: view.context,
-        context_runs: view.context_runs,
         back: view.back,
         back_runs: view.back_runs,
         back_units: web_units(view.back_units),

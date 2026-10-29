@@ -22,8 +22,6 @@ ReviewCardModel card({required int frontSteps, int answerSteps = 3}) {
           ],
         ),
     ],
-    context: const [],
-    contextRuns: const [],
     back: [for (var line = 0; line < answerSteps; line++) 'a$line'],
     backRuns: [for (var line = 0; line < answerSteps; line++) const []],
     backUnits: const [],

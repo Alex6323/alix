@@ -183,8 +183,6 @@ pub struct _CardView {
     pub section_context: Vec<String>,
     pub section_context_runs: Vec<Vec<InlineRun>>,
     pub section_context_units: Vec<ContentUnit>,
-    pub context: Vec<String>,
-    pub context_runs: Vec<Vec<InlineRun>>,
     pub back: Vec<String>,
     pub back_runs: Vec<Vec<InlineRun>>,
     pub back_units: Vec<ContentUnit>,

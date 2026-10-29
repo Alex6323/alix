@@ -34,8 +34,6 @@ Widget _card({
   final card = ReviewCardModel(
     front: front,
     frontRuns: [_run(front)],
-    context: const [],
-    contextRuns: const [],
     back: [answer],
     backRuns: [
       [_run(answer, code: codeAnswer)],

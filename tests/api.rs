@@ -4594,7 +4594,7 @@ fn a_pick_shape_that_mismatches_its_question_yields_400() {
 }
 
 #[test]
-fn a_table_deck_serves_sampled_choices_and_header_context_at_recognize() {
+fn a_table_deck_serves_sampled_choices_and_asks_its_title_at_recognize() {
     let (base, _guard) = spawn_full_server(None);
 
     let resp = post_json(
@@ -4607,27 +4607,15 @@ fn a_table_deck_serves_sampled_choices_and_header_context_at_recognize() {
     assert_eq!("recognize", body["depth"], "body: {body}");
     assert_eq!("choice", body["mode"], "body: {body}");
 
-    let context: Vec<&str> = body["card"]["context"]
-        .as_array()
-        .expect("a table card carries its header as context")
-        .iter()
-        .filter_map(|v| v.as_str())
-        .collect();
-    assert_eq!(
-        vec!["German numbers"],
-        context,
-        "the title is the whole context; column labels are not per-card: {body}"
-    );
     assert!(
-        !body["card"]["context_runs"]
-            .as_array()
-            .expect("context renders as runs")
-            .is_empty(),
-        "body: {body}"
+        body["card"].get("context").is_none() && body["card"].get("context_runs").is_none(),
+        "the title travels in the front, not beside it: {body}"
     );
-
     let front = body["card"]["front"].as_str().unwrap();
-    let expected = table_answer(front);
+    let cell = front
+        .strip_prefix("German numbers\n• ")
+        .unwrap_or_else(|| panic!("the title asks and the cell follows as a bullet: {front:?}"));
+    let expected = table_answer(cell);
     let choices = body["choices"]
         .as_array()
         .expect("column sampling arms the pick with no augment cache");

@@ -183,8 +183,6 @@ ReviewStateModel _state({
     card: ReviewCardModel(
       front: 'question',
       frontRuns: const [],
-      context: const [],
-      contextRuns: const [],
       back: const ['answer'],
       backRuns: const [[]],
       backUnits: const [],

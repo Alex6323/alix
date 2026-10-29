@@ -2211,23 +2211,41 @@ mod tests {
     }
 
     #[test]
-    fn both_directions_keep_a_table_header_as_context() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.md");
-        std::fs::write(
-            &path,
-            "## Vocabulary\n| word | meaning |\n|---|---|\n| purported | angeblich | <!-- r:4k2x9w -->\n<!-- cards -->\n<!-- direction: both -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n",
-        )
-        .unwrap();
+    fn law_a_table_title_asks_each_half_with_that_half_s_cell_as_a_bullet() {
+        let rows = [
+            (
+                "titled",
+                "## Vocabulary\n",
+                "Vocabulary\n• purported",
+                "Vocabulary\n• angeblich",
+            ),
+            ("untitled", "", "purported", "angeblich"),
+        ];
+        for (label, title, forward, reverse) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("d.md");
+            std::fs::write(
+                &path,
+                format!(
+                    "{title}| word | meaning |\n|---|---|\n| purported | angeblich | <!-- r:4k2x9w -->\n<!-- cards -->\n<!-- direction: both -->\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n"
+                ),
+            )
+            .unwrap();
 
-        let deck = Deck::load(&path).unwrap();
+            let deck = Deck::load(&path).unwrap();
 
-        assert_eq!(2, deck.cards.len());
-        for card in &deck.cards {
+            let halves: Vec<_> = deck
+                .cards
+                .iter()
+                .map(|card| (card.front.as_str(), card.back.clone()))
+                .collect();
             assert_eq!(
-                vec!["Vocabulary"],
-                card.context,
-                "the title reaches both halves"
+                vec![
+                    (forward, vec!["angeblich".to_string()]),
+                    (reverse, vec!["purported".to_string()]),
+                ],
+                halves,
+                "{label}: each half asks its own cell under the title"
             );
         }
     }

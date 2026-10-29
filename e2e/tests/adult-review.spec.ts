@@ -102,8 +102,6 @@ function longContentState({
       front,
       front_runs: [{ text: front }],
       front_units: null,
-      context: [],
-      context_runs: [],
       section_context: sectionLines,
       section_context_runs: sectionLines.map((text) => [{ text }]),
       section_context_units: sectionLines.map((text) => ({ kind: "sentence", text })),

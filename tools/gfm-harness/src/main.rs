@@ -45,7 +45,7 @@ struct CardMeasurement {
     back_plain: Vec<String>,
     notes: Vec<NoteMeasurement>,
     section_context: Vec<String>,
-    context: Vec<String>,
+    table_title: Option<String>,
     authored_distractors: Vec<String>,
     images: Vec<ImageMeasurement>,
     images_back: Vec<ImageMeasurement>,
@@ -183,7 +183,7 @@ fn card_measurement(card: &Card) -> CardMeasurement {
             })
             .collect(),
         section_context: card.section_context.clone(),
-        context: card.context.clone(),
+        table_title: card.table_title.clone(),
         authored_distractors: card.authored_distractors.clone(),
         images: image_measurements(&card.images),
         images_back: image_measurements(&card.images_back),

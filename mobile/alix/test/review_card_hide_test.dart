@@ -23,8 +23,6 @@ InlineRunModel _run(String text, {bool code = false}) =>
 ReviewCardModel _card() => ReviewCardModel(
   front: _front,
   frontRuns: [_run(_front)],
-  context: const [],
-  contextRuns: const [],
   back: const [_line1, _line2],
   backRuns: [
     [_run(_line1)],

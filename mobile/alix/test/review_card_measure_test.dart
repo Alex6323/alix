@@ -48,8 +48,6 @@ Widget _card(TextEditingController attempt) {
     frontRuns: [
       InlineRunModel(text: _question, bold: false, italic: false, code: false),
     ],
-    context: const [],
-    contextRuns: const [],
     back: const [_short, _answer],
     backRuns: const [[], []],
     backUnits: [_sentence(_short), _sentence(_answer)],

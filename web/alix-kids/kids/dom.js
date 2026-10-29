@@ -101,24 +101,6 @@ function codeWithBlanks(lines) {
   return code;
 }
 
-function contextLine(text, runs) {
-  const line = el("div", "rev-context");
-  if (!runs) {
-    appendContextText(line, { text: text || "" });
-    return line;
-  }
-  const standaloneMath = isStandaloneInlineMath(runs);
-  for (const run of runs) {
-    if (run.math) {
-      const node = mathRunNode(run);
-      if (standaloneMath) node.classList.add("math-standalone");
-      line.appendChild(node);
-    }
-    else appendContextText(line, run);
-  }
-  return line;
-}
-
 function appendChecklist(parent, items, blanks = false) {
   const checklist = el("div", "checklist");
   for (const item of items || []) {
@@ -261,5 +243,5 @@ function appendQuote(parent, units, blanks = false) {
   parent.appendChild(quote);
 }
 
-return { appendChecklist, appendQuote, appendRuns, appendTable, contextLine, el, frontPrompt, mascot: mascotEl };
+return { appendChecklist, appendQuote, appendRuns, appendTable, el, frontPrompt, mascot: mascotEl };
 }

@@ -158,8 +158,9 @@ pub struct Card {
     /// only on demand and never part of identity, so re-filing a card
     /// changes what it explains, never what it is.
     pub section_context: Vec<String>,
-    /// A card table's title; empty on every other card.
-    pub context: Vec<String>,
+    /// A titled card table's title, already composed into `front`; kept to
+    /// compose the reversed half.
+    pub table_title: Option<String>,
     pub back: Vec<String>,
     pub notes: Vec<Note>,
     pub line: usize,
@@ -263,6 +264,15 @@ pub enum AnswerSpace {
     Authored,
 }
 
+const TABLE_CELL_MARK: &str = "\n• ";
+
+pub(crate) fn table_front(title: Option<&str>, cell: &str) -> String {
+    match title {
+        Some(title) => format!("{title}{TABLE_CELL_MARK}{cell}"),
+        None => cell.to_string(),
+    }
+}
+
 impl Card {
     pub fn plain(
         subject: Arc<str>,
@@ -301,7 +311,7 @@ impl Card {
             front_steps: Vec::new(),
             rect_step: None,
             section_context: Vec::new(),
-            context: Vec::new(),
+            table_title: None,
             back,
             notes,
             line,
@@ -350,11 +360,20 @@ impl Card {
             .replace(crate::parser::ANSWER, "")
     }
 
+    fn table_cell(&self) -> &str {
+        self.table_title
+            .as_deref()
+            .and_then(|title| self.front.strip_prefix(title))
+            .and_then(|rest| rest.strip_prefix(TABLE_CELL_MARK))
+            .unwrap_or(&self.front)
+    }
+
     pub fn reversed(&self) -> Card {
+        let back = self.back.join("\n");
         let mut card = Card::plain(
             Arc::clone(&self.subject),
-            self.back.join("\n"),
-            vec![self.front.clone()],
+            table_front(self.table_title.as_deref(), &back),
+            vec![self.table_cell().to_string()],
             self.notes.clone(),
             self.line,
         );
@@ -377,7 +396,7 @@ impl Card {
         card.row = self.row.clone();
         card.sampling = self.sampling;
         card.ignored = self.ignored;
-        card.context = self.context.clone();
+        card.table_title = self.table_title.clone();
         card.reversed = true;
         // Reuses the forward card's fingerprint instead of recomputing over swapped sides: one
         // authored card is one content unit.

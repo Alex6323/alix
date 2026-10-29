@@ -7,7 +7,8 @@
     }
   ],
   "back": [
-    "\\frac{1"
+    "\\frac{1",
+    "$$y^2$$"
   ],
   "back_runs": [
     [
@@ -17,6 +18,15 @@
           "error": "ParseError: unexpected end"
         },
         "text": "\\frac{1"
+      }
+    ],
+    [
+      {
+        "math": {
+          "display": true,
+          "svg": "<svg><path d=\"M1 1\"/></svg>"
+        },
+        "text": "y^2"
       }
     ]
   ],
@@ -36,20 +46,6 @@
     }
   ],
   "citations": [],
-  "context": [
-    "$$y^2$$"
-  ],
-  "context_runs": [
-    [
-      {
-        "math": {
-          "display": true,
-          "svg": "<svg><path d=\"M1 1\"/></svg>"
-        },
-        "text": "y^2"
-      }
-    ]
-  ],
   "crumb": null,
   "front": "x^2",
   "front_runs": [

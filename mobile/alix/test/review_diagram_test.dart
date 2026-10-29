@@ -39,8 +39,6 @@ void main() {
           front: 'Topic',
           frontRuns: const [],
           frontUnits: [sentence('Topic'), ...units],
-          context: const [],
-          contextRuns: const [],
           back: const ['answer'],
           backRuns: const [[]],
           backUnits: const [],
@@ -151,8 +149,6 @@ void main() {
       final card = ReviewCardModel(
         front: 'Question',
         frontRuns: const [],
-        context: const [],
-        contextRuns: const [],
         back: back,
         backRuns: [for (final _ in back) const <InlineRunModel>[]],
         answerSteps: [
@@ -260,8 +256,6 @@ void main() {
           alt: 'flowchart LR\n A-->B',
         ),
       ],
-      context: const [],
-      contextRuns: const [],
       back: const ['answer'],
       backRuns: const [[]],
       backUnits: const [],
@@ -346,8 +340,6 @@ void main() {
     ReviewCardModel card() => ReviewCardModel(
       front: 'Topic\n```mermaid\nflowchart LR\n  A[x] --> B[y]\n```',
       frontRuns: const [],
-      context: const [],
-      contextRuns: const [],
       frontUnits: [
         ReviewSentenceModel(text: 'Topic', runs: const []),
         ReviewDiagramModel(
@@ -461,8 +453,6 @@ void main() {
     final card = ReviewCardModel(
       front: 'Question',
       frontRuns: const [],
-      context: const [],
-      contextRuns: const [],
       back: const ['```mermaid', 'flowchart LR', ' A-->B', '```'],
       backRuns: const [[], [], [], []],
       answerSteps: const [ReviewAnswerLineModel(backFrom: 0, backTo: 1), ReviewAnswerLineModel(backFrom: 1, backTo: 2), ReviewAnswerLineModel(backFrom: 2, backTo: 3), ReviewAnswerLineModel(backFrom: 3, backTo: 4)],

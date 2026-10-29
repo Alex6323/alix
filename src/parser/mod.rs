@@ -2673,9 +2673,15 @@ fn build_table_cards_inner(
         }
         let note = row.cells.get(2).filter(|cell| !cell.is_empty()).cloned();
         let notes = Vec::from_iter(note.map(Note::plain));
-        let mut card = Card::plain(Arc::clone(subject), front, vec![back], notes, row.line);
+        let mut card = Card::plain(
+            Arc::clone(subject),
+            crate::card::table_front(raw.title.as_deref(), &front),
+            vec![back],
+            notes,
+            row.line,
+        );
         card.deck_id = Arc::clone(deck_id);
-        card.context = raw.title.iter().cloned().collect();
+        card.table_title = raw.title.clone();
         // An unstamped row is an unstamped card: composing an id from the
         // container alone would collide every such row on the base id.
         if let Some(stamp) = row.stamp {
@@ -8579,7 +8585,7 @@ a
         let card = &deck.cards[0];
         assert!(card.is_blank_card(), "{card:?}");
         assert_eq!(vec!["alpha"], card.back);
-        assert!(card.context.is_empty(), "{:?}", card.context);
+        assert!(card.table_title.is_none(), "{:?}", card.table_title);
 
         let rows = [
             ("a cover alone", "## q\n<!-- cover: span hidden=\"q\" -->\n"),
@@ -8912,7 +8918,10 @@ the answer
         assert_eq!("hund", first.front);
         assert_eq!(vec!["dog"], first.back);
         assert_eq!(None, first.only_note());
-        assert!(first.context.is_empty(), "an untitled table has no context");
+        assert!(
+            first.table_title.is_none(),
+            "an untitled table has no context"
+        );
         assert_eq!(Some(CONTAINER), first.token.as_deref());
         assert_eq!(Some("4k2x9w"), first.row.as_deref());
         assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), first.id());
@@ -8932,7 +8941,7 @@ the answer
         assert_eq!(2, deck.cards.len());
         assert_eq!(Some("care"), deck.cards[0].only_note());
         assert_eq!(None, deck.cards[1].only_note());
-        assert!(deck.cards[0].context.is_empty());
+        assert!(deck.cards[0].table_title.is_none());
     }
 
     #[test]
@@ -8970,7 +8979,10 @@ the answer
     fn a_bare_heading_directly_above_a_table_titles_it_instead_of_erroring() {
         let deck = parse("## q\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n");
         assert_eq!(1, deck.cards.len());
-        assert_eq!(vec!["q"], deck.cards[0].context);
+        assert_eq!(
+            "q\n• x", deck.cards[0].front,
+            "the title asks, the cell follows as a bullet"
+        );
     }
 
     #[test]
@@ -9145,8 +9157,8 @@ the answer
             "| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n| c | d |\n|---|---|\n| z | w |\n<!-- cards -->\n",
         );
         assert_eq!(2, deck.cards.len());
-        assert!(deck.cards[0].context.is_empty());
-        assert!(deck.cards[1].context.is_empty());
+        assert!(deck.cards[0].table_title.is_none());
+        assert!(deck.cards[1].table_title.is_none());
     }
 
     #[test]
@@ -9156,7 +9168,7 @@ the answer
         );
         let deck = parse(&text);
         assert_eq!(1, deck.cards.len(), "the heading is a title, not a card");
-        assert_eq!(vec!["Verbs of arguing"], deck.cards[0].context);
+        assert_eq!("Verbs of arguing\n• x", deck.cards[0].front);
         assert_eq!(Some(format!("{CONTAINER}-t4k2x9w")), deck.cards[0].id());
     }
 
@@ -9166,7 +9178,7 @@ the answer
         assert_eq!(2, deck.cards.len());
         assert_eq!("q", deck.cards[0].front);
         assert_eq!(vec!["answer"], deck.cards[0].back);
-        assert!(deck.cards[1].context.is_empty(), "the table is untitled");
+        assert!(deck.cards[1].table_title.is_none(), "the table is untitled");
     }
 
     #[test]
@@ -9203,7 +9215,7 @@ the answer
     fn a_blank_line_between_title_and_table_still_titles() {
         let deck = parse("## Title\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n");
         assert_eq!(1, deck.cards.len());
-        assert_eq!(vec!["Title"], deck.cards[0].context);
+        assert_eq!("Title\n• x", deck.cards[0].front);
     }
 
     #[test]
@@ -10801,7 +10813,7 @@ the answer
             );
             for card in &deck.cards {
                 assert!(
-                    card.context.is_empty(),
+                    card.table_title.is_none(),
                     "{label}: a blank card has no context"
                 );
                 for hidden in &card.back {

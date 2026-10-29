@@ -46,7 +46,6 @@ export function createStudy({
     diagramImage,
     maskedImage,
     clearLegendSides,
-    appendContext,
     computedStyle,
     crumbStrip,
     deckEl,
@@ -481,8 +480,6 @@ export function createStudy({
       q.classList.add("sectioned");
       q.addEventListener("click", openSection);
     }
-    // A context line labels the front (a card table's title) above it.
-    appendContext(q, c.context, c.context_runs, [], "context label", contextDiagram);
     questionFilled = filledNow();
     questionNode = questionEl(c, questionFilled, contextDiagram);
     q.appendChild(questionNode);
@@ -511,7 +508,6 @@ export function createStudy({
       moreHint: false, // browse has no overflow marker
     });
 
-    appendContext(q, c.context, c.context_runs, [], "context label", browseDiagram);
     q.appendChild(questionEl(c, (c.front_steps || []).length, browseDiagram));
     appendImages(q, c.images);
     fitQuestion(q);

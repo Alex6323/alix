@@ -19,8 +19,6 @@ function state() {
       front: "Why is the sky blue?",
       front_runs: [{ text: "Why is the sky blue?" }],
       front_units: null,
-      context: [],
-      context_runs: [],
       back: ["Rayleigh scattering"],
       back_runs: [[{ text: "Rayleigh scattering" }]],
       back_units: [{ kind: "sentence", text: "Rayleigh scattering" }],

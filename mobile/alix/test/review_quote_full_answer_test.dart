@@ -17,8 +17,6 @@ List<InlineRunModel> _runs(String text) => [
 ReviewCardModel _quoteCard({required bool reshaped}) => ReviewCardModel(
   front: 'Question',
   frontRuns: const [],
-  context: const [],
-  contextRuns: const [],
   back: const ['the claim', '> supporting quotation', '> continued quotation'],
   backRuns: [
     _runs('the claim'),

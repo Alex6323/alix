@@ -15,10 +15,7 @@ export function createTutor({
     appendTable,
     appendRunsOrText,
     chip,
-    appendContext,
-    diagramImage,
     document: doc,
-    maskedImage,
     el,
     keys,
     label,
@@ -26,17 +23,6 @@ export function createTutor({
     notice,
     stage,
   } = ui;
-  // The tutor reference shows what the learner is being asked about with
-  // the asked label revealed; sibling and cover masks stay, because the
-  // tutor must not leak the block's other questions.
-  function referenceDiagram(unit) {
-    const img = diagramImage(unit);
-    if (img.dataset.revealedAlt) img.alt = img.dataset.revealedAlt;
-    const kept = (unit.regions || []).filter((r) => !r.reveal_on_answer);
-    if (!kept.length) return img;
-    return maskedImage(img, kept, "img");
-  }
-
   let open = false;
   let data = {
     transcript: [],
@@ -330,14 +316,6 @@ export function createTutor({
         if (card.front_runs) appendRuns(front, card.front_runs);
         else front.textContent = card.front;
         reference.appendChild(front);
-        appendContext(
-          reference,
-          card.context,
-          card.context_runs,
-          [],
-          "ask-card-ctx",
-          referenceDiagram,
-        );
         // Walk the answer's steps, so a quotation or a table shows as its
         // rendered block rather than as raw markers.
         for (const step of card.answer_steps || []) {

@@ -312,7 +312,6 @@ class ReviewCardView extends StatelessWidget {
     AlixTokens tokens, {
     required bool answered,
   }) {
-    final theme = Theme.of(context);
     final rectsLifted =
         answered ||
         questionAt(
@@ -328,10 +327,6 @@ class ReviewCardView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        ..._contextLines(
-          card,
-          style: theme.textTheme.labelMedium?.copyWith(color: tokens.dim),
-        ),
         _questionTap(card, _front(context, card, tokens, answered: answered)),
         for (final image in card.images) ...[
           const SizedBox(height: 12),
@@ -724,20 +719,6 @@ class ReviewCardView extends StatelessWidget {
           : CrossAxisAlignment.stretch,
       children: children,
     );
-  }
-
-  List<Widget> _contextLines(ReviewCardModel card, {TextStyle? style}) {
-    return [
-      for (final (index, line) in card.context.indexed) ...[
-        runsOrText(
-          index < card.contextRuns.length ? card.contextRuns[index] : null,
-          line,
-          textAlign: TextAlign.center,
-          style: style,
-        ),
-        const SizedBox(height: 8),
-      ],
-    ];
   }
 
   // The ONE fence walk (the same alignment law as the web clients):

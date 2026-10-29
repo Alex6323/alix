@@ -10,8 +10,6 @@ ReviewCardModel _card() {
   return ReviewCardModel(
     front: 'Which are even?',
     frontRuns: const [],
-    context: const [],
-    contextRuns: const [],
     back: const ['two', 'four'],
     backRuns: const [[], []],
     backUnits: const [],

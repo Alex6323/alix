@@ -127,7 +127,6 @@ struct StagedDeck {
 struct CardIdentity {
     id: String,
     front: String,
-    context: Vec<String>,
     back: Vec<String>,
     givens: Vec<String>,
     images: Vec<String>,
@@ -884,7 +883,6 @@ fn card_identity(card: &Card) -> Result<CardIdentity> {
     Ok(CardIdentity {
         id: card.id().unwrap_or_default(),
         front: card.front.clone(),
-        context: card.context.clone(),
         back: card.back.clone(),
         givens: card.givens.clone(),
         images: image_identities(&card.images)?,

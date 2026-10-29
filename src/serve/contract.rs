@@ -116,8 +116,6 @@ fn statedto_review_phase_wire_shape() {
             section_context: Vec::new(),
             section_context_runs: Vec::new(),
             section_context_units: Vec::new(),
-            context: vec!["Chapter 4".to_string()],
-            context_runs: vec![crate::inline::parse_inline("Chapter 4")],
             back: vec!["every value has one owner".to_string()],
             back_runs: vec![crate::inline::parse_inline("every value has one owner")],
             back_units: vec![ContentUnit::Sentence {
@@ -277,8 +275,6 @@ fn statedto_review_phase_wire_shape() {
                     {"text": "ownership", "bold": true},
                     {"text": "?"}
                 ],
-                "context": ["Chapter 4"],
-                "context_runs": [[{"text": "Chapter 4"}]],
                 "front_steps": [],
                 "back": ["every value has one owner"],
                 "back_runs": [[{"text": "every value has one owner"}]],
@@ -716,8 +712,6 @@ fn walkdto_front_phase_wire_shape() {
                 "id": "card-9w2c7xkq4m",
                 "front": "capital of France",
                 "front_runs": [{"text": "capital of France"}],
-                "context": [],
-                "context_runs": [],
                 "front_steps": [],
                 "back": ["Paris"],
                 "back_runs": [[{"text": "Paris"}]],
@@ -877,8 +871,8 @@ fn examdto_cooldown_phase_wire_shape() {
 
 /// Spec law 14, the wire half: a card under a section carries the
 /// `section_context` triple. The fence collapses into ONE code unit, and the
-/// fence's own lines keep the per-line run projection `context_runs` already
-/// uses, so a client skips them in prose and renders the unit instead. Math
+/// fence's own lines keep their per-line run projection, so a client skips
+/// them in prose and renders the unit instead. Math
 /// is asserted in the lib's projection law, never pinned here: a rendered SVG
 /// is the renderer's business, not the wire's.
 /// Spec law 7: showing a section costs nothing and asks nobody. It rides the
@@ -944,8 +938,6 @@ fn carddto_sectioned_wire_shape() {
                 }
             ],
             "citations": [],
-            "context": [],
-            "context_runs": [],
             "front_steps": [],
             "crumb": null,
             "front": "q",
@@ -1043,8 +1035,6 @@ fn carddto_wire_shape() {
             section_context: Vec::new(),
             section_context_runs: Vec::new(),
             section_context_units: Vec::new(),
-            context: Vec::new(),
-            context_runs: Vec::new(),
             back: vec!["Use **x**".to_string(), "France".to_string()],
             back_runs: vec![
                 crate::inline::parse_inline("Use `**x**`"),
@@ -1111,8 +1101,6 @@ fn carddto_wire_shape() {
                     ]
                 }
             ],
-            "context": [],
-            "context_runs": [],
             "front_steps": [],
             "back": ["Use **x**", "France"],
             "back_runs": [
@@ -1188,10 +1176,8 @@ fn carddto_math_wire_shape() {
         section_context: Vec::new(),
         section_context_runs: Vec::new(),
         section_context_units: Vec::new(),
-        context: vec!["$$y^2$$".to_string()],
-        context_runs: vec![vec![display]],
-        back: vec![r"\frac{1".to_string()],
-        back_runs: vec![vec![error]],
+        back: vec![r"\frac{1".to_string(), "$$y^2$$".to_string()],
+        back_runs: vec![vec![error], vec![display]],
         back_units: vec![ContentUnit::Sentence {
             text: r"\frac{1".to_string(),
             runs: vec![InlineRun {
@@ -1228,21 +1214,19 @@ fn carddto_math_wire_shape() {
                     "svg": "<svg><path d=\"M0 0\"/></svg>"
                 }
             }],
-            "context": ["$$y^2$$"],
-            "context_runs": [[{
-                "text": "y^2",
-                "math": {
-                    "display": true,
-                    "svg": "<svg><path d=\"M1 1\"/></svg>"
-                }
-            }]],
             "front_steps": [],
-            "back": ["\\frac{1"],
+            "back": ["\\frac{1", "$$y^2$$"],
             "back_runs": [[{
                 "text": "\\frac{1",
                 "math": {
                     "display": false,
                     "error": "ParseError: unexpected end"
+                }
+            }], [{
+                "text": "y^2",
+                "math": {
+                    "display": true,
+                    "svg": "<svg><path d=\"M1 1\"/></svg>"
                 }
             }]],
             "back_units": [{
@@ -1280,8 +1264,6 @@ fn carddto_quote_wire_shape() {
         section_context: Vec::new(),
         section_context_runs: Vec::new(),
         section_context_units: Vec::new(),
-        context: Vec::new(),
-        context_runs: Vec::new(),
         back: vec![
             "That it shows the presence of bugs.".to_string(),
             "> Program testing can be used to show the presence of bugs,".to_string(),
@@ -1332,8 +1314,6 @@ fn carddto_quote_wire_shape() {
             "id": "card-8k3p1vzr5n",
             "front": "What did Dijkstra say about testing?",
             "front_runs": [{"text": "What did Dijkstra say about testing?"}],
-            "context": [],
-            "context_runs": [],
             "front_steps": [],
             "back": [
                 "That it shows the presence of bugs.",
@@ -1414,8 +1394,6 @@ fn carddto_table_wire_shape() {
         section_context: Vec::new(),
         section_context_runs: Vec::new(),
         section_context_units: Vec::new(),
-        context: Vec::new(),
-        context_runs: Vec::new(),
         back: vec![
             "| a | b | c | d |".to_string(),
             "| --- | :-- | :-: | --: |".to_string(),
@@ -1446,8 +1424,6 @@ fn carddto_table_wire_shape() {
             "id": "card-9w2c7xkq4m",
             "front": "Name the columns",
             "front_runs": [{"text": "Name the columns"}],
-            "context": [],
-            "context_runs": [],
             "front_steps": [],
             "back": [
                 "| a | b | c | d |",
@@ -1804,8 +1780,6 @@ fn browsedto_wire_shape() {
             section_context: Vec::new(),
             section_context_runs: Vec::new(),
             section_context_units: Vec::new(),
-            context: Vec::new(),
-            context_runs: Vec::new(),
             back: vec!["a".to_string()],
             back_runs: vec![crate::inline::parse_inline("a")],
             back_units: vec![ContentUnit::Sentence {
@@ -1834,8 +1808,6 @@ fn browsedto_wire_shape() {
                 "id": "card-9w2c7xkq4m",
                 "front": "q",
                 "front_runs": [{"text": "q"}],
-                "context": [],
-                "context_runs": [],
                 "front_steps": [],
                 "back": ["a"],
                 "back_runs": [[{"text": "a"}]],
@@ -3068,8 +3040,6 @@ fn carddto_blank_wire_shape() {
                 ],
                 "rects_revealed": false
             }],
-            "context": [],
-            "context_runs": [],
             "back": ["lunate"],
             "back_runs": [[{"text": "lunate"}]],
             "back_units": [{

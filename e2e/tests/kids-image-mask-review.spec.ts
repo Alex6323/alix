@@ -22,8 +22,6 @@ function state(imageRegions = regions, crop = null) {
       front: "Name the marked part",
       front_runs: [{ text: "Name the marked part" }],
       front_units: null,
-      context: [],
-      context_runs: [],
       back: ["answer"],
       back_runs: [[{ text: "answer" }]],
       back_units: [{ kind: "sentence", text: "answer" }],

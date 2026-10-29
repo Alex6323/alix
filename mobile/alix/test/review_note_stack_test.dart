@@ -31,8 +31,6 @@ Widget _card(
     front: 'Question',
     frontRuns: const [],
     frontUnits: frontUnits,
-    context: const [],
-    contextRuns: const [],
     back: const ['Answer'],
     backRuns: const [[]],
     backUnits: const [],

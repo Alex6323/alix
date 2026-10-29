@@ -217,10 +217,6 @@ ReviewCardModel reviewCardFromBridge(bridge.CardView card) {
           rectsRevealed: step.rectsRevealed,
         ),
     ],
-    context: card.context,
-    contextRuns: [
-      for (final runs in card.contextRuns) inlineRunsFromBridge(runs),
-    ],
     back: card.back,
     backRuns: [for (final runs in card.backRuns) inlineRunsFromBridge(runs)],
     backUnits: [for (final unit in card.backUnits) _noteFromBridge(unit)],

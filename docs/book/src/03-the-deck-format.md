@@ -276,10 +276,13 @@ nothing between them but blank lines:
 | to refute | widerlegen  | eine These widerlegen |
 ```
 
-The heading names the group and, when present, is the row card's only
-context line; it is a title only when its body is empty, so a
-heading with an answer under it is an ordinary card that happens to be
-followed by a table. The table's directives, including its own ID, trail the
+The heading is the question every row asks: the review shows it, with the
+row's first cell beneath it as a bullet (`• to refute`), so a lowercase cell
+still reads naturally. Under `direction: both` or `direction: reverse` the
+reversed half asks the same heading with the second column's cell as its
+bullet, so write a heading that works in every direction you study. The
+heading is a title only when its body is empty, so a heading with an answer
+under it is an ordinary card that happens to be followed by a table. The table's directives, including its own ID, trail the
 table on their own lines below it; a directive on the heading line is a parse
 error.
 

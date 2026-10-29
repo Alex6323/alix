@@ -214,9 +214,6 @@ pub fn diagnostics(cards: &[Card], augment: Option<&AugmentCache>) -> Vec<MathDi
             &mut seen,
             &mut diagnostics,
         );
-        for runs in &view.context_runs {
-            collect_run_diagnostics(card.line, "context", runs, &mut seen, &mut diagnostics);
-        }
         for runs in &view.back_runs {
             collect_run_diagnostics(card.line, "answer", runs, &mut seen, &mut diagnostics);
         }

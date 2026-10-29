@@ -10,8 +10,6 @@ ReviewCardModel _card(List<String> back, {List<ReviewAnswerStepModel>? steps}) =
     ReviewCardModel(
   front: 'Question',
   frontRuns: const [],
-  context: const [],
-  contextRuns: const [],
   back: back,
   backRuns: [for (final _ in back) const []],
   backUnits: const [],

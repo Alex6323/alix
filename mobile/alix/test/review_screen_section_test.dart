@@ -269,8 +269,6 @@ void main() {
       final card = ReviewCardModel(
         front: 'q?',
         frontRuns: const [],
-        context: const [],
-        contextRuns: const [],
         back: const ['a'],
         backRuns: const [],
         backUnits: const [],

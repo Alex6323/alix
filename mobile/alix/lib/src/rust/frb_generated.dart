@@ -2597,8 +2597,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   CardView dco_decode_card_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 18)
-      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return CardView(
       front: dco_decode_String(arr[0]),
       frontRuns: dco_decode_list_inline_run(arr[1]),
@@ -2607,17 +2607,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sectionContext: dco_decode_list_String(arr[4]),
       sectionContextRuns: dco_decode_list_list_inline_run(arr[5]),
       sectionContextUnits: dco_decode_list_content_unit(arr[6]),
-      context: dco_decode_list_String(arr[7]),
-      contextRuns: dco_decode_list_list_inline_run(arr[8]),
-      back: dco_decode_list_String(arr[9]),
-      backRuns: dco_decode_list_list_inline_run(arr[10]),
-      backUnits: dco_decode_list_content_unit(arr[11]),
-      answerSteps: dco_decode_list_answer_step(arr[12]),
-      reshaped: dco_decode_bool(arr[13]),
-      note: dco_decode_list_note_view(arr[14]),
-      images: dco_decode_list_image_view(arr[15]),
-      imagesBack: dco_decode_list_image_view(arr[16]),
-      citations: dco_decode_list_String(arr[17]),
+      back: dco_decode_list_String(arr[7]),
+      backRuns: dco_decode_list_list_inline_run(arr[8]),
+      backUnits: dco_decode_list_content_unit(arr[9]),
+      answerSteps: dco_decode_list_answer_step(arr[10]),
+      reshaped: dco_decode_bool(arr[11]),
+      note: dco_decode_list_note_view(arr[12]),
+      images: dco_decode_list_image_view(arr[13]),
+      imagesBack: dco_decode_list_image_view(arr[14]),
+      citations: dco_decode_list_String(arr[15]),
     );
   }
 
@@ -4018,8 +4016,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_sectionContext = sse_decode_list_String(deserializer);
     var var_sectionContextRuns = sse_decode_list_list_inline_run(deserializer);
     var var_sectionContextUnits = sse_decode_list_content_unit(deserializer);
-    var var_context = sse_decode_list_String(deserializer);
-    var var_contextRuns = sse_decode_list_list_inline_run(deserializer);
     var var_back = sse_decode_list_String(deserializer);
     var var_backRuns = sse_decode_list_list_inline_run(deserializer);
     var var_backUnits = sse_decode_list_content_unit(deserializer);
@@ -4037,8 +4033,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sectionContext: var_sectionContext,
       sectionContextRuns: var_sectionContextRuns,
       sectionContextUnits: var_sectionContextUnits,
-      context: var_context,
-      contextRuns: var_contextRuns,
       back: var_back,
       backRuns: var_backRuns,
       backUnits: var_backUnits,
@@ -5888,8 +5882,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_String(self.sectionContext, serializer);
     sse_encode_list_list_inline_run(self.sectionContextRuns, serializer);
     sse_encode_list_content_unit(self.sectionContextUnits, serializer);
-    sse_encode_list_String(self.context, serializer);
-    sse_encode_list_list_inline_run(self.contextRuns, serializer);
     sse_encode_list_String(self.back, serializer);
     sse_encode_list_list_inline_run(self.backRuns, serializer);
     sse_encode_list_content_unit(self.backUnits, serializer);

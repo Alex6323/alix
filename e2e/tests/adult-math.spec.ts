@@ -35,7 +35,7 @@ async function openQuestionFitBrowse(page: any, request: any, cards: any[]) {
   await expect(page.locator(".region.q")).toBeVisible();
 }
 
-test("adult context blocks render paired bare math and keep unmatched openers literal", async ({ page, request }) => {
+test("adult section blocks render paired bare math and keep unmatched openers literal", async ({ page, request }) => {
   const browseResponse = await request.post("/api/browse", {
     data: { deck: "animals/math.md" },
   });
@@ -48,15 +48,15 @@ test("adult context blocks render paired bare math and keep unmatched openers li
   expect(mathUnit, "the fixture must provide one reusable display-math unit").toBeTruthy();
 
   await page.evaluate(async (unit) => {
-    const { appendContext, el } = await import("/review.js");
+    const { appendSectionContext, el } = await import("/review.js");
     const audit = el("div", "context-block-audit");
     for (const [name, lines, units] of [
-      ["bare", ["$$", unit.text, "$$"], [unit]],
-      ["fence", ["```math", unit.text, "```"], [unit]],
-      ["unclosed", ["$$", unit.text], []],
+      ["bare", ["Heading", "$$", unit.text, "$$"], [unit]],
+      ["fence", ["Heading", "```math", unit.text, "```"], [unit]],
+      ["unclosed", ["Heading", "$$", unit.text], []],
     ]) {
       const surface = el("section", `surface-${name}`);
-      appendContext(surface, lines, null, units);
+      appendSectionContext(surface, lines, null, units);
       audit.appendChild(surface);
     }
     document.getElementById("stage")!.replaceChildren(audit);
@@ -246,10 +246,8 @@ test("a tall display formula on the question side scales into the capped questio
     front: `Topic\n${inlineRun.text}`,
     front_runs: [{ text: "Topic" }, { text: "\n" }, formula],
     front_units: null,
-    context: [],
-    context_runs: [],
   };
-  const frontCard = { ...explain, front: inlineRun.text, front_runs: [formula], front_units: null, context: [], context_runs: [] };
+  const frontCard = { ...explain, front: inlineRun.text, front_runs: [formula], front_units: null };
   await page.route("**/api/browse", (route) =>
     route.fulfill({ json: { cards: [linedCard, frontCard], label: "tall formulas" } }),
   );
@@ -293,8 +291,6 @@ test("two display formulas share the available question height", async ({ page, 
     front: `${formula.text}\n${formula.text}`,
     front_runs: [formula, { text: "\n" }, formula],
     front_units: null,
-    context: [],
-    context_runs: [],
   };
   await openQuestionFitBrowse(page, request, [card]);
 
@@ -328,8 +324,6 @@ test("a question image remains visible beside a fitted formula", async ({ page, 
     front: formula.text,
     front_runs: [formula],
     front_units: null,
-    context: [],
-    context_runs: [],
     images: [{ src: TALL_IMAGE, alt: "geometry probe" }],
   };
   await openQuestionFitBrowse(page, request, [card]);

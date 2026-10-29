@@ -37,8 +37,6 @@ Widget _card({
     frontRuns: [
       InlineRunModel(text: _question, bold: false, italic: false, code: false),
     ],
-    context: const [],
-    contextRuns: const [],
     back: answer,
     backRuns: [for (final _ in answer) const []],
     backUnits: [for (final text in answer) _sentence(text)],

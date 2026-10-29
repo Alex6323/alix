@@ -125,6 +125,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A titled card table now asks its title: the `##` heading above the table is
+  the question every row shows, with the row's first cell beneath it as a
+  bullet, instead of a dim label over the cell. The reversed half of a
+  `direction: both` or `reverse` table asks the same title with the second
+  column's cell as its bullet. The card JSON drops `context` and
+  `context_runs`; the title now arrives inside `front`.
 - On the web, a card's section context opens as a sheet that slides up from
   the bottom of the page, as on the phone, in place of the panel that sat
   under the question; it takes only the room its prose needs. The sheet

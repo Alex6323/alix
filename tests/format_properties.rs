@@ -281,11 +281,14 @@ proptest! {
         let text = format!("{DECK_HEAD}\n{}", render_table(&table));
         let deck = alix::parser::parse("deck.md", &text).expect("a generated table parses");
         prop_assert_eq!(table.rows.len(), deck.cards.len());
-        let expected_context: Vec<String> = table.title.iter().cloned().collect();
         for (row, card) in table.rows.iter().zip(&deck.cards) {
-            prop_assert_eq!(&row.cells[0], &card.front);
+            let expected_front = match &table.title {
+                Some(title) => format!("{title}\n• {}", row.cells[0]),
+                None => row.cells[0].clone(),
+            };
+            prop_assert_eq!(&expected_front, &card.front);
             prop_assert_eq!(&row.cells[1], &card.back[0]);
-            prop_assert_eq!(&expected_context, &card.context);
+            prop_assert_eq!(&table.title, &card.table_title);
             match (&row.stamp, &table.container) {
                 (Some(stamp), Some(container)) => {
                     prop_assert_eq!(Some(format!("{container}-t{stamp}")), card.id());

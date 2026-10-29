@@ -101,9 +101,6 @@ pub struct CardView {
     /// Fence-shaped units only, in fence order.
     #[serde(default)]
     pub section_context_units: Vec<ContentUnit>,
-    pub context: Vec<String>,
-    #[serde(default)]
-    pub context_runs: Vec<Vec<InlineRun>>,
     pub back: Vec<String>,
     #[serde(default)]
     pub back_runs: Vec<Vec<InlineRun>>,
@@ -233,11 +230,6 @@ impl CardView {
             })
             .collect();
         projector.set_holes(false);
-        let context_runs = card
-            .context
-            .iter()
-            .map(|line| projector.project(line))
-            .collect();
         let lines = card.answer_lines(space);
         let (back, back_runs) = project_lines(lines, projector);
         let back_units = render::answer_units_with(lines, projector, &card.resolved_diagrams);
@@ -255,8 +247,6 @@ impl CardView {
             section_context: card.section_context.clone(),
             section_context_runs,
             section_context_units: render::section_units(&card.section_context),
-            context: card.context.clone(),
-            context_runs,
             back,
             back_runs,
             back_units,
@@ -1480,7 +1470,7 @@ $$
 
     #[test]
     fn card_view_projects_math_across_every_card_surface() {
-        let mut card = Card::plain(
+        let card = Card::plain(
             std::sync::Arc::from("deck.md"),
             "Find $x^2$".to_string(),
             vec![
@@ -1492,18 +1482,9 @@ $$
             vec![crate::card::Note::plain("Remember $x^2$.".to_string())],
             1,
         );
-        card.context = vec!["Use $a + b$".to_string()];
-
         let view = CardView::from(&card);
         assert_eq!(view.front, "Find x^2");
         assert!(view.front_runs[1].math.is_some());
-        assert_eq!(view.context, ["Use $a + b$"]);
-        let context_math = view.context_runs[0]
-            .iter()
-            .find(|run| run.math.is_some())
-            .unwrap();
-        assert_eq!(context_math.text, "a + b");
-        assert!(context_math.math.as_ref().unwrap().svg.is_some());
         assert_eq!(view.back[0], "x^2");
         assert!(view.back_runs[0][0].math.as_ref().unwrap().display);
         assert_eq!(view.back[2], "$x^2$");
@@ -1516,14 +1497,13 @@ $$
 
     #[test]
     fn one_card_view_renders_one_copy_of_a_repeated_formula() {
-        let mut card = Card::plain(
+        let card = Card::plain(
             std::sync::Arc::from("deck.md"),
             "$x^2$".to_string(),
             vec!["$x^2$".to_string()],
             vec![crate::card::Note::plain("$x^2$".to_string())],
             1,
         );
-        card.context = vec!["$x^2$".to_string()];
         let before = crate::math::thread_render_count();
         let view = CardView::from(&card);
         assert_eq!(crate::math::thread_render_count() - before, 1);

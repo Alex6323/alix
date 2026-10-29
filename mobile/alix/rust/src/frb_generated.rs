@@ -2692,8 +2692,6 @@ const _: fn() = || {
         let _: Vec<String> = CardView.section_context;
         let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.section_context_runs;
         let _: Vec<crate::api::review::ContentUnit> = CardView.section_context_units;
-        let _: Vec<String> = CardView.context;
-        let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.context_runs;
         let _: Vec<String> = CardView.back;
         let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.back_runs;
         let _: Vec<crate::api::review::ContentUnit> = CardView.back_units;
@@ -3034,9 +3032,6 @@ impl SseDecode for crate::api::review::CardView {
             <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_sectionContextUnits =
             <Vec<crate::api::review::ContentUnit>>::sse_decode(deserializer);
-        let mut var_context = <Vec<String>>::sse_decode(deserializer);
-        let mut var_contextRuns =
-            <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_back = <Vec<String>>::sse_decode(deserializer);
         let mut var_backRuns = <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
         let mut var_backUnits = <Vec<crate::api::review::ContentUnit>>::sse_decode(deserializer);
@@ -3054,8 +3049,6 @@ impl SseDecode for crate::api::review::CardView {
             section_context: var_sectionContext,
             section_context_runs: var_sectionContextRuns,
             section_context_units: var_sectionContextUnits,
-            context: var_context,
-            context_runs: var_contextRuns,
             back: var_back,
             back_runs: var_backRuns,
             back_units: var_backUnits,
@@ -4912,8 +4905,6 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CardView> 
             self.0.section_context.into_into_dart().into_dart(),
             self.0.section_context_runs.into_into_dart().into_dart(),
             self.0.section_context_units.into_into_dart().into_dart(),
-            self.0.context.into_into_dart().into_dart(),
-            self.0.context_runs.into_into_dart().into_dart(),
             self.0.back.into_into_dart().into_dart(),
             self.0.back_runs.into_into_dart().into_dart(),
             self.0.back_units.into_into_dart().into_dart(),
@@ -6281,8 +6272,6 @@ impl SseEncode for crate::api::review::CardView {
             serializer,
         );
         <Vec<crate::api::review::ContentUnit>>::sse_encode(self.section_context_units, serializer);
-        <Vec<String>>::sse_encode(self.context, serializer);
-        <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.context_runs, serializer);
         <Vec<String>>::sse_encode(self.back, serializer);
         <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.back_runs, serializer);
         <Vec<crate::api::review::ContentUnit>>::sse_encode(self.back_units, serializer);

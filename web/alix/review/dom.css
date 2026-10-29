@@ -15,8 +15,6 @@
   .front-text.topic { font-size: clamp(0.95rem, 2vw, 1.1rem); font-weight: 500; color: var(--dim); letter-spacing: 0.01em; }
   .context { color: var(--bolt); font-family: var(--mono); white-space: pre-wrap;
     font-size: clamp(1.15rem, 3vw, 1.45rem); line-height: 1.5; margin-top: 10px; }
-  .context.label { color: var(--dim); font-size: clamp(0.8rem, 1.8vw, 0.92rem);
-    letter-spacing: 0.04em; text-transform: none; margin: 0 0 6px; line-height: 1.3; }
   .section-heading { color: var(--ink); font-family: var(--sans); font-size: clamp(1.05rem, 2.6vw, 1.3rem);
     font-weight: 600; line-height: 1.35; margin: 0 0 10px; overflow-wrap: anywhere; }
   .section-prose { color: var(--dim); font-family: var(--sans); font-size: clamp(0.95rem, 2.2vw, 1.08rem);
