@@ -8,6 +8,21 @@ import 'package:alix_mobile/theme.dart';
 
 const _mono = 'IBM Plex Mono';
 
+final _codeToken = RegExp(r'[^\p{L}\p{M}\p{N}_\s]+', unicode: true);
+final _space = RegExp(r'\s', unicode: true);
+
+List<String> codeSegments(String code) {
+  final segments = <String>[];
+  var start = 0;
+  for (final token in _codeToken.allMatches(code)) {
+    if (token.end == code.length || _space.hasMatch(code[token.end])) continue;
+    segments.add(code.substring(start, token.end));
+    start = token.end;
+  }
+  segments.add(code.substring(start));
+  return segments;
+}
+
 class InlineRuns extends StatelessWidget {
   const InlineRuns({
     super.key,
@@ -131,11 +146,23 @@ class InlineRuns extends StatelessWidget {
     if (run.sub || run.sup) {
       return [_scriptSpan(run, codeColor, veiled)];
     }
+    final breakable = run.code ? _withCodeBreaks(run) : run;
     if (!contextHoles) {
-      return [_text(run.text, _runStyle(run, codeColor), veiled)];
+      return [_text(breakable.text, _runStyle(run, codeColor), veiled)];
     }
-    return _contextSpans(run, codeColor, veiled);
+    return _contextSpans(breakable, codeColor, veiled);
   }
+
+  InlineRunModel _withCodeBreaks(InlineRunModel run) => InlineRunModel(
+    text: codeSegments(run.text).join('\u200B'),
+    bold: run.bold,
+    italic: run.italic,
+    strike: run.strike,
+    code: run.code,
+    link: run.link,
+    ins: run.ins,
+    answer: run.answer,
+  );
 
   InlineSpan _scriptSpan(InlineRunModel run, Color codeColor, bool veiled) {
     final Widget text = contextHoles && _holeMarker.hasMatch(run.text)

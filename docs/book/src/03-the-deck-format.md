@@ -58,7 +58,10 @@ Card fronts, answer lines, and note prose support `**bold**`, `*italic*` or
 `_italic_`, `~~strikethrough~~` (the double-tilde pair exactly; a single or
 triple tilde run stays ordinary text), and inline `` `code` ``. Inline code is
 verbatim, so
-`` `**literal**` `` displays the asterisks instead of bold text.
+`` `**literal**` `` displays the asterisks instead of bold text. A long
+inline code run may wrap after its punctuation, so `Ledger::get_public_key`
+can end one line at `Ledger::` and continue with `get_public_key`; a word
+inside the run never splits unless it is wider than the whole line.
 
 Formatting has two projections: styled display and plain content. Grading uses
 the plain content, so type `Paris`, not `**Paris**`. To keep emphasis markers

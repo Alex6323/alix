@@ -1,0 +1,14 @@
+[
+  { "code": "Ledger::get_public_key", "segments": ["Ledger::", "get_public_key"] },
+  { "code": "client.transaction_builder(sender);", "segments": ["client.", "transaction_builder(", "sender);"] },
+  { "code": "debug!(\"{tb:?}\")", "segments": ["debug!(\"{", "tb:?}\")"] },
+  { "code": "path/to/file.rs", "segments": ["path/", "to/", "file.", "rs"] },
+  { "code": "x->y", "segments": ["x->", "y"] },
+  { "code": "::std", "segments": ["::", "std"] },
+  { "code": "a -> b", "segments": ["a -> b"] },
+  { "code": "let tb = x", "segments": ["let tb = x"] },
+  { "code": "snake_case_name", "segments": ["snake_case_name"] },
+  { "code": "größe::wert", "segments": ["größe::", "wert"] },
+  { "code": "x", "segments": ["x"] },
+  { "code": "...", "segments": ["..."] }
+]

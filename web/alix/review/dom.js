@@ -31,13 +31,32 @@ export function el(tag, cls, text) {
   return node;
 }
 
-function styledRunNode(run, text) {
-  let node = document.createTextNode(text);
-  if (run.code) {
-    const code = document.createElement("code");
-    code.appendChild(node);
-    node = code;
+const CODE_TOKEN = /[^\p{L}\p{M}\p{N}_\s]+/gu;
+
+function codeSegments(code) {
+  const segments = [];
+  let start = 0;
+  for (const token of code.matchAll(CODE_TOKEN)) {
+    const end = token.index + token[0].length;
+    if (end === code.length || /\s/u.test(code[end])) continue;
+    segments.push(code.slice(start, end));
+    start = end;
   }
+  segments.push(code.slice(start));
+  return segments;
+}
+
+function codeNode(text) {
+  const code = document.createElement("code");
+  codeSegments(text).forEach((segment, index) => {
+    if (index > 0) code.appendChild(document.createElement("wbr"));
+    code.appendChild(document.createTextNode(segment));
+  });
+  return code;
+}
+
+function styledRunNode(run, text) {
+  let node = run.code ? codeNode(text) : document.createTextNode(text);
   if (run.link) {
     const link = document.createElement("a");
     link.className = "autolink";

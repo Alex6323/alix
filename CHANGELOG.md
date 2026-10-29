@@ -125,12 +125,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A long inline code run wraps after its punctuation (`::`, `.`, `(`, `/`
+  and the like) on the web, the children's page and the phone, instead of
+  splitting an identifier mid-word, so `Ledger::get_public_key` breaks as
+  `Ledger::` and `get_public_key`. Words inside the run split only when
+  wider than the line.
+
 - A titled card table now asks its title: the `##` heading above the table is
   the question every row shows, with the row's first cell beneath it as a
   bullet, instead of a dim label over the cell. The reversed half of a
   `direction: both` or `reverse` table asks the same title with the second
   column's cell as its bullet. The card JSON drops `context` and
   `context_runs`; the title now arrives inside `front`.
+
 - On the web, a card's section context opens as a sheet that slides up from
   the bottom of the page, as on the phone, in place of the panel that sat
   under the question; it takes only the room its prose needs. The sheet
@@ -204,7 +211,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   which case they reuse that key. `alix deck generate` from a local file or
   folder does the same for its facts deck, beside the unchanged `exam:` line.
   An input outside every root while `src` is taken stops the build before the
-  model is called. Prompts quote a locator path that contains a space. `alix workspace update`
+  model is called. Prompts quote a locator path that contains a space. `alix
+  workspace update`
   refuses a proposal that changes the deck's `cite:`.
 
 - Every `<!-- at: -->` locator names a `cite:` key: `<key>:<path>[:<lines>]`,
@@ -529,6 +537,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On the phone, a section too long for the screen no longer pushes its sheet
   under the status bar, where its close mark could not be reached; the sheet
   now stops at the top of the review or walk header.
+
 - `alix receive`, the web app's ZIP receive, and the phone's paired pull now
   extract archives with `zip` 9.1.2, clearing three advisories against the
   8.6.0 extractor (RUSTSEC-2026-0367, -0368, -0369: setuid bits kept, link
@@ -610,13 +619,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   loads no Claude settings files (`--setting-sources ""`), so your own
   Claude allow rules no longer apply to it. A root path with pattern
   characters, or any root on Windows, gets no file tools.
+
 - Locator errors no longer start with an ADR rule number (`rule 3: key ...`);
   the message itself names what is wrong.
+
 - `alix doctor <deck>` labeled the deck's `exam:` entries `sources:` and did not
   show its `cite:` roots. It now prints an `exam:` line and a `cite:` line
   listing each root by key, and its `settings:`, `exam:` and `cite:` lines
   include what a member deck inherits from its workspace, tagged
   `(workspace)`.
+
 - A URL trace build wrote each cited sentence into its `at:` locator, which
   does not parse. Inside a workspace the build now asks the model to copy each
   passage verbatim between two marker lines carrying a token minted per build,

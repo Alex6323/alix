@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -280,7 +283,10 @@ void main() {
       find.textContaining(r'$5 and $10', findRichText: true),
       findsOneWidget,
     );
-    expect(find.textContaining(r'$x$', findRichText: true), findsOneWidget);
+    expect(
+      find.textContaining(RegExp('\\\$\u200Bx\\\$'), findRichText: true),
+      findsOneWidget,
+    );
   });
 
   testWidgets('blanks draw as pills while math remains intact', (tester) async {
@@ -478,4 +484,45 @@ void main() {
       );
     }
   });
+
+  testWidgets(
+    'a code run breaks only after its punctuation tokens, per the shared vectors',
+    (tester) async {
+      final vectors =
+          jsonDecode(
+                File('../../tests/fixtures/code-breaks.json').readAsStringSync(),
+              )
+              as List<dynamic>;
+      for (final vector in vectors.cast<Map<String, dynamic>>()) {
+        final code = vector['code'] as String;
+        final segments = (vector['segments'] as List<dynamic>).cast<String>();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: InlineRuns(
+                runs: [textRun('see '), textRun(code, code: true), textRun('a::b')],
+                style: const TextStyle(fontSize: 18),
+              ),
+            ),
+          ),
+        );
+        final texts = tester
+            .widgetList<RichText>(
+              find.descendant(
+                of: find.byType(InlineRuns),
+                matching: find.byType(RichText),
+              ),
+            )
+            .expand((rich) => textSpans(rich.text))
+            .map((span) => span.text)
+            .whereType<String>()
+            .toList();
+        expect(
+          texts,
+          ['see ', segments.join('​'), 'a::b'],
+          reason: '`$code`: breaks after each token, prose untouched',
+        );
+      }
+    },
+  );
 }
