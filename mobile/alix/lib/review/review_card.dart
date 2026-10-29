@@ -327,7 +327,7 @@ class ReviewCardView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _questionTap(card, _front(context, card, tokens, answered: answered)),
+        _front(context, card, tokens, answered: answered),
         for (final image in card.images) ...[
           const SizedBox(height: 12),
           _cardImage(context, image, rectsLifted),
@@ -352,16 +352,6 @@ class ReviewCardView extends StatelessWidget {
             VeilInvisible(child: _cardImage(context, image, answered)),
           ],
       ],
-    );
-  }
-
-  Widget _questionTap(ReviewCardModel card, Widget front) {
-    if (!card.hasSection) return front;
-    return GestureDetector(
-      key: const ValueKey('question-tap'),
-      behavior: HitTestBehavior.opaque,
-      onTap: () => onOpenSection(card),
-      child: SizedBox(width: double.infinity, child: Center(child: front)),
     );
   }
 
@@ -1282,7 +1272,15 @@ class ReviewCardView extends StatelessWidget {
   }
 
   List<Widget> _legendChips(ReviewCardModel card) {
-    final chips = [..._modeChips(card)];
+    final chips = [
+      if (card.hasSection && !_answered(card))
+        ReviewChip(
+          label: 'Context',
+          kind: ReviewChipKind.quiet,
+          onTap: () => onOpenSection(card),
+        ),
+      ..._modeChips(card),
+    ];
     final tutor = tutorCard;
     if (serverLive && tutor != null && _attempted(card)) {
       chips.add(

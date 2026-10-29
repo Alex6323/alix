@@ -115,14 +115,18 @@ void main() {
     ], reason: 'two sections: each opens on its first item');
   });
 
-  testWidgets('a tap on the question reopens the section sheet in a walk', (
+  testWidgets('the Context chip reopens the section sheet in a walk', (
     tester,
   ) async {
     await pumpWalk(tester, _oneSection);
     expect(await dismissSheetIfOpen(tester), isTrue, reason: 'first contact');
-    await tester.tap(find.byKey(const ValueKey('question-tap')));
-    await tester.pumpAndSettle();
-    expect(sheetTitle, findsOneWidget, reason: 'the question reopens it');
+    expect(
+      find.byKey(const ValueKey('question-tap')),
+      findsNothing,
+      reason: 'the question is no tap target',
+    );
+    await tap(tester, 'Context');
+    expect(sheetTitle, findsOneWidget, reason: 'the chip reopens it');
   });
 
   testWidgets('the section sheet of a walk closes from its close mark', (

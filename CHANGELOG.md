@@ -125,6 +125,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- On the phone, a card's section opens from a quiet **Context** chip left of
+  Reveal, shown only before the reveal; a tap on the question no longer opens
+  it, and the section is not offered once the answer shows.
+
 - A long inline code run wraps after its punctuation (`::`, `.`, `(`, `/`
   and the like) on the web, the children's page and the phone, instead of
   splitting an identifier mid-word, so `Ledger::get_public_key` breaks as

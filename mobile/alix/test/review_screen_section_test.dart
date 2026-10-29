@@ -73,11 +73,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> tapQuestion(WidgetTester tester) async {
-    expect(questionTap, findsOneWidget, reason: 'the question is the tap target');
-    await tester.tap(questionTap);
-    await tester.pumpAndSettle();
-  }
+  Future<void> openContext(WidgetTester tester) => tapChip(tester, 'Context');
 
   // Card 1 introduces the section this sitting and opens the sheet by
   // itself; card 2 is the steady state: the sheet waits for a tap.
@@ -91,7 +87,7 @@ void main() {
       '---\ntitle: Roads\n---\n# $heading\n$_prose\n\n## q1?\na1\n\n## q2?\na2\n';
 
   testWidgets(
-    'a sectioned card names its section nowhere on its face: no pill, no heading, no Context chip, no prose',
+    'a sectioned card names its section only by a Context chip: no pill, no heading, no prose, no question tap',
     (tester) async {
       await pumpReview(tester, sectioned());
       await advanceToSecondCard(tester);
@@ -102,13 +98,16 @@ void main() {
         findsNothing,
         reason: 'the heading shows only inside the sheet',
       );
-      expect(find.text('Context'), findsNothing, reason: 'no chip');
+      expect(find.text('Context'), findsOneWidget, reason: 'the chip before the reveal');
       expect(
         find.text(_prose),
         findsNothing,
         reason: 'a card after the first shows the section only on demand',
       );
-      expect(questionTap, findsOneWidget, reason: 'the question is tappable');
+      expect(questionTap, findsNothing, reason: 'the question is no tap target');
+      await tester.tap(questionRegion);
+      await tester.pumpAndSettle();
+      expect(sheetTitle, findsNothing, reason: 'a tap on the question opens nothing');
     },
   );
 
@@ -125,12 +124,12 @@ void main() {
     expect(sheetTitle, findsNothing, reason: 'no sheet opened');
   });
 
-  testWidgets('tapping the question opens the section sheet with heading and prose', (
+  testWidgets('the Context chip opens the section sheet with heading and prose', (
     tester,
   ) async {
     await pumpReview(tester, sectioned());
     await advanceToSecondCard(tester);
-    await tapQuestion(tester);
+    await openContext(tester);
 
     expect(sheetTitle, findsOneWidget, reason: 'the sheet opened');
     expect((tester.widget(sheetTitle) as Text).data, _heading);
@@ -142,7 +141,7 @@ void main() {
   ) async {
     await pumpReview(tester, sectioned());
     await advanceToSecondCard(tester);
-    await tapQuestion(tester);
+    await openContext(tester);
 
     final closeMark = find.byKey(const ValueKey('section-sheet-close'));
     expect(closeMark, findsOneWidget, reason: 'the sheet shows a close mark');
@@ -167,8 +166,8 @@ void main() {
     await tester.tap(closeMark);
     await tester.pumpAndSettle();
     expect(sheetTitle, findsNothing, reason: 'the close mark dismissed the sheet');
-    await tapQuestion(tester);
-    expect(sheetTitle, findsOneWidget, reason: 'the question reopens it afterwards');
+    await openContext(tester);
+    expect(sheetTitle, findsOneWidget, reason: 'the chip reopens it afterwards');
   });
 
   testWidgets('a section too long for the screen keeps the sheet and its close mark below the status bar', (
@@ -184,7 +183,7 @@ void main() {
       '---\ntitle: Roads\n---\n# $_heading\n$longProse\n\n## q1?\na1\n\n## q2?\na2\n',
     );
     await advanceToSecondCard(tester);
-    await tapQuestion(tester);
+    await openContext(tester);
 
     final toolbarTop = tester.getRect(find.byType(AppBar)).bottom - kToolbarHeight;
     final sheet = tester.getRect(find.byType(SectionSheet));
@@ -202,7 +201,7 @@ void main() {
   });
 
   testWidgets(
-    'the first introduction from a section opens the sheet by itself once; the question reopens it, reveal does not, and the second card waits for a tap',
+    'the first introduction from a section opens the sheet by itself once; the Context chip reopens it until the reveal, and the second card waits for the chip',
     (tester) async {
       await pumpReview(tester, sectioned());
 
@@ -217,17 +216,18 @@ void main() {
       await dismissSheet(tester);
       expect(sheetTitle, findsNothing, reason: 'dismissed');
       expect(find.text(_prose), findsNothing, reason: 'the prose is never on the card face');
-      await tapQuestion(tester);
-      expect(sheetTitle, findsOneWidget, reason: 'the question is the reopen route');
+      await openContext(tester);
+      expect(sheetTitle, findsOneWidget, reason: 'the chip is the reopen route');
       await dismissSheet(tester);
 
       await tapChip(tester, 'Reveal');
       expect(sheetTitle, findsNothing, reason: 'a state rebuild on the same card does not reopen the sheet');
+      expect(find.text('Context'), findsNothing, reason: 'no context after the reveal');
 
       await tapChip(tester, 'Seen');
       expect(sheetTitle, findsNothing, reason: 'card 2 from the same section does not open the sheet');
-      await tapQuestion(tester);
-      expect(sheetTitle, findsOneWidget, reason: 'card 2 opens its section on the tap');
+      await openContext(tester);
+      expect(sheetTitle, findsOneWidget, reason: 'card 2 opens its section from the chip');
     },
   );
 
@@ -247,7 +247,7 @@ void main() {
       await tapChip(tester, 'Seen');
 
       final openedAutomatically = sheetTitle.evaluate().isNotEmpty;
-      if (!openedAutomatically) await tapQuestion(tester);
+      if (!openedAutomatically) await openContext(tester);
       expect(
         find.text('Second section.'),
         findsOneWidget,
