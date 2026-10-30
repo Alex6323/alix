@@ -2581,7 +2581,7 @@ mod tests {
         std::fs::create_dir_all(&src).unwrap();
         std::fs::write(
             src.join("spanish.md"),
-            "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q\na\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         touch(&src, "spanish.local.md");

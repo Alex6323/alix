@@ -924,7 +924,7 @@ fn resolve_row_reuses_a_shared_cache_instead_of_reparsing_on_a_second_call() {
     // resolving from the shared cache must keep the pre-rewrite answer.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("solo.md");
-    write_initialized(&path, "## f <!-- id: card-s1 -->\nb\n");
+    write_initialized(&path, "## f\nb\n<!-- id: card-s1 -->\n");
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let mut cache = DeckCache::default();
 
@@ -1389,8 +1389,14 @@ fn a_foreign_workspace_with_a_damaged_progress_root_reds_every_member() {
     let ws = dir.path().join("animals");
     std::fs::create_dir_all(ws.join("decks")).unwrap();
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
-    write_initialized(&ws.join("decks/one.md"), "## q1 <!-- id: card-qa -->\na1\n");
-    write_initialized(&ws.join("decks/two.md"), "## q2 <!-- id: card-qb -->\na2\n");
+    write_initialized(
+        &ws.join("decks/one.md"),
+        "## q1\na1\n<!-- id: card-qa -->\n",
+    );
+    write_initialized(
+        &ws.join("decks/two.md"),
+        "## q2\na2\n<!-- id: card-qb -->\n",
+    );
     let store_root = crate::workspace::store_path(&ws);
     std::fs::create_dir_all(&store_root).unwrap();
     let progress = crate::state::UserFiles::new(&store_root).progress();
@@ -2029,7 +2035,7 @@ fn input_name_matches_clap_value_names() {
 
 fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
     let deck = dir.join("d.md");
-    std::fs::write(&deck, "## front <!-- id: card-q1 -->\nback\n").unwrap();
+    std::fs::write(&deck, "## front\nback\n<!-- id: card-q1 -->\n").unwrap();
     let mut store = Store::open(dir.join("p.json")).unwrap();
     let mut card = Card::plain(
         Arc::from("d.md"),

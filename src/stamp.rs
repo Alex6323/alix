@@ -1173,10 +1173,13 @@ mod tests {
     #[test]
     fn a_bare_marker_deck_is_refused_before_any_mint_can_half_convert_it() {
         let dir = tempfile::tempdir().unwrap();
-        let with_bare_marker = "## q <!-- id: 9w2c7x4k1m8q3z5t0v6b2n4d8f -->\na\n## fresh\nb\n";
+        let with_bare_marker = "## q\na\n<!-- id: 9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n## fresh\nb\n";
         let path = write(&dir, "marker.md", with_bare_marker);
         let result = stamp_deck(&path);
-        assert!(matches!(result, Err(StampError::Parse(_))), "{result:?}");
+        assert!(
+            matches!(&result, Err(StampError::Parse(error)) if error.to_string().contains("must hold a base `card-<token>` id")),
+            "{result:?}"
+        );
         assert_eq!(with_bare_marker, fs::read_to_string(&path).unwrap());
     }
 
@@ -2210,7 +2213,7 @@ mod tests {
             &dir,
             "d.md",
             &format!(
-                "{DECK_HEAD}## q <!-- id: card-regionregionregionregionre -->\ne\u{301}x\n<!-- blank: span hidden=\"\u{301}\" boundary=char b:a1b2c3 -->\n"
+                "{DECK_HEAD}## q\ne\u{301}x\n<!-- blank: span hidden=\"\u{301}\" boundary=char b:a1b2c3 -->\n<!-- id: card-regionregionregionregionre -->\n"
             ),
         );
         let before = fs::read_to_string(&path).unwrap();

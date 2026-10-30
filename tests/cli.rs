@@ -2353,16 +2353,22 @@ fn reset_orphans_clears_an_orphaned_document_whatever_the_live_deck_count() {
 fn reset_orphans_refuses_while_any_deck_like_file_in_the_target_cannot_be_read() {
     // A deck the parser rejects hides whatever ids it holds, so every key in
     // the target would look orphaned: the sweep stops instead of pruning.
-    for (shape, broken) in [
+    for (shape, broken, reason) in [
         (
             "an invalid card id",
-            "---\nformat-version: 1\nid: \"deck-b\"\n---\n## q <!-- id: nope -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-b\"\n---\n## q\na\n<!-- id: nope -->\n",
+            "must hold a base `card-<token>` id",
         ),
         (
             "unclosed frontmatter",
-            "---\nformat-version: 1\nid: \"deck-b\"\n## q <!-- id: card-b1 -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-b\"\n## q\na\n<!-- id: card-b1 -->\n",
+            "frontmatter never closes",
         ),
-        ("a front without an answer", "## q <!-- id: card-b1 -->\n"),
+        (
+            "a front without an answer",
+            "## q\n<!-- id: card-b1 -->\n",
+            "card front without an answer",
+        ),
     ] {
         let dir = TempDir::new().unwrap();
         let store_path = dir.path().to_path_buf();
@@ -2385,6 +2391,11 @@ fn reset_orphans_refuses_while_any_deck_like_file_in_the_target_cannot_be_read()
             !out.status.success(),
             "{shape}: the sweep ran anyway: {}",
             stdout(&out)
+        );
+        assert!(
+            stderr(&out).contains(reason),
+            "{shape}: refused for another reason: {}",
+            stderr(&out)
         );
         assert_eq!(
             before.0,
@@ -3451,11 +3462,11 @@ fn bug_report_include_deck_adds_exactly_the_requested_deck_verbatim() {
     )
     .unwrap();
     let requested = decks.join("requested-private-name.md");
-    let requested_bytes = b"---\nformat-version: 1\nid: deck-requested123\n---\n## requested-front <!-- id: card-requested123 -->\nrequested-back\n> [!NOTE]\n> requested-authored-note\n";
+    let requested_bytes = b"---\nformat-version: 1\nid: deck-requested123\n---\n## requested-front\nrequested-back\n> [!NOTE]\n> requested-authored-note\n<!-- id: card-requested123 -->\n";
     std::fs::write(&requested, requested_bytes).unwrap();
     std::fs::write(
         decks.join("other.md"),
-        "---\nformat-version: 1\nid: deck-other123456\n---\n## other-front <!-- id: card-other123456 -->\nother-back\n",
+        "---\nformat-version: 1\nid: deck-other123456\n---\n## other-front\nother-back\n<!-- id: card-other123456 -->\n",
     )
     .unwrap();
     std::fs::write(
@@ -3559,7 +3570,7 @@ fn bug_report_writes_a_local_archive_from_the_configured_decks() {
     std::fs::create_dir_all(test_config_dir(home.path())).unwrap();
     std::fs::write(
         decks.join("private-name.md"),
-        "---\nformat-version: 1\nid: deck-private123\n---\n## private-front <!-- id: card-private123 -->\nprivate-back\n",
+        "---\nformat-version: 1\nid: deck-private123\n---\n## private-front\nprivate-back\n<!-- id: card-private123 -->\n",
     )
     .unwrap();
     let config_path = test_config_dir(home.path()).join("config.toml");
@@ -4998,7 +5009,7 @@ fn ordinary_text_and_markdown_files_never_enter_trace_building() {
         ),
         (
             "ordinary.md",
-            "---\nformat-version: 1\nid: deck-source\n---\n## Source question <!-- id: card-source1 -->\nSource answer\n",
+            "---\nformat-version: 1\nid: deck-source\n---\n## Source question\nSource answer\n<!-- id: card-source1 -->\n",
         ),
     ] {
         let dir = TempDir::new().unwrap();
@@ -6583,13 +6594,13 @@ fn doctor_quotes_the_personal_key_the_parser_actually_accepts() {
         &decks,
         "spanish.md",
         "---\nformat-version: 1\nid: deck-spanishspanishspanishspa\n---\n\
-         ## darse cuenta <!-- id: card-onetwothreefourfivesixsev -->\nto realise\n",
+         ## darse cuenta\nto realise\n<!-- id: card-onetwothreefourfivesixsev -->\n",
     );
     write(
         &decks,
         "german.md",
         "---\nformat-version: 1\nid: deck-germangermangermangerm\n---\n\
-         ## sich freuen <!-- id: card-sevensixfivefourthreetwoone -->\nto be glad\n",
+         ## sich freuen\nto be glad\n<!-- id: card-sevensixfivefourthreetwoone -->\n",
     );
     // Names a deck that exists, but not the one it sits beside.
     write(

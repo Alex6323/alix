@@ -2047,7 +2047,7 @@ mod tests {
         std::fs::write(
             workspace.join("member.md"),
             "---\nformat-version: 1\nid: deck-member1\n---\n\
-             ## member <!-- id: card-member1 -->\nanswer\n",
+             ## member\nanswer\n<!-- id: card-member1 -->\n",
         )
         .unwrap();
         let empty = root.path().join("empty");

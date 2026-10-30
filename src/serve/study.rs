@@ -2082,7 +2082,7 @@ mod tests {
         let deck_id = "deck-studytest".to_string();
         let card_id = "card-studytest".to_string();
         let deck = dir.join("study.md");
-        std::fs::write(&deck, "## question <!-- id: card-studytest -->\nanswer\n").unwrap();
+        std::fs::write(&deck, "## question\nanswer\n<!-- id: card-studytest -->\n").unwrap();
         let mut card = crate::card::Card::plain(
             std::sync::Arc::from("study.md"),
             "question".to_string(),
