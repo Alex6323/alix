@@ -1659,6 +1659,11 @@ mod tests {
             extract_note_lines("a\n~~~\n- kept verbatim\n"),
             "an unclosed fence is closed"
         );
+        assert_eq!(
+            vec!["```", "let a = 1;", "", "- not a key point", "```", "b"],
+            extract_note_lines("```\nlet a = 1;\n\n- not a key point\n```\nb\n"),
+            "a blank line inside a fence is code, not the fence's close"
+        );
     }
 
     #[test]

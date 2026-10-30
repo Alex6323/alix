@@ -540,8 +540,8 @@ pub fn select(
         .and_then(|d| d.deck_token.as_deref())
         .map(Arc::from)
         .unwrap_or_else(|| Arc::from(label.as_str()));
-    // Quirk: a `--region` focus always excludes personal cards (they belong to
-    // no topology). The region-id retain above already enforces that invariant.
+    // A `--region` focus excludes personal cards even when a cached region
+    // lists one by id.
     if region_sel.is_some() {
         cards.retain(|card| card.line < PERSONAL_LINE_BASE);
     }
@@ -2389,7 +2389,7 @@ it reads line two\n\
             walk: vec![card_id.clone()],
             regions: vec![augment::TopologyRegion {
                 name: "r1".to_string(),
-                cards: vec![card_id],
+                cards: vec![card_id, "card-vq1".to_string()],
             }],
             deck_token,
         });

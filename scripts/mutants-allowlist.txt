@@ -194,3 +194,11 @@ src/parser/cloze.rs:161: replace - with / in unbracketed_src
 src/deck.rs:896: replace > with >= in with_exam
 src/deck.rs:962: replace > with >= in with_added_cite
 src/deck.rs:1013: replace > with >= in rewrite_frozen_assets
+
+# EQUIVALENT. `candidate_count` returns 0 for a card without both a table
+# token and a row, and only card-table rows carry those; the parser rejects a
+# blank span on a card table (`a_span_on_a_card_table_is_rejected_loudly`), so
+# no card has a region and a row. Every region card therefore samples nothing
+# whichever way this guard reads, and the guard stays as the stated policy.
+# Line-pinned.
+src/choice/mod.rs:279: delete ! in ColumnPools::can_sample
