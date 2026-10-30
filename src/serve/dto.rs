@@ -1612,12 +1612,12 @@ mod tests {
         );
         sitting.set_answer("answer".to_string());
         sitting.submit();
-        for _ in 0..1_000_000 {
+        for _ in 0..500 {
             let _ = sitting.advance(0);
             if !sitting.thinking() {
                 break;
             }
-            std::thread::yield_now();
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
         assert!(
             sitting.result().is_some_and(|result| result.passed),
