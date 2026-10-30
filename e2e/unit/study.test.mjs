@@ -416,6 +416,43 @@ test("the advertised submit binding wins over choice navigation", () => {
   assert.deepEqual(run.calls, ["/api/choose"], "the key shown on Submit submits");
 });
 
+test("a pending hint from an old revision does not block the same card's fresh attempt", () => {
+  const calls = [];
+  const study = createStudy({
+    api: async () => ({}),
+    fetchApi: (path) => {
+      calls.push(path);
+      return new Promise(() => {});
+    },
+    post: (body) => ({ method: "POST", body }),
+    storage: { getItem: () => null, setItem: () => {} },
+    model: { create: createModel, applyStudyState, currentScreen, enterPicker, filledSteps, questionAt, revealStepCount },
+    rerender: () => {},
+    traceData: () => null,
+    replaceTraceSession: () => {},
+    openTutor: () => {},
+    startExam: () => {},
+    closeMenu: () => {},
+    timers: {},
+    ui: {},
+  });
+  const attempt = (studyRevision) => ({
+    kind: "review",
+    phase: "review",
+    label: "Facts",
+    mode: "flip",
+    study_revision: studyRevision,
+    card: { id: "card-1", answer_steps: [{ kind: "line" }], hints: [[{ text: "Think north." }]] },
+  });
+
+  study.apply(attempt(41));
+  study.openHints();
+  study.apply(attempt(42));
+  study.openHints();
+
+  assert.deepEqual(calls, ["/api/hint", "/api/hint"], "the new attempt owns an independent request");
+});
+
 test("a rebound browse quit leaves the browser and Backspace always does", async () => {
   const picker = { kind: "review", phase: "select", label: "picker", card: null };
   const browse = { next: plain("l"), prev: plain("h"), quit: plain("q") };

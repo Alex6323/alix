@@ -248,6 +248,59 @@ test("typing `i` into an answer field types it and opens nothing", async ({ page
   expect(requests).toHaveLength(0);
 });
 
+test("Enter activates a focused Close hints button instead of opening another hint", async ({ page }) => {
+  await start(page, "France", "Recall");
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/hint")),
+    hintChip(page).click(),
+  ]);
+  await expect(stacked(page)).toHaveCount(1);
+
+  const close = page.getByRole("button", { name: "Close hints" });
+  await close.focus();
+  await page.keyboard.press("Enter");
+
+  await expect(page.locator(".section-drawer"), "Enter activates the focused dialog control").toHaveCount(0);
+});
+
+test("typed feedback closes a hint panel that won the request race", async ({ page }) => {
+  await introduceThenCram(page, "France", "Reconstruct");
+  let releaseHint: () => void = () => {};
+  let releaseCheck: () => void = () => {};
+  const heldHint = new Promise<void>((resolve) => { releaseHint = resolve; });
+  const heldCheck = new Promise<void>((resolve) => { releaseCheck = resolve; });
+  await page.route("**/api/hint", async (route) => {
+    await heldHint;
+    await route.continue();
+  });
+  await page.route("**/api/check", async (route) => {
+    await heldCheck;
+    await route.continue();
+  });
+
+  await Promise.all([
+    page.waitForRequest((request) => request.url().includes("/api/hint")),
+    hintChip(page).click(),
+  ]);
+  await page.locator("#ansRegion input.field").fill("Paris");
+  await Promise.all([
+    page.waitForRequest((request) => request.url().includes("/api/check")),
+    page.getByRole("button", { name: "Submit" }).click(),
+  ]);
+
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/hint")),
+    Promise.resolve().then(releaseHint),
+  ]);
+  await expect(stacked(page), "the hint response wins first").toHaveCount(1);
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/check")),
+    Promise.resolve().then(releaseCheck),
+  ]);
+  await expect(page.getByRole("button", { name: "Got it" }), "the check has reached feedback").toBeVisible();
+  await expect(page.locator(".section-drawer"), "an answer boundary closes the modal panel").toHaveCount(0);
+});
+
 test("a pass graded right after opening a hint records Partial", async ({ page }) => {
   await introduceThenCram(page, "France", "Recall");
   await Promise.all([

@@ -80,7 +80,7 @@ export function createStudy({
   let panelKind = null;
   let hintScope = null;
   let hintsShown = 0;
-  let hintPending = false;
+  let hintPendingScope = null;
   let answerConcealed = clientModel.answerConcealed;
   let feedback = clientModel.feedback;
   let selectedChoices = new Set();
@@ -339,13 +339,9 @@ export function createStudy({
   function choose(i) {
     if (isWalking()) { walkChoose({ index: i }); return; }
     // An introduction-card pick reveals its answer feedback: same encounter rule.
-    api("/api/choose", post({ index: i, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(f => {
-      feedback = f;
-      // Only the answer changed. A full rerender() rebuilds the question too, which
-      // reads as a flicker (and re-rasterises any math in it).
-      fillBottom();
-      renderLegend();
-    });
+    // Only the answer changed. A full rerender() rebuilds the question too, which
+    // reads as a flicker (and re-rasterises any math in it).
+    api("/api/choose", post({ index: i, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(showFeedback);
   }
   function toggleChoice(i) {
     if (selectedChoices.has(i)) selectedChoices.delete(i);
@@ -358,15 +354,17 @@ export function createStudy({
     if (!selectedChoices.size) return;
     const indices = Array.from(selectedChoices).sort((a, b) => a - b);
     if (isWalking()) { walkChoose({ indices }); return; }
-    api("/api/choose", post({ indices, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(f => {
-      feedback = f;
-      fillBottom();
-      renderLegend();
-    });
+    api("/api/choose", post({ indices, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(showFeedback);
   }
   function submitCheck() {
     const lines = Array.from(doc.querySelectorAll("#ansRegion input.field")).map(i => i.value);
-    api("/api/check", post({ lines })).catch(() => { load(); return Promise.reject(); }).then(f => { feedback = f; fillBottom(); renderLegend(); }).catch(() => load());
+    api("/api/check", post({ lines })).catch(() => { load(); return Promise.reject(); }).then(showFeedback).catch(() => load());
+  }
+  function showFeedback(f) {
+    feedback = f;
+    removeSectionSheet();
+    fillBottom();
+    renderLegend();
   }
   // TypeLine: one line at a time; the server derives the position-paired check
   // from the card's own mode. Resubmits every line checked so far (the
@@ -758,17 +756,18 @@ export function createStudy({
   function openedHints() { return hintScope === currentHintScope() ? hintsShown : 0; }
 
   function openHints() {
-    if (!hintsOffered() || hintPending) return;
+    if (!hintsOffered() || hintPendingScope === currentHintScope()) return;
     if (openedHints() > 0) { showPanel("hint"); return; }
     const scope = currentHintScope();
-    hintPending = true;
+    hintPendingScope = scope;
+    const settle = () => { if (hintPendingScope === scope) hintPendingScope = null; };
     fetchApi("/api/hint", post({ card: state.card.id })).then(() => {
-      hintPending = false;
+      settle();
       if (scope !== currentHintScope() || !hintsOffered()) return;
       hintScope = scope;
       hintsShown = 1;
       showPanel("hint");
-    }, () => { hintPending = false; });
+    }, settle);
   }
 
   function nextHint() {
@@ -2045,6 +2044,7 @@ export function createStudy({
         return;
       }
       if (sectionView) {
+        if (e.key === "Enter" && doc.activeElement && doc.activeElement.tagName === "BUTTON") return;
         e.preventDefault();
         if (e.key === "Escape") closeSection();
         else if (hit(e, keys.context)) { if (panelKind === "section") closeSection(); else openSection(); }
