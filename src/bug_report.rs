@@ -631,6 +631,44 @@ mod tests {
     }
 
     #[test]
+    fn private_config_keys_are_dropped_at_every_depth_and_only_real_tokens_are_kept() {
+        let mut value: toml::Value = toml::from_str(
+            "token = \"top-token\"\n\
+             prompt = \"top-prompt\"\n\
+             [serve]\ntoken = \"\"\nport = 7777\n\
+             [deep.nested]\nextra = \"nested-extra\"\nkeep = 1\n\
+             [[backends]]\ntoken = \"array-token\"\nprompt = \"array-prompt\"\nname = \"a\"\n\
+             [[backends]]\nextra = \"array-extra\"\nname = \"b\"\n",
+        )
+        .unwrap();
+        let mut tokens = Vec::new();
+        drop_private_config_fields(&mut value, &mut tokens);
+        let text = toml::to_string(&value).unwrap();
+
+        for private in [
+            "top-token",
+            "top-prompt",
+            "nested-extra",
+            "array-token",
+            "array-prompt",
+            "array-extra",
+            "token",
+            "prompt",
+            "extra",
+        ] {
+            assert!(!text.contains(private), "kept {private:?}: {text}");
+        }
+        for kept in ["port = 7777", "keep = 1", "name = \"a\"", "name = \"b\""] {
+            assert!(text.contains(kept), "dropped {kept:?}: {text}");
+        }
+        assert_eq!(
+            vec!["top-token".to_string(), "array-token".to_string()],
+            tokens,
+            "non-empty tokens are collected for redaction, the empty one is not"
+        );
+    }
+
+    #[test]
     fn identical_inputs_produce_byte_identical_archives() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("decks");

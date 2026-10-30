@@ -1155,6 +1155,16 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
 
     let out = alix(&["reset", ws.to_str().unwrap(), "--yes"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Reset 2 card(s)."),
+        "one card in each member is counted: {}",
+        stdout(&out)
+    );
+    assert!(
+        !stdout(&out).contains("unreadable"),
+        "nothing unreadable, nothing reported removed: {}",
+        stdout(&out)
+    );
 
     let reloaded = decks_store(&[&a, &b]);
     assert_eq!(0, reloaded.len(), "member card progress should be gone");
@@ -3116,6 +3126,10 @@ fn stats_shows_per_depth_due_counts() {
     assert!(
         result.contains("due now (reconstruct): 1"),
         "the past-due reconstruct schedule must be counted: {result}"
+    );
+    assert!(
+        result.contains("due now (recognize):   1"),
+        "the past-due recognize schedule must be counted: {result}"
     );
 }
 

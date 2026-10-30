@@ -272,6 +272,27 @@ mod tests {
     }
 
     #[test]
+    fn the_cache_counts_one_entry_per_path_however_often_it_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = DeckCache::default();
+        assert!(cache.is_empty(), "a fresh cache holds nothing");
+        assert_eq!(0, cache.len(), "a fresh cache holds nothing");
+
+        let paths = ["a.md", "b.md", "c.md"].map(|name| dir.path().join(name));
+        for path in &paths {
+            write(
+                path,
+                "---\nformat-version: 1\nid: \"deck-d\"\n---\n## q\na\n",
+            );
+            cache.load(path).unwrap();
+            cache.label(path);
+        }
+
+        assert!(!cache.is_empty(), "three read decks: not empty");
+        assert_eq!(3, cache.len(), "three paths, each read twice");
+    }
+
+    #[test]
     fn a_size_change_invalidates_the_entry() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
