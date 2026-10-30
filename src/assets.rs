@@ -2812,6 +2812,20 @@ mod tests {
             inserted.contains(&crate::diagram::fingerprint("flowchart LR\n A-->B")),
             "the fingerprint is the LF-normalized one: {inserted:?}"
         );
+
+        let lf = freeze_diagrams(
+            directory.path(),
+            "deck-deck1",
+            &text.replace("\r\n", "\n"),
+            None,
+            Some(cli.to_str().unwrap()),
+        )
+        .unwrap();
+        let (_, inserted) = &lf.replacements[0];
+        assert!(
+            inserted.ends_with("-->\n") && !inserted.contains('\r'),
+            "an LF text gets an LF-terminated stamp: {inserted:?}"
+        );
     }
 
     #[test]
