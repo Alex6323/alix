@@ -2053,6 +2053,42 @@ mod tests {
     }
 
     #[test]
+    fn anchor_token_offset_finds_the_bounded_token_outside_every_quoted_value() {
+        for (label, line, expected) in [
+            ("at the line start", "position:1 b:a1", Some(0)),
+            (
+                "after whitespace",
+                "<!-- blank: span position:1 -->",
+                Some(17),
+            ),
+            ("past a longer number", "position:13 position:1", Some(12)),
+            ("not glued to a word", "xposition:1", None),
+            (
+                "past a quoted copy after whitespace",
+                "hidden=\"x position:1\" position:1",
+                Some(22),
+            ),
+            (
+                "past an escaped quote inside a value",
+                "hidden=\"a\\\"position:1\" position:1",
+                Some(23),
+            ),
+            ("never inside an unclosed value", "\"x position:1", None),
+            (
+                "a backslash outside a value escapes nothing",
+                "\\\"x position:1",
+                None,
+            ),
+        ] {
+            assert_eq!(
+                expected,
+                anchor_token_offset(line, "position:1"),
+                "row `{label}`: {line}"
+            );
+        }
+    }
+
+    #[test]
     fn repair_positions_applies_the_keep_authored_edit_and_settles() {
         let dir = tempfile::tempdir().unwrap();
         let path = anchor_deck(

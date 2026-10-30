@@ -669,6 +669,48 @@ mod tests {
     }
 
     #[test]
+    fn every_allowlisted_log_shape_keeps_exactly_its_fields_and_the_rest_drop() {
+        for (label, line, kept) in [
+            (
+                "http timing",
+                "target=http at=1 took=2 w=0 path=/private",
+                Some("target=http at=1 took=2 w=0"),
+            ),
+            (
+                "selection",
+                "target=select card=c tier=t fresh=1 revealed=0 due=2 floor=3 roster=4 deck=private",
+                Some("target=select card=c tier=t fresh=1 revealed=0 due=2 floor=3 roster=4"),
+            ),
+            (
+                "ai error",
+                "target=error kind=ai backend=claude model=private message=private",
+                Some("target=error kind=ai backend=claude"),
+            ),
+            (
+                "http error",
+                "target=error kind=http method=GET area=api status=500 sync=s path=/private message=m",
+                Some("target=error kind=http method=GET area=api status=500 sync=s message=m"),
+            ),
+            (
+                "panic",
+                "target=error kind=panic file=f.rs line=3 thread=t payload=private",
+                Some("target=error kind=panic file=f.rs line=3 thread=t"),
+            ),
+            (
+                "parse error",
+                "target=error kind=parse code=c line=4 path=/private",
+                Some("target=error kind=parse code=c line=4"),
+            ),
+            ("unknown error kind", "target=error kind=private x=1", None),
+            ("unknown target", "target=private x=1", None),
+            ("no target", "x=1 message=private", None),
+        ] {
+            let expected = kept.map(|kept| format!("{kept}\n")).unwrap_or_default();
+            assert_eq!(expected, allowlisted_log(line), "row `{label}`");
+        }
+    }
+
+    #[test]
     fn identical_inputs_produce_byte_identical_archives() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("decks");

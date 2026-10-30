@@ -253,17 +253,14 @@ fn contrast(a: f64, b: f64) -> f64 {
 /// the colon. Skips property names that merely start with `fill`
 /// (`fill-opacity`), whose next non-space character is not a colon.
 fn fill_declaration(style: &str) -> Option<&str> {
-    let mut rest = style;
-    while let Some(at) = rest.find("fill") {
-        let after = &rest[at + "fill".len()..];
-        if let Some(value) = after.trim_start().strip_prefix(':') {
-            let value = value.trim_start();
-            let end = value.find([';', '}']).unwrap_or(value.len());
-            return Some(value[..end].trim_end());
-        }
-        rest = after;
-    }
-    None
+    style.match_indices("fill").find_map(|(at, name)| {
+        let value = style[at + name.len()..]
+            .trim_start()
+            .strip_prefix(':')?
+            .trim_start();
+        let end = value.find([';', '}']).unwrap_or(value.len());
+        Some(value[..end].trim_end())
+    })
 }
 
 #[cfg(feature = "full")]
@@ -1948,6 +1945,33 @@ mod tests {
             .to_string();
         assert!(message.contains("no-such-family-xyz"), "{message}");
         assert!(message.contains("not installed"), "{message}");
+    }
+
+    #[test]
+    fn relative_luminance_matches_the_wcag_formula_on_both_sides_of_the_knee() {
+        for (label, color, expected) in [
+            ("white", (255, 255, 255), 1.0),
+            ("black", (0, 0, 0), 0.0),
+            ("pure red", (255, 0, 0), 0.2126),
+            ("pure green", (0, 255, 0), 0.7152),
+            ("pure blue", (0, 0, 255), 0.0722),
+            (
+                "mid gray, above the knee",
+                (128, 128, 128),
+                0.215_860_500_113_899_23,
+            ),
+            (
+                "dark gray, below the knee",
+                (10, 10, 10),
+                0.003_035_269_835_488_375,
+            ),
+        ] {
+            let got = relative_luminance(color);
+            assert!(
+                (got - expected).abs() < 1e-12,
+                "{label}: expected {expected}, got {got}"
+            );
+        }
     }
 
     #[test]
