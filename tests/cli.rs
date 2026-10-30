@@ -1098,8 +1098,19 @@ fn each_order_repair_alone_runs_on_a_workspace_path() {
         "---\ntitle: C\nid: \"deck-comments\"\n---\n## q\na\n<!-- id: card-x -->\n<!-- reveal: line -->\n",
     )
     .unwrap();
+    std::fs::write(
+        ws.join("decks/skipped.md"),
+        "---\n# a remark\nid: \"deck-skipped\"\n---\n## q\na\n",
+    )
+    .unwrap();
 
     let out = alix(&["doctor", ws.to_str().unwrap(), "--repair-frontmatter-order"]);
+    assert_eq!(
+        1,
+        stderr(&out).matches("frontmatter left as-is").count(),
+        "frontmatter flag alone: the repair runs once per deck: {}",
+        stderr(&out)
+    );
     assert!(
         stdout(&out).contains("reordered frontmatter"),
         "frontmatter flag alone: {}{}",
