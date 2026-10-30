@@ -470,7 +470,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
                 let prose = build_card(
                     &subject,
                     &deck_id,
-                    raw,
+                    *raw,
                     document.frontmatter.choices,
                     &mut cards,
                     &mut lints,
@@ -491,7 +491,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
                     token: raw.directives.token.clone(),
                     end_line: raw.end_line,
                 });
-                build_table_cards(&subject, &deck_id, raw, &mut cards)?;
+                build_table_cards(&subject, &deck_id, *raw, &mut cards)?;
             }
         }
     }
@@ -724,8 +724,8 @@ struct Document {
 }
 
 enum RawBlock {
-    Card(RawCard),
-    Table(RawTable),
+    Card(Box<RawCard>),
+    Table(Box<RawTable>),
 }
 
 struct RawCard {
@@ -1160,7 +1160,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                     open_depths.clear();
                 }
                 section_has_cards |= !tbl.rows.is_empty();
-                blocks.push(RawBlock::Table(tbl));
+                blocks.push(RawBlock::Table(Box::new(tbl)));
             }
         }
 
@@ -1293,7 +1293,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                     block_line = card.line;
                     directives = card.directives;
                 } else {
-                    blocks.push(RawBlock::Card(card));
+                    blocks.push(RawBlock::Card(Box::new(card)));
                 }
             }
             let header = split_cells(raw).ok_or(ParseError::TableLineMalformed(lineno))?;
@@ -1335,7 +1335,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         {
             if depth == 1 {
                 if let Some(card) = take_card(&mut current)? {
-                    blocks.push(RawBlock::Card(card));
+                    blocks.push(RawBlock::Card(Box::new(card)));
                 }
                 // Scanned like any other heading, so an editorial comment
                 // is stripped exactly as it is on a card front; only a
@@ -1375,7 +1375,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 return Err(ParseError::OrphanSubCard(lineno));
             }
             if let Some(card) = take_card(&mut current)? {
-                blocks.push(RawBlock::Card(card));
+                blocks.push(RawBlock::Card(Box::new(card)));
             }
             let (front, directives) = heading(rest, lineno, lints)?;
             if front.is_empty() {
@@ -1745,10 +1745,10 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
     }
     if let Some(tbl) = table.take() {
         section_has_cards |= !tbl.rows.is_empty();
-        blocks.push(RawBlock::Table(tbl));
+        blocks.push(RawBlock::Table(Box::new(tbl)));
     }
     if let Some(card) = take_card(&mut current)? {
-        blocks.push(RawBlock::Card(card));
+        blocks.push(RawBlock::Card(Box::new(card)));
     }
     lint_section_without_cards(&section, section_heading_line, section_has_cards, lints);
     Ok(ScannedBody {
@@ -6424,7 +6424,7 @@ a
                 })
                 .collect()
         };
-        let rows: [(&str, &str, Vec<(usize, &str)>); 7] = [
+        let rows = [
             (
                 "an empty tip before the leaking one is not the line named",
                 "## q\n> [!TIP]\n>\n\n> [!TIP]\n> Paris\n\n---\nParis\n",
