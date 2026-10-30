@@ -224,3 +224,21 @@ src/assets.rs:163: replace default_diagram_command -> Option<&'static str> with 
 # runs `run` with every flag false, which does nothing; the one extra cost
 # is listing the deck files. No output or file differs. Line-pinned.
 src/cli/doctor.rs:1575: replace Repairs::any -> bool with true
+
+# EQUIVALENT. `locate` returns the piece that contains the probed byte, so
+# `range.start` is never before its piece and `range.end` never after it.
+# At an exact piece edge the neighbour slice is empty, which yields true
+# through the guarded arm and through the fallback alike, so forcing a
+# guard true or widening it to include equality changes no answer.
+# Line-pinned.
+src/parser/stream.rs:187: replace match guard range.start > piece.range.start with true in MaskableStream::word_bounded
+src/parser/stream.rs:187: replace > with >= in MaskableStream::word_bounded
+src/parser/stream.rs:195: replace match guard range.end < piece.range.end with true in MaskableStream::word_bounded
+src/parser/stream.rs:195: replace < with <= in MaskableStream::word_bounded
+
+# UNREACHABLE. `Path::components` never yields an empty, `.`, `..` or
+# separator-containing `Component::Normal`: those spellings are dropped or
+# become another component kind, which the `_` arm already refuses. The
+# check is kept as a loud guard, so weakening its `||` chain to `&&`
+# changes nothing observable. Line-pinned.
+src/sync/server.rs:587: replace || with && in wire_path
