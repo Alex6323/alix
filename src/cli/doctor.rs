@@ -2353,12 +2353,17 @@ mod tests {
         w(
             dir.path(),
             "flow.md",
-            "---\n{format-version: 1, id: deck-ready}\n---\n## q <!-- id: card-ready -->\na\n",
+            "---\n{format-version: 1, id: deck-ready}\n---\n## q\na\n<!-- id: card-ready -->\n",
         );
 
         let mut report = Report::default();
         deck_findings(&path, &mut report);
 
+        assert!(
+            report.errors.is_empty(),
+            "the deck parses: {:#?}",
+            report.errors
+        );
         assert!(
             report
                 .warnings
