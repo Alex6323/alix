@@ -1272,11 +1272,11 @@ mod tests {
         // into a section, with that card's old id stranded below it.
         std::fs::write(
             &broken,
-            "## still a card <!-- id: card-7ty2cy2c42qp8vqq5xrfwcqega -->\nanswer\n# was a card\nprose\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
+            "## still a card\nanswer\n<!-- id: card-7ty2cy2c42qp8vqq5xrfwcqega -->\n# was a card\nprose\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
         )
         .unwrap();
         let valid = dir.path().join("z-valid.md");
-        let valid_text = "## a real card <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\nanswer\n";
+        let valid_text = "## a real card\nanswer\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n";
         std::fs::write(&valid, valid_text).unwrap();
 
         let dupes = crate::dedup::scan_dir_fast(dir.path()).card_dupes;
@@ -1284,6 +1284,11 @@ mod tests {
             dupes.is_empty(),
             "precondition: the orphan id below a section claims no card, so \
              there is no duplicate at all: {dupes:?}"
+        );
+
+        assert!(
+            crate::parser::parse("z-valid.md", valid_text).is_ok(),
+            "precondition: the healthy deck parses"
         );
 
         resolve_duplicates_at_open(&valid);

@@ -11283,7 +11283,7 @@ the answer
                 0..3,
             ),
         ) {
-            let mut deck = String::from("## q <!-- id: card-proptok -->\n---\n");
+            let mut deck = String::from("## q\n---\n");
             for line in &lines {
                 deck.push_str(line);
                 deck.push('\n');
@@ -11294,8 +11294,14 @@ the answer
                     "<!-- {keyword}: span hidden=\"{hidden}\" occurrence={occurrence} boundary=char -->\n"
                 ));
             }
+            deck.push_str("<!-- id: card-proptok -->\n");
             // Ok or Err are both fine; only a panic fails the property.
-            let _ = super::parse("deck.md", &deck);
+            if let Err(error) = super::parse("deck.md", &deck) {
+                proptest::prop_assert!(
+                    !error.to_string().contains("card heading line takes no"),
+                    "the fixture must reach the generated body: {error}"
+                );
+            }
         }
     }
     #[test]
