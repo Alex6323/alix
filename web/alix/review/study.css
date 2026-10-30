@@ -81,11 +81,12 @@
                       border-radius: 5px; padding: 1px 5px; }
   .region-toggle:hover { color: var(--bolt); }
   .region-toggle:hover .k { border-color: var(--bolt); }
-  /* Hide (self-test): veiled letters are drawn transparent in place, so every
-     word keeps its width; what is not text is invisible with its box kept, and
-     the note is invisible with its box kept. Nothing moves. */
-  .region.a.concealed .veiled { color: transparent; }
-  .region.a.concealed img, .region.a.concealed .math-run, .region.a.concealed canvas { visibility: hidden; }
+  .region.a.concealed { overflow: hidden; mask-image: none; -webkit-mask-image: none; }
+  .hide-cover { position: absolute; inset: 0; z-index: 1; border-radius: 12px;
+                background: linear-gradient(var(--line), var(--line)), var(--void);
+                display: flex; flex-direction: column; align-items: center; justify-content: center;
+                gap: 6px; color: var(--dim); }
+  .hide-cover-label { font-size: 0.86rem; }
   .card.concealing .region.n > *, .card.concealing .note-hint { visibility: hidden; }
   .cite-err { color: var(--warn); font-style: italic; font-size: 0.8rem; padding-left: 6px; }
 

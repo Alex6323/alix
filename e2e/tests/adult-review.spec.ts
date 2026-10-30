@@ -1037,7 +1037,7 @@ test("concealing a new card restores its diagram mask and masked alt", async ({ 
   await expect(diagram).toHaveAttribute("alt", "diagram labels: …, …");
 });
 
-test("every revealed answer hides for a self-test: letters veiled in place, the note invisible, nothing moves", async ({ page }) => {
+test("every revealed answer hides for a self-test under a cover: the answer covered, the note invisible, nothing moves", async ({ page }) => {
   const answerLines = ["An immutable binding: the name cannot be reassigned.", "Shadow it with `let` instead."];
   const base = longContentState({
     answerLines,
@@ -1067,7 +1067,6 @@ test("every revealed answer hides for a self-test: letters veiled in place, the 
   const answer = page.locator("#ansRegion");
   const note = page.locator("#noteRegion");
   const hideCue = answer.locator(".hide-toggle");
-  const transparent = "rgba(0, 0, 0, 0)";
   const geometry = () =>
     page.evaluate(async () => {
       await Promise.all(document.getAnimations().map((animation) => animation.finished));
@@ -1086,11 +1085,17 @@ test("every revealed answer hides for a self-test: letters veiled in place, the 
         noteBlock: rect("#noteRegion .note"),
       };
     });
-  const colours = () =>
+  const cover = answer.locator(".hide-cover");
+  const covering = () =>
     page.evaluate(() => {
-      const all = (selector: string) =>
-        Array.from(document.querySelectorAll(selector)).map((node) => getComputedStyle(node).color);
-      return { veiled: all("#ansRegion .veiled"), kept: all("#ansRegion .kept"), codeVeiled: all("#ansRegion code .veiled") };
+      const region = document.querySelector("#ansRegion")!.getBoundingClientRect();
+      const top = document.elementFromPoint(region.left + region.width / 2, region.top + region.height / 2);
+      const box = document.querySelector("#ansRegion .hide-cover")?.getBoundingClientRect();
+      return {
+        onTop: top ? Boolean(top.closest(".hide-cover")) : false,
+        region: [region.left, region.top, region.width, region.height].map(Math.round),
+        cover: box ? [box.left, box.top, box.width, box.height].map(Math.round) : null,
+      };
     });
 
   await expect(hideCue, "before reveal: nothing to hide").toHaveCount(0);
@@ -1105,29 +1110,18 @@ test("every revealed answer hides for a self-test: letters veiled in place, the 
   await page.keyboard.press("h");
   await expect(answer, "h hides").toHaveClass(/concealed/);
   await expect(hideCue).toHaveAttribute("title", "show answer");
-  const first = await answer
-    .locator(".veil")
-    .first()
-    .evaluate((node) => Array.from(node.children).map((child) => [child.className, child.textContent]));
-  expect(first.slice(0, 4), "An immutable: first and last letters kept, the middle veiled").toEqual([
-    ["kept", "A"],
-    ["veiled", "n"],
-    ["kept", " i"],
-    ["veiled", "mmutabl"],
-  ]);
-  expect(await answer.locator(".reveal").textContent(), "the text is still there, drawn in place").toContain(answerLines[0]);
-  const hidden = await colours();
-  expect(hidden.veiled.length, "veiled runs exist").toBeGreaterThan(0);
-  expect(hidden.veiled.every((colour) => colour === transparent), `every veiled run is transparent: ${hidden.veiled}`).toBe(true);
-  expect(hidden.kept.every((colour) => colour !== transparent), `no kept run is transparent: ${hidden.kept}`).toBe(true);
-  expect(hidden.codeVeiled.length, "the code run is veiled by the same rule").toBeGreaterThan(0);
+  await expect(cover, "hidden: one cover").toHaveCount(1);
+  await expect(cover, "hidden: the cover names the way back").toContainText("click to reveal");
+  const hidden = await covering();
+  expect(hidden.onTop, `hidden: the cover is what the answer's centre shows: ${JSON.stringify(hidden)}`).toBe(true);
+  expect(hidden.cover, `hidden: the cover fills the answer region: ${JSON.stringify(hidden)}`).toEqual(hidden.region);
+  await expect(hideCue, "hidden: the corner cue stays above the cover").toBeVisible();
   await expect(note.locator(".note p").first(), "hidden: the note is invisible").toBeHidden();
   expect(await geometry(), "hidden: question, answer, code and note boxes are where they were").toEqual(shown);
 
   await page.keyboard.press("h");
   await expect(answer, "h again shows").not.toHaveClass(/concealed/);
-  const again = await colours();
-  expect(again.veiled.every((colour) => colour !== transparent), "shown: the veiled runs read again").toBe(true);
+  await expect(cover, "shown: the cover is gone").toHaveCount(0);
   await expect(note.locator(".note p").first(), "shown: the note is back").toBeVisible();
   expect(await geometry(), "shown again: nothing moved").toEqual(shown);
 
@@ -1841,8 +1835,8 @@ test("the first section introduction auto-opens without inline and the next sect
 
   await page.keyboard.press("Escape");
   await expect(drawer, "first section card: Escape closes the automatic drawer").toHaveCount(0);
-  await page.locator("#card .region.q").click();
-  await expect(drawer, "first section card: a click on the question reopens the drawer").toBeVisible();
+  await page.getByRole("button", { name: /^Context/ }).click();
+  await expect(drawer, "first section card: the Context chip reopens the drawer").toBeVisible();
   await page.keyboard.press("Escape");
   await expect(drawer, "first section card: Escape closes the reopened drawer").toHaveCount(0);
   await page.getByRole("button", { name: "Reveal" }).click();
@@ -1859,8 +1853,8 @@ test("the first section introduction auto-opens without inline and the next sect
   await expect(page.locator(".section-inline"), "second section card: inline context is absent").toHaveCount(0);
   await expect(drawer, "second section card: drawer does not auto-open").toHaveCount(0);
   await expect(page.locator(".section-title"), "second section card: no heading on the card face").toHaveCount(0);
-  await page.locator("#card .region.q").click();
-  await expect(drawer, "second section card: a click on the question opens the drawer").toBeVisible();
+  await page.getByRole("button", { name: /^Context/ }).click();
+  await expect(drawer, "second section card: the Context chip opens the drawer").toBeVisible();
   await expect(drawer.getByRole("heading", { name: "Ocean depths" }), "second section card: the sheet names the section").toBeVisible();
   await page.keyboard.press("Escape");
   await expect(drawer, "second section card: Escape closes the drawer").toHaveCount(0);
@@ -1933,7 +1927,7 @@ test("an open section drawer swallows every review key", async ({ page }) => {
   });
   await openApp(page);
 
-  await page.locator("#card .region.q").click();
+  await page.getByRole("button", { name: /^Context/ }).click();
   await expect(page.locator(".section-drawer"), "key sweep start: drawer is open").toBeVisible();
   const before = await page.evaluate(() => fetch("/api/state").then((response) => response.json()));
   for (const key of ["Space", "Control+s", "1", "2", "3", "a", "Control+x", "r", "s", "h"]) {
@@ -1952,13 +1946,14 @@ test("an open section drawer swallows every review key", async ({ page }) => {
   await expect(page.locator(".section-drawer"), "key sweep Escape: drawer closes").toHaveCount(0);
 });
 
-test("a sectionless card shows no section title and ignores a click on the question", async ({ page }) => {
+test("a sectionless card shows no section title, no Context chip, and ignores a click on the question", async ({ page }) => {
   await page.route("**/api/state", (route) => route.fulfill({
     json: longContentState({ answerLines: ["Answer"] }),
   }));
   await openApp(page);
 
   await expect(page.locator(".section-title"), "sectionless card: title is absent").toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Context/ }), "sectionless card: no Context chip").toHaveCount(0);
   const question = page.locator("#card .region.q");
   await expect(question, "sectionless card: the question is not marked as an opener").not.toHaveClass(/sectioned/);
   expect(
@@ -1969,7 +1964,7 @@ test("a sectionless card shows no section title and ignores a click on the quest
   await expect(page.locator(".section-drawer"), "sectionless card: a click on the question opens nothing").toHaveCount(0);
 });
 
-test("a click on the question and the review menu both open the drawer", async ({ page }) => {
+test("the Context chip, the c key and the review menu open the drawer before the reveal; the question does not, and none of them after it", async ({ page }) => {
   await page.route("**/api/state", (route) => route.fulfill({
     json: longContentState({
       answerLines: ["Answer"],
@@ -1982,8 +1977,11 @@ test("a click on the question and the review menu both open the drawer", async (
   await expect(page.locator(".section-title"), "non-first section: no heading on the card face").toHaveCount(0);
   expect(
     await page.locator("#card .region.q").evaluate((element) => window.getComputedStyle(element).cursor),
-    "sectioned card: the question reads as clickable",
-  ).toBe("pointer");
+    "sectioned card: the question does not read as clickable",
+  ).not.toBe("pointer");
+  await page.locator("#card .region.q").click();
+  await expect(page.locator(".section-drawer"), "a click on the question opens nothing").toHaveCount(0);
+  const contextChip = page.getByRole("button", { name: /^Context/ });
   await page.evaluate(() => {
     const animated: string[] = [];
     const original = Element.prototype.animate;
@@ -1993,12 +1991,12 @@ test("a click on the question and the review menu both open the drawer", async (
     };
     (window as unknown as { animated: string[] }).animated = animated;
   });
-  await page.locator("#card .region.q").click();
+  await contextChip.click();
   const drawer = page.locator(".section-drawer");
-  await expect(drawer, "question route: drawer opens").toBeVisible();
+  await expect(drawer, "chip route: drawer opens").toBeVisible();
   const panel = drawer.locator(".section-drawer-panel");
-  await expect(panel, "question route: focus enters the drawer").toBeFocused();
-  await expect(panel.getByRole("heading", { name: "Drawer routes" }), "question route: heading renders").toBeVisible();
+  await expect(panel, "chip route: focus enters the drawer").toBeFocused();
+  await expect(panel.getByRole("heading", { name: "Drawer routes" }), "chip route: heading renders").toBeVisible();
   await drawer.evaluate(async (element) => {
     await Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished));
   });
@@ -2058,8 +2056,8 @@ test("a click on the question and the review menu both open the drawer", async (
   ).toBeLessThanOrEqual(24);
   await page.getByRole("button", { name: "Close section context" }).click();
   await expect(drawer, "close mark route: the sheet closes").toHaveCount(0);
-  await page.locator("#card .region.q").click();
-  await expect(drawer, "question route after the close mark: the sheet reopens").toBeVisible();
+  await contextChip.click();
+  await expect(drawer, "chip route after the close mark: the sheet reopens").toBeVisible();
   if (process.env.SECTION_CONTEXT_SCREENSHOTS) {
     await page.screenshot({ path: `${process.env.SECTION_CONTEXT_SCREENSHOTS}/section-drawer.png` });
   }
@@ -2079,16 +2077,23 @@ test("a click on the question and the review menu both open the drawer", async (
   await expect(drawer, "context key route: the key reopens it with focus on the page").toBeVisible();
   await page.keyboard.press("Escape");
   await expect(drawer, "context key route: Escape closes it again").toHaveCount(0);
-  await page.locator("#card .region.q").click();
-  await expect(drawer, "question route again: drawer reopens").toBeVisible();
+  await contextChip.click();
+  await expect(drawer, "chip route again: drawer reopens").toBeVisible();
   const dimmedQuestion = (await page.locator("#card .region.q").boundingBox())!;
   await page.mouse.click(dimmedQuestion.x + dimmedQuestion.width / 2, dimmedQuestion.y + dimmedQuestion.height / 2);
-  await expect(drawer, "question route: a click on the dimmed question closes the drawer").toHaveCount(0);
+  await expect(drawer, "a click on the dimmed question closes the drawer").toHaveCount(0);
   await page.getByRole("button", { name: "Menu" }).click();
   await page.getByRole("menuitem", { name: /^Context/ }).click();
   await expect(drawer, "menu route: drawer opens").toBeVisible();
   await page.locator(".section-drawer-scrim").click({ position: { x: 4, y: 4 } });
   await expect(drawer, "scrim route: drawer closes").toHaveCount(0);
+
+  await page.getByRole("button", { name: /^Reveal/ }).click();
+  await expect(contextChip, "after the reveal: no Context chip").toHaveCount(0);
+  await page.keyboard.press("c");
+  await expect(drawer, "after the reveal: the c key opens nothing").toHaveCount(0);
+  await page.getByRole("button", { name: "Menu" }).click();
+  await expect(page.getByRole("menuitem", { name: /^Context/ }), "after the reveal: no menu entry").toBeHidden();
 });
 
 test("a state applied while the sheet is open tears the sheet down", async ({ page }) => {
@@ -2105,21 +2110,20 @@ test("a state applied while the sheet is open tears the sheet down", async ({ pa
   });
   await page.route("**/api/state", (route) => route.fulfill({ json: first }));
   await openApp(page);
-  await page.getByRole("button", { name: "Reveal" }).click();
 
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  await page.route("**/api/grade", async (route) => {
+  await page.route("**/api/skip", async (route) => {
     await gate;
     await route.fulfill({ json: second });
   });
-  await page.getByRole("button", { name: "Got it" }).click();
-  await page.locator("#card .region.q").click();
-  await expect(page.locator(".section-drawer"), "grade in flight: the sheet opens").toBeVisible();
+  await page.getByRole("button", { name: /^Skip/ }).click();
+  await page.keyboard.press("c");
+  await expect(page.locator(".section-drawer"), "skip in flight: the sheet opens").toBeVisible();
   release();
-  await expect(page.locator(".front-text"), "grade lands: the next card renders").toHaveText("The next card arrives.");
-  await expect(page.locator(".section-drawer"), "grade lands: the sheet is torn down with the old card").toHaveCount(0);
-  await expect(page.locator("#card .region.q"), "grade lands: the new card's question is an opener").toHaveClass(/sectioned/);
+  await expect(page.locator(".front-text"), "skip lands: the next card renders").toHaveText("The next card arrives.");
+  await expect(page.locator(".section-drawer"), "skip lands: the sheet is torn down with the old card").toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Context/ }), "skip lands: the new card offers its Context chip").toBeVisible();
   await page.keyboard.press("c");
   await expect(page.locator(".section-drawer"), "context key after the apply: exactly one sheet").toHaveCount(1);
   await page.keyboard.press("Escape");
@@ -2145,7 +2149,7 @@ test("the sheet overlays the card at the page bottom and stays put when the ques
       return { bottom: box.bottom, left: box.left, right: box.right, top: box.top };
     });
   const closed = await questionRect();
-  await page.locator("#card .region.q").click();
+  await page.getByRole("button", { name: /^Context/ }).click();
   const drawer = page.locator(".section-drawer");
   await expect(drawer, "sheet opens").toBeVisible();
   await drawer.evaluate(async (element) => {

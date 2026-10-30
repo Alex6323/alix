@@ -417,10 +417,10 @@ About 4 atmospheres.
 
 A card's section is never on the card face. The first card you ever meet from
 a section opens the whole section in a sheet that slides up from the bottom, once; after
-that, in this sitting and every later one, a click on the question opens it,
-as do the `c` key and the review menu's **Context** entry. The Android app
-opens the sheet from a **Context** chip shown before the reveal, and opens it by
-itself under the same rule (see [The mobile app](18-the-mobile-app.md#reviewing)). The kids
+that, in this sitting and every later one, a **Context** chip in the bottom
+row opens it until the answer shows, as do the `c` key and the review menu's
+**Context** entry; the Android app does the same with its **Context** chip,
+and opens the sheet by itself under the same rule (see [The mobile app](18-the-mobile-app.md#reviewing)). The kids
 client does not expose section context.
 
 A section heading is a heading, nothing more. It takes no directives and no card

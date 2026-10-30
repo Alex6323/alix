@@ -476,10 +476,6 @@ export function createStudy({
       }
       crumbStrip.appendChild(bc);
     }
-    if (hasSection()) {
-      q.classList.add("sectioned");
-      q.addEventListener("click", openSection);
-    }
     questionFilled = filledNow();
     questionNode = questionEl(c, questionFilled, contextDiagram);
     q.appendChild(questionNode);
@@ -564,7 +560,7 @@ export function createStudy({
     });
   }
   // Every revealed text answer can be hidden for a self-test; a sketch, a
-  // choice pick, a typed check and an unrevealed card have nothing to veil.
+  // choice pick, a typed check and an unrevealed card have nothing to hide.
   function hidableNow() {
     if (!state || !state.card || revealed === 0 || feedback) return false;
     if (effectiveDraw() || isIntroChoice() || isChoice() || isInput() || isTypeLine()) return false;
@@ -678,7 +674,7 @@ export function createStudy({
       );
     }
     if (toggles.childElementCount) a.appendChild(toggles);
-    if (hidable && answerConcealed) applyVeil(a);
+    if (hidable && answerConcealed) a.appendChild(hideCover());
     // keep the newest visible line in view without scrolling into the hidden
     // footprint reserved for later lines
     if (state.mode === "line" && revealed > 0) {
@@ -740,9 +736,10 @@ export function createStudy({
   function hasSection() {
     return !!(state && state.card && (state.card.section_context || []).length);
   }
+  function contextOffered() { return hasSection() && !isAnswered(); }
 
   function openSection() {
-    if (!hasSection() || sectionView) return;
+    if (!contextOffered() || sectionView) return;
     if (!doc.getElementById("card")) return;
     sectionView = true;
     const drawer = el("div", "section-drawer");
@@ -1591,6 +1588,8 @@ export function createStudy({
   function renderLegend() {
     legend.innerHTML = "";
     clearLegendSides();
+    if (state.card) setMenuContext(isWalking() ? "walk" : "review");
+    if (contextOffered()) chip("Context", "quiet", openSection, label(keys.context));
     if (isWalking()) { renderWalkLegend(); return; }
     if (feedback) {
       if (isIntroducing()) {
@@ -1864,7 +1863,7 @@ export function createStudy({
     fillBottom();
     renderLegend();
   }
-  // Hiding flips classes and wraps text in place: the card is not re-rendered,
+  // Hiding flips classes and lays a cover over the answer: the card is not re-rendered,
   // so the note, the footer and the answer's own box hold their positions.
   function toggleHide() {
     if (revealed === 0 && isIntroducing()) { reveal(); return; }
@@ -1873,30 +1872,23 @@ export function createStudy({
     const a = doc.getElementById("ansRegion");
     if (!a) return;
     a.classList.toggle("concealed", answerConcealed);
-    if (answerConcealed) applyVeil(a);
+    a.querySelectorAll(".hide-cover").forEach((cover) => cover.remove());
+    if (answerConcealed) {
+      a.scrollTop = 0;
+      a.appendChild(hideCover());
+    }
     syncQuestion();
     const cardEl = doc.getElementById("card");
     if (cardEl) syncDiagramAnswerState(cardEl);
     paintHideCue(a);
   }
 
-  // Wraps every text node of the region once (a wrapped node stays wrapped
-  // and is inert while shown); the toggles, math and blank pills are left as
-  // they are.
-  function applyVeil(root) {
-    const walker = doc.createTreeWalker(root, 4);
-    const nodes = [];
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node);
-    for (const node of nodes) {
-      const parent = node.parentElement;
-      if (!parent || !/\S/.test(node.data)) continue;
-      if (parent.closest(".region-toggles, .math-run, .blank-pill, .veil")) continue;
-      const veil = el("span", "veil");
-      for (const run of model.veilRuns(node.data)) {
-        veil.appendChild(el("span", run.kept ? "kept" : "veiled", run.text));
-      }
-      parent.replaceChild(veil, node);
-    }
+  function hideCover() {
+    const cover = el("div", "hide-cover");
+    cover.innerHTML = '<svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true">' +
+      '<path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>';
+    cover.appendChild(el("span", "hide-cover-label", "click to reveal"));
+    return cover;
   }
 
   // The self-test conceal owns the diagram answer too: re-masking rides a
@@ -2015,7 +2007,7 @@ export function createStudy({
         }
         return;
       }
-      if (hasSection() && hit(e, keys.context)) { e.preventDefault(); openSection(); return; }
+      if (contextOffered() && hit(e, keys.context)) { e.preventDefault(); openSection(); return; }
       // `s` swaps a cited card between its answer and its source, once answered.
       if ((state.card.citations || []).length && isAnswered() && !e.ctrlKey && e.key.toLowerCase() === "s") {
         e.preventDefault(); toggleCitation(); return;
@@ -2154,7 +2146,7 @@ export function createStudy({
       if (e.key === "Enter" || hit(e, keys.restart)) { e.preventDefault(); nextWalk(); }
       return;
     }
-    if (hasSection() && hit(e, keys.context)) { e.preventDefault(); openSection(); return; }
+    if (contextOffered() && hit(e, keys.context)) { e.preventDefault(); openSection(); return; }
     if (state.phase === "answer") {
       if ((state.card.citations || []).length && !e.ctrlKey && e.key.toLowerCase() === "s") {
         e.preventDefault(); toggleCitation(); return;
@@ -2200,6 +2192,7 @@ export function createStudy({
     buildCardShell,
     handleKey,
     hasSection,
+    contextOffered,
     isAnswered,
     isBrowsing,
     isWalking,

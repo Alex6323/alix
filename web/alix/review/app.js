@@ -70,7 +70,7 @@ study = createStudy({
   sessionStorage,
   lastDeck: () => sessionStorage.getItem("alix.lastDeck"),
   openAugment: (deck) => augment.open(deck),
-  model: { create: createModel, applyStudyState, enterPicker, currentScreen, filledSteps, questionAt, revealStepCount, veilRuns },
+  model: { create: createModel, applyStudyState, enterPicker, currentScreen, filledSteps, questionAt, revealStepCount },
   rerender: render,
   traceData: () => trace.data(),
   replaceTraceSession: (next) => trace.replace(next),
@@ -427,7 +427,7 @@ function setMenuContext(ctx) {
   // rest (Remove card, Promote) are per-deck-card actions a trace checkpoint
   // doesn't have, so they get their own narrower checks below.
   document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = (ctx === "review" || ctx === "trace" || ctx === "walk") ? "" : "none"; });
-  document.getElementById("mContext").style.display = (ctx === "review" || ctx === "walk") && study && study.hasSection() ? "" : "none";
+  document.getElementById("mContext").style.display = (ctx === "review" || ctx === "walk") && study && study.contextOffered() ? "" : "none";
   document.getElementById("mRemove").style.display = ctx === "review" ? "" : "none";
   // (a remediation card) — narrower than the other .m-review items, so it
   // gets its own check on top of the context toggle.

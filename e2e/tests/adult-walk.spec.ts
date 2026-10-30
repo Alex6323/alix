@@ -95,8 +95,8 @@ test("a walk serves the unwalked rest, then a full pass, with the section sheet 
   await again.click();
   await closeSectionSheet(page, "walk 2");
   await expect(page.locator(".section-title"), "walk 2: no heading on the card face").toHaveCount(0);
-  await page.locator("#card .region.q").click();
-  await closeSectionSheet(page, "walk 2 question click");
+  await page.getByRole("button", { name: /^Context/ }).click();
+  await closeSectionSheet(page, "walk 2 Context chip");
   await expect(page.locator(".front-text")).toHaveText(FLIP_FRONT);
   await expect(page.locator("#hist"), "walk 2 counts only the unwalked item").toHaveText("1 left");
 

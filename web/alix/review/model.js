@@ -69,33 +69,6 @@ export function revealStepCount(card) {
   return front.length || (card.answer_steps || []).length;
 }
 
-// The hidden look of a revealed answer: each word keeps its first character,
-// and its last past two characters; the rest is drawn transparent in place.
-// Runs concatenate back to the text, so the line keeps its exact width.
-export function veilRuns(text) {
-  const runs = [];
-  const push = (chunk, kept) => {
-    if (!chunk) return;
-    const last = runs[runs.length - 1];
-    if (last && last.kept === kept) last.text += chunk;
-    else runs.push({ text: chunk, kept });
-  };
-  for (const part of String(text || "").split(/(\s+)/)) {
-    if (!part) continue;
-    if (/^\s+$/.test(part)) { push(part, true); continue; }
-    const chars = Array.from(part);
-    if (chars.length <= 2) {
-      push(chars[0], true);
-      push(chars.slice(1).join(""), false);
-      continue;
-    }
-    push(chars[0], true);
-    push(chars.slice(1, -1).join(""), false);
-    push(chars[chars.length - 1], true);
-  }
-  return runs;
-}
-
 export function filledSteps({ card, mode, revealed, answered, concealed }) {
   const steps = (card && card.front_steps) || [];
   if (!steps.length || concealed) return 0;

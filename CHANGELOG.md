@@ -125,6 +125,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- On the web, a card's section opens from a quiet **Context** chip in the
+  bottom row (or `c`, or the review menu) until the answer shows; a click on
+  the question no longer opens it. Hiding a revealed answer (`h` or a click)
+  lays a cover with an eye-off glyph over it instead of drawing each word with
+  transparent middle letters.
 - On the phone, a tap on a revealed answer hides it under a **Hide** sheet
   that rises from the answer's top edge, leaving the question in view; its
   close mark shows the answer again. It replaces the in-place look that kept

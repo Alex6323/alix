@@ -187,15 +187,18 @@ its region, a "more below" or "more above" marker appears at that edge;
 clicking it scrolls that region by most of its height, so you can walk a long
 answer without reaching for the wheel. Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server).
-A card under a section names the section nowhere on its face. On the first
+A card under a section names the section on its face only through a quiet
+**Context** chip in the bottom row, offered until the answer shows. On the first
 card you ever meet from that section, the section sheet opens by itself
 once: the page dims at once and the sheet slides up from the bottom of the
 page, as on the phone, taking only the room its prose needs; a long section
 scrolls inside it. Dismiss it and it stays closed through reveal or answer
 input; later cards from the same section, in this sitting or any later one,
 do not open it automatically. The full section never appears inline. Click
-the question (the pointer shows it is clickable), press `c`, or use
-**Context** beside **Ask** in the review menu to open the sheet on demand.
+the **Context** chip, press `c`, or use **Context** beside **Ask** in the
+review menu to open the sheet on demand; a click on the question opens
+nothing, and once the answer shows none of these is offered, since the
+section is there to help you answer.
 While the sheet is open, the card and its review keys are inert; a click on
 the dimmed page, the `×` in the sheet's top-right corner, `c`, or Escape
 closes it.
@@ -212,13 +215,10 @@ re-fetches workspace icon images, so a regenerated emblem shows without a
 reload.
 
 Once an answer is on screen you can **hide it to self-test** before you grade:
-press `h` or click the answer. Every word keeps its first letter, and its last
-letter past two letters; the other letters are drawn transparent in place, so
-the word shapes stay where they are and the line keeps its width. Inline code,
-tables and lists follow the same rule; an image or a diagram goes invisible
-with its space kept. The note disappears while the answer is hidden and comes
-back when you show it. Nothing on the card moves. `h` or a click shows the
-answer again, and the corner marker names what the next press does; on a
+press `h` or click the answer. A cover fills the answer's space, an eye-off
+glyph with "click to reveal" beneath it. The note disappears while the answer
+is hidden and comes back when you show it. Nothing on the card moves. `h` or a
+click shows the answer again, and the corner marker names what the next press does; on a
 cited card it sits beside the `</>` source marker. A choice pick, a typed
 check and a sketch have nothing to hide. The next card always starts shown.
 
