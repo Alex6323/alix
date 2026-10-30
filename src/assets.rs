@@ -2973,6 +2973,58 @@ mod tests {
     }
 
     #[test]
+    fn stamp_edits_apply_in_order_and_refuse_every_invalid_range() {
+        type Row<'a> = (
+            &'a str,
+            &'a str,
+            &'a [(std::ops::Range<usize>, &'a str)],
+            Option<&'a str>,
+        );
+        let rows: [Row; 9] = [
+            (
+                "disjoint",
+                "abcdef",
+                &[(1..2, "X"), (4..5, "Y")],
+                Some("aXcdYf"),
+            ),
+            (
+                "touching",
+                "abcdef",
+                &[(1..2, "X"), (2..3, "Y")],
+                Some("aXYdef"),
+            ),
+            ("one insertion", "abcdef", &[(2..2, "X")], Some("abXcdef")),
+            ("overlapping", "abcdef", &[(1..3, "X"), (2..4, "Y")], None),
+            (
+                "two insertions at one point",
+                "abcdef",
+                &[(2..2, "X"), (2..2, "Y")],
+                None,
+            ),
+            (
+                "reversed",
+                "abcdef",
+                &[(std::ops::Range { start: 3, end: 2 }, "X")],
+                None,
+            ),
+            ("past the end", "abcdef", &[(5..7, "X")], None),
+            ("start inside a character", "a\u{e9}", &[(2..3, "X")], None),
+            ("end inside a character", "a\u{e9}", &[(1..2, "X")], None),
+        ];
+        for (label, text, edits, expected) in rows {
+            let edits: Vec<(std::ops::Range<usize>, String)> = edits
+                .iter()
+                .map(|(range, text)| (range.clone(), text.to_string()))
+                .collect();
+            assert_eq!(
+                expected.map(str::to_string),
+                apply_stamp_edits(text, &edits).ok(),
+                "row `{label}`"
+            );
+        }
+    }
+
+    #[test]
     fn a_failed_diagram_warns_while_the_healthy_one_freezes() {
         let _guard = crate::testutil::exec_lock();
         let directory = workspace();
