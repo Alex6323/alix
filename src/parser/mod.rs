@@ -2325,8 +2325,6 @@ fn capture_answer_fences(
     fences
 }
 
-/// Whole-word, case-insensitive containment. Short answers are skipped:
-/// a three-letter answer matches too much prose to be worth reporting.
 fn lint_hints_naming_the_answer(card: &Card, hint_line: Option<usize>, lints: &mut Vec<Lint>) {
     let Some(line) = hint_line else {
         return;
@@ -2345,6 +2343,8 @@ fn lint_hints_naming_the_answer(card: &Card, hint_line: Option<usize>, lints: &m
     }
 }
 
+/// Whole-word, case-insensitive containment. Short answers are skipped:
+/// a three-letter answer matches too much prose to be worth reporting.
 fn names_answer(note: &str, answer: &str) -> bool {
     let answer = answer.trim();
     if answer.chars().count() < 4 {
