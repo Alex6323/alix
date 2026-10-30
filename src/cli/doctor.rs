@@ -1975,11 +1975,16 @@ mod tests {
         let path = dir.path().join("Eng-Sayings.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: \"deck-3nmmy2qkrw2trvvrmbm7ajry9t\"\n---\n## q <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\na\n",
+            "---\nformat-version: 1\nid: \"deck-3nmmy2qkrw2trvvrmbm7ajry9t\"\n---\n## q\na\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
         )
         .unwrap();
         let mut report = Report::default();
         deck_findings(&path, &mut report);
+        assert!(
+            report.errors.is_empty(),
+            "the deck parses: {:#?}",
+            report.errors
+        );
         let mentions_title = report
             .warnings
             .iter()
@@ -2275,11 +2280,16 @@ mod tests {
         w(
             dir.path(),
             "ready.md",
-            "---\nformat-version: 1\nid: deck-ready\n---\n## q <!-- id: card-ready -->\na\n",
+            "---\nformat-version: 1\nid: deck-ready\n---\n## q\na\n<!-- id: card-ready -->\n",
         );
 
         let mut report = Report::default();
         deck_findings(&path, &mut report);
+        assert!(
+            report.errors.is_empty(),
+            "the deck parses: {:#?}",
+            report.errors
+        );
 
         assert!(
             report
@@ -4608,32 +4618,16 @@ printf ']}}'
         w(
             &decks,
             "facts.md",
-            "---\nformat-version: 1\nid: deck-deck1\n---\n## q <!-- id: card-card1 -->\na\n",
-        );
-        std::fs::create_dir_all(dir.path().join(".alix/progress")).unwrap();
-        w(
-            &dir.path().join(".alix/progress"),
-            "deck-deck1.json",
-            r#"{"version":1,"deck_id":"deck-deck1","subject":"facts.md","revision":1,"cards":{},"records":{},"writer":null}"#,
+            "---\nformat-version: 1\nid: \"deck-3nmmy2qkrw2trvvrmbm7ajry9t\"\n---\n## q\na\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
         );
 
         let report = workspace_findings(dir.path(), false);
 
         assert!(
-            !report
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("un-converted")),
-            "clean workspace flagged un-converted: {:#?}",
-            report.warnings
-        );
-        assert!(
-            !report
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("points into `assets/`")),
-            "clean workspace flagged a source into assets: {:#?}",
-            report.warnings
+            report.warnings.is_empty() && report.errors.is_empty(),
+            "a clean workspace has no finding: {:#?} {:#?}",
+            report.warnings,
+            report.errors
         );
     }
 
