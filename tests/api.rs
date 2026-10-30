@@ -9869,3 +9869,52 @@ fn law_opening_any_picker_session_ends_an_active_augment_session() {
         );
     }
 }
+
+#[test]
+fn an_opened_hint_turns_the_next_pass_into_partial_and_names_only_the_current_card() {
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| {
+        std::fs::write(
+            dir.join("hinted.md"),
+            "---\nformat-version: 1\nid: \"deck-hinted\"\n---\n## Capital of France?\n> [!TIP]\n> A river city.\n\n---\nParis\n<!-- id: card-h1 -->\n",
+        )
+        .unwrap();
+    });
+    let selected = post_json(&base, "/api/select", r#"{"deck":"hinted.md"}"#);
+    assert_eq!(200, selected.status, "select");
+    let state = get_json(&base, "/api/state");
+    assert_eq!(
+        1,
+        state["card"]["hints"].as_array().map_or(0, Vec::len),
+        "state: {state}"
+    );
+    let card = state["card"]["id"].as_str().unwrap().to_string();
+    let revision = state["study_revision"].as_u64().unwrap();
+    let open = |card: &str, revision: u64| {
+        http(
+            &base,
+            "POST",
+            "/api/hint",
+            &[
+                ("Content-Type", "application/json"),
+                ("X-Alix-Study-Revision", &revision.to_string()),
+            ],
+            serde_json::json!({ "card": card }).to_string().as_bytes(),
+        )
+        .status
+    };
+
+    assert_eq!(409, open("card-not-on-screen", revision), "another card");
+    assert_eq!(409, open(&card, revision + 1), "a stale revision");
+    assert_eq!(204, open(&card, revision), "the current card");
+
+    let graded = post_gated(&base, "/api/grade", r#"{"grade":"passed"}"#);
+    let body: serde_json::Value = serde_json::from_slice(&graded.body).unwrap();
+    assert_eq!(
+        (1, 1),
+        (
+            body["passed"].as_u64().unwrap(),
+            body["partial"].as_u64().unwrap()
+        ),
+        "a pass after an opened hint records Partial: {body}"
+    );
+}

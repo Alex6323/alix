@@ -189,6 +189,7 @@ pub struct _CardView {
     pub answer_steps: Vec<AnswerStep>,
     pub reshaped: bool,
     pub note: Vec<NoteView>,
+    pub hints: Vec<Vec<ContentUnit>>,
     pub images: Vec<ImageView>,
     pub images_back: Vec<ImageView>,
     pub citations: Vec<String>,
@@ -496,6 +497,11 @@ impl ReviewSession {
     #[flutter_rust_bridge::frb(sync)]
     pub fn check(&self, lines: Vec<String>) -> Option<CheckFeedback> {
         alix::review::check_typed(&self.session, &lines)
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn open_hint(&mut self, card_id: String) -> bool {
+        self.session.open_hint(&card_id)
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -1998,6 +2004,26 @@ mod tests {
             !note.is_empty(),
             "the note shows on the live session without a reopen"
         );
+    }
+
+    #[test]
+    fn an_opened_hint_caps_the_next_pass_and_names_only_the_current_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("d.md"),
+            "## capital of France?\n> [!TIP]\n> a river city\n\n---\nParis\n",
+        );
+        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
+        let state = s.state(Some(LATER));
+        assert_eq!(1, state.card.expect("a card is current").hints.len(), "hints reach the phone");
+        let id = s.tutor_card().expect("a card is current").id;
+
+        assert!(!s.open_hint("card-not-current".to_string()), "another card");
+        assert!(s.open_hint(id), "the current card");
+        s.grade(Grade::Pass, Some(LATER)).unwrap();
+        let state = s.state(Some(LATER));
+        assert_eq!((1, 1), (state.passed, state.partial), "the pass is capped at Partial");
     }
 
     #[test]

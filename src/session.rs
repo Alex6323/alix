@@ -119,6 +119,7 @@ pub struct Session {
     // Sections with a card the learner met before this session opened.
     met_sections: HashSet<Vec<String>>,
     current_introducing: bool,
+    hint_opened: bool,
     appearances: Vec<u32>,
     choice_seed: u64,
     scheduler: Box<dyn Scheduler>,
@@ -229,6 +230,7 @@ impl Session {
             introduced_sections: HashSet::new(),
             met_sections,
             current_introducing: false,
+            hint_opened: false,
             appearances,
             choice_seed: now_ms,
             scheduler,
@@ -463,9 +465,22 @@ impl Session {
         self.choice_seed
     }
 
+    pub fn open_hint(&mut self, card_id: &str) -> bool {
+        let opens = self
+            .current()
+            .is_some_and(|card| !card.hints.is_empty() && card.id().as_deref() == Some(card_id));
+        self.hint_opened |= opens;
+        opens
+    }
+
     pub fn grade(&mut self, store: &mut Store, grade: Grade, now_ms: u64) {
         let Some(index) = self.current_idx else {
             return;
+        };
+        let grade = if self.hint_opened && grade == Grade::Pass {
+            Grade::Partial
+        } else {
+            grade
         };
         let Some(id) = self.cards[index].id() else {
             self.advance(store, now_ms);
@@ -709,6 +724,9 @@ impl Session {
         });
         let next = decision.as_ref().map(|decision| decision.index);
         let changed = next != self.current_idx;
+        if !keep_current || changed {
+            self.hint_opened = false;
+        }
         if let Some(i) = next
             && changed
         {
@@ -1390,6 +1408,137 @@ mod tests {
 
     fn sched() -> Box<dyn Scheduler> {
         Box::new(crate::scheduler::Fsrs::default())
+    }
+
+    fn hinted_cards(n: usize) -> Vec<Card> {
+        (0..n)
+            .map(|i| {
+                let mut card = card("deck.md", i);
+                card.hints = vec!["h".to_string()];
+                card
+            })
+            .collect()
+    }
+
+    fn graded(n: usize, options: SessionOptions) -> (Session, Store, tempfile::TempDir) {
+        let (mut store, dir) = empty_store();
+        let session = Session::new(hinted_cards(n), &mut store, sched(), options, 1_000);
+        (session, store, dir)
+    }
+
+    fn grading_options(cram: bool) -> SessionOptions {
+        SessionOptions {
+            skip_introduction: true,
+            cram,
+            ..SessionOptions::default()
+        }
+    }
+
+    #[test]
+    fn an_opened_hint_caps_a_pass_at_partial_and_leaves_a_fail_alone() {
+        let rows = [
+            ("pass, no hint", false, false, Grade::Pass, (1, 0, 0)),
+            ("pass, hint opened", false, true, Grade::Pass, (1, 1, 0)),
+            (
+                "partial, hint opened",
+                false,
+                true,
+                Grade::Partial,
+                (1, 1, 0),
+            ),
+            ("fail, hint opened", false, true, Grade::Fail, (0, 0, 1)),
+            ("cram pass, hint opened", true, true, Grade::Pass, (1, 1, 0)),
+        ];
+        for (label, cram, open, grade, (passed, partial, failed)) in rows {
+            let (mut session, mut store, _dir) = graded(1, grading_options(cram));
+            let id = session.current_id().unwrap();
+            if open {
+                assert!(
+                    session.open_hint(&id),
+                    "{label}: the current card's hint opens"
+                );
+            }
+            session.grade(&mut store, grade, 2_000);
+            assert_eq!(
+                (passed, partial, failed),
+                (
+                    session.stats.passed,
+                    session.stats.partial,
+                    session.stats.failed
+                ),
+                "{label}: (passed, partial, failed)"
+            );
+        }
+    }
+
+    #[test]
+    fn every_change_of_current_card_clears_an_opened_hint_and_a_poll_keeps_it() {
+        let after = |label: &str, n: usize, step: &dyn Fn(&mut Session, &mut Store)| -> usize {
+            let (mut session, mut store, _dir) = graded(n, grading_options(false));
+            let id = session.current_id().unwrap();
+            assert!(session.open_hint(&id), "{label}: opens");
+            step(&mut session, &mut store);
+            session.grade(&mut store, Grade::Pass, 3_000);
+            session.stats.partial
+        };
+        assert_eq!(
+            0,
+            after("skip to another card", 2, &|s, st| s.skip(st, 2_000)),
+            "skip to another card"
+        );
+        assert_eq!(
+            0,
+            after("skip re-selects the one card", 1, &|s, st| s
+                .skip(st, 2_000)),
+            "skip re-selects the one card"
+        );
+        assert_eq!(
+            0,
+            after("remove", 2, &|s, st| {
+                s.remove_current(st, 2_000);
+            }),
+            "remove"
+        );
+        assert_eq!(
+            0,
+            after("restart", 1, &|s, st| {
+                s.restart(st, 2_000);
+            }),
+            "restart"
+        );
+        assert_eq!(
+            0,
+            after("introduce", 2, &|s, st| s.introduce_current(st, 2_000)),
+            "introduce"
+        );
+        assert_eq!(
+            1,
+            after("a poll that keeps the card", 1, &|s, st| {
+                s.poll(st, 2_000);
+            }),
+            "a poll that keeps the card"
+        );
+    }
+
+    #[test]
+    fn a_hint_opens_only_on_the_current_card_and_only_when_it_has_hints() {
+        let (mut session, mut store, _dir) = graded(2, grading_options(false));
+        assert!(
+            !session.open_hint("card-not-current"),
+            "a card that is not current"
+        );
+        let (mut bare, mut bare_store, _bare_dir) = {
+            let (mut store, dir) = empty_store();
+            let session =
+                Session::new(cards(1), &mut store, sched(), grading_options(false), 1_000);
+            (session, store, dir)
+        };
+        let id = bare.current_id().unwrap();
+        assert!(!bare.open_hint(&id), "a card with no hints");
+        bare.grade(&mut bare_store, Grade::Pass, 2_000);
+        assert_eq!(0, bare.stats.partial, "a refused open sets no flag");
+        session.grade(&mut store, Grade::Pass, 2_000);
+        assert_eq!(0, session.stats.partial, "a refused open sets no flag");
     }
 
     #[test]

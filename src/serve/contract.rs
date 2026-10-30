@@ -155,6 +155,7 @@ fn statedto_review_phase_wire_shape() {
                 },
                 ],
             }],
+            hints: Vec::new(),
             images: vec![ImageDto {
                 src: "/img/0123456789abcdef".to_string(),
                 alt: Some("a heap-allocated String".to_string()),
@@ -313,6 +314,7 @@ fn statedto_review_phase_wire_shape() {
                         }
                     ]
                 }],
+                "hints": [],
                 "images": [
                     {"src": "/img/0123456789abcdef", "alt": "a heap-allocated String",
                      "regions": [
@@ -719,6 +721,7 @@ fn walkdto_front_phase_wire_shape() {
                 "answer_steps": [{"kind": "line", "back_from": 0, "back_to": 1}],
                 "reshaped": false,
                 "note": [],
+                "hints": [],
                 "images": [],
                 "images_back": [],
                 "citations": [],
@@ -950,6 +953,7 @@ fn carddto_sectioned_wire_shape() {
             "images": [],
             "images_back": [],
             "note": [],
+            "hints": [],
             "answer_steps": [
                 {"kind": "line", "back_from": 0, "back_to": 1}
             ],
@@ -1062,6 +1066,16 @@ fn carddto_wire_shape() {
                     runs: crate::inline::parse_inline("A **city**."),
                 }],
             }],
+            hints: vec![
+                vec![ContentUnit::Sentence {
+                    text: "Think of a **river**.".to_string(),
+                    runs: crate::inline::parse_inline("Think of a **river**."),
+                }],
+                vec![ContentUnit::Sentence {
+                    text: "It starts with P.".to_string(),
+                    runs: crate::inline::parse_inline("It starts with P."),
+                }],
+            ],
             images: Vec::new(),
             images_back: Vec::new(),
             citations: Vec::new(),
@@ -1130,6 +1144,18 @@ fn carddto_wire_shape() {
                     "runs": [{"text": "A "}, {"text": "city", "bold": true}, {"text": "."}]
                 }]
             }],
+            "hints": [
+                [{
+                    "kind": "sentence",
+                    "text": "Think of a **river**.",
+                    "runs": [{"text": "Think of a "}, {"text": "river", "bold": true}, {"text": "."}]
+                }],
+                [{
+                    "kind": "sentence",
+                    "text": "It starts with P.",
+                    "runs": [{"text": "It starts with P."}]
+                }]
+            ],
             "images": [],
             "images_back": [],
             "citations": [],
@@ -1196,6 +1222,7 @@ fn carddto_math_wire_shape() {
         }],
         reshaped: false,
         note: Vec::new(),
+        hints: Vec::new(),
         images: Vec::new(),
         images_back: Vec::new(),
         citations: Vec::new(),
@@ -1245,6 +1272,7 @@ fn carddto_math_wire_shape() {
             ],
             "reshaped": false,
             "note": [],
+            "hints": [],
             "images": [],
             "images_back": [],
             "citations": [],
@@ -1302,6 +1330,7 @@ fn carddto_quote_wire_shape() {
         ],
         reshaped: false,
         note: Vec::new(),
+        hints: Vec::new(),
         images: Vec::new(),
         images_back: Vec::new(),
         citations: Vec::new(),
@@ -1355,6 +1384,7 @@ fn carddto_quote_wire_shape() {
             ],
             "reshaped": false,
             "note": [],
+            "hints": [],
             "images": [],
             "images_back": [],
             "citations": [],
@@ -1412,6 +1442,7 @@ fn carddto_table_wire_shape() {
         }],
         reshaped: true,
         note: Vec::new(),
+        hints: Vec::new(),
         images: Vec::new(),
         images_back: Vec::new(),
         citations: Vec::new(),
@@ -1474,6 +1505,7 @@ fn carddto_table_wire_shape() {
             }],
             "reshaped": true,
             "note": [],
+            "hints": [],
             "images": [],
             "images_back": [],
             "citations": [],
@@ -1792,6 +1824,7 @@ fn browsedto_wire_shape() {
             }],
             reshaped: false,
             note: Vec::new(),
+            hints: Vec::new(),
             images: Vec::new(),
             images_back: Vec::new(),
             citations: Vec::new(),
@@ -1821,6 +1854,7 @@ fn browsedto_wire_shape() {
                 ],
                 "reshaped": false,
                 "note": [],
+                "hints": [],
                 "images": [],
                 "images_back": [],
                 "citations": [],
@@ -3050,6 +3084,7 @@ fn carddto_blank_wire_shape() {
             "answer_steps": [{"kind": "line", "back_from": 0, "back_to": 1}],
             "reshaped": false,
             "note": [],
+            "hints": [],
             "images": [{"src": image, "alt": "a hand"}],
             "images_back": [],
             "citations": [],

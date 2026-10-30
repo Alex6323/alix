@@ -113,6 +113,8 @@ pub struct CardView {
     pub answer_steps: Vec<crate::render::AnswerStep>,
     pub reshaped: bool,
     pub note: Vec<NoteView>,
+    #[serde(default)]
+    pub hints: Vec<Vec<ContentUnit>>,
     pub images: Vec<ImageView>,
     pub images_back: Vec<ImageView>,
     pub citations: Vec<String>,
@@ -253,6 +255,7 @@ impl CardView {
             answer_steps,
             reshaped: space == AnswerSpace::Displayed && card.display_back.is_some(),
             note: render::note_views_with(card, projector),
+            hints: render::hint_units_with(card, projector),
             images: {
                 let stamps = asked_stamps(card);
                 let asked = move |stamp: Option<&str>| {
@@ -676,6 +679,41 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_hint_renders_as_its_own_unit_list_in_authored_order() {
+        let deck = parser::parse(
+            "d.md",
+            "## Q\n> [!TIP]\n> first **hint**\n\n> [!TIP]\n> second\n\n---\nanswer\n",
+        )
+        .unwrap();
+        let view = CardView::from(&deck.cards[0]);
+        let texts: Vec<Vec<String>> = view
+            .hints
+            .iter()
+            .map(|units| {
+                units
+                    .iter()
+                    .map(|unit| match unit {
+                        ContentUnit::Sentence { text, .. } => text.clone(),
+                        other => format!("{other:?}"),
+                    })
+                    .collect()
+            })
+            .collect();
+        assert_eq!(
+            vec![
+                vec!["first **hint**".to_string()],
+                vec!["second".to_string()]
+            ],
+            texts
+        );
+        assert!(
+            view.back.iter().all(|line| !line.contains("hint")),
+            "no hint text in the answer: {:?}",
+            view.back
+        );
+    }
 
     #[test]
     fn a_reference_link_resolves_against_its_own_decks_definitions() {

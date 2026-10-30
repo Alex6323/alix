@@ -153,6 +153,23 @@ pub(crate) fn note_views_with(
         .collect()
 }
 
+pub(crate) fn hint_units_with(
+    card: &Card,
+    projector: &mut DisplayProjector,
+) -> Vec<Vec<ContentUnit>> {
+    card.hints
+        .iter()
+        .map(|hint| {
+            text_units_with(
+                hint,
+                projector,
+                true,
+                &mut plain_fences(&card.resolved_diagrams),
+            )
+        })
+        .collect()
+}
+
 pub(crate) fn answer_units_with(
     lines: &[String],
     projector: &mut DisplayProjector,

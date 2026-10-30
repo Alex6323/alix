@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1239709160;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 599733988;
 
 // Section: executor
 
@@ -703,6 +703,56 @@ fn wire__crate__api__review__ReviewSession_open_impl(
                     Ok(output_ok)
                 })(),
             )
+        },
+    )
+}
+fn wire__crate__api__review__ReviewSession_open_hint_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ReviewSession_open_hint",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ReviewSession>,
+            >>::sse_decode(&mut deserializer);
+            let api_card_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, true,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref_mut()),
+                        _ => unreachable!(),
+                    }
+                }
+                let mut api_that_guard = api_that_guard.unwrap();
+                let output_ok = Result::<_, ()>::Ok(crate::api::review::ReviewSession::open_hint(
+                    &mut *api_that_guard,
+                    api_card_id,
+                ))?;
+                Ok(output_ok)
+            })())
         },
     )
 }
@@ -2698,6 +2748,7 @@ const _: fn() = || {
         let _: Vec<crate::api::review::AnswerStep> = CardView.answer_steps;
         let _: bool = CardView.reshaped;
         let _: Vec<crate::api::review::NoteView> = CardView.note;
+        let _: Vec<Vec<crate::api::review::ContentUnit>> = CardView.hints;
         let _: Vec<crate::api::review::ImageView> = CardView.images;
         let _: Vec<crate::api::review::ImageView> = CardView.images_back;
         let _: Vec<String> = CardView.citations;
@@ -3038,6 +3089,7 @@ impl SseDecode for crate::api::review::CardView {
         let mut var_answerSteps = <Vec<crate::api::review::AnswerStep>>::sse_decode(deserializer);
         let mut var_reshaped = <bool>::sse_decode(deserializer);
         let mut var_note = <Vec<crate::api::review::NoteView>>::sse_decode(deserializer);
+        let mut var_hints = <Vec<Vec<crate::api::review::ContentUnit>>>::sse_decode(deserializer);
         let mut var_images = <Vec<crate::api::review::ImageView>>::sse_decode(deserializer);
         let mut var_imagesBack = <Vec<crate::api::review::ImageView>>::sse_decode(deserializer);
         let mut var_citations = <Vec<String>>::sse_decode(deserializer);
@@ -3055,6 +3107,7 @@ impl SseDecode for crate::api::review::CardView {
             answer_steps: var_answerSteps,
             reshaped: var_reshaped,
             note: var_note,
+            hints: var_hints,
             images: var_images,
             images_back: var_imagesBack,
             citations: var_citations,
@@ -3530,6 +3583,20 @@ impl SseDecode for Vec<Vec<String>> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<Vec<String>>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<Vec<crate::api::review::ContentUnit>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<Vec<crate::api::review::ContentUnit>>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -4654,13 +4721,13 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        38 => wire__crate__api__listing__deck_strips_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__listing__list_members_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__listing__list_root_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__listing__list_searchable_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__sync__paired_apply_pull_impl(port, ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__simple__stamp_deck_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__listing__deck_strips_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__listing__list_members_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__listing__list_root_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__listing__list_searchable_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__sync__paired_apply_pull_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__simple__stamp_deck_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4704,72 +4771,73 @@ fn pde_ffi_dispatcher_sync_impl(
             data_len,
         ),
         13 => wire__crate__api__review__ReviewSession_open_impl(ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__review__ReviewSession_record_minted_card_impl(
+        14 => wire__crate__api__review__ReviewSession_open_hint_impl(ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__review__ReviewSession_record_minted_card_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        15 => wire__crate__api__review__ReviewSession_state_impl(ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__review__ReviewSession_tutor_card_impl(ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__review__TraceSession_apply_exam_failed_impl(
+        16 => wire__crate__api__review__ReviewSession_state_impl(ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__review__ReviewSession_tutor_card_impl(ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__review__TraceSession_apply_exam_failed_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        18 => wire__crate__api__review__TraceSession_apply_exam_passed_impl(
+        19 => wire__crate__api__review__TraceSession_apply_exam_passed_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        19 => {
+        20 => {
             wire__crate__api__review__TraceSession_deck_has_exam_impl(ptr, rust_vec_len, data_len)
         }
-        20 => wire__crate__api__review__TraceSession_exam_cooldown_ms_impl(
+        21 => wire__crate__api__review__TraceSession_exam_cooldown_ms_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        21 => wire__crate__api__review__TraceSession_grade_impl(ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__review__TraceSession_open_impl(ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__review__TraceSession_predict_impl(ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__review__TraceSession_state_impl(ptr, rust_vec_len, data_len),
-        25 => {
+        22 => wire__crate__api__review__TraceSession_grade_impl(ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__review__TraceSession_open_impl(ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__review__TraceSession_predict_impl(ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__review__TraceSession_state_impl(ptr, rust_vec_len, data_len),
+        26 => {
             wire__crate__api__review__WalkSession_apply_card_note_impl(ptr, rust_vec_len, data_len)
         }
-        26 => wire__crate__api__review__WalkSession_choose_impl(ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__review__WalkSession_choose_multi_impl(ptr, rust_vec_len, data_len),
-        28 => {
+        27 => wire__crate__api__review__WalkSession_choose_impl(ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__review__WalkSession_choose_multi_impl(ptr, rust_vec_len, data_len),
+        29 => {
             wire__crate__api__review__WalkSession_mint_tutor_card_impl(ptr, rust_vec_len, data_len)
         }
-        29 => wire__crate__api__review__WalkSession_next_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__review__WalkSession_open_impl(ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__review__WalkSession_record_minted_card_impl(
+        30 => wire__crate__api__review__WalkSession_next_impl(ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__review__WalkSession_open_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__review__WalkSession_record_minted_card_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        32 => wire__crate__api__review__WalkSession_restart_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__review__WalkSession_reveal_impl(ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__review__WalkSession_state_impl(ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__review__WalkSession_tutor_card_impl(ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__generate__apply_generated_deck_impl(ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__simple__core_version_impl(ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__listing__deck_title_impl(ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__sync__paired_entries_impl(ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__sync__paired_free_space_impl(ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__sync__paired_needs_space_impl(ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__sync__paired_orphans_impl(ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__sync__paired_plan_pushes_impl(ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__sync__paired_record_push_impl(ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__sync__paired_recover_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__sync__paired_remove_entry_impl(ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__sync__paired_resolve_conflict_impl(ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__sync__paired_root_dir_impl(ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__sync__paired_staging_zip_impl(ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__review__WalkSession_restart_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__review__WalkSession_reveal_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__review__WalkSession_state_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__review__WalkSession_tutor_card_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__generate__apply_generated_deck_impl(ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__simple__core_version_impl(ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__listing__deck_title_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__sync__paired_entries_impl(ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__sync__paired_free_space_impl(ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__sync__paired_needs_space_impl(ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__sync__paired_orphans_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__sync__paired_plan_pushes_impl(ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__sync__paired_record_push_impl(ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__sync__paired_recover_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__sync__paired_remove_entry_impl(ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__sync__paired_resolve_conflict_impl(ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__sync__paired_root_dir_impl(ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__sync__paired_staging_zip_impl(ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4911,6 +4979,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CardView> 
             self.0.answer_steps.into_into_dart().into_dart(),
             self.0.reshaped.into_into_dart().into_dart(),
             self.0.note.into_into_dart().into_dart(),
+            self.0.hints.into_into_dart().into_dart(),
             self.0.images.into_into_dart().into_dart(),
             self.0.images_back.into_into_dart().into_dart(),
             self.0.citations.into_into_dart().into_dart(),
@@ -6278,6 +6347,7 @@ impl SseEncode for crate::api::review::CardView {
         <Vec<crate::api::review::AnswerStep>>::sse_encode(self.answer_steps, serializer);
         <bool>::sse_encode(self.reshaped, serializer);
         <Vec<crate::api::review::NoteView>>::sse_encode(self.note, serializer);
+        <Vec<Vec<crate::api::review::ContentUnit>>>::sse_encode(self.hints, serializer);
         <Vec<crate::api::review::ImageView>>::sse_encode(self.images, serializer);
         <Vec<crate::api::review::ImageView>>::sse_encode(self.images_back, serializer);
         <Vec<String>>::sse_encode(self.citations, serializer);
@@ -6656,6 +6726,16 @@ impl SseEncode for Vec<Vec<String>> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <Vec<String>>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<Vec<crate::api::review::ContentUnit>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <Vec<crate::api::review::ContentUnit>>::sse_encode(item, serializer);
         }
     }
 }

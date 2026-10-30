@@ -618,8 +618,15 @@ stable `root_id`; paired clients compare the latter before any progress write.
 | POST | `/api/introduce` | – | `StateDto` | 409 |
 | POST | `/api/check` | `{lines: [string]}` | `CheckFeedbackDto` | 400 bad body / no card; 409 |
 | POST | `/api/choose` | `{index, card}` for a single pick, `{indices, card}` for select-all (`card`: the current `card.id`, required) | `ChooseFeedbackDto` \| `MultiChooseFeedbackDto` | 400 bad body / no question / shape mismatch; 409 no session / another card |
+| POST | `/api/hint` | `{card}` (the current `card.id`, required) | 204, no body | 400 bad body; 409 no session / stale revision / another card / a card without hints |
 | POST | `/api/remove` | – | `StateDto` | 409 |
 | POST | `/api/restart` | – | `StateDto` | 409 |
+
+`/api/hint` records that the current card's hints were opened: a pass graded
+on that card afterwards records Partial (a fail stays a fail), however many
+hints were opened. The mark lives in the session, so a page reload keeps it
+and any move to another card (a grade, skip, introduce, remove, or restart)
+clears it. It does not advance `study_revision`. Repeating it is harmless.
 
 `/api/reset` wipes a row's stored progress (schedules, mastered flag)
 outright — a typed-name confirmation is client UX, not enforced here; a
@@ -842,6 +849,7 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `answer_steps` | [AnswerStepDto] | The steps a client walks the answer in: reveal counts every step, typing asks only the gradeable ones. Always present. |
 | `reshaped` | bool | `back` is the `format` augment's display shape. True only on a reveal mode: a typed mode is served the deck's AUTHORED answer, so `reshaped` is false there and `back` is what the check grades. |
 | `note` | [NoteDto] | Post-answer notes, in authored order. Empty when the card has none. |
+| `hints` | [[ContentUnitDto]] | The card's hints (`> [!TIP]` blocks above the divider), one unit list per hint, in authored order. Always present; empty when the card has none. A client offers them one at a time while the answer is still being produced, the same window as the section, and shows the first only after `POST /api/hint` succeeds. The reversed half of a card carries none. |
 | `images` / `images_back` | [ImageDto] | Front / back images, rendered as ordered blocks on that side. Empty when none. |
 | `citations` | [CitationDto] | Ordered `<!-- at: -->` citations. Empty when none. |
 | `crumb` | CrumbDto? | Topology breadcrumb (region heatmap). |

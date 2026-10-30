@@ -2243,6 +2243,31 @@ mod tests {
     }
 
     #[test]
+    fn hints_ride_only_the_forward_half_of_a_reversed_card() {
+        for (label, direction, expected) in [
+            ("both", "both", vec![(false, 2), (true, 0)]),
+            ("reverse", "reverse", vec![(true, 0)]),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("d.md");
+            std::fs::write(
+                &path,
+                format!(
+                    "## q\n> [!TIP]\n> one\n\n> [!TIP]\n> two\n\n---\na\n<!-- direction: {direction} -->\n"
+                ),
+            )
+            .unwrap();
+            let halves: Vec<(bool, usize)> = Deck::load(&path)
+                .unwrap()
+                .cards
+                .iter()
+                .map(|card| (card.reversed, card.hints.len()))
+                .collect();
+            assert_eq!(expected, halves, "{label}: (reversed, hints)");
+        }
+    }
+
+    #[test]
     fn deck_level_direction_applies_to_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");

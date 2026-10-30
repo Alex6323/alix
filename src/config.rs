@@ -86,6 +86,7 @@ pub struct Bindings {
     pub restart: Vec<KeyPattern>,
     pub ask: Vec<KeyPattern>,
     pub context: Vec<KeyPattern>,
+    pub hint: Vec<KeyPattern>,
     pub make_note: Vec<KeyPattern>,
     pub make_card: Vec<KeyPattern>,
     pub quit: Vec<KeyPattern>,
@@ -108,6 +109,7 @@ impl Default for Bindings {
             restart: keys(&["r"]),
             ask: keys(&["a"]),
             context: keys(&["c"]),
+            hint: keys(&["i"]),
             make_note: keys(&[]),
             make_card: keys(&["ctrl-d"]),
             quit: keys(&["esc"]),
@@ -120,7 +122,7 @@ impl Bindings {
         list.first().map(|p| p.to_string()).unwrap_or_default()
     }
 
-    fn actions(&self) -> [(&'static str, &[KeyPattern]); 16] {
+    fn actions(&self) -> [(&'static str, &[KeyPattern]); 17] {
         [
             ("failed", &self.failed),
             ("partly", &self.partly),
@@ -135,6 +137,7 @@ impl Bindings {
             ("restart", &self.restart),
             ("ask", &self.ask),
             ("context", &self.context),
+            ("hint", &self.hint),
             ("make_note", &self.make_note),
             ("make_card", &self.make_card),
             ("quit", &self.quit),
@@ -145,18 +148,23 @@ impl Bindings {
 type Phases = &'static [(&'static str, &'static [&'static str])];
 
 const REVIEW_PHASES: Phases = &[
-    ("question", &["quit", "context", "remove", "skip", "reveal"]),
+    (
+        "question",
+        &["quit", "context", "hint", "remove", "skip", "reveal"],
+    ),
     (
         "line introduction",
         &["quit", "context", "remove", "ask", "reveal"],
     ),
     (
         "choice question",
-        &["quit", "context", "remove", "skip", "submit", "up", "down"],
+        &[
+            "quit", "context", "hint", "remove", "skip", "submit", "up", "down",
+        ],
     ),
     (
         "typed question",
-        &["quit", "context", "remove", "skip", "submit"],
+        &["quit", "context", "hint", "remove", "skip", "submit"],
     ),
     (
         "graded answer",
@@ -819,6 +827,7 @@ struct RawReview {
     restart: Option<Vec<String>>,
     ask: Option<Vec<String>>,
     context: Option<Vec<String>>,
+    hint: Option<Vec<String>>,
     make_note: Option<Vec<String>>,
     make_card: Option<Vec<String>>,
     quit: Option<Vec<String>>,
@@ -856,6 +865,7 @@ impl Config {
         assign(&mut keys.restart, review.restart, "review.restart")?;
         assign(&mut keys.ask, review.ask, "review.ask")?;
         assign(&mut keys.context, review.context, "review.context")?;
+        assign(&mut keys.hint, review.hint, "review.hint")?;
         assign(&mut keys.make_note, review.make_note, "review.make_note")?;
         assign(&mut keys.make_card, review.make_card, "review.make_card")?;
         assign(&mut keys.quit, review.quit, "review.quit")?;
@@ -1325,6 +1335,7 @@ pub fn default_config_toml() -> &'static str {
 # restart = ["r"]               # start a new session from the summary screen
 # ask = ["a"]                   # ask the tutor about an answered card
 # context = ["c"]               # swap the question for the card's section
+# hint = ["i"]                  # show the card's next hint
 # make_note = []                # ask view: condense the conversation into a note
 # make_card = ["ctrl-d"]        # ask view: distill the conversation into a card
 # quit = ["esc"]                # leave the session
@@ -2037,6 +2048,7 @@ mod tests {
             restart,
             ask,
             context,
+            hint,
             make_note,
             make_card,
             quit,
@@ -2073,6 +2085,7 @@ mod tests {
             ("review.restart", restart),
             ("review.ask", ask),
             ("review.context", context),
+            ("review.hint", hint),
             ("review.make_note", make_note),
             ("review.make_card", make_card),
             ("review.quit", quit),

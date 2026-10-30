@@ -68,6 +68,8 @@ abstract class ReviewSession implements RustOpaqueInterface {
     device: device,
   );
 
+  bool openHint({required String cardId});
+
   String recordMintedCard({required String block});
 
   ReviewState state({BigInt? nowMs});
@@ -175,6 +177,7 @@ class CardView {
   final List<AnswerStep> answerSteps;
   final bool reshaped;
   final List<NoteView> note;
+  final List<List<ContentUnit>> hints;
   final List<ImageView> images;
   final List<ImageView> imagesBack;
   final List<String> citations;
@@ -193,6 +196,7 @@ class CardView {
     required this.answerSteps,
     required this.reshaped,
     required this.note,
+    required this.hints,
     required this.images,
     required this.imagesBack,
     required this.citations,
@@ -213,6 +217,7 @@ class CardView {
       answerSteps.hashCode ^
       reshaped.hashCode ^
       note.hashCode ^
+      hints.hashCode ^
       images.hashCode ^
       imagesBack.hashCode ^
       citations.hashCode;
@@ -235,6 +240,7 @@ class CardView {
           answerSteps == other.answerSteps &&
           reshaped == other.reshaped &&
           note == other.note &&
+          hints == other.hints &&
           images == other.images &&
           imagesBack == other.imagesBack &&
           citations == other.citations;

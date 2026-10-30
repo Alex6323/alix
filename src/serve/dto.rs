@@ -42,6 +42,7 @@ pub(super) struct CardDto {
     pub(super) answer_steps: Vec<crate::render::AnswerStep>,
     pub(super) reshaped: bool,
     pub(super) note: Vec<NoteDto>,
+    pub(super) hints: Vec<Vec<ContentUnit>>,
     pub(super) images: Vec<ImageDto>,
     pub(super) images_back: Vec<ImageDto>,
     pub(super) citations: Vec<CitationDto>,
@@ -500,6 +501,7 @@ pub(super) struct ReviewKeys {
     restart: Vec<KeyDto>,
     ask: Vec<KeyDto>,
     context: Vec<KeyDto>,
+    hint: Vec<KeyDto>,
     make_note: Vec<KeyDto>,
     make_card: Vec<KeyDto>,
     submit: Vec<KeyDto>,
@@ -521,6 +523,7 @@ impl ReviewKeys {
             restart: key_list(&b.restart),
             ask: key_list(&b.ask),
             context: key_list(&b.context),
+            hint: key_list(&b.hint),
             make_note: key_list(&b.make_note),
             make_card: key_list(&b.make_card),
             submit: key_list(&b.submit),
@@ -1483,6 +1486,7 @@ pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
                 units: web_units(note.units),
             })
             .collect(),
+        hints: view.hints.into_iter().map(web_units).collect(),
         citations: view
             .citations
             .into_iter()

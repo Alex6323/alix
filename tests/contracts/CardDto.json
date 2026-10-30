@@ -105,6 +105,37 @@
       "kind": "checklist"
     }
   ],
+  "hints": [
+    [
+      {
+        "kind": "sentence",
+        "runs": [
+          {
+            "text": "Think of a "
+          },
+          {
+            "bold": true,
+            "text": "river"
+          },
+          {
+            "text": "."
+          }
+        ],
+        "text": "Think of a **river**."
+      }
+    ],
+    [
+      {
+        "kind": "sentence",
+        "runs": [
+          {
+            "text": "It starts with P."
+          }
+        ],
+        "text": "It starts with P."
+      }
+    ]
+  ],
   "id": "card-9w2c7xkq4m",
   "images": [],
   "images_back": [],

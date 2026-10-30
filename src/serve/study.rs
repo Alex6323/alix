@@ -353,6 +353,11 @@ pub(super) enum StudyCommand {
         expected: u64,
         reply: Reply<Feedback<review::MultiChoiceFeedback>>,
     },
+    OpenHint {
+        card: String,
+        expected: u64,
+        reply: Reply<bool>,
+    },
     Remove {
         expected: u64,
         reply: Reply<Option<StateDto>>,
@@ -550,6 +555,13 @@ impl StudyHandle {
     ) -> Option<Feedback<review::ChoiceFeedback>> {
         self.call(|reply| StudyCommand::Choose {
             index,
+            card,
+            expected,
+            reply,
+        })
+    }
+    pub(super) fn open_hint(&self, card: String, expected: u64) -> Option<bool> {
+        self.call(|reply| StudyCommand::OpenHint {
             card,
             expected,
             reply,
@@ -1050,6 +1062,18 @@ impl StudyState {
                     }
                 };
                 let _ = reply.send(out);
+            }
+            StudyCommand::OpenHint {
+                card,
+                expected,
+                reply,
+            } => {
+                let opened = self.revision == expected
+                    && self
+                        .reviewing
+                        .as_mut()
+                        .is_some_and(|r| r.session.open_hint(&card));
+                let _ = reply.send(opened);
             }
             StudyCommand::Remove { expected, reply } => {
                 let out = if self.revision != expected {
