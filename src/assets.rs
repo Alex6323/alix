@@ -2162,6 +2162,89 @@ mod tests {
     }
 
     #[test]
+    fn bare_node_retries_warn_only_past_the_probe_budget() {
+        let node = |id: &str, text: &str, index: usize| {
+            format!(
+                r##"<g class="node" id="d1-flowchart-{id}-0" transform="translate({},{})"><rect class="label-container" x="0" y="0" width="15" height="10" fill="none"/><g class="label"><text x="2" y="7">{text}</text></g></g>"##,
+                2 + 17 * (index % 13),
+                2 + 12 * (index / 13),
+            )
+        };
+        let svg_of = |nodes: &[(String, String)]| {
+            let body: String = nodes
+                .iter()
+                .enumerate()
+                .map(|(index, (id, text))| node(id, text, index))
+                .collect();
+            format!(
+                r##"<svg id="d1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 225 65"><style>#d1{{font-family:DejaVu Sans;font-size:4px;fill:#333;}}</style>{body}</svg>"##
+            )
+        };
+        let batch = |svgs: Vec<String>| {
+            svgs.iter()
+                .enumerate()
+                .map(|(index, svg)| format!("<!-- {{\"id\": {}}} -->\n{svg}", index + 1))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        for (bare_nodes, over_budget) in [(64, false), (65, true)] {
+            let _guard = crate::testutil::exec_lock();
+            let directory = workspace();
+            let ids: Vec<String> = (0..bare_nodes).map(|n| format!("n{n:02}")).collect();
+            let edges: Vec<String> = ids.chunks(2).map(|pair| pair.join(" --> ")).collect();
+            let interior = format!("flowchart LR\n  {}", edges.join("\n  "));
+            let path = diagram_deck(
+                directory.path(),
+                &format!("## q\n```mermaid\n{interior}\n```\nanswer\n"),
+            );
+            let unchanged: Vec<(String, String)> =
+                ids.iter().map(|id| (id.clone(), id.clone())).collect();
+            let with = |index: usize, id: &str| {
+                let mut nodes = unchanged.clone();
+                nodes[index] = (id.to_string(), "xq1".to_string());
+                svg_of(&nodes)
+            };
+            let budget = crate::diagram::PROBE_BUDGET - bare_nodes;
+            let outputs = [
+                batch(vec![svg_of(&unchanged)]),
+                batch((0..bare_nodes).map(|index| with(index, "xq1")).collect()),
+                batch(
+                    (0..bare_nodes.min(budget))
+                        .map(|index| with(index, &ids[index]))
+                        .collect(),
+                ),
+            ];
+            let mut script = String::from(
+                "cat >/dev/null; n=$(cat calls 2>/dev/null | wc -l); echo x >> calls;",
+            );
+            for (call, output) in outputs.iter().enumerate() {
+                let file = directory.path().join(format!("sekien-out{call}"));
+                std::fs::write(&file, output).unwrap();
+                script.push_str(&format!(
+                    " [ \"$n\" -eq {call} ] && cat {};",
+                    file.display()
+                ));
+            }
+            let cli = crate::testutil::fake_cli(
+                directory.path(),
+                &format!("cd {} && {{ {script} true; }}", directory.path().display()),
+            );
+
+            let report = freeze_member_with(&path, Some(cli.to_str().unwrap())).unwrap();
+
+            let warned = report
+                .diagram_warnings
+                .iter()
+                .any(|warning| warning.contains("bare-node retries over the probe budget"));
+            assert_eq!(
+                over_budget, warned,
+                "{bare_nodes} bare nodes against a retry budget of {budget}: {:?}",
+                report.diagram_warnings
+            );
+        }
+    }
+
+    #[test]
     fn a_labeled_node_reference_cannot_license_a_bare_retry() {
         let _guard = crate::testutil::exec_lock();
         let directory = workspace();
