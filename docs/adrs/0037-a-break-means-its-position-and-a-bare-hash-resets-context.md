@@ -1,10 +1,10 @@
 # 0037: A break means its position, and a bare `#` resets context
 
 - Status: Accepted (standalone-rule clause superseded by 0038)
-- Evidence: ContextResetInCard in src/parser/mod.rs
 - Evidence: thematic_break in src/parser/mod.rs
 - Recorded: 2026-08-27
 - Retrospective: No
+- Amended by: 0058 (rules 2 and 3)
 
 Supersedes the section-terminator clause of
 [0036](0036-a-heading-is-study-structure-not-deck-metadata.md). The rest of

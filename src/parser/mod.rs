@@ -137,6 +137,7 @@ pub enum LintKind {
     NoteNamesNoBlank {
         name: String,
     },
+    SectionWithoutCards,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,10 +190,10 @@ pub enum ParseError {
         "line {0}: a deck body starts with a heading; open a `# ` section or `## ` card above this line"
     )]
     ProseBeforeFirstHeading(usize),
-    #[error(
-        "line {0}: a bare `#` sits attached inside a card, where a context reset has no meaning; leave a blank line above it to reset the section, or write the section title after `# `"
-    )]
-    ContextResetInCard(usize),
+    #[error("line {0}: section heading is empty; write its title")]
+    EmptySectionHeading(usize),
+    #[error("line {0}: table row has an empty front cell")]
+    EmptyFrontCell(usize),
     #[error("line {0}: a section heading takes no directives and no card id")]
     SectionDirective(usize),
     #[error("line {0}: this card id belongs to no card")]
@@ -348,7 +349,8 @@ impl ParseError {
             Self::BlankCardDirection(_) => "blank_card_direction",
             Self::OrphanSubCard(_) => "orphan_sub_card",
             Self::ProseBeforeFirstHeading(_) => "prose_before_first_heading",
-            Self::ContextResetInCard(_) => "context_reset_in_card",
+            Self::EmptySectionHeading(_) => "empty_section_heading",
+            Self::EmptyFrontCell(_) => "empty_front_cell",
             Self::SectionDirective(_) => "section_directive",
             Self::OrphanCardId(_) => "orphan_card_id",
             Self::SubCardTableTitle(_) => "sub_card_table_title",
@@ -392,7 +394,8 @@ impl ParseError {
             | Self::BlankCardDirection(line)
             | Self::OrphanSubCard(line)
             | Self::ProseBeforeFirstHeading(line)
-            | Self::ContextResetInCard(line)
+            | Self::EmptySectionHeading(line)
+            | Self::EmptyFrontCell(line)
             | Self::SectionDirective(line)
             | Self::OrphanCardId(line)
             | Self::SubCardTableTitle(line)
@@ -1008,6 +1011,23 @@ fn thematic_break(t: &str) -> bool {
     })
 }
 
+fn lint_section_without_cards(
+    section: &[String],
+    line: Option<usize>,
+    has_cards: bool,
+    lints: &mut Vec<Lint>,
+) {
+    if let Some(line) = line
+        && section.len() > 1
+        && !has_cards
+    {
+        lints.push(Lint {
+            line,
+            kind: LintKind::SectionWithoutCards,
+        });
+    }
+}
+
 fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBody, ParseError> {
     let mut blocks: Vec<RawBlock> = Vec::new();
     let mut definitions: Vec<String> = Vec::new();
@@ -1015,6 +1035,8 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
     let mut table: Option<RawTable> = None;
     let mut open_depths: Vec<(usize, usize)> = Vec::new();
     let mut section: Vec<String> = Vec::new();
+    let mut section_heading_line: Option<usize> = None;
+    let mut section_has_cards = false;
     let mut seen_heading = false;
     let mut skip_delimiter = false;
     let mut skip_lines = 0usize;
@@ -1068,6 +1090,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 if !parents {
                     open_depths.clear();
                 }
+                section_has_cards = true;
                 blocks.push(RawBlock::Table(tbl));
             }
         }
@@ -1242,7 +1265,6 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             && !(sidecar_mode() && depth != 2)
         {
             if depth == 1 {
-                let attached_in_card = current.is_some() && !prev_blank && !prev_heading;
                 if let Some(card) = take_card(&mut current)? {
                     blocks.push(RawBlock::Card(card));
                 }
@@ -1255,13 +1277,20 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                     return Err(ParseError::SectionDirective(lineno));
                 }
                 let (text, _) = heading(rest, lineno, lints)?;
-                let resets = trim_ws(&text).is_empty();
-                if resets && attached_in_card {
-                    return Err(ParseError::ContextResetInCard(lineno));
+                if trim_ws(&text).is_empty() {
+                    return Err(ParseError::EmptySectionHeading(lineno));
                 }
+                lint_section_without_cards(
+                    &section,
+                    section_heading_line,
+                    section_has_cards,
+                    lints,
+                );
+                section_heading_line = Some(lineno);
+                section_has_cards = false;
                 open_depths.clear();
                 seen_heading = true;
-                section = if resets { Vec::new() } else { vec![text] };
+                section = vec![text];
                 prev_blank = false;
                 prev_heading = true;
                 continue;
@@ -1284,6 +1313,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 return Err(ParseError::EmptyFront(lineno));
             }
             seen_heading = true;
+            section_has_cards = true;
             open_depths.push((depth, lineno));
             current = Some(RawCard {
                 line: lineno,
@@ -1635,11 +1665,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         });
     }
     if let Some(tbl) = table.take() {
+        section_has_cards = true;
         blocks.push(RawBlock::Table(tbl));
     }
     if let Some(card) = take_card(&mut current)? {
         blocks.push(RawBlock::Card(card));
     }
+    lint_section_without_cards(&section, section_heading_line, section_has_cards, lints);
     Ok(ScannedBody {
         blocks,
         definitions,
@@ -2665,7 +2697,7 @@ fn build_table_cards_inner(
     for row in raw.rows {
         let front = row.cells[0].clone();
         if front.is_empty() {
-            return Err(ParseError::EmptyFront(row.line));
+            return Err(ParseError::EmptyFrontCell(row.line));
         }
         let back = row.cells[1].clone();
         if back.is_empty() {
@@ -4941,9 +4973,9 @@ a
             ),
             // ── empty heading text ──
             (
-                "an empty section heading resets the context",
+                "an empty section heading errors",
                 "#\u{20}\n## q\na\n".into(),
-                Cards(1),
+                Err(1),
             ),
             (
                 "an empty sub-card front errors",
@@ -5939,55 +5971,124 @@ a
     }
 
     #[test]
-    fn a_bare_hash_resets_the_section_context() {
-        let deck = parse("# S\nctx\n\n## a\nx\n\n#\n\n## b\ny\n");
-        assert_eq!(
-            vec!["S".to_string(), "ctx".to_string()],
-            deck.cards[0].section_context,
-            "the card before the reset keeps its context"
-        );
-        assert!(
-            deck.cards[1].section_context.is_empty(),
-            "the card after the reset carries none, got {:?}",
-            deck.cards[1].section_context
-        );
-        assert!(deck.lints.is_empty(), "a reset draws no lint");
-    }
-
-    #[test]
-    fn a_reset_with_nothing_after_it_changes_no_parse() {
-        for text in ["## a\nx\n\n#\n", "## a\nx\n\n#\n\n#\n"] {
-            let deck = parse(text);
-            assert_eq!(1, deck.cards.len(), "one card: {text:?}");
-            assert_eq!(
-                vec!["x".to_string()],
-                deck.cards[0].back,
-                "the answer is untouched: {text:?}"
-            );
-            assert!(
-                deck.lints.is_empty(),
-                "a reset that resets nothing draws no lint: {text:?}, got {:?}",
-                deck.lints
-            );
+    fn every_empty_section_heading_is_an_error_wherever_it_sits() {
+        let spellings = [
+            "#",
+            "# ",
+            "# ##",
+            "# <!-- an aside -->",
+            "# \t",
+            "# ## <!-- an aside -->",
+            "# #<!-- an aside -->",
+        ];
+        for spelling in spellings {
+            let positions = [
+                (
+                    "before the first card",
+                    format!("{spelling}\n\n## q\na\n"),
+                    1,
+                ),
+                (
+                    "between cards",
+                    format!("# S\n\n## a\nx\n\n{spelling}\n\n## b\ny\n"),
+                    6,
+                ),
+                ("attached under a card", format!("## a\nx\n{spelling}\n"), 3),
+            ];
+            for (position, text, line) in positions {
+                let error = err(&text);
+                assert_eq!(
+                    ParseError::EmptySectionHeading(line),
+                    error,
+                    "{spelling:?} {position}"
+                );
+                assert_eq!(
+                    format!("line {line}: section heading is empty; write its title"),
+                    error.to_string(),
+                    "{spelling:?} {position}"
+                );
+            }
         }
     }
 
     #[test]
-    fn a_bare_hash_attached_inside_a_card_errors() {
-        assert_eq!(
-            ParseError::ContextResetInCard(3),
-            err("## a\nmore\n#\n---\nanswer\n")
-        );
+    fn a_section_with_prose_and_no_card_draws_a_lint_at_its_heading() {
+        let without_cards = |text: &str| -> Vec<usize> {
+            parse(text)
+                .lints
+                .iter()
+                .filter(|lint| matches!(lint.kind, LintKind::SectionWithoutCards))
+                .map(|lint| lint.line)
+                .collect()
+        };
+        let rows: [(&str, &str, Vec<usize>); 7] = [
+            (
+                "prose, then the next section",
+                "# A\nprose\n\n# B\nmore\n\n## q\na\n",
+                vec![1],
+            ),
+            (
+                "prose at the end of the file",
+                "# A\n\n## q\na\n\n# B\nprose\n",
+                vec![6],
+            ),
+            ("a title-only section", "# A\n\n# B\n\n## q\na\n", vec![]),
+            (
+                "a card table is a card",
+                "# A\nprose\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n",
+                vec![],
+            ),
+            (
+                "a card table before the next section is a card",
+                "# A\nprose\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n\n# B\n\n## q\na\n",
+                vec![],
+            ),
+            (
+                "an ignored card is a card",
+                "# A\nprose\n\n## q\na\n<!-- ignore -->\n",
+                vec![],
+            ),
+            (
+                "a section with prose and a card",
+                "# A\nprose\n\n## q\na\n",
+                vec![],
+            ),
+        ];
+        for (label, text, lines) in rows {
+            assert_eq!(lines, without_cards(text), "{label}");
+        }
     }
 
     #[test]
-    fn prose_after_a_reset_joins_the_emptied_section() {
-        let deck = parse("# S\n\n## a\nx\n\n#\n\nstray\n\n## b\ny\n");
+    fn a_hash_and_tab_is_no_heading_and_an_escaped_hash_is_a_title() {
         assert_eq!(
-            vec!["stray".to_string()],
-            deck.cards[1].section_context,
-            "prose after a reset opens the new, empty context"
+            ParseError::ProseBeforeFirstHeading(1),
+            err("#\t\n\n## q\na\n"),
+            "before the first heading a `#` + TAB line is prose"
         );
+        let deck = parse("# S\n\n## a\nx\n#\t\n");
+        assert_eq!(
+            vec!["x".to_string(), "#".to_string()],
+            deck.cards[0].back,
+            "under a card a `#` + TAB line is answer content"
+        );
+        let deck = parse("# \\#\n\n## q\na\n");
+        assert_eq!(vec!["#".to_string()], deck.cards[0].section_context);
+    }
+
+    #[test]
+    fn an_empty_card_heading_and_an_empty_table_front_cell_name_no_section() {
+        let heading = err("# S\n##\n");
+        assert_eq!(ParseError::EmptyFront(2), heading);
+        let cell = err("| a | b |\n|---|---|\n| | y |\n<!-- cards -->\n");
+        assert_eq!(ParseError::EmptyFrontCell(3), cell);
+        assert_eq!(
+            "line 3: table row has an empty front cell",
+            cell.to_string()
+        );
+        for error in [heading, cell] {
+            assert!(!error.to_string().contains("section"), "{error}");
+        }
     }
 
     #[test]
@@ -6039,15 +6140,8 @@ a
     }
 
     #[test]
-    fn an_eol_terminated_hash_run_is_a_heading_so_empty_text_resets() {
-        for text in ["#\n\n## q\na\n", "# \n\n## q\na\n"] {
-            let deck = parse(text);
-            assert!(
-                deck.cards[0].section_context.is_empty(),
-                "a bare `#` opens an empty context, got {:?}",
-                deck.cards[0].section_context
-            );
-        }
+    fn an_eol_terminated_hash_run_is_a_heading_and_a_run_without_space_is_prose() {
+        assert_eq!(ParseError::EmptySectionHeading(1), err("#\n\n## q\na\n"));
         assert_eq!(ParseError::EmptyFront(2), err("# S\n##\n"));
         assert_eq!(
             ParseError::ProseBeforeFirstHeading(1),
@@ -6057,10 +6151,10 @@ a
     }
 
     #[test]
-    fn a_sub_card_chain_does_not_cross_a_context_reset() {
+    fn a_sub_card_chain_does_not_cross_a_section() {
         assert_eq!(
             ParseError::OrphanSubCard(8),
-            err("# S\n\n## p\na\n\n#\n\n### s\nb\n")
+            err("# S\n\n## p\na\n\n# T\n\n### s\nb\n")
         );
     }
 
@@ -6905,9 +6999,9 @@ a
              any other block: {error:?}"
         );
 
-        let deck = parse("# S\n\nprose\n\n---\n<!-- plain -->\n");
+        let deck = parse("# S\n\nprose\n\n---\n<!-- plain -->\n\n## q\na\n");
         assert!(
-            deck.cards.is_empty() && deck.lints.is_empty(),
+            deck.cards.len() == 1 && deck.lints.is_empty(),
             "a section divider does supply a block, so plain below one stays \
              legal: {:?}",
             deck.lints
@@ -9121,7 +9215,7 @@ the answer
     #[test]
     fn an_empty_front_or_back_cell_is_refused() {
         assert_eq!(
-            ParseError::EmptyFront(3),
+            ParseError::EmptyFrontCell(3),
             err("| a | b |\n|---|---|\n| | y | <!-- r:4k2x9w -->\n<!-- cards -->\n")
         );
         assert_eq!(

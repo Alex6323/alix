@@ -120,11 +120,11 @@ src/paired.rs:286: replace || with && in check_entry_name
 
 # UNOBSERVABLE. `RawTable` is created only when `invocation_below` finds a
 # Cards invocation in its contiguous trailing zone. Every row overwrites
-# `end_line` at 1912, and every trailing machinery comment overwrites it at
-# 1937 before either escape at 1061 or 1637; errors return no table first.
+# `end_line` at 1944, and every trailing machinery comment overwrites it at
+# 1969 before either escape at 1083 or 1667; errors return no table first.
 # Line-pinned because `scan` holds other arithmetic.
-src/parser/mod.rs:1232: replace + with - in scan
-src/parser/mod.rs:1232: replace + with * in scan
+src/parser/mod.rs:1255: replace + with - in scan
+src/parser/mod.rs:1255: replace + with * in scan
 
 # EQUIVALENT, provably. `ground` reaches this comparison only through
 # `hex_color`, so `ink` is always the luminance of an 8-bit RGB triple.
@@ -223,4 +223,4 @@ src/assets.rs:163: replace default_diagram_command -> Option<&'static str> with 
 # a repair only for a flag that is set. Forcing `any` to true therefore
 # runs `run` with every flag false, which does nothing; the one extra cost
 # is listing the deck files. No output or file differs. Line-pinned.
-src/cli/doctor.rs:1572: replace Repairs::any -> bool with true
+src/cli/doctor.rs:1575: replace Repairs::any -> bool with true

@@ -426,15 +426,13 @@ client does not expose section context.
 A section heading is a heading, nothing more. It takes no directives and no card
 ID, because a section owns no card to bind either to.
 
-A section runs to the next `#` heading. To end one without opening another,
-write a **bare `#`**: a `#` with no title opens an *empty* context, so the cards
-after it carry none until the next titled `#` (a sub-card chain does not cross it
-either). Prose under a bare `#` belongs to the new, empty section, exactly as it
-would under a titled one.
-
-A bare `#` needs a blank line above it, like any other block. Attached directly
-under a card's own lines it is an error, since a reset there would silently
-truncate the card.
+A section runs to the next `#` heading, and nothing else ends it: every card
+carries the context of the nearest titled `#` above it, and a sub-card chain
+does not cross a `#`. Cards above the first `#` carry no context. A `#` with no
+title is an error.
+`alix doctor` warns about a section that has prose but no card before the next
+`#`, since a section introduces the cards under it; a `#` typed where `##` was
+meant often looks like that.
 
 ### `###` to `######` — sub-cards
 

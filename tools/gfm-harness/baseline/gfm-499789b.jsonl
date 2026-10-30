@@ -45,7 +45,7 @@
 {"e":45,"g":[13],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":46,"g":[13],"err":"line 1: card front without an answer; a card heading asks a question, so give it at least one answer line below"}
 {"e":47,"g":[13],"err":"line 4: a thematic break line only divides a card's front from the answer attached below it; delete the line, or put `<!-- plain -->` below it to keep it literal"}
-{"e":48,"g":[13],"cards":1,"back":"div"}
+{"e":48,"g":[13],"lints":["Lint { line: 3, kind: SectionWithoutCards }"],"cards":1,"back":"div"}
 {"e":49,"g":[13,14],"err":"line 2: card front is empty; write the question on the heading line"}
 {"e":50,"g":[13],"err":"line 3: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"}
 {"e":51,"g":[13],"err":"line 4: a `===` underline heading is not supported; write the heading as its own `#`-prefixed line instead"}

@@ -8,6 +8,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix doctor` warns about a section that has prose but no card before the
+  next `#` heading.
 - Deck frontmatter accepts `cite:`, a list of keyed roots such as
   `- code: crates/core`, and `alix.toml` accepts a `[cite]` table. A
   malformed `cite:` (not a list of one-key mappings, a bad or repeated key,
@@ -125,6 +127,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A section now runs to the next `#` heading and nothing else ends it: a `#`
+  with no title (also `# ##` or `# <!-- an aside -->`) is an error, "section
+  heading is empty; write its title", instead of ending the section. A deck
+  that used one fails to parse until the line is removed or given a title. An
+  empty card-table front cell now reports "table row has an empty front
+  cell".
 - On the web, a card's section opens from a quiet **Context** chip in the
   bottom row (or `c`, or the review menu) until the answer shows; a click on
   the question no longer opens it. Hiding a revealed answer (`h` or a click)
