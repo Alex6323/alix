@@ -1090,7 +1090,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 if !parents {
                     open_depths.clear();
                 }
-                section_has_cards = true;
+                section_has_cards |= !tbl.rows.is_empty();
                 blocks.push(RawBlock::Table(tbl));
             }
         }
@@ -1665,7 +1665,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         });
     }
     if let Some(tbl) = table.take() {
-        section_has_cards = true;
+        section_has_cards |= !tbl.rows.is_empty();
         blocks.push(RawBlock::Table(tbl));
     }
     if let Some(card) = take_card(&mut current)? {
@@ -6021,7 +6021,7 @@ a
                 .map(|lint| lint.line)
                 .collect()
         };
-        let rows: [(&str, &str, Vec<usize>); 7] = [
+        let rows: [(&str, &str, Vec<usize>); 9] = [
             (
                 "prose, then the next section",
                 "# A\nprose\n\n# B\nmore\n\n## q\na\n",
@@ -6042,6 +6042,16 @@ a
                 "a card table before the next section is a card",
                 "# A\nprose\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n\n# B\n\n## q\na\n",
                 vec![],
+            ),
+            (
+                "a zero-row card table is no card",
+                "# A\nprose\n\n| a | b |\n|---|---|\n<!-- cards -->\n\n# B\n\n## q\na\n",
+                vec![1],
+            ),
+            (
+                "a zero-row card table at the end of the file is no card",
+                "# A\nprose\n\n| a | b |\n|---|---|\n<!-- cards -->\n",
+                vec![1],
             ),
             (
                 "an ignored card is a card",
