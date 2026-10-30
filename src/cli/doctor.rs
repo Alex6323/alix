@@ -2052,6 +2052,35 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_missing_sync_folder_holds_no_nested_roots_but_an_unreadable_one_fails() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            nested_sync_root_files(&dir.path().join("absent"))
+                .unwrap()
+                .is_empty(),
+            "a folder that does not exist holds nothing"
+        );
+
+        let locked = dir.path().join("locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let readable_anyway = std::fs::read_dir(&locked).is_ok();
+        let walked = nested_sync_root_files(dir.path());
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(
+            !readable_anyway,
+            "the unreadable half needs a user that file modes bind (not root)"
+        );
+        assert!(
+            walked.is_err(),
+            "an unreadable folder is an error, not an empty one"
+        );
+    }
+
     #[test]
     fn anchor_token_offset_finds_the_bounded_token_outside_every_quoted_value() {
         for (label, line, expected) in [

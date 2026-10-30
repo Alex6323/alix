@@ -8096,7 +8096,12 @@ fn doctor_reports_every_diagram_inconsistency() {
     let bind_stamp = stamp(&labeled_print, &bind_geometry);
     let range_stamp = stamp(&labeled_print, &range_geometry);
 
-    let rows: [(&str, String, &str); 8] = [
+    let rows: [(&str, String, &str); 9] = [
+        (
+            "clean",
+            format!("## q\n{fence}\n{current_stamp}\nanswer\n"),
+            "",
+        ),
         (
             "orphan",
             format!("## q\nanswer\n{orphan_stamp}\n"),
@@ -8156,10 +8161,26 @@ fn doctor_reports_every_diagram_inconsistency() {
     let out = alix(&["doctor", ws.to_str().unwrap()]);
     let err = stderr(&out);
     for (name, _, fragment) in &rows {
-        assert!(
-            err.contains(fragment),
-            "row {name}: expected `{fragment}` in doctor output:\n{err}"
-        );
+        let deck = format!("{name}.md");
+        let lines: Vec<&str> = err.lines().filter(|line| line.contains(&deck)).collect();
+        if fragment.is_empty() {
+            let findings: Vec<&&str> = lines
+                .iter()
+                .filter(|line| {
+                    rows.iter()
+                        .any(|(_, _, f)| !f.is_empty() && line.contains(f))
+                })
+                .collect();
+            assert!(
+                findings.is_empty(),
+                "row {name}: a consistent deck has no diagram finding: {findings:?}"
+            );
+        } else {
+            assert!(
+                lines.iter().any(|line| line.contains(fragment)),
+                "row {name}: expected `{fragment}` on its own deck's lines:\n{err}"
+            );
+        }
     }
     assert!(
         !out.status.success(),
