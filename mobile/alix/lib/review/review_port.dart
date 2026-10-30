@@ -26,6 +26,8 @@ abstract interface class ReviewPort {
 
   ReviewCheckFeedbackModel? check(List<String> lines);
 
+  bool openHint(String cardId);
+
   ReviewStateModel introduce();
 
   ReviewStateModel grade(ReviewGrade grade);

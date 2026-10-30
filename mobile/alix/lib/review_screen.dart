@@ -8,7 +8,8 @@ import 'package:alix_mobile/bridge/review_bridge.dart';
 import 'package:alix_mobile/exam_screen.dart';
 import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
-import 'package:alix_mobile/review/review_card.dart' show showSectionSheet;
+import 'package:alix_mobile/review/review_card.dart'
+    show ReviewHelpMode, showReviewHelpSheet;
 import 'package:alix_mobile/review/review_controller.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/review_view.dart';
@@ -72,6 +73,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   ServerClient? _client;
   Directory? _support;
   String? _autoOpenedSection;
+  bool _helpSheetOpen = false;
   bool _summaryPushed = false;
 
   /// The current card's tutor conversation, kept across sheet openings so a
@@ -269,8 +271,37 @@ class _ReviewScreenState extends State<ReviewScreen> {
     conversation.addListener(settled);
   }
 
+  Future<void> _showHelp(
+    ReviewCardModel card,
+    ReviewHelpMode initialMode,
+  ) async {
+    if (_helpSheetOpen || !mounted) return;
+    _helpSheetOpen = true;
+    await showReviewHelpSheet(
+      context,
+      card,
+      initialMode: initialMode,
+      offerHints: !_controller.state.introducing,
+      openedHints: () => _controller.openedHints,
+      onOpenHint: _controller.openHint,
+      onNextHint: _controller.openNextHint,
+    );
+    _helpSheetOpen = false;
+  }
+
   void _openSection(ReviewCardModel card) {
-    showSectionSheet(context, card);
+    _showHelp(card, ReviewHelpMode.section);
+  }
+
+  void _openHint(ReviewCardModel card) {
+    if (!_controller.openHint()) return;
+    _showHelp(card, ReviewHelpMode.hint);
+  }
+
+  void _closeHelp() {
+    if (!_helpSheetOpen || !mounted) return;
+    _helpSheetOpen = false;
+    Navigator.of(context).pop();
   }
 
   void _autoOpenSection(ReviewStateModel state, ReviewCardModel? card) {
@@ -331,18 +362,55 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   void _introduce() {
+    _closeHelp();
     _controller.introduce();
     _resetInputs();
   }
 
   void _grade(ReviewGrade grade) {
+    _closeHelp();
     _controller.grade(grade);
     _resetInputs();
   }
 
   void _restart() {
+    _closeHelp();
     _controller.restart();
     if (_controller.openError == null) _resetInputs();
+  }
+
+  void _choose(int chosen) {
+    _closeHelp();
+    _controller.choose(chosen);
+  }
+
+  void _submitChoices() {
+    _closeHelp();
+    _controller.submitChoices();
+  }
+
+  void _check(List<String> lines) {
+    final before = _controller.typelineChecked.length;
+    final answered = _controller.checkFeedback != null;
+    _controller.check(lines);
+    if (!answered && _controller.checkFeedback != null) _closeHelp();
+    // TypeLine reuses the one open field, so it is emptied only when the
+    // server accepted a longer prefix; a failed check keeps the text visible.
+    if (_controller.typelineChecked.length > before) _typed[0].clear();
+  }
+
+  void _reveal() {
+    _closeHelp();
+    _controller.reveal();
+  }
+
+  void _revealNextLine() {
+    final card = _controller.state.card;
+    if (card != null &&
+        _controller.revealedLines + 1 >= revealStepCount(card)) {
+      _closeHelp();
+    }
+    _controller.revealNextLine();
   }
 
   Future<bool> _confirmLeave(BuildContext context) async {
@@ -406,25 +474,19 @@ class _ReviewScreenState extends State<ReviewScreen> {
           cram: _controller.cram,
           nowMs: nowMs,
           confirmLeave: _confirmLeave,
-          onChoose: _controller.choose,
+          onChoose: _choose,
           onToggleChoice: _controller.toggleChoice,
-          onSubmitChoices: _controller.submitChoices,
-          onCheck: (lines) {
-            final before = _controller.typelineChecked.length;
-            _controller.check(lines);
-            // TypeLine reuses the one open field, so it is emptied only when
-            // the server actually accepted a longer prefix: a rejected or
-            // failed check leaves the learner's text where they can see it.
-            if (_controller.typelineChecked.length > before) _typed[0].clear();
-          },
+          onSubmitChoices: _submitChoices,
+          onCheck: _check,
           onOpenAttempt: _controller.openAttempt,
           onToggleKeypoint: _controller.toggleKeypoint,
-          onReveal: _controller.reveal,
-          onRevealNextLine: _controller.revealNextLine,
+          onReveal: _reveal,
+          onRevealNextLine: _revealNextLine,
           onIntroduce: _introduce,
           onGrade: _grade,
           onOpenTutor: _openTutor,
           onOpenSection: _openSection,
+          onOpenHint: _openHint,
           onRestart: _restart,
           onOpenExam: _openExam,
         );

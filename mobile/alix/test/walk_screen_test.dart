@@ -37,6 +37,13 @@ const _lines =
     '## how does a tide pool form?\nThe tide rises\nThe tide falls\n'
     'Water stays behind\n<!-- reveal: line -->\n';
 
+const _hinted =
+    '## capital of italy?\n'
+    '> [!TIP]\n'
+    '> a city on the Tiber\n\n'
+    '---\n'
+    'Rome\n';
+
 void main() {
   setUpAll(() async => RustLib.init());
 
@@ -127,6 +134,13 @@ void main() {
     );
     await tap(tester, 'Context');
     expect(sheetTitle, findsOneWidget, reason: 'the chip reopens it');
+  });
+
+  testWidgets('a walk never offers a card hint', (tester) async {
+    await pumpWalk(tester, _hinted);
+    expect(chip('Hint'), findsNothing, reason: 'the question phase has no hint');
+    await tap(tester, 'Reveal');
+    expect(chip('Hint'), findsNothing, reason: 'the answer phase has no hint');
   });
 
   testWidgets('the section sheet of a walk closes from its close mark', (

@@ -98,6 +98,7 @@ class ReviewView extends StatelessWidget {
     required this.onGrade,
     required this.onOpenTutor,
     required this.onOpenSection,
+    required this.onOpenHint,
     required this.onRestart,
     required this.onOpenExam,
   });
@@ -141,6 +142,7 @@ class ReviewView extends StatelessWidget {
   final ValueChanged<ReviewGrade> onGrade;
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
   final ValueChanged<ReviewCardModel> onOpenSection;
+  final ValueChanged<ReviewCardModel> onOpenHint;
   final VoidCallback onRestart;
   final VoidCallback onOpenExam;
 
@@ -221,6 +223,7 @@ class ReviewView extends StatelessWidget {
                         onGrade: onGrade,
                         onOpenTutor: onOpenTutor,
                         onOpenSection: onOpenSection,
+                        onOpenHint: onOpenHint,
                       ),
               ),
             ],
@@ -259,4 +262,3 @@ class _SaveBanner extends StatelessWidget {
     );
   }
 }
-

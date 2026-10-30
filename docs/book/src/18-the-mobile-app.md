@@ -100,8 +100,18 @@ nowhere else, and the card never moves to make room. The first card you ever
 meet from a section opens that sheet by itself, once; swipe it away or tap the
 `×` in its top-right corner, and the chip brings it back. Every later card from
 the section, in this sitting or any later one, waits for the chip. A tap on the
-question does nothing. A tap on a
-revealed answer hides it for a self-test: a sheet titled **Hide** rises from
+question does nothing.
+
+A card with [hints](03-the-deck-format.md#hints) shows a quiet **Hint** chip
+beside **Context** while you are still answering. It opens the first hint in
+the same sheet; **Next hint** adds each later hint below the earlier ones, and
+reopening restores the hints already shown. When both context and hints exist,
+the sheet's selector swaps between them without losing that stack. Opening a
+hint turns a pass on the card into Partial. Introductions and walks offer no
+hints, and the reverse half of a two-direction card carries none.
+
+Tapping a revealed answer hides it for a self-test: a sheet titled **Hide**
+rises from
 the answer's top edge to the bottom of the screen, covering the answer, the
 note and the grade buttons while the question stays in view; the `×` in its
 top-right corner, or a swipe down, shows it all again. A choice pick, a typed

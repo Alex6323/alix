@@ -60,6 +60,7 @@ class ReviewController extends ChangeNotifier {
   final Sketch _sketch = Sketch();
   bool _attemptOpen = false;
   bool _serverLive = false;
+  int _openedHints = 0;
 
   ReviewStateModel get state {
     final state = _state;
@@ -85,6 +86,7 @@ class ReviewController extends ChangeNotifier {
   bool get attemptOpen => _attemptOpen;
   bool get serverLive => _serverLive;
   bool get cram => _cram;
+  int get openedHints => _openedHints;
   ReviewTutorCardModel? get tutorCard => _requirePort().tutorCard;
   bool get deckHasExam => _requirePort().deckHasExam;
 
@@ -145,6 +147,24 @@ class ReviewController extends ChangeNotifier {
     } else {
       _checkFeedback = _requirePort().check(lines);
     }
+    notifyListeners();
+  }
+
+  bool openHint() {
+    if (_openedHints > 0) return true;
+    final card = state.card;
+    final tutor = tutorCard;
+    if (card == null || card.hints.isEmpty || tutor == null) return false;
+    if (!_requirePort().openHint(tutor.id)) return false;
+    _openedHints = 1;
+    notifyListeners();
+    return true;
+  }
+
+  void openNextHint() {
+    final available = state.card?.hints.length ?? 0;
+    if (_openedHints == 0 || _openedHints >= available) return;
+    _openedHints++;
     notifyListeners();
   }
 
@@ -272,5 +292,6 @@ class ReviewController extends ChangeNotifier {
     _tickedKeypoints.clear();
     _sketch.reset();
     _attemptOpen = false;
+    _openedHints = 0;
   }
 }

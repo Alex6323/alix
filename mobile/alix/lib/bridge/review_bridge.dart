@@ -116,6 +116,9 @@ class ReviewBridgePort implements ReviewPort {
   }
 
   @override
+  bool openHint(String cardId) => _session.openHint(cardId: cardId);
+
+  @override
   ReviewStateModel introduce() =>
       _stateFromBridge(_session.introduce(), _session.label());
 
@@ -228,6 +231,10 @@ ReviewCardModel reviewCardFromBridge(bridge.CardView card) {
           badge: _badgeFromBridge(note.badge),
           units: [for (final unit in note.units) _noteFromBridge(unit)],
         ),
+    ],
+    hints: [
+      for (final hint in card.hints)
+        [for (final unit in hint) _noteFromBridge(unit)],
     ],
     images: [for (final image in card.images) _imageFromBridge(image)],
     imagesBack: [for (final image in card.imagesBack) _imageFromBridge(image)],

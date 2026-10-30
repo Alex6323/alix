@@ -11,15 +11,13 @@ void main() {
         'notifyListeners();',
       ),
       [
-        107,
-        112,
-        117,
-        122,
-        127,
-        148,
-        153,
-        158,
-        163,
+        109,
+        114,
+        119,
+        124,
+        129,
+        150,
+        160,
         168,
         173,
         178,
@@ -28,11 +26,16 @@ void main() {
         193,
         198,
         203,
-        228,
+        208,
+        213,
+        218,
+        223,
+        248,
       ],
       reason:
           'setServerLive, install, choose, toggleChoice, submitChoices, '
-          'check, openAttempt, toggleKeypoint, reveal, '
+          'check, accepted first hint, next hint, openAttempt, toggleKeypoint, '
+          'reveal, '
           'the six sketch transitions (tool, begin, extend, end, undo, '
           'clear), revealNextLine, restart, and applyCardNote own every '
           'ReviewController mutation',
@@ -85,7 +88,7 @@ void main() {
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
-        'lib/review_screen.dart:366',
+        'lib/review_screen.dart:434',
         'lib/picker_screen.dart:650',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:225',
@@ -94,7 +97,7 @@ void main() {
       reason:
           'sync wiring added imports, fields, and methods above build() in '
           'review_screen.dart and picker_screen.dart, the section sheet '
-          'opener added one import and one method to review_screen.dart, '
+          'opener became one shared Context/Hint panel in review_screen.dart, '
           'and the skip-introduction switch added a field to both, moving '
           'their single ListenableBuilder site; the tutor conversation '
           'ownership added an import, four fields, and three methods to '

@@ -116,6 +116,7 @@ class ReviewCardView extends StatelessWidget {
     required this.onGrade,
     required this.onOpenTutor,
     required this.onOpenSection,
+    this.onOpenHint,
     this.onWalkNext,
   });
 
@@ -155,6 +156,7 @@ class ReviewCardView extends StatelessWidget {
   final ValueChanged<ReviewGrade> onGrade;
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
   final ValueChanged<ReviewCardModel> onOpenSection;
+  final ValueChanged<ReviewCardModel>? onOpenHint;
   final VoidCallback? onWalkNext;
 
   bool get _hasChoices => state.choices?.isNotEmpty ?? false;
@@ -1255,12 +1257,22 @@ class ReviewCardView extends StatelessWidget {
   }
 
   List<Widget> _legendChips(ReviewCardModel card) {
+    final openHint = onOpenHint;
     final chips = [
       if (card.hasSection && !_answered(card))
         ReviewChip(
           label: 'Context',
           kind: ReviewChipKind.quiet,
           onTap: () => onOpenSection(card),
+        ),
+      if (openHint != null &&
+          !state.introducing &&
+          card.hints.isNotEmpty &&
+          !_answered(card))
+        ReviewChip(
+          label: 'Hint',
+          kind: ReviewChipKind.quiet,
+          onTap: () => openHint(card),
         ),
       ..._modeChips(card),
     ];
@@ -1901,27 +1913,114 @@ List<InlineRunModel> _joinRunLines(List<List<InlineRunModel>> lines) {
   ];
 }
 
-Future<void> showSectionSheet(BuildContext context, ReviewCardModel card) {
+enum ReviewHelpMode { section, hint }
+
+Future<void> showReviewHelpSheet(
+  BuildContext context,
+  ReviewCardModel card, {
+  required ReviewHelpMode initialMode,
+  required bool offerHints,
+  required ValueGetter<int> openedHints,
+  required bool Function() onOpenHint,
+  required VoidCallback onNextHint,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (_) => SectionSheet(card: card),
+    builder: (_) => !offerHints || card.hints.isEmpty
+        ? SectionSheet(card: card)
+        : ReviewHelpSheet(
+            card: card,
+            initialMode: initialMode,
+            offerHints: offerHints,
+            openedHints: openedHints,
+            onOpenHint: onOpenHint,
+            onNextHint: onNextHint,
+          ),
   );
 }
 
-/// The card's section on demand: a modal bottom sheet with the heading as
-/// its title, a close mark in the top-right corner, and the prose below,
-/// the tutor sheet's shape.
 class SectionSheet extends StatelessWidget {
   const SectionSheet({super.key, required this.card});
 
   final ReviewCardModel card;
 
   @override
+  Widget build(BuildContext context) => ReviewHelpSheet(
+    card: card,
+    initialMode: ReviewHelpMode.section,
+    offerHints: false,
+    openedHints: () => 0,
+    onOpenHint: () => false,
+    onNextHint: () {},
+  );
+}
+
+Future<void> showSectionSheet(BuildContext context, ReviewCardModel card) {
+  return showReviewHelpSheet(
+    context,
+    card,
+    initialMode: ReviewHelpMode.section,
+    offerHints: false,
+    openedHints: () => 0,
+    onOpenHint: () => false,
+    onNextHint: () {},
+  );
+}
+
+class ReviewHelpSheet extends StatefulWidget {
+  const ReviewHelpSheet({
+    super.key,
+    required this.card,
+    required this.initialMode,
+    required this.offerHints,
+    required this.openedHints,
+    required this.onOpenHint,
+    required this.onNextHint,
+  });
+
+  final ReviewCardModel card;
+  final ReviewHelpMode initialMode;
+  final bool offerHints;
+  final ValueGetter<int> openedHints;
+  final bool Function() onOpenHint;
+  final VoidCallback onNextHint;
+
+  @override
+  State<ReviewHelpSheet> createState() => _ReviewHelpSheetState();
+}
+
+class _ReviewHelpSheetState extends State<ReviewHelpSheet> {
+  late ReviewHelpMode _mode = widget.initialMode;
+
+  void _select(ReviewHelpMode mode) {
+    if (mode == _mode) return;
+    if (mode == ReviewHelpMode.hint &&
+        widget.openedHints() == 0 &&
+        !widget.onOpenHint()) {
+      return;
+    }
+    setState(() => _mode = mode);
+  }
+
+  void _nextHint() {
+    widget.onNextHint();
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tokens = theme.alix;
+    final card = widget.card;
+    final hints = widget.openedHints();
+    final opened = hints < card.hints.length ? hints : card.hints.length;
+    final selector =
+        widget.offerHints && card.hasSection && card.hints.isNotEmpty;
+    final title = _mode == ReviewHelpMode.section
+        ? card.sectionTitle
+        : 'Hints';
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 8, 8, 20),
@@ -1936,8 +2035,12 @@ class SectionSheet extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.only(top: 12),
                     child: Text(
-                      card.sectionTitle,
-                      key: const ValueKey('section-sheet-title'),
+                      title,
+                      key: ValueKey(
+                        _mode == ReviewHelpMode.section
+                            ? 'section-sheet-title'
+                            : 'hint-sheet-title',
+                      ),
                       style: theme.textTheme.titleMedium,
                     ),
                   ),
@@ -1953,16 +2056,86 @@ class SectionSheet extends StatelessWidget {
                 ),
               ],
             ),
+            if (selector) ...[
+              const SizedBox(height: 4),
+              Wrap(
+                key: const ValueKey('review-help-mode-selector'),
+                spacing: 8,
+                children: [
+                  ReviewChip(
+                    key: const ValueKey('review-help-context'),
+                    label: 'Context',
+                    kind: _mode == ReviewHelpMode.section
+                        ? ReviewChipKind.base
+                        : ReviewChipKind.quiet,
+                    onTap: () => _select(ReviewHelpMode.section),
+                  ),
+                  ReviewChip(
+                    key: const ValueKey('review-help-hint'),
+                    label: 'Hint',
+                    kind: _mode == ReviewHelpMode.hint
+                        ? ReviewChipKind.base
+                        : ReviewChipKind.quiet,
+                    onTap: () => _select(ReviewHelpMode.hint),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ],
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.only(right: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: _sectionProse(
-                    card,
-                    tokens,
-                    _sectionProseStyle(theme, tokens),
-                  ),
+                  children: _mode == ReviewHelpMode.section
+                      ? _sectionProse(
+                          card,
+                          tokens,
+                          _sectionProseStyle(theme, tokens),
+                        )
+                      : [
+                          for (var index = 0; index < opened; index++) ...[
+                            if (index > 0) ...[
+                              const SizedBox(height: 14),
+                              Divider(color: tokens.line),
+                              const SizedBox(height: 14),
+                            ],
+                            KeyedSubtree(
+                              key: ValueKey('opened-hint-$index'),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  for (
+                                    var unitIndex = 0;
+                                    unitIndex < card.hints[index].length;
+                                    unitIndex++
+                                  ) ...[
+                                    if (unitIndex > 0)
+                                      const SizedBox(height: 10),
+                                    unitWidget(
+                                      card.hints[index][unitIndex],
+                                      tokens,
+                                      _sectionProseStyle(theme, tokens),
+                                      TextAlign.start,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (opened < card.hints.length) ...[
+                            const SizedBox(height: 18),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: ReviewChip(
+                                key: const ValueKey('next-hint'),
+                                label: 'Next hint',
+                                kind: ReviewChipKind.primary,
+                                onTap: _nextHint,
+                              ),
+                            ),
+                          ],
+                        ],
                 ),
               ),
             ),

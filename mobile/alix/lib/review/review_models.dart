@@ -230,6 +230,7 @@ class ReviewCardModel {
     required Iterable<ReviewAnswerStepModel> answerSteps,
     required this.reshaped,
     required Iterable<ReviewNoteModel> note,
+    Iterable<Iterable<ReviewContentUnitModel>> hints = const [],
     required Iterable<ReviewImageModel> images,
     required Iterable<ReviewImageModel> imagesBack,
     Iterable<String> section = const [],
@@ -246,6 +247,10 @@ class ReviewCardModel {
        backUnits = List.unmodifiable(backUnits),
        answerSteps = List.unmodifiable(answerSteps),
        note = List.unmodifiable(note),
+       hints = List<List<ReviewContentUnitModel>>.unmodifiable([
+         for (final hint in hints)
+           List<ReviewContentUnitModel>.unmodifiable(hint),
+       ]),
        images = List.unmodifiable(images),
        imagesBack = List.unmodifiable(imagesBack);
 
@@ -267,6 +272,7 @@ class ReviewCardModel {
       answerSteps.whereType<ReviewAnswerLineModel>().toList(growable: false);
   final bool reshaped;
   final List<ReviewNoteModel> note;
+  final List<List<ReviewContentUnitModel>> hints;
   final List<ReviewImageModel> images;
   final List<ReviewImageModel> imagesBack;
 
