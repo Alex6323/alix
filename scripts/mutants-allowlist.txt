@@ -209,6 +209,16 @@ src/choice/mod.rs:279: delete ! in ColumnPools::can_sample
 # expression, so the program is unchanged for every input. Line-pinned.
 src/assets.rs:526: replace freeze_diagrams -> Result<DiagramOutcome, AssetError> with Ok(Default::default())
 
+# EQUIVALENT. The lean-core `default_diagram_command`
+# (`cfg(not(feature = "full"))`) returns `None`; its value reaches only the
+# lean `freeze_diagrams` stub above, which takes it as `_command` and
+# ignores it (directly, and through `repair_diagrams_with` and
+# `freeze_member_with`). Any `Some(..)` therefore behaves exactly as `None`
+# in the one build where this function compiles; the full-feature sweep
+# never compiles it at all. Line-pinned.
+src/assets.rs:163: replace default_diagram_command -> Option<&'static str> with Some("")
+src/assets.rs:163: replace default_diagram_command -> Option<&'static str> with Some("xyzzy")
+
 # EQUIVALENT. `any` only gates calls to `Repairs::run`, and `run` performs
 # a repair only for a flag that is set. Forcing `any` to true therefore
 # runs `run` with every flag false, which does nothing; the one extra cost
