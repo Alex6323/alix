@@ -3063,6 +3063,47 @@ mod tests {
     }
 
     #[test]
+    fn a_probe_share_fails_only_on_an_operational_fault() {
+        let probe = |start| crate::diagram::SourceProbe {
+            start,
+            end: start + 1,
+            source: String::new(),
+        };
+        let probes = [probe(0), probe(5)];
+        type Row = (&'static str, Vec<Result<String, String>>, bool);
+        let rows: [Row; 4] = [
+            ("short batch", vec![Err("rejected".to_string())], true),
+            (
+                "no output",
+                vec![
+                    Ok(String::new()),
+                    Err(crate::diagram::NO_RENDER_OUTPUT.to_string()),
+                ],
+                true,
+            ),
+            (
+                "rejected by the renderer",
+                vec![Err("rejected".to_string()), Err("rejected".to_string())],
+                false,
+            ),
+            (
+                "rendered without an original",
+                vec![Ok(String::new()), Ok(String::new())],
+                false,
+            ),
+        ];
+        for (label, results, fails) in rows {
+            let mut assigned = Vec::new();
+            let failure = assign_share(&probes, &results, None, "marker", &mut assigned, |_, _| {});
+            assert_eq!(fails, failure.is_some(), "row `{label}`: {failure:?}");
+            assert!(
+                assigned.is_empty(),
+                "row `{label}`: nothing to assign without an original"
+            );
+        }
+    }
+
+    #[test]
     fn a_failed_diagram_warns_while_the_healthy_one_freezes() {
         let _guard = crate::testutil::exec_lock();
         let directory = workspace();
