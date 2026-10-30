@@ -1120,30 +1120,11 @@ pub fn remove_cards(path: &Path, front_lines: &[usize]) -> Result<(), DeckError>
     write_deck_text(path, &new_text)
 }
 
-pub fn rewrite_without_cards(
-    path: &Path,
-    original: &str,
-    front_lines: &[usize],
-) -> Result<(), DeckError> {
-    rewrite_without(path, original, front_lines, &[])
-}
-
 /// One pass over the original text: card blocks by boundary, region
 /// directives by exact line. Both sets carry original line numbers, so
-/// applying them together never shifts an address.
-pub fn rewrite_without(
-    path: &Path,
-    original: &str,
-    front_lines: &[usize],
-    exact_lines: &[usize],
-) -> Result<(), DeckError> {
-    rewrite_without_reporting(path, original, front_lines, exact_lines)
-        .map(|_| ())
-        .map_err(|(error, _)| error)
-}
-
-/// The text now on disk, which on failure is `Some` exactly when the
-/// replacement committed before the error.
+/// applying them together never shifts an address. The text now on disk,
+/// which on failure is `Some` exactly when the replacement committed before
+/// the error.
 pub fn rewrite_without_reporting(
     path: &Path,
     original: &str,
@@ -2596,6 +2577,11 @@ mod tests {
             (
                 "a deck with a cite list",
                 "---\ncite:\n  - code: \"crates/core\"\ntrace: t\n---\n## q\na\n",
+                "---\ntrace: t\ncite:\n  - code: \"crates/core\"\n  - src: \".\"\n---\n## q\na\n",
+            ),
+            (
+                "a deck whose cite list is the last key",
+                "---\ntrace: t\ncite:\n  - code: \"crates/core\"\n---\n## q\na\n",
                 "---\ntrace: t\ncite:\n  - code: \"crates/core\"\n  - src: \".\"\n---\n## q\na\n",
             ),
         ] {

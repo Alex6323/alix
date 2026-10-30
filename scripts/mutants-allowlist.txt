@@ -183,3 +183,14 @@ src/inline.rs:1140: replace + with * in autolink_end
 # range, or remaining tail for any input. Line-pinned to the nested-close arm.
 src/parser/cloze.rs:161: replace - with + in unbracketed_src
 src/parser/cloze.rs:161: replace - with / in unbracketed_src
+
+# EQUIVALENT. Each loop walks a deck's lines with `open` as the 1-based
+# number of the opening `---` fence, which `is_frontmatter_fence` admits only
+# as `---` plus whitespace. Widening `line_number > open` to `>=` lets that
+# one line into the frontmatter branch, where `top_level_yaml_key` finds no
+# `:` and `skipping` is still false, so the branch pushes the line unchanged;
+# outside the branch it is pushed unchanged too, since no `at:` rewrite can
+# sit on a fence. The output is identical for every input. Line-pinned.
+src/deck.rs:896: replace > with >= in with_exam
+src/deck.rs:962: replace > with >= in with_added_cite
+src/deck.rs:1013: replace > with >= in rewrite_frozen_assets
