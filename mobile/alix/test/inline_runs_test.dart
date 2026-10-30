@@ -527,30 +527,32 @@ void main() {
     'a code break opportunity never reaches the screen-reader label',
     (tester) async {
       final semantics = tester.ensureSemantics();
-      for (final contextHoles in [false, true]) {
-        await tester.pumpWidget(
-          MaterialApp(
-            home: Scaffold(
-              body: InlineRuns(
-                runs: const [
-                  InlineRunModel(
-                    text: 'Ledger::get_public_key',
-                    bold: false,
-                    italic: false,
-                    code: true,
-                  ),
-                ],
-                style: const TextStyle(fontSize: 18),
-                contextHoles: contextHoles,
+      for (final code in ['Ledger::get_public_key', 'path/to/file.rs']) {
+        for (final contextHoles in [false, true]) {
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: InlineRuns(
+                  runs: [
+                    InlineRunModel(
+                      text: code,
+                      bold: false,
+                      italic: false,
+                      code: true,
+                    ),
+                  ],
+                  style: const TextStyle(fontSize: 18),
+                  contextHoles: contextHoles,
+                ),
               ),
             ),
-          ),
-        );
-        expect(
-          tester.getSemantics(find.byType(RichText)).label,
-          'Ledger::get_public_key',
-          reason: 'contextHoles: $contextHoles',
-        );
+          );
+          expect(
+            tester.getSemantics(find.byType(RichText)).label,
+            code,
+            reason: 'code: $code, contextHoles: $contextHoles',
+          );
+        }
       }
       semantics.dispose();
     },

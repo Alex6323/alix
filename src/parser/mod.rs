@@ -6035,7 +6035,7 @@ a
             ("a title-only section", "# A\n\n# B\n\n## q\na\n", vec![]),
             (
                 "a card table is a card",
-                "# A\nprose\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n",
+                "# A\nprose\n\n| a | b |\n|---|---|\n| x | y |\n| u | v |\n<!-- cards -->\n",
                 vec![],
             ),
             (

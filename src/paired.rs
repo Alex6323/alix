@@ -2672,33 +2672,40 @@ mod tests {
     fn a_received_link_is_refused_before_unpack_materializes_any_entry() {
         use std::io::Write;
 
-        let tmp = tempfile::tempdir().unwrap();
-        let zip_path = tmp.path().join("pull.zip");
-        let mut zip = zip::ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
-        let options: zip::write::SimpleFileOptions = Default::default();
-        zip.start_file("plain.txt", options).unwrap();
-        zip.write_all(b"plain").unwrap();
-        zip.add_symlink("linked.txt", "plain.txt", options).unwrap();
-        zip.finish().unwrap();
-        let dest = tmp.path().join("unpacked");
-        std::fs::create_dir_all(&dest).unwrap();
+        for link_first in [false, true] {
+            let tmp = tempfile::tempdir().unwrap();
+            let zip_path = tmp.path().join("pull.zip");
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
+            let options: zip::write::SimpleFileOptions = Default::default();
+            if link_first {
+                zip.add_symlink("linked.txt", "plain.txt", options).unwrap();
+            }
+            zip.start_file("plain.txt", options).unwrap();
+            zip.write_all(b"plain").unwrap();
+            if !link_first {
+                zip.add_symlink("linked.txt", "plain.txt", options).unwrap();
+            }
+            zip.finish().unwrap();
+            let dest = tmp.path().join("unpacked");
+            std::fs::create_dir_all(&dest).unwrap();
 
-        let result = unpack(&zip_path, &dest);
-        let mut materialized: Vec<String> = std::fs::read_dir(&dest)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        materialized.sort();
-        let named_refusal = result
-            .as_ref()
-            .err()
-            .is_some_and(|error| error.to_string().contains("linked.txt"));
+            let result = unpack(&zip_path, &dest);
+            let mut materialized: Vec<String> = std::fs::read_dir(&dest)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+            materialized.sort();
+            let named_refusal = result
+                .as_ref()
+                .err()
+                .is_some_and(|error| error.to_string().contains("linked.txt"));
 
-        assert!(
-            named_refusal && materialized.is_empty(),
-            "a received link must be named and refused before extraction writes anything; \
-             result: {result:?}, materialized: {materialized:?}"
-        );
+            assert!(
+                named_refusal && materialized.is_empty(),
+                "a received link must be named and refused before extraction writes anything; \
+                 link_first: {link_first}, result: {result:?}, materialized: {materialized:?}"
+            );
+        }
     }
 
     fn modified_times(dir: &Path) -> BTreeMap<String, std::time::SystemTime> {
