@@ -704,6 +704,59 @@ mod tests {
     }
 
     #[test]
+    fn sync_table_reads_distinguish_missing_from_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing.toml");
+
+        assert_eq!(
+            None,
+            read_table(&missing).unwrap(),
+            "a missing file is absent"
+        );
+        assert!(
+            read_table(dir.path()).is_err(),
+            "an existing directory is a read failure, not an absent table"
+        );
+    }
+
+    #[test]
+    fn lightweight_identity_reads_the_exact_initialized_deck_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("broken.md");
+        std::fs::write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-lightweight\"\n---\n## no answer\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            Some("deck-lightweight".to_string()),
+            lightweight_deck_id(&path),
+            "identity recovery reads frontmatter even when the deck body does not parse"
+        );
+    }
+
+    #[test]
+    fn wire_paths_are_nonempty_entry_relative_normal_components() {
+        let rows = [
+            ("one component", "deck.md", Some("deck.md")),
+            ("nested components", "decks/one.md", Some("decks/one.md")),
+            ("empty", "", None),
+            ("current directory", ".", None),
+            ("parent directory", "../one.md", None),
+            ("absolute", "/one.md", None),
+        ];
+
+        for (label, path, expected) in rows {
+            let actual = wire_path(Path::new(path));
+            match expected {
+                Some(expected) => assert_eq!(expected, actual.unwrap(), "{label}: {path:?}"),
+                None => assert!(actual.is_err(), "{label}: {path:?} was accepted"),
+            }
+        }
+    }
+
+    #[test]
     fn moving_a_served_folder_keeps_its_root_identity() {
         let parent = tempfile::tempdir().unwrap();
         let before = parent.path().join("before");
@@ -809,6 +862,95 @@ mod tests {
         // macOS and a short name on Windows.
         assert_eq!(loose.canonicalize().unwrap(), loose_target.path);
         assert_eq!(member.canonicalize().unwrap(), member_target.path);
+    }
+
+    #[test]
+    fn a_workspace_member_is_listed_only_through_its_workspace_entry() {
+        let served = tempfile::tempdir().unwrap();
+        let workspace = served.path().join("course");
+        std::fs::create_dir_all(workspace.join("decks")).unwrap();
+        std::fs::write(workspace.join("alix.toml"), "title = \"Course\"\n").unwrap();
+        let member = workspace.join("decks/member.md");
+        write_deck(&member, "deck-member", "card-member");
+        let mut recent = crate::recent::RecentDecks::load(served.path().join("recent.json"));
+        recent.record(&[member], 1);
+
+        let catalog = SyncCatalog::load(
+            served.path(),
+            &recent,
+            &mut crate::cache::DeckCache::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            vec![("course", "workspace", 1)],
+            catalog
+                .entries()
+                .iter()
+                .map(|entry| (entry.name.as_str(), entry.kind.as_str(), entry.members))
+                .collect::<Vec<_>>(),
+            "a member row must not become a second top-level sync entry"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_workspace_member_is_left_out_instead_of_followed() {
+        let served = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let workspace = served.path().join("course");
+        std::fs::create_dir_all(workspace.join("decks")).unwrap();
+        std::fs::write(workspace.join("alix.toml"), "title = \"Course\"\n").unwrap();
+        let external = outside.path().join("external.md");
+        write_deck(&external, "deck-external", "card-external");
+        std::os::unix::fs::symlink(&external, workspace.join("decks/linked.md")).unwrap();
+
+        let catalog = SyncCatalog::load(
+            served.path(),
+            &crate::recent::RecentDecks::load(served.path().join("recent.json")),
+            &mut crate::cache::DeckCache::default(),
+        )
+        .unwrap();
+        let entry = catalog
+            .entries()
+            .iter()
+            .find(|entry| entry.name == "course")
+            .unwrap();
+
+        assert_eq!(0, entry.members, "the external target is not a member");
+        assert_eq!(
+            vec!["decks/linked.md"],
+            entry.left_out,
+            "the lexical member name explains what was excluded"
+        );
+        assert!(
+            matches!(catalog.deck("deck-external"), DeckLookup::Missing),
+            "the external deck id is not indexed"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_file_metadata_distinguishes_missing_from_unreadable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing.json");
+        assert!(
+            !is_regular_file(&missing, &PrivateFile::LocalManifest).unwrap(),
+            "a missing optional private file is absent"
+        );
+
+        let locked = dir.path().join("locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let result = is_regular_file(&locked.join("inside.json"), &PrivateFile::LocalManifest);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        assert!(
+            result.is_err(),
+            "a metadata permission failure is not a missing optional file"
+        );
     }
 
     #[test]

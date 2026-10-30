@@ -1508,6 +1508,137 @@ mod tests {
     use super::*;
 
     #[test]
+    fn key_lists_preserve_every_pattern_in_order() {
+        let patterns = [
+            KeyPattern {
+                key: Key::Char('x'),
+                ctrl: false,
+            },
+            KeyPattern {
+                key: Key::Enter,
+                ctrl: true,
+            },
+        ];
+
+        let keys = key_list(&patterns);
+
+        assert_eq!(2, keys.len(), "every configured pattern is served");
+        assert_eq!(("x", false), (keys[0].k.as_str(), keys[0].ctrl));
+        assert_eq!(("Enter", true), (keys[1].k.as_str(), keys[1].ctrl));
+    }
+
+    #[test]
+    fn every_exam_strictness_has_its_wire_name() {
+        for (strictness, expected) in [
+            (Strictness::Strict, "strict"),
+            (Strictness::Balanced, "balanced"),
+            (Strictness::Lenient, "lenient"),
+        ] {
+            assert_eq!(
+                expected,
+                strictness_name(strictness),
+                "wire name for {strictness:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_citations_preserve_each_authored_locator_without_roots() {
+        let mut card = Card::plain(
+            std::sync::Arc::from("subject"),
+            "question".to_string(),
+            vec!["answer".to_string()],
+            Vec::new(),
+            1,
+        );
+        card.citations.push(crate::card::SourceCitation {
+            locator: crate::locator::Locator {
+                key: "src".to_string(),
+                target: crate::locator::Target::File {
+                    path: "one.rs".to_string(),
+                    range: Some((2, 3)),
+                },
+            },
+            fingerprint: None,
+            asset: None,
+            line: 2,
+        });
+        card.citations.push(crate::card::SourceCitation {
+            locator: crate::locator::Locator {
+                key: "frozen".to_string(),
+                target: crate::locator::Target::Passage,
+            },
+            fingerprint: None,
+            asset: None,
+            line: 3,
+        });
+
+        let citations = resolved_citations(&card, None);
+
+        assert_eq!(2, citations.len(), "every authored citation is served");
+        assert_eq!("src:one.rs:2-3", citations[0].locator);
+        assert_eq!("frozen", citations[1].locator);
+        assert!(
+            citations
+                .iter()
+                .all(|citation| { citation.excerpt.is_none() && citation.error.is_none() })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_passed_exam_names_every_newly_unlocked_deck() {
+        let _lock = crate::testutil::exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("base.md");
+        std::fs::write(&base, "## base\nanswer\n").unwrap();
+        std::fs::write(
+            dir.path().join("advanced.md"),
+            "---\nrequires: base\n---\n## advanced\nanswer\n",
+        )
+        .unwrap();
+        let cli = crate::testutil::fake_reply(
+            dir.path(),
+            "{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}",
+        );
+        let mut sitting = exam::Sitting::start_trace(
+            "trace".to_string(),
+            vec!["point".to_string()],
+            "base.md".to_string(),
+            "deck-base".to_string(),
+            Strictness::Balanced,
+            crate::config::ExamConfig::default(),
+            crate::testutil::ask_config(&cli),
+        );
+        sitting.set_answer("answer".to_string());
+        sitting.submit();
+        for _ in 0..1_000_000 {
+            let _ = sitting.advance(0);
+            if !sitting.thinking() {
+                break;
+            }
+            std::thread::yield_now();
+        }
+        assert!(
+            sitting.result().is_some_and(|result| result.passed),
+            "the fixture must reach a passing result: phase={:?}, error={:?}",
+            sitting.phase(),
+            sitting.error()
+        );
+
+        let dto = exam_dto(&Examining {
+            sitting,
+            deck_path: base,
+        });
+
+        assert_eq!(
+            vec!["advanced.md"],
+            dto.unlocks,
+            "a pass exposes exactly the direct dependents"
+        );
+    }
+
+    #[test]
     fn deck_drawer_total_counts_unstamped_cards_the_heatmap_omits() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("rust.md");

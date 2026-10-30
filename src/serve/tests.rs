@@ -2596,6 +2596,11 @@ fn trace_dto_tracks_phase_excerpt_and_rail() {
     w.session.grade(&mut store, Delta::Failed, 1001);
     let d = trace_dto(&w);
     assert_eq!("done", d.phase);
+    assert!(
+        d.path.iter().all(|hop| !hop.current),
+        "a completed trace has no current hop: {:?}",
+        d.path.iter().map(|hop| hop.current).collect::<Vec<_>>()
+    );
     let s = d.summary.expect("done has a summary");
     assert_eq!((1, 0, 1), (s.passed, s.partly, s.failed));
     assert_eq!(vec![2], s.weak); // 1-based: the failed second hop

@@ -365,6 +365,27 @@ mod tests {
         assert_eq!(Some((3, 0..1)), s.splice(&(2..3)));
     }
 
+    #[test]
+    fn word_boundaries_follow_neighbors_within_each_visible_piece() {
+        let rows = [
+            ("whole piece", "word", 0..4, true),
+            ("alphanumeric before", "xword", 1..5, false),
+            ("alphanumeric after", "wordx", 0..4, false),
+            ("punctuation on both sides", "(word)", 1..5, true),
+            ("style seam", "**word**x", 0..4, true),
+        ];
+
+        for (label, text, range, expected) in rows {
+            let s = stream(&[text]);
+            assert_eq!(
+                expected,
+                s.word_bounded(&range),
+                "{label}: {range:?} in {:?}",
+                s.text
+            );
+        }
+    }
+
     // A dense two-letter alphabet with structural tokens, so overlapping
     // occurrences straddling style edges are COMMON, not needle-rare: the
     // differential property must be able to reach the shadowing shapes it
