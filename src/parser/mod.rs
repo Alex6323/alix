@@ -138,6 +138,9 @@ pub enum LintKind {
         name: String,
     },
     SectionWithoutCards,
+    HintContainsAnswer {
+        answer: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -218,6 +221,14 @@ pub enum ParseError {
         "line {line}: the note opened here trails the card, and answer content follows it; comment machinery trails: move the content above the note"
     )]
     ContentAfterNote { line: usize },
+    #[error(
+        "line {0}: only a `[!TIP]` (a hint) may sit above the divider; move this note below the answer"
+    )]
+    NoteAboveDivider(usize),
+    #[error(
+        "line {0}: a card with a `blank:`, `cover:` or `crop:` region takes no hint; move the tip below the answer"
+    )]
+    HintOnRegionCard(usize),
     #[error(
         "line {line}: a card heading line takes no `<!-- {key}: ... -->`; comment machinery trails: move it below the card's content"
     )]
@@ -346,6 +357,8 @@ impl ParseError {
             Self::EmptyFront(_) => "empty_front",
             Self::FrontWithoutAnswer(_) => "front_without_answer",
             Self::BlankCardDivider(_) => "blank_card_divider",
+            Self::NoteAboveDivider(_) => "note_above_divider",
+            Self::HintOnRegionCard(_) => "hint_on_region_card",
             Self::BlankCardDirection(_) => "blank_card_direction",
             Self::OrphanSubCard(_) => "orphan_sub_card",
             Self::ProseBeforeFirstHeading(_) => "prose_before_first_heading",
@@ -391,6 +404,8 @@ impl ParseError {
             | Self::EmptyFront(line)
             | Self::FrontWithoutAnswer(line)
             | Self::BlankCardDivider(line)
+            | Self::NoteAboveDivider(line)
+            | Self::HintOnRegionCard(line)
             | Self::BlankCardDirection(line)
             | Self::OrphanSubCard(line)
             | Self::ProseBeforeFirstHeading(line)
@@ -727,11 +742,16 @@ struct RawCard {
     back: Vec<(usize, String)>,
     divider: Option<usize>,
     notes: Vec<Note>,
+    /// Every badge-opened run, including runs with no body.
+    note_badges: Vec<(usize, Badge)>,
+    hints: Vec<String>,
+    hint_line: Option<usize>,
     directives: CardDirectives,
     mapping: Option<Mapping>,
     /// What opened this card's trailing machinery run; content arriving
     /// afterward proves the run sat above content.
     machinery: Option<TrailingStart>,
+    machinery_after_note: Option<TrailingStart>,
     /// The line of a bare `$$` opener still unclosed; a card may not end
     /// with one open.
     open_math: Option<usize>,
@@ -769,6 +789,19 @@ enum TrailingStart {
     Ignore { line: usize },
 }
 
+impl TrailingStart {
+    fn error(&self) -> ParseError {
+        match self {
+            Self::Directive { line, key } => ParseError::LeadingDirective {
+                line: *line,
+                key: key.clone(),
+            },
+            Self::Note { line } => ParseError::ContentAfterNote { line: *line },
+            Self::Ignore { line } => ParseError::LeadingIgnore(*line),
+        }
+    }
+}
+
 /// What the blockquote run currently being scanned turned out to be.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum QuoteRun {
@@ -779,14 +812,44 @@ enum QuoteRun {
 impl RawCard {
     fn machinery_stays_trailing(&self) -> Result<(), ParseError> {
         match &self.machinery {
-            Some(TrailingStart::Directive { line, key }) => Err(ParseError::LeadingDirective {
-                line: *line,
-                key: key.clone(),
-            }),
-            Some(TrailingStart::Note { line }) => Err(ParseError::ContentAfterNote { line: *line }),
-            Some(TrailingStart::Ignore { line }) => Err(ParseError::LeadingIgnore(*line)),
+            Some(start) => Err(start.error()),
             None => Ok(()),
         }
+    }
+
+    fn note_opened_machinery(&self) -> bool {
+        matches!(self.machinery, Some(TrailingStart::Note { .. }))
+    }
+
+    fn record_machinery(&mut self, start: TrailingStart) {
+        if self.machinery.is_none() {
+            self.machinery = Some(start);
+        } else if self.note_opened_machinery() && self.machinery_after_note.is_none() {
+            self.machinery_after_note = Some(start);
+        }
+    }
+
+    fn lift_hints(&mut self) -> Result<(), ParseError> {
+        if !self.note_opened_machinery() {
+            return Ok(());
+        }
+        if let Some(&(line, _)) = self
+            .note_badges
+            .iter()
+            .find(|(_, badge)| *badge != Badge::Tip)
+        {
+            return Err(ParseError::NoteAboveDivider(line));
+        }
+        if let Some(start) = &self.machinery_after_note {
+            return Err(start.error());
+        }
+        self.hint_line = self.note_badges.first().map(|&(line, _)| line);
+        self.hints = std::mem::take(&mut self.notes)
+            .into_iter()
+            .map(|note| note.body)
+            .collect();
+        self.machinery = None;
+        Ok(())
     }
 }
 
@@ -1325,9 +1388,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 back: Vec::new(),
                 divider: None,
                 notes: Vec::new(),
+                note_badges: Vec::new(),
+                hints: Vec::new(),
+                hint_line: None,
                 directives,
                 mapping: None,
                 machinery: None,
+                machinery_after_note: None,
                 open_math: None,
                 open_note_math: None,
                 pending_badge: None,
@@ -1420,6 +1487,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 && (prev_blank || prev_heading);
             if attached && divides {
                 if let Some(card) = current.as_mut() {
+                    card.lift_hints()?;
                     card.machinery_stays_trailing()?;
                     card.divider = Some(lineno);
                     card.above = Some(Above::Divider);
@@ -1450,6 +1518,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                     let run = run_above.unwrap_or_else(|| match Badge::parse(trim_ws(text)) {
                         Some(badge) => {
                             card.pending_badge = Some(badge);
+                            card.note_badges.push((lineno, badge));
                             QuoteRun::Note
                         }
                         None => {
@@ -1537,9 +1606,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                         return Err(ParseError::OrphanIgnore(lineno));
                     };
                     card.directives.ignore = true;
-                    if card.machinery.is_none() {
-                        card.machinery = Some(TrailingStart::Ignore { line: lineno });
-                    }
+                    card.record_machinery(TrailingStart::Ignore { line: lineno });
                     mappable_block = block_above;
                     prev_blank = false;
                     prev_heading = false;
@@ -1571,9 +1638,11 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                                     }),
                                 }
                             }
-                            if is_known_card_key(&key) && card.machinery.is_none() {
-                                card.machinery =
-                                    Some(TrailingStart::Directive { line: lineno, key });
+                            if is_known_card_key(&key) {
+                                card.record_machinery(TrailingStart::Directive {
+                                    line: lineno,
+                                    key,
+                                });
                             }
                         }
                         // A region outside any card has nothing to bind to and
@@ -2248,6 +2317,24 @@ fn capture_answer_fences(
 
 /// Whole-word, case-insensitive containment. Short answers are skipped:
 /// a three-letter answer matches too much prose to be worth reporting.
+fn lint_hints_naming_the_answer(card: &Card, hint_line: Option<usize>, lints: &mut Vec<Lint>) {
+    let Some(line) = hint_line else {
+        return;
+    };
+    let named = card
+        .back
+        .iter()
+        .find(|answer| card.hints.iter().any(|hint| names_answer(hint, answer)));
+    if let Some(answer) = named {
+        lints.push(Lint {
+            line,
+            kind: LintKind::HintContainsAnswer {
+                answer: answer.clone(),
+            },
+        });
+    }
+}
+
 fn names_answer(note: &str, answer: &str) -> bool {
     let answer = answer.trim();
     if answer.chars().count() < 4 {
@@ -3132,9 +3219,13 @@ fn build_card_inner(
         back,
         divider,
         notes,
+        note_badges: _,
+        hints,
+        hint_line,
         directives,
         mapping,
         machinery: _,
+        machinery_after_note: _,
         open_math: _,
         open_note_math: _,
         pending_badge: _,
@@ -3143,6 +3234,11 @@ fn build_card_inner(
         definition_lines,
         escaped_lines,
     } = raw;
+    if let Some(hint_line) = hint_line
+        && !directives.sites.is_empty()
+    {
+        return Err(ParseError::HintOnRegionCard(hint_line));
+    }
     let divided = divider.is_some();
     let mut front_media: Vec<(usize, CardImage)> = Vec::new();
     let heading_segments = scan_markers(&heading, line, lints)?;
@@ -3581,6 +3677,8 @@ fn build_card_inner(
         card.givens = directives.givens;
         card.authored_distractors = distractors;
         card.multiple_choice = mapping == Mapping::ChoicesMultiple;
+        card.hints = hints;
+        lint_hints_naming_the_answer(&card, hint_line, lints);
         cards.push(card);
         return Ok(None);
     }
@@ -3645,6 +3743,8 @@ fn build_card_inner(
     card.citations = directives.citations;
     card.diagrams = directives.diagrams;
     card.givens = directives.givens;
+    card.hints = hints;
+    lint_hints_naming_the_answer(&card, hint_line, lints);
     cards.push(card);
     let prose = question_heading.map(|heading| BlockProse {
         heading,
@@ -6067,6 +6167,275 @@ a
         for (label, text, lines) in rows {
             assert_eq!(lines, without_cards(text), "{label}");
         }
+    }
+
+    #[test]
+    fn every_question_side_tip_becomes_a_hint_in_authored_order() {
+        let rows: [(&str, &str, Vec<&str>, Vec<&str>); 9] = [
+            (
+                "one hint",
+                "## q\n> [!TIP]\n> think\n\n---\nanswer\n",
+                vec!["think"],
+                vec![],
+            ),
+            (
+                "two hints keep their order",
+                "## q\n> [!TIP]\n> first\n\n> [!TIP]\n> second\n\n---\nanswer\n",
+                vec!["first", "second"],
+                vec![],
+            ),
+            (
+                "a multi-line front with a hint",
+                "## q\nmore\n\n> [!TIP]\n> h\n\n---\nanswer\n",
+                vec!["h"],
+                vec![],
+            ),
+            (
+                "a multi-line hint body",
+                "## q\n> [!TIP]\n> line one\n> line two\n\n---\nanswer\n",
+                vec!["line one\nline two"],
+                vec![],
+            ),
+            (
+                "a tip below the answer stays a note",
+                "## q\nanswer\n> [!TIP]\n> t\n",
+                vec![],
+                vec!["t"],
+            ),
+            (
+                "a hint and a trailing note",
+                "## q\n> [!TIP]\n> h\n\n---\nanswer\n> [!NOTE]\n> n\n",
+                vec!["h"],
+                vec!["n"],
+            ),
+            (
+                "an empty tip above the divider is dropped",
+                "## q\n> [!TIP]\n\n---\nanswer\n",
+                vec![],
+                vec![],
+            ),
+            (
+                "a tip line inside an open quote stays quote content",
+                "## q\n> ordinary quoted front\n> [!TIP]\n> same quote\n\n---\nanswer\n",
+                vec![],
+                vec![],
+            ),
+            (
+                "the answer is unchanged by a hint",
+                "## q\n> [!TIP]\n> h\n\n---\nanswer\nmore answer\n",
+                vec!["h"],
+                vec![],
+            ),
+        ];
+        for (label, text, hints, notes) in rows {
+            let deck = parse(text);
+            let card = &deck.cards[0];
+            assert_eq!(hints, card.hints, "{label}: hints");
+            assert_eq!(
+                notes,
+                card.notes
+                    .iter()
+                    .map(|note| note.body.as_str())
+                    .collect::<Vec<_>>(),
+                "{label}: notes"
+            );
+            assert!(
+                card.back
+                    .iter()
+                    .chain([&card.front])
+                    .all(|text| !text.contains("[!TIP]") || label.starts_with("a tip line inside")),
+                "{label}: no tip reaches the front or back: {:?} / {:?}",
+                card.front,
+                card.back
+            );
+        }
+        let deck = parse("## q\n> [!TIP]\n> h\n\n---\nanswer\nmore answer\n");
+        assert_eq!(vec!["answer", "more answer"], deck.cards[0].back);
+        assert_eq!("q", deck.cards[0].front);
+        let embedded =
+            parse("## q\n> ordinary quoted front\n> [!TIP]\n> same quote\n\n---\nanswer\n");
+        assert!(
+            embedded.cards[0].front.contains("same quote"),
+            "the open quote keeps its tip-shaped line: {:?}",
+            embedded.cards[0].front
+        );
+        let empty = parse("## q\n> [!TIP]\n\n---\nanswer\n");
+        assert!(
+            empty
+                .lints
+                .iter()
+                .any(|lint| matches!(lint.kind, LintKind::EmptyNote)),
+            "an empty tip draws the empty-note lint"
+        );
+    }
+
+    #[test]
+    fn a_misplaced_question_side_note_names_the_first_rule_it_breaks() {
+        let rows: [(&str, &str, &str); 10] = [
+            (
+                "two hints on a cover card: the first tip is named",
+                "## q\nalpha beta\n<!-- cover: span hidden=\"alpha\" -->\n> [!TIP]\n> one\n\n> [!TIP]\n> two\n\n---\nanswer\n",
+                "line 4: a card with a `blank:`, `cover:` or `crop:` region takes no hint; move the tip below the answer",
+            ),
+            (
+                "a note above the divider",
+                "## q\n> [!NOTE]\n> n\n\n---\nanswer\n",
+                "line 2: only a `[!TIP]` (a hint) may sit above the divider; move this note below the answer",
+            ),
+            (
+                "a warning after a hint",
+                "## q\n> [!TIP]\n> h\n\n> [!WARNING]\n> w\n\n---\nanswer\n",
+                "line 5: only a `[!TIP]` (a hint) may sit above the divider; move this note below the answer",
+            ),
+            (
+                "region, tip and note: the note wins",
+                "## q\nalpha beta\n<!-- cover: span hidden=\"alpha\" -->\n> [!TIP]\n> hint\n\n> [!NOTE]\n> note\n\n---\nanswer\n",
+                "line 7: only a `[!TIP]` (a hint) may sit above the divider; move this note below the answer",
+            ),
+            (
+                "a directive after a hint",
+                "## q\n> [!TIP]\n> hint\n<!-- reveal: line -->\n\n---\nanswer\n",
+                "line 4: `<!-- reveal: ... -->` sits above card content; comment machinery trails: move it below the card's last content line",
+            ),
+            (
+                "an ignore after a hint",
+                "## q\n> [!TIP]\n> hint\n<!-- ignore -->\n\n---\nanswer\n",
+                "line 4: `<!-- ignore -->` sits above card content; comment machinery trails: move it below the card's last content line",
+            ),
+            (
+                "a hint on a cover card",
+                "## q\nalpha beta\n<!-- cover: span hidden=\"alpha\" -->\n> [!TIP]\n> hint\n\n---\nanswer\n",
+                "line 4: a card with a `blank:`, `cover:` or `crop:` region takes no hint; move the tip below the answer",
+            ),
+            (
+                "a hint on a blank card",
+                "## q\nalpha\n<!-- blank: span hidden=\"alpha\" b:a1b2c3 -->\n> [!TIP]\n> hint\n\n---\nanswer\n",
+                "line 4: a card with a `blank:`, `cover:` or `crop:` region takes no hint; move the tip below the answer",
+            ),
+            (
+                "front content after a hint",
+                "## q\n> [!TIP]\n> h\n\nmore\n\n---\nanswer\n",
+                "line 2: the note opened here trails the card, and answer content follows it; comment machinery trails: move the content above the note",
+            ),
+            (
+                "a hint with nothing attached below the divider",
+                "## q\n> [!TIP]\n> h\n\n---\n",
+                "line 5: a thematic break line only divides a card's front from the answer attached below it; delete the line, or put `<!-- plain -->` below it to keep it literal",
+            ),
+        ];
+        for (label, text, message) in rows {
+            assert_eq!(message, err(text).to_string(), "{label}");
+        }
+    }
+
+    #[test]
+    fn a_hinted_card_stays_a_choice_card_under_either_mapping() {
+        for (label, text) in [
+            (
+                "an explicit mapping",
+                "## q\n> [!TIP]\n> h\n\n---\n- [x] a\n- [ ] b\n<!-- choices: single -->\n",
+            ),
+            (
+                "a deck-level default",
+                "---\nchoices: single\n---\n## q\n> [!TIP]\n> h\n\n---\n- [x] a\n- [ ] b\n",
+            ),
+        ] {
+            let deck = parse(text);
+            assert_eq!(vec!["h"], deck.cards[0].hints, "{label}: hints");
+            assert_eq!(vec!["a"], deck.cards[0].back, "{label}: back");
+            assert_eq!(
+                vec!["b"],
+                deck.cards[0].authored_distractors,
+                "{label}: distractors"
+            );
+        }
+    }
+
+    #[test]
+    fn adding_or_editing_a_hint_changes_no_fingerprint() {
+        let fingerprints = |text: &str| {
+            let card = parse(text).cards.remove(0);
+            (card.content_fingerprint, card.block_fingerprint)
+        };
+        let bare = fingerprints("## q\nanswer\n");
+        for (label, text) in [
+            ("a hint added", "## q\n> [!TIP]\n> h\n\n---\nanswer\n"),
+            (
+                "the hint edited",
+                "## q\n> [!TIP]\n> other words\n\n---\nanswer\n",
+            ),
+            (
+                "a second hint",
+                "## q\n> [!TIP]\n> h\n\n> [!TIP]\n> more\n\n---\nanswer\n",
+            ),
+        ] {
+            assert_eq!(bare, fingerprints(text), "{label}");
+        }
+        assert_ne!(
+            bare,
+            fingerprints("## q\nother answer\n"),
+            "control: an answer edit does move the fingerprint"
+        );
+    }
+
+    #[test]
+    fn a_hint_that_names_an_answer_line_draws_a_lint_at_the_hint() {
+        let leaks = |text: &str| -> Vec<(usize, String)> {
+            parse(text)
+                .lints
+                .into_iter()
+                .filter_map(|lint| match lint.kind {
+                    LintKind::HintContainsAnswer { answer } => Some((lint.line, answer)),
+                    _ => None,
+                })
+                .collect()
+        };
+        let rows: [(&str, &str, Vec<(usize, &str)>); 6] = [
+            (
+                "a hint that spells the answer",
+                "## q\n> [!TIP]\n> it is Paris\n\n---\nParis\n",
+                vec![(2, "Paris")],
+            ),
+            (
+                "case does not hide it",
+                "## q\n> [!TIP]\n> think PARIS\n\n---\nParis\n",
+                vec![(2, "Paris")],
+            ),
+            (
+                "the second hint leaks",
+                "## q\n> [!TIP]\n> a city\n\n> [!TIP]\n> Paris\n\n---\nParis\n",
+                vec![(2, "Paris")],
+            ),
+            (
+                "a short answer is too common to flag",
+                "## q\n> [!TIP]\n> the 1 in 10\n\n---\n1\n",
+                vec![],
+            ),
+            (
+                "a correct choice the hint names",
+                "## q\n> [!TIP]\n> not Berlin, try Paris\n\n---\n- [x] Paris\n- [ ] Berlin\n<!-- choices: single -->\n",
+                vec![(2, "Paris")],
+            ),
+            (
+                "a hint that only circles the answer",
+                "## q\n> [!TIP]\n> a capital on the Seine\n\n---\nParis\n",
+                vec![],
+            ),
+        ];
+        for (label, text, expected) in rows {
+            let expected: Vec<(usize, String)> = expected
+                .into_iter()
+                .map(|(line, answer)| (line, answer.to_string()))
+                .collect();
+            assert_eq!(expected, leaks(text), "{label}");
+        }
+    }
+
+    #[test]
+    fn a_personal_sidecar_card_carries_its_hints() {
+        let cards =
+            super::parse_sidecar("deck.md", "## q\n> [!TIP]\n> h\n\n---\nanswer\n").unwrap();
+        assert_eq!(vec!["h"], cards[0].hints);
     }
 
     #[test]

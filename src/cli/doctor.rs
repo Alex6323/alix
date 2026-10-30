@@ -760,6 +760,9 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::EmptyNote => "this alert badge opens a note with no body, so the card \
              shows nothing for it"
             .to_string(),
+        LintKind::HintContainsAnswer { answer } => {
+            format!("hint shows the answer line `{answer}` before the reveal")
+        }
         LintKind::SectionWithoutCards => "section has prose but no card below it; a section \
              introduces the cards under it"
             .to_string(),

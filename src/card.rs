@@ -163,6 +163,7 @@ pub struct Card {
     pub table_title: Option<String>,
     pub back: Vec<String>,
     pub notes: Vec<Note>,
+    pub hints: Vec<String>,
     pub line: usize,
     /// The authored block's first line: a heading card's own line, a table
     /// row's table line. Every review unit one block expands to shares it.
@@ -314,6 +315,7 @@ impl Card {
             table_title: None,
             back,
             notes,
+            hints: Vec::new(),
             line,
             block_line: line,
             parent_block: None,

@@ -389,6 +389,38 @@ A cloze card can give one blank a note of its own, so a note that names an
 answer doesn't give it away on the sibling cards. See
 [a note for one blank](06-cloze-direction-images.md#a-note-for-one-blank).
 
+## Hints
+
+A `[!TIP]` block on the question side, between the front and the `---`
+divider, is a **hint**: offered while you answer, shown only when you ask for
+it. It sits where a front image sits, so a one-line card gains a divider (with
+a blank line above it) to carry one:
+
+```
+## What does `?` do on a `Result`?
+> [!TIP]
+> Think about where an error goes next.
+
+> [!TIP]
+> Which function does it leave?
+
+---
+It returns the `Err` from the enclosing function.
+```
+
+Several hints on one card are offered one at a time, in the order you wrote
+them, so write them to move closer to the answer. A hint is neither question
+text nor answer: it is not typed, not a choice, not a step of
+`<!-- reveal: line -->`, and editing it never touches the card's identity or
+review history. Opening any hint turns a pass on that card into Partial for
+that review.
+
+Only `[!TIP]` may stand above the divider; any other badge there fails loud
+at its badge line, and a `[!TIP]` below the answer is an ordinary note. A card
+with a `blank:`, `cover:` or `crop:` region takes no hint. A hint that spells
+out one of the answer's lines (four characters or more, any case) draws a
+warning from `alix doctor`, since it would give the answer away.
+
 ## Sections and sub-cards
 
 Heading depth decides a line's role. `##` is a card front, `#` opens a section,
