@@ -5972,6 +5972,11 @@ fn workspace_augment_batches_every_member_deck_into_one_call() {
 
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     assert!(
+        stderr(&out).contains("Generating multiple-choice distractors for \"Quiz\""),
+        "the batched call is announced with its target and the workspace title: {}",
+        stderr(&out)
+    );
+    assert!(
         stdout(&out).contains("augmented 2 of 2 cards"),
         "both decks' cards must ride one batched call, not one call per deck: {}",
         stdout(&out)
@@ -5986,6 +5991,45 @@ fn workspace_augment_batches_every_member_deck_into_one_call() {
     assert!(
         two.contains("W3") && !two.contains("W1"),
         "and not spill into a sibling's: {two}"
+    );
+}
+
+#[test]
+fn workspace_augment_format_reshapes_a_member_decks_card() {
+    let dir = TempDir::new().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "title = \"Parts\"\n").unwrap();
+    std::fs::write(
+        workspace.join("decks/parts.md"),
+        "---\nformat-version: 1\nid: \"deck-parts\"\n---\n## List the parts\nA, B, C\n<!-- id: card-parts1 -->\n",
+    )
+    .unwrap();
+    let cli = fake_claude(
+        dir.path(),
+        r#"{"0": {"back": ["A", "B", "C"], "mode": "line"}}"#,
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&[
+        "workspace",
+        "augment",
+        workspace.to_str().unwrap(),
+        "--target",
+        "format",
+        "--config",
+        &config,
+    ]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let cached = std::fs::read_to_string(workspace.join("augment/deck-parts.json")).unwrap();
+    assert!(
+        cached.contains("LineByLine"),
+        "the member card's reshape is cached in its deck's document: {cached}"
     );
 }
 
