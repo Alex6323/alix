@@ -202,6 +202,13 @@ section is there to help you answer.
 While the sheet is open, the card and its review keys are inert; a click on
 the dimmed page, the `×` in the sheet's top-right corner, `c`, or Escape
 closes it.
+A card with [hints](03-the-deck-format.md#hints) offers a quiet **Hint**
+chip beside **Context** for as long as you are still answering (on a
+`reveal: line` card, until the last line shows). The chip, `i`, or **Hint** in
+the review menu opens the same sheet with the first hint; **Next hint** (or
+Enter) adds the next one under it until none are left, and reopening shows the
+ones you already opened. `c` and `i` swap the sheet between the section and
+the hints. Opening a hint turns a pass on that card into Partial.
 A dim **"N left"** count in the header shows how many cards the session still
 holds; it can tick up when a card you missed cools back in for its retry. The
 **☰ menu** is context-aware: during review it holds **Ask** and,

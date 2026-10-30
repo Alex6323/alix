@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Staged hints: a `> [!TIP]` block between a card's question and its `---`
+  divider is a hint. Several are offered one at a time while you answer, from
+  a **Hint** chip (or `i` on the web), and opening any of them turns a pass on
+  that card into Partial. Any other badge above the divider is an error, and
+  `alix doctor` warns when a hint spells out an answer line. `CardDto.hints`
+  and `POST /api/hint` carry them to clients.
 - `alix doctor` warns about a section that has prose but no card before the
   next `#` heading.
 - Deck frontmatter accepts `cite:`, a list of keyed roots such as

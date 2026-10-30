@@ -17,6 +17,7 @@ export function modeTag({ introducing, choices, mode, draw }) {
 
 export function createStudy({
   api,
+  fetchApi,
   post,
   storage,
   sessionStorage,
@@ -76,6 +77,10 @@ export function createStudy({
   let citationView = clientModel.citationView;
   let sectionView = clientModel.sectionView;
   let autoOpenedSection = null;
+  let panelKind = null;
+  let hintScope = null;
+  let hintsShown = 0;
+  let hintPending = false;
   let answerConcealed = clientModel.answerConcealed;
   let feedback = clientModel.feedback;
   let selectedChoices = new Set();
@@ -739,23 +744,57 @@ export function createStudy({
   function contextOffered() { return hasSection() && !isAnswered(); }
 
   function openSection() {
-    if (!contextOffered() || sectionView) return;
-    if (!doc.getElementById("card")) return;
-    sectionView = true;
-    const drawer = el("div", "section-drawer");
-    drawer.setAttribute("role", "dialog");
-    drawer.setAttribute("aria-modal", "true");
+    if (!contextOffered()) return;
+    showPanel("section");
+  }
+
+  function hintCount() {
+    return state && state.card ? (state.card.hints || []).length : 0;
+  }
+  function hintsOffered() {
+    return !isWalking() && !!state && state.phase === "review" && hintCount() > 0 && !isAnswered();
+  }
+  function currentHintScope() { return `${state.card.id}@${state.study_revision}`; }
+  function openedHints() { return hintScope === currentHintScope() ? hintsShown : 0; }
+
+  function openHints() {
+    if (!hintsOffered() || hintPending) return;
+    if (openedHints() > 0) { showPanel("hint"); return; }
+    const scope = currentHintScope();
+    hintPending = true;
+    fetchApi("/api/hint", post({ card: state.card.id })).then(() => {
+      hintPending = false;
+      if (scope !== currentHintScope() || !hintsOffered()) return;
+      hintScope = scope;
+      hintsShown = 1;
+      showPanel("hint");
+    }, () => { hintPending = false; });
+  }
+
+  function nextHint() {
+    if (panelKind !== "hint" || openedHints() >= hintCount()) return;
+    hintsShown += 1;
+    showPanel("hint");
+  }
+
+  function fillPanel(drawer, panel, closer) {
+    panel.replaceChildren(closer);
+    if (panelKind === "hint") {
+      drawer.setAttribute("aria-label", "Hints");
+      closer.setAttribute("aria-label", "Close hints");
+      const stack = el("div", "hint-stack");
+      renderNote(stack, state.card.hints.slice(0, openedHints()).map((units) => ({ badge: "tip", units })));
+      panel.appendChild(stack);
+      if (openedHints() < hintCount()) {
+        const next = el("button", "chip quiet hint-next", "Next hint");
+        next.type = "button";
+        next.addEventListener("click", nextHint);
+        panel.appendChild(next);
+      }
+      return;
+    }
     drawer.setAttribute("aria-label", `Section context: ${state.card.section_context[0]}`);
-    const scrim = el("div", "section-drawer-scrim");
-    scrim.addEventListener("click", closeSection);
-    drawer.appendChild(scrim);
-    const panel = el("section", "section-drawer-panel");
-    panel.tabIndex = -1;
-    const closer = el("button", "section-drawer-close", "×");
-    closer.type = "button";
     closer.setAttribute("aria-label", "Close section context");
-    closer.addEventListener("click", closeSection);
-    panel.appendChild(closer);
     appendSectionContext(
       panel,
       state.card.section_context,
@@ -763,6 +802,30 @@ export function createStudy({
       state.card.section_context_units,
       contextDiagram,
     );
+  }
+
+  function showPanel(kind) {
+    const open = doc.querySelector(".section-drawer");
+    if (sectionView && open) {
+      panelKind = kind;
+      fillPanel(open, open.querySelector(".section-drawer-panel"), open.querySelector(".section-drawer-close"));
+      return;
+    }
+    if (!doc.getElementById("card")) return;
+    sectionView = true;
+    panelKind = kind;
+    const drawer = el("div", "section-drawer");
+    drawer.setAttribute("role", "dialog");
+    drawer.setAttribute("aria-modal", "true");
+    const scrim = el("div", "section-drawer-scrim");
+    scrim.addEventListener("click", closeSection);
+    drawer.appendChild(scrim);
+    const panel = el("section", "section-drawer-panel");
+    panel.tabIndex = -1;
+    const closer = el("button", "section-drawer-close", "×");
+    closer.type = "button";
+    closer.addEventListener("click", closeSection);
+    fillPanel(drawer, panel, closer);
     drawer.appendChild(panel);
     doc.body.appendChild(drawer);
     if (legend && legend.parentElement) legend.parentElement.inert = true;
@@ -781,6 +844,7 @@ export function createStudy({
     doc.querySelectorAll(".section-drawer").forEach((stale) => stale.remove());
     if (legend && legend.parentElement) legend.parentElement.inert = false;
     sectionView = false;
+    panelKind = null;
   }
 
   function autoOpenSection() {
@@ -1590,6 +1654,7 @@ export function createStudy({
     clearLegendSides();
     if (state.card) setMenuContext(isWalking() ? "walk" : "review");
     if (contextOffered()) chip("Context", "quiet", openSection, label(keys.context));
+    if (hintsOffered()) chip("Hint", "quiet", openHints, label(keys.hint));
     if (isWalking()) { renderWalkLegend(); return; }
     if (feedback) {
       if (isIntroducing()) {
@@ -1981,7 +2046,10 @@ export function createStudy({
       }
       if (sectionView) {
         e.preventDefault();
-        if (e.key === "Escape" || hit(e, keys.context)) closeSection();
+        if (e.key === "Escape") closeSection();
+        else if (hit(e, keys.context)) { if (panelKind === "section") closeSection(); else openSection(); }
+        else if (hit(e, keys.hint)) { if (panelKind === "hint") closeSection(); else openHints(); }
+        else if (e.key === "Enter" && panelKind === "hint") nextHint();
         return;
       }
       if (isWalking()) { handleWalkKey(e); return; }
@@ -2008,6 +2076,7 @@ export function createStudy({
         return;
       }
       if (contextOffered() && hit(e, keys.context)) { e.preventDefault(); openSection(); return; }
+      if (hintsOffered() && hitOutsideField(e, keys.hint)) { e.preventDefault(); openHints(); return; }
       // `s` swaps a cited card between its answer and its source, once answered.
       if ((state.card.citations || []).length && isAnswered() && !e.ctrlKey && e.key.toLowerCase() === "s") {
         e.preventDefault(); toggleCitation(); return;
@@ -2193,12 +2262,14 @@ export function createStudy({
     handleKey,
     hasSection,
     contextOffered,
+    hintsOffered,
     isAnswered,
     isBrowsing,
     isWalking,
     keys: () => keys,
     load,
     openSection,
+    openHints,
     openBrowse,
     openWalk,
     prepareRender,

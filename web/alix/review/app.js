@@ -65,6 +65,7 @@ function withToken(path) { return apiClient.withToken(path); }
 
 study = createStudy({
   api,
+  fetchApi: apiClient.fetch,
   post,
   storage: localStorage,
   sessionStorage,
@@ -410,6 +411,7 @@ document.getElementById("mAsk").addEventListener("click", () => {
   else if (study.isAnswered()) tutor.show();
 });
 document.getElementById("mContext").addEventListener("click", () => { menu.classList.remove("open"); study.openSection(); });
+document.getElementById("mHint").addEventListener("click", () => { menu.classList.remove("open"); study.openHints(); });
 document.getElementById("mRemove").addEventListener("click", () => {
   menu.classList.remove("open");
   if (!study.sectionOpen()) study.remove();
@@ -428,6 +430,7 @@ function setMenuContext(ctx) {
   // doesn't have, so they get their own narrower checks below.
   document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = (ctx === "review" || ctx === "trace" || ctx === "walk") ? "" : "none"; });
   document.getElementById("mContext").style.display = (ctx === "review" || ctx === "walk") && study && study.contextOffered() ? "" : "none";
+  document.getElementById("mHint").style.display = ctx === "review" && study && study.hintsOffered() ? "" : "none";
   document.getElementById("mRemove").style.display = ctx === "review" ? "" : "none";
   // (a remediation card) — narrower than the other .m-review items, so it
   // gets its own check on top of the context toggle.
@@ -470,6 +473,7 @@ function boot() {
     document.querySelector("#mRemove .mk").textContent = label(k.remove);
     document.getElementById("mAskKey").textContent = label(k.ask);
     document.getElementById("mContextKey").textContent = label(k.context);
+    document.getElementById("mHintKey").textContent = label(k.hint);
     return study.load();
   }).catch(() => setTimeout(boot, 500));
 }
