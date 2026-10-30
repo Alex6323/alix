@@ -562,6 +562,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On the web, a pick or typed-check result that arrives after the card has
+  changed (for example after a quick Skip) is ignored; it could mark the next
+  card answered before its answer was shown.
 - On the phone, a screen reader reads inline code as written; the invisible
   line-break points that let long code wrap no longer enter its text.
 - A paired pull refuses an archive carrying a link before extracting any of

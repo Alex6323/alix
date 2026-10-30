@@ -341,7 +341,7 @@ export function createStudy({
     // An introduction-card pick reveals its answer feedback: same encounter rule.
     // Only the answer changed. A full rerender() rebuilds the question too, which
     // reads as a flicker (and re-rasterises any math in it).
-    api("/api/choose", post({ index: i, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(showFeedback);
+    api("/api/choose", post({ index: i, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(forThisAttempt(showFeedback));
   }
   function toggleChoice(i) {
     if (selectedChoices.has(i)) selectedChoices.delete(i);
@@ -354,11 +354,11 @@ export function createStudy({
     if (!selectedChoices.size) return;
     const indices = Array.from(selectedChoices).sort((a, b) => a - b);
     if (isWalking()) { walkChoose({ indices }); return; }
-    api("/api/choose", post({ indices, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(showFeedback);
+    api("/api/choose", post({ indices, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(forThisAttempt(showFeedback));
   }
   function submitCheck() {
     const lines = Array.from(doc.querySelectorAll("#ansRegion input.field")).map(i => i.value);
-    api("/api/check", post({ lines })).catch(() => { load(); return Promise.reject(); }).then(showFeedback).catch(() => load());
+    api("/api/check", post({ lines })).catch(() => { load(); return Promise.reject(); }).then(forThisAttempt(showFeedback)).catch(() => load());
   }
   function showFeedback(f) {
     feedback = f;
@@ -374,11 +374,11 @@ export function createStudy({
   // three-way grade.
   function submitTypeLine(value) {
     const lines = typelineChecked.map(r => r.input).concat([value]);
-    api("/api/check", post({ lines })).then(f => {
+    api("/api/check", post({ lines })).then(forThisAttempt(f => {
       typelineChecked = f.results;
       if (typelineChecked.length >= gradeableSteps().length) feedback = f;
       rerender();
-    });
+    }));
   }
   function submitCurrentTypeLine() {
     const inp = doc.querySelector("#ansRegion input.field");
@@ -752,18 +752,22 @@ export function createStudy({
   function hintsOffered() {
     return !isWalking() && !!state && state.phase === "review" && hintCount() > 0 && !isAnswered();
   }
-  function currentHintScope() { return `${state.card.id}@${state.study_revision}`; }
-  function openedHints() { return hintScope === currentHintScope() ? hintsShown : 0; }
+  function attemptScope() { return `${state.card.id}@${state.study_revision}`; }
+  function forThisAttempt(apply) {
+    const scope = attemptScope();
+    return (result) => { if (state && state.card && attemptScope() === scope) apply(result); };
+  }
+  function openedHints() { return hintScope === attemptScope() ? hintsShown : 0; }
 
   function openHints() {
-    if (!hintsOffered() || hintPendingScope === currentHintScope()) return;
+    if (!hintsOffered() || hintPendingScope === attemptScope()) return;
     if (openedHints() > 0) { showPanel("hint"); return; }
-    const scope = currentHintScope();
+    const scope = attemptScope();
     hintPendingScope = scope;
     const settle = () => { if (hintPendingScope === scope) hintPendingScope = null; };
     fetchApi("/api/hint", post({ card: state.card.id })).then(() => {
       settle();
-      if (scope !== currentHintScope() || !hintsOffered()) return;
+      if (scope !== attemptScope() || !hintsOffered()) return;
       hintScope = scope;
       hintsShown = 1;
       showPanel("hint");

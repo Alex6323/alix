@@ -453,6 +453,83 @@ test("a pending hint from an old revision does not block the same card's fresh a
   assert.deepEqual(calls, ["/api/hint", "/api/hint"], "the new attempt owns an independent request");
 });
 
+test("a rejected hint request releases the same attempt for retry", async () => {
+  const calls = [];
+  const study = createStudy({
+    api: async () => ({}),
+    fetchApi: (path) => {
+      calls.push(path);
+      return calls.length === 1 ? Promise.reject(new Error("offline")) : new Promise(() => {});
+    },
+    post: (body) => ({ method: "POST", body }),
+    storage: { getItem: () => null, setItem: () => {} },
+    model: { create: createModel, applyStudyState, currentScreen, enterPicker, filledSteps, questionAt, revealStepCount },
+    rerender: () => {},
+    traceData: () => null,
+    replaceTraceSession: () => {},
+    openTutor: () => {},
+    startExam: () => {},
+    closeMenu: () => {},
+    timers: {},
+    ui: {},
+  });
+  study.apply({
+    kind: "review",
+    phase: "review",
+    label: "Facts",
+    mode: "flip",
+    study_revision: 41,
+    card: { id: "card-1", answer_steps: [{ kind: "line" }], hints: [[{ text: "Think north." }]] },
+  });
+
+  study.openHints();
+  await Promise.resolve();
+  study.openHints();
+
+  assert.deepEqual(calls, ["/api/hint", "/api/hint"], "the rejection clears the same scope");
+});
+
+test("an old hint settlement cannot clear the fresh attempt's pending request", async () => {
+  const calls = [];
+  const releases = [];
+  const study = createStudy({
+    api: async () => ({}),
+    fetchApi: (path) => {
+      calls.push(path);
+      return new Promise((resolve) => releases.push(resolve));
+    },
+    post: (body) => ({ method: "POST", body }),
+    storage: { getItem: () => null, setItem: () => {} },
+    model: { create: createModel, applyStudyState, currentScreen, enterPicker, filledSteps, questionAt, revealStepCount },
+    rerender: () => {},
+    traceData: () => null,
+    replaceTraceSession: () => {},
+    openTutor: () => {},
+    startExam: () => {},
+    closeMenu: () => {},
+    timers: {},
+    ui: {},
+  });
+  const attempt = (studyRevision) => ({
+    kind: "review",
+    phase: "review",
+    label: "Facts",
+    mode: "flip",
+    study_revision: studyRevision,
+    card: { id: "card-1", answer_steps: [{ kind: "line" }], hints: [[{ text: "Think north." }]] },
+  });
+
+  study.apply(attempt(41));
+  study.openHints();
+  study.apply(attempt(42));
+  study.openHints();
+  releases[0]();
+  await Promise.resolve();
+  study.openHints();
+
+  assert.deepEqual(calls, ["/api/hint", "/api/hint"], "the fresh scope remains single-flight");
+});
+
 test("a rebound browse quit leaves the browser and Backspace always does", async () => {
   const picker = { kind: "review", phase: "select", label: "picker", card: null };
   const browse = { next: plain("l"), prev: plain("h"), quit: plain("q") };

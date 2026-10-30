@@ -166,7 +166,8 @@ test("hints open one at a time, only after the server records the opening", asyn
   await expect(stacked(page), "first hint after the 204").toHaveCount(1);
   await expect(stacked(page).nth(0)).toContainText("A river city.");
 
-  await nextHint(page).click();
+  await nextHint(page).focus();
+  await page.keyboard.press("Enter");
   await expect(stacked(page), "Next hint stacks the second under the first").toHaveCount(2);
   await expect(stacked(page).nth(0)).toContainText("A river city.");
   await expect(stacked(page).nth(1)).toContainText("Starts with P.");
@@ -299,6 +300,114 @@ test("typed feedback closes a hint panel that won the request race", async ({ pa
   ]);
   await expect(page.getByRole("button", { name: "Got it" }), "the check has reached feedback").toBeVisible();
   await expect(page.locator(".section-drawer"), "an answer boundary closes the modal panel").toHaveCount(0);
+});
+
+test("late feedback from the previous card cannot close the fresh card's context", async ({ page }) => {
+  const card = ({ id, front, section, sectionFirst, studyRevision, choices = null }: {
+    id: string;
+    front: string;
+    section: string[];
+    sectionFirst: boolean;
+    studyRevision: number;
+    choices?: string[] | null;
+  }) => ({
+    kind: "review",
+    study_revision: studyRevision,
+    phase: "review",
+    card: {
+      id,
+      front,
+      front_runs: [{ text: front }],
+      front_units: null,
+      section_context: section,
+      section_context_runs: section.map((text) => [{ text }]),
+      section_context_units: section.map((text) => ({ kind: "sentence", text })),
+      back: ["Answer"],
+      back_runs: [[{ text: "Answer" }]],
+      back_units: [{ kind: "sentence", text: "Answer" }],
+      answer_steps: [{ kind: "line", back_from: 0, back_to: 1 }],
+      reshaped: false,
+      note: [],
+      images: [],
+      images_back: [],
+      citations: [],
+      crumb: null,
+      hints: [],
+    },
+    choices,
+    choice_runs: choices?.map((text) => [{ text }]) ?? null,
+    section_first: sectionFirst,
+    keypoints: null,
+    keypoint_runs: null,
+    introducing: true,
+    mode: choices ? "choice" : "flip",
+    depth: "recall",
+    input: "type",
+    remaining: 1,
+    initial: 1,
+    reviews: 0,
+    passed: 0,
+    failed: 0,
+    introduced: 0,
+    exam_due: [],
+    can_restart: false,
+    promotable: false,
+    next_due_ms: null,
+    due_left: 0,
+    new_left: 0,
+    label: "feedback-race.md",
+    save_error: null,
+  });
+  const first = card({
+    id: "card-old",
+    front: "Which answer belongs to the old card?",
+    section: [],
+    sectionFirst: false,
+    studyRevision: 71,
+    choices: ["Old answer", "Old distractor"],
+  });
+  const fresh = card({
+    id: "card-fresh",
+    front: "This fresh card owns the open context.",
+    section: ["Fresh section", "This panel belongs to the fresh card."],
+    sectionFirst: true,
+    studyRevision: 72,
+  });
+  let current = first;
+  let releaseChoice: () => void = () => {};
+  const heldChoice = new Promise<void>((resolve) => { releaseChoice = resolve; });
+  await page.route("**/api/state", (route) => route.fulfill({ json: current }));
+  await page.route("**/api/choose", async (route) => {
+    await heldChoice;
+    await route.fulfill({ json: { chosen: 0, correct: 0, passed: true } });
+  });
+  await page.route("**/api/skip", (route) => {
+    current = fresh;
+    return route.fulfill({ json: fresh });
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  await Promise.all([
+    page.waitForRequest((request) => request.url().includes("/api/choose")),
+    page.getByRole("button", { name: /Old answer/ }).click(),
+  ]);
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/skip")),
+    page.getByRole("button", { name: /^Skip/ }).click(),
+  ]);
+  await expect(page.locator(".front-text")).toHaveText("This fresh card owns the open context.");
+  await expect(page.locator(".section-drawer")).toBeVisible();
+  await expect(page.locator(".section-drawer")).toContainText("This panel belongs to the fresh card.");
+
+  const oldResponse = page.waitForResponse((response) => response.url().includes("/api/choose"));
+  releaseChoice();
+  await oldResponse;
+
+  await expect(
+    page.locator(".section-drawer"),
+    "the previous card's response must not tear down the fresh card's panel",
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reveal" }), "the fresh card stays unanswered").toBeVisible();
 });
 
 test("a pass graded right after opening a hint records Partial", async ({ page }) => {
