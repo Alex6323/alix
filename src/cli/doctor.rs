@@ -4176,7 +4176,7 @@ printf ']}}'
             dir.path(),
             "base.md",
             &format!(
-                "---\nformat-version: 1\nid: \"{CANONICAL_ID}\"\n---\n## a <!-- id: card-b1 -->\n1\n"
+                "---\nformat-version: 1\nid: \"{CANONICAL_ID}\"\n---\n## a\n1\n<!-- id: card-b1 -->\n"
             ),
         );
         let resolvable = dir.path().join("resolvable.md");
@@ -4202,6 +4202,14 @@ printf ']}}'
             .filter(|warning| warning.contains("dangling prerequisite"))
             .collect();
         assert_eq!(1, dangling_warnings.len(), "{:#?}", report.warnings);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("fails to parse")),
+            "the required deck itself parses: {:#?}",
+            report.warnings
+        );
         assert!(
             dangling_warnings[0].contains("deck-zzzzzzzzzzzzzzzzzzzzzzzzzz"),
             "{}",
@@ -4271,7 +4279,7 @@ printf ']}}'
             dir.path(),
             "base.md",
             &format!(
-                "---\nformat-version: 1\nid: \"{CANONICAL_ID}\"\n---\n## a <!-- id: card-b1 -->\n1\n"
+                "---\nformat-version: 1\nid: \"{CANONICAL_ID}\"\n---\n## a\n1\n<!-- id: card-b1 -->\n"
             ),
         );
         w(
@@ -4296,6 +4304,14 @@ printf ']}}'
                 .any(|warning| warning.contains("the id wins")
                     && warning.contains(&format!("write `{CANONICAL_ID}.md` to require the file"))),
             "{:#?}",
+            report.warnings
+        );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("fails to parse")),
+            "the required deck itself parses: {:#?}",
             report.warnings
         );
         assert!(
