@@ -410,7 +410,11 @@ strips private state recursively even if the sender used another tool
 documents are intentionally shareable generated deck material; unrelated or
 orphaned augmentation documents stay home. Frozen `assets/` are intentionally
 shareable evidence and may contain proprietary or private source excerpts;
-review the staged workspace before sending it. An `assets/` directory that
+review the staged workspace before sending it. Freezing copies a local image
+into `assets/` only from the workspace or one of the deck's local `cite:`
+roots
+(`an_image_freezes_only_from_the_workspace_or_a_local_cite_root`,
+`src/assets.rs`). An `assets/` directory that
 no deck in the workspace owns is left out of staging and of a paired pull
 rather than failing them, and `alix doctor` warns about it
 (`workspace_material_refuses_an_unresolvable_image_and_leaves_a_stray_asset_directory_out`,

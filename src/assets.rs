@@ -1681,6 +1681,44 @@ mod tests {
     }
 
     #[test]
+    fn an_image_freezes_only_from_the_workspace_or_a_local_cite_root() {
+        let directory = workspace();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.png"), b"secret").unwrap();
+        let cited = tempfile::tempdir().unwrap();
+        std::fs::write(cited.path().join("figure.png"), b"figure").unwrap();
+
+        let stray = directory.path().join("decks/stray.md");
+        let stray_text = format!(
+            "---\nformat-version: 1\nid: \"deck-stray\"\n---\n## q\n![s]({})\na\n",
+            outside.path().join("secret.png").display()
+        );
+        std::fs::write(&stray, &stray_text).unwrap();
+        let error = freeze_member(&stray).unwrap_err();
+        assert!(
+            matches!(error, AssetError::ImageOutsideBoundary(_)),
+            "an image outside every boundary is refused: {error:?}"
+        );
+        assert_eq!(stray_text, std::fs::read_to_string(&stray).unwrap());
+
+        let cites = directory.path().join("decks/cites.md");
+        std::fs::write(
+            &cites,
+            format!(
+                "---\nformat-version: 1\nid: \"deck-cites\"\ncite:\n  - fig: {}\n---\n## q\n![f]({})\na\n",
+                crate::parser::yaml_quote(&cited.path().display().to_string()),
+                cited.path().join("figure.png").display()
+            ),
+        )
+        .unwrap();
+        let report = freeze_member(&cites).unwrap();
+        assert_eq!(
+            1, report.images,
+            "an image under a local cite root is ingested"
+        );
+    }
+
+    #[test]
     fn a_failed_freeze_preserves_a_preexisting_empty_assets_root() {
         let directory = workspace();
         let assets = directory.path().join(ROOT);
