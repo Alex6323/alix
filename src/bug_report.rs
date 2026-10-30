@@ -710,6 +710,92 @@ mod tests {
         }
     }
 
+    const DECK: &str =
+        "---\nformat-version: 1\nid: \"deck-0j2k4m6p8r1t3v5x7z9b2d4f6h\"\n---\n## q\na\n";
+
+    #[test]
+    fn a_missing_config_or_log_is_absent_but_an_unreadable_one_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing");
+        let unreadable = dir.path().join("a-directory");
+        std::fs::create_dir(&unreadable).unwrap();
+        let out = dir.path().join("out.log");
+        let mut tokens = Vec::new();
+
+        assert!(
+            read_safe_config(&missing, &mut tokens).unwrap().is_none(),
+            "missing config"
+        );
+        assert!(
+            read_safe_config(&unreadable, &mut tokens).is_err(),
+            "unreadable config"
+        );
+        assert!(
+            !copy_log(&missing, &out, dir.path(), &[]).unwrap(),
+            "missing log"
+        );
+        assert!(
+            copy_log(&unreadable, &out, dir.path(), &[]).is_err(),
+            "unreadable log"
+        );
+    }
+
+    #[test]
+    fn the_inventory_counts_only_real_decks_wherever_they_sit() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for sub in ["progress", "sub"] {
+            std::fs::create_dir(root.join(sub)).unwrap();
+        }
+        for (name, text) in [
+            ("a.md", DECK),
+            ("sub/b.md", DECK),
+            ("progress/skipped.md", DECK),
+            ("notes.txt", DECK),
+            ("README.md", DECK),
+            ("c.sync-conflict-20261030-000000-ABCDEFG.md", DECK),
+            ("d.local.md", DECK),
+            ("not-a-deck.md", "## q\na\n"),
+            (".hidden.md", DECK),
+        ] {
+            std::fs::write(root.join(name), text).unwrap();
+        }
+
+        let mut paths = Vec::new();
+        collect_decks(root, &mut paths);
+        let mut names: Vec<String> = paths
+            .iter()
+            .map(|path| path.strip_prefix(root).unwrap().display().to_string())
+            .collect();
+        names.sort();
+
+        assert_eq!(vec!["a.md".to_string(), "sub/b.md".to_string()], names);
+    }
+
+    #[test]
+    fn an_included_deck_follows_the_inventory_in_the_archive() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("decks");
+        std::fs::create_dir(&root).unwrap();
+        let deck = root.join("deck.md");
+        std::fs::write(&deck, DECK).unwrap();
+
+        let bundle = write_bundle_with(&BundleOptions {
+            root: &root,
+            out_dir: &dir.path().join("out"),
+            config_path: None,
+            log_paths: &[],
+            include_deck: Some(&deck),
+            home: Path::new("/home/nobody"),
+            tokens: &[],
+            now_ms: 1_786_377_600_000,
+        })
+        .unwrap();
+
+        let (names, _) = archive_text(&bundle.path);
+        assert_eq!(vec!["report.md", "decks.txt", "deck.md"], names);
+    }
+
     #[test]
     fn identical_inputs_produce_byte_identical_archives() {
         let dir = tempfile::tempdir().unwrap();
