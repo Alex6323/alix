@@ -556,6 +556,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A paired pull refuses an archive carrying a link before extracting any of
+  it, as `alix receive` already did; before, it extracted into its private
+  staging folder first and refused only afterwards.
 - On the phone, a section too long for the screen no longer pushes its sheet
   under the status bar, where its close mark could not be reached; the sheet
   now stops at the top of the review or walk header.

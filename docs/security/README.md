@@ -448,6 +448,13 @@ relying on its current callers (Codex). Refusing first also removes an earlier
 dependence on whether the extraction directory and the decks directory shared a
 filesystem. The command-line folder clobber refusal is pinned by
 `receive_a_zip_folder_refuses_to_clobber_an_existing_dest` (`tests/cli.rs`).
+
+A paired pull from the desktop applies the same refusal before extraction:
+`paired::unpack` scans every archive entry and names any link before it
+writes a single file into its staging directory (Codex found that it used
+to extract first and refuse only on the later staging walk). Pinned by
+`a_received_link_is_refused_before_unpack_materializes_any_entry`
+(`src/paired.rs`).
 Extraction itself never writes, or changes a mode, through a link entry to a
 path outside the destination: two laws in `src/share.rs`,
 `unzipping_never_writes_through_a_link_entry_to_a_path_outside_the_destination`
