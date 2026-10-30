@@ -763,13 +763,19 @@ mod tests {
 
         let mut paths = Vec::new();
         collect_decks(root, &mut paths);
-        let mut names: Vec<String> = paths
+        let mut found: Vec<&Path> = paths
             .iter()
-            .map(|path| path.strip_prefix(root).unwrap().display().to_string())
+            .map(|path| path.strip_prefix(root).unwrap())
             .collect();
-        names.sort();
+        found.sort();
 
-        assert_eq!(vec!["a.md".to_string(), "sub/b.md".to_string()], names);
+        assert_eq!(
+            vec![
+                Path::new("a.md").to_path_buf(),
+                Path::new("sub").join("b.md")
+            ],
+            found
+        );
     }
 
     #[test]
