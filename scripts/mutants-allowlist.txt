@@ -202,3 +202,9 @@ src/deck.rs:1013: replace > with >= in rewrite_frozen_assets
 # whichever way this guard reads, and the guard stays as the stated policy.
 # Line-pinned.
 src/choice/mod.rs:279: delete ! in ColumnPools::can_sample
+
+# EQUIVALENT. This is the lean-core stub of `freeze_diagrams`
+# (`cfg(not(feature = "full"))`), whose whole body is
+# `Ok(DiagramOutcome::default())`; the mutant replaces it with the same
+# expression, so the program is unchanged for every input. Line-pinned.
+src/assets.rs:526: replace freeze_diagrams -> Result<DiagramOutcome, AssetError> with Ok(Default::default())

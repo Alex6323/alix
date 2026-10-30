@@ -981,6 +981,75 @@ fn doctor_repair_does_not_hide_an_all_blank_range_that_runs_past_eof() {
 }
 
 #[test]
+fn deck_init_freezes_a_diagram_with_the_sekien_on_path_and_reports_it() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let svg = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/labeled-sekien.svg"),
+    )
+    .unwrap();
+    let rendered = dir.path().join("sekien-out");
+    std::fs::write(&rendered, format!("<!-- {{\"id\": 1}} -->\n{svg}")).unwrap();
+    let sekien = bin.join("sekien");
+    std::fs::write(
+        &sekien,
+        format!("#!/bin/sh\ncat >/dev/null; cat {}\n", rendered.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&sekien, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+
+    let graph = ws.join("decks/graph.md");
+    std::fs::write(
+        &graph,
+        "---\nformat-version: 1\nid: \"deck-graph\"\n---\n## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n",
+    )
+    .unwrap();
+    let plain = ws.join("decks/plain.md");
+    std::fs::write(
+        &plain,
+        "---\nformat-version: 1\nid: \"deck-plain\"\n---\n## q\nanswer\n",
+    )
+    .unwrap();
+
+    let out = alix_env(
+        &["deck", "init", graph.to_str().unwrap()],
+        dir.path(),
+        &[("PATH", &path)],
+    );
+    assert!(out.status.success(), "graph init stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Frozen 1 diagram(s)"),
+        "graph init: the default renderer froze the one diagram: {}",
+        stdout(&out)
+    );
+    assert!(
+        std::fs::read_to_string(&graph)
+            .unwrap()
+            .contains("<!-- diagram: fingerprint:"),
+        "graph init: the deck carries the diagram stamp"
+    );
+
+    let out = alix_env(
+        &["deck", "init", plain.to_str().unwrap()],
+        dir.path(),
+        &[("PATH", &path)],
+    );
+    assert!(out.status.success(), "plain init stderr: {}", stderr(&out));
+    assert!(
+        !stdout(&out).contains("Frozen"),
+        "plain init: no diagram, no frozen line: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
 fn workspace_init_writes_both_documented_manifests() {
     let dir = TempDir::new().unwrap();
     let ws = dir.path().join("fresh");
