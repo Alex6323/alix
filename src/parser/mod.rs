@@ -742,8 +742,9 @@ struct RawCard {
     back: Vec<(usize, String)>,
     divider: Option<usize>,
     notes: Vec<Note>,
-    /// Every badge-opened run, including runs with no body.
-    note_badges: Vec<(usize, Badge)>,
+    /// Every badge-opened run, including runs with no body, and whether
+    /// its body is blank.
+    note_badges: Vec<(usize, Badge, bool)>,
     hints: Vec<String>,
     hint_line: Option<usize>,
     directives: CardDirectives,
@@ -833,20 +834,25 @@ impl RawCard {
         if !self.note_opened_machinery() {
             return Ok(());
         }
-        if let Some(&(line, _)) = self
+        if let Some(&(line, ..)) = self
             .note_badges
             .iter()
-            .find(|(_, badge)| *badge != Badge::Tip)
+            .find(|(_, badge, _)| *badge != Badge::Tip)
         {
             return Err(ParseError::NoteAboveDivider(line));
         }
         if let Some(start) = &self.machinery_after_note {
             return Err(start.error());
         }
-        self.hint_line = self.note_badges.first().map(|&(line, _)| line);
+        self.hint_line = self
+            .note_badges
+            .iter()
+            .find(|(.., empty)| !empty)
+            .map(|&(line, ..)| line);
         self.hints = std::mem::take(&mut self.notes)
             .into_iter()
             .map(|note| note.body)
+            .filter(|body| !trim_ws(body).is_empty())
             .collect();
         self.machinery = None;
         Ok(())
@@ -1518,7 +1524,11 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                     let run = run_above.unwrap_or_else(|| match Badge::parse(trim_ws(text)) {
                         Some(badge) => {
                             card.pending_badge = Some(badge);
-                            card.note_badges.push((lineno, badge));
+                            card.note_badges.push((
+                                lineno,
+                                badge,
+                                note_run_is_empty(lines, idx + 1),
+                            ));
                             QuoteRun::Note
                         }
                         None => {
@@ -6171,7 +6181,19 @@ a
 
     #[test]
     fn every_question_side_tip_becomes_a_hint_in_authored_order() {
-        let rows: [(&str, &str, Vec<&str>, Vec<&str>); 9] = [
+        let rows: [(&str, &str, Vec<&str>, Vec<&str>); 11] = [
+            (
+                "a tip with one blank quote line is dropped",
+                "## q\n> [!TIP]\n>\n\n---\nanswer\n",
+                vec![],
+                vec![],
+            ),
+            (
+                "a tip with two blank quote lines is dropped",
+                "## q\n> [!TIP]\n>\n>\n\n---\nanswer\n",
+                vec![],
+                vec![],
+            ),
             (
                 "one hint",
                 "## q\n> [!TIP]\n> think\n\n---\nanswer\n",
@@ -6259,13 +6281,25 @@ a
             "the open quote keeps its tip-shaped line: {:?}",
             embedded.cards[0].front
         );
-        let empty = parse("## q\n> [!TIP]\n\n---\nanswer\n");
+        for text in [
+            "## q\n> [!TIP]\n\n---\nanswer\n",
+            "## q\n> [!TIP]\n>\n\n---\nanswer\n",
+        ] {
+            assert!(
+                parse(text)
+                    .lints
+                    .iter()
+                    .any(|lint| matches!(lint.kind, LintKind::EmptyNote)),
+                "an empty tip draws the empty-note lint: {text:?}"
+            );
+        }
+        let region = parse(
+            "## q\nalpha\n<!-- cover: span hidden=\"alpha\" -->\n> [!TIP]\n>\n\n---\nanswer\n",
+        );
         assert!(
-            empty
-                .lints
-                .iter()
-                .any(|lint| matches!(lint.kind, LintKind::EmptyNote)),
-            "an empty tip draws the empty-note lint"
+            region.cards.iter().all(|card| card.hints.is_empty()),
+            "an empty tip is dropped before the region rule sees it: {:?}",
+            region.cards
         );
     }
 
@@ -6390,7 +6424,12 @@ a
                 })
                 .collect()
         };
-        let rows: [(&str, &str, Vec<(usize, &str)>); 6] = [
+        let rows: [(&str, &str, Vec<(usize, &str)>); 7] = [
+            (
+                "an empty tip before the leaking one is not the line named",
+                "## q\n> [!TIP]\n>\n\n> [!TIP]\n> Paris\n\n---\nParis\n",
+                vec![(5, "Paris")],
+            ),
             (
                 "a hint that spells the answer",
                 "## q\n> [!TIP]\n> it is Paris\n\n---\nParis\n",
