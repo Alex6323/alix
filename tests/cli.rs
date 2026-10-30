@@ -981,7 +981,7 @@ fn doctor_repair_does_not_hide_an_all_blank_range_that_runs_past_eof() {
 }
 
 #[test]
-fn deck_init_freezes_a_diagram_with_the_sekien_on_path_and_reports_it() {
+fn the_sekien_on_path_freezes_a_diagram_at_init_and_refreezes_a_stale_one_on_repair() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = TempDir::new().unwrap();
@@ -1045,6 +1045,41 @@ fn deck_init_freezes_a_diagram_with_the_sekien_on_path_and_reports_it() {
     assert!(
         !stdout(&out).contains("Frozen"),
         "plain init: no diagram, no frozen line: {}",
+        stdout(&out)
+    );
+
+    let stale = std::fs::read_to_string(&graph)
+        .unwrap()
+        .replace(" A-->B\n", " A-->C\n");
+    std::fs::write(&graph, stale).unwrap();
+    let repair = || {
+        alix_env(
+            &["doctor", "--repair-diagrams", graph.to_str().unwrap()],
+            dir.path(),
+            &[("PATH", &path)],
+        )
+    };
+    let out = repair();
+    assert!(
+        out.status.success(),
+        "stale repair stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        stdout(&out).contains("re-froze 1 diagram(s)"),
+        "stale repair: the edited fence is frozen again: {}",
+        stdout(&out)
+    );
+
+    let out = repair();
+    assert!(
+        out.status.success(),
+        "fresh repair stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        !stdout(&out).contains("re-froze"),
+        "fresh repair: nothing to freeze, no re-froze line: {}",
         stdout(&out)
     );
 }

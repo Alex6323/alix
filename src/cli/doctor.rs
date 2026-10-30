@@ -4273,6 +4273,29 @@ printf ']}}'
     }
 
     #[test]
+    fn a_trace_checkpoint_without_a_locator_is_reported_at_its_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("walk.md");
+        w(
+            dir.path(),
+            "walk.md",
+            "---\nformat-version: 1\nid: \"deck-3nmmy2qkrw2trvvrmbm7ajry9t\"\ntrace: a walk\n---\n## step\na\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
+        );
+
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("checkpoint at line 6: no `at:` locator")),
+            "{:#?}",
+            report.warnings
+        );
+    }
+
+    #[test]
     fn doctor_reports_a_file_shadowing_a_required_deck_id() {
         let dir = tempfile::tempdir().unwrap();
         w(
