@@ -135,7 +135,7 @@ src/parser/mod.rs:1232: replace + with * in scan
 # both grounds would by definition contrast identically, so the tie-break
 # carries no legibility meaning worth pinning either. Line-pinned: the
 # argument is about this one comparison, not about the function.
-src/diagram.rs:222: replace > with >= in ground
+src/diagram.rs:232: replace > with >= in ground
 
 # EQUIVALENT, provably, and by inspection rather than enumeration. The only
 # inputs where `>` and `>=` differ are those with `a == b`, and there
@@ -144,7 +144,7 @@ src/diagram.rs:222: replace > with >= in ground
 # false and the `else` arm is taken either way. No input distinguishes them.
 # Line-pinned: the argument is about this one comparison, so a `>` surviving
 # anywhere else in the function must be argued on its own.
-src/diagram.rs:247: replace > with >= in contrast
+src/diagram.rs:257: replace > with >= in contrast
 
 # EQUIVALENT. `link.open * 1` adds only the already-dropped opening bracket
 # to the label range, so its new label bit is never observed and every kept

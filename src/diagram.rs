@@ -164,7 +164,17 @@ fn check_raster_size(width: u32, height: u32) -> Result<()> {
 
 #[cfg(feature = "full")]
 fn raster(svg: &str, family: &str, zoom: f32) -> Result<resvg::tiny_skia::Pixmap> {
-    let mut db = system_fonts().clone();
+    raster_with(system_fonts(), svg, family, zoom)
+}
+
+#[cfg(feature = "full")]
+fn raster_with(
+    fonts: &usvg::fontdb::Database,
+    svg: &str,
+    family: &str,
+    zoom: f32,
+) -> Result<resvg::tiny_skia::Pixmap> {
+    let mut db = fonts.clone();
     db.set_sans_serif_family(family);
     let query = usvg::fontdb::Query {
         families: &[usvg::fontdb::Family::Name(family)],
@@ -1766,6 +1776,40 @@ mod tests {
                 "variant {variant:?} must be recognized as a dark theme"
             );
         }
+    }
+
+    #[test]
+    fn text_naming_no_font_draws_in_the_diagram_family() {
+        let faces = Path::new(env!("CARGO_MANIFEST_DIR")).join("mobile/alix/assets/fonts");
+        let mut fonts = usvg::fontdb::Database::new();
+        fonts
+            .load_font_file(faces.join("ibm-plex-sans-400.ttf"))
+            .unwrap();
+        fonts
+            .load_font_file(faces.join("ibm-plex-mono-400.ttf"))
+            .unwrap();
+        let svg = |family: &str| {
+            format!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="40"><style>#d1{{fill:#333;}}</style><text x="4" y="28" font-size="20"{family}>Wim 1il</text></svg>"#
+            )
+        };
+        let draw = |svg: &str| {
+            raster_with(&fonts, svg, "IBM Plex Mono", 1.0)
+                .unwrap()
+                .data()
+                .to_vec()
+        };
+
+        let unnamed = draw(&svg(""));
+
+        assert!(
+            draw(&svg(r#" font-family="IBM Plex Sans""#)) != unnamed,
+            "the two faces must draw apart, or the next check proves nothing"
+        );
+        assert!(
+            draw(&svg(r#" font-family="IBM Plex Mono""#)) == unnamed,
+            "text naming no font draws in the family the diagram was given"
+        );
     }
 
     /// Ground choice follows WCAG contrast, not channel mean: bright green
