@@ -283,10 +283,7 @@ void main() {
       find.textContaining(r'$5 and $10', findRichText: true),
       findsOneWidget,
     );
-    expect(
-      find.textContaining(RegExp('\\\$\u200Bx\\\$'), findRichText: true),
-      findsOneWidget,
-    );
+    expect(find.textContaining(r'$x$', findRichText: true), findsOneWidget);
   });
 
   testWidgets('blanks draw as pills while math remains intact', (tester) async {
@@ -523,6 +520,39 @@ void main() {
           reason: '`$code`: breaks after each token, prose untouched',
         );
       }
+    },
+  );
+
+  testWidgets(
+    'a code break opportunity never reaches the screen-reader label',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      for (final contextHoles in [false, true]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: InlineRuns(
+                runs: const [
+                  InlineRunModel(
+                    text: 'Ledger::get_public_key',
+                    bold: false,
+                    italic: false,
+                    code: true,
+                  ),
+                ],
+                style: const TextStyle(fontSize: 18),
+                contextHoles: contextHoles,
+              ),
+            ),
+          ),
+        );
+        expect(
+          tester.getSemantics(find.byType(RichText)).label,
+          'Ledger::get_public_key',
+          reason: 'contextHoles: $contextHoles',
+        );
+      }
+      semantics.dispose();
     },
   );
 }

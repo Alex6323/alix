@@ -95,8 +95,13 @@ class InlineRuns extends StatelessWidget {
     );
   }
 
-  TextSpan _text(String text, TextStyle style) =>
-      TextSpan(text: text, style: style);
+  TextSpan _text(String text, TextStyle style) => TextSpan(
+    text: text,
+    style: style,
+    semanticsLabel: text.contains('\u200B')
+        ? text.replaceAll('\u200B', '')
+        : null,
+  );
 
   List<InlineSpan> _inlineSpans(
     InlineRunModel run, {

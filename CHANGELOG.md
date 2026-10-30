@@ -556,6 +556,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On the phone, a screen reader reads inline code as written; the invisible
+  line-break points that let long code wrap no longer enter its text.
 - A paired pull refuses an archive carrying a link before extracting any of
   it, as `alix receive` already did; before, it extracted into its private
   staging folder first and refused only afterwards.
