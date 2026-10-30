@@ -1050,6 +1050,50 @@ fn deck_init_freezes_a_diagram_with_the_sekien_on_path_and_reports_it() {
 }
 
 #[test]
+fn each_order_repair_alone_runs_on_a_workspace_path() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    std::fs::create_dir(ws.join("decks")).unwrap();
+    let front = ws.join("decks/front.md");
+    std::fs::write(&front, "---\nid: \"deck-front\"\ntitle: T\n---\n## q\na\n").unwrap();
+    let comments = ws.join("decks/comments.md");
+    std::fs::write(
+        &comments,
+        "---\ntitle: C\nid: \"deck-comments\"\n---\n## q\na\n<!-- id: card-x -->\n<!-- reveal: line -->\n",
+    )
+    .unwrap();
+
+    let out = alix(&["doctor", ws.to_str().unwrap(), "--repair-frontmatter-order"]);
+    assert!(
+        stdout(&out).contains("reordered frontmatter"),
+        "frontmatter flag alone: {}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(
+        std::fs::read_to_string(&front)
+            .unwrap()
+            .starts_with("---\ntitle: T\nid: \"deck-front\"\n"),
+        "frontmatter flag alone: the deck is written"
+    );
+
+    let out = alix(&["doctor", ws.to_str().unwrap(), "--repair-comment-order"]);
+    assert!(
+        stdout(&out).contains("reordered comment machinery"),
+        "comment flag alone: {}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(
+        std::fs::read_to_string(&comments)
+            .unwrap()
+            .ends_with("<!-- reveal: line -->\n<!-- id: card-x -->\n"),
+        "comment flag alone: the deck is written"
+    );
+}
+
+#[test]
 fn workspace_init_writes_both_documented_manifests() {
     let dir = TempDir::new().unwrap();
     let ws = dir.path().join("fresh");

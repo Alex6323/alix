@@ -219,3 +219,9 @@ src/diagram.rs:247: replace > with >= in contrast
 # Every 8-bit color (`hex_color` yields nothing else) was run through the real
 # `relative_luminance` and `contrast` on 2026-10-30, and none ties. Line-pinned.
 src/diagram.rs:222: replace > with >= in ground
+
+# EQUIVALENT. `any` only gates calls to `Repairs::run`, and `run` performs
+# a repair only for a flag that is set. Forcing `any` to true therefore
+# runs `run` with every flag false, which does nothing; the one extra cost
+# is listing the deck files. No output or file differs. Line-pinned.
+src/cli/doctor.rs:1572: replace Repairs::any -> bool with true
