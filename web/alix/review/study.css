@@ -129,6 +129,20 @@
     font-family: var(--mono); font-size: 1.1rem; text-align: center; outline: none;
   }
   .field:focus { border-color: var(--bolt); }
+  .field.blank-field {
+    display: inline-block; width: auto; min-width: var(--blank-width); max-width: 100%;
+    field-sizing: content; min-height: 0; height: 1.35em; padding: 0 0.5em;
+    vertical-align: -0.25em; font: inherit; text-align: center;
+    border: 2px solid var(--bolt-hi); border-radius: 999px;
+    background: color-mix(in srgb, var(--bolt-hi) 16%, transparent);
+  }
+  .blank-filled.pass { color: var(--good); }
+  .blank-typed { color: var(--again); margin-right: 0.35em; }
+
+  /* A cloze card: no hairline; the question and its response center as one group. */
+  .card.cloze > .region.q + .divider { display: none; }
+  .card.cloze > .region.q { flex: 0 1 auto; max-height: none; margin-top: auto; }
+  .card.cloze > .region.a { flex: 0 0 auto; margin-bottom: auto; }
   /* type badge — the small bordered-mono pill at the top-left of the card,
      naming the check you're doing (flip / choice / typing…); see renderCard. */
   .mode-tag {

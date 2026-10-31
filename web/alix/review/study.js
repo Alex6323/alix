@@ -74,6 +74,7 @@ export function createStudy({
   let revealed = clientModel.revealed;
   let questionNode = null;
   let questionFilled = 0;
+  let blanksInline = false;
   let citationView = clientModel.citationView;
   let sectionView = clientModel.sectionView;
   let autoOpenedSection = null;
@@ -357,8 +358,7 @@ export function createStudy({
     api("/api/choose", post({ indices, card: state.card.id })).catch(() => { load(); return Promise.reject(); }).then(forThisAttempt(showFeedback));
   }
   function submitCheck() {
-    const lines = Array.from(doc.querySelectorAll("#ansRegion input.field")).map(i => i.value);
-    api("/api/check", post({ lines })).catch(() => { load(); return Promise.reject(); }).then(forThisAttempt(showFeedback)).catch(() => load());
+    api("/api/check", post({ lines: typedLines() })).catch(() => { load(); return Promise.reject(); }).then(forThisAttempt(showFeedback)).catch(() => load());
   }
   function showFeedback(f) {
     feedback = f;
@@ -479,8 +479,9 @@ export function createStudy({
       }
       crumbStrip.appendChild(bc);
     }
+    card.classList.toggle("cloze", answerInQuestion());
     questionFilled = filledNow();
-    questionNode = questionEl(c, questionFilled, contextDiagram);
+    questionNode = reviewQuestionEl(questionFilled);
     q.appendChild(questionNode);
     appendImages(q, c.images);
     fitQuestion(q);
@@ -506,6 +507,7 @@ export function createStudy({
       withNote: hasNote,
       moreHint: false, // browse has no overflow marker
     });
+    card.classList.toggle("cloze", (c.front_steps || []).length > 0);
 
     q.appendChild(questionEl(c, (c.front_steps || []).length, browseDiagram));
     appendImages(q, c.images);
@@ -578,7 +580,7 @@ export function createStudy({
     const filled = filledNow();
     if (filled === questionFilled) return;
     const q = questionNode.parentElement;
-    const next = questionEl(state.card, filled, contextDiagram);
+    const next = reviewQuestionEl(filled);
     q.replaceChild(next, questionNode);
     questionNode = next;
     questionFilled = filled;
@@ -586,6 +588,45 @@ export function createStudy({
   }
   function answerInQuestion() {
     return !!(state.card && state.card.front_steps && state.card.front_steps.length);
+  }
+  function holeSteps() { return (state.card && state.card.hole_steps) || []; }
+  function blanksTyped() {
+    return !isWalking() && !isIntroducing() && isInput() && holeSteps().length > 0;
+  }
+  function reviewQuestionEl(filled) {
+    const node = questionEl(state.card, filled, contextDiagram);
+    blanksInline = blanksTyped() && (feedback ? markBlanks(node) : inputBlanks(node));
+    return node;
+  }
+  function inputBlanks(node) {
+    const pills = node.querySelectorAll(".blank-pill:not(.muted)");
+    if (pills.length !== holeSteps().length) return false;
+    pills.forEach((pill, k) => {
+      const inp = el("input", "field blank-field");
+      inp.type = "text"; inp.autocomplete = "off"; inp.spellcheck = false;
+      inp.dataset.step = holeSteps()[k];
+      inp.addEventListener("keydown", e => { if (hit(e, keys.submit)) { e.preventDefault(); submitCheck(); } });
+      pill.replaceWith(inp);
+    });
+    return true;
+  }
+  function markBlanks(node) {
+    const filled = node.querySelectorAll(".blank-filled");
+    if (filled.length !== holeSteps().length) return false;
+    filled.forEach((span, k) => {
+      const r = feedback.results[holeSteps()[k]];
+      if (!r) return;
+      span.classList.add(r.passed ? "pass" : "miss");
+      if (!r.passed && r.input) span.insertBefore(el("s", "blank-typed", r.input), span.firstChild);
+    });
+    return true;
+  }
+  function typedLines() {
+    const blanks = doc.querySelectorAll("#card input.blank-field");
+    if (!blanks.length) return Array.from(doc.querySelectorAll("#ansRegion input.field")).map(i => i.value);
+    const lines = holeSteps().map(() => "");
+    blanks.forEach(inp => { lines[Number(inp.dataset.step)] = inp.value; });
+    return lines;
   }
 
   function noteVisibleForCurrentCard() {
@@ -1132,6 +1173,10 @@ export function createStudy({
   // Typing: an input per gradeable step. A quotation or a table is answer
   // content the learner reads, never a field.
   function renderInput(a) {
+    if (blanksInline) {
+      doc.querySelector("#card .blank-field").focus();
+      return;
+    }
     const wrap = el("div", "inputs");
     gradeableSteps().forEach(() => {
       const inp = el("input", "field");
@@ -1158,6 +1203,7 @@ export function createStudy({
 
   // The typed answer after submitting: every line, checked.
   function renderCheckFeedback(a) {
+    if (blanksInline) return;
     const wrap = el("div", "reveal");
     feedback.results.forEach(r => checkedLine(wrap, r));
     a.appendChild(wrap);

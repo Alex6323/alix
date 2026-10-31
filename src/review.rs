@@ -92,6 +92,11 @@ pub struct CardView {
     /// empty on a plain card.
     #[serde(default)]
     pub front_steps: Vec<FrontStep>,
+    /// For each asked `⍰` in `front_runs`, in reading order, the index of the
+    /// answer step it asks. Empty unless every asked blank is a text span
+    /// outside math and fences.
+    #[serde(default)]
+    pub hole_steps: Vec<usize>,
     /// The card's section: its `# ` heading and that section's prose, shown
     /// only on demand. Image syntax inside it stays prose.
     #[serde(default)]
@@ -246,6 +251,7 @@ impl CardView {
             front_runs,
             front_units,
             front_steps,
+            hole_steps: card.hole_steps.clone(),
             section_context: card.section_context.clone(),
             section_context_runs,
             section_context_units: render::section_units(&card.section_context),
@@ -667,6 +673,10 @@ pub fn check_typed(session: &Session, lines: &[String]) -> Option<CheckFeedback>
         let results = answer::grade_lines_ordered(lines, &expected[..attempted]);
         let complete = lines.len() == expected.len();
         let passed = complete && results.iter().all(|r| r.passed);
+        (results, passed)
+    } else if !card.hole_steps.is_empty() {
+        let results = answer::grade_lines_ordered(lines, &expected);
+        let passed = results.iter().all(|r| r.passed);
         (results, passed)
     } else {
         let results = answer::grade_lines_unordered(lines, &expected);
@@ -1276,6 +1286,106 @@ mod tests {
             ),
             "a step resolves the fence through the same record: {:?}",
             diagram.front_steps[0].front_units
+        );
+    }
+
+    fn question_runs<'a>(
+        units: Option<&'a [ContentUnit]>,
+        runs: &'a [InlineRun],
+    ) -> Vec<&'a InlineRun> {
+        fn walk<'a>(units: &'a [ContentUnit], out: &mut Vec<&'a InlineRun>) {
+            for unit in units {
+                match unit {
+                    ContentUnit::Sentence { runs, .. } => out.extend(runs),
+                    ContentUnit::Table { header, rows, .. } => {
+                        out.extend(header.iter().chain(rows.iter().flatten()).flatten());
+                    }
+                    ContentUnit::Checklist { items } => {
+                        out.extend(items.iter().flat_map(|item| &item.runs));
+                    }
+                    ContentUnit::Quote { units } => walk(units, out),
+                    ContentUnit::Code { .. } | ContentUnit::Diagram { .. } => {}
+                }
+            }
+        }
+        match units {
+            Some(units) => {
+                let mut out = Vec::new();
+                walk(units, &mut out);
+                out
+            }
+            None => runs.iter().collect(),
+        }
+    }
+
+    #[test]
+    fn each_hole_in_reading_order_fills_with_the_answer_line_its_hole_step_names() {
+        let cards = parse(
+            "## reversed
+alpha beta gamma
+<!-- blank: span [g] hidden=\"gamma\" b:a1b2c3 -->
+<!-- blank: span [g] hidden=\"alpha\" b:d4e5f6 -->
+
+## lines
+alpha first
+beta **second** and `gamma`
+<!-- blank: span [g] hidden=\"gamma\" b:a1b2c3 -->
+<!-- blank: span [g] hidden=\"second\" b:d4e5f6 -->
+<!-- blank: span [g] hidden=\"alpha\" b:e5f6a7 -->
+
+## table
+| a | b |
+| --- | --- |
+| alpha | beta |
+<!-- blank: span [g] hidden=\"beta\" b:a1b2c3 -->
+<!-- blank: span [g] hidden=\"alpha\" b:d4e5f6 -->
+
+## quote
+> alpha said beta
+<!-- blank: span [g] hidden=\"beta\" b:a1b2c3 -->
+<!-- blank: span [g] hidden=\"alpha\" b:d4e5f6 -->
+
+## list
+- alpha
+- beta
+<!-- blank: span [g] hidden=\"beta\" b:a1b2c3 -->
+<!-- blank: span [g] hidden=\"alpha\" b:d4e5f6 -->
+",
+        );
+        let mut checked = Vec::new();
+        for card in &cards {
+            let view = CardView::from(card);
+            let label = &view.front;
+            assert!(!view.hole_steps.is_empty(), "{label}: no hole steps");
+            let holes: usize = question_runs(view.front_units.as_deref(), &view.front_runs)
+                .iter()
+                .filter(|run| !run.answer)
+                .map(|run| run.text.matches(crate::parser::BLANK).count())
+                .sum();
+            assert_eq!(view.hole_steps.len(), holes, "{label}: hole count");
+            let last = view.front_steps.last().expect("a blank card has steps");
+            let filled: Vec<&str> = question_runs(last.front_units.as_deref(), &last.front_runs)
+                .into_iter()
+                .filter(|run| run.answer)
+                .map(|run| run.text.as_str())
+                .collect();
+            let graded: Vec<&str> = view
+                .hole_steps
+                .iter()
+                .map(|step| view.back[*step].as_str())
+                .collect();
+            assert_eq!(graded, filled, "{label}: fill order");
+            checked.push(view.hole_steps);
+        }
+        assert_eq!(
+            vec![
+                vec![1, 0],
+                vec![2, 1, 0],
+                vec![1, 0],
+                vec![1, 0],
+                vec![1, 0]
+            ],
+            checked
         );
     }
 
@@ -2302,21 +2412,39 @@ $$
     }
 
     #[test]
-    fn check_typed_orders_only_for_typeline() {
-        let (mut store, _augment, _dir) = fixtures();
-        let line = parse("## q\none\ntwo\n<!-- reveal: line -->\n");
-        seen(&mut store, &line);
-        let typeline = session_at(line, &mut store, Depth::Reconstruct, NOW);
+    fn check_typed_is_positional_for_typeline_and_in_place_blanks_only() {
+        let rows = [
+            ("typeline", "## q\none\ntwo\n<!-- reveal: line -->\n", false),
+            ("several typed lines", "## q\none\ntwo\n", true),
+            (
+                "blanks typed in place",
+                "## q\ntwo then one\n<!-- blank: span [g] hidden=\"one\" b:a1b2c3 -->\n<!-- blank: span [g] hidden=\"two\" b:d4e5f6 -->\n",
+                false,
+            ),
+            (
+                "blanks in a fence keep their own fields",
+                "## q\n```text\ntwo then one\n```\n<!-- blank: span [g] hidden=\"one\" b:a1b2c3 -->\n<!-- blank: span [g] hidden=\"two\" b:d4e5f6 -->\n",
+                true,
+            ),
+        ];
         let swapped = vec!["two".to_string(), "one".to_string()];
-        let ordered = check_typed(&typeline, &swapped).expect("feedback");
-        assert!(!ordered.passed, "typeline is position-sensitive");
-
-        let multi = parse("## q\none\ntwo\n");
-        seen(&mut store, &multi);
-        let unordered_session = session_at(multi, &mut store, Depth::Reconstruct, NOW);
-        let unordered = check_typed(&unordered_session, &swapped).expect("feedback");
-        assert!(unordered.passed, "any order matches the same lines");
-        assert_eq!(unordered.results.len(), 2);
+        for (label, deck, swap_passes) in rows {
+            let (mut store, _augment, _dir) = fixtures();
+            let cards = parse(deck);
+            seen(&mut store, &cards);
+            let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
+            let feedback = check_typed(&session, &swapped).expect("feedback");
+            assert_eq!(swap_passes, feedback.passed, "{label}: swapped lines");
+            assert_eq!(2, feedback.results.len(), "{label}: results");
+            if !swap_passes {
+                let expected: Vec<&str> = feedback
+                    .results
+                    .iter()
+                    .map(|r| r.expected.as_str())
+                    .collect();
+                assert_eq!(vec!["one", "two"], expected, "{label}: results by position");
+            }
+        }
     }
 
     #[test]

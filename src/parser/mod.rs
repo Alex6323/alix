@@ -2233,7 +2233,7 @@ fn extract_row_stamp(line: &str) -> Option<(String, String)> {
 /// Which card line a bound span sits in: the heading, a front line of a
 /// divided card (index into `front_extra`), or an answer line (index into
 /// the answer).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Origin {
     Heading,
     Front(usize),
@@ -2246,6 +2246,7 @@ struct SpanSplice {
     directive_line: usize,
     cover: bool,
     math: bool,
+    fenced: bool,
     origin: Origin,
     range: (usize, usize),
 }
@@ -2587,6 +2588,21 @@ fn build_region_cards(
             .collect::<Vec<String>>()
             .join("\n")
     };
+    let hole_steps = |own: &[usize]| -> Vec<usize> {
+        let mut asked: Vec<&SpanSplice> = prose
+            .splices
+            .iter()
+            .filter(|splice| !splice.cover && own.contains(&splice.directive_line))
+            .collect();
+        if asked.len() != own.len() || asked.iter().any(|splice| splice.math || splice.fenced) {
+            return Vec::new();
+        }
+        asked.sort_by_key(|splice| (splice.origin, splice.range.0));
+        asked
+            .iter()
+            .filter_map(|splice| own.iter().position(|line| *line == splice.directive_line))
+            .collect()
+    };
     let math_line = |line: usize| {
         prose
             .splices
@@ -2640,6 +2656,7 @@ fn build_region_cards(
         }
         card.front_steps = front_steps;
         card.rect_step = rect_step;
+        card.hole_steps = hole_steps(&own);
         card.images.extend(std::mem::take(&mut card.images_back));
         card.notes = notes
             .iter()
@@ -3506,6 +3523,7 @@ fn build_card_inner(
                 directive_line: span.line,
                 cover: span.kind == region::RegionKind::Cover,
                 math: stream.math_piece(&(start..end)).is_some(),
+                fenced: block.kind == BlockKind::Fence,
                 origin: origin(range.start + index),
                 range: (splice_range.start, splice_range.end),
             });
@@ -11391,6 +11409,84 @@ the answer
                         .iter()
                         .map(String::as_str)
                         .collect::<Vec<_>>())
+                    .collect::<Vec<_>>(),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_blank_cards_hole_steps_map_each_asked_hole_in_reading_order_to_its_answer_line() {
+        let rows: [(&str, String, Vec<Vec<usize>>); 9] = [
+            (
+                "a group written against reading order",
+                format!(
+                    "## q\nalpha beta gamma\n<!-- blank: span [g] hidden=\"gamma\" b:a1b2c3 -->\n<!-- blank: span [g] hidden=\"alpha\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec![vec![1, 0]],
+            ),
+            (
+                "holes across three answer lines",
+                format!(
+                    "## q\nalpha first\nbeta here\ngamma there\n<!-- blank: span [g] hidden=\"gamma\" b:a1b2c3 -->\n<!-- blank: span [g] hidden=\"beta\" b:d4e5f6 -->\n<!-- blank: span [g] hidden=\"alpha\" b:e5f6a7 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec![vec![2, 1, 0]],
+            ),
+            (
+                "a hole on the heading before holes written against reading order",
+                format!(
+                    "## the alpha\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\nbeta here\ngamma there\n<!-- blank: span [g] hidden=\"gamma\" b:d4e5f6 -->\n<!-- blank: span [g] hidden=\"beta\" b:e5f6a7 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec![vec![0, 2, 1]],
+            ),
+            (
+                "styled holes",
+                format!(
+                    "## q\n**alpha** and `beta`\n<!-- blank: span [g] hidden=\"beta\" b:a1b2c3 -->\n<!-- blank: span [g] hidden=\"alpha\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec![vec![1, 0]],
+            ),
+            (
+                "ungrouped blanks and a cover",
+                format!(
+                    "## q\nalpha beta gamma\n<!-- blank: span hidden=\"gamma\" b:a1b2c3 -->\n<!-- cover: span hidden=\"beta\" -->\n<!-- blank: span hidden=\"alpha\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec![vec![0], vec![0]],
+            ),
+            (
+                "a group of a rect and a span",
+                format!(
+                    "## name\n![](hand.png)\n<!-- blank: rect [g] x=1 y=1 width=2 height=2 hidden=\"lunate\" b:a1b2c3 -->\nthe hamate is a bone\n<!-- blank: span [g] hidden=\"hamate\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec![vec![]],
+            ),
+            (
+                "a hole inside a formula",
+                format!(
+                    "## q\nthe square $x^2 + 1$ here\n<!-- blank: span [g] hidden=\"x^2\" b:a1b2c3 -->\n<!-- blank: span [g] hidden=\"square\" b:d4e5f6 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec![vec![]],
+            ),
+            (
+                "a hole inside a code fence",
+                format!(
+                    "## q\nthe square\n<!-- blank: span [g] hidden=\"square\" b:d4e5f6 -->\n```rust\nlet alpha = 1;\n```\n<!-- blank: span [g] hidden=\"alpha\" b:a1b2c3 -->\n<!-- id: {RTOK} -->\n"
+                ),
+                vec![vec![]],
+            ),
+            (
+                "a plain card",
+                format!("## q\nalpha\n<!-- id: {RTOK} -->\n"),
+                vec![vec![]],
+            ),
+        ];
+        for (label, text, expected) in rows {
+            let deck = parse(&text);
+            assert_eq!(
+                expected,
+                deck.cards
+                    .iter()
+                    .map(|card| card.hole_steps.clone())
                     .collect::<Vec<_>>(),
                 "{label}"
             );

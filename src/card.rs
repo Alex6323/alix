@@ -154,6 +154,10 @@ pub struct Card {
     /// Index into `front_steps` of the step that uncovers the card's image
     /// rects.
     pub rect_step: Option<usize>,
+    /// For each asked `⍰` in `front`, in reading order, the index of the
+    /// answer line it asks. Empty unless every asked blank is a text span
+    /// outside math and fences.
+    pub hole_steps: Vec<usize>,
     /// The card's section: its `# ` heading and that section's prose. Shown
     /// only on demand and never part of identity, so re-filing a card
     /// changes what it explains, never what it is.
@@ -311,6 +315,7 @@ impl Card {
             front,
             front_steps: Vec::new(),
             rect_step: None,
+            hole_steps: Vec::new(),
             section_context: Vec::new(),
             table_title: None,
             back,

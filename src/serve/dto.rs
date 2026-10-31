@@ -31,6 +31,8 @@ pub(super) struct CardDto {
     pub(super) front_units: Option<Vec<ContentUnit>>,
     pub(super) front_steps: Vec<FrontStepDto>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) hole_steps: Vec<usize>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) section_context: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) section_context_runs: Vec<Vec<InlineRun>>,
@@ -1455,6 +1457,7 @@ pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
                 rects_revealed: step.rects_revealed,
             })
             .collect(),
+        hole_steps: view.hole_steps,
         section_context: view.section_context,
         section_context_runs: view.section_context_runs,
         section_context_units: web_units(view.section_context_units),

@@ -170,6 +170,7 @@ class CardView {
   final List<InlineRun> frontRuns;
   final List<ContentUnit>? frontUnits;
   final List<FrontStep> frontSteps;
+  final Uint64List holeSteps;
   final List<String> sectionContext;
   final List<List<InlineRun>> sectionContextRuns;
   final List<ContentUnit> sectionContextUnits;
@@ -189,6 +190,7 @@ class CardView {
     required this.frontRuns,
     this.frontUnits,
     required this.frontSteps,
+    required this.holeSteps,
     required this.sectionContext,
     required this.sectionContextRuns,
     required this.sectionContextUnits,
@@ -210,6 +212,7 @@ class CardView {
       frontRuns.hashCode ^
       frontUnits.hashCode ^
       frontSteps.hashCode ^
+      holeSteps.hashCode ^
       sectionContext.hashCode ^
       sectionContextRuns.hashCode ^
       sectionContextUnits.hashCode ^
@@ -233,6 +236,7 @@ class CardView {
           frontRuns == other.frontRuns &&
           frontUnits == other.frontUnits &&
           frontSteps == other.frontSteps &&
+          holeSteps == other.holeSteps &&
           sectionContext == other.sectionContext &&
           sectionContextRuns == other.sectionContextRuns &&
           sectionContextUnits == other.sectionContextUnits &&

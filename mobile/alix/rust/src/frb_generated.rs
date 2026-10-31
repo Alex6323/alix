@@ -2789,6 +2789,7 @@ const _: fn() = || {
         let _: Vec<crate::api::review::InlineRun> = CardView.front_runs;
         let _: Option<Vec<crate::api::review::ContentUnit>> = CardView.front_units;
         let _: Vec<crate::api::review::FrontStep> = CardView.front_steps;
+        let _: Vec<usize> = CardView.hole_steps;
         let _: Vec<String> = CardView.section_context;
         let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.section_context_runs;
         let _: Vec<crate::api::review::ContentUnit> = CardView.section_context_units;
@@ -3128,6 +3129,7 @@ impl SseDecode for crate::api::review::CardView {
         let mut var_frontUnits =
             <Option<Vec<crate::api::review::ContentUnit>>>::sse_decode(deserializer);
         let mut var_frontSteps = <Vec<crate::api::review::FrontStep>>::sse_decode(deserializer);
+        let mut var_holeSteps = <Vec<usize>>::sse_decode(deserializer);
         let mut var_sectionContext = <Vec<String>>::sse_decode(deserializer);
         let mut var_sectionContextRuns =
             <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
@@ -3148,6 +3150,7 @@ impl SseDecode for crate::api::review::CardView {
             front_runs: var_frontRuns,
             front_units: var_frontUnits,
             front_steps: var_frontSteps,
+            hole_steps: var_holeSteps,
             section_context: var_sectionContext,
             section_context_runs: var_sectionContextRuns,
             section_context_units: var_sectionContextUnits,
@@ -5021,6 +5024,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CardView> 
             self.0.front_runs.into_into_dart().into_dart(),
             self.0.front_units.into_into_dart().into_dart(),
             self.0.front_steps.into_into_dart().into_dart(),
+            self.0.hole_steps.into_into_dart().into_dart(),
             self.0.section_context.into_into_dart().into_dart(),
             self.0.section_context_runs.into_into_dart().into_dart(),
             self.0.section_context_units.into_into_dart().into_dart(),
@@ -6386,6 +6390,7 @@ impl SseEncode for crate::api::review::CardView {
         <Vec<crate::api::review::InlineRun>>::sse_encode(self.front_runs, serializer);
         <Option<Vec<crate::api::review::ContentUnit>>>::sse_encode(self.front_units, serializer);
         <Vec<crate::api::review::FrontStep>>::sse_encode(self.front_steps, serializer);
+        <Vec<usize>>::sse_encode(self.hole_steps, serializer);
         <Vec<String>>::sse_encode(self.section_context, serializer);
         <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(
             self.section_context_runs,

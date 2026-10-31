@@ -45,6 +45,16 @@ sibling's is muted and dashed. Filled text is highlighted in the accent
 colour. A card asking several spans at once (a named group) fills one span per
 press under `reveal: line`, all at once under `flip`.
 
+When you type a cloze card (at Reconstruct), the web app makes each asked
+blank the typing field itself: type each answer in its gap and press Enter.
+Each gap is checked against its own answer, so swapping two answers is two
+misses. The result shows in the gaps: a right answer turns green, and a miss
+shows what you typed, struck through, before the answer. A blank inside a code
+fence or a formula keeps its own field below the question instead, as does a
+group that walks `reveal: line`. A cloze card has no dividing line under its
+question: the question and its field or choices sit together in the middle of
+the card.
+
 The hidden text must appear in the bound block exactly as written. When it appears
 more than once, `occurrence=2` picks the second match; matches snap to word
 boundaries unless the directive says `boundary=char`.

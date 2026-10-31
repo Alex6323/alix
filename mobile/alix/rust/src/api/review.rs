@@ -180,6 +180,7 @@ pub struct _CardView {
     pub front_runs: Vec<InlineRun>,
     pub front_units: Option<Vec<ContentUnit>>,
     pub front_steps: Vec<FrontStep>,
+    pub hole_steps: Vec<usize>,
     pub section_context: Vec<String>,
     pub section_context_runs: Vec<Vec<InlineRun>>,
     pub section_context_units: Vec<ContentUnit>,

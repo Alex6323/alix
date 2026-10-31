@@ -95,11 +95,11 @@ The check derives from the reveal-method and the depth:
 
 - **At Recall**, a `flip` or `cloze` card **reveals** and you self-grade; a `line`
   card reveals line by line, then you self-grade.
-- **At Reconstruct**, you **produce** it: a `cloze` card has you **type** the gap;
-  a card with a short, single-line answer has you **type** it; a `line`-reveal
-  card has you **type each line in turn**; a card with a richer, multi-line answer
-  becomes an **explain** prompt whose back lines are the **key points** you
-  self-grade against.
+- **At Reconstruct**, you **produce** it: a `cloze` card has you **type** the gap
+  in place; a card with a short, single-line answer has you **type** it; a
+  `line`-reveal card has you **type each line in turn**; a card with a richer,
+  multi-line answer becomes an **explain** prompt whose back lines are the **key
+  points** you self-grade against.
 
 A typed check normalizes both sides (case, whitespace, trailing punctuation) and
 compares exactly, with no edit-distance tolerance, then shows the diff. The

@@ -2673,26 +2673,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   CardView dco_decode_card_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 17)
-      throw Exception('unexpected arr length: expect 17 but see ${arr.length}');
+    if (arr.length != 18)
+      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
     return CardView(
       front: dco_decode_String(arr[0]),
       frontRuns: dco_decode_list_inline_run(arr[1]),
       frontUnits: dco_decode_opt_list_content_unit(arr[2]),
       frontSteps: dco_decode_list_front_step(arr[3]),
-      sectionContext: dco_decode_list_String(arr[4]),
-      sectionContextRuns: dco_decode_list_list_inline_run(arr[5]),
-      sectionContextUnits: dco_decode_list_content_unit(arr[6]),
-      back: dco_decode_list_String(arr[7]),
-      backRuns: dco_decode_list_list_inline_run(arr[8]),
-      backUnits: dco_decode_list_content_unit(arr[9]),
-      answerSteps: dco_decode_list_answer_step(arr[10]),
-      reshaped: dco_decode_bool(arr[11]),
-      note: dco_decode_list_note_view(arr[12]),
-      hints: dco_decode_list_list_content_unit(arr[13]),
-      images: dco_decode_list_image_view(arr[14]),
-      imagesBack: dco_decode_list_image_view(arr[15]),
-      citations: dco_decode_list_String(arr[16]),
+      holeSteps: dco_decode_list_prim_usize_strict(arr[4]),
+      sectionContext: dco_decode_list_String(arr[5]),
+      sectionContextRuns: dco_decode_list_list_inline_run(arr[6]),
+      sectionContextUnits: dco_decode_list_content_unit(arr[7]),
+      back: dco_decode_list_String(arr[8]),
+      backRuns: dco_decode_list_list_inline_run(arr[9]),
+      backUnits: dco_decode_list_content_unit(arr[10]),
+      answerSteps: dco_decode_list_answer_step(arr[11]),
+      reshaped: dco_decode_bool(arr[12]),
+      note: dco_decode_list_note_view(arr[13]),
+      hints: dco_decode_list_list_content_unit(arr[14]),
+      images: dco_decode_list_image_view(arr[15]),
+      imagesBack: dco_decode_list_image_view(arr[16]),
+      citations: dco_decode_list_String(arr[17]),
     );
   }
 
@@ -4096,6 +4097,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_frontRuns = sse_decode_list_inline_run(deserializer);
     var var_frontUnits = sse_decode_opt_list_content_unit(deserializer);
     var var_frontSteps = sse_decode_list_front_step(deserializer);
+    var var_holeSteps = sse_decode_list_prim_usize_strict(deserializer);
     var var_sectionContext = sse_decode_list_String(deserializer);
     var var_sectionContextRuns = sse_decode_list_list_inline_run(deserializer);
     var var_sectionContextUnits = sse_decode_list_content_unit(deserializer);
@@ -4114,6 +4116,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       frontRuns: var_frontRuns,
       frontUnits: var_frontUnits,
       frontSteps: var_frontSteps,
+      holeSteps: var_holeSteps,
       sectionContext: var_sectionContext,
       sectionContextRuns: var_sectionContextRuns,
       sectionContextUnits: var_sectionContextUnits,
@@ -5978,6 +5981,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_inline_run(self.frontRuns, serializer);
     sse_encode_opt_list_content_unit(self.frontUnits, serializer);
     sse_encode_list_front_step(self.frontSteps, serializer);
+    sse_encode_list_prim_usize_strict(self.holeSteps, serializer);
     sse_encode_list_String(self.sectionContext, serializer);
     sse_encode_list_list_inline_run(self.sectionContextRuns, serializer);
     sse_encode_list_content_unit(self.sectionContextUnits, serializer);
