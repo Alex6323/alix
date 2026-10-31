@@ -218,6 +218,33 @@ class ReviewFrontStepModel {
   final bool rectsRevealed;
 }
 
+class ReviewExcerptLineModel {
+  const ReviewExcerptLineModel({required this.number, required this.text});
+
+  final int number;
+  final String text;
+}
+
+class ReviewExcerptModel {
+  ReviewExcerptModel({
+    required this.path,
+    required Iterable<ReviewExcerptLineModel> lines,
+    required this.truncated,
+  }) : lines = List.unmodifiable(lines);
+
+  final String path;
+  final List<ReviewExcerptLineModel> lines;
+  final bool truncated;
+}
+
+class ReviewCitationModel {
+  const ReviewCitationModel({required this.locator, this.excerpt, this.error});
+
+  final String locator;
+  final ReviewExcerptModel? excerpt;
+  final String? error;
+}
+
 class ReviewCardModel {
   ReviewCardModel({
     required this.front,
@@ -234,6 +261,7 @@ class ReviewCardModel {
     Iterable<Iterable<ReviewContentUnitModel>> hints = const [],
     required Iterable<ReviewImageModel> images,
     required Iterable<ReviewImageModel> imagesBack,
+    Iterable<ReviewCitationModel> citations = const [],
     Iterable<String> section = const [],
     Iterable<Iterable<InlineRunModel>> sectionRuns = const [],
     Iterable<ReviewContentUnitModel> sectionUnits = const [],
@@ -254,7 +282,8 @@ class ReviewCardModel {
            List<ReviewContentUnitModel>.unmodifiable(hint),
        ]),
        images = List.unmodifiable(images),
-       imagesBack = List.unmodifiable(imagesBack);
+       imagesBack = List.unmodifiable(imagesBack),
+       citations = List.unmodifiable(citations);
 
   final String front;
   final List<InlineRunModel> frontRuns;
@@ -278,6 +307,7 @@ class ReviewCardModel {
   final List<List<ReviewContentUnitModel>> hints;
   final List<ReviewImageModel> images;
   final List<ReviewImageModel> imagesBack;
+  final List<ReviewCitationModel> citations;
 
   /// The card's section as served: the heading text first, then its prose.
   /// Empty when the card has no section.

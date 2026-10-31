@@ -11,6 +11,7 @@ import 'package:alix_mobile/review/sketch_canvas.dart';
 import 'package:alix_mobile/review/unit_widgets.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/shared/inline_runs.dart';
+import 'package:alix_mobile/shared/source_excerpt.dart';
 import 'package:alix_mobile/theme.dart';
 
 const _sans = 'IBM Plex Sans';
@@ -398,14 +399,7 @@ class ReviewCardView extends StatelessWidget {
 
   Widget _answerTap(bool hideable, Widget region) {
     if (!hideable) return region;
-    return Builder(
-      builder: (context) => GestureDetector(
-        key: const ValueKey('answer-tap'),
-        behavior: HitTestBehavior.opaque,
-        onTap: () => showHideSheet(context),
-        child: region,
-      ),
-    );
+    return _AnswerTap(card: state.card!, child: region);
   }
 
   /// One scrolling region of the card, its content on the reading measure.
@@ -2413,11 +2407,50 @@ class _ReviewHelpSheetState extends State<ReviewHelpSheet> {
   }
 }
 
-Future<void> showHideSheet(BuildContext answerContext) {
+enum ReviewAnswerSheetView { hide, source }
+
+class _AnswerTap extends StatefulWidget {
+  const _AnswerTap({required this.card, required this.child});
+
+  final ReviewCardModel card;
+  final Widget child;
+
+  @override
+  State<_AnswerTap> createState() => _AnswerTapState();
+}
+
+class _AnswerTapState extends State<_AnswerTap> {
+  var _lastView = ReviewAnswerSheetView.hide;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: const ValueKey('answer-tap'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => showHideSheet(
+        context,
+        citations: widget.card.citations,
+        initialView: _lastView,
+        onViewChanged: (view) => _lastView = view,
+      ),
+      child: widget.child,
+    );
+  }
+}
+
+Future<void> showHideSheet(
+  BuildContext answerContext, {
+  List<ReviewCitationModel> citations = const [],
+  ReviewAnswerSheetView initialView = ReviewAnswerSheetView.hide,
+  ValueChanged<ReviewAnswerSheetView>? onViewChanged,
+}) {
   final box = answerContext.findRenderObject() as RenderBox?;
   if (box == null) return Future.value();
   final top = box.localToGlobal(Offset.zero).dy;
-  final height = MediaQuery.sizeOf(answerContext).height - top;
+  final screenHeight = MediaQuery.sizeOf(answerContext).height;
+  final height = screenHeight - top;
+  final sourceTop = MediaQuery.paddingOf(answerContext).top + kToolbarHeight;
+  final sourceHeight = screenHeight - sourceTop;
   final theme = Theme.of(answerContext);
   return showModalBottomSheet<void>(
     context: answerContext,
@@ -2427,16 +2460,54 @@ Future<void> showHideSheet(BuildContext answerContext) {
       theme.alix.line,
       theme.scaffoldBackgroundColor,
     ),
-    builder: (_) => HideSheet(height: height),
+    builder: (_) => HideSheet(
+      height: height,
+      sourceHeight: sourceHeight,
+      citations: citations,
+      initialView: initialView,
+      onViewChanged: onViewChanged,
+    ),
   );
 }
 
 /// A revealed answer hidden for a self-test: a sheet from the answer's top
 /// edge to the bottom of the screen, the question left in view.
-class HideSheet extends StatelessWidget {
-  const HideSheet({super.key, required this.height});
+class HideSheet extends StatefulWidget {
+  const HideSheet({
+    super.key,
+    required this.height,
+    double? sourceHeight,
+    this.citations = const [],
+    this.initialView = ReviewAnswerSheetView.hide,
+    this.onViewChanged,
+  }) : sourceHeight = sourceHeight ?? height;
 
   final double height;
+  final double sourceHeight;
+  final List<ReviewCitationModel> citations;
+  final ReviewAnswerSheetView initialView;
+  final ValueChanged<ReviewAnswerSheetView>? onViewChanged;
+
+  @override
+  State<HideSheet> createState() => _HideSheetState();
+}
+
+class _HideSheetState extends State<HideSheet> {
+  late ReviewAnswerSheetView _view;
+
+  @override
+  void initState() {
+    super.initState();
+    _view = widget.citations.isEmpty
+        ? ReviewAnswerSheetView.hide
+        : widget.initialView;
+  }
+
+  void _show(ReviewAnswerSheetView view) {
+    if (_view == view) return;
+    setState(() => _view = view);
+    widget.onViewChanged?.call(view);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2444,20 +2515,41 @@ class HideSheet extends StatelessWidget {
     final tokens = theme.alix;
     return SizedBox(
       key: const ValueKey('hide-sheet'),
-      height: height,
+      height: _view == ReviewAnswerSheetView.source
+          ? widget.sourceHeight
+          : widget.height,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 20),
         child: Column(
           children: [
             Row(
+              key: const ValueKey('answer-sheet-header'),
               children: [
                 const SizedBox(width: 48),
                 Expanded(
-                  child: Text(
-                    'Hide',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.titleMedium,
-                  ),
+                  child: widget.citations.isEmpty
+                      ? Text(
+                          'Hide',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleMedium,
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _AnswerSheetChoice(
+                              key: const ValueKey('answer-sheet-hide'),
+                              label: 'Hide',
+                              selected: _view == ReviewAnswerSheetView.hide,
+                              onTap: () => _show(ReviewAnswerSheetView.hide),
+                            ),
+                            _AnswerSheetChoice(
+                              key: const ValueKey('answer-sheet-source'),
+                              label: 'Source',
+                              selected: _view == ReviewAnswerSheetView.source,
+                              onTap: () => _show(ReviewAnswerSheetView.source),
+                            ),
+                          ],
+                        ),
                 ),
                 IconButton(
                   key: const ValueKey('hide-sheet-close'),
@@ -2471,18 +2563,99 @@ class HideSheet extends StatelessWidget {
               ],
             ),
             Expanded(
-              child: Center(
-                child: Icon(
-                  Icons.visibility_off_outlined,
-                  size: 40,
-                  color: tokens.dim,
-                  semanticLabel: 'Answer hidden',
-                ),
-              ),
+              child: _view == ReviewAnswerSheetView.hide
+                  ? Center(
+                      key: const ValueKey('hide-sheet-hide-view'),
+                      child: Icon(
+                        Icons.visibility_off_outlined,
+                        size: 40,
+                        color: tokens.dim,
+                        semanticLabel: 'Answer hidden',
+                      ),
+                    )
+                  : _SourceSheet(
+                      citations: widget.citations,
+                      rotatedExtent: (widget.sourceHeight - 150)
+                          .clamp(160, 520)
+                          .toDouble(),
+                    ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AnswerSheetChoice extends StatelessWidget {
+  const _AnswerSheetChoice({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = theme.alix;
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: selected ? tokens.text : tokens.dim,
+        textStyle: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+        ),
+      ),
+      child: Text(label),
+    );
+  }
+}
+
+class _SourceSheet extends StatelessWidget {
+  const _SourceSheet({required this.citations, required this.rotatedExtent});
+
+  final List<ReviewCitationModel> citations;
+  final double rotatedExtent;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).alix;
+    return SingleChildScrollView(
+      key: const ValueKey('source-sheet'),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var index = 0; index < citations.length; index++) ...[
+            if (index > 0) const SizedBox(height: 12),
+            _citation(tokens, citations[index], index),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _citation(AlixTokens tokens, ReviewCitationModel citation, int index) {
+    final excerpt = citation.excerpt;
+    if (excerpt == null) {
+      return sourceExcerptError(
+        tokens,
+        citation.error ?? 'No source excerpt for ${citation.locator}',
+        key: ValueKey(index == 0 ? 'source-error' : 'source-error-$index'),
+      );
+    }
+    return sourceExcerptBlock(
+      tokens,
+      path: excerpt.path,
+      lines: [for (final line in excerpt.lines) (line.number, line.text)],
+      truncated: excerpt.truncated,
+      rotateWhenOverflow: true,
+      rotatedExtent: rotatedExtent,
     );
   }
 }

@@ -477,11 +477,13 @@ its answer rests on several disjoint source ranges:
 ```
 
 Each locator remains one contiguous range; separate directives never imply
-that disjoint code is adjacent. On reveal a `</>` marker appears on the answer:
-**click the marker** (or press `s`) to swap the answer for the same
-editor-style source panels used by traces, and back; a click on the answer
-itself hides it for a self-test, as on every card. Multiple excerpts are stacked in authored
-order inside the one scrollable answer region. For a live citation, alix shows
+that disjoint code is adjacent. In the browser, a `</>` marker appears on the
+revealed answer: **click the marker** (or press `s`) to swap the answer for the
+same editor-style source panels used by traces, and back; a click on the answer
+itself hides it for a self-test, as on every card. On the phone, tap the
+revealed answer and choose **Source** in the Hide / Source sheet; the sheet
+reopens on the view last used for that card. Multiple excerpts are stacked in
+authored order inside the one scrollable region. For a live citation, alix shows
 the lines only when their fingerprint still matches. A moved, changed, deleted,
 ambiguous, or unfingerprinted excerpt shows a warning instead of unrelated
 lines, without hiding the other citations. Short evidence keeps the answer's

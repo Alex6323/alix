@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The phone shows a cited card's source. Tapping a revealed answer on a card
+  with `<!-- at: ... -->` citations opens the Hide sheet with a Hide / Source
+  switch; Source lists each cited path with numbered lines, or the reason the
+  excerpt is unavailable, and turns the code sideways when a line is too wide
+  for the portrait screen.
+
 - Staged hints: a `> [!TIP]` block between a card's question and its `---`
   divider is a hint. Several are offered one at a time while you answer, from
   a **Hint** chip (or `i` on the web), and opening any of them turns a pass on
@@ -137,11 +143,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Review: typing a cloze card on the web and the phone happens in the blanks
   themselves, and the result shows there (green when right; on a miss, what
-  you typed, struck through, before the answer). Each blank is checked against its own
-  answer, so swapped answers are misses. A blank inside a code fence or a
-  formula keeps its field below the question. Cloze cards lose the dividing
-  line under the question, which now sits with its field or choices in the
-  middle of the card. `CardDto` gains `hole_steps`.
+  you typed, struck through, before the answer). Each blank is checked against
+  its own answer, so swapped answers are misses. A blank inside a code fence
+  or a formula keeps its field below the question. Cloze cards lose the
+  dividing line under the question, which now sits with its field or choices
+  in the middle of the card. `CardDto` gains `hole_steps`.
 
 - Review: **Skip** leaves the web's bottom row and moves into the ☰ menu as
   **Skip card**, and the phone gains the same **Skip card** in a new ⋮ menu in

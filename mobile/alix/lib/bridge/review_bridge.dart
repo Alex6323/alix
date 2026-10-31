@@ -243,6 +243,26 @@ ReviewCardModel reviewCardFromBridge(bridge.CardView card) {
     ],
     images: [for (final image in card.images) _imageFromBridge(image)],
     imagesBack: [for (final image in card.imagesBack) _imageFromBridge(image)],
+    citations: [
+      for (final citation in card.citations)
+        ReviewCitationModel(
+          locator: citation.locator,
+          excerpt: citation.excerpt == null
+              ? null
+              : ReviewExcerptModel(
+                  path: citation.excerpt!.path,
+                  lines: [
+                    for (final line in citation.excerpt!.lines)
+                      ReviewExcerptLineModel(
+                        number: line.n.toInt(),
+                        text: line.text,
+                      ),
+                  ],
+                  truncated: citation.excerpt!.truncated,
+                ),
+          error: citation.error,
+        ),
+    ],
     section: card.sectionContext,
     sectionRuns: [
       for (final runs in card.sectionContextRuns) inlineRunsFromBridge(runs),

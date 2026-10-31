@@ -114,12 +114,19 @@ hints, and the reverse half of a two-direction card carries none.
 To set a card aside for later in the session, open the ⋮ menu in the review
 header and pick **Skip card**; it is offered until the answer shows.
 
-Tapping a revealed answer hides it for a self-test: a sheet titled **Hide**
-rises from
-the answer's top edge to the bottom of the screen, covering the answer, the
-note and the grade buttons while the question stays in view; the `×` in its
-top-right corner, or a swipe down, shows it all again. A choice pick, a typed
-check and a sketch have nothing to hide.
+Tapping a revealed answer opens its answer sheet. An uncited card keeps the
+single **Hide** view: the sheet rises from the answer's top edge to the bottom
+of the screen, covering the answer, the note and the grade buttons while the
+question stays in view. A cited card adds a **Hide / Source** switch in the
+sheet header. **Source** stacks every cited path and numbered excerpt, or its
+error when the excerpt is unavailable, using the same editor-style presentation
+as a trace. The Source sheet reaches the bottom of the session header so long
+lines have more room; only the code turns sideways when its longest line would
+overflow the portrait width, while the header and paths stay upright, and a
+line too long even sideways wraps. Reopening the sheet on the same card shows
+the view last used; the next card starts on **Hide**. The `×` in the top-right
+corner, or a swipe down, closes either view. A choice pick, a typed check and a
+sketch have nothing to hide.
 
 The bar at the top names the deck, cut to one line, and counts the cards
 left. **New session** on the summary starts the next sitting with the same

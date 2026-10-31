@@ -4,6 +4,7 @@ import 'package:alix_mobile/review/review_card.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/shared/inline_runs.dart';
+import 'package:alix_mobile/shared/source_excerpt.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/trace/trace_models.dart';
 
@@ -218,70 +219,18 @@ class TraceSessionPhaseBody extends StatelessWidget {
   Widget _excerptBlock(AlixTokens tokens) {
     final excerpt = state.excerpt;
     if (excerpt == null) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          border: Border.all(color: tokens.line),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Text(
-          state.excerptError ?? 'no excerpt for this checkpoint',
-          style: TextStyle(
-            color: tokens.dim,
-            fontStyle: FontStyle.italic,
-            fontSize: 13,
-          ),
-        ),
+      return sourceExcerptError(
+        tokens,
+        state.excerptError ?? 'no excerpt for this checkpoint',
       );
     }
     final terms = _sourceTerms();
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: tokens.line),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            child: Text(
-              excerpt.path,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: _mono,
-                fontSize: 11,
-                color: tokens.dim,
-              ),
-            ),
-          ),
-          Divider(height: 1, color: tokens.line),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final line in excerpt.lines)
-                  _gutterLine(line, terms, tokens),
-                if (excerpt.truncated)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      '… excerpt truncated',
-                      style: TextStyle(
-                        color: tokens.faint,
-                        fontSize: 11,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return sourceExcerptBlock(
+      tokens,
+      path: excerpt.path,
+      lines: [for (final line in excerpt.lines) (line.number, line.text)],
+      truncated: excerpt.truncated,
+      spansForLine: (text) => _sourceSpans(text, terms, tokens),
     );
   }
 
@@ -341,43 +290,6 @@ class TraceSessionPhaseBody extends StatelessWidget {
       cursor = nextAt + nextTerm.length;
     }
     return matched ? spans : null;
-  }
-
-  Widget _gutterLine(
-    TraceSessionLineModel line,
-    List<String> terms,
-    AlixTokens tokens,
-  ) {
-    final style = TextStyle(
-      fontFamily: _mono,
-      fontSize: 13,
-      color: tokens.text,
-    );
-    final spans = _sourceSpans(line.text, terms, tokens);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 32,
-            child: Text(
-              '${line.number}',
-              style: TextStyle(
-                fontFamily: _mono,
-                fontSize: 12,
-                color: tokens.faint,
-              ),
-            ),
-          ),
-          Expanded(
-            child: spans == null
-                ? Text(line.text, style: style)
-                : Text.rich(TextSpan(style: style, children: spans)),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _pointsList(BuildContext context, AlixTokens tokens) {
