@@ -2076,7 +2076,7 @@ export function createStudy({
         }
         return;
       }
-      if (contextOffered() && hit(e, keys.context)) { e.preventDefault(); openSection(); return; }
+      if (contextOffered() && hitOutsideField(e, keys.context)) { e.preventDefault(); openSection(); return; }
       if (hintsOffered() && hitOutsideField(e, keys.hint)) { e.preventDefault(); openHints(); return; }
       // `s` swaps a cited card between its answer and its source, once answered.
       if ((state.card.citations || []).length && isAnswered() && !e.ctrlKey && e.key.toLowerCase() === "s") {
@@ -2216,7 +2216,7 @@ export function createStudy({
       if (e.key === "Enter" || hit(e, keys.restart)) { e.preventDefault(); nextWalk(); }
       return;
     }
-    if (contextOffered() && hit(e, keys.context)) { e.preventDefault(); openSection(); return; }
+    if (contextOffered() && hitOutsideField(e, keys.context)) { e.preventDefault(); openSection(); return; }
     if (state.phase === "answer") {
       if ((state.card.citations || []).length && !e.ctrlKey && e.key.toLowerCase() === "s") {
         e.preventDefault(); toggleCitation(); return;

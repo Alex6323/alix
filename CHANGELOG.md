@@ -571,6 +571,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On the web, typing a `c` into an answer field (or the explain box) types
+  it instead of opening the section context.
 - On narrow screens the web review card no longer runs to the right edge:
   it keeps the same gutter on both sides.
 - On the phone, a tutor card whose Add reply was lost no longer ends up on
