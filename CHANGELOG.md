@@ -14,8 +14,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that card into Partial. Any other badge above the divider is an error, and
   `alix doctor` warns when a hint spells out an answer line. `CardDto.hints`
   and `POST /api/hint` carry them to clients.
+
 - `alix doctor` warns about a section that has prose but no card before the
   next `#` heading.
+
 - Deck frontmatter accepts `cite:`, a list of keyed roots such as
   `- code: crates/core`, and `alix.toml` accepts a `[cite]` table. A
   malformed `cite:` (not a list of one-key mappings, a bad or repeated key,
@@ -133,17 +135,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Web review: **Skip** leaves the bottom row and moves into the ☰ menu as
+  **Skip card**, so the row before the answer reads Context, the main button,
+  then Hint, on the web and the phone alike.
+
 - A section now runs to the next `#` heading and nothing else ends it: a `#`
   with no title (also `# ##` or `# <!-- an aside -->`) is an error, "section
   heading is empty; write its title", instead of ending the section. A deck
   that used one fails to parse until the line is removed or given a title. An
   empty card-table front cell now reports "table row has an empty front
   cell".
+
 - On the web, a card's section opens from a quiet **Context** chip in the
   bottom row (or `c`, or the review menu) until the answer shows; a click on
   the question no longer opens it. Hiding a revealed answer (`h` or a click)
   lays a cover with an eye-off glyph over it instead of drawing each word with
   transparent middle letters.
+
 - On the phone, a tap on a revealed answer hides it under a **Hide** sheet
   that rises from the answer's top edge, leaving the question in view; its
   close mark shows the answer again. It replaces the in-place look that kept
@@ -565,11 +573,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On the web, a pick or typed-check result that arrives after the card has
   changed (for example after a quick Skip) is ignored; it could mark the next
   card answered before its answer was shown.
+
 - On the phone, a screen reader reads inline code as written; the invisible
   line-break points that let long code wrap no longer enter its text.
+
 - A paired pull refuses an archive carrying a link before extracting any of
   it, as `alix receive` already did; before, it extracted into its private
   staging folder first and refused only afterwards.
+
 - On the phone, a section too long for the screen no longer pushes its sheet
   under the status bar, where its close mark could not be reached; the sheet
   now stops at the top of the review or walk header.

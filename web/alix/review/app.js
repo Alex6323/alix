@@ -412,6 +412,7 @@ document.getElementById("mAsk").addEventListener("click", () => {
 });
 document.getElementById("mContext").addEventListener("click", () => { menu.classList.remove("open"); study.openSection(); });
 document.getElementById("mHint").addEventListener("click", () => { menu.classList.remove("open"); study.openHints(); });
+document.getElementById("mSkip").addEventListener("click", () => { menu.classList.remove("open"); if (!study.sectionOpen()) study.skip(); });
 document.getElementById("mRemove").addEventListener("click", () => {
   menu.classList.remove("open");
   if (!study.sectionOpen()) study.remove();
@@ -431,6 +432,7 @@ function setMenuContext(ctx) {
   document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = (ctx === "review" || ctx === "trace" || ctx === "walk") ? "" : "none"; });
   document.getElementById("mContext").style.display = (ctx === "review" || ctx === "walk") && study && study.contextOffered() ? "" : "none";
   document.getElementById("mHint").style.display = ctx === "review" && study && study.hintsOffered() ? "" : "none";
+  document.getElementById("mSkip").style.display = ctx === "review" && study && study.skipOffered() ? "" : "none";
   document.getElementById("mRemove").style.display = ctx === "review" ? "" : "none";
   // (a remediation card) — narrower than the other .m-review items, so it
   // gets its own check on top of the context toggle.
@@ -474,6 +476,7 @@ function boot() {
     document.getElementById("mAskKey").textContent = label(k.ask);
     document.getElementById("mContextKey").textContent = label(k.context);
     document.getElementById("mHintKey").textContent = label(k.hint);
+    document.getElementById("mSkipKey").textContent = label(k.skip);
     return study.load();
   }).catch(() => setTimeout(boot, 500));
 }

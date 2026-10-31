@@ -9,6 +9,11 @@ import type { Page } from "@playwright/test";
 import { test, expect } from "./helpers";
 import { adultDeckRow, openApp } from "./helpers";
 
+async function skipCard(page: Page) {
+  await page.locator("#kebab").click();
+  await page.locator("#mSkip").click();
+}
+
 const HINTS_WORKSPACE = path.join(__dirname, "..", ".tmp", "adult", "decks", "hints-lab");
 
 const DECKS: Record<string, string> = {
@@ -133,6 +138,23 @@ function hintRequests(page: Page): string[] {
 const hintChip = (page: Page) => page.locator("#legend .chip", { hasText: /^Hint/ });
 const stacked = (page: Page) => page.locator(".section-drawer .hint-stack .note");
 const nextHint = (page: Page) => page.getByRole("button", { name: "Next hint" });
+
+test("the primary sits between Context and Hint, and Skip lives in the menu", async ({ page }) => {
+  await start(page, "Europe", "Recall");
+  const labels = await page.locator("#legend .chip").evaluateAll((chips) =>
+    chips.map((chip) => (chip.firstChild?.textContent ?? "").trim()));
+  expect(labels, "the bottom row before the reveal").toEqual(["Context", "Reveal", "Hint"]);
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".section-drawer"), "the auto-opened context is closed").toHaveCount(0);
+  await page.locator("#kebab").click();
+  await expect(page.locator("#mSkip"), "Skip card is offered in the menu").toBeVisible();
+  await page.locator("#kebab").click();
+  await page.getByRole("button", { name: /^Reveal/ }).click();
+  await page.locator("#kebab").click();
+  await expect(page.locator("#mSkip"), "an answered card offers no skip").toBeHidden();
+  await page.locator("#kebab").click();
+});
 
 test("hints open one at a time, only after the server records the opening", async ({ page }) => {
   const requests = hintRequests(page);
@@ -393,7 +415,7 @@ test("late feedback from the previous card cannot close the fresh card's context
   ]);
   await Promise.all([
     page.waitForResponse((response) => response.url().includes("/api/skip")),
-    page.getByRole("button", { name: /^Skip/ }).click(),
+    skipCard(page),
   ]);
   await expect(page.locator(".front-text")).toHaveText("This fresh card owns the open context.");
   await expect(page.locator(".section-drawer")).toBeVisible();

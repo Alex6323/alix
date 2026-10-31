@@ -752,6 +752,12 @@ export function createStudy({
   function hintsOffered() {
     return !isWalking() && !!state && state.phase === "review" && hintCount() > 0 && !isAnswered();
   }
+  function skipOffered() {
+    if (isWalking() || !state || state.phase !== "review" || !state.card || feedback) return false;
+    if (isIntroducing()) return isIntroChoice() || revealed === 0;
+    if (effectiveDraw() && revealed === 0) return true;
+    return isChoice() || isInput() || isTypeLine() || !fullyRevealed();
+  }
   function attemptScope() { return `${state.card.id}@${state.study_revision}`; }
   function forThisAttempt(apply) {
     const scope = attemptScope();
@@ -1657,7 +1663,6 @@ export function createStudy({
     clearLegendSides();
     if (state.card) setMenuContext(isWalking() ? "walk" : "review");
     if (contextOffered()) chip("Context", "quiet", openSection, label(keys.context));
-    if (hintsOffered()) chip("Hint", "quiet", openHints, label(keys.hint));
     if (isWalking()) { renderWalkLegend(); return; }
     if (feedback) {
       if (isIntroducing()) {
@@ -1692,7 +1697,6 @@ export function createStudy({
       if (effectiveDraw()) {
         if (revealed === 0) {
           chip("Reveal", "primary", drawReveal, label(keys.reveal)); // reveal freezes your attempt
-          chip("Skip", "", skip, label(keys.skip));
         } else {
           chip("Seen", "primary", introduce, label(keys.cont));      // ungraded acknowledgment
           chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
@@ -1702,7 +1706,6 @@ export function createStudy({
           const submit = chip("Submit", "primary", submitMultiChoice, label(keys.submit));
           submit.disabled = selectedChoices.size === 0;
         }
-        chip("Skip", "", skip, label(keys.skip));            // options are tappable
       } else if (revealed > 0 && state.mode === "line" && !fullyRevealed()) {
         chip("Reveal next", "primary", reveal, label(keys.reveal));
         chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
@@ -1711,29 +1714,22 @@ export function createStudy({
         chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
       } else {
         chip("Reveal", "primary", reveal, label(keys.reveal));
-        chip("Skip", "", skip, label(keys.skip));
       }
     } else if (effectiveDraw() && revealed === 0) {
       chip("Reveal", "primary", drawReveal, label(keys.reveal));
-      chip("Skip", "", skip, label(keys.skip));
     } else if (isChoice()) {
       if (isMultiChoice()) {
         const submit = chip("Submit", "primary", submitMultiChoice, label(keys.submit));
         submit.disabled = selectedChoices.size === 0;
       }
-      chip("Skip", "", skip, label(keys.skip));
     } else if (isInput()) {
       chip("Submit", "primary", submitCheck, label(keys.submit));
-      chip("Skip", "", skip, label(keys.skip));
     } else if (isTypeLine()) {
       chip("Check", "primary", submitCurrentTypeLine, label(keys.submit));
-      chip("Skip", "", skip, label(keys.skip));
     } else if (isExplain() && !fullyRevealed()) {
       chip("Reveal", "primary", explainReveal, "shift+enter");
-      chip("Skip", "", skip, label(keys.skip));
     } else if (!fullyRevealed()) {
       chip(state.mode === "line" && revealed > 0 ? "Reveal next" : "Reveal", "primary", reveal, label(keys.reveal));
-      chip("Skip", "", skip, label(keys.skip));
     } else if (hasKeypoints()) {
       chip("Yes", "passed", () => answerKeypoint(true), "y");
       chip("No", "failed", () => answerKeypoint(false), "n");
@@ -1758,6 +1754,7 @@ export function createStudy({
       chip("Got it", "passed", () => grade("passed"), label(keys.passed));
       chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
     }
+    if (hintsOffered()) chip("Hint", "quiet", openHints, label(keys.hint));
     chip("Leave", "", leaveSession, label(keys.quit), legendLeft); // pinned bottom-left; return to the deck picker
   }
 
@@ -2267,6 +2264,8 @@ export function createStudy({
     hasSection,
     contextOffered,
     hintsOffered,
+    skipOffered,
+    skip,
     isAnswered,
     isBrowsing,
     isWalking,

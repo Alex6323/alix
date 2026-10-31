@@ -1265,6 +1265,7 @@ class ReviewCardView extends StatelessWidget {
           kind: ReviewChipKind.quiet,
           onTap: () => onOpenSection(card),
         ),
+      ..._modeChips(card),
       if (openHint != null &&
           !state.introducing &&
           card.hints.isNotEmpty &&
@@ -1274,7 +1275,6 @@ class ReviewCardView extends StatelessWidget {
           kind: ReviewChipKind.quiet,
           onTap: () => openHint(card),
         ),
-      ..._modeChips(card),
     ];
     final tutor = tutorCard;
     if (serverLive && tutor != null && _attempted(card)) {

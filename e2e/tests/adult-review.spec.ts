@@ -10,8 +10,14 @@
 // server still has selected on page load (`load()` calls GET /api/state and
 // renders wherever it left off), so a previous test's unfinished review
 // would otherwise leak into the next one. `beforeEach` forces a clean slate.
+import type { Page } from "@playwright/test";
 import { test, expect } from "./helpers";
 import { adultDeckRow, openApp } from "./helpers";
+
+async function skipCard(page: Page) {
+  await page.locator("#kebab").click();
+  await page.locator("#mSkip").click();
+}
 
 test.beforeEach(async ({ page, request }) => {
   await request.post("/api/deselect", { data: {} });
@@ -321,7 +327,7 @@ test("revealed inline formatting renders as safe DOM elements", async ({ page })
   await expect(page.locator(".front-text")).toHaveText("Which animal is the tallest in the world?");
   await Promise.all([
     page.waitForResponse((res) => res.url().includes("/api/skip")),
-    page.getByRole("button", { name: /^Skip/ }).click(),
+    skipCard(page),
   ]);
   await expect(page.locator(".front-text")).toHaveText("What is the fastest animal on land?");
   await page.getByRole("button", { name: "Reveal" }).click();
@@ -1516,7 +1522,7 @@ test("leaving an unsaved tutor returns to its originating card without pulling s
   const beforeSkip = await page.locator(".front-text").textContent();
   await Promise.all([
     page.waitForResponse((res) => res.url().includes("/api/skip")),
-    page.getByRole("button", { name: /^Skip/ }).click(),
+    skipCard(page),
   ]);
   // The response arriving is not the render: wait for the card to change
   // before reading the origin front (a two-card session always swaps on skip).
@@ -2117,7 +2123,7 @@ test("a state applied while the sheet is open tears the sheet down", async ({ pa
     await gate;
     await route.fulfill({ json: second });
   });
-  await page.getByRole("button", { name: /^Skip/ }).click();
+  await skipCard(page);
   await page.keyboard.press("c");
   await expect(page.locator(".section-drawer"), "skip in flight: the sheet opens").toBeVisible();
   release();

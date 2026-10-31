@@ -103,7 +103,8 @@ the section, in this sitting or any later one, waits for the chip. A tap on the
 question does nothing.
 
 A card with [hints](03-the-deck-format.md#hints) shows a quiet **Hint** chip
-beside **Context** while you are still answering. It opens the first hint in
+to the right of the main button (**Context** sits to its left) while you are
+still answering. It opens the first hint in
 the same sheet; **Next hint** adds each later hint below the earlier ones, and
 reopening restores the hints already shown. When both context and hints exist,
 the sheet's selector swaps between them without losing that stack. Opening a

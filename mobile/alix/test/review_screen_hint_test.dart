@@ -136,6 +136,24 @@ void main() {
     expect(chip('Hint'), findsNothing, reason: 'the answer ended the offer');
   });
 
+  testWidgets('the primary sits between Context and Hint', (tester) async {
+    final root = deckRoot(
+      'order',
+      '# Capitals\nUse the river and country together.\n\n$twoHints',
+    );
+    makeDue(root);
+    await pumpReview(tester, root);
+
+    final context = tester.getCenter(chip('Context')).dx;
+    final reveal = tester.getCenter(chip('Reveal')).dx;
+    final hint = tester.getCenter(chip('Hint')).dx;
+    expect(
+      context < reveal && reveal < hint,
+      isTrue,
+      reason: 'Context $context, Reveal $reveal, Hint $hint',
+    );
+  });
+
   testWidgets('context and opened hints share one retained panel', (
     tester,
   ) async {
