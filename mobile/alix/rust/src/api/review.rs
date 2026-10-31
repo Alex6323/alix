@@ -1316,6 +1316,35 @@ mod tests {
     }
 
     #[test]
+    fn skipping_the_only_introduction_re_serves_it_without_progress() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = root.join("one.md");
+        write(&deck, "## One?\nA.\n");
+        alix::stamp::stamp_deck(&deck).unwrap();
+        let mut session = ReviewSession::open(
+            deck.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(Depth::Recall),
+            None,
+            None,
+            Some(T0),
+            None,
+        )
+        .unwrap();
+        let before = session.state(Some(T0));
+        assert!(before.introducing);
+        let front = before.card.unwrap().front;
+
+        let after = session.skip(Some(T0)).unwrap();
+
+        assert_eq!(front, after.card.unwrap().front);
+        assert!(after.introducing, "the fresh card remains an introduction");
+        assert_eq!(0, after.introduced, "skip records no introduction");
+        assert_eq!(0, after.reviews, "skip records no review");
+    }
+
+    #[test]
     fn skipping_introduction_serves_a_fresh_card_for_grading() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();

@@ -416,6 +416,45 @@ test("the advertised submit binding wins over choice navigation", () => {
   assert.deepEqual(run.calls, ["/api/choose"], "the key shown on Submit submits");
 });
 
+test("the Skip menu offer matches every former footer branch", () => {
+  const card = { id: "card-1", answer_steps: [{ kind: "line" }, { kind: "line" }] };
+  const review = (extra = {}) => ({
+    kind: "review",
+    phase: "review",
+    label: "Facts",
+    mode: "flip",
+    card,
+    ...extra,
+  });
+  const offered = (state) => Boolean(keyHarness(state, {}).study.skipOffered());
+
+  assert.equal(offered({ kind: "review", phase: "done", card: null }), false, "done");
+  assert.equal(offered({ ...review(), kind: "walk" }), false, "walk");
+  assert.equal(offered(review({ introducing: true })), true, "introduction before reveal");
+  assert.equal(offered(review({ introducing: true, mode: "choice", choices: ["a", "b"] })), true, "introduction choice");
+  assert.equal(offered(review({ input: "draw" })), true, "draw before reveal");
+  assert.equal(offered(review({ mode: "typing" })), true, "typing");
+  assert.equal(offered(review({ mode: "typeline" })), true, "line typing");
+  assert.equal(offered(review({ mode: "explain" })), true, "explain before reveal");
+  assert.equal(offered(review({ depth: "recognize" })), true, "Recognize fallback before reveal");
+
+  const introLine = keyHarness(review({ introducing: true, mode: "line" }), { reveal: plain("r") });
+  introLine.press("r");
+  assert.equal(introLine.study.skipOffered(), false, "a partially revealed introduction line");
+
+  const revealed = keyHarness(review(), { reveal: plain("r") });
+  revealed.press("r");
+  assert.equal(revealed.study.skipOffered(), false, "an answered flip card");
+
+  const pendingChoice = keyHarness(
+    review({ mode: "choice", choices: ["a", "b"] }),
+    {},
+  );
+  pendingChoice.press("1");
+  assert.deepEqual(pendingChoice.calls, ["/api/choose"], "the choice response remains pending");
+  assert.equal(Boolean(pendingChoice.study.skipOffered()), true, "the old footer Skip also stayed during the pending response");
+});
+
 test("a pending hint from an old revision does not block the same card's fresh attempt", () => {
   const calls = [];
   const study = createStudy({

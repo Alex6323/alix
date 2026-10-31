@@ -144,9 +144,10 @@ void main() {
     );
   });
 
-  test('the same card re-served after a skip has a fresh hint stack', () {
+  test('the same card re-served by skip has a fresh attempt', () {
     final state = _state(hints: [_hint('first'), _hint('second')]);
-    final port = _FakeReviewPort(state, tutor: _tutor('card-one'));
+    final port = _FakeReviewPort(state, tutor: _tutor('card-one'))
+      ..skipResult = state;
     final controller = ReviewController(
       factory: _FakeReviewFactory([port]),
       deckPath: '/decks/facts.md',
@@ -156,8 +157,16 @@ void main() {
 
     expect(controller.openHint(), isTrue);
     controller.openNextHint();
+    controller.reveal();
+    controller.revealNextLine();
+    controller.choose(1);
+    controller.toggleChoice(2);
+    controller.submitChoices();
+    controller.check(const ['answer']);
+    controller.openAttempt();
+    controller.toggleKeypoint(0);
     expect(controller.openedHints, 2);
-    controller.install(state);
+    controller.skip();
 
     expect(
       controller.state,
@@ -169,12 +178,20 @@ void main() {
       0,
       reason: 'the new attempt has no stale stack',
     );
+    expect(controller.revealed, isFalse);
+    expect(controller.revealedLines, 0);
+    expect(controller.choice, isNull);
+    expect(controller.multiSelected, isEmpty);
+    expect(controller.multiChoice, isNull);
+    expect(controller.checkFeedback, isNull);
+    expect(controller.attemptOpen, isFalse);
+    expect(controller.tickedKeypoints, isEmpty);
+    expect(port.skips, 1);
     expect(controller.openHint(), isTrue);
-    expect(
-      port.openedHintIds,
-      ['card-one', 'card-one'],
-      reason: 'the new attempt records its own first open',
-    );
+    expect(port.openedHintIds, [
+      'card-one',
+      'card-one',
+    ], reason: 'the new attempt records its own first open');
   });
 
   test('a cram session opens crammed and stays crammed across a restart', () {
@@ -337,11 +354,13 @@ class _FakeReviewPort implements ReviewPort {
   ReviewStateModel _state;
   final ReviewTutorCardModel? tutor;
   ReviewStateModel? introduceResult;
+  ReviewStateModel? skipResult;
   ReviewStateModel? gradeResult;
   ReviewStateModel? applyCardNoteResult;
   bool openHintResult = true;
   final List<ReviewGrade> grades = [];
   final List<String> openedHintIds = [];
+  int skips = 0;
 
   @override
   ReviewStateModel get state => _state;
@@ -350,7 +369,10 @@ class _FakeReviewPort implements ReviewPort {
   ReviewStateModel introduce() => _state = introduceResult ?? _state;
 
   @override
-  ReviewStateModel skip() => _state;
+  ReviewStateModel skip() {
+    skips++;
+    return _state = skipResult ?? _state;
+  }
 
   @override
   bool openHint(String cardId) {
