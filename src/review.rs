@@ -122,7 +122,66 @@ pub struct CardView {
     pub hints: Vec<Vec<ContentUnit>>,
     pub images: Vec<ImageView>,
     pub images_back: Vec<ImageView>,
-    pub citations: Vec<String>,
+    pub citations: Vec<CitationView>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CitationView {
+    pub locator: String,
+    pub excerpt: Option<ExcerptView>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ExcerptView {
+    pub path: String,
+    pub lines: Vec<ExcerptLine>,
+    pub truncated: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ExcerptLine {
+    pub n: usize,
+    pub text: String,
+}
+
+/// Without roots every citation keeps its locator and resolves nothing.
+pub fn resolve_citations(
+    card: &Card,
+    roots: Option<&crate::cite::CitationRoots>,
+) -> Vec<CitationView> {
+    card.citations
+        .iter()
+        .map(|citation| {
+            let mut view = CitationView {
+                locator: citation.locator.to_string(),
+                excerpt: None,
+                error: None,
+            };
+            if let Some(roots) = roots {
+                match roots.checked_excerpt(citation) {
+                    Ok(excerpt) => view.excerpt = Some(excerpt_view(&excerpt.capped_for_display())),
+                    Err(error) => view.error = Some(format!("{error:#}")),
+                }
+            }
+            view
+        })
+        .collect()
+}
+
+pub fn excerpt_view(excerpt: &crate::source::Excerpt) -> ExcerptView {
+    ExcerptView {
+        path: excerpt.path.display().to_string(),
+        lines: excerpt
+            .lines
+            .iter()
+            .map(|(n, text)| ExcerptLine {
+                n: *n,
+                text: text.clone(),
+            })
+            .collect(),
+        truncated: excerpt.truncated,
+    }
 }
 
 fn image_views(
@@ -276,11 +335,7 @@ impl CardView {
                 };
                 image_views(&card.images_back, &asked, covers_reveal(card))
             },
-            citations: card
-                .citations
-                .iter()
-                .map(|citation| citation.locator.to_string())
-                .collect(),
+            citations: resolve_citations(card, None),
         }
     }
 }
@@ -434,6 +489,7 @@ pub fn state(
     session: &Session,
     store: &Store,
     augment: &AugmentCache,
+    citation_roots: &std::collections::HashMap<String, crate::cite::CitationRoots>,
     now_ms: Option<u64>,
 ) -> ReviewState {
     let now = now_ms.unwrap_or_else(session::now_ms);
@@ -478,7 +534,10 @@ pub fn state(
     } else {
         AnswerSpace::Displayed
     };
-    let card_view = card.map(|card| CardView::project_in(card, &mut projector, space));
+    let card_view = card.map(|card| CardView {
+        citations: resolve_citations(card, citation_roots.get(&*card.deck_id)),
+        ..CardView::project_in(card, &mut projector, space)
+    });
     let choice_runs = choices.as_ref().map(|choices| {
         choices
             .iter()
@@ -933,7 +992,7 @@ mod tests {
             let session = session_at(cards, &mut store, depth, NOW);
             assert!(session.current().is_some(), "{depth:?} serves the card");
             assert_eq!(
-                state(&session, &store, &augment, Some(NOW)).mode,
+                state(&session, &store, &augment, &Default::default(), Some(NOW)).mode,
                 want,
                 "{depth:?}"
             );
@@ -963,7 +1022,7 @@ mod tests {
 
         assert_eq!(
             Some(T0 + cooldown),
-            state(&session, &store, &augment, Some(now)).next_due_ms,
+            state(&session, &store, &augment, &Default::default(), Some(now)).next_due_ms,
             "the summary counts down to the earliest card in the deck"
         );
     }
@@ -974,14 +1033,14 @@ mod tests {
         let cards = parse("## q\na\n");
         let fresh = session_at(cards.clone(), &mut store, Depth::Recall, NOW);
         assert!(
-            state(&fresh, &store, &augment, Some(NOW)).introducing,
+            state(&fresh, &store, &augment, &Default::default(), Some(NOW)).introducing,
             "never-seen card"
         );
 
         seen(&mut store, &cards);
         let again = session_at(cards, &mut store, Depth::Recall, NOW);
         assert!(
-            !state(&again, &store, &augment, Some(NOW)).introducing,
+            !state(&again, &store, &augment, &Default::default(), Some(NOW)).introducing,
             "seen card"
         );
     }
@@ -991,12 +1050,12 @@ mod tests {
         let (mut store, augment, _dir) = fixtures();
         let cards = parse("## q\na\n");
         let first = session_at(cards.clone(), &mut store, Depth::Recall, NOW);
-        assert!(state(&first, &store, &augment, Some(NOW)).introducing);
+        assert!(state(&first, &store, &augment, &Default::default(), Some(NOW)).introducing);
         drop(first);
 
         let again = session_at(cards, &mut store, Depth::Recall, NOW + 1);
         assert!(
-            state(&again, &store, &augment, Some(NOW + 1)).introducing,
+            state(&again, &store, &augment, &Default::default(), Some(NOW + 1)).introducing,
             "presentation persists nothing, so the reopened card is still introducing"
         );
     }
@@ -1021,7 +1080,7 @@ mod tests {
         }];
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
-        let card = state(&session, &store, &augment, Some(NOW))
+        let card = state(&session, &store, &augment, &Default::default(), Some(NOW))
             .card
             .expect("a card");
         assert!(
@@ -1736,7 +1795,66 @@ $$
              <!-- at: src:store.rs:30-40 -->\n",
         );
         let view = CardView::from(&cards[0]);
-        assert_eq!(view.citations, ["src:lib.rs:10-20", "src:store.rs:30-40"]);
+        let locators: Vec<&str> = view.citations.iter().map(|c| c.locator.as_str()).collect();
+        assert_eq!(locators, ["src:lib.rs:10-20", "src:store.rs:30-40"]);
+        assert!(
+            view.citations
+                .iter()
+                .all(|c| c.excerpt.is_none() && c.error.is_none()),
+            "a bare projection resolves nothing"
+        );
+    }
+
+    #[test]
+    fn the_review_state_resolves_the_current_cards_citations_through_its_decks_roots() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alix.toml"), "").unwrap();
+        std::fs::create_dir(dir.path().join("decks")).unwrap();
+        std::fs::write(
+            dir.path().join("source.rs"),
+            "fn live() {}\nfn other() {}\n",
+        )
+        .unwrap();
+        let deck_path = dir.path().join("decks/d.md");
+        std::fs::write(
+            &deck_path,
+            "---\nformat-version: 1\nid: \"deck-livecited1\"\ncite:\n  - src: .\n---\n\
+             ## q\na\n<!-- at: src:source.rs:1 -->\n",
+        )
+        .unwrap();
+        crate::source::stamp_citations(&deck_path).unwrap();
+        let deck = crate::deck::Deck::load(&deck_path).unwrap();
+        let (mut store, augment, _store_dir) = fixtures();
+        let mut cards = deck.cards.clone();
+        cards[0].token = Some(std::sync::Arc::from("tok1"));
+        let session = session_at(cards, &mut store, Depth::Recall, NOW);
+
+        let roots = std::collections::HashMap::from([(
+            "deck-livecited1".to_string(),
+            crate::cite::CitationRoots::for_deck(&deck),
+        )]);
+        let resolved = state(&session, &store, &augment, &roots, Some(NOW));
+        let citation = &resolved.card.expect("a current card").citations[0];
+        assert_eq!("src:source.rs:1", citation.locator);
+        assert_eq!(None, citation.error, "the live line resolves");
+        assert_eq!(
+            Some(vec![ExcerptLine {
+                n: 1,
+                text: "fn live() {}".to_string()
+            }]),
+            citation
+                .excerpt
+                .as_ref()
+                .map(|excerpt| excerpt.lines.clone()),
+            "the excerpt is the cited line"
+        );
+
+        let bare = state(&session, &store, &augment, &Default::default(), Some(NOW));
+        let citation = &bare.card.expect("a current card").citations[0];
+        assert!(
+            citation.excerpt.is_none() && citation.error.is_none(),
+            "without the deck's roots nothing resolves: {citation:?}"
+        );
     }
 
     const FOUR: &str = "## q1\na1\n## q2\na2\n## q3\na3\n## q4\na4\n";
@@ -1749,10 +1867,13 @@ $$
         arm(&mut augment, &cards);
 
         let recall = session_at(cards.clone(), &mut store, Depth::Recall, NOW);
-        assert_eq!(state(&recall, &store, &augment, Some(NOW)).choices, None);
+        assert_eq!(
+            state(&recall, &store, &augment, &Default::default(), Some(NOW)).choices,
+            None
+        );
 
         let recognize = session_at(cards.clone(), &mut store, Depth::Recognize, NOW);
-        let options = state(&recognize, &store, &augment, Some(NOW))
+        let options = state(&recognize, &store, &augment, &Default::default(), Some(NOW))
             .choices
             .expect("cached distractors arm the Recognize pick");
         assert_eq!(options.len(), crate::choice::NUM_OPTIONS);
@@ -1760,11 +1881,23 @@ $$
         let mut fresh_store = Store::open(_dir.path().join("fresh.json")).unwrap();
         let empty_augment = AugmentCache::open(_dir.path().join("empty.json"));
         let introduction = session_at(cards.clone(), &mut fresh_store, Depth::Recall, NOW);
-        let bare = state(&introduction, &fresh_store, &empty_augment, Some(NOW));
+        let bare = state(
+            &introduction,
+            &fresh_store,
+            &empty_augment,
+            &Default::default(),
+            Some(NOW),
+        );
         assert!(bare.introducing);
         assert_eq!(bare.choices, None, "no distractors, no introduction pick");
 
-        let armed = state(&introduction, &fresh_store, &augment, Some(NOW));
+        let armed = state(
+            &introduction,
+            &fresh_store,
+            &augment,
+            &Default::default(),
+            Some(NOW),
+        );
         assert!(armed.choices.is_some(), "full distractors arm the pick");
 
         let skipping = Session::new(
@@ -1778,7 +1911,13 @@ $$
             },
             NOW,
         );
-        let graded = state(&skipping, &fresh_store, &augment, Some(NOW));
+        let graded = state(
+            &skipping,
+            &fresh_store,
+            &augment,
+            &Default::default(),
+            Some(NOW),
+        );
         assert!(
             !graded.introducing,
             "skipping introduction: the fresh card is served for a grade"
@@ -1795,7 +1934,7 @@ $$
         let cards = parse("## lone q\nlone a\n");
         seen(&mut store, &cards);
         let recognize = session_at(cards, &mut store, Depth::Recognize, NOW);
-        let s = state(&recognize, &store, &augment, Some(NOW));
+        let s = state(&recognize, &store, &augment, &Default::default(), Some(NOW));
         assert_eq!(s.choices, None, "no siblings, no pick");
         assert_eq!(s.mode, Mode::Flip, "a choiceless Recognize card is a flip");
     }
@@ -2062,7 +2201,7 @@ $$
         let session = session_at(cards, &mut store, Depth::Recognize, NOW);
 
         let question = current_question(&session, &store, &augment).expect("a pick");
-        let served = state(&session, &store, &augment, Some(NOW));
+        let served = state(&session, &store, &augment, &Default::default(), Some(NOW));
         let shown = served.choices.as_ref().expect("options");
         assert_eq!(shown, &question.options, "state serves the same options");
         assert_eq!(
@@ -2070,7 +2209,7 @@ $$
             Some(question.options.len())
         );
         assert_eq!(
-            state(&session, &store, &augment, Some(NOW)).choices,
+            state(&session, &store, &augment, &Default::default(), Some(NOW)).choices,
             Some(question.options.clone())
         );
 
@@ -2332,7 +2471,7 @@ $$
             seen(&mut store, &cards);
             let session = session_at(cards, &mut store, depth, NOW);
 
-            let served = state(&session, &store, &augment, Some(NOW));
+            let served = state(&session, &store, &augment, &Default::default(), Some(NOW));
             assert_eq!(expected_mode, served.mode, "{expected_mode:?}");
             let card = served.card.expect("a card is served");
             assert_eq!(
@@ -2490,7 +2629,7 @@ $$
 
         cards[0].display_back = Some(vec!["a reshaped".into(), "answer".into()]);
         let session = session_at(cards.clone(), &mut store, Depth::Reconstruct, NOW);
-        let fallback = state(&session, &store, &augment, Some(NOW));
+        let fallback = state(&session, &store, &augment, &Default::default(), Some(NOW));
         assert_eq!(fallback.mode, Mode::Explain);
         assert_eq!(
             fallback.keypoints,
@@ -2503,16 +2642,25 @@ $$
             vec!["one claim".to_string()],
             cards[0].content_fingerprint,
         );
-        let cached = state(&session, &store, &augment, Some(NOW));
+        let cached = state(&session, &store, &augment, &Default::default(), Some(NOW));
         assert_eq!(cached.keypoints, Some(vec!["one claim".to_string()]));
         assert_eq!(cached.keypoint_runs.as_ref().map(Vec::len), Some(1));
 
         let recall = session_at(cards.clone(), &mut store, Depth::Recall, NOW);
-        assert_eq!(state(&recall, &store, &augment, Some(NOW)).keypoints, None);
+        assert_eq!(
+            state(&recall, &store, &augment, &Default::default(), Some(NOW)).keypoints,
+            None
+        );
 
         let mut fresh = Store::open(_dir.path().join("fresh.json")).unwrap();
         let introduction = session_at(cards, &mut fresh, Depth::Reconstruct, NOW);
-        let introduced = state(&introduction, &fresh, &augment, Some(NOW));
+        let introduced = state(
+            &introduction,
+            &fresh,
+            &augment,
+            &Default::default(),
+            Some(NOW),
+        );
         assert!(introduced.introducing);
         assert_eq!(introduced.keypoints, None);
     }
@@ -2526,7 +2674,7 @@ $$
         seen(&mut store, &cards);
 
         let session = session_at(cards, &mut store, Depth::Reconstruct, NOW);
-        let fallback = state(&session, &store, &augment, Some(NOW));
+        let fallback = state(&session, &store, &augment, &Default::default(), Some(NOW));
 
         assert_eq!(fallback.mode, Mode::Explain);
         assert_eq!(
@@ -2542,13 +2690,13 @@ $$
         let cards = parse(FOUR);
         seen(&mut store, &cards);
         let mut session = session_at(cards, &mut store, Depth::Recall, NOW);
-        let start = state(&session, &store, &augment, Some(NOW));
+        let start = state(&session, &store, &augment, &Default::default(), Some(NOW));
         assert_eq!(start.initial, 4);
         assert_eq!((start.reviews, start.passed, start.failed), (0, 0, 0));
 
         session.grade(&mut store, Grade::Pass, NOW);
         session.grade(&mut store, Grade::Fail, NOW);
-        let later = state(&session, &store, &augment, Some(NOW));
+        let later = state(&session, &store, &augment, &Default::default(), Some(NOW));
         assert_eq!(later.reviews, 2);
         assert_eq!(later.passed, 1);
         assert_eq!(later.failed, 1);
@@ -2562,7 +2710,7 @@ $$
         let mut session = session_at(cards, &mut fresh, Depth::Recall, NOW);
         session.introduce_current(&mut fresh, NOW);
         session.introduce_current(&mut fresh, NOW);
-        let s = state(&session, &fresh, &augment, Some(NOW));
+        let s = state(&session, &fresh, &augment, &Default::default(), Some(NOW));
         assert_eq!(s.introduced, 2, "the summary must know new cards were met");
         assert_eq!((s.reviews, s.passed, s.failed), (0, 0, 0));
     }
@@ -2581,7 +2729,7 @@ $$
             session.is_finished(),
             "every card is still inside its introduction cooldown"
         );
-        let s = state(&session, &store, &augment, Some(NOW));
+        let s = state(&session, &store, &augment, &Default::default(), Some(NOW));
         let cooldown = crate::scheduler::DEFAULT_INTRODUCTION_COOLDOWN_MS;
         assert_eq!(
             s.next_due_ms,
@@ -2608,7 +2756,7 @@ $$
             NOW,
         );
         assert!(session.is_finished());
-        let s = state(&session, &store, &augment, Some(NOW));
+        let s = state(&session, &store, &augment, &Default::default(), Some(NOW));
         assert_eq!(s.next_due_ms, None);
     }
 
@@ -2634,7 +2782,7 @@ $$
 
         assert_eq!(
             None,
-            state(&session, &store, &augment, Some(now)).next_due_ms,
+            state(&session, &store, &augment, &Default::default(), Some(now)).next_due_ms,
             "an opening at the present instant is due now, not a future countdown"
         );
     }
@@ -2646,7 +2794,7 @@ $$
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert!(!session.is_finished());
-        let s = state(&session, &store, &augment, Some(NOW));
+        let s = state(&session, &store, &augment, &Default::default(), Some(NOW));
         assert_eq!(s.next_due_ms, None, "only the finished payload carries it");
     }
 
@@ -2667,7 +2815,7 @@ $$
             session.is_finished(),
             "session did not finish after introducing all {card_count} cards once"
         );
-        let s = state(&session, &store, &augment, Some(NOW));
+        let s = state(&session, &store, &augment, &Default::default(), Some(NOW));
 
         assert!(s.introduced > 0, "the sitting introduced cards");
         assert_eq!(0, s.reviews, "and graded none");
@@ -2687,10 +2835,16 @@ $$
         session.grade(&mut store, Grade::Pass, NOW);
         assert!(session.is_finished());
 
-        let done = state(&session, &store, &augment, Some(NOW));
+        let done = state(&session, &store, &augment, &Default::default(), Some(NOW));
         assert!(!done.can_restart, "nothing is due right after the pass");
         let much_later = NOW + 90 * 24 * 3_600_000;
-        let again = state(&session, &store, &augment, Some(much_later));
+        let again = state(
+            &session,
+            &store,
+            &augment,
+            &Default::default(),
+            Some(much_later),
+        );
         assert!(again.can_restart, "the card comes due again");
     }
 
@@ -2701,7 +2855,7 @@ $$
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert_eq!(
-            state(&session, &store, &augment, Some(NOW)).input,
+            state(&session, &store, &augment, &Default::default(), Some(NOW)).input,
             Input::Draw
         );
     }
@@ -2715,7 +2869,7 @@ $$
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert_eq!(
-            state(&session, &store, &augment, Some(NOW)).input,
+            state(&session, &store, &augment, &Default::default(), Some(NOW)).input,
             Input::Draw,
             "the authored span input must reach the review client"
         );
@@ -2728,7 +2882,7 @@ $$
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert_eq!(
-            state(&session, &store, &augment, Some(NOW)).input,
+            state(&session, &store, &augment, &Default::default(), Some(NOW)).input,
             Input::Draw,
             "the formula rule: a math span sketches unless pinned"
         );
@@ -2743,7 +2897,7 @@ $$
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert_eq!(
-            state(&session, &store, &augment, Some(NOW)).input,
+            state(&session, &store, &augment, &Default::default(), Some(NOW)).input,
             Input::Draw,
             "the block directive routes to the span card"
         );
@@ -2757,7 +2911,7 @@ $$
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recall, NOW);
         assert_eq!(
-            state(&session, &store, &augment, Some(NOW)).input,
+            state(&session, &store, &augment, &Default::default(), Some(NOW)).input,
             Input::Type
         );
     }
@@ -2770,7 +2924,7 @@ $$
     fn a_finished_session_reports_no_card_and_no_choices() {
         let (mut store, augment, _dir) = fixtures();
         let session = session_at(Vec::new(), &mut store, Depth::Recall, NOW);
-        let state = state(&session, &store, &augment, Some(NOW));
+        let state = state(&session, &store, &augment, &Default::default(), Some(NOW));
         assert!(state.finished);
         assert!(state.card.is_none());
         assert_eq!(state.choices, None);
@@ -3054,7 +3208,7 @@ $$
         let cards = parse(MULTI);
         seen(&mut store, &cards);
         let session = session_at(cards, &mut store, Depth::Recognize, NOW);
-        let s = state(&session, &store, &augment, Some(NOW));
+        let s = state(&session, &store, &augment, &Default::default(), Some(NOW));
         let options = s
             .choices
             .expect("an authored multiple card builds its pick");
@@ -3073,7 +3227,13 @@ $$
         let cards = parse(MULTI);
 
         let introduction = session_at(cards.clone(), &mut store, Depth::Recall, NOW);
-        let s = state(&introduction, &store, &augment, Some(NOW));
+        let s = state(
+            &introduction,
+            &store,
+            &augment,
+            &Default::default(),
+            Some(NOW),
+        );
         assert!(s.introducing, "precondition: the card is fresh");
         assert!(
             s.choices.is_some(),
@@ -3091,7 +3251,7 @@ $$
             },
             NOW,
         );
-        let s = state(&skipping, &store, &augment, Some(NOW));
+        let s = state(&skipping, &store, &augment, &Default::default(), Some(NOW));
         assert!(!s.introducing);
         assert_eq!(
             s.choices, None,
@@ -3175,7 +3335,13 @@ $$
         let mut fresh_store = Store::open(_dir.path().join("fresh.json")).unwrap();
         let cards = parse("---\nchoices: multiple\n---\n## all\n- [x] a\n- [x] b\n");
         let session = session_at(cards, &mut fresh_store, Depth::Recall, NOW);
-        let s = state(&session, &fresh_store, &augment, Some(NOW));
+        let s = state(
+            &session,
+            &fresh_store,
+            &augment,
+            &Default::default(),
+            Some(NOW),
+        );
         assert!(s.introducing);
         assert_eq!(None, s.choices, "nothing to choose against, so no pick");
         assert_eq!(None, s.choices_multiple);

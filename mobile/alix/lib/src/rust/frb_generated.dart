@@ -2592,6 +2592,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ExcerptView dco_decode_box_autoadd_excerpt_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_excerpt_view(raw);
+  }
+
+  @protected
   MathView dco_decode_box_autoadd_math_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_math_view(raw);
@@ -2693,7 +2699,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       hints: dco_decode_list_list_content_unit(arr[14]),
       images: dco_decode_list_image_view(arr[15]),
       imagesBack: dco_decode_list_image_view(arr[16]),
-      citations: dco_decode_list_String(arr[17]),
+      citations: dco_decode_list_citation_view(arr[17]),
     );
   }
 
@@ -2738,6 +2744,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       chosen: dco_decode_usize(arr[0]),
       correct: dco_decode_usize(arr[1]),
       passed: dco_decode_bool(arr[2]),
+    );
+  }
+
+  @protected
+  CitationView dco_decode_citation_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return CitationView(
+      locator: dco_decode_String(arr[0]),
+      excerpt: dco_decode_opt_box_autoadd_excerpt_view(arr[1]),
+      error: dco_decode_opt_String(arr[2]),
     );
   }
 
@@ -2865,6 +2884,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ExcerptLine dco_decode_excerpt_line(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ExcerptLine(
+      n: dco_decode_usize(arr[0]),
+      text: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  ExcerptView dco_decode_excerpt_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ExcerptView(
+      path: dco_decode_String(arr[0]),
+      lines: dco_decode_list_excerpt_line(arr[1]),
+      truncated: dco_decode_bool(arr[2]),
+    );
+  }
+
+  @protected
   double dco_decode_f_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as double;
@@ -2968,6 +3012,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<CitationView> dco_decode_list_citation_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_citation_view).toList();
+  }
+
+  @protected
   List<ContentUnit> dco_decode_list_content_unit(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_content_unit).toList();
@@ -2983,6 +3033,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<DeckStrip> dco_decode_list_deck_strip(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_deck_strip).toList();
+  }
+
+  @protected
+  List<ExcerptLine> dco_decode_list_excerpt_line(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_excerpt_line).toList();
   }
 
   @protected
@@ -3237,6 +3293,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Depth? dco_decode_opt_box_autoadd_depth(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_depth(raw);
+  }
+
+  @protected
+  ExcerptView? dco_decode_opt_box_autoadd_excerpt_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_excerpt_view(raw);
   }
 
   @protected
@@ -4001,6 +4063,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ExcerptView sse_decode_box_autoadd_excerpt_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_excerpt_view(deserializer));
+  }
+
+  @protected
   MathView sse_decode_box_autoadd_math_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_math_view(deserializer));
@@ -4110,7 +4180,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_hints = sse_decode_list_list_content_unit(deserializer);
     var var_images = sse_decode_list_image_view(deserializer);
     var var_imagesBack = sse_decode_list_image_view(deserializer);
-    var var_citations = sse_decode_list_String(deserializer);
+    var var_citations = sse_decode_list_citation_view(deserializer);
     return CardView(
       front: var_front,
       frontRuns: var_frontRuns,
@@ -4167,6 +4237,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       chosen: var_chosen,
       correct: var_correct,
       passed: var_passed,
+    );
+  }
+
+  @protected
+  CitationView sse_decode_citation_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_locator = sse_decode_String(deserializer);
+    var var_excerpt = sse_decode_opt_box_autoadd_excerpt_view(deserializer);
+    var var_error = sse_decode_opt_String(deserializer);
+    return CitationView(
+      locator: var_locator,
+      excerpt: var_excerpt,
+      error: var_error,
     );
   }
 
@@ -4321,6 +4404,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ExcerptLine sse_decode_excerpt_line(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_n = sse_decode_usize(deserializer);
+    var var_text = sse_decode_String(deserializer);
+    return ExcerptLine(n: var_n, text: var_text);
+  }
+
+  @protected
+  ExcerptView sse_decode_excerpt_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_path = sse_decode_String(deserializer);
+    var var_lines = sse_decode_list_excerpt_line(deserializer);
+    var var_truncated = sse_decode_bool(deserializer);
+    return ExcerptView(
+      path: var_path,
+      lines: var_lines,
+      truncated: var_truncated,
+    );
+  }
+
+  @protected
   double sse_decode_f_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getFloat64();
@@ -4462,6 +4566,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<CitationView> sse_decode_list_citation_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <CitationView>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_citation_view(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<ContentUnit> sse_decode_list_content_unit(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -4493,6 +4611,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <DeckStrip>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_deck_strip(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ExcerptLine> sse_decode_list_excerpt_line(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ExcerptLine>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_excerpt_line(deserializer));
     }
     return ans_;
   }
@@ -4914,6 +5044,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_depth(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  ExcerptView? sse_decode_opt_box_autoadd_excerpt_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_excerpt_view(deserializer));
     } else {
       return null;
     }
@@ -5870,6 +6013,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_excerpt_view(
+    ExcerptView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_excerpt_view(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_math_view(
     MathView self,
     SseSerializer serializer,
@@ -5994,7 +6146,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_list_content_unit(self.hints, serializer);
     sse_encode_list_image_view(self.images, serializer);
     sse_encode_list_image_view(self.imagesBack, serializer);
-    sse_encode_list_String(self.citations, serializer);
+    sse_encode_list_citation_view(self.citations, serializer);
   }
 
   @protected
@@ -6027,6 +6179,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_usize(self.chosen, serializer);
     sse_encode_usize(self.correct, serializer);
     sse_encode_bool(self.passed, serializer);
+  }
+
+  @protected
+  void sse_encode_citation_view(CitationView self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.locator, serializer);
+    sse_encode_opt_box_autoadd_excerpt_view(self.excerpt, serializer);
+    sse_encode_opt_String(self.error, serializer);
   }
 
   @protected
@@ -6132,6 +6292,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_depth(Depth self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_excerpt_line(ExcerptLine self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(self.n, serializer);
+    sse_encode_String(self.text, serializer);
+  }
+
+  @protected
+  void sse_encode_excerpt_view(ExcerptView self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.path, serializer);
+    sse_encode_list_excerpt_line(self.lines, serializer);
+    sse_encode_bool(self.truncated, serializer);
   }
 
   @protected
@@ -6244,6 +6419,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_citation_view(
+    List<CitationView> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_citation_view(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_content_unit(
     List<ContentUnit> self,
     SseSerializer serializer,
@@ -6276,6 +6463,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_deck_strip(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_excerpt_line(
+    List<ExcerptLine> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_excerpt_line(item, serializer);
     }
   }
 
@@ -6674,6 +6873,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_depth(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_excerpt_view(
+    ExcerptView? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_excerpt_view(self, serializer);
     }
   }
 

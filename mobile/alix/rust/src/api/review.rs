@@ -10,7 +10,7 @@ pub use alix::{
     math::MathView,
     render::{AnswerStep, CellAlign, ChecklistItem, ContentUnit},
     card::Badge,
-    review::{CardView, CheckFeedback, ChoiceFeedback, CropView, FrontStep, ImageView, MultiChoiceFeedback, NoteView, RegionRole, RegionView, ReviewState},
+    review::{CardView, CheckFeedback, ChoiceFeedback, CitationView, CropView, ExcerptLine, ExcerptView, FrontStep, ImageView, MultiChoiceFeedback, NoteView, RegionRole, RegionView, ReviewState},
     session::RecognizeGap,
     trace::Phase as TraceSessionPhase,
     walk::Phase as WalkPhase,
@@ -193,7 +193,27 @@ pub struct _CardView {
     pub hints: Vec<Vec<ContentUnit>>,
     pub images: Vec<ImageView>,
     pub images_back: Vec<ImageView>,
-    pub citations: Vec<String>,
+    pub citations: Vec<CitationView>,
+}
+
+#[flutter_rust_bridge::frb(mirror(CitationView))]
+pub struct _CitationView {
+    pub locator: String,
+    pub excerpt: Option<ExcerptView>,
+    pub error: Option<String>,
+}
+
+#[flutter_rust_bridge::frb(mirror(ExcerptView))]
+pub struct _ExcerptView {
+    pub path: String,
+    pub lines: Vec<ExcerptLine>,
+    pub truncated: bool,
+}
+
+#[flutter_rust_bridge::frb(mirror(ExcerptLine))]
+pub struct _ExcerptLine {
+    pub n: usize,
+    pub text: String,
 }
 
 #[flutter_rust_bridge::frb(mirror(ReviewState))]
@@ -379,6 +399,7 @@ pub struct ReviewSession {
     session: alix::session::Session,
     store: alix::store::Store,
     augment: alix::augment::AugmentCache,
+    citation_roots: std::collections::HashMap<String, alix::cite::CitationRoots>,
     topology_name: Option<String>,
     label: String,
     deck_path: PathBuf,
@@ -452,6 +473,7 @@ impl ReviewSession {
             session: build.session,
             store,
             augment: build.augment,
+            citation_roots: build.source_bases,
             topology_name: build.topology_name,
             label: build.label,
             deck_path,
@@ -466,7 +488,13 @@ impl ReviewSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn state(&self, now_ms: Option<u64>) -> ReviewState {
-        let mut state = alix::review::state(&self.session, &self.store, &self.augment, now_ms);
+        let mut state = alix::review::state(
+            &self.session,
+            &self.store,
+            &self.augment,
+            &self.citation_roots,
+            now_ms,
+        );
         state.save_error = self.save_error.clone();
         state.load_warnings = self.load_warnings.clone();
         state
@@ -1223,6 +1251,31 @@ mod tests {
             None,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_cited_cards_excerpt_reaches_the_phones_review_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("source.rs"), "fn live() {}\n").unwrap();
+        let deck = root.join("cited.md");
+        write_deck(
+            &deck,
+            "---\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:source.rs:1 -->\n",
+        );
+        alix::source::stamp_citations(&deck).unwrap();
+        let session = opened_fresh(&deck, root);
+        let card = session.state(Some(LATER)).card.expect("a current card");
+        let citation = &card.citations[0];
+        assert_eq!(None, citation.error, "the live line resolves");
+        assert_eq!(
+            Some(vec!["fn live() {}".to_string()]),
+            citation
+                .excerpt
+                .as_ref()
+                .map(|excerpt| excerpt.lines.iter().map(|line| line.text.clone()).collect()),
+            "the cited line reaches the phone"
+        );
     }
 
     #[test]

@@ -2802,7 +2802,7 @@ const _: fn() = || {
         let _: Vec<Vec<crate::api::review::ContentUnit>> = CardView.hints;
         let _: Vec<crate::api::review::ImageView> = CardView.images;
         let _: Vec<crate::api::review::ImageView> = CardView.images_back;
-        let _: Vec<String> = CardView.citations;
+        let _: Vec<crate::api::review::CitationView> = CardView.citations;
     }
     {
         let CheckFeedback = None::<crate::api::review::CheckFeedback>.unwrap();
@@ -2820,6 +2820,12 @@ const _: fn() = || {
         let _: usize = ChoiceFeedback.chosen;
         let _: usize = ChoiceFeedback.correct;
         let _: bool = ChoiceFeedback.passed;
+    }
+    {
+        let CitationView = None::<crate::api::review::CitationView>.unwrap();
+        let _: String = CitationView.locator;
+        let _: Option<crate::api::review::ExcerptView> = CitationView.excerpt;
+        let _: Option<String> = CitationView.error;
     }
     match None::<crate::api::review::ContentUnit>.unwrap() {
         crate::api::review::ContentUnit::Sentence { text, runs } => {
@@ -2867,6 +2873,17 @@ const _: fn() = || {
         let _: f64 = CropView.width;
         let _: f64 = CropView.height;
         let _: String = CropView.unit;
+    }
+    {
+        let ExcerptLine = None::<crate::api::review::ExcerptLine>.unwrap();
+        let _: usize = ExcerptLine.n;
+        let _: String = ExcerptLine.text;
+    }
+    {
+        let ExcerptView = None::<crate::api::review::ExcerptView>.unwrap();
+        let _: String = ExcerptView.path;
+        let _: Vec<crate::api::review::ExcerptLine> = ExcerptView.lines;
+        let _: bool = ExcerptView.truncated;
     }
     {
         let FrontStep = None::<crate::api::review::FrontStep>.unwrap();
@@ -3144,7 +3161,7 @@ impl SseDecode for crate::api::review::CardView {
         let mut var_hints = <Vec<Vec<crate::api::review::ContentUnit>>>::sse_decode(deserializer);
         let mut var_images = <Vec<crate::api::review::ImageView>>::sse_decode(deserializer);
         let mut var_imagesBack = <Vec<crate::api::review::ImageView>>::sse_decode(deserializer);
-        let mut var_citations = <Vec<String>>::sse_decode(deserializer);
+        let mut var_citations = <Vec<crate::api::review::CitationView>>::sse_decode(deserializer);
         return crate::api::review::CardView {
             front: var_front,
             front_runs: var_frontRuns,
@@ -3218,6 +3235,20 @@ impl SseDecode for crate::api::review::ChoiceFeedback {
             chosen: var_chosen,
             correct: var_correct,
             passed: var_passed,
+        };
+    }
+}
+
+impl SseDecode for crate::api::review::CitationView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_locator = <String>::sse_decode(deserializer);
+        let mut var_excerpt = <Option<crate::api::review::ExcerptView>>::sse_decode(deserializer);
+        let mut var_error = <Option<String>>::sse_decode(deserializer);
+        return crate::api::review::CitationView {
+            locator: var_locator,
+            excerpt: var_excerpt,
+            error: var_error,
         };
     }
 }
@@ -3398,6 +3429,32 @@ impl SseDecode for crate::api::review::Depth {
     }
 }
 
+impl SseDecode for crate::api::review::ExcerptLine {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_n = <usize>::sse_decode(deserializer);
+        let mut var_text = <String>::sse_decode(deserializer);
+        return crate::api::review::ExcerptLine {
+            n: var_n,
+            text: var_text,
+        };
+    }
+}
+
+impl SseDecode for crate::api::review::ExcerptView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_path = <String>::sse_decode(deserializer);
+        let mut var_lines = <Vec<crate::api::review::ExcerptLine>>::sse_decode(deserializer);
+        let mut var_truncated = <bool>::sse_decode(deserializer);
+        return crate::api::review::ExcerptView {
+            path: var_path,
+            lines: var_lines,
+            truncated: var_truncated,
+        };
+    }
+}
+
 impl SseDecode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3557,6 +3614,18 @@ impl SseDecode for Vec<crate::api::review::ChecklistItem> {
     }
 }
 
+impl SseDecode for Vec<crate::api::review::CitationView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::review::CitationView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::review::ContentUnit> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3588,6 +3657,18 @@ impl SseDecode for Vec<crate::api::listing::DeckStrip> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::listing::DeckStrip>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::review::ExcerptLine> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::review::ExcerptLine>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -4030,6 +4111,17 @@ impl SseDecode for Option<crate::api::review::Depth> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<crate::api::review::Depth>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::review::ExcerptView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::review::ExcerptView>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -5142,6 +5234,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::ChoiceFeed
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CitationView> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.locator.into_into_dart().into_dart(),
+            self.0.excerpt.into_into_dart().into_dart(),
+            self.0.error.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::CitationView>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::CitationView>>
+    for crate::api::review::CitationView
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::CitationView> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ContentUnit> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
@@ -5346,6 +5460,49 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::Depth>>
     for crate::api::review::Depth
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::review::Depth> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ExcerptLine> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.n.into_into_dart().into_dart(),
+            self.0.text.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::ExcerptLine>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::ExcerptLine>>
+    for crate::api::review::ExcerptLine
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::ExcerptLine> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ExcerptView> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.path.into_into_dart().into_dart(),
+            self.0.lines.into_into_dart().into_dart(),
+            self.0.truncated.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::review::ExcerptView>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::ExcerptView>>
+    for crate::api::review::ExcerptView
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::review::ExcerptView> {
         self.into()
     }
 }
@@ -6406,7 +6563,7 @@ impl SseEncode for crate::api::review::CardView {
         <Vec<Vec<crate::api::review::ContentUnit>>>::sse_encode(self.hints, serializer);
         <Vec<crate::api::review::ImageView>>::sse_encode(self.images, serializer);
         <Vec<crate::api::review::ImageView>>::sse_encode(self.images_back, serializer);
-        <Vec<String>>::sse_encode(self.citations, serializer);
+        <Vec<crate::api::review::CitationView>>::sse_encode(self.citations, serializer);
     }
 }
 
@@ -6451,6 +6608,15 @@ impl SseEncode for crate::api::review::ChoiceFeedback {
         <usize>::sse_encode(self.chosen, serializer);
         <usize>::sse_encode(self.correct, serializer);
         <bool>::sse_encode(self.passed, serializer);
+    }
+}
+
+impl SseEncode for crate::api::review::CitationView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.locator, serializer);
+        <Option<crate::api::review::ExcerptView>>::sse_encode(self.excerpt, serializer);
+        <Option<String>>::sse_encode(self.error, serializer);
     }
 }
 
@@ -6585,6 +6751,23 @@ impl SseEncode for crate::api::review::Depth {
     }
 }
 
+impl SseEncode for crate::api::review::ExcerptLine {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <usize>::sse_encode(self.n, serializer);
+        <String>::sse_encode(self.text, serializer);
+    }
+}
+
+impl SseEncode for crate::api::review::ExcerptView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.path, serializer);
+        <Vec<crate::api::review::ExcerptLine>>::sse_encode(self.lines, serializer);
+        <bool>::sse_encode(self.truncated, serializer);
+    }
+}
+
 impl SseEncode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -6716,6 +6899,16 @@ impl SseEncode for Vec<crate::api::review::ChecklistItem> {
     }
 }
 
+impl SseEncode for Vec<crate::api::review::CitationView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::review::CitationView>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::review::ContentUnit> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -6742,6 +6935,16 @@ impl SseEncode for Vec<crate::api::listing::DeckStrip> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::listing::DeckStrip>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::review::ExcerptLine> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::review::ExcerptLine>::sse_encode(item, serializer);
         }
     }
 }
@@ -7094,6 +7297,16 @@ impl SseEncode for Option<crate::api::review::Depth> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::review::Depth>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::review::ExcerptView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::review::ExcerptView>::sse_encode(value, serializer);
         }
     }
 }

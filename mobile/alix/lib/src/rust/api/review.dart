@@ -183,7 +183,7 @@ class CardView {
   final List<List<ContentUnit>> hints;
   final List<ImageView> images;
   final List<ImageView> imagesBack;
-  final List<String> citations;
+  final List<CitationView> citations;
 
   const CardView({
     required this.front,
@@ -320,6 +320,26 @@ class ChoiceFeedback {
           passed == other.passed;
 }
 
+class CitationView {
+  final String locator;
+  final ExcerptView? excerpt;
+  final String? error;
+
+  const CitationView({required this.locator, this.excerpt, this.error});
+
+  @override
+  int get hashCode => locator.hashCode ^ excerpt.hashCode ^ error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CitationView &&
+          runtimeType == other.runtimeType &&
+          locator == other.locator &&
+          excerpt == other.excerpt &&
+          error == other.error;
+}
+
 @freezed
 sealed class ContentUnit with _$ContentUnit {
   const ContentUnit._();
@@ -409,6 +429,48 @@ class CrumbState {
 }
 
 enum Depth { recognize, recall, reconstruct }
+
+class ExcerptLine {
+  final BigInt n;
+  final String text;
+
+  const ExcerptLine({required this.n, required this.text});
+
+  @override
+  int get hashCode => n.hashCode ^ text.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExcerptLine &&
+          runtimeType == other.runtimeType &&
+          n == other.n &&
+          text == other.text;
+}
+
+class ExcerptView {
+  final String path;
+  final List<ExcerptLine> lines;
+  final bool truncated;
+
+  const ExcerptView({
+    required this.path,
+    required this.lines,
+    required this.truncated,
+  });
+
+  @override
+  int get hashCode => path.hashCode ^ lines.hashCode ^ truncated.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExcerptView &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          lines == other.lines &&
+          truncated == other.truncated;
+}
 
 class FrontStep {
   final String front;

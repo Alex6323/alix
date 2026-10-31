@@ -6,8 +6,6 @@ use super::{Browsing, Examining, Reviewing, Tracing, Walking, catalog::img_key};
 use crate::{
     answer::{Input, Mode, mode_name},
     augment::AugmentCache,
-    card::Card,
-    cite::CitationRoots,
     config::{AskConfig, Bindings, BrowseBindings, Key, KeyPattern, PickerKeys, Strictness},
     deck::{self, Deck, DeckState},
     depth::{Depth, depth_name},
@@ -1169,7 +1167,7 @@ pub(super) fn review_state(
     // Every fact here comes from the shared `crate::review` contract, the same
     // state embedded mobile renders; this envelope only adds wire naming and
     // serve-held context.
-    let s = review::state(session, store, &r.augment, None);
+    let s = review::state(session, store, &r.augment, &r.source_bases, None);
     // Only computed when finished: it reloads decks, so this stays off the hot path.
     let exam_due = if s.finished {
         // `r.files.paths` is keyed by deck_id (routing only); the wire value
@@ -1228,7 +1226,6 @@ pub(super) fn review_state(
                     .collect(),
             });
         }
-        dto.citations = resolved_citations(c, r.source_bases.get(&*c.deck_id));
         dto
     });
     StateDto {
@@ -1269,24 +1266,23 @@ pub(super) fn review_state(
     }
 }
 
-fn resolved_citations(card: &Card, roots: Option<&CitationRoots>) -> Vec<CitationDto> {
-    card.citations
-        .iter()
-        .map(|citation| {
-            let mut resolved = CitationDto {
-                locator: citation.locator.to_string(),
-                excerpt: None,
-                error: None,
-            };
-            if let Some(roots) = roots {
-                match roots.checked_excerpt(citation) {
-                    Ok(ex) => resolved.excerpt = Some(excerpt_dto(&ex.capped_for_display())),
-                    Err(e) => resolved.error = Some(format!("{e:#}")),
-                }
-            }
-            resolved
-        })
-        .collect()
+fn citation_dto(view: review::CitationView) -> CitationDto {
+    CitationDto {
+        locator: view.locator,
+        excerpt: view.excerpt.map(|excerpt| ExcerptDto {
+            path: excerpt.path,
+            lines: excerpt
+                .lines
+                .into_iter()
+                .map(|line| LineDto {
+                    n: line.n,
+                    text: line.text,
+                })
+                .collect(),
+            truncated: excerpt.truncated,
+        }),
+        error: view.error,
+    }
 }
 
 pub(super) fn walk_phase_name(phase: walk::Phase) -> &'static str {
@@ -1304,7 +1300,10 @@ pub(super) fn walk_dto(w: &Walking, save_error: Option<&str>) -> WalkDto {
     let mut projector = DisplayProjector::default();
     let card_dto = card.map(|c| {
         let mut dto = card_dto(CardView::project(c, &mut projector), c.id());
-        dto.citations = resolved_citations(c, Some(&w.info.source_base));
+        dto.citations = review::resolve_citations(c, Some(&w.info.source_base))
+            .into_iter()
+            .map(citation_dto)
+            .collect();
         dto
     });
     let choice_runs = question.as_ref().map(|q| {
@@ -1490,15 +1489,7 @@ pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
             })
             .collect(),
         hints: view.hints.into_iter().map(web_units).collect(),
-        citations: view
-            .citations
-            .into_iter()
-            .map(|locator| CitationDto {
-                locator,
-                excerpt: None,
-                error: None,
-            })
-            .collect(),
+        citations: view.citations.into_iter().map(citation_dto).collect(),
         crumb: None,
     }
 }
@@ -1551,7 +1542,7 @@ mod tests {
 
     #[test]
     fn resolved_citations_preserve_each_authored_locator_without_roots() {
-        let mut card = Card::plain(
+        let mut card = crate::card::Card::plain(
             std::sync::Arc::from("subject"),
             "question".to_string(),
             vec!["answer".to_string()],
@@ -1580,7 +1571,7 @@ mod tests {
             line: 3,
         });
 
-        let citations = resolved_citations(&card, None);
+        let citations = review::resolve_citations(&card, None);
 
         assert_eq!(2, citations.len(), "every authored citation is served");
         assert_eq!("src:one.rs:2-3", citations[0].locator);

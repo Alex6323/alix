@@ -148,6 +148,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth dco_decode_box_autoadd_depth(dynamic raw);
 
   @protected
+  ExcerptView dco_decode_box_autoadd_excerpt_view(dynamic raw);
+
+  @protected
   MathView dco_decode_box_autoadd_math_view(dynamic raw);
 
   @protected
@@ -199,6 +202,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChoiceFeedback dco_decode_choice_feedback(dynamic raw);
 
   @protected
+  CitationView dco_decode_citation_view(dynamic raw);
+
+  @protected
   ContentUnit dco_decode_content_unit(dynamic raw);
 
   @protected
@@ -218,6 +224,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth dco_decode_depth(dynamic raw);
+
+  @protected
+  ExcerptLine dco_decode_excerpt_line(dynamic raw);
+
+  @protected
+  ExcerptView dco_decode_excerpt_view(dynamic raw);
 
   @protected
   double dco_decode_f_64(dynamic raw);
@@ -256,6 +268,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ChecklistItem> dco_decode_list_checklist_item(dynamic raw);
 
   @protected
+  List<CitationView> dco_decode_list_citation_view(dynamic raw);
+
+  @protected
   List<ContentUnit> dco_decode_list_content_unit(dynamic raw);
 
   @protected
@@ -263,6 +278,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeckStrip> dco_decode_list_deck_strip(dynamic raw);
+
+  @protected
+  List<ExcerptLine> dco_decode_list_excerpt_line(dynamic raw);
 
   @protected
   List<FrontStep> dco_decode_list_front_step(dynamic raw);
@@ -368,6 +386,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth? dco_decode_opt_box_autoadd_depth(dynamic raw);
+
+  @protected
+  ExcerptView? dco_decode_opt_box_autoadd_excerpt_view(dynamic raw);
 
   @protected
   MathView? dco_decode_opt_box_autoadd_math_view(dynamic raw);
@@ -623,6 +644,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth sse_decode_box_autoadd_depth(SseDeserializer deserializer);
 
   @protected
+  ExcerptView sse_decode_box_autoadd_excerpt_view(SseDeserializer deserializer);
+
+  @protected
   MathView sse_decode_box_autoadd_math_view(SseDeserializer deserializer);
 
   @protected
@@ -690,6 +714,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChoiceFeedback sse_decode_choice_feedback(SseDeserializer deserializer);
 
   @protected
+  CitationView sse_decode_citation_view(SseDeserializer deserializer);
+
+  @protected
   ContentUnit sse_decode_content_unit(SseDeserializer deserializer);
 
   @protected
@@ -709,6 +736,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth sse_decode_depth(SseDeserializer deserializer);
+
+  @protected
+  ExcerptLine sse_decode_excerpt_line(SseDeserializer deserializer);
+
+  @protected
+  ExcerptView sse_decode_excerpt_view(SseDeserializer deserializer);
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
@@ -749,6 +782,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<CitationView> sse_decode_list_citation_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<ContentUnit> sse_decode_list_content_unit(SseDeserializer deserializer);
 
   @protected
@@ -756,6 +794,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeckStrip> sse_decode_list_deck_strip(SseDeserializer deserializer);
+
+  @protected
+  List<ExcerptLine> sse_decode_list_excerpt_line(SseDeserializer deserializer);
 
   @protected
   List<FrontStep> sse_decode_list_front_step(SseDeserializer deserializer);
@@ -885,6 +926,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth? sse_decode_opt_box_autoadd_depth(SseDeserializer deserializer);
+
+  @protected
+  ExcerptView? sse_decode_opt_box_autoadd_excerpt_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   MathView? sse_decode_opt_box_autoadd_math_view(SseDeserializer deserializer);
@@ -1190,6 +1236,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_depth(Depth self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_excerpt_view(
+    ExcerptView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_math_view(
     MathView self,
     SseSerializer serializer,
@@ -1277,6 +1329,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_citation_view(CitationView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_content_unit(ContentUnit self, SseSerializer serializer);
 
   @protected
@@ -1296,6 +1351,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_depth(Depth self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_excerpt_line(ExcerptLine self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_excerpt_view(ExcerptView self, SseSerializer serializer);
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
@@ -1343,6 +1404,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_citation_view(
+    List<CitationView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_content_unit(
     List<ContentUnit> self,
     SseSerializer serializer,
@@ -1357,6 +1424,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_deck_strip(
     List<DeckStrip> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_excerpt_line(
+    List<ExcerptLine> self,
     SseSerializer serializer,
   );
 
@@ -1542,6 +1615,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_depth(Depth? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_excerpt_view(
+    ExcerptView? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_math_view(
