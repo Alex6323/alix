@@ -300,12 +300,14 @@ class _TutorSheetState extends State<TutorSheet> {
         TextField(
           key: const ValueKey('tutor-draft-front-field'),
           controller: _draftFront,
+          enabled: !_conversation.draftLocked,
           decoration: const InputDecoration(labelText: 'Front'),
         ),
         const SizedBox(height: 8),
         TextField(
           key: const ValueKey('tutor-draft-back-field'),
           controller: _draftBack,
+          enabled: !_conversation.draftLocked,
           minLines: 1,
           maxLines: 4,
           decoration: const InputDecoration(labelText: 'Back'),
@@ -322,7 +324,7 @@ class _TutorSheetState extends State<TutorSheet> {
             const SizedBox(width: 8),
             FilledButton(
               key: const ValueKey('tutor-draft-confirm-button'),
-              onPressed: _confirmDraft,
+              onPressed: _conversation.adding ? null : _confirmDraft,
               child: const Text('Add'),
             ),
           ],

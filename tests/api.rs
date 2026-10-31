@@ -2504,13 +2504,28 @@ fn a_phone_drafted_card_is_minted_in_the_desktop_sidecar_and_handed_back_with_it
         r#"{"deck_id":"deck-sample","front":"capital of spain?","back":["Madrid"]}"#,
     );
     assert_eq!(
-        422, response.status,
-        "a second mint of the same content is refused"
+        200, response.status,
+        "an identical retry (its reply was lost) gets the kept card"
+    );
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(
+        (Some(id.as_str()), Some(block.as_str())),
+        (body["id"].as_str(), body["block"].as_str()),
+        "the retry hands back the kept id and block"
     );
     assert_eq!(
         text,
         std::fs::read_to_string(&sidecar).unwrap(),
-        "the refused duplicate left the sidecar as it was"
+        "the identical retry appended nothing"
+    );
+    let response = post_json(
+        &base,
+        "/api/remote/ask/card",
+        r#"{"deck_id":"deck-sample","front":"capital of **spain**?","back":["Madrid"]}"#,
+    );
+    assert_eq!(
+        422, response.status,
+        "the same content in different text is still a refused duplicate"
     );
     let response = post_json(
         &base,

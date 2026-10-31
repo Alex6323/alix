@@ -204,7 +204,8 @@ personal sidecar (`<deck>.local.md`), never the authored deck, the store, or
 any phone-supplied path: a remote note whose card resolved appends its
 condensed lines, and a remote card create (`POST /api/remote/ask/card`) on a
 served deck appends one card after the local create's validation and dedup
-(ADR 0057). A card-only note and a create for an unserved deck write
+(ADR 0057); an identical retry of a sidecar card appends nothing and answers
+with that card (ADR 0060). A card-only note and a create for an unserved deck write
 nothing. A pairing-token holder can therefore append model-condensed text,
 steered by the history it sends, and cards of its own wording to a served
 deck's sidecar. Regression evidence:

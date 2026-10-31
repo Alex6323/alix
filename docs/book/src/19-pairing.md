@@ -87,8 +87,12 @@ Once paired, review gains things it doesn't have offline:
   rather than doing nothing silently). A card you add from a draft is
   minted on the desktop the same way when it serves the deck, and the phone
   records it under the id the desktop hands back, so the next pull keeps
-  it; the desktop refusing the card (a duplicate, or an unreachable
-  desktop) adds nothing on the phone either, and the draft stays open. For
+  it. Pressing **Add** locks the draft's fields. A refusal (a duplicate,
+  or a malformed card) adds nothing on the phone, says so, and unlocks the
+  draft for editing. When no answer arrives, the phone says the card may
+  already be on the desktop and keeps the fields locked: tapping **Add**
+  again sends the same card, and if the desktop already kept it, it hands
+  that card back and the phone records it. For
   a deck the desktop does not serve, the card is minted on the phone alone
   and stays there. Every question re-sends the whole
   exchange to the paired desktop (the server keeps no session of its own

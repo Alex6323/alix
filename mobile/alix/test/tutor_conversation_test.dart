@@ -183,7 +183,7 @@ void main() {
         RemoteAsk(thinking: false, answer: 'an answer'),
         RemoteAsk(thinking: false, draft: DraftCard(front: 'f', back: ['b'])),
       ],
-      postCardReplies: const [MintedCard(id: 'card-desk', block: block)],
+      postCardReplies: const [AddCardMinted(MintedCard(id: 'card-desk', block: block))],
     );
     var mintCalls = 0;
     final recorded = <String>[];
@@ -220,7 +220,7 @@ void main() {
         RemoteAsk(thinking: false, answer: 'an answer'),
         RemoteAsk(thinking: false, draft: DraftCard(front: 'f', back: ['b'])),
       ],
-      postCardReplies: const [null],
+      postCardReplies: const [AddCardRefused(404)],
     );
     var mintCalls = 0;
     var recordCalls = 0;
@@ -246,6 +246,63 @@ void main() {
     expect(recordCalls, 0);
     expect(subject.message, 'The desktop did not keep the card.');
     expect(subject.draft, isNotNull, reason: 'the draft stays open for another try');
+  });
+
+  testWidgets('a refused Add unlocks the draft and names the refusal', (tester) async {
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'an answer'),
+        RemoteAsk(thinking: false, draft: DraftCard(front: 'f', back: ['b'])),
+      ],
+      postCardReplies: const [AddCardRefused(422)],
+    );
+    final subject = conversation(client, TutorSlot(), 'card-a');
+    await drafted(tester, subject);
+
+    expect(await subject.confirmDraft('f', ['b']), isFalse);
+
+    expect(subject.message, 'The desktop refused the card: a duplicate, or malformed.');
+    expect(subject.draftLocked, isFalse, reason: 'a refusal is edited, not retried as is');
+    expect(subject.draft, isNotNull);
+  });
+
+  testWidgets('an unanswered Add keeps the draft locked and its retry records the kept card',
+      (tester) async {
+    const block = '## f\nb\n<!-- id: card-desk -->\n';
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'an answer'),
+        RemoteAsk(thinking: false, draft: DraftCard(front: 'f', back: ['b'])),
+      ],
+      postCardReplies: const [
+        AddCardNoAnswer(),
+        AddCardMinted(MintedCard(id: 'card-desk', block: block)),
+      ],
+    );
+    final recorded = <String>[];
+    final subject = conversation(
+      client,
+      TutorSlot(),
+      'card-a',
+      record: (block) async {
+        recorded.add(block);
+        return 'card-desk';
+      },
+    );
+    await drafted(tester, subject);
+
+    expect(await subject.confirmDraft('f', ['b']), isFalse);
+    expect(
+      subject.message,
+      'No answer from the desktop. The card may already be added; tap Add to retry.',
+    );
+    expect(subject.draftLocked, isTrue, reason: 'the retry must send the same text');
+    expect(recorded, isEmpty);
+
+    expect(await subject.confirmDraft('f', ['b']), isTrue);
+    expect(recorded, [block]);
+    expect(subject.draftLocked, isFalse);
+    expect(subject.draft, isNull);
   });
 
   testWidgets('a card-only draft is minted on the phone alone', (tester) async {

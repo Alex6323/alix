@@ -335,6 +335,31 @@ void main() {
       expect(seen, ['Bearer secret-tok', 'Bearer secret-tok']);
     });
 
+    test('postCard tells a kept card, a refusal, and a lost reply apart', () async {
+      var call = 0;
+      final s = await startServer((request) async {
+        await request.drain<void>();
+        call++;
+        if (call == 1) {
+          await respondJson(request, 200, {'id': 'card-k', 'block': '## f\nb\n<!-- id: card-k -->\n'});
+        } else if (call == 2) {
+          request.response.statusCode = 422;
+          await request.response.close();
+        } else {
+          (await request.response.detachSocket()).destroy();
+        }
+      });
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 't'));
+      addTearDown(client.close);
+
+      final kept = await client.postCard('deck-d1', 'f', ['b']);
+      expect(kept, isA<AddCardMinted>().having((r) => r.card.id, 'id', 'card-k'), reason: '200');
+      final refused = await client.postCard('deck-d1', 'f', ['b']);
+      expect(refused, isA<AddCardRefused>().having((r) => r.status, 'status', 422), reason: '422');
+      final lost = await client.postCard('deck-d1', 'f', ['b']);
+      expect(lost, isA<AddCardNoAnswer>(), reason: 'the reply never arrived');
+    });
+
     test('a dead port reads as null within about 3.5s, no exception thrown', () async {
       final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
       final deadPort = probe.port;

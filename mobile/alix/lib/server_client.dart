@@ -329,6 +329,29 @@ class MintedCard {
   }
 }
 
+/// How `POST /api/remote/ask/card` ended: the desktop kept the card, it
+/// answered with a refusal (nothing written), or no answer arrived (the
+/// card may or may not be on the desktop).
+sealed class AddCardReply {
+  const AddCardReply();
+}
+
+final class AddCardMinted extends AddCardReply {
+  const AddCardMinted(this.card);
+
+  final MintedCard card;
+}
+
+final class AddCardRefused extends AddCardReply {
+  const AddCardRefused(this.status);
+
+  final int status;
+}
+
+final class AddCardNoAnswer extends AddCardReply {
+  const AddCardNoAnswer();
+}
+
 /// The reply to a remote tutor call (`POST`/`GET /api/remote/ask`,
 /// `POST /api/remote/ask/draft`). Mirrors `RemoteAskDto`; unknown wire
 /// fields are ignored and absent ones read as their default, so the reader
@@ -562,9 +585,8 @@ abstract class ServerClient {
   Future<bool> postNote(TutorCardContext card, List<TutorTurn> history);
 
   /// `POST /api/remote/ask/card`: mints the learner's edited draft on the
-  /// desktop, into the served deck's own sidecar. Null when the desktop
-  /// does not serve [deckId], refuses the content, or cannot be reached.
-  Future<MintedCard?> postCard(String deckId, String front, List<String> back);
+  /// desktop, into the served deck's own sidecar.
+  Future<AddCardReply> postCard(String deckId, String front, List<String> back);
 
   /// `POST /api/remote/exam/start`: opens a sitting on [deck] (a bare name
   /// or `<workspace>/<file>`, resolved the same way `/api/select` does).
@@ -630,6 +652,11 @@ class HttpServerClient implements ServerClient {
   }
 
   Future<Map<String, dynamic>?> _attempt(String method, String path, Object? body) async {
+    final (status, json) = await _exchange(method, path, body);
+    return status >= 200 && status < 300 ? json : null;
+  }
+
+  Future<(int, Map<String, dynamic>?)> _exchange(String method, String path, Object? body) async {
     final request = await (method == 'GET' ? _client.getUrl(uriFor(path)) : _client.postUrl(uriFor(path)));
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${config.token}');
     if (body != null) {
@@ -641,10 +668,10 @@ class HttpServerClient implements ServerClient {
     final response = await request.close();
     final text = await response.transform(utf8.decoder).join();
     if (response.statusCode == 401) throw const PairingExpired();
-    if (response.statusCode < 200 || response.statusCode >= 300) return null;
-    if (text.isEmpty) return const {};
+    if (response.statusCode < 200 || response.statusCode >= 300) return (response.statusCode, null);
+    if (text.isEmpty) return (response.statusCode, const <String, dynamic>{});
     final decoded = jsonDecode(text);
-    return decoded is Map<String, dynamic> ? decoded : null;
+    return (response.statusCode, decoded is Map<String, dynamic> ? decoded : null);
   }
 
   Future<Map<String, dynamic>?> _get(String path) => _call('GET', path);
@@ -701,13 +728,23 @@ class HttpServerClient implements ServerClient {
   }
 
   @override
-  Future<MintedCard?> postCard(String deckId, String front, List<String> back) async {
-    final json = await _post('/api/remote/ask/card', {
-      'deck_id': deckId,
-      'front': front,
-      'back': back,
-    });
-    return json == null ? null : MintedCard.fromJson(json);
+  Future<AddCardReply> postCard(String deckId, String front, List<String> back) async {
+    final int status;
+    final Map<String, dynamic>? json;
+    try {
+      (status, json) = await _exchange('POST', '/api/remote/ask/card', {
+        'deck_id': deckId,
+        'front': front,
+        'back': back,
+      }).timeout(_requestTimeout);
+    } on PairingExpired {
+      rethrow;
+    } on Object {
+      return const AddCardNoAnswer();
+    }
+    if (status < 200 || status >= 300) return AddCardRefused(status);
+    final minted = MintedCard.fromJson(json);
+    return minted == null ? const AddCardNoAnswer() : AddCardMinted(minted);
   }
 
   @override

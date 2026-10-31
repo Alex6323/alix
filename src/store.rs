@@ -1391,6 +1391,55 @@ pub fn mint_personal_card(
     back: &[String],
     deck_fingerprints: &std::collections::HashSet<u64>,
 ) -> Result<MintedCard, MintError> {
+    let (front, back) = plain_sides(front, back)?;
+    let token = crate::token::format_card_id(
+        &crate::token::mint().map_err(|e| MintError::Mint(e.to_string()))?,
+        None,
+        false,
+    );
+    append_checked_card(
+        deck_path,
+        deck_id,
+        plain_block(&front, &back, &token),
+        deck_fingerprints,
+    )
+}
+
+pub fn mint_or_return_kept_card(
+    deck_path: &Path,
+    deck_id: &str,
+    front: &str,
+    back: &[String],
+    deck_fingerprints: &std::collections::HashSet<u64>,
+) -> Result<MintedCard, MintError> {
+    match mint_personal_card(deck_path, deck_id, front, back, deck_fingerprints) {
+        Err(MintError::Duplicate) => {
+            kept_card(deck_path, deck_id, front, back).ok_or(MintError::Duplicate)
+        }
+        minted => minted,
+    }
+}
+
+fn kept_card(deck_path: &Path, deck_id: &str, front: &str, back: &[String]) -> Option<MintedCard> {
+    let (front, back) = plain_sides(front, back).ok()?;
+    let text = std::fs::read_to_string(crate::personal::sidecar_path(deck_path)).ok()?;
+    let cards = crate::parser::parse_str(deck_id, &text).ok()?;
+    let id = cards
+        .iter()
+        .find(|card| {
+            card.front == front
+                && card.back == back
+                && card.notes.is_empty()
+                && card.hints.is_empty()
+        })?
+        .id()?;
+    Some(MintedCard {
+        block: plain_block(&front, &back, &id),
+        id,
+    })
+}
+
+fn plain_sides(front: &str, back: &[String]) -> Result<(String, Vec<String>), MintError> {
     let front = front.trim();
     let back: Vec<String> = back
         .iter()
@@ -1407,18 +1456,17 @@ pub fn mint_personal_card(
             "front and back must be single lines".to_string(),
         ));
     }
-    let token = crate::token::format_card_id(
-        &crate::token::mint().map_err(|e| MintError::Mint(e.to_string()))?,
-        None,
-        false,
-    );
+    Ok((front.to_string(), back))
+}
+
+fn plain_block(front: &str, back: &[String], id: &str) -> String {
     let mut text = format!("## {front}\n");
-    for line in &back {
+    for line in back {
         text.push_str(line);
         text.push('\n');
     }
-    text.push_str(&format!("<!-- id: {token} -->\n"));
-    append_checked_card(deck_path, deck_id, text, deck_fingerprints)
+    text.push_str(&format!("<!-- id: {id} -->\n"));
+    text
 }
 
 /// Appends a block another device already minted, keeping its id.
@@ -2886,6 +2934,57 @@ mod tests {
         assert!(
             text.ends_with(&minted.block),
             "the sidecar ends with that exact block:\n{text}"
+        );
+    }
+
+    #[test]
+    fn a_retried_mint_returns_the_kept_card_only_when_front_and_back_are_identical() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("geo.md");
+        let authored = crate::parser::parse_str(
+            "geo.md",
+            "## capital of france?\nParis\n<!-- id: card-france -->\n",
+        )
+        .unwrap();
+        let deck_fingerprints = HashSet::from([authored[0].block_fingerprint]);
+        let mint = |front: &str, back: &str| {
+            mint_or_return_kept_card(
+                &deck,
+                "geo.md",
+                front,
+                &[back.to_string()],
+                &deck_fingerprints,
+            )
+        };
+
+        let kept = mint("capital of **spain**?", "Madrid").unwrap();
+        let retried = mint("  capital of **spain**?  ", "Madrid").unwrap();
+        assert_eq!(
+            (&kept.id, &kept.block),
+            (&retried.id, &retried.block),
+            "identical retry: the kept card comes back"
+        );
+        let text = std::fs::read_to_string(crate::personal::sidecar_path(&deck)).unwrap();
+        assert_eq!(
+            1,
+            text.matches("<!-- id: ").count(),
+            "identical retry appends nothing:\n{text}"
+        );
+
+        assert!(
+            matches!(
+                mint("capital of spain?", "Madrid"),
+                Err(MintError::Duplicate)
+            ),
+            "same fingerprint, different text: still a duplicate"
+        );
+        assert!(
+            matches!(
+                mint("capital of france?", "Paris"),
+                Err(MintError::Duplicate)
+            ),
+            "a deck card is never handed back as a kept card"
         );
     }
 

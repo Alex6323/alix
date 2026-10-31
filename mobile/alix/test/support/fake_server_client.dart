@@ -27,7 +27,7 @@ class FakeServerClient implements ServerClient {
     Map<int, Completer<RemoteAsk?>>? getAskGates,
     List<bool>? postDraftReplies,
     List<bool>? postNoteReplies,
-    List<MintedCard?>? postCardReplies,
+    List<AddCardReply>? postCardReplies,
     this.expireOnPostCard = false,
     this.examStartReply = true,
     this.expireOnExamStart = false,
@@ -86,8 +86,8 @@ class FakeServerClient implements ServerClient {
   final List<bool> postNoteReplies;
 
   /// Replies to `postCard`, one per call, the last repeating; empty reads
-  /// as null (the desktop kept nothing).
-  final List<MintedCard?> postCardReplies;
+  /// as no answer.
+  final List<AddCardReply> postCardReplies;
   final bool expireOnPostCard;
 
   // ── exam (examStart / examGet / examGrade / examRemediate) ─────────────
@@ -199,10 +199,10 @@ class FakeServerClient implements ServerClient {
   }
 
   @override
-  Future<MintedCard?> postCard(String deckId, String front, List<String> back) async {
+  Future<AddCardReply> postCard(String deckId, String front, List<String> back) async {
     postCardCalls.add(PostCardCall(deckId: deckId, front: front, back: back));
     if (expireOnPostCard) throw const PairingExpired();
-    if (postCardReplies.isEmpty) return null;
+    if (postCardReplies.isEmpty) return const AddCardNoAnswer();
     final reply = postCardReplies[_cardCall.clamp(0, postCardReplies.length - 1)];
     _cardCall++;
     return reply;

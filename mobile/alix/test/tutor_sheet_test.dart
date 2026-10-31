@@ -283,6 +283,40 @@ void main() {
         reason: 'a draft is made from the whole conversation');
   });
 
+  testWidgets('an unanswered Add locks the draft fields and says so', (tester) async {
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'first answer'),
+        RemoteAsk(thinking: false, draft: DraftCard(front: 'Why one owner?', back: ['drops'])),
+      ],
+      postCardReplies: const [AddCardNoAnswer()],
+    );
+    await pumpSheet(tester, client: client);
+
+    await ask(tester, 'first question');
+    await tester.tap(find.byKey(const ValueKey('tutor-make-card-button')));
+    await tester.pump();
+    await tester.pump(_pollInterval);
+    await tester.pumpAndSettle();
+    bool enabled(String key) => tester.widget<TextField>(find.byKey(ValueKey(key))).enabled ?? true;
+    expect(enabled('tutor-draft-front-field'), isTrue, reason: 'a fresh draft is editable');
+
+    await tester.tap(find.byKey(const ValueKey('tutor-draft-confirm-button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('No answer from the desktop. The card may already be added; tap Add to retry.'),
+      findsOneWidget,
+    );
+    expect(enabled('tutor-draft-front-field'), isFalse, reason: 'the retry must send the same text');
+    expect(enabled('tutor-draft-back-field'), isFalse);
+    expect(
+      tester.widget<FilledButton>(find.byKey(const ValueKey('tutor-draft-confirm-button'))).onPressed,
+      isNotNull,
+      reason: 'Add retries',
+    );
+  });
+
   testWidgets('"Make a card" and "Make a note" are disabled until an answer exists', (tester) async {
     final client = FakeServerClient(
       getAskReplies: const [RemoteAsk(thinking: false, answer: 'an answer')],

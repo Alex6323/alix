@@ -571,6 +571,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On the phone, a tutor card whose Add reply was lost no longer ends up on
+  the desktop only: the phone says no answer arrived (instead of "did not
+  keep"), keeps the draft locked, and a second Add gets the card the desktop
+  already kept. `POST /api/remote/ask/card` answers such an identical retry
+  with the kept card instead of `422`.
+
 - On the web, a pick or typed-check result that arrives after the card has
   changed (for example after a quick Skip) is ignored; it could mark the next
   card answered before its answer was shown.

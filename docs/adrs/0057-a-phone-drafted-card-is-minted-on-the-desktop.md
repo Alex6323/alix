@@ -7,6 +7,7 @@
 - Evidence: fn remote_endpoints_never_write_the_server_store in tests/api.rs
 - Evidence: fn record_minted_card_keeps_the_desktop_id_and_dedups_against_the_deck_and_the_sidecar in mobile/alix/rust/src/api/review.rs
 - Amends: 0055 (clause 4, for card creates on a served deck)
+- Amended by: 0060 (clause 1, for an identical retry)
 
 ## Context
 

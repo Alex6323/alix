@@ -142,6 +142,12 @@ class TutorConversation extends ChangeNotifier {
   DraftCard? _draft;
   DraftCard? get draft => _draft;
 
+  bool _draftLocked = false;
+  bool get draftLocked => _draftLocked;
+
+  bool _adding = false;
+  bool get adding => _adding;
+
   /// Whether the desktop answered the draft from the card alone: such a
   /// deck is not served, so the card can only be minted on the phone.
   bool _draftCardOnly = false;
@@ -377,6 +383,7 @@ class TutorConversation extends ChangeNotifier {
     }
     _draftPending = false;
     _draft = draft;
+    _draftLocked = false;
     _draftCardOnly = dto.cardOnly;
     // A draft consumes the exchanges it was made from, as on the desktop.
     _notedThrough = _transcript.length;
@@ -390,21 +397,39 @@ class TutorConversation extends ChangeNotifier {
   /// open for another try; the phone never keeps a card the desktop did not.
   Future<bool> confirmDraft(String front, List<String> back) async {
     if (_draftCardOnly) return _add(() => mint(front, back));
-    MintedCard? minted;
+    if (_adding) return false;
+    _adding = true;
+    _draftLocked = true;
+    _changed();
+    final AddCardReply reply;
     try {
-      minted = await client.postCard(card.deckId, front, back);
+      reply = await client.postCard(card.deckId, front, back);
     } on PairingExpired {
       if (_disposed) return false;
+      _adding = false;
+      _draftLocked = false;
       _say(pairingExpiredMessage);
       return false;
     }
     if (_disposed) return false;
-    if (minted == null) {
-      _say('The desktop did not keep the card.');
-      return false;
+    _adding = false;
+    switch (reply) {
+      case AddCardMinted(:final card):
+        final added = await _add(() => record(card.block));
+        if (!added) _draftLocked = false;
+        return added;
+      case AddCardRefused(:final status):
+        _draftLocked = false;
+        _say(
+          status == 422
+              ? 'The desktop refused the card: a duplicate, or malformed.'
+              : 'The desktop did not keep the card.',
+        );
+        return false;
+      case AddCardNoAnswer():
+        _say('No answer from the desktop. The card may already be added; tap Add to retry.');
+        return false;
     }
-    final block = minted.block;
-    return _add(() => record(block));
   }
 
   Future<bool> _add(Future<String> Function() write) async {
@@ -417,12 +442,14 @@ class TutorConversation extends ChangeNotifier {
     }
     if (_disposed) return true;
     _draft = null;
+    _draftLocked = false;
     _say('Card added.');
     return true;
   }
 
   void cancelDraft() {
     _draft = null;
+    _draftLocked = false;
     _changed();
   }
 

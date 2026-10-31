@@ -443,7 +443,7 @@ pub(super) fn remote_create_card(
         return missing(&"the served deck carries no id");
     };
     let deck_fingerprints: HashSet<u64> = deck.cards.iter().map(|c| c.block_fingerprint).collect();
-    match crate::store::mint_personal_card(
+    match crate::store::mint_or_return_kept_card(
         &path,
         &deck_id,
         &req.front,
