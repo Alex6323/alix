@@ -256,19 +256,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
   /// A conversation for a card the learner left keeps polling until its
   /// call settles, so its note or card still lands; then it is disposed.
   void _retireTutor(TutorConversation conversation) {
-    if (!conversation.busy) {
-      conversation.dispose();
-      return;
-    }
     _retiredTutors.add(conversation);
-    void settled() {
-      if (conversation.busy) return;
-      conversation.removeListener(settled);
-      _retiredTutors.remove(conversation);
-      conversation.dispose();
-    }
-
-    conversation.addListener(settled);
+    conversation.retire(onDisposed: () => _retiredTutors.remove(conversation));
   }
 
   Future<void> _showHelp(

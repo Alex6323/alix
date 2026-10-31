@@ -88,11 +88,11 @@ void main() {
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
-        'lib/review_screen.dart:440',
+        'lib/review_screen.dart:429',
         'lib/picker_screen.dart:650',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:225',
-        'lib/walk_screen.dart:199',
+        'lib/walk_screen.dart:188',
       ],
       reason:
           'sync wiring added imports, fields, and methods above build() in '
@@ -106,7 +106,8 @@ void main() {
           'imports, a field, and methods to trace_screen.dart; the shared '
           'showSectionSheet shortened the opener in review_screen.dart and '
           'walk_screen.dart by four lines; the review menu'"'"'s skip added a '
-          'method to review_screen.dart; generate_sheet.dart is unchanged',
+          'method to review_screen.dart; retirement moved into '
+          'TutorConversation.retire, shortening both screens; generate_sheet.dart is unchanged',
     );
   });
 

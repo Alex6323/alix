@@ -182,11 +182,33 @@ class TutorConversation extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     _pollTimer?.cancel();
     slot.removeListener(_changed);
     slot._release(this);
     super.dispose();
+  }
+
+  /// Disposes now when idle, else once its in-flight call settles.
+  void retire({VoidCallback? onDisposed}) {
+    void finish() {
+      dispose();
+      onDisposed?.call();
+    }
+
+    if (!busy) {
+      finish();
+      return;
+    }
+    void settled() {
+      if (busy) return;
+      removeListener(settled);
+      // A ChangeNotifier must not be disposed from inside its own notification.
+      scheduleMicrotask(finish);
+    }
+
+    addListener(settled);
   }
 
   void _changed() {

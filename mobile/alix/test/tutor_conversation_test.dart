@@ -341,6 +341,43 @@ void main() {
     );
   });
 
+  testWidgets('a retired Add is not disposed from inside its settling notification', (tester) async {
+    const block = '## f\nb\n<!-- id: card-desk -->\n';
+    final gate = Completer<AddCardReply>();
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'an answer'),
+        RemoteAsk(thinking: false, draft: DraftCard(front: 'f', back: ['b'])),
+      ],
+      postCardGate: gate,
+    );
+    var retired = false;
+    final subject = TutorConversation(
+      card: _card('card-a'),
+      client: client,
+      slot: TutorSlot(),
+      mint: (front, back) async => 'card-phone',
+      record: (block) async => 'card-desk',
+      onNote: (_) {},
+      onMessage: (_) {},
+      pollInterval: _pollInterval,
+    );
+    addTearDown(() {
+      if (!retired) subject.dispose();
+    });
+    await drafted(tester, subject);
+
+    final outcome = subject.confirmDraft('f', ['b']);
+    await tester.pump();
+    subject.retire(onDisposed: () => retired = true);
+    expect(retired, isFalse, reason: 'an Add in flight keeps the conversation');
+    gate.complete(const AddCardMinted(MintedCard(id: 'card-desk', block: block)));
+
+    expect(await outcome, isTrue);
+    await tester.pump();
+    expect(retired, isTrue, reason: 'disposed once the Add settled');
+  });
+
   testWidgets('a card-only Add locks the draft and rejects a second tap', (tester) async {
     final gate = Completer<String>();
     var mintCalls = 0;

@@ -157,19 +157,8 @@ class _WalkScreenState extends State<WalkScreen> {
   }
 
   void _retireTutor(TutorConversation conversation) {
-    if (!conversation.busy) {
-      conversation.dispose();
-      return;
-    }
     _retiredTutors.add(conversation);
-    void settled() {
-      if (conversation.busy) return;
-      conversation.removeListener(settled);
-      _retiredTutors.remove(conversation);
-      conversation.dispose();
-    }
-
-    conversation.addListener(settled);
+    conversation.retire(onDisposed: () => _retiredTutors.remove(conversation));
   }
 
   void _openSection(ReviewCardModel card) {
