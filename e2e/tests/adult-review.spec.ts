@@ -2364,3 +2364,19 @@ test("question and answer prose sit in a centred block, left-aligned inside it; 
     }
   }
 });
+
+test("the review card keeps equal side gutters at every viewport width", async ({ page }) => {
+  await openWildCram(page, "Recall");
+  for (const width of [390, 600, 760, 1200]) {
+    await page.setViewportSize({ width, height: 844 });
+    const box = await page.locator("#card").boundingBox();
+    if (!box) throw new Error(`no card box at ${width}px`);
+    const left = box.x;
+    const right = width - (box.x + box.width);
+    expect(right, `${width}px: the card ends inside the viewport (right gutter ${right})`).toBeGreaterThan(0);
+    expect(
+      Math.abs(left - right),
+      `${width}px: left gutter ${left} equals right gutter ${right}`,
+    ).toBeLessThanOrEqual(1);
+  }
+});

@@ -1,10 +1,10 @@
   /* ── stage + card ─────────────────────────────────────────────────── */
-  .stage { flex: 1; display: grid; place-items: center; padding: 28px 24px; min-height: 0; }
+  .stage { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; padding: 28px 24px; min-height: 0; }
   /* the review card is a borderless, centered column (~720px) — no card box,
      no stacked-pile peek behind it; content flows and the answer region scrolls
      inside (see .region.a). */
   .stack {
-    position: relative; width: min(94vw, 720px);
+    position: relative; width: min(100%, 720px);
     height: 100%; max-height: 100%; min-height: 0; display: flex; flex-direction: column;
     animation: cardIn 0.22s cubic-bezier(.2, .7, .3, 1) both;
   }

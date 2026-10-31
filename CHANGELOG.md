@@ -571,6 +571,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On narrow screens the web review card no longer runs to the right edge:
+  it keeps the same gutter on both sides.
 - On the phone, a tutor card whose Add reply was lost no longer ends up on
   the desktop only: the phone says no answer arrived (instead of "did not
   keep"), keeps the draft locked, and a second Add gets the card the desktop
