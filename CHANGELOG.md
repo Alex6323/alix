@@ -135,13 +135,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Review: typing a cloze card on the web happens in the blanks themselves,
-  and the result shows there (green when right; on a miss, what you typed,
-  struck through, before the answer). Each blank is checked against its own
+- Review: typing a cloze card on the web and the phone happens in the blanks
+  themselves, and the result shows there (green when right; on a miss, what
+  you typed, struck through, before the answer). Each blank is checked against its own
   answer, so swapped answers are misses. A blank inside a code fence or a
   formula keeps its field below the question. Cloze cards lose the dividing
   line under the question, which now sits with its field or choices in the
   middle of the card. `CardDto` gains `hole_steps`.
+
 - Review: **Skip** leaves the web's bottom row and moves into the ☰ menu as
   **Skip card**, and the phone gains the same **Skip card** in a new ⋮ menu in
   the review header (it had no way to skip). The row before the answer reads
@@ -580,8 +581,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - On the web, typing a `c` into an answer field (or the explain box) types
   it instead of opening the section context.
+
 - On narrow screens the web review card no longer runs to the right edge:
   it keeps the same gutter on both sides.
+
 - On the phone, a tutor card whose Add reply was lost no longer ends up on
   the desktop only: the phone says no answer arrived (instead of "did not
   keep"), keeps the draft locked, and a second Add gets the card the desktop

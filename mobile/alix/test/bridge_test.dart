@@ -1062,6 +1062,66 @@ void main() {
     expect(find.text('Got it'), findsOneWidget);
   });
 
+  testWidgets('cloze fields submit directive order through the real core', (
+    tester,
+  ) async {
+    final root = makeRoot();
+    addTearDown(() => root.deleteSync(recursive: true));
+    final deck = '${root.path}/phone-cloze.md';
+    final backdated = BigInt.from(
+      DateTime.now().millisecondsSinceEpoch - 600000,
+    );
+    writeTestDeck(
+      deck,
+      '## fill the pair\n'
+      'alpha then beta\n'
+      '<!-- blank: span [g] hidden="beta" b:a1b2c3 -->\n'
+      '<!-- blank: span [g] hidden="alpha" b:d4e5f6 -->\n'
+      '<!-- id: card-11111111111111111111111111 -->\n',
+    );
+    final session = ReviewSession.open(
+      deckPath: deck,
+      rootDir: root.path,
+      nowMs: backdated,
+    );
+    session.introduce(nowMs: backdated);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReviewScreen(
+          deckPath: deck,
+          rootDir: root.path,
+          depth: ReviewDepth.reconstruct,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('cloze-field-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('cloze-field-1')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('cloze-field-0')),
+      'alpha',
+    );
+    await tester.enterText(find.byKey(const ValueKey('cloze-field-1')), 'beta');
+    await tester.tap(find.text('Submit'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('Got it'), findsOneWidget);
+    final question = tester
+        .widgetList<RichText>(
+          find.descendant(
+            of: find.byKey(const ValueKey('question-region')),
+            matching: find.byType(RichText),
+          ),
+        )
+        .map((rich) => rich.text.toPlainText())
+        .join(' ');
+    expect(question, contains('alpha'));
+    expect(question, contains('beta'));
+  });
+
   testWidgets('review flows from reveal to grade on a due card', (
     tester,
   ) async {

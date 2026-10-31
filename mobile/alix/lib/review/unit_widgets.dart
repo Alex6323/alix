@@ -17,14 +17,16 @@ Widget unitWidget(
   ReviewContentUnitModel unit,
   AlixTokens tokens,
   TextStyle style,
-  TextAlign textAlign,
-) {
+  TextAlign textAlign, {
+  AskedHoleSpanBuilder? askedHoleSpanBuilder,
+}) {
   return switch (unit) {
     ReviewSentenceModel(:final text, :final runs) => runsOrText(
       runs,
       text,
       style: style,
       textAlign: textAlign,
+      askedHoleSpanBuilder: askedHoleSpanBuilder,
     ),
     ReviewCodeModel(:final lines) => codeBlock(
       lines,
@@ -36,9 +38,21 @@ Widget unitWidget(
       tokens,
       style,
       textAlign == TextAlign.center ? TextAlign.start : textAlign,
+      askedHoleSpanBuilder: askedHoleSpanBuilder,
     ),
-    ReviewTableModel() => tableWidget(unit, tokens, style),
-    ReviewQuoteModel(:final units) => quoteWidget(units, tokens, style, textAlign),
+    ReviewTableModel() => tableWidget(
+      unit,
+      tokens,
+      style,
+      askedHoleSpanBuilder: askedHoleSpanBuilder,
+    ),
+    ReviewQuoteModel(:final units) => quoteWidget(
+      units,
+      tokens,
+      style,
+      textAlign,
+      askedHoleSpanBuilder: askedHoleSpanBuilder,
+    ),
   };
 }
 
@@ -48,8 +62,9 @@ Widget quoteWidget(
   List<ReviewContentUnitModel> units,
   AlixTokens tokens,
   TextStyle style,
-  TextAlign surface,
-) {
+  TextAlign surface, {
+  AskedHoleSpanBuilder? askedHoleSpanBuilder,
+}) {
   return Container(
     padding: const EdgeInsets.only(left: 12),
     decoration: BoxDecoration(
@@ -64,13 +79,19 @@ Widget quoteWidget(
             tokens,
             style,
             unit is ReviewSentenceModel ? TextAlign.start : surface,
+            askedHoleSpanBuilder: askedHoleSpanBuilder,
           ),
       ],
     ),
   );
 }
 
-Widget tableWidget(ReviewTableModel unit, AlixTokens tokens, TextStyle style) {
+Widget tableWidget(
+  ReviewTableModel unit,
+  AlixTokens tokens,
+  TextStyle style, {
+  AskedHoleSpanBuilder? askedHoleSpanBuilder,
+}) {
   TextAlign cellAlign(int index) => switch (index < unit.aligns.length
       ? unit.aligns[index]
       : ReviewCellAlign.none) {
@@ -86,6 +107,7 @@ Widget tableWidget(ReviewTableModel unit, AlixTokens tokens, TextStyle style) {
         '',
         style: cellStyle,
         textAlign: cellAlign(index),
+        askedHoleSpanBuilder: askedHoleSpanBuilder,
       ),
     );
   }
@@ -118,8 +140,9 @@ Widget checklistWidget(
   List<ReviewChecklistItemModel> items,
   AlixTokens tokens,
   TextStyle style,
-  TextAlign textAlign,
-) {
+  TextAlign textAlign, {
+  AskedHoleSpanBuilder? askedHoleSpanBuilder,
+}) {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -142,6 +165,7 @@ Widget checklistWidget(
                   item.text,
                   style: style,
                   textAlign: textAlign,
+                  askedHoleSpanBuilder: askedHoleSpanBuilder,
                 ),
               ),
             ],
@@ -158,6 +182,7 @@ Widget runsOrText(
   TextAlign textAlign = TextAlign.start,
   bool contextHoles = false,
   AlixTokens? tokens,
+  AskedHoleSpanBuilder? askedHoleSpanBuilder,
 }) {
   final effectiveStyle = style ?? const TextStyle();
   if (runs == null) {
@@ -170,6 +195,7 @@ Widget runsOrText(
     contextHoles: contextHoles,
     blankColor: tokens?.boltHi,
     mutedBlankColor: tokens?.dim,
+    askedHoleSpanBuilder: askedHoleSpanBuilder,
   );
 }
 

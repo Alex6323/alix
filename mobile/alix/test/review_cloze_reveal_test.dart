@@ -158,8 +158,16 @@ void main() {
     final card = groupCard();
     final typedPass = ReviewCheckFeedbackModel(
       results: const [
-        ReviewTypedResultModel(input: 'typed one', expected: '', passed: true),
-        ReviewTypedResultModel(input: 'typed two', expected: '', passed: true),
+        ReviewTypedResultModel(
+          input: 'scaphoid',
+          expected: 'scaphoid',
+          passed: true,
+        ),
+        ReviewTypedResultModel(
+          input: 'lunate',
+          expected: 'lunate',
+          passed: true,
+        ),
       ],
       passed: true,
     );
@@ -218,13 +226,20 @@ void main() {
       ),
     ];
     final accent = alixDark().alix.boltHi;
+    final good = alixDark().alix.good;
     for (final row in rows) {
       await pumpRow(tester, card, row);
       final step = '${row.label} (filled ${row.filled})';
+      final inlineTyping = row.mode == ReviewMode.typing && !row.introducing;
       expect(
         find.byType(BlankPill),
-        findsNWidgets(2 - row.filled),
+        findsNWidgets(inlineTyping ? 0 : 2 - row.filled),
         reason: '$step: unfilled blanks stay pills',
+      );
+      expect(
+        find.byType(TextField),
+        findsNWidgets(inlineTyping && row.check == null ? 2 : 0),
+        reason: '$step: ordinary typing uses inline fields before feedback',
       );
       final words = ['scaphoid', 'lunate'];
       for (final (index, word) in words.indexed) {
@@ -238,7 +253,11 @@ void main() {
           reason: '$step: "$word" drawn $expected time(s), got $shown',
         );
         for (final span in shown) {
-          expect(span.style?.color, accent, reason: '$step: "$word" accent');
+          expect(
+            span.style?.color,
+            row.check == null ? accent : good,
+            reason: '$step: "$word" feedback color',
+          );
         }
       }
     }

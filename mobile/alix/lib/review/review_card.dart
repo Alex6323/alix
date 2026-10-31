@@ -10,6 +10,7 @@ import 'package:alix_mobile/review/sketch.dart';
 import 'package:alix_mobile/review/sketch_canvas.dart';
 import 'package:alix_mobile/review/unit_widgets.dart';
 import 'package:alix_mobile/shared/inline_models.dart';
+import 'package:alix_mobile/shared/inline_runs.dart';
 import 'package:alix_mobile/theme.dart';
 
 const _sans = 'IBM Plex Sans';
@@ -168,6 +169,64 @@ class ReviewCardView extends StatelessWidget {
       !state.introducing &&
       state.keypoints != null;
 
+  int? _askedHolesInRuns(Iterable<InlineRunModel> runs) {
+    var count = 0;
+    for (final run in runs) {
+      final holes = '⍰'.allMatches(run.text).length;
+      if (holes > 0 && run.math != null) return null;
+      count += holes;
+    }
+    return count;
+  }
+
+  int? _askedHolesInUnits(Iterable<ReviewContentUnitModel> units) {
+    var count = 0;
+    for (final unit in units) {
+      int? nested;
+      switch (unit) {
+        case ReviewSentenceModel(:final runs):
+          nested = _askedHolesInRuns(runs);
+        case ReviewCodeModel(:final lines):
+          if (lines.any((line) => line.contains('⍰'))) return null;
+          nested = 0;
+        case ReviewDiagramModel():
+          nested = 0;
+        case ReviewChecklistModel(:final items):
+          nested = _askedHolesInRuns(items.expand((item) => item.runs));
+        case ReviewTableModel(:final header, :final rows):
+          nested = _askedHolesInRuns([
+            ...header.expand((cell) => cell),
+            ...rows.expand((row) => row).expand((cell) => cell),
+          ]);
+        case ReviewQuoteModel(:final units):
+          nested = _askedHolesInUnits(units);
+      }
+      if (nested == null) return null;
+      count += nested;
+    }
+    return count;
+  }
+
+  bool _blanksAreInputs(ReviewCardModel card) {
+    if (state.mode != ReviewMode.typing ||
+        state.introducing ||
+        card.holeSteps.isEmpty) {
+      return false;
+    }
+    final holes = card.frontUnits == null
+        ? _askedHolesInRuns(card.frontRuns)
+        : _askedHolesInUnits(card.frontUnits!);
+    if (holes != card.holeSteps.length ||
+        card.holeSteps.any(
+          (step) => step < 0 || step >= typedControllers.length,
+        )) {
+      return false;
+    }
+    final results = checkFeedback?.results;
+    return results == null ||
+        card.holeSteps.every((step) => step < results.length);
+  }
+
   bool _lineDone(ReviewCardModel card) {
     return state.mode == ReviewMode.lineByLine &&
         revealedLines >= revealStepCount(card);
@@ -180,33 +239,117 @@ class ReviewCardView extends StatelessWidget {
     final answered = _answered(card);
     final showNote = answered && card.note.isNotEmpty;
     final hideable = _hideable(card);
+    final cloze = card.frontSteps.isNotEmpty;
     return Column(
       children: [
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, box) {
-              final body = box.maxHeight;
-              return Column(
-                key: const ValueKey('card-body'),
-                children: [
-                  ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: body * 0.38),
-                    child: _region(
-                      key: const ValueKey('question-region'),
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
-                      child: _head(context, card, tokens, answered: answered),
-                    ),
+          child: cloze
+              ? _clozeBody(
+                  context,
+                  card,
+                  tokens,
+                  answered: answered,
+                  showNote: showNote,
+                  hideable: hideable,
+                )
+              : _plainBody(
+                  context,
+                  card,
+                  tokens,
+                  answered: answered,
+                  showNote: showNote,
+                  hideable: hideable,
+                ),
+        ),
+        _legend(context, card),
+      ],
+    );
+  }
+
+  Widget _plainBody(
+    BuildContext context,
+    ReviewCardModel card,
+    AlixTokens tokens, {
+    required bool answered,
+    required bool showNote,
+    required bool hideable,
+  }) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        final body = box.maxHeight;
+        return Column(
+          key: const ValueKey('card-body'),
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: body * 0.38),
+              child: _region(
+                key: const ValueKey('question-region'),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+                child: _head(context, card, tokens, answered: answered),
+              ),
+            ),
+            _measured(_divider(tokens)),
+            Expanded(
+              child: _AnswerNoteLayout(
+                floor: body / 3,
+                answer: _answerTap(
+                  hideable,
+                  _region(
+                    key: const ValueKey('answer-region'),
+                    contentKey: const ValueKey('answer-content'),
+                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
+                    child: _answer(context, card, tokens, answered: answered),
                   ),
-                  _measured(_divider(tokens)),
-                  Expanded(
-                    child: _AnswerNoteLayout(
-                      floor: body / 3,
-                      answer: _answerTap(
+                ),
+                note: showNote
+                    ? _region(
+                        key: const ValueKey('note-region'),
+                        contentKey: const ValueKey('note-content'),
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                        child: _note(context, card, tokens),
+                      )
+                    : null,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _clozeBody(
+    BuildContext context,
+    ReviewCardModel card,
+    AlixTokens tokens, {
+    required bool answered,
+    required bool showNote,
+    required bool hideable,
+  }) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        return SizedBox(
+          key: const ValueKey('card-body'),
+          height: box.maxHeight,
+          child: ScrollWithMoreHint(
+            child: SingleChildScrollView(
+              primary: true,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: box.maxHeight),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _groupRegion(
+                        key: const ValueKey('question-region'),
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+                        child: _head(context, card, tokens, answered: answered),
+                      ),
+                      _answerTap(
                         hideable,
-                        _region(
+                        _groupRegion(
                           key: const ValueKey('answer-region'),
                           contentKey: const ValueKey('answer-content'),
-                          padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                           child: _answer(
                             context,
                             card,
@@ -215,23 +358,21 @@ class ReviewCardView extends StatelessWidget {
                           ),
                         ),
                       ),
-                      note: showNote
-                          ? _region(
-                              key: const ValueKey('note-region'),
-                              contentKey: const ValueKey('note-content'),
-                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-                              child: _note(context, card, tokens),
-                            )
-                          : null,
-                    ),
+                      if (showNote)
+                        _groupRegion(
+                          key: const ValueKey('note-region'),
+                          contentKey: const ValueKey('note-content'),
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                          child: _note(context, card, tokens),
+                        ),
+                    ],
                   ),
-                ],
-              );
-            },
+                ),
+              ),
+            ),
           ),
-        ),
-        _legend(context, card),
-      ],
+        );
+      },
     );
   }
 
@@ -283,6 +424,20 @@ class ReviewCardView extends StatelessWidget {
             Padding(key: contentKey, padding: padding, child: child),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _groupRegion({
+    required Key key,
+    Key? contentKey,
+    required EdgeInsets padding,
+    required Widget child,
+  }) {
+    return KeyedSubtree(
+      key: key,
+      child: _measured(
+        Padding(key: contentKey, padding: padding, child: child),
       ),
     );
   }
@@ -381,16 +536,38 @@ class ReviewCardView extends StatelessWidget {
       height: 1.4,
       color: Theme.of(context).colorScheme.onSurface,
     );
-    final question = questionAt(
-      card,
-      filledFrontSteps(
-        card,
-        mode: state.mode,
-        introducing: state.introducing,
-        answered: answered,
-        revealedLines: revealedLines,
-      ),
-    );
+    final blanksAreInputs = _blanksAreInputs(card);
+    final question = blanksAreInputs
+        ? questionAt(card, 0)
+        : questionAt(
+            card,
+            filledFrontSteps(
+              card,
+              mode: state.mode,
+              introducing: state.introducing,
+              answered: answered,
+              revealedLines: revealedLines,
+            ),
+          );
+    var hole = 0;
+    final AskedHoleSpanBuilder? askedHoleSpanBuilder = blanksAreInputs
+        ? (runStyle) {
+            final readingIndex = hole++;
+            final step = card.holeSteps[readingIndex];
+            final feedback = checkFeedback;
+            if (feedback == null) {
+              return _blankFieldSpan(
+                context,
+                card,
+                tokens,
+                runStyle,
+                readingIndex,
+                step,
+              );
+            }
+            return _blankFeedbackSpan(feedback.results[step], tokens, runStyle);
+          }
+        : null;
     final units = question.frontUnits;
     if (units == null) {
       return runsOrText(
@@ -399,6 +576,7 @@ class ReviewCardView extends StatelessWidget {
         style: style,
         contextHoles: true,
         tokens: tokens,
+        askedHoleSpanBuilder: askedHoleSpanBuilder,
       );
     }
     return Column(
@@ -414,15 +592,95 @@ class ReviewCardView extends StatelessWidget {
               style: style,
               contextHoles: true,
               tokens: tokens,
+              askedHoleSpanBuilder: askedHoleSpanBuilder,
             ),
             ReviewCodeModel(:final lines) => codeBlock(
               lines,
               style.color ?? tokens.text,
               blankTokens: tokens,
             ),
-            _ => unitWidget(unit, tokens, style, TextAlign.start),
+            _ => unitWidget(
+              unit,
+              tokens,
+              style,
+              TextAlign.start,
+              askedHoleSpanBuilder: askedHoleSpanBuilder,
+            ),
           },
         ],
+      ],
+    );
+  }
+
+  InlineSpan _blankFieldSpan(
+    BuildContext context,
+    ReviewCardModel card,
+    AlixTokens tokens,
+    TextStyle style,
+    int readingIndex,
+    int step,
+  ) {
+    final em = MediaQuery.textScalerOf(context).scale(style.fontSize ?? 14);
+    final last = readingIndex == card.holeSteps.length - 1;
+    OutlineInputBorder border(Color color) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(em),
+      borderSide: BorderSide(color: color, width: 2),
+    );
+    return WidgetSpan(
+      alignment: PlaceholderAlignment.baseline,
+      baseline: TextBaseline.alphabetic,
+      child: SizedBox(
+        width: em * 5,
+        child: TextField(
+          key: ValueKey('cloze-field-$readingIndex'),
+          controller: typedControllers[step],
+          textAlign: TextAlign.center,
+          textInputAction: last ? TextInputAction.done : TextInputAction.next,
+          onSubmitted: last ? (_) => _submitTyped(card) : null,
+          style: style.copyWith(height: 1),
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: tokens.boltHi.withValues(alpha: 0.16),
+            contentPadding: EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: em * 0.15,
+            ),
+            enabledBorder: border(tokens.boltHi),
+            focusedBorder: border(tokens.bolt),
+            border: border(tokens.boltHi),
+          ),
+        ),
+      ),
+    );
+  }
+
+  InlineSpan _blankFeedbackSpan(
+    ReviewTypedResultModel result,
+    AlixTokens tokens,
+    TextStyle style,
+  ) {
+    if (result.passed) {
+      return TextSpan(
+        text: result.expected,
+        style: style.copyWith(color: tokens.good),
+      );
+    }
+    return TextSpan(
+      children: [
+        if (result.input.isNotEmpty)
+          TextSpan(
+            text: result.input,
+            style: style.copyWith(
+              color: tokens.again,
+              decoration: TextDecoration.lineThrough,
+            ),
+          ),
+        if (result.input.isNotEmpty) const TextSpan(text: ' '),
+        TextSpan(
+          text: result.expected,
+          style: style.copyWith(color: tokens.boltHi),
+        ),
       ],
     );
   }
@@ -436,6 +694,7 @@ class ReviewCardView extends StatelessWidget {
 
   Widget _divider(AlixTokens tokens) {
     return FractionallySizedBox(
+      key: const ValueKey('card-divider'),
       widthFactor: 0.7,
       child: Container(
         height: 1,
@@ -550,6 +809,7 @@ class ReviewCardView extends StatelessWidget {
   Widget _body(BuildContext context, ReviewCardModel card, AlixTokens tokens) {
     if (_hasChoices) return _options(tokens);
     if (_isDrawing) return _sketchBody(context, card, tokens);
+    if (_blanksAreInputs(card)) return const SizedBox.shrink();
     final answerInQuestion = card.frontSteps.isNotEmpty;
     if (state.mode == ReviewMode.lineByLine &&
         (!state.introducing || revealed)) {
@@ -569,6 +829,13 @@ class ReviewCardView extends StatelessWidget {
       return _fullAnswer(context, card, tokens, stanza: true);
     }
     return const SizedBox.shrink();
+  }
+
+  void _submitTyped(ReviewCardModel card) {
+    onCheck([
+      for (var index = 0; index < card.gradeableSteps.length; index++)
+        typedControllers[index].text,
+    ]);
   }
 
   /// Every surface that shows a WHOLE answer walks the same steps the
@@ -1387,12 +1654,7 @@ class ReviewCardView extends StatelessWidget {
                 onCheck([typedControllers[0].text]);
                 return;
               }
-              onCheck([
-                for (var index = 0;
-                    index < card.gradeableSteps.length;
-                    index++)
-                  typedControllers[index].text,
-              ]);
+              _submitTyped(card);
             },
           ),
         ];

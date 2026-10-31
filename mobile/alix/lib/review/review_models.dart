@@ -224,6 +224,7 @@ class ReviewCardModel {
     required Iterable<InlineRunModel> frontRuns,
     Iterable<ReviewContentUnitModel>? frontUnits,
     Iterable<ReviewFrontStepModel> frontSteps = const [],
+    Iterable<int> holeSteps = const [],
     required Iterable<String> back,
     required Iterable<Iterable<InlineRunModel>> backRuns,
     required Iterable<ReviewContentUnitModel> backUnits,
@@ -239,6 +240,7 @@ class ReviewCardModel {
   }) : frontRuns = List.unmodifiable(frontRuns),
        frontUnits = frontUnits == null ? null : List.unmodifiable(frontUnits),
        frontSteps = List.unmodifiable(frontSteps),
+       holeSteps = List.unmodifiable(holeSteps),
        section = List.unmodifiable(section),
        sectionRuns = _freezeRunLines(sectionRuns),
        sectionUnits = List.unmodifiable(sectionUnits),
@@ -259,6 +261,7 @@ class ReviewCardModel {
   final List<ReviewContentUnitModel>? frontUnits;
 
   final List<ReviewFrontStepModel> frontSteps;
+  final List<int> holeSteps;
 
   /// A card table's title, labelling the front; empty on every other card.
   final List<String> back;

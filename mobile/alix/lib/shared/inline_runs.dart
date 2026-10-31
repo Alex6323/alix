@@ -10,6 +10,8 @@ const _mono = 'IBM Plex Mono';
 final _codeToken = RegExp(r'[^\p{L}\p{M}\p{N}_\s]+', unicode: true);
 final _space = RegExp(r'\s', unicode: true);
 
+typedef AskedHoleSpanBuilder = InlineSpan Function(TextStyle style);
+
 List<String> codeSegments(String code) {
   final segments = <String>[];
   var start = 0;
@@ -31,6 +33,7 @@ class InlineRuns extends StatelessWidget {
     this.contextHoles = false,
     this.blankColor,
     this.mutedBlankColor,
+    this.askedHoleSpanBuilder,
   });
 
   final List<InlineRunModel> runs;
@@ -39,6 +42,7 @@ class InlineRuns extends StatelessWidget {
   final bool contextHoles;
   final Color? blankColor;
   final Color? mutedBlankColor;
+  final AskedHoleSpanBuilder? askedHoleSpanBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -200,15 +204,18 @@ class InlineRuns extends StatelessWidget {
         );
       }
       final asked = match.group(0) == '⍰';
+      final runStyle = _runStyle(run, codeColor);
       spans.add(
-        blankPillSpan(
-          asked: asked,
-          fontSize: _runStyle(run, codeColor).fontSize ?? 14,
-          color:
-              (asked ? blankColor : mutedBlankColor) ??
-              style.color ??
-              Colors.black,
-        ),
+        asked && askedHoleSpanBuilder != null
+            ? askedHoleSpanBuilder!(runStyle)
+            : blankPillSpan(
+                asked: asked,
+                fontSize: runStyle.fontSize ?? 14,
+                color:
+                    (asked ? blankColor : mutedBlankColor) ??
+                    style.color ??
+                    Colors.black,
+              ),
       );
       start = match.end;
     }

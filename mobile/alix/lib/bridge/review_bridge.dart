@@ -224,6 +224,7 @@ ReviewCardModel reviewCardFromBridge(bridge.CardView card) {
           rectsRevealed: step.rectsRevealed,
         ),
     ],
+    holeSteps: [for (final step in card.holeSteps) step.toInt()],
     back: card.back,
     backRuns: [for (final runs in card.backRuns) inlineRunsFromBridge(runs)],
     backUnits: [for (final unit in card.backUnits) _noteFromBridge(unit)],

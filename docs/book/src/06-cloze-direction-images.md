@@ -45,8 +45,10 @@ sibling's is muted and dashed. Filled text is highlighted in the accent
 colour. A card asking several spans at once (a named group) fills one span per
 press under `reveal: line`, all at once under `flip`.
 
-When you type a cloze card (at Reconstruct), the web app makes each asked
-blank the typing field itself: type each answer in its gap and press Enter.
+When you type a cloze card (at Reconstruct), the web and phone apps make each
+asked blank the typing field itself: type each answer in its gap and press
+Enter (on the phone the keyboard's action moves to the next gap, and on the
+last one checks).
 Each gap is checked against its own answer, so swapping two answers is two
 misses. The result shows in the gaps: a right answer turns green, and a miss
 shows what you typed, struck through, before the answer. A blank inside a code
