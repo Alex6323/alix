@@ -378,6 +378,110 @@ void main() {
     expect(retired, isTrue, reason: 'disposed once the Add settled');
   });
 
+  testWidgets('a retirement microtask is harmless after its owner is disposed', (tester) async {
+    const block = '## f\nb\n<!-- id: card-desk -->\n';
+    final gate = Completer<AddCardReply>();
+    final slot = TutorSlot();
+    final subject = TutorConversation(
+      card: _card('card-a'),
+      client: FakeServerClient(
+        getAskReplies: const [
+          RemoteAsk(thinking: false, answer: 'an answer'),
+          RemoteAsk(thinking: false, draft: DraftCard(front: 'f', back: ['b'])),
+        ],
+        postCardGate: gate,
+      ),
+      slot: slot,
+      mint: (front, back) async => 'card-phone',
+      record: (block) async => 'card-desk',
+      onNote: (_) {},
+      onMessage: (_) {},
+      pollInterval: _pollInterval,
+    );
+    await drafted(tester, subject);
+    final retired = <TutorConversation>[subject];
+
+    final outcome = subject.confirmDraft('f', ['b']);
+    await tester.pump();
+    subject.retire(onDisposed: () => retired.remove(subject));
+    gate.complete(const AddCardMinted(MintedCard(id: 'card-desk', block: block)));
+    expect(await outcome, isTrue);
+
+    subject.dispose();
+    slot.dispose();
+    await tester.pump();
+    expect(retired, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('disposing a retired note prevents late owner callbacks', (tester) async {
+    final gate = Completer<RemoteAsk?>();
+    var noteCalls = 0;
+    var messageCalls = 0;
+    final slot = TutorSlot();
+    final subject = TutorConversation(
+      card: _card('card-a'),
+      client: FakeServerClient(
+        getAskReplies: const [RemoteAsk(thinking: false, answer: 'an answer')],
+        getAskGates: {1: gate},
+      ),
+      slot: slot,
+      mint: (front, back) async => 'card-phone',
+      record: (block) async => 'card-desk',
+      onNote: (_) => noteCalls++,
+      onMessage: (_) => messageCalls++,
+      pollInterval: _pollInterval,
+    );
+    await subject.send('q');
+    await tester.pump(_pollInterval);
+    await subject.makeNote();
+    await tester.pump(_pollInterval);
+    subject.retire();
+
+    subject.dispose();
+    slot.dispose();
+    gate.complete(const RemoteAsk(thinking: false, note: ['late note']));
+    await tester.pump();
+
+    expect(noteCalls, 0);
+    expect(messageCalls, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('repeated retirement disposes safely and completes both requests', (tester) async {
+    const block = '## f\nb\n<!-- id: card-desk -->\n';
+    final gate = Completer<AddCardReply>();
+    final subject = TutorConversation(
+      card: _card('card-a'),
+      client: FakeServerClient(
+        getAskReplies: const [
+          RemoteAsk(thinking: false, answer: 'an answer'),
+          RemoteAsk(thinking: false, draft: DraftCard(front: 'f', back: ['b'])),
+        ],
+        postCardGate: gate,
+      ),
+      slot: TutorSlot(),
+      mint: (front, back) async => 'card-phone',
+      record: (block) async => 'card-desk',
+      onNote: (_) {},
+      onMessage: (_) {},
+      pollInterval: _pollInterval,
+    );
+    await drafted(tester, subject);
+    var completedRetirements = 0;
+
+    final outcome = subject.confirmDraft('f', ['b']);
+    await tester.pump();
+    subject.retire(onDisposed: () => completedRetirements++);
+    subject.retire(onDisposed: () => completedRetirements++);
+    gate.complete(const AddCardMinted(MintedCard(id: 'card-desk', block: block)));
+    expect(await outcome, isTrue);
+    await tester.pump();
+
+    expect(completedRetirements, 2);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a card-only Add locks the draft and rejects a second tap', (tester) async {
     final gate = Completer<String>();
     var mintCalls = 0;
