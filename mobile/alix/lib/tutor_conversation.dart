@@ -201,7 +201,7 @@ class TutorConversation extends ChangeNotifier {
 
   /// A call of this conversation is in flight: ask, draft and note share
   /// this object's one poll timer.
-  bool get busy => _pendingQuestion != null || _draftPending || _notePending;
+  bool get busy => _pendingQuestion != null || _draftPending || _notePending || _adding;
 
   /// Another conversation's call holds the desktop's ask slot, so this one
   /// waits (the learner moved on while a note or draft was in flight).
@@ -396,23 +396,34 @@ class TutorConversation extends ChangeNotifier {
   /// serve the deck. On a refusal the message is shown and the draft stays
   /// open for another try; the phone never keeps a card the desktop did not.
   Future<bool> confirmDraft(String front, List<String> back) async {
-    if (_draftCardOnly) return _add(() => mint(front, back));
     if (_adding) return false;
     _adding = true;
     _draftLocked = true;
     _changed();
+    try {
+      return await _confirm(front, back);
+    } finally {
+      _adding = false;
+      _changed();
+    }
+  }
+
+  Future<bool> _confirm(String front, List<String> back) async {
+    if (_draftCardOnly) {
+      final added = await _add(() => mint(front, back));
+      if (!added) _draftLocked = false;
+      return added;
+    }
     final AddCardReply reply;
     try {
       reply = await client.postCard(card.deckId, front, back);
     } on PairingExpired {
       if (_disposed) return false;
-      _adding = false;
       _draftLocked = false;
       _say(pairingExpiredMessage);
       return false;
     }
     if (_disposed) return false;
-    _adding = false;
     switch (reply) {
       case AddCardMinted(:final card):
         final added = await _add(() => record(card.block));

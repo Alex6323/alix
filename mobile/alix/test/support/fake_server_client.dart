@@ -29,6 +29,7 @@ class FakeServerClient implements ServerClient {
     List<bool>? postNoteReplies,
     List<AddCardReply>? postCardReplies,
     this.expireOnPostCard = false,
+    this.postCardGate,
     this.examStartReply = true,
     this.expireOnExamStart = false,
     List<RemoteExam>? examGetReplies,
@@ -89,6 +90,7 @@ class FakeServerClient implements ServerClient {
   /// as no answer.
   final List<AddCardReply> postCardReplies;
   final bool expireOnPostCard;
+  final Completer<AddCardReply>? postCardGate;
 
   // ── exam (examStart / examGet / examGrade / examRemediate) ─────────────
   final bool examStartReply;
@@ -202,6 +204,7 @@ class FakeServerClient implements ServerClient {
   Future<AddCardReply> postCard(String deckId, String front, List<String> back) async {
     postCardCalls.add(PostCardCall(deckId: deckId, front: front, back: back));
     if (expireOnPostCard) throw const PairingExpired();
+    if (postCardGate != null) return postCardGate!.future;
     if (postCardReplies.isEmpty) return const AddCardNoAnswer();
     final reply = postCardReplies[_cardCall.clamp(0, postCardReplies.length - 1)];
     _cardCall++;

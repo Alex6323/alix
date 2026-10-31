@@ -23,10 +23,13 @@ later reconciles the two.
 
 1. `POST /api/remote/ask/card` answers an identical retry with the kept
    card: when the create is a duplicate and the deck's personal sidecar
-   holds a card whose trimmed front and back equal the request's, with no
-   notes or hints, the answer is 200 with that card's id and block and
-   nothing is appended. Any other duplicate, including one of an authored
-   deck card or the same content in different text, stays 422. Only this
+   holds the request's trimmed front and back stored exactly as the plain
+   card a create writes (`## front`, the back lines, the id line, nothing
+   else), the answer is 200 with that card's id and those exact bytes, and
+   nothing is appended. Any other duplicate stays 422: one of an authored
+   deck card (checked first, even when the sidecar also holds the card),
+   the same content in different text, or a sidecar card carrying anything
+   more, such as a directive. Only this
    route does it; a local create keeps refusing every duplicate.
 2. The phone tells three outcomes apart: the desktop kept the card, the
    desktop answered with a refusal, or no answer arrived. On no answer it

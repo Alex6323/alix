@@ -1413,30 +1413,32 @@ pub fn mint_or_return_kept_card(
     deck_fingerprints: &std::collections::HashSet<u64>,
 ) -> Result<MintedCard, MintError> {
     match mint_personal_card(deck_path, deck_id, front, back, deck_fingerprints) {
-        Err(MintError::Duplicate) => {
-            kept_card(deck_path, deck_id, front, back).ok_or(MintError::Duplicate)
-        }
+        Err(MintError::Duplicate) => kept_card(deck_path, deck_id, front, back, deck_fingerprints)
+            .ok_or(MintError::Duplicate),
         minted => minted,
     }
 }
 
-fn kept_card(deck_path: &Path, deck_id: &str, front: &str, back: &[String]) -> Option<MintedCard> {
+fn kept_card(
+    deck_path: &Path,
+    deck_id: &str,
+    front: &str,
+    back: &[String],
+    deck_fingerprints: &std::collections::HashSet<u64>,
+) -> Option<MintedCard> {
     let (front, back) = plain_sides(front, back).ok()?;
     let text = std::fs::read_to_string(crate::personal::sidecar_path(deck_path)).ok()?;
     let cards = crate::parser::parse_str(deck_id, &text).ok()?;
-    let id = cards
+    cards
         .iter()
-        .find(|card| {
-            card.front == front
-                && card.back == back
-                && card.notes.is_empty()
-                && card.hints.is_empty()
-        })?
-        .id()?;
-    Some(MintedCard {
-        block: plain_block(&front, &back, &id),
-        id,
-    })
+        .filter(|card| card.front == front && card.back == back)
+        .filter(|card| !deck_fingerprints.contains(&card.block_fingerprint))
+        .find_map(|card| {
+            let id = card.id()?;
+            let block = plain_block(&front, &back, &id);
+            let verbatim = text.starts_with(&block) || text.contains(&format!("\n{block}"));
+            verbatim.then_some(MintedCard { block, id })
+        })
 }
 
 fn plain_sides(front: &str, back: &[String]) -> Result<(String, Vec<String>), MintError> {
@@ -2985,6 +2987,60 @@ mod tests {
                 Err(MintError::Duplicate)
             ),
             "a deck card is never handed back as a kept card"
+        );
+    }
+
+    #[test]
+    fn a_retried_mint_does_not_rebuild_a_directive_card_as_plain_text() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("geo.md");
+        let sidecar = crate::personal::sidecar_path(&deck);
+        let kept = "---\nfor: geo.md\n---\n\n## capital of spain?\nMadrid\n<!-- input: draw -->\n<!-- id: card-spain -->\n";
+        std::fs::write(&sidecar, kept).unwrap();
+
+        let retried = mint_or_return_kept_card(
+            &deck,
+            "geo.md",
+            "capital of spain?",
+            &["Madrid".to_string()],
+            &HashSet::new(),
+        );
+
+        assert!(
+            matches!(retried, Err(MintError::Duplicate)),
+            "different sidecar text must stay a refused duplicate"
+        );
+        assert_eq!(kept, std::fs::read_to_string(sidecar).unwrap());
+    }
+
+    #[test]
+    fn an_authored_duplicate_is_not_returned_from_a_matching_sidecar_card() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let deck = dir.path().join("geo.md");
+        let authored = crate::parser::parse_str(
+            "geo.md",
+            "## capital of spain?\nMadrid\n<!-- id: card-authored -->\n",
+        )
+        .unwrap();
+        std::fs::write(
+            crate::personal::sidecar_path(&deck),
+            "---\nfor: geo.md\n---\n\n## capital of spain?\nMadrid\n<!-- id: card-personal -->\n",
+        )
+        .unwrap();
+
+        let retried = mint_or_return_kept_card(
+            &deck,
+            "geo.md",
+            "capital of spain?",
+            &["Madrid".to_string()],
+            &HashSet::from([authored[0].block_fingerprint]),
+        );
+
+        assert!(
+            matches!(retried, Err(MintError::Duplicate)),
+            "a match against the authored deck stays refused"
         );
     }
 

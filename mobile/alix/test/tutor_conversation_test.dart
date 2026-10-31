@@ -305,6 +305,79 @@ void main() {
     expect(subject.draft, isNull);
   });
 
+  testWidgets('an Add in flight keeps a retired conversation alive', (tester) async {
+    const block = '## f\nb\n<!-- id: card-desk -->\n';
+    final gate = Completer<AddCardReply>();
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'an answer'),
+        RemoteAsk(thinking: false, draft: DraftCard(front: 'f', back: ['b'])),
+      ],
+      postCardGate: gate,
+    );
+    final recorded = <String>[];
+    final subject = conversation(
+      client,
+      TutorSlot(),
+      'card-a',
+      record: (block) async {
+        recorded.add(block);
+        return 'card-desk';
+      },
+    );
+    await drafted(tester, subject);
+
+    final outcome = subject.confirmDraft('f', ['b']);
+    await tester.pump();
+    final busyWhileAdding = subject.busy;
+    gate.complete(const AddCardMinted(MintedCard(id: 'card-desk', block: block)));
+
+    expect(await outcome, isTrue);
+    expect(recorded, [block]);
+    expect(
+      busyWhileAdding,
+      isTrue,
+      reason: 'the review screen retires only conversations whose busy flag is true',
+    );
+  });
+
+  testWidgets('a card-only Add locks the draft and rejects a second tap', (tester) async {
+    final gate = Completer<String>();
+    var mintCalls = 0;
+    final client = FakeServerClient(
+      getAskReplies: const [
+        RemoteAsk(thinking: false, answer: 'an answer', cardOnly: true),
+        RemoteAsk(
+          thinking: false,
+          cardOnly: true,
+          draft: DraftCard(front: 'f', back: ['b']),
+        ),
+      ],
+    );
+    final subject = conversation(
+      client,
+      TutorSlot(),
+      'card-a',
+      mint: (front, back) {
+        mintCalls++;
+        return gate.future;
+      },
+    );
+    await drafted(tester, subject);
+
+    final first = subject.confirmDraft('f', ['b']);
+    await tester.pump();
+    final lockedWhileAdding = subject.draftLocked;
+    final second = subject.confirmDraft('f', ['b']);
+    await tester.pump();
+    gate.complete('card-phone');
+
+    expect(await first, isTrue);
+    expect(await second, isFalse, reason: 'one Add is accepted');
+    expect(mintCalls, 1, reason: 'a second tap cannot mint the same local card twice');
+    expect(lockedWhileAdding, isTrue);
+  });
+
   testWidgets('a card-only draft is minted on the phone alone', (tester) async {
     final client = FakeServerClient(
       getAskReplies: const [

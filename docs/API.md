@@ -428,9 +428,10 @@ is synchronous, holds no slot, and is adult-only (`403`). A deck the desktop
 does not serve is `404` with nothing written (the phone then mints the card
 alone); a duplicate or malformed card is `422`, as on the local route,
 with one exception for a retry whose reply was lost: when the sidecar
-already holds a card with exactly this (trimmed) front and back and no
-notes or hints, the answer is `200` with that card's `{id, block}` and
-nothing is appended. A match against the authored deck stays `422`.
+already holds exactly the plain card this (trimmed) front and back would
+make, with nothing else in its block, the answer is `200` with that card's
+`{id, block}` (its bytes as stored) and nothing is appended. A match against
+the authored deck stays `422`, even when the sidecar holds the same card.
 
 A remote exam sitting starts with `POST /api/remote/exam/start {deck}`: the
 server resolves **its own copy** of the named deck, by the same resolution
@@ -1572,7 +1573,7 @@ round-trip suite):
 The reply to `POST /api/remote/ask/card` (§4.11): `id: string`, the minted
 card's prefixed id (`card-<token>`), and `block: string`, the exact stamped
 text the desktop appended to its sidecar, or for an identical retry the kept
-card in that same form (`## front`, the back lines, the
+card's stored bytes, which have that same form (`## front`, the back lines, the
 `<!-- id: ... -->` line, each newline-terminated). The phone appends the
 block as it is, so the next pull's copy of the sidecar is identical to what
 the phone already holds.

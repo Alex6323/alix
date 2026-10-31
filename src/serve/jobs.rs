@@ -442,7 +442,11 @@ pub(super) fn remote_create_card(
     let Some(deck_id) = deck.info.deck_token.clone() else {
         return missing(&"the served deck carries no id");
     };
-    let deck_fingerprints: HashSet<u64> = deck.cards.iter().map(|c| c.block_fingerprint).collect();
+    let deck_fingerprints: HashSet<u64> = deck
+        .authored_cards()
+        .iter()
+        .map(|c| c.block_fingerprint)
+        .collect();
     match crate::store::mint_or_return_kept_card(
         &path,
         &deck_id,

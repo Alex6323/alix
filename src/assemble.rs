@@ -110,6 +110,12 @@ pub struct TutorDeck {
     authored_len: usize,
 }
 
+impl TutorDeck {
+    pub fn authored_cards(&self) -> &[Card] {
+        &self.cards[..self.authored_len]
+    }
+}
+
 pub struct WalkBuild {
     pub session: WalkSession,
     pub info: DeckInfo,
