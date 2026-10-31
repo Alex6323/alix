@@ -235,6 +235,11 @@ class ReviewCardView extends StatelessWidget {
     );
   }
 
+  bool get skippable {
+    final card = state.card;
+    return card != null && !_answered(card);
+  }
+
   bool _answered(ReviewCardModel card) =>
       revealed ||
       checkFeedback != null ||

@@ -123,6 +123,10 @@ class ReviewBridgePort implements ReviewPort {
       _stateFromBridge(_session.introduce(), _session.label());
 
   @override
+  ReviewStateModel skip() =>
+      _stateFromBridge(_session.skip(), _session.label());
+
+  @override
   ReviewStateModel grade(ReviewGrade grade) {
     return _stateFromBridge(
       _session.grade(grade: _gradeToBridge(grade)),

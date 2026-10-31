@@ -523,6 +523,15 @@ impl ReviewSession {
     }
 
     #[flutter_rust_bridge::frb(sync)]
+    pub fn skip(&mut self, now_ms: Option<u64>) -> Result<ReviewState> {
+        let now = now_ms.unwrap_or_else(alix::time::now_ms);
+        self.session.skip(&mut self.store, now);
+        self.session.poll(&mut self.store, now);
+        self.save_store();
+        Ok(self.state(Some(now)))
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
     pub fn crumb(&self, now_ms: Option<u64>) -> Option<CrumbState> {
         let now = now_ms.unwrap_or_else(alix::time::now_ms);
         let card = self.session.current()?;
@@ -1277,6 +1286,33 @@ mod tests {
             reopen(true).state(Some(LATER + 1)).card.is_some(),
             "cram serves the card the scheduler is holding back",
         );
+    }
+
+    #[test]
+    fn skip_serves_the_next_card_and_keeps_the_skipped_one_for_later() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = root.join("two.md");
+        write(&deck, "## One?\nA.\n\n## Two?\nB.\n");
+        alix::stamp::stamp_deck(&deck).unwrap();
+        let mut session = ReviewSession::open(
+            deck.to_string_lossy().into_owned(),
+            root.to_string_lossy().into_owned(),
+            Some(Depth::Recall),
+            None,
+            Some(true),
+            Some(T0),
+            None,
+        )
+        .unwrap();
+        let first = session.state(Some(T0)).card.unwrap().front;
+
+        let after = session.skip(Some(T0)).unwrap();
+        let next = after.card.unwrap().front;
+        assert_ne!(first, next, "skip serves another card");
+        session.grade(Grade::Pass, Some(T0)).unwrap();
+        let last = session.state(Some(T0)).card.unwrap().front;
+        assert_eq!(first, last, "the skipped card comes back later in the sitting");
     }
 
     #[test]

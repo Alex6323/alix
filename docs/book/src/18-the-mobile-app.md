@@ -111,6 +111,9 @@ the sheet's selector swaps between them without losing that stack. Opening a
 hint turns a pass on the card into Partial. Introductions and walks offer no
 hints, and the reverse half of a two-direction card carries none.
 
+To set a card aside for later in the session, open the ⋮ menu in the review
+header and pick **Skip card**; it is offered until the answer shows.
+
 Tapping a revealed answer hides it for a self-test: a sheet titled **Hide**
 rises from
 the answer's top edge to the bottom of the screen, covering the answer, the

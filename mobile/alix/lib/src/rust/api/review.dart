@@ -72,6 +72,8 @@ abstract class ReviewSession implements RustOpaqueInterface {
 
   String recordMintedCard({required String block});
 
+  ReviewState skip({BigInt? nowMs});
+
   ReviewState state({BigInt? nowMs});
 
   TutorCard? tutorCard();

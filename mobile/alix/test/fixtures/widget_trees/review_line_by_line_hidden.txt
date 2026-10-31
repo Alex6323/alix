@@ -72,4 +72,16 @@ Scaffold
                                       Padding(EdgeInsets.zero)
                                         ConstrainedBox
                           Text("1 left")
+                    IconButton(enabled=true, tooltip="More") key=[<StandardComponentType.moreButton>]
+                      _IconButtonM3(enabled=true)
+                        ConstrainedBox
+                          Material
+                            CustomPaint
+                              Tooltip("More")
+                                InkWell(tap=true, longPress=false)
+                                  Padding(EdgeInsets.all(8.0))
+                                    Align
+                                      Icon(e404)
+                                        SizedBox(width=24.0, height=24.0)
+                                          Center
     Stack

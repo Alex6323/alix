@@ -367,6 +367,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
     _resetInputs();
   }
 
+  void _skip() {
+    _closeHelp();
+    _controller.skip();
+    _resetInputs();
+  }
+
   void _grade(ReviewGrade grade) {
     _closeHelp();
     _controller.grade(grade);
@@ -489,6 +495,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           onOpenHint: _openHint,
           onRestart: _restart,
           onOpenExam: _openExam,
+          onSkip: _skip,
         );
       },
     );

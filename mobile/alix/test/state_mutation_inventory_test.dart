@@ -30,7 +30,7 @@ void main() {
         213,
         218,
         223,
-        248,
+        250,
       ],
       reason:
           'setServerLive, install, choose, toggleChoice, submitChoices, '
@@ -88,7 +88,7 @@ void main() {
         ..._sites('lib/walk_screen.dart', 'ListenableBuilder('),
       ],
       [
-        'lib/review_screen.dart:434',
+        'lib/review_screen.dart:440',
         'lib/picker_screen.dart:650',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:225',
@@ -105,7 +105,8 @@ void main() {
           'to picker_screen.dart; the session-end conflict check added '
           'imports, a field, and methods to trace_screen.dart; the shared '
           'showSectionSheet shortened the opener in review_screen.dart and '
-          'walk_screen.dart by four lines; generate_sheet.dart is unchanged',
+          'walk_screen.dart by four lines; the review menu'"'"'s skip added a '
+          'method to review_screen.dart; generate_sheet.dart is unchanged',
     );
   });
 

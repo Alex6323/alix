@@ -225,6 +225,8 @@ class ReviewController extends ChangeNotifier {
 
   void introduce() => install(_requirePort().introduce());
 
+  void skip() => install(_requirePort().skip());
+
   void grade(ReviewGrade grade) => install(_requirePort().grade(grade));
 
   ReviewGrade get verdictGrade => _requirePort().keypointGrade(

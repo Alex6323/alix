@@ -101,6 +101,7 @@ class ReviewView extends StatelessWidget {
     required this.onOpenHint,
     required this.onRestart,
     required this.onOpenExam,
+    required this.onSkip,
   });
 
   final ReviewStateModel state;
@@ -145,10 +146,50 @@ class ReviewView extends StatelessWidget {
   final ValueChanged<ReviewCardModel> onOpenHint;
   final VoidCallback onRestart;
   final VoidCallback onOpenExam;
+  final VoidCallback onSkip;
 
   @override
   Widget build(BuildContext context) {
     final card = state.card;
+    final cardView = card == null
+        ? null
+        : ReviewCardView(
+            state: state,
+            revealed: revealed,
+            revealedLines: revealedLines,
+            choice: choice,
+            multiChoice: multiChoice,
+            multiSelected: multiSelected,
+            checkFeedback: checkFeedback,
+            typelineChecked: typelineChecked,
+            tickedKeypoints: tickedKeypoints,
+            sketch: sketch,
+            onSketchBegin: onSketchBegin,
+            onSketchExtend: onSketchExtend,
+            onSketchEnd: onSketchEnd,
+            onSketchTool: onSketchTool,
+            onSketchUndo: onSketchUndo,
+            onSketchClear: onSketchClear,
+            attemptOpen: attemptOpen,
+            attemptController: attemptController,
+            typedControllers: typedControllers,
+            serverLive: serverLive,
+            tutorCard: tutorCard,
+            verdictGrade: verdictGrade,
+            onChoose: onChoose,
+            onToggleChoice: onToggleChoice,
+            onSubmitChoices: onSubmitChoices,
+            onCheck: onCheck,
+            onOpenAttempt: onOpenAttempt,
+            onToggleKeypoint: onToggleKeypoint,
+            onReveal: onReveal,
+            onRevealNextLine: onRevealNextLine,
+            onIntroduce: onIntroduce,
+            onGrade: onGrade,
+            onOpenTutor: onOpenTutor,
+            onOpenSection: onOpenSection,
+            onOpenHint: onOpenHint,
+          );
     return LeaveGuard(
       finished: state.finished,
       confirm: () => confirmLeave(context),
@@ -167,6 +208,8 @@ class ReviewView extends StatelessWidget {
           ),
           actions: [
             if (!state.finished) AppBarCount('${state.remaining} left'),
+            if (cardView != null)
+              _ReviewMenu(onSkip: cardView.skippable ? onSkip : null),
           ],
         ),
         body: SafeArea(
@@ -188,48 +231,36 @@ class ReviewView extends StatelessWidget {
                         onRestart: onRestart,
                         onOpenExam: onOpenExam,
                       )
-                    : ReviewCardView(
-                        state: state,
-                        revealed: revealed,
-                        revealedLines: revealedLines,
-                        choice: choice,
-                        multiChoice: multiChoice,
-                        multiSelected: multiSelected,
-                        checkFeedback: checkFeedback,
-                        typelineChecked: typelineChecked,
-                        tickedKeypoints: tickedKeypoints,
-                        sketch: sketch,
-                        onSketchBegin: onSketchBegin,
-                        onSketchExtend: onSketchExtend,
-                        onSketchEnd: onSketchEnd,
-                        onSketchTool: onSketchTool,
-                        onSketchUndo: onSketchUndo,
-                        onSketchClear: onSketchClear,
-                        attemptOpen: attemptOpen,
-                        attemptController: attemptController,
-                        typedControllers: typedControllers,
-                        serverLive: serverLive,
-                        tutorCard: tutorCard,
-                        verdictGrade: verdictGrade,
-                        onChoose: onChoose,
-                        onToggleChoice: onToggleChoice,
-                        onSubmitChoices: onSubmitChoices,
-                        onCheck: onCheck,
-                        onOpenAttempt: onOpenAttempt,
-                        onToggleKeypoint: onToggleKeypoint,
-                        onReveal: onReveal,
-                        onRevealNextLine: onRevealNextLine,
-                        onIntroduce: onIntroduce,
-                        onGrade: onGrade,
-                        onOpenTutor: onOpenTutor,
-                        onOpenSection: onOpenSection,
-                        onOpenHint: onOpenHint,
-                      ),
+                    : cardView!,
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ReviewMenu extends StatelessWidget {
+  const _ReviewMenu({required this.onSkip});
+
+  final VoidCallback? onSkip;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<VoidCallback>(
+      key: const ValueKey('review-menu'),
+      icon: const Icon(Icons.more_vert),
+      tooltip: 'More',
+      onSelected: (action) => action(),
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          key: const ValueKey('review-menu-skip'),
+          value: onSkip,
+          enabled: onSkip != null,
+          child: const Text('Skip card'),
+        ),
+      ],
     );
   }
 }

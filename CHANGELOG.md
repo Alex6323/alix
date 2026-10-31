@@ -135,9 +135,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Web review: **Skip** leaves the bottom row and moves into the ☰ menu as
-  **Skip card**, so the row before the answer reads Context, the main button,
-  then Hint, on the web and the phone alike.
+- Review: **Skip** leaves the web's bottom row and moves into the ☰ menu as
+  **Skip card**, and the phone gains the same **Skip card** in a new ⋮ menu in
+  the review header (it had no way to skip). The row before the answer reads
+  Context, the main button, then Hint, on both.
 
 - A section now runs to the next `#` heading and nothing else ends it: a `#`
   with no title (also `# ##` or `# <!-- an aside -->`) is an error, "section

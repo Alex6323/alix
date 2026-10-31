@@ -154,6 +154,40 @@ void main() {
     );
   });
 
+  testWidgets('Skip card in the review menu serves the next card', (
+    tester,
+  ) async {
+    final root = deckRoot('skip', '## One?\nA.\n\n## Two?\nB.\n');
+    makeDue(root);
+    await pumpReview(tester, root);
+    final first = find.text('One?').evaluate().isNotEmpty ? 'One?' : 'Two?';
+    final second = first == 'One?' ? 'Two?' : 'One?';
+
+    await tester.tap(find.byKey(const ValueKey('review-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('review-menu-skip')));
+    await tester.pumpAndSettle();
+    expect(find.text(second), findsOneWidget, reason: 'skip served the other card');
+    expect(find.text(first), findsNothing);
+
+    final reveal = tester.widget<ReviewChip>(
+      find.widgetWithText(ReviewChip, 'Reveal'),
+    );
+    reveal.onTap!();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('review-menu')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<PopupMenuItem<VoidCallback>>(
+            find.byKey(const ValueKey('review-menu-skip')),
+          )
+          .enabled,
+      isFalse,
+      reason: 'an answered card offers no skip',
+    );
+  });
+
   testWidgets('context and opened hints share one retained panel', (
     tester,
   ) async {

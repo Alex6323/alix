@@ -30,6 +30,8 @@ abstract interface class ReviewPort {
 
   ReviewStateModel introduce();
 
+  ReviewStateModel skip();
+
   ReviewStateModel grade(ReviewGrade grade);
 
   ReviewGrade keypointGrade({required int covered, required int total});

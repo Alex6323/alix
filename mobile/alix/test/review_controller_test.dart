@@ -350,6 +350,9 @@ class _FakeReviewPort implements ReviewPort {
   ReviewStateModel introduce() => _state = introduceResult ?? _state;
 
   @override
+  ReviewStateModel skip() => _state;
+
+  @override
   bool openHint(String cardId) {
     openedHintIds.add(cardId);
     return openHintResult;
