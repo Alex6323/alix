@@ -117,7 +117,7 @@ so is every client.
    (`is_workspace`, or a folder) is a container, not a session (see
    `DeckItemDto.name`). `DeckItemDto.selectable` says this on the wire
    directly, so a client no longer has to infer it from `is_workspace`.
-2. `POST /api/select {deck, topology?, region?, depth?, cram?, skip_introduction?, session?}`
+2. `POST /api/select {deck, topology?, region?, depth?, cram?, skip_introduction?, session?, track_confidence?}`
    builds a session. **The response is either a `StateDto` or a
    `TraceSessionDto` — branch on `kind` (`"review"` | `"trace"`) before anything
    else.** A trace deck traces; a fact deck reviews. `depth` is
@@ -130,6 +130,8 @@ so is every client.
    event (`introduced_ms` stays unset, which the store already allows). `session`
    overrides `max_session` (the cards one sitting serves) for this launch; its
    new-card share stays the instance's `new_cards_percent`.
+   `track_confidence` switches the deck's stored confidence tracking on or
+   off before the session starts; omitted keeps what is stored.
 3. Render from `StateDto` (`phase:"review"`, `card`, `mode`, `depth`, counts).
    Every `StateDto` carries `study_revision`, the monotonic identity of the
    current review transition. **Echo it in the `X-Alix-Study-Revision`
@@ -640,6 +642,7 @@ stable `root_id`; paired clients compare the latter before any progress write.
 | POST | `/api/check` | `{lines: [string]}` | `CheckFeedbackDto` | 400 bad body / no card; 409 |
 | POST | `/api/choose` | `{index, card}` for a single pick, `{indices, card}` for select-all (`card`: the current `card.id`, required) | `ChooseFeedbackDto` \| `MultiChooseFeedbackDto` | 400 bad body / no question / shape mismatch; 409 no session / another card |
 | POST | `/api/hint` | `{card}` (the current `card.id`, required) | 204, no body | 400 bad body; 409 no session / stale revision / another card / a card without hints |
+| POST | `/api/confidence` | `{card, confidence}` (`card`: the current `card.id`, required; `confidence`: `"sure"` \| `"unsure"` *(closed)*) | 204, no body | 400 bad body; 409 no session / stale revision / another card / tracking off |
 | POST | `/api/remove` | – | `StateDto` | 409 |
 | POST | `/api/restart` | – | `StateDto` | 409 |
 
@@ -648,6 +651,12 @@ on that card afterwards records Partial (a fail stays a fail), however many
 hints were opened. The mark lives in the session, so a page reload keeps it
 and any move to another card (a grade, skip, introduce, remove, or restart)
 clears it. It does not advance `study_revision`. Repeating it is harmless.
+
+`/api/confidence` records the learner's Sure/Unsure mark for the current
+card while the session tracks confidence (`StateDto.track_confidence`). The
+next grade of that card stores it on its review in the deck's progress; any
+move to another card clears it, like the hint mark. It does not advance
+`study_revision`, and a repeat replaces the mark.
 
 `/api/reset` wipes a row's stored progress (schedules, mastered flag)
 outright — a typed-name confirmation is client UX, not enforced here; a
@@ -848,6 +857,7 @@ The review-session payload; returned by every review action.
 | `topology` | string? | The review order this sitting was opened under, absent when none. A client re-selecting this deck echoes it back so the scope survives. |
 | `region` | string? | The region within `topology` this sitting was scoped to, absent when the whole order is in play. Echo it back with `topology`. |
 | `save_error` | string? | Absent while saving works. Set (human-readable reason) once session progress can no longer be persisted, e.g. another writer replaced this deck's progress document; it stays set until a save succeeds, so clients should show it persistently and advise reopening the deck. |
+| `track_confidence` | bool | Present and `true` when the session's deck tracks confidence: the client asks Sure/Unsure in place of its reveal or submit action and sends the pick to `/api/confidence` before grading. Absent otherwise. |
 | `load_warnings` | [string] | Deck-load diagnostics for the open session (absent when none): a stamped diagram that did not resolve falls back to source at review, and this is the loud trace of it. Clients surface it once at session open. |
 
 Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
@@ -1111,6 +1121,7 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `new_cards` | bool | Fresh material since badging. |
 | `crammable` | bool | The row has at least one card a cram could serve: an authored **or personal** card that has not retired, with a readable progress document (a session serves both, so both count). Independent of due-ness: it stays true while every depth sits in a cooldown, which is when a cram is wanted. Gate the depth control on `reviewable || crammable`, and each depth chip on its own `reviewable_*` unless cram is on. Group rows report `false` (they are not selectable). |
 | `last_launch` | string | How the deck was last launched: `recognize`, `recall`, `reconstruct`, or `walk`. Before any launch, the deck's default depth. A client offers this launch as the deck's primary action. |
+| `track_confidence` | bool | Present and `true` when the deck tracks confidence; absent otherwise. A client shows it as the launch menu's toggle and sends a change with `/api/select`. |
 | `deadline` | DeadlineDto? | A workspace's "ready by" target ({#deadlines}). Present only on a workspace row whose `alix.local.toml` sets one; `null` on every deck/folder row and on a workspace with none set. **Additive**: clients must tolerate its absence/null, same as any other optional field here. |
 
 ### DeadlineDto

@@ -10072,3 +10072,113 @@ fn an_opened_hint_turns_the_next_pass_into_partial_and_names_only_the_current_ca
         "a pass after an opened hint records Partial: {body}"
     );
 }
+
+#[test]
+fn a_tracked_launch_marks_the_graded_review_with_its_confidence_and_the_deck_remembers_tracking() {
+    let (base, guard) = spawn_test_server_fixture(None, |dir| {
+        std::fs::write(
+            dir.join("tracked.md"),
+            "---\nformat-version: 1\nid: \"deck-tracked\"\n---\n## Capital of France?\nParis\n<!-- id: card-t1 -->\n",
+        )
+        .unwrap();
+    });
+    let mark = |card: &str, revision: u64, confidence: &str| {
+        http(
+            &base,
+            "POST",
+            "/api/confidence",
+            &[
+                ("Content-Type", "application/json"),
+                ("X-Alix-Study-Revision", &revision.to_string()),
+            ],
+            serde_json::json!({ "card": card, "confidence": confidence })
+                .to_string()
+                .as_bytes(),
+        )
+        .status
+    };
+
+    assert_eq!(
+        200,
+        post_json(&base, "/api/select", r#"{"deck":"tracked.md"}"#).status,
+        "untracked select"
+    );
+    let state = get_json(&base, "/api/state");
+    assert_eq!(
+        None,
+        state.get("track_confidence"),
+        "untracked state omits the flag: {state}"
+    );
+    let card = state["card"]["id"].as_str().unwrap().to_string();
+    let revision = state["study_revision"].as_u64().unwrap();
+    assert_eq!(
+        409,
+        mark(&card, revision, "sure"),
+        "untracked: the mark is refused"
+    );
+
+    assert_eq!(
+        200,
+        post_json(
+            &base,
+            "/api/select",
+            r#"{"deck":"tracked.md","track_confidence":true}"#
+        )
+        .status,
+        "tracked select"
+    );
+    let state = get_json(&base, "/api/state");
+    assert_eq!(
+        Some(true),
+        state["track_confidence"].as_bool(),
+        "tracked state: {state}"
+    );
+    let card = state["card"]["id"].as_str().unwrap().to_string();
+    let revision = state["study_revision"].as_u64().unwrap();
+    assert_eq!(
+        400,
+        mark(&card, revision, "guessed"),
+        "an unknown confidence value"
+    );
+    assert_eq!(
+        409,
+        mark("card-not-on-screen", revision, "sure"),
+        "another card"
+    );
+    assert_eq!(409, mark(&card, revision + 1, "sure"), "a stale revision");
+    assert_eq!(204, mark(&card, revision, "sure"), "the current card");
+    assert_eq!(
+        200,
+        post_gated(&base, "/api/grade", r#"{"grade":"failed"}"#).status,
+        "grade"
+    );
+
+    let progress =
+        std::fs::read_to_string(guard.dir().join(".alix/progress/deck-tracked.json")).unwrap();
+    let progress: serde_json::Value = serde_json::from_str(&progress).unwrap();
+    assert_eq!(
+        Some(true),
+        progress["deck"]["track_confidence"].as_bool(),
+        "toggle saved: {progress}"
+    );
+    let history = &progress["cards"]["card-t1"]["history"];
+    assert_eq!(
+        Some("sure"),
+        history
+            .as_array()
+            .and_then(|h| h.last())
+            .and_then(|r| r["confidence"].as_str()),
+        "the graded review carries its mark: {progress}"
+    );
+
+    assert_eq!(
+        200,
+        post_json(&base, "/api/select", r#"{"deck":"tracked.md"}"#).status,
+        "a later plain select"
+    );
+    assert_eq!(
+        Some(true),
+        get_json(&base, "/api/state")["track_confidence"].as_bool(),
+        "a launch without the field keeps the stored toggle"
+    );
+}

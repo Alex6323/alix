@@ -83,6 +83,8 @@ pub struct SelectOptions {
     /// A per-launch override of `max_session` for this sitting.
     pub session: Option<usize>,
     pub now_ms: Option<u64>,
+    /// Some: the learner switched the deck's confidence tracking at launch.
+    pub track_confidence: Option<bool>,
 }
 
 pub struct SessionBuild {
@@ -613,6 +615,10 @@ pub fn select(
     // due, so a restart still reopens at the last-chosen depth.
     let resolved_depth = session.depth();
     store.set_last_launch(deck_id.as_ref(), resolved_depth.into());
+    if let Some(on) = opts.track_confidence {
+        store.set_track_confidence(deck_id.as_ref(), on);
+    }
+    session.set_track_confidence(store.track_confidence(deck_id.as_ref()));
     if let Err(e) = store.save() {
         eprintln!("warning: could not save progress: {e}");
     }

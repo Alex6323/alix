@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Confidence tracking on the web: the depth menu's **confidence** tick-box
+  makes a deck ask **Sure** or **Unsure** in place of Reveal or Submit, and a
+  single-answer choice card then selects first and submits on Sure/Unsure.
+  The mark is stored with the review; scheduling ignores it. The depth menu
+  also offers **Exam** for a deck with an exam.
+
 - The phone shows a cited card's source. Tapping a revealed answer on a card
   with `<!-- at: ... -->` citations opens the Hide sheet with a Hide / Source
   switch; Source lists each cited path with numbered lines, or the reason the
@@ -144,6 +150,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   notice; decks reach the phone through the paired desktop instead.
 
 ### Changed
+
+- Progress files gain `track_confidence` on a deck and `confidence`
+  (`"sure"` | `"unsure"`) on a review. A tracked deck's progress no longer
+  loads in an older desktop or phone build, so update both before syncing it.
 
 - The exam writes its questions per deck section: `[exam] num_questions`
   now counts questions for each `#` section (default 3, was 5 per sitting),

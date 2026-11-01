@@ -48,8 +48,10 @@ Every review session runs at one of three independent depths, picked when you
 start it with the web picker's split **Depth…** button, whose small ▾ opens a menu
 of the three (on the keyboard: `v`, then `1`/`2`/`3`; `Esc` cancels; rebindable in
 [`[keys.picker]`](16-configuration.md)). The menu also carries the **cram**
-tick-box (`c`); see [Cramming](05-scheduling.md), and **Walk** (`w`), an
-unscheduled read-through ([Walking a deck](15-the-web-app.md#walking-a-deck)). The main button repeats the
+tick-box (`c`); see [Cramming](05-scheduling.md), the **confidence** tick-box
+([Confidence tracking](15-the-web-app.md#confidence-tracking)), **Walk** (`w`), an
+unscheduled read-through ([Walking a deck](15-the-web-app.md#walking-a-deck)),
+and **Exam** (`x`) on a deck with an exam ([The AI exam](12-the-ai-exam.md)). The main button repeats the
 deck's last launch, remembered per deck: **Learn** at its last depth, or
 **Walk** after a walk. The first time you ever open a
 deck, that default is Recognize only when every card has a genuine

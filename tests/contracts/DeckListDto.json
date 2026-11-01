@@ -81,6 +81,7 @@
           "reviewable_reconstruct": false,
           "selectable": true,
           "state": "started",
+          "track_confidence": true,
           "tree": "└─ "
         }
       ],

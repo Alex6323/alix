@@ -351,6 +351,36 @@ export function createStudy({
     fillBottom();
     renderLegend();
   }
+  function tracked() {
+    return !!state.track_confidence && !isIntroducing() && !isWalking();
+  }
+  function picksBeforeSubmit() {
+    return tracked() && isChoice() && !isMultiChoice();
+  }
+  function pickChoice(i) {
+    selectedChoices = new Set([i]);
+    choiceFocus = i;
+    fillBottom();
+    renderLegend();
+  }
+  function chooseSelected() {
+    const [i] = selectedChoices;
+    if (i !== undefined) choose(i);
+  }
+  function markThen(confidence, action) {
+    fetchApi("/api/confidence", post({ card: state.card.id, confidence })).then(action, action);
+  }
+  function confidenceChips(action, key, disabled) {
+    const unsure = chip("Unsure", "quiet", () => markThen("unsure", action), "u");
+    const sure = chip("Sure", "primary", () => markThen("sure", action), key);
+    unsure.disabled = sure.disabled = !!disabled;
+  }
+  function confidenceKey(e, key, action) {
+    if (!tracked()) return false;
+    if (hit(e, key)) { e.preventDefault(); markThen("sure", action); return true; }
+    if (!e.ctrlKey && !e.altKey && e.key === "u") { e.preventDefault(); markThen("unsure", action); return true; }
+    return false;
+  }
   function submitMultiChoice() {
     if (!selectedChoices.size) return;
     const indices = Array.from(selectedChoices).sort((a, b) => a - b);
@@ -605,7 +635,7 @@ export function createStudy({
       const inp = el("input", "field blank-field");
       inp.type = "text"; inp.autocomplete = "off"; inp.spellcheck = false;
       inp.dataset.step = holeSteps()[k];
-      inp.addEventListener("keydown", e => { if (hit(e, keys.submit)) { e.preventDefault(); submitCheck(); } });
+      inp.addEventListener("keydown", e => { if (hit(e, keys.submit)) { e.preventDefault(); if (tracked()) markThen("sure", submitCheck); else submitCheck(); } });
       pill.replaceWith(inp);
     });
     return true;
@@ -1150,15 +1180,15 @@ export function createStudy({
     opts[choiceFocus].scrollIntoView({ block: "nearest" });
   }
   function renderChoices(a) {
-    const previousFocus = isMultiChoice() ? choiceFocus : -1;
+    const previousFocus = isMultiChoice() || picksBeforeSubmit() ? choiceFocus : -1;
     choiceFocus = -1;
     const first = appendChoiceOptions(a, {
       choices: state.choices,
       choiceRuns: state.choice_runs,
-      onChoose: isMultiChoice() ? toggleChoice : choose,
+      onChoose: isMultiChoice() ? toggleChoice : picksBeforeSubmit() ? pickChoice : choose,
     });
     const options = a.querySelectorAll(".options .option");
-    if (isMultiChoice()) {
+    if (isMultiChoice() || picksBeforeSubmit()) {
       options.forEach((option, index) => {
         const selected = selectedChoices.has(index);
         option.classList.toggle("selected", selected);
@@ -1182,7 +1212,7 @@ export function createStudy({
     gradeableSteps().forEach(() => {
       const inp = el("input", "field");
       inp.type = "text"; inp.autocomplete = "off"; inp.spellcheck = false;
-      inp.addEventListener("keydown", e => { if (hit(e, keys.submit)) { e.preventDefault(); submitCheck(); } });
+      inp.addEventListener("keydown", e => { if (hit(e, keys.submit)) { e.preventDefault(); if (tracked()) markThen("sure", submitCheck); else submitCheck(); } });
       wrap.appendChild(inp);
     });
     a.appendChild(wrap);
@@ -1275,7 +1305,7 @@ export function createStudy({
         // Enter inserts a newline (compose freely); Shift+Enter reveals. Stop the
         // event here so the same keypress doesn't also reach the doc handler
         // and submit the (now visible) checklist in one go.
-        if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); e.stopPropagation(); explainReveal(); }
+        if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); e.stopPropagation(); if (tracked()) markThen("sure", explainReveal); else explainReveal(); }
       });
       a.appendChild(ta);
       timers.setTimeout(() => ta.focus(), 0);
@@ -1763,18 +1793,28 @@ export function createStudy({
         chip("Reveal", "primary", reveal, label(keys.reveal));
       }
     } else if (effectiveDraw() && revealed === 0) {
-      chip("Reveal", "primary", drawReveal, label(keys.reveal));
+      if (tracked()) confidenceChips(drawReveal, label(keys.reveal));
+      else chip("Reveal", "primary", drawReveal, label(keys.reveal));
     } else if (isChoice()) {
-      if (isMultiChoice()) {
+      if (isMultiChoice() && tracked()) {
+        confidenceChips(submitMultiChoice, label(keys.submit), selectedChoices.size === 0);
+      } else if (isMultiChoice()) {
         const submit = chip("Submit", "primary", submitMultiChoice, label(keys.submit));
         submit.disabled = selectedChoices.size === 0;
+      } else if (tracked()) {
+        confidenceChips(chooseSelected, label(keys.submit), selectedChoices.size === 0);
       }
+    } else if (isInput() && tracked()) {
+      confidenceChips(submitCheck, label(keys.submit));
     } else if (isInput()) {
       chip("Submit", "primary", submitCheck, label(keys.submit));
     } else if (isTypeLine()) {
       chip("Check", "primary", submitCurrentTypeLine, label(keys.submit));
     } else if (isExplain() && !fullyRevealed()) {
-      chip("Reveal", "primary", explainReveal, "shift+enter");
+      if (tracked()) confidenceChips(explainReveal, "shift+enter");
+      else chip("Reveal", "primary", explainReveal, "shift+enter");
+    } else if (!fullyRevealed() && revealed === 0 && tracked()) {
+      confidenceChips(reveal, label(keys.reveal));
     } else if (!fullyRevealed()) {
       chip(state.mode === "line" && revealed > 0 ? "Reveal next" : "Reveal", "primary", reveal, label(keys.reveal));
     } else if (hasKeypoints()) {
@@ -2201,6 +2241,7 @@ export function createStudy({
       // (freezing the drawing) to match the "Reveal" chip; placed before the explain
       // and generic reveal branches so a flip/explain draw card reveals via drawReveal().
       if (effectiveDraw() && revealed === 0) {
+        if (confidenceKey(e, keys.reveal, drawReveal)) return;
         if (hit(e, keys.reveal)) { e.preventDefault(); drawReveal(); }
         else if (hit(e, keys.skip)) { e.preventDefault(); skip(); }
         else if (hit(e, keys.remove)) { e.preventDefault(); remove(); }
@@ -2210,7 +2251,7 @@ export function createStudy({
       // Shift+Enter reveals. The textarea handles Shift+Enter when focused (and stops
       // it there); this covers the case where focus has left the textarea.
       if (isExplain() && !fullyRevealed()) {
-        if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); explainReveal(); }
+        if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); if (tracked()) markThen("sure", explainReveal); else explainReveal(); }
         else if (e.ctrlKey && hit(e, keys.remove)) { e.preventDefault(); remove(); }
         else if (e.ctrlKey && hit(e, keys.skip)) { e.preventDefault(); skip(); }
         return;
@@ -2224,6 +2265,7 @@ export function createStudy({
       }
       if (!fullyRevealed()) {
         if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
+        if (revealed === 0 && confidenceKey(e, keys.reveal, reveal)) return;
         if (hit(e, keys.reveal)) { e.preventDefault(); reveal(); return; }
         return;
       }
@@ -2249,6 +2291,8 @@ export function createStudy({
   }
 
   function handleChoiceKey(e) {
+    if (isMultiChoice() && selectedChoices.size && confidenceKey(e, keys.submit, submitMultiChoice)) return;
+    if (picksBeforeSubmit() && selectedChoices.size && confidenceKey(e, keys.submit, chooseSelected)) return;
     if (isMultiChoice() && hit(e, keys.submit)) { e.preventDefault(); submitMultiChoice(); return; }
     if (hit(e, keys.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
     if (hit(e, keys.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }
@@ -2260,10 +2304,11 @@ export function createStudy({
       }
       return;
     }
-    if (e.key === "Enter" && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); choose(choiceFocus); return; }
+    const pick = picksBeforeSubmit() ? pickChoice : choose;
+    if (e.key === "Enter" && choiceFocus >= 0 && choiceFocus < state.choices.length) { e.preventDefault(); pick(choiceFocus); return; }
     if (e.key >= "1" && e.key <= "9") {
       const i = +e.key - 1;
-      if (i < state.choices.length) { e.preventDefault(); choose(i); }
+      if (i < state.choices.length) { e.preventDefault(); pick(i); }
     }
   }
 

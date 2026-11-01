@@ -44,6 +44,13 @@ pub(crate) fn take_sync_commit_threads(deck_id: &str) -> Vec<std::thread::Thread
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Confidence {
+    Sure,
+    Unsure,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Review {
     pub ts_ms: u64,
@@ -51,6 +58,8 @@ pub struct Review {
     pub depth: Depth,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub propagated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<Confidence>,
 }
 
 // Our own representation (all-u64 times), decoupled from rs-fsrs's `Card` so
@@ -179,6 +188,7 @@ impl CardState {
             grade,
             depth,
             propagated,
+            confidence: None,
         });
         let excess = self.history.len().saturating_sub(HISTORY_CAP);
         self.history.drain(..excess);
@@ -200,6 +210,8 @@ pub struct DeckProgress {
     pub recalled_at_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reconstructed_at_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub track_confidence: bool,
 }
 
 impl DeckProgress {
@@ -1233,6 +1245,18 @@ impl Store {
             .entry(deck_id.to_string())
             .or_default()
             .last_launch = Some(launch);
+    }
+
+    pub fn track_confidence(&self, deck_id: &str) -> bool {
+        self.decks.get(deck_id).is_some_and(|d| d.track_confidence)
+    }
+
+    pub fn set_track_confidence(&mut self, deck_id: &str, on: bool) {
+        let deck = self.decks.entry(deck_id.to_string()).or_default();
+        deck.track_confidence = on;
+        if deck.is_empty() {
+            self.decks.remove(deck_id);
+        }
     }
 
     pub fn badge_earned(&self, deck_id: &str, depth: Depth) -> Option<u64> {
@@ -2273,7 +2297,8 @@ mod tests {
                 ts_ms: 1000,
                 grade: Grade::Pass,
                 depth: Depth::Recall,
-                propagated: false
+                propagated: false,
+                confidence: None,
             }],
             state.history
         );
@@ -3461,6 +3486,51 @@ mod tests {
     }
 
     #[test]
+    fn confidence_and_its_deck_toggle_are_written_only_when_present_and_survive_a_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p.json");
+        let mut store = Store::open(&path).unwrap();
+        let state = store.get_or_insert("card-a");
+        state.record_review(1000, Grade::Fail, Depth::Recall, false);
+        state.history.last_mut().unwrap().confidence = Some(Confidence::Sure);
+        state.record_review(2000, Grade::Pass, Depth::Recall, false);
+        store.set_track_confidence("p", true);
+        store.save().unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            1,
+            text.matches(r#""confidence": "sure""#).count(),
+            "one marked review: {text}"
+        );
+        assert_eq!(
+            1,
+            text.matches(r#""confidence":"#).count(),
+            "an unmarked review omits the key: {text}"
+        );
+        assert!(
+            text.contains(r#""track_confidence": true"#),
+            "the toggle: {text}"
+        );
+
+        let reloaded = Store::open(&path).unwrap();
+        assert!(reloaded.track_confidence("p"), "toggle reloads");
+        let marks: Vec<_> = reloaded
+            .get("card-a")
+            .unwrap()
+            .history
+            .iter()
+            .map(|r| r.confidence)
+            .collect();
+        assert_eq!(vec![Some(Confidence::Sure), None], marks, "marks reload");
+
+        let mut store = reloaded;
+        store.set_track_confidence("p", false);
+        store.save().unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("track_confidence"), "off is omitted: {text}");
+    }
+
+    #[test]
     fn an_overfull_history_from_disk_trims_to_the_cap_on_the_next_review() {
         let mut state = CardState::new();
         for i in 0..(HISTORY_CAP + 5) {
@@ -3469,6 +3539,7 @@ mod tests {
                 grade: Grade::Pass,
                 depth: Depth::Recall,
                 propagated: false,
+                confidence: None,
             });
         }
         state.record_review(999_999, Grade::Pass, Depth::Recall, false);

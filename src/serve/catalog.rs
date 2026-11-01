@@ -324,6 +324,8 @@ pub(super) fn deck_item_dto(
                 new_cards: s.new_cards,
                 crammable: s.crammable,
                 last_launch,
+                track_confidence: store
+                    .track_confidence(deck.deck_token.as_deref().unwrap_or_default()),
                 deadline: None, // a deadline is a workspace-level setting, not a deck's
             }
         }
@@ -359,6 +361,7 @@ pub(super) fn deck_item_dto(
             new_cards: false,
             crammable: false,
             last_launch: Launch::default().name(),
+            track_confidence: false,
             deadline: None,
         },
     }
@@ -440,6 +443,7 @@ pub(super) fn workspace_members(
         bool,
         &'static str,
         Option<Arc<crate::deck::Deck>>,
+        bool,
     );
     let loaded: Vec<LoadedMember> = paths
         .iter()
@@ -476,20 +480,32 @@ pub(super) fn workspace_members(
                     }),
                 _ => Launch::default(),
             };
-            (status, has_topology, last_launch.name(), deck)
+            let track_confidence = match (store, deck.as_ref()) {
+                (Some(st), Some(d)) => {
+                    st.track_confidence(d.deck_token.as_deref().unwrap_or_default())
+                }
+                _ => false,
+            };
+            (
+                status,
+                has_topology,
+                last_launch.name(),
+                deck,
+                track_confidence,
+            )
         })
         .collect();
     // A member whose deck failed to load counts toward neither `ready` nor
     // `total` (the rule itself lives in `picker::workspace_readiness`).
     let member_statuses: Vec<picker::DeckStatus> = loaded
         .iter()
-        .filter_map(|(status, _, _, _)| status.clone())
+        .filter_map(|(status, _, _, _, _)| status.clone())
         .collect();
     let readiness = picker::workspace_readiness(&member_statuses);
     let members_loaded: Vec<(PathBuf, Option<Arc<crate::deck::Deck>>)> = paths
         .iter()
         .cloned()
-        .zip(loaded.iter().map(|(_, _, _, deck)| deck.clone()))
+        .zip(loaded.iter().map(|(_, _, _, deck, _)| deck.clone()))
         .collect();
     let parent = picker::member_parents(&members_loaded, decks_dir);
     let key: Vec<(bool, String)> = e
@@ -517,6 +533,7 @@ pub(super) fn workspace_members(
             let indent = prefix.chars().count() / 3;
             let has_topology = loaded[i].1;
             let last_launch = loaded[i].2;
+            let track_confidence = loaded[i].4;
             match &loaded[i].0 {
                 Some(s) => MemberDto {
                     name: m.name.clone(),
@@ -550,6 +567,7 @@ pub(super) fn workspace_members(
                     new_cards: s.new_cards,
                     crammable: s.crammable,
                     last_launch,
+                    track_confidence,
                 },
                 // Mirrors deck_item_dto's failed-load fallback: still
                 // selectable, nothing reviewable. Whole-root store damage
@@ -578,6 +596,7 @@ pub(super) fn workspace_members(
                     new_cards: false,
                     crammable: false,
                     last_launch,
+                    track_confidence,
                 },
             }
         })
@@ -703,6 +722,7 @@ pub(super) fn deck_catalog(
                 new_cards: false,
                 crammable: false,
                 last_launch: Launch::default().name(),
+                track_confidence: false,
                 deadline,
             };
             if is_ws {
@@ -752,6 +772,8 @@ pub(super) fn parse_selection(request: &mut Request) -> Option<(String, SelectOp
         skip_introduction: bool,
         #[serde(default)]
         session: Option<usize>,
+        #[serde(default)]
+        track_confidence: Option<bool>,
     }
     let body: Body = serde_json::from_reader(request.as_reader()).ok()?;
     if body.deck.is_empty() {
@@ -768,6 +790,7 @@ pub(super) fn parse_selection(request: &mut Request) -> Option<(String, SelectOp
             session: body.session,
             // The web serves on the wall clock; only embedders inject time.
             now_ms: None,
+            track_confidence: body.track_confidence,
         },
     ))
 }

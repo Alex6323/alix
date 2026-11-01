@@ -358,6 +358,12 @@ pub(super) enum StudyCommand {
         expected: u64,
         reply: Reply<bool>,
     },
+    MarkConfidence {
+        card: String,
+        confidence: crate::store::Confidence,
+        expected: u64,
+        reply: Reply<bool>,
+    },
     Remove {
         expected: u64,
         reply: Reply<Option<StateDto>>,
@@ -579,6 +585,19 @@ impl StudyHandle {
     pub(super) fn open_hint(&self, card: String, expected: u64) -> Option<bool> {
         self.call(|reply| StudyCommand::OpenHint {
             card,
+            expected,
+            reply,
+        })
+    }
+    pub(super) fn mark_confidence(
+        &self,
+        card: String,
+        confidence: crate::store::Confidence,
+        expected: u64,
+    ) -> Option<bool> {
+        self.call(|reply| StudyCommand::MarkConfidence {
+            card,
+            confidence,
             expected,
             reply,
         })
@@ -1113,6 +1132,19 @@ impl StudyState {
                         .as_mut()
                         .is_some_and(|r| r.session.open_hint(&card));
                 let _ = reply.send(opened);
+            }
+            StudyCommand::MarkConfidence {
+                card,
+                confidence,
+                expected,
+                reply,
+            } => {
+                let marked = self.revision == expected
+                    && self
+                        .reviewing
+                        .as_mut()
+                        .is_some_and(|r| r.session.mark_confidence(&card, confidence));
+                let _ = reply.send(marked);
             }
             StudyCommand::Remove { expected, reply } => {
                 let out = if self.revision != expected {

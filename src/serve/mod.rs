@@ -1287,6 +1287,25 @@ pub fn run_review(
                     },
                 }
             }
+            (Method::Post, "/api/confidence") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                #[derive(Deserialize)]
+                struct Body {
+                    card: String,
+                    confidence: crate::store::Confidence,
+                }
+                match json_body::<Body>(&mut request) {
+                    None => respond_status(request, 400),
+                    Some(body) => match study.mark_confidence(body.card, body.confidence, expected) {
+                        None => respond_status(request, 503),
+                        Some(false) => respond_status(request, 409),
+                        Some(true) => respond_status(request, 204),
+                    },
+                }
+            }
             (Method::Post, "/api/remove") => {
                 let Some(expected) = echoed_revision(&request) else {
                     respond_status(request, 400);

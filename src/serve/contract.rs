@@ -62,6 +62,7 @@ fn statedto_select_phase_wire_shape() {
         label: "select decks".to_string(),
         save_error: None,
         load_warnings: Vec::new(),
+        track_confidence: false,
     };
     pin(
         "StateDto.select",
@@ -262,6 +263,7 @@ fn statedto_review_phase_wire_shape() {
             ".alix/progress/deck-rust1.json: stale progress revision 3; disk is at 4".to_string(),
         ),
         load_warnings: vec!["2 frozen diagram(s) did not resolve and fall back to source; run `alix doctor` for details".to_string()],
+        track_confidence: true,
     };
     pin(
         "StateDto.review",
@@ -375,7 +377,8 @@ fn statedto_review_phase_wire_shape() {
             "topology": "order",
             "region": "intro",
             "save_error": ".alix/progress/deck-rust1.json: stale progress revision 3; disk is at 4",
-            "load_warnings": ["2 frozen diagram(s) did not resolve and fall back to source; run `alix doctor` for details"]
+            "load_warnings": ["2 frozen diagram(s) did not resolve and fall back to source; run `alix doctor` for details"],
+            "track_confidence": true
         }),
     );
 }
@@ -417,6 +420,7 @@ fn statedto_done_phase_carries_the_next_due_instant() {
         label: "rust.md".to_string(),
         save_error: None,
         load_warnings: Vec::new(),
+        track_confidence: false,
     };
     pin(
         "StateDto.done",
@@ -497,6 +501,7 @@ fn statedto_done_phase_carries_the_recognize_gap() {
         label: "status-codes.md".to_string(),
         save_error: None,
         load_warnings: Vec::new(),
+        track_confidence: false,
     };
     pin(
         "StateDto.recognize-gap",
@@ -1612,6 +1617,7 @@ fn decklistdto_wire_shape() {
                 new_cards: false,
                 crammable: true,
                 last_launch: "recall",
+                track_confidence: true,
             }],
             path: Some("~/decks".to_string()),
             icon: Some("/img/0123456789abcdef".to_string()),
@@ -1622,6 +1628,7 @@ fn decklistdto_wire_shape() {
             new_cards: true,
             crammable: true,
             last_launch: "recall",
+            track_confidence: false,
             deadline: Some(DeadlineDto {
                 date: "2026-09-01".to_string(),
                 days_left: 23,
@@ -1658,6 +1665,7 @@ fn decklistdto_wire_shape() {
             new_cards: true,
             crammable: true,
             last_launch: "recall",
+            track_confidence: false,
             // A loose deck row never carries a deadline: that's a workspace
             // setting only.
             deadline: None,
@@ -1710,7 +1718,8 @@ fn decklistdto_wire_shape() {
                     "badge_dotted": false,
                     "new_cards": false,
                     "crammable": true,
-                    "last_launch": "recall"
+                    "last_launch": "recall",
+                    "track_confidence": true
                 }],
                 "path": "~/decks",
                 "icon": "/img/0123456789abcdef",

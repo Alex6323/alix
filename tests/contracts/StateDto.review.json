@@ -240,5 +240,6 @@
   "save_error": ".alix/progress/deck-rust1.json: stale progress revision 3; disk is at 4",
   "section_first": false,
   "study_revision": 7,
-  "topology": "order"
+  "topology": "order",
+  "track_confidence": true
 }

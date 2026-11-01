@@ -120,6 +120,8 @@ pub struct Session {
     met_sections: HashSet<Vec<String>>,
     current_introducing: bool,
     hint_opened: bool,
+    confidence: Option<crate::store::Confidence>,
+    track_confidence: bool,
     appearances: Vec<u32>,
     choice_seed: u64,
     scheduler: Box<dyn Scheduler>,
@@ -231,6 +233,8 @@ impl Session {
             met_sections,
             current_introducing: false,
             hint_opened: false,
+            confidence: None,
+            track_confidence: false,
             appearances,
             choice_seed: now_ms,
             scheduler,
@@ -242,6 +246,14 @@ impl Session {
         };
         session.advance(store, now_ms);
         session
+    }
+
+    pub fn set_track_confidence(&mut self, on: bool) {
+        self.track_confidence = on;
+    }
+
+    pub fn tracks_confidence(&self) -> bool {
+        self.track_confidence
     }
 
     pub fn set_depth_excluded(&mut self, cards: Vec<Card>) {
@@ -473,6 +485,17 @@ impl Session {
         opens
     }
 
+    pub fn mark_confidence(&mut self, card_id: &str, confidence: crate::store::Confidence) -> bool {
+        let current = self.track_confidence
+            && self
+                .current()
+                .is_some_and(|card| card.id().as_deref() == Some(card_id));
+        if current {
+            self.confidence = Some(confidence);
+        }
+        current
+    }
+
     pub fn grade(&mut self, store: &mut Store, grade: Grade, now_ms: u64) {
         let Some(index) = self.current_idx else {
             return;
@@ -499,6 +522,9 @@ impl Session {
             self.scheduler.reanchor(state, depth, now_ms);
         } else {
             self.scheduler.apply(state, depth, grade, now_ms, false);
+            if let Some(review) = state.history.last_mut() {
+                review.confidence = self.confidence;
+            }
         }
 
         // A pass propagates to EVERY shallower depth (ADR 0033 clause 4),
@@ -726,6 +752,7 @@ impl Session {
         let changed = next != self.current_idx;
         if !keep_current || changed {
             self.hint_opened = false;
+            self.confidence = None;
         }
         if let Some(i) = next
             && changed
@@ -1518,6 +1545,81 @@ mod tests {
             }),
             "a poll that keeps the card"
         );
+    }
+
+    #[test]
+    fn a_confidence_mark_lands_on_the_graded_review_and_clears_when_the_card_changes() {
+        use crate::store::Confidence;
+        type Step = dyn Fn(&mut Session, &mut Store, &str) -> bool;
+        let rows: [(&str, usize, &Step, Grade, Option<Confidence>); 6] = [
+            (
+                "sure then a miss",
+                1,
+                &|s, _, id| s.mark_confidence(id, Confidence::Sure),
+                Grade::Fail,
+                Some(Confidence::Sure),
+            ),
+            (
+                "unsure then a pass",
+                1,
+                &|s, _, id| s.mark_confidence(id, Confidence::Unsure),
+                Grade::Pass,
+                Some(Confidence::Unsure),
+            ),
+            ("no mark", 1, &|_, _, _| true, Grade::Pass, None),
+            (
+                "tracking off",
+                1,
+                &|s, _, id| {
+                    s.set_track_confidence(false);
+                    !s.mark_confidence(id, Confidence::Sure)
+                },
+                Grade::Pass,
+                None,
+            ),
+            (
+                "a card that is not current",
+                1,
+                &|s, _, _| !s.mark_confidence("card-not-current", Confidence::Sure),
+                Grade::Pass,
+                None,
+            ),
+            (
+                "marked, then skipped to another card",
+                2,
+                &|s, st, id| {
+                    let marked = s.mark_confidence(id, Confidence::Sure);
+                    s.skip(st, 1_500);
+                    marked
+                },
+                Grade::Pass,
+                None,
+            ),
+        ];
+        for (label, n, step, grade, expected) in rows {
+            let (mut session, mut store, _dir) = graded(n, grading_options(false));
+            session.set_track_confidence(true);
+            let first = session.current_id().unwrap();
+            assert!(
+                step(&mut session, &mut store, &first),
+                "{label}: the step's own check"
+            );
+            let graded_id = session.current_id().unwrap();
+            session.grade(&mut store, grade, 2_000);
+            let last = store
+                .get(&graded_id)
+                .and_then(|c| c.history.last().copied());
+            assert_eq!(
+                Some(grade),
+                last.map(|r| r.grade),
+                "{label}: the graded review"
+            );
+            assert_eq!(
+                expected,
+                last.and_then(|r| r.confidence),
+                "{label}: its mark"
+            );
+        }
     }
 
     #[test]

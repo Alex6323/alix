@@ -47,6 +47,7 @@ export function createPicker({
   let drawerSel = { deck: null, topology: null, region: null };
   let topoCache = {};
   let cramOn = false;
+  let trackOn = null; // the depth menu's confidence toggle: null until flipped, so a launch keeps what is stored
   let focusedEl = null;
   let iconNonce = 0;
   const drawerDurationMs = 170;
@@ -78,15 +79,17 @@ export function createPicker({
     return !!next && next.kind === "trace";
   }
 
-  function select(name, topology, region, depth, cram) {
+  function select(name, topology, region, depth, cram, trackConfidence) {
     rememberLaunch(name);
-    return api("/api/select", post({
+    const body = {
       deck: name,
       topology: topology || null,
       region: region || null,
       depth: depth || null,
       cram: !!cram,
-    })).then((next) => {
+    };
+    if (typeof trackConfidence === "boolean") body.track_confidence = trackConfidence;
+    return api("/api/select", post(body)).then((next) => {
       if (isTraceSession(next)) openTraceSession(next);
       else applyStudy(next);
       return next;
@@ -284,7 +287,7 @@ export function createPicker({
       if (!cramOn && !canStartAt(it, gated, depth)) return;
       lastWorkspace = wsName || null;
       const sel = drawerSel.deck === it.name ? drawerSel : {};
-      select(it.name, sel.topology, sel.region, depth, cramOn);
+      select(it.name, sel.topology, sel.region, depth, cramOn, trackOn);
     }
 
     function launchWalk(it, wsName) {
@@ -539,6 +542,12 @@ export function createPicker({
           cram.addEventListener("mousedown", e => e.preventDefault());
           cram.addEventListener("click", () => { cramOn = !cramOn; syncPrimary(); });
           legend.appendChild(cram);
+          const tracking = trackOn === null ? !!it.track_confidence : trackOn;
+          const track = el("button", "chip" + (tracking ? " primary" : ""), (tracking ? "☑" : "☐") + " confidence");
+          track.title = "ask Sure or Unsure before each answer and record it with the review";
+          track.addEventListener("mousedown", e => e.preventDefault());
+          track.addEventListener("click", () => { trackOn = !tracking; syncPrimary(); });
+          legend.appendChild(track);
           const cancel = el("button", "chip", "Cancel");
           cancel.appendChild(el("span", "k", "esc"));
           cancel.addEventListener("mousedown", e => e.preventDefault());
@@ -622,7 +631,7 @@ export function createPicker({
           // Keep focus on the deck row (see the depth menu above): the click
           // rebuilds the footer, which would otherwise strand focus on <body>.
           lv.addEventListener("mousedown", e => e.preventDefault());
-          lv.addEventListener("click", () => { depthMenuOpen = true; cramOn = false; syncPrimary(); });
+          lv.addEventListener("click", () => { depthMenuOpen = true; cramOn = false; trackOn = null; syncPrimary(); });
           legend.appendChild(lv);
         }
         // A read-only Browse of the focused deck (key b).
@@ -982,7 +991,7 @@ export function createPicker({
         else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browse(cur._item, cur._wsName); }
         else if (e.key === "a" && cur && (cur._item || cur._open)) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item ? cur._item.name : cur._open.name); }
         else if (e.key === "d" && cur && cur._open && cur._open.state === "workspace") { e.preventDefault(); deadlinePromptOpen = true; syncPrimary(); }
-        else if (hit(e, keys.depth) && hasDepthSplit(cur) && canOpenDepths(cur._item, cur._gated)) { e.preventDefault(); depthMenuOpen = true; cramOn = false; syncPrimary(); }
+        else if (hit(e, keys.depth) && hasDepthSplit(cur) && canOpenDepths(cur._item, cur._gated)) { e.preventDefault(); depthMenuOpen = true; cramOn = false; trackOn = null; syncPrimary(); }
         else if (e.key === "r") { e.preventDefault(); refresh(); } // re-scan the decks (also the ⟳ nav button)
         else if (opts.allowMastered && hit(e, keys.mastered)) { e.preventDefault(); renderMastered(); }
         else if (e.key === "x" && cur && cur._item && cur._item.examable) {

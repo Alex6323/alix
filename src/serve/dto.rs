@@ -166,6 +166,8 @@ pub(super) struct StateDto {
     /// did not resolve); absent when there are none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) load_warnings: Vec<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) track_confidence: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -238,6 +240,8 @@ pub(super) struct DeckItemDto {
     pub(super) new_cards: bool,
     pub(super) crammable: bool,
     pub(super) last_launch: &'static str,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) track_confidence: bool,
     pub(super) deadline: Option<DeadlineDto>,
 }
 
@@ -274,6 +278,8 @@ pub(super) struct MemberDto {
     pub(super) new_cards: bool,
     pub(super) crammable: bool,
     pub(super) last_launch: &'static str,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) track_confidence: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -1164,6 +1170,7 @@ pub(super) fn review_state(
             region: None,
             save_error: save_error.map(str::to_string),
             load_warnings: Vec::new(),
+            track_confidence: false,
         };
     };
     let session = &r.session;
@@ -1266,6 +1273,7 @@ pub(super) fn review_state(
         region: r.region_name.clone(),
         save_error: save_error.map(str::to_string),
         load_warnings: r.load_warnings.clone(),
+        track_confidence: session.tracks_confidence(),
     }
 }
 
