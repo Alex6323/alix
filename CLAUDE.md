@@ -621,7 +621,7 @@ to this codebase. When in doubt, mirror the surrounding code.
   must reimplement production behavior to boot a server.
 - **Subagent-driven development cleans up after itself.** When an SDD run
   finishes — its branch merged or abandoned — clear its scratch with
-  **`make sdd-clean`** (removes the `.superpowers/sdd/` ledger + task-brief /
-  review-package files, keeps the dir + `.gitignore`), so a spent ledger doesn't
+  **`make sdd-clean`** (removes everything under `.superpowers/sdd/`, per-plan
+  folders included, and keeps the dir + `.gitignore`), so a spent ledger doesn't
   linger in the working tree and get mistaken for active work. The ledger is a
   live recovery map *during* a run; once the work lands it has done its job.

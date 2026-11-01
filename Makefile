@@ -530,7 +530,7 @@ clean:
 # gitignored and recoverable from git log, so this is safe to run anytime — it's
 # how an SDD run cleans up after its branch lands (see CLAUDE.md).
 sdd-clean:
-	@find .superpowers/sdd -maxdepth 1 -type f ! -name .gitignore -delete 2>/dev/null; \
+	@find .superpowers/sdd -mindepth 1 -maxdepth 1 ! -name .gitignore -exec rm -rf {} + 2>/dev/null; \
 		echo "cleaned .superpowers/sdd/ (kept the dir + .gitignore)"
 
 # Release heartbeat: report whether shipped work has piled up unreleased (entries
