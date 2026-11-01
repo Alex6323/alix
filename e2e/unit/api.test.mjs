@@ -99,7 +99,7 @@ test("api clears a rejected pairing token once", async () => {
 test("every walk route validates the shape it returns", () => {
   const walk = { kind: "walk", phase: "front" };
   const picker = { kind: "review", phase: "select" };
-  for (const route of ["/api/walk", "/api/walk/reveal", "/api/walk/next", "/api/walk/restart"]) {
+  for (const route of ["/api/walk", "/api/walk/reveal", "/api/walk/grade", "/api/walk/restart"]) {
     const validate = validatorFor(route);
     assert.equal(validate(walk), true, `${route} accepts a WalkDto`);
     assert.equal(validate(picker), false, `${route} rejects a StateDto`);

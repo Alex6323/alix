@@ -182,6 +182,9 @@ pub(super) struct WalkDto {
     pub(super) position: usize,
     pub(super) total: usize,
     pub(super) label: String,
+    pub(super) study_revision: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) pick: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) save_error: Option<String>,
 }
@@ -1293,7 +1296,7 @@ pub(super) fn walk_phase_name(phase: walk::Phase) -> &'static str {
     }
 }
 
-pub(super) fn walk_dto(w: &Walking, save_error: Option<&str>) -> WalkDto {
+pub(super) fn walk_dto(w: &Walking, study_revision: u64, save_error: Option<&str>) -> WalkDto {
     let session = &w.session;
     let card = session.current();
     let question = session.question();
@@ -1328,6 +1331,10 @@ pub(super) fn walk_dto(w: &Walking, save_error: Option<&str>) -> WalkDto {
         position: session.position(),
         total: session.total(),
         label: w.label.clone(),
+        study_revision,
+        pick: session
+            .pick()
+            .map(|right| if right { "correct" } else { "wrong" }),
         save_error: save_error.map(str::to_string),
     }
 }

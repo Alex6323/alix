@@ -1,0 +1,19 @@
+{
+  "card": null,
+  "choice_runs": null,
+  "choices": [
+    "Rome",
+    "Paris"
+  ],
+  "choices_multiple": null,
+  "input": "type",
+  "kind": "walk",
+  "label": "Geography",
+  "mode": "choice",
+  "phase": "answer",
+  "pick": "wrong",
+  "position": 1,
+  "section_first": false,
+  "study_revision": 5,
+  "total": 3
+}

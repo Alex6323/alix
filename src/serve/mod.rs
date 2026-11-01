@@ -1653,6 +1653,10 @@ pub fn run_review(
                 Some(Some(dto)) => respond_json(request, &dto),
             },
             (Method::Post, "/api/walk/choose") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
                 #[derive(Deserialize)]
                 struct Body {
                     index: Option<usize>,
@@ -1666,7 +1670,7 @@ pub fn run_review(
                         continue;
                     }
                 };
-                match study.walk_choose(choice) {
+                match study.walk_choose(choice, expected) {
                     None => respond_status(request, 503),
                     Some(Feedback::NoSession) => respond_status(request, 409),
                     Some(Feedback::Bad) => respond_status(request, 400),
@@ -1676,21 +1680,62 @@ pub fn run_review(
                     }
                 }
             }
-            (Method::Post, "/api/walk/reveal") => match study.walk_reveal() {
-                None => respond_status(request, 503),
-                Some(None) => respond_status(request, 409),
-                Some(Some(dto)) => respond_json(request, &dto),
-            },
-            (Method::Post, "/api/walk/next") => match study.walk_next() {
-                None => respond_status(request, 503),
-                Some(None) => respond_status(request, 409),
-                Some(Some(dto)) => respond_json(request, &dto),
-            },
-            (Method::Post, "/api/walk/restart") => match study.walk_restart() {
-                None => respond_status(request, 503),
-                Some(None) => respond_status(request, 409),
-                Some(Some(dto)) => respond_json(request, &dto),
-            },
+            (Method::Post, "/api/walk/reveal") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.walk_reveal(expected) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                }
+            }
+            (Method::Post, "/api/walk/grade") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Some(grade) = read_grade(&mut request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.walk_grade(grade, expected) {
+                    None => respond_status(request, 503),
+                    Some(Feedback::NoSession) => respond_status(request, 409),
+                    Some(Feedback::Bad) => respond_status(request, 400),
+                    Some(Feedback::Ok(dto)) => respond_json(request, &dto),
+                }
+            }
+            (Method::Post, "/api/walk/hint") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                #[derive(Deserialize)]
+                struct Body {
+                    card: String,
+                }
+                match json_body::<Body>(&mut request) {
+                    None => respond_status(request, 400),
+                    Some(body) => match study.walk_hint(body.card, expected) {
+                        None => respond_status(request, 503),
+                        Some(false) => respond_status(request, 409),
+                        Some(true) => respond_status(request, 204),
+                    },
+                }
+            }
+            (Method::Post, "/api/walk/restart") => {
+                let Some(expected) = echoed_revision(&request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match study.walk_restart(expected) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(dto)) => respond_json(request, &dto),
+                }
+            }
             (Method::Post, "/api/walk/leave") => match study.walk_leave() {
                 None => respond_status(request, 503),
                 Some(Transition::Done(dto)) => respond_json(request, &dto),

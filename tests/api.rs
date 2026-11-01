@@ -7387,7 +7387,7 @@ fn get_api_trace_with_no_active_trace_yields_409() {
 const WALK_DECK: &str = "---\nformat-version: 1\nid: \"deck-walk\"\n---\n\
 # Capitals\n\nEvery country has one.\n\n\
 ## capital of France\n- [x] Paris\n- [ ] Rome\n- [ ] Berlin\n<!-- choices: single -->\n<!-- id: card-w1 -->\n\n\
-## 2 + 2\n4\n<!-- id: card-w2 -->\n";
+## 2 + 2\n> [!TIP]\n> Count on your fingers.\n\n---\n4\n<!-- id: card-w2 -->\n";
 
 fn write_walk_deck(dir: &Path) {
     std::fs::write(dir.join("walk.md"), WALK_DECK).unwrap();
@@ -7401,6 +7401,27 @@ fn walked_ms(dir: &Path, card: &str) -> Option<u64> {
     open_deck_store(dir, "walk.md")
         .get(card)
         .and_then(|state| state.walked_ms)
+}
+
+fn walk_revision(base: &str) -> String {
+    let walk = json_of(&http(base, "GET", "/api/walk", &[], &[]));
+    walk["study_revision"].as_u64().unwrap_or(0).to_string()
+}
+
+/// Posts a walk mutation with the walk's current `study_revision` echoed,
+/// the way the web client does.
+fn post_walk(base: &str, path: &str, json: &str) -> HttpResp {
+    let revision = walk_revision(base);
+    http(
+        base,
+        "POST",
+        path,
+        &[
+            ("Content-Type", "application/json"),
+            ("X-Alix-Study-Revision", &revision),
+        ],
+        json.as_bytes(),
+    )
 }
 
 fn correct_index(dto: &serde_json::Value) -> usize {
@@ -7443,29 +7464,31 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
         dto["choices"].as_array().map_or(0, Vec::len),
         "open: the authored options are offered: {dto}"
     );
-
-    // a pick item opens only through a pick, and next on the front writes nothing
-    let revealed = json_of(&post_json(&base, "/api/walk/reveal", "{}"));
-    let nexted = json_of(&post_json(&base, "/api/walk/next", "{}"));
     assert_eq!(
-        (("front", 0), ("front", 0), None),
+        dto["study_revision"].as_u64().unwrap_or(0).to_string(),
+        walk_revision(&base),
+        "open: the opening walk state carries the revision a pick must echo: {dto}"
+    );
+
+    // a pick item opens only through a pick, and a grade on the front is refused
+    let revealed = json_of(&post_walk(&base, "/api/walk/reveal", "{}"));
+    let graded = post_walk(&base, "/api/walk/grade", r#"{"grade":"passed"}"#).status;
+    assert_eq!(
+        (("front", 0), 400, None),
         (
             (
                 revealed["phase"].as_str().unwrap_or_default(),
                 revealed["position"].as_u64().unwrap_or(9)
             ),
-            (
-                nexted["phase"].as_str().unwrap_or_default(),
-                nexted["position"].as_u64().unwrap_or(9)
-            ),
+            graded,
             walked_ms(guard.dir(), "card-w1"),
         ),
-        "pick item: reveal and next on the front change nothing: {revealed} {nexted}"
+        "pick item: reveal changes nothing and a grade on the front is 400: {revealed}"
     );
 
     // choose
     let index = correct_index(&dto);
-    let resp = post_json(
+    let resp = post_walk(
         &base,
         "/api/walk/choose",
         &format!(r#"{{"index":{index}}}"#),
@@ -7481,20 +7504,31 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
         "choose: the correct pick passes: {feedback}"
     );
     let polled = json_of(&http(&base, "GET", "/api/walk", &[], &[]));
-    let again = post_json(&base, "/api/walk/choose", r#"{"index":0}"#).status;
-    let shapeless = post_json(&base, "/api/walk/choose", r#"{"index":0,"indices":[0]}"#).status;
+    let again = post_walk(&base, "/api/walk/choose", r#"{"index":0}"#).status;
+    let shapeless = post_walk(&base, "/api/walk/choose", r#"{"index":0,"indices":[0]}"#).status;
     assert_eq!(
-        ("answer", 400, 400),
+        ("answer", Some("correct"), 400, 400),
         (
             polled["phase"].as_str().unwrap_or_default(),
+            polled["pick"].as_str(),
             again,
             shapeless
         ),
-        "choose: the answer opens, a second pick and a two-shape body are 400: {polled}"
+        "choose: the answer opens with the pick result, a second pick and a two-shape body are 400: {polled}"
+    );
+    let partly = post_walk(&base, "/api/walk/grade", r#"{"grade":"partly"}"#).status;
+    assert_eq!(
+        (400, None),
+        (partly, walked_ms(guard.dir(), "card-w1")),
+        "grade: Partly after a correct pick is refused and writes nothing"
     );
 
-    // next writes walked_ms and saves
-    let dto = json_of(&post_json(&base, "/api/walk/next", "{}"));
+    // a grade writes walked_ms and the walk grade, and saves
+    let dto = json_of(&post_walk(
+        &base,
+        "/api/walk/grade",
+        r#"{"grade":"passed"}"#,
+    ));
     let w1 = open_deck_store(guard.dir(), "walk.md")
         .get("card-w1")
         .cloned();
@@ -7507,18 +7541,19 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
             dto["section_first"] == true,
             dto["position"].as_u64().unwrap_or(9),
         ),
-        "next: the flip follows within the same section: {dto}"
+        "grade: the flip follows within the same section: {dto}"
     );
     assert!(
         w1.as_ref().is_some_and(|state| state.walked_ms.is_some()
+            && state.walk_grade == Some(alix::scheduler::Grade::Pass)
             && state.introduced_ms.is_none()
             && state.recall.is_none()
             && state.recognize.is_none()),
-        "next: card-w1 is on disk with walked_ms and nothing else: {w1:?}"
+        "grade: card-w1 is on disk with walked_ms, its walk grade and nothing else: {w1:?}"
     );
 
     // restart mid-walk continues where it stopped
-    let dto = json_of(&post_json(&base, "/api/walk/restart", "{}"));
+    let dto = json_of(&post_walk(&base, "/api/walk/restart", "{}"));
     assert_eq!(
         ("front", "card-w2", true, 0, 1),
         (
@@ -7528,18 +7563,53 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
             dto["position"].as_u64().unwrap_or(9),
             dto["total"].as_u64().unwrap_or(9),
         ),
-        "restart: only the never-walked item is served and the section opens again: {dto}"
+        "restart: only the waiting item is served and the section opens again: {dto}"
     );
 
-    // a flip item takes no pick, reveals, then next walks it
-    let picked = post_json(&base, "/api/walk/choose", r#"{"index":0}"#).status;
-    let revealed = json_of(&post_json(&base, "/api/walk/reveal", "{}"));
+    // a flip item takes no pick, opens its hint on the front only, reveals, then a hinted pass is
+    // stored as Partial
+    let card_hint = http(
+        &base,
+        "POST",
+        "/api/walk/hint",
+        &[
+            ("Content-Type", "application/json"),
+            ("X-Alix-Study-Revision", &walk_revision(&base)),
+        ],
+        br#"{"card":"card-w2"}"#,
+    )
+    .status;
+    let revision_after_hint = walk_revision(&base);
+    let picked = post_walk(&base, "/api/walk/choose", r#"{"index":0}"#).status;
+    let revealed = json_of(&post_walk(&base, "/api/walk/reveal", "{}"));
+    let late_hint = post_walk(&base, "/api/walk/hint", r#"{"card":"card-w2"}"#).status;
     assert_eq!(
-        (400, "answer"),
-        (picked, revealed["phase"].as_str().unwrap_or_default()),
-        "flip item: a pick is 400 and reveal opens the answer: {revealed}"
+        (204, 400, "answer", 409),
+        (
+            card_hint,
+            picked,
+            revealed["phase"].as_str().unwrap_or_default(),
+            late_hint
+        ),
+        "flip item: the hint opens on the front (204), a pick is 400, reveal opens the answer, a hint on the answer is 409: {revealed}"
     );
-    let dto = json_of(&post_json(&base, "/api/walk/next", "{}"));
+    assert_eq!(
+        revision_after_hint,
+        revealed["study_revision"].as_u64().unwrap_or(0).to_string(),
+        "hint and reveal do not bump the revision"
+    );
+    let dto = json_of(&post_walk(
+        &base,
+        "/api/walk/grade",
+        r#"{"grade":"passed"}"#,
+    ));
+    assert_eq!(
+        Some(alix::scheduler::Grade::Partial),
+        open_deck_store(guard.dir(), "walk.md")
+            .get("card-w2")
+            .and_then(|state| state.walk_grade),
+        "hinted pass: card-w2 is stored as Partial"
+    );
     assert_eq!(
         ("done", 1, true),
         (
@@ -7547,11 +7617,23 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
             dto["position"].as_u64().unwrap_or(9),
             walked_ms(guard.dir(), "card-w2").is_some()
         ),
-        "flip next: card-w2 is walked and the walked card-w1 is not served again: {dto}"
+        "flip grade: card-w2 is walked and the got card-w1 is not served again: {dto}"
     );
 
-    // every item walked: the next walk is a full pass, oldest first
-    let dto = json_of(&post_json(&base, "/api/walk/restart", "{}"));
+    // the partly card-w2 waits: the next walk serves only it; once it is got, a full pass, oldest
+    // first
+    let dto = json_of(&post_walk(&base, "/api/walk/restart", "{}"));
+    assert_eq!(
+        ("card-w2", 1),
+        (
+            dto["card"]["id"].as_str().unwrap_or_default(),
+            dto["total"].as_u64().unwrap_or(9)
+        ),
+        "waiting: only the partly item is served: {dto}"
+    );
+    post_walk(&base, "/api/walk/reveal", "{}");
+    post_walk(&base, "/api/walk/grade", r#"{"grade":"passed"}"#);
+    let dto = json_of(&post_walk(&base, "/api/walk/restart", "{}"));
     assert_eq!(
         ("card-w1", 2),
         (
@@ -7561,21 +7643,52 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
         "full pass: both items, the longest-ago walked first: {dto}"
     );
 
+    // a stale tab: a pick echoing the revision from before a restart is refused
+    let stale = walk_revision(&base);
+    post_walk(&base, "/api/walk/restart", "{}");
+    let index = correct_index(&json_of(&http(&base, "GET", "/api/walk", &[], &[])));
+    let stale_pick = http(
+        &base,
+        "POST",
+        "/api/walk/choose",
+        &[
+            ("Content-Type", "application/json"),
+            ("X-Alix-Study-Revision", &stale),
+        ],
+        format!(r#"{{"index":{index}}}"#).as_bytes(),
+    )
+    .status;
+    let headerless = post_json(&base, "/api/walk/reveal", "{}").status;
+    let polled = json_of(&http(&base, "GET", "/api/walk", &[], &[]));
+    assert_eq!(
+        (409, 400, "front", true),
+        (
+            stale_pick,
+            headerless,
+            polled["phase"].as_str().unwrap_or_default(),
+            polled["pick"].is_null()
+        ),
+        "stale tab: a pick with the old revision is 409, a headerless POST is 400, the walk is untouched: {polled}"
+    );
+
     // done
-    let index = correct_index(&dto);
-    post_json(
+    post_walk(
         &base,
         "/api/walk/choose",
         &format!(r#"{{"index":{index}}}"#),
     );
-    post_json(&base, "/api/walk/next", "{}");
-    post_json(&base, "/api/walk/reveal", "{}");
-    let done = json_of(&post_json(&base, "/api/walk/next", "{}"));
+    post_walk(&base, "/api/walk/grade", r#"{"grade":"passed"}"#);
+    post_walk(&base, "/api/walk/reveal", "{}");
+    let done = json_of(&post_walk(
+        &base,
+        "/api/walk/grade",
+        r#"{"grade":"passed"}"#,
+    ));
     let stamps = (
         walked_ms(guard.dir(), "card-w1"),
         walked_ms(guard.dir(), "card-w2"),
     );
-    let after = json_of(&post_json(&base, "/api/walk/next", "{}"));
+    let after = post_walk(&base, "/api/walk/grade", r#"{"grade":"passed"}"#).status;
     assert_eq!(
         (("done", 2, true), stamps),
         (
@@ -7589,7 +7702,7 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
                 walked_ms(guard.dir(), "card-w2")
             ),
         ),
-        "done: one pass ends, next past the end writes nothing: {done} {after}"
+        "done: one pass ends, a grade past the end ({after}) writes nothing: {done}"
     );
 
     // a trace deck and an unknown deck are refused
@@ -7617,7 +7730,14 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
         (409, 409, 409),
         (
             http(&base, "GET", "/api/walk", &[], &[]).status,
-            post_json(&base, "/api/walk/next", "{}").status,
+            http(
+                &base,
+                "POST",
+                "/api/walk/grade",
+                &[("X-Alix-Study-Revision", "0")],
+                br#"{"grade":"passed"}"#
+            )
+            .status,
             http(&base, "GET", "/api/walk/ask", &[], &[]).status
         ),
         "select: every walk route answers 409 once a review replaced the walk"

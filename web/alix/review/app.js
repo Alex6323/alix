@@ -431,7 +431,7 @@ function setMenuContext(ctx) {
   // doesn't have, so they get their own narrower checks below.
   document.querySelectorAll("#menu .m-review").forEach((b) => { b.style.display = (ctx === "review" || ctx === "trace" || ctx === "walk") ? "" : "none"; });
   document.getElementById("mContext").style.display = (ctx === "review" || ctx === "walk") && study && study.contextOffered() ? "" : "none";
-  document.getElementById("mHint").style.display = ctx === "review" && study && study.hintsOffered() ? "" : "none";
+  document.getElementById("mHint").style.display = (ctx === "review" || ctx === "walk") && study && study.hintsOffered() ? "" : "none";
   document.getElementById("mSkip").style.display = ctx === "review" && study && study.skipOffered() ? "" : "none";
   document.getElementById("mRemove").style.display = ctx === "review" ? "" : "none";
   // (a remediation card) — narrower than the other .m-review items, so it

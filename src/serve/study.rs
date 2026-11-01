@@ -410,11 +410,27 @@ pub(super) enum StudyCommand {
     WalkPoll(Reply<Option<WalkDto>>),
     WalkChoose {
         choice: WalkChoice,
+        expected: u64,
         reply: Reply<Feedback<WalkChoiceFeedback>>,
     },
-    WalkReveal(Reply<Option<WalkDto>>),
-    WalkNext(Reply<Option<WalkDto>>),
-    WalkRestart(Reply<Option<WalkDto>>),
+    WalkReveal {
+        expected: u64,
+        reply: Reply<Option<WalkDto>>,
+    },
+    WalkGrade {
+        grade: crate::scheduler::Grade,
+        expected: u64,
+        reply: Reply<Feedback<WalkDto>>,
+    },
+    WalkHint {
+        card: String,
+        expected: u64,
+        reply: Reply<bool>,
+    },
+    WalkRestart {
+        expected: u64,
+        reply: Reply<Option<WalkDto>>,
+    },
     WalkLeave(Reply<Transition<StateDto>>),
     WalkAsk {
         action: Option<AskAction>,
@@ -728,17 +744,40 @@ impl StudyHandle {
     pub(super) fn walk_poll(&self) -> Option<Option<WalkDto>> {
         self.call(StudyCommand::WalkPoll)
     }
-    pub(super) fn walk_choose(&self, choice: WalkChoice) -> Option<Feedback<WalkChoiceFeedback>> {
-        self.call(|reply| StudyCommand::WalkChoose { choice, reply })
+    pub(super) fn walk_choose(
+        &self,
+        choice: WalkChoice,
+        expected: u64,
+    ) -> Option<Feedback<WalkChoiceFeedback>> {
+        self.call(|reply| StudyCommand::WalkChoose {
+            choice,
+            expected,
+            reply,
+        })
     }
-    pub(super) fn walk_reveal(&self) -> Option<Option<WalkDto>> {
-        self.call(StudyCommand::WalkReveal)
+    pub(super) fn walk_reveal(&self, expected: u64) -> Option<Option<WalkDto>> {
+        self.call(|reply| StudyCommand::WalkReveal { expected, reply })
     }
-    pub(super) fn walk_next(&self) -> Option<Option<WalkDto>> {
-        self.call(StudyCommand::WalkNext)
+    pub(super) fn walk_grade(
+        &self,
+        grade: crate::scheduler::Grade,
+        expected: u64,
+    ) -> Option<Feedback<WalkDto>> {
+        self.call(|reply| StudyCommand::WalkGrade {
+            grade,
+            expected,
+            reply,
+        })
     }
-    pub(super) fn walk_restart(&self) -> Option<Option<WalkDto>> {
-        self.call(StudyCommand::WalkRestart)
+    pub(super) fn walk_hint(&self, card: String, expected: u64) -> Option<bool> {
+        self.call(|reply| StudyCommand::WalkHint {
+            card,
+            expected,
+            reply,
+        })
+    }
+    pub(super) fn walk_restart(&self, expected: u64) -> Option<Option<WalkDto>> {
+        self.call(|reply| StudyCommand::WalkRestart { expected, reply })
     }
     pub(super) fn walk_leave(&self) -> Option<Transition<StateDto>> {
         self.call(StudyCommand::WalkLeave)
@@ -1345,12 +1384,17 @@ impl StudyState {
                 let dto = self
                     .walking
                     .as_ref()
-                    .map(|w| walk_dto(w, self.save_error.as_deref()));
+                    .map(|w| walk_dto(w, self.revision, self.save_error.as_deref()));
                 let _ = reply.send(dto);
             }
-            StudyCommand::WalkChoose { choice, reply } => {
+            StudyCommand::WalkChoose {
+                choice,
+                expected,
+                reply,
+            } => {
                 let out = match (self.walking.as_mut(), choice) {
                     (None, _) => Feedback::NoSession,
+                    _ if self.revision != expected => Feedback::NoSession,
                     (Some(w), WalkChoice::Single(index)) => match w.session.choose(index) {
                         Some(f) => Feedback::Ok(WalkChoiceFeedback::Single(f)),
                         None => Feedback::Bad,
@@ -1364,35 +1408,68 @@ impl StudyState {
                 };
                 let _ = reply.send(out);
             }
-            StudyCommand::WalkReveal(reply) => {
-                let dto = self.walking.as_mut().map(|w| {
-                    w.session.reveal();
-                    walk_dto(w, self.save_error.as_deref())
-                });
+            StudyCommand::WalkReveal { expected, reply } => {
+                let revision = self.revision;
+                let dto = self
+                    .walking
+                    .as_mut()
+                    .filter(|_| revision == expected)
+                    .map(|w| {
+                        w.session.reveal();
+                        walk_dto(w, revision, self.save_error.as_deref())
+                    });
                 let _ = reply.send(dto);
             }
-            StudyCommand::WalkNext(reply) => {
-                let dto = self.walking.as_mut().map(|w| {
-                    let before = w.session.position();
-                    let grade = if w.session.pick() == Some(false) {
-                        crate::scheduler::Grade::Fail
-                    } else {
-                        crate::scheduler::Grade::Pass
-                    };
-                    w.session.grade(&mut self.store, grade, now_ms());
-                    if w.session.position() != before {
-                        flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
-                        self.writes = self.writes.wrapping_add(1);
+            StudyCommand::WalkGrade {
+                grade,
+                expected,
+                reply,
+            } => {
+                let out = match self.walking.as_mut() {
+                    None => Feedback::NoSession,
+                    Some(_) if self.revision != expected => Feedback::NoSession,
+                    Some(w) => {
+                        if w.session.grade(&mut self.store, grade, now_ms()) {
+                            flush_mutation(
+                                &self.store,
+                                &mut self.store_dirty,
+                                &mut self.save_error,
+                            );
+                            self.writes = self.writes.wrapping_add(1);
+                            self.revision += 1;
+                            Feedback::Ok(walk_dto(w, self.revision, self.save_error.as_deref()))
+                        } else {
+                            Feedback::Bad
+                        }
                     }
-                    walk_dto(w, self.save_error.as_deref())
-                });
-                let _ = reply.send(dto);
+                };
+                let _ = reply.send(out);
             }
-            StudyCommand::WalkRestart(reply) => {
-                let dto = self.walking.as_mut().map(|w| {
-                    w.restart(&self.store);
-                    walk_dto(w, self.save_error.as_deref())
-                });
+            StudyCommand::WalkHint {
+                card,
+                expected,
+                reply,
+            } => {
+                let opened = self.revision == expected
+                    && self
+                        .walking
+                        .as_mut()
+                        .is_some_and(|w| w.session.open_hint(&card));
+                let _ = reply.send(opened);
+            }
+            StudyCommand::WalkRestart { expected, reply } => {
+                let revision = self.revision;
+                let dto = self
+                    .walking
+                    .as_mut()
+                    .filter(|_| revision == expected)
+                    .map(|w| {
+                        w.restart(&self.store);
+                        walk_dto(w, revision + 1, self.save_error.as_deref())
+                    });
+                if dto.is_some() {
+                    self.revision += 1;
+                }
                 let _ = reply.send(dto);
             }
             StudyCommand::WalkLeave(reply) => {
@@ -1664,7 +1741,7 @@ impl StudyState {
                 self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);
                 let walking = Walking::new(build);
-                let dto = walk_dto(&walking, self.save_error.as_deref());
+                let dto = walk_dto(&walking, self.revision + 1, self.save_error.as_deref());
                 self.walking = Some(walking);
                 self.reviewing = None;
                 self.tracing = None;

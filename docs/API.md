@@ -551,15 +551,17 @@ flush its own progress before the comparison.
 
 ### 4.13 The walk
 
-A walk reads one fact deck once, item by item, without drilling it: no
-grade, no schedule, no introduction. `POST /api/walk {deck}` opens it and
-returns a `WalkDto` (`kind: "walk"`). The items are the ones a review of the
-deck would serve, every direction and every cloze blank its own item, locked
-and personal cards included. While any item was never walked, a walk holds
-only the never-walked items, in deck order with a card's sibling items spread
-apart within their section, so `total` is what is left of the pass and a walk
-left early continues where it stopped. Once every item is walked, a walk holds
-them all, least recently walked first, ties in deck order.
+A walk reads one fact deck once, item by item, without drilling it: the
+learner grades each item, but nothing is scheduled or introduced and no
+review history is written. `POST /api/walk {deck}` opens it and returns a
+`WalkDto` (`kind: "walk"`). The items are the ones a review of the deck would
+serve, every direction and every cloze blank its own item, locked and personal
+cards included. An item is waiting unless its last walk grade is a pass. While
+any item waits, a walk holds only the waiting items, in deck order with a
+card's sibling items spread apart within their section, so `total` is what is
+left of the pass and a walk left early continues where it stopped. Once none
+waits, a walk holds them all, least recently walked first, ties in deck
+order.
 
 Each item cycles `phase` `"front"` → `"answer"` *(closed, with `"done"`)*.
 An item whose card has authored choices (`mode: "choice"`) is answered with
@@ -570,12 +572,19 @@ as `/api/choose` and opens the answer. Every other item (`mode: "flip"`, or
 `POST /api/walk/reveal`. A `"line"` item's client reveals its steps one per
 press, as in a review, and sends the reveal with the last one. A pick on a flip item, a second pick, or
 a body with both or neither shape is a 400; a reveal on a choice item changes
-nothing. Nothing about the attempt is recorded.
+nothing. Nothing about the attempt is recorded. After a pick, `pick` is
+`"correct"` or `"wrong"` (absent before one), so a reloaded client shows the
+right controls. On the front, `POST /api/walk/hint {card}` opens the card's
+authored hints (204; 409 off the front, for another card, or for a card
+without hints), and a later pass is stored as partly, as in review.
 
 Opening a walk records `walk` as the deck's last launch (`last_launch` in
-`DeckItemDto`). `POST /api/walk/next` moves past an open answer: it records
-the item's `walked_ms` in the deck's progress document and saves it before
-replying. On the front it changes nothing. After the last
+`DeckItemDto`). `POST /api/walk/grade {grade}` (`failed`, `partly` or
+`passed`) grades an open answer: it records the item's `walked_ms` and its
+walk grade in the deck's progress document, saves it, and moves to the next
+item. A flip or line item takes any grade; after a correct pick only
+`passed` or `failed`; after a wrong pick only `failed`. Any other grade, or a
+grade off the answer, is a 400 and records nothing. After the last
 item the phase is `"done"`; `POST /api/walk/restart` starts the next walk
 from the store, and `POST /api/walk/leave` returns the picker `StateDto`.
 `section_first` is true on the first item of each section in every walk, so
@@ -583,7 +592,12 @@ a client presents that section by itself as it does in review.
 
 A walk is a session like a review or a trace: opening one ends any of those,
 and opening any other session (select, browse, exam, augment, reset,
-deselect) ends the walk. A walk does not use `X-Alix-Study-Revision`.
+deselect) ends the walk. Every walk mutation (`choose`, `reveal`, `grade`,
+`hint`, `restart`) echoes the `study_revision` of the last `WalkDto` in
+`X-Alix-Study-Revision`, as review mutations do: missing is a 400, stale is a
+409. Opening, grading and restarting move the revision; a pick, a reveal and
+a hint do not. A client answers any 409 with `GET /api/walk`, which is a 409
+only when no walk is open.
 `GET /api/state` does not report a walk; poll `GET /api/walk`.
 
 ## 5. Endpoint reference
@@ -747,10 +761,11 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 |---|---|---|---|---|
 | POST | `/api/walk` | `{deck}` | `WalkDto` | 400 bad body / unknown deck / folder / trace deck / unreadable progress / load failure; 500 progress flush failure |
 | GET | `/api/walk` | – | `WalkDto` (poll) | 409 not walking |
-| POST | `/api/walk/choose` | `{index}` or `{indices}` | `ChooseFeedbackDto` \| `MultiChooseFeedbackDto` | 400 bad body / not on the front / not a choice item / shape mismatch; 409 |
-| POST | `/api/walk/reveal` | – | `WalkDto` | 409 |
-| POST | `/api/walk/next` | – | `WalkDto` | 409 |
-| POST | `/api/walk/restart` | – | `WalkDto` | 409 |
+| POST | `/api/walk/choose` | `{index}` or `{indices}` | `ChooseFeedbackDto` \| `MultiChooseFeedbackDto` | 400 no revision / bad body / not on the front / not a choice item / shape mismatch; 409 |
+| POST | `/api/walk/reveal` | – | `WalkDto` | 400 no revision; 409 |
+| POST | `/api/walk/grade` | `{grade}` | `WalkDto` | 400 no revision / bad body / off the answer / grade not accepted after the pick; 409 |
+| POST | `/api/walk/hint` | `{card}` | 204 | 400 no revision / bad body; 409 off the front / another card / no hints / stale |
+| POST | `/api/walk/restart` | – | `WalkDto` | 400 no revision; 409 |
 | POST | `/api/walk/ask` | `{question}` | `AskDto` (empty question: 200, no call started) | 409 |
 | GET | `/api/walk/ask` | – | `AskDto` | 409 |
 | POST | `/api/walk/ask/note` | – | `AskDto` | 409 |
@@ -1521,7 +1536,9 @@ attempted and failed; one target's error doesn't stop the rest from running).
 | `position` | number | How many items this walk has passed: the 0-based index of the current item, equal to `total` at `done`. |
 | `total` | number | Items in this walk. |
 | `label` | string | The deck's display name *(presentational)*. |
-| `save_error` | string? | Absent while saving works; set as on `StateDto` once a `next` could not be saved. |
+| `study_revision` | number | The revision every walk mutation echoes in `X-Alix-Study-Revision`. |
+| `pick` | string? | `correct` \| `wrong` after a pick on this item; absent otherwise. |
+| `save_error` | string? | Absent while saving works; set as on `StateDto` once a grade could not be saved. |
 
 ### HopDto
 

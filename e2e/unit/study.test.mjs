@@ -283,8 +283,8 @@ test("a finished walk offers Next walk, which restarts the walk", async () => {
 function keyHarness(state, keys, browseKeys) {
   const calls = [];
   const study = createStudy({
-    api: (path) => {
-      calls.push(path);
+    api: (path, opts) => {
+      calls.push(opts?.body?.grade ? `${path} ${opts.body.grade}` : path);
       return path === "/api/browse"
         ? Promise.resolve({ cards: [{}, {}], label: "Facts" })
         : new Promise(() => {});
@@ -346,15 +346,19 @@ test("a plain-character quit key typed into an answer field stays text", () => {
   assert.deepEqual(run.calls, [], `q in a field left the session: ${run.calls.join(", ")}`);
 });
 
-test("the continue key moves past a walked answer and Enter alone does not", () => {
-  const answer = { kind: "walk", phase: "answer", label: "Facts", card: { id: "card-1" }, position: 1, total: 2 };
-  const run = keyHarness(answer, { reveal: plain(" "), cont: plain("z") });
-
-  run.press("Enter");
-  assert.deepEqual(run.calls, [], "Enter is not bound to continue here");
-
-  run.press("z");
-  assert.deepEqual(run.calls, ["/api/walk/next"], "z continues");
+test("a walked answer takes the grade keys its pick allows, and continue only after a pick", () => {
+  const keys = { reveal: plain(" "), cont: plain("z"), failed: plain("1"), partly: plain("2"), passed: plain("3") };
+  const answer = (pick) => ({ kind: "walk", phase: "answer", label: "Facts", card: { id: "card-1" }, position: 1, total: 2, ...(pick ? { pick } : {}) });
+  const rows = [
+    [undefined, ["Enter", "z", "1", "2", "3"], ["/api/walk/grade failed", "/api/walk/grade partly", "/api/walk/grade passed"]],
+    ["correct", ["Enter", "2", "3", "z", "1"], ["/api/walk/grade passed", "/api/walk/grade failed"]],
+    ["wrong", ["Enter", "1", "2", "3", "z"], ["/api/walk/grade failed"]],
+  ];
+  for (const [pick, presses, expected] of rows) {
+    const run = keyHarness(answer(pick), keys);
+    for (const key of presses) run.press(key);
+    assert.deepEqual(run.calls, expected, `pick=${pick}: ${presses.join(" ")} -> ${run.calls.join(", ")}`);
+  }
 });
 
 test("the submit key sends a selected multi-choice answer and Enter alone does not", () => {

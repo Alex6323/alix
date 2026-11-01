@@ -194,7 +194,7 @@ export function createStudy({
       }))
       .catch(() => load());
   }
-  function walkNext() { api("/api/walk/next", post({})).then(apply).catch(() => load()); }
+  function walkGrade(grade) { api("/api/walk/grade", post({ grade })).then(apply).catch(() => load()); }
   function nextWalk() {
     autoOpenedSection = null;
     api("/api/walk/restart", post({})).then(apply).catch(() => load());
@@ -791,7 +791,8 @@ export function createStudy({
     return state && state.card ? (state.card.hints || []).length : 0;
   }
   function hintsOffered() {
-    return !isWalking() && !!state && state.phase === "review" && hintCount() > 0 && !isAnswered();
+    if (isWalking()) return !!state && state.phase === "front" && hintCount() > 0;
+    return !!state && state.phase === "review" && hintCount() > 0 && !isAnswered();
   }
   function skipOffered() {
     if (isWalking() || !state || state.phase !== "review" || !state.card || feedback) return false;
@@ -812,7 +813,7 @@ export function createStudy({
     const scope = attemptScope();
     hintPendingScope = scope;
     const settle = () => { if (hintPendingScope === scope) hintPendingScope = null; };
-    fetchApi("/api/hint", post({ card: state.card.id })).then(() => {
+    fetchApi(isWalking() ? "/api/walk/hint" : "/api/hint", post({ card: state.card.id })).then(() => {
       settle();
       if (scope !== attemptScope() || !hintsOffered()) return;
       hintScope = scope;
@@ -1806,7 +1807,16 @@ export function createStudy({
 
   function renderWalkLegend() {
     if (state.phase === "answer") {
-      chip("Next", "primary", walkNext, label(keys.cont));
+      if (state.pick === "correct") {
+        chip("Next", "primary", () => walkGrade("passed"), label(keys.cont));
+        chip("I guessed", "quiet", () => walkGrade("failed"), label(keys.failed));
+      } else if (state.pick === "wrong") {
+        chip("Continue", "primary", () => walkGrade("failed"), label(keys.cont));
+      } else {
+        chip("Missed it", "failed", () => walkGrade("failed"), label(keys.failed));
+        chip("Partly", "partly", () => walkGrade("partly"), label(keys.partly));
+        chip("Got it", "passed", () => walkGrade("passed"), label(keys.passed));
+      }
       chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
     } else if (isMultiChoice()) {
       chip("Submit", "primary", submitMultiChoice, label(keys.submit)).disabled = selectedChoices.size === 0;
@@ -1814,6 +1824,7 @@ export function createStudy({
       const next = state.mode === "line" && revealed > 0 && !effectiveDraw();
       chip(next ? "Reveal next" : "Reveal", "primary", effectiveDraw() ? walkDrawReveal : walkReveal, label(keys.reveal));
     }
+    if (hintsOffered()) chip("Hint", "quiet", openHints, label(keys.hint));
     chip("Leave", "", leaveWalk, label(keys.quit), legendLeft);
   }
 
@@ -2269,9 +2280,17 @@ export function createStudy({
       }
       if (hidableNow() && !e.ctrlKey && e.key.toLowerCase() === "h") { e.preventDefault(); toggleHide(); return; }
       if (hit(e, keys.ask)) { e.preventDefault(); openTutor(); return; }
-      if (hit(e, keys.cont)) { e.preventDefault(); walkNext(); }
+      if (state.pick === "correct") {
+        if (hit(e, keys.cont)) { e.preventDefault(); walkGrade("passed"); }
+        else if (hit(e, keys.failed)) { e.preventDefault(); walkGrade("failed"); }
+      } else if (state.pick === "wrong") {
+        if (hit(e, keys.cont)) { e.preventDefault(); walkGrade("failed"); }
+      } else if (hit(e, keys.failed)) { e.preventDefault(); walkGrade("failed"); }
+      else if (hit(e, keys.partly)) { e.preventDefault(); walkGrade("partly"); }
+      else if (hit(e, keys.passed)) { e.preventDefault(); walkGrade("passed"); }
       return;
     }
+    if (hintsOffered() && hitOutsideField(e, keys.hint)) { e.preventDefault(); openHints(); return; }
     if (isChoice()) { handleChoiceKey(e); return; }
     if (hit(e, keys.reveal)) {
       e.preventDefault();

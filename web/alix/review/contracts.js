@@ -44,7 +44,7 @@ export function validatorFor(path) {
       return isStudyState;
     case "/api/walk":
     case "/api/walk/reveal":
-    case "/api/walk/next":
+    case "/api/walk/grade":
     case "/api/walk/restart":
       return isWalkState;
     case "/api/trace":

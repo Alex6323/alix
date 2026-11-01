@@ -703,6 +703,8 @@ fn walkdto_front_phase_wire_shape() {
         position: 0,
         total: 3,
         label: "Geography".to_string(),
+        study_revision: 4,
+        pick: None,
         save_error: None,
     };
     pin(
@@ -736,7 +738,49 @@ fn walkdto_front_phase_wire_shape() {
             "input": "type",
             "position": 0,
             "total": 3,
-            "label": "Geography"
+            "label": "Geography",
+            "study_revision": 4
+        }),
+    );
+}
+
+#[test]
+fn walkdto_answer_after_pick_wire_shape() {
+    let dto = WalkDto {
+        kind: "walk",
+        phase: "answer",
+        card: None,
+        choices: Some(vec!["Rome".to_string(), "Paris".to_string()]),
+        choices_multiple: None,
+        choice_runs: None,
+        section_first: false,
+        mode: "choice",
+        input: "type",
+        position: 1,
+        total: 3,
+        label: "Geography".to_string(),
+        study_revision: 5,
+        pick: Some("wrong"),
+        save_error: None,
+    };
+    pin(
+        "WalkDto.answer",
+        &dto,
+        json!({
+            "kind": "walk",
+            "phase": "answer",
+            "card": null,
+            "choices": ["Rome", "Paris"],
+            "choices_multiple": null,
+            "choice_runs": null,
+            "section_first": false,
+            "mode": "choice",
+            "input": "type",
+            "position": 1,
+            "total": 3,
+            "label": "Geography",
+            "study_revision": 5,
+            "pick": "wrong"
         }),
     );
 }
@@ -756,6 +800,8 @@ fn walkdto_done_phase_wire_shape() {
         position: 3,
         total: 3,
         label: "Geography".to_string(),
+        study_revision: 7,
+        pick: None,
         save_error: Some("progress could not be saved".to_string()),
     };
     pin(
@@ -774,6 +820,7 @@ fn walkdto_done_phase_wire_shape() {
             "position": 3,
             "total": 3,
             "label": "Geography",
+            "study_revision": 7,
             "save_error": "progress could not be saved"
         }),
     );

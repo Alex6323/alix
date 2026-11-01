@@ -76,8 +76,9 @@ test("a walk serves the unwalked rest, then a full pass, with the section sheet 
   ]);
   await expect(octopus, "walk 1 choice: the pick shows right or wrong").toHaveClass(/correct/);
   await expect(page.getByRole("button", { name: /^Ask/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^I guessed/ }), "walk 1 correct pick: the quiet guess is offered").toBeVisible();
   await Promise.all([
-    page.waitForResponse((r) => r.url().endsWith("/api/walk/next") && r.ok()),
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/grade") && r.ok()),
     page.getByRole("button", { name: /^Next/ }).click(),
   ]);
   await expect(page.locator(".front-text")).toHaveText(FLIP_FRONT);
@@ -111,9 +112,10 @@ test("a walk serves the unwalked rest, then a full pass, with the section sheet 
     page.keyboard.press(" "),
   ]);
   await expect(page.locator("#ansRegion .reveal")).toContainText("A borrowed shell");
+  await expect(page.getByRole("button", { name: /^Missed it/ }), "flip answer: the three grades").toBeVisible();
   await Promise.all([
-    page.waitForResponse((r) => r.url().endsWith("/api/walk/next") && r.ok()),
-    page.keyboard.press(" "),
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/grade") && r.ok()),
+    page.keyboard.press("3"),
   ]);
 
   // Done: Next walk replaces Next session and starts walk 3, a full pass.
@@ -134,6 +136,32 @@ test("a walk serves the unwalked rest, then a full pass, with the section sheet 
   const walked = await openWalkMenu(page);
   await expect(walked).toBeVisible();
   await expect(walked.locator("span"), "every item walked: no hint").toHaveCount(1);
+});
+
+test("a wrong pick survives a reload with only Continue, and the missed item leads the next walk", async ({ page }) => {
+  await adultDeckRow(page, "Walk Tour").click();
+  const walk = await openWalkMenu(page);
+  await walk.click();
+  await closeSectionSheet(page, "wrong pick");
+  const starfish = page.locator(".option").filter({ has: page.locator(".opt", { hasText: "Starfish", exact: true }) });
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/choose") && r.ok()),
+    starfish.click(),
+  ]);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  if (await page.locator(".section-drawer").count()) await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: /^Continue/ }), "reload after a wrong pick: Continue").toBeVisible();
+  await expect(page.getByRole("button", { name: /^(Next|I guessed|Got it)/ }), "reload after a wrong pick: no pass").toHaveCount(0);
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/grade") && r.ok()),
+    page.getByRole("button", { name: /^Continue/ }).click(),
+  ]);
+  await page.keyboard.press("Escape");
+  await adultDeckRow(page, "Walk Tour").click();
+  const again = await openWalkMenu(page);
+  await again.click();
+  await closeSectionSheet(page, "after the miss");
+  await expect(page.locator(".front-text"), "the missed choice item leads").toHaveText(CHOICE_FRONT);
 });
 
 const LINE_DECK = `---
@@ -176,7 +204,7 @@ test("a walk reveals a reveal: line card one line at a time", async ({ page }) =
     page.keyboard.press(" "),
   ]);
   await expect(shown, "last press: every line").toHaveCount(3);
-  await expect(page.getByRole("button", { name: /^Next/ }), "last line opens the answer").toBeVisible();
+  await expect(page.getByRole("button", { name: /^Got it/ }), "last line opens the answer and its grades").toBeVisible();
 });
 
 test("the section sheet fits its content and closes from its own button", async ({ page }) => {
