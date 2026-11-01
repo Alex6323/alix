@@ -7643,41 +7643,60 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
         "full pass: both items, the longest-ago walked first: {dto}"
     );
 
-    // a stale tab: a pick echoing the revision from before a restart is refused
+    // a stale tab: every walk mutation echoing the revision from before a restart is refused
     let stale = walk_revision(&base);
     post_walk(&base, "/api/walk/restart", "{}");
+    let fresh = walk_revision(&base);
     let index = correct_index(&json_of(&http(&base, "GET", "/api/walk", &[], &[])));
-    let stale_pick = http(
-        &base,
-        "POST",
-        "/api/walk/choose",
-        &[
-            ("Content-Type", "application/json"),
-            ("X-Alix-Study-Revision", &stale),
-        ],
-        format!(r#"{{"index":{index}}}"#).as_bytes(),
-    )
-    .status;
+    let post_stale = |path: &str, json: &str| {
+        http(
+            &base,
+            "POST",
+            path,
+            &[
+                ("Content-Type", "application/json"),
+                ("X-Alix-Study-Revision", &stale),
+            ],
+            json.as_bytes(),
+        )
+        .status
+    };
+    let stale_pick = post_stale("/api/walk/choose", &format!(r#"{{"index":{index}}}"#));
+    let stale_reveal = post_stale("/api/walk/reveal", "{}");
+    let stale_restart = post_stale("/api/walk/restart", "{}");
     let headerless = post_json(&base, "/api/walk/reveal", "{}").status;
     let polled = json_of(&http(&base, "GET", "/api/walk", &[], &[]));
     assert_eq!(
-        (409, 400, "front", true),
+        (409, 409, 409, 400, "front", true, fresh.clone()),
         (
             stale_pick,
+            stale_reveal,
+            stale_restart,
             headerless,
             polled["phase"].as_str().unwrap_or_default(),
-            polled["pick"].is_null()
+            polled["pick"].is_null(),
+            walk_revision(&base)
         ),
-        "stale tab: a pick with the old revision is 409, a headerless POST is 400, the walk is untouched: {polled}"
+        "stale tab: a stale pick, reveal and restart are 409, a headerless POST is 400, the walk and its revision are untouched: {polled}"
     );
-
-    // done
     post_walk(
         &base,
         "/api/walk/choose",
         &format!(r#"{{"index":{index}}}"#),
     );
+    let w1_before = walked_ms(guard.dir(), "card-w1");
+    let stale_grade = post_stale("/api/walk/grade", r#"{"grade":"passed"}"#);
+    let w1_after_stale_grade = walked_ms(guard.dir(), "card-w1");
     post_walk(&base, "/api/walk/grade", r#"{"grade":"passed"}"#);
+    let stale_hint = post_stale("/api/walk/hint", r#"{"card":"card-w2"}"#);
+    let fresh_hint = post_walk(&base, "/api/walk/hint", r#"{"card":"card-w2"}"#).status;
+    assert_eq!(
+        (409, w1_before, 409, 204),
+        (stale_grade, w1_after_stale_grade, stale_hint, fresh_hint),
+        "stale tab: a stale grade on the answer writes nothing, a stale hint on a hinted front is 409 where a fresh one opens"
+    );
+
+    // done
     post_walk(&base, "/api/walk/reveal", "{}");
     let done = json_of(&post_walk(
         &base,

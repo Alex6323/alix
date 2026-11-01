@@ -164,6 +164,70 @@ test("a wrong pick survives a reload with only Continue, and the missed item lea
   await expect(page.locator(".front-text"), "the missed choice item leads").toHaveText(CHOICE_FRONT);
 });
 
+const HINTED_FRONT = "Where does a sea anemone hold on?";
+
+const HINT_DECK = `---
+id: "deck-000000000000000000000000w1"
+title: Tide pools
+---
+
+# Tide pools
+
+Rock pools hold water when the tide goes out.
+
+## ${FLIP_FRONT}
+A borrowed shell
+<!-- id: card-walkflip -->
+
+## ${HINTED_FRONT}
+> [!TIP]
+> Something hard under the water.
+
+---
+On a rock
+<!-- id: card-walkhinted -->
+`;
+
+test("a walk opens a hint on the question, and a hinted Got it leaves the card waiting", async ({ page }) => {
+  fs.writeFileSync(path.join(WALK_WORKSPACE, "decks", "tide.md"), HINT_DECK);
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Walk Tour").click();
+  const walk = await openWalkMenu(page);
+  await walk.click();
+  await closeSectionSheet(page, "hint walk");
+  const hint = page.locator("#legend .chip", { hasText: /^Hint/ });
+  await expect(page.locator(".front-text")).toHaveText(FLIP_FRONT);
+  await expect(hint, "a card without hints offers no Hint chip").toHaveCount(0);
+  await page.keyboard.press(" ");
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/grade") && r.ok()),
+    page.getByRole("button", { name: /^Got it/ }).click(),
+  ]);
+
+  await expect(page.locator(".front-text")).toHaveText(HINTED_FRONT);
+  await expect(hint, "a hinted question offers the Hint chip").toBeVisible();
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/hint") && r.status() === 204),
+    page.keyboard.press("i"),
+  ]);
+  await expect(page.locator(".section-drawer .hint-stack .note"), "the hint opens").toContainText("Something hard under the water.");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /^Reveal/ }).click();
+  await expect(hint, "the answer offers no hint").toHaveCount(0);
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/grade") && r.ok()),
+    page.getByRole("button", { name: /^Got it/ }).click(),
+  ]);
+
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/restart") && r.ok()),
+    page.getByRole("button", { name: /^Next walk/ }).click(),
+  ]);
+  await closeSectionSheet(page, "after the hinted Got it");
+  await expect(page.locator(".front-text"), "the hinted card waits").toHaveText(HINTED_FRONT);
+  await expect(page.locator("#hist"), "only the hinted card waits").toHaveText("1 left");
+});
+
 const LINE_DECK = `---
 id: "deck-000000000000000000000000w1"
 title: Tide pools

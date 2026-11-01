@@ -89,8 +89,10 @@ so is every client.
   explain the refusal without exposing a host path.
   `400` is overloaded (malformed body, unknown deck name, store failure —
   per-endpoint meaning in §5). `409` = "no active session/exam/trace/walk of
-  the kind this endpoint needs". `401` = bad/missing token. `403` = an adult-only
-  endpoint (§4.5) called while `[serve] audience = "kids"`. `404` = unknown
+  the kind this endpoint needs", or on a walk route a stale
+  `X-Alix-Study-Revision` or a hint the current item cannot open. `401` =
+  bad/missing token. `403` = an adult-only endpoint (§4.5) called while
+  `[serve] audience = "kids"`. `404` = unknown
   route or image. `503` = a background owner thread is gone and the server is
   draining; the request was fine, so it is the one error worth retrying as-is.
   Clients should not assume other bodies stay empty forever; a JSON
