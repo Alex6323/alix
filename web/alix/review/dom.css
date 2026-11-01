@@ -10,7 +10,7 @@
   .front-text .checklist { display: grid; gap: 6px; margin: 4px auto 0; text-align: left; }
   .front-text .checklist-row { display: flex; align-items: flex-start; gap: 8px; }
   .front-text .checklist-box { flex: none; font-family: var(--mono); }
-  .front-text pre { margin: 4px 0; padding: 10px 12px; overflow-x: auto; background: rgba(0,0,0,0.25); border-radius: 8px; font: 0.82rem/1.45 var(--mono); }
+  .front-text pre { margin: 4px 0; padding: 10px 12px; overflow-x: auto; background: light-dark(rgba(0,0,0,0.06), rgba(0,0,0,0.25)); border-radius: 8px; font: 0.82rem/1.45 var(--mono); }
 
   .front-text.topic { font-size: clamp(0.95rem, 2vw, 1.1rem); font-weight: 500; color: var(--dim); letter-spacing: 0.01em; }
   .context { color: var(--bolt); font-family: var(--mono); white-space: pre-wrap;

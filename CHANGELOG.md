@@ -141,6 +141,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Web: a code block in a card's question sits on a much lighter panel in the
+  light palettes (6% black instead of 25%), so the code, not the box, draws
+  the eye; dark palettes are unchanged.
 - Review: typing a cloze card on the web and the phone happens in the blanks
   themselves, and the result shows there (green when right; on a miss, what
   you typed, struck through, before the answer). Each blank is checked against
