@@ -6,6 +6,7 @@ use crate::{
     choice::{self, ChoiceQuestion},
     depth::Reveal,
     review::{self, ChoiceFeedback, MultiChoiceFeedback},
+    scheduler::Grade,
     session,
     store::Store,
 };
@@ -25,6 +26,8 @@ pub struct WalkSession {
     shown_sections: HashSet<Vec<String>>,
     section_first: bool,
     choice_seed: u64,
+    pick: Option<bool>,
+    hint_opened: bool,
 }
 
 impl WalkSession {
@@ -37,6 +40,8 @@ impl WalkSession {
             shown_sections: HashSet::new(),
             section_first: false,
             choice_seed: now_ms,
+            pick: None,
+            hint_opened: false,
         };
         walk.restart(store, now_ms);
         walk
@@ -100,6 +105,7 @@ impl WalkSession {
         }
         let feedback = review::choice_feedback(&self.question()?, chosen)?;
         self.phase = Phase::Answer;
+        self.pick = Some(feedback.passed);
         Some(feedback)
     }
 
@@ -109,6 +115,7 @@ impl WalkSession {
         }
         let feedback = review::multi_choice_feedback(&self.question()?, chosen)?;
         self.phase = Phase::Answer;
+        self.pick = Some(feedback.passed);
         Some(feedback)
     }
 
@@ -118,19 +125,51 @@ impl WalkSession {
         }
     }
 
+    pub fn pick(&self) -> Option<bool> {
+        self.pick
+    }
+
+    pub fn open_hint(&mut self, card_id: &str) -> bool {
+        let opens = self.phase == Phase::Front
+            && self.current().is_some_and(|card| {
+                !card.hints.is_empty() && card.id().as_deref() == Some(card_id)
+            });
+        self.hint_opened |= opens;
+        opens
+    }
+
+    pub fn accepts(&self, grade: Grade) -> bool {
+        self.phase == Phase::Answer
+            && match self.pick {
+                None => true,
+                Some(true) => grade != Grade::Partial,
+                Some(false) => grade == Grade::Fail,
+            }
+    }
+
     /// The caller saves `store`.
-    pub fn next(&mut self, store: &mut Store, now_ms: u64) {
-        if self.phase != Phase::Answer {
-            return;
+    pub fn grade(&mut self, store: &mut Store, grade: Grade, now_ms: u64) -> bool {
+        if !self.accepts(grade) {
+            return false;
         }
+        let grade = if self.hint_opened && grade == Grade::Pass {
+            Grade::Partial
+        } else {
+            grade
+        };
         if let Some(id) = self.current().and_then(Card::id) {
-            store.get_or_insert(&id).walked_ms = Some(now_ms);
+            let state = store.get_or_insert(&id);
+            state.walked_ms = Some(now_ms);
+            state.walk_grade = Some(grade);
         }
         self.position += 1;
         self.enter();
+        true
     }
 
     fn enter(&mut self) {
+        self.pick = None;
+        self.hint_opened = false;
         let Some(section) = self.current().map(|card| card.section_context.clone()) else {
             self.phase = Phase::Done;
             self.section_first = false;
@@ -234,7 +273,7 @@ mod tests {
         } else {
             walk.reveal();
         }
-        walk.next(store, now_ms);
+        walk.grade(store, Grade::Pass, now_ms);
     }
 
     #[test]
@@ -331,11 +370,14 @@ mod tests {
             "after {served:?} the walk is done"
         );
         walk.reveal();
-        walk.next(&mut store, 99);
         assert_eq!(
-            (Phase::Done, 3),
-            (walk.phase(), walk.position()),
-            "reveal and next past the end change nothing"
+            (false, Phase::Done, 3),
+            (
+                walk.grade(&mut store, Grade::Pass, 99),
+                walk.phase(),
+                walk.position()
+            ),
+            "reveal and grade past the end change nothing"
         );
         let empty = WalkSession::new(Vec::new(), &store, 0);
         assert_eq!(
@@ -435,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    fn law_the_only_store_write_a_walk_makes_is_walked_ms_on_next() {
+    fn law_a_walk_writes_only_walked_ms_and_walk_grade_on_grade() {
         let one = ["# One"];
         let picked = {
             let mut card = card(1, &one);
@@ -483,11 +525,14 @@ mod tests {
         while walk.phase() != Phase::Done {
             let current = id(walk.current().unwrap());
             let start = snapshot(&store);
-            walk.next(&mut store, at);
+            assert!(
+                !walk.grade(&mut store, Grade::Pass, at),
+                "{current}: grade on the front is refused"
+            );
             assert_eq!(
                 start,
                 snapshot(&store),
-                "{current}: next on the front writes nothing"
+                "{current}: grade on the front writes nothing"
             );
             if walk.mode() == Mode::Choice {
                 walk.choose(0);
@@ -499,11 +544,22 @@ mod tests {
                 (walk.phase(), snapshot(&store)),
                 "{current}: the attempt opens the answer and writes nothing"
             );
-            walk.next(&mut store, at);
+            let grade = if walk.pick() == Some(false) {
+                Grade::Fail
+            } else {
+                Grade::Pass
+            };
+            assert!(
+                walk.grade(&mut store, grade, at),
+                "{current}: {grade:?} after the attempt is accepted"
+            );
             assert_eq!(
-                Some(at),
-                store.get(&current).and_then(|state| state.walked_ms),
-                "{current}: next past the answer stamps walked_ms"
+                (Some(at), Some(grade)),
+                store
+                    .get(&current)
+                    .map(|state| (state.walked_ms, state.walk_grade))
+                    .unwrap_or_default(),
+                "{current}: grading stamps walked_ms and stores the grade"
             );
             at += 1;
         }
@@ -511,10 +567,11 @@ mod tests {
             let card_id = id(card);
             let mut after = store.get(&card_id).cloned().unwrap();
             after.walked_ms = None;
+            after.walk_grade = None;
             assert_eq!(
                 before.get(&card_id).cloned().unwrap_or_default(),
                 after,
-                "{card_id}: everything but walked_ms is untouched"
+                "{card_id}: everything but walked_ms and walk_grade is untouched"
             );
         }
         let absent = cards
@@ -543,6 +600,152 @@ mod tests {
                 "{depth:?}: no badge is recorded"
             );
         }
+    }
+
+    fn items_by_kind() -> (Vec<(&'static str, Card)>, tempfile::TempDir) {
+        let text = "## pick one capital\n- [x] Paris\n- [ ] London\n- [ ] Berlin\n<!-- choices: single -->\n\n\
+                    ## pick every even\n- [x] 2\n- [x] 4\n- [ ] 3\n<!-- choices: multiple -->\n\n\
+                    ## plain question\nplain answer\n\n\
+                    ## lines question\nfirst line\nsecond line\n<!-- reveal: line -->\n";
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("kinds.md");
+        std::fs::write(&path, text).unwrap();
+        crate::stamp::stamp_deck(&path).unwrap();
+        let cards = crate::deck::Deck::load(&path).unwrap().cards;
+        let by_front = |front: &str| cards.iter().find(|c| c.front == front).unwrap().clone();
+        (
+            vec![
+                ("single", by_front("pick one capital")),
+                ("multi", by_front("pick every even")),
+                ("flip", by_front("plain question")),
+                ("line", by_front("lines question")),
+            ],
+            dir,
+        )
+    }
+
+    fn attempt(walk: &mut WalkSession, right: bool) {
+        match walk.question() {
+            Some(question) if question.multiple => {
+                let chosen: Vec<usize> = if right {
+                    question.correct_set.clone()
+                } else {
+                    (0..question.options.len())
+                        .filter(|i| !question.correct_set.contains(i))
+                        .take(1)
+                        .collect()
+                };
+                walk.choose_multi(&chosen);
+            }
+            Some(question) => {
+                let chosen = if right {
+                    question.correct
+                } else {
+                    (question.correct + 1) % question.options.len()
+                };
+                walk.choose(chosen);
+            }
+            None => walk.reveal(),
+        }
+    }
+
+    #[test]
+    fn law_a_walk_grade_follows_the_accept_table_for_every_item_kind() {
+        let (items, _deck_dir) = items_by_kind();
+        for (kind, item) in &items {
+            let picks: &[bool] = if item.authored_distractors.is_empty() && !item.multiple_choice {
+                &[true]
+            } else {
+                &[true, false]
+            };
+            for &right in picks {
+                for grade in [Grade::Fail, Grade::Partial, Grade::Pass] {
+                    for hinted in [false, true] {
+                        let mut card = item.clone();
+                        card.hints = vec!["a hint".to_string()];
+                        let card_id = id(&card);
+                        let (mut store, _dir) = store();
+                        let mut walk = WalkSession::new(vec![card], &store, 3);
+                        let picked = walk.mode() == Mode::Choice;
+                        if hinted {
+                            assert!(
+                                walk.open_hint(&card_id),
+                                "{kind}: the hint opens on the front"
+                            );
+                        }
+                        attempt(&mut walk, right);
+                        let label = format!("{kind} right={right} {grade:?} hinted={hinted}");
+                        let accepted = match (picked, right) {
+                            (false, _) => true,
+                            (true, true) => grade != Grade::Partial,
+                            (true, false) => grade == Grade::Fail,
+                        };
+                        assert_eq!(
+                            (accepted, picked.then_some(right)),
+                            (walk.accepts(grade), walk.pick()),
+                            "{label}: accepts and pick"
+                        );
+                        let before = store.clone();
+                        assert_eq!(
+                            accepted,
+                            walk.grade(&mut store, grade, 50),
+                            "{label}: grade's verdict"
+                        );
+                        let stored = store.get(&card_id).map(|s| (s.walked_ms, s.walk_grade));
+                        let expected = accepted.then(|| {
+                            let capped = if hinted && grade == Grade::Pass {
+                                Grade::Partial
+                            } else {
+                                grade
+                            };
+                            (Some(50), Some(capped))
+                        });
+                        assert_eq!(expected, stored, "{label}: what the store holds");
+                        if !accepted {
+                            assert_eq!(
+                                (before.len(), Phase::Answer),
+                                (store.len(), walk.phase()),
+                                "{label}: a refused grade writes nothing and stays on the answer"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn law_open_hint_is_accepted_only_in_front_on_the_current_item_with_hints() {
+        let mut hinted = card(1, &[]);
+        hinted.hints = vec!["look left".to_string()];
+        let bare = card(2, &[]);
+        let (hinted_id, bare_id) = (id(&hinted), id(&bare));
+        let (mut store, _dir) = store();
+        let mut walk = WalkSession::new(vec![hinted, bare], &store, 0);
+        assert_eq!(
+            (false, true),
+            (walk.open_hint(&bare_id), walk.open_hint(&hinted_id)),
+            "front: another item's id is refused, the current one opens"
+        );
+        walk.reveal();
+        assert!(!walk.open_hint(&hinted_id), "answer: refused");
+        walk.grade(&mut store, Grade::Pass, 5);
+        assert_eq!(
+            Some(Grade::Partial),
+            store.get(&hinted_id).and_then(|s| s.walk_grade),
+            "the opened hint capped the pass"
+        );
+        assert!(
+            !walk.open_hint(&bare_id),
+            "front of an item without hints: refused"
+        );
+        walk.reveal();
+        walk.grade(&mut store, Grade::Pass, 6);
+        assert_eq!(
+            Some(Grade::Pass),
+            store.get(&bare_id).and_then(|s| s.walk_grade),
+            "the cap does not carry over to the next item"
+        );
     }
 
     #[test]
@@ -616,7 +819,7 @@ mod tests {
                 walk.reveal();
             }
             assert_eq!(Phase::Answer, walk.phase(), "{label}: the answer is open");
-            walk.next(&mut store, at);
+            walk.grade(&mut store, Grade::Fail, at);
             at += 1;
         }
     }

@@ -1097,7 +1097,12 @@ impl WalkSession {
     pub fn next(&mut self, now_ms: Option<u64>) -> WalkState {
         let now = now_ms.unwrap_or_else(alix::time::now_ms);
         let before = self.session.position();
-        self.session.next(&mut self.store, now);
+        let grade = if self.session.pick() == Some(false) {
+            alix::scheduler::Grade::Fail
+        } else {
+            alix::scheduler::Grade::Pass
+        };
+        self.session.grade(&mut self.store, grade, now);
         if self.session.position() != before {
             match self.store.save() {
                 Ok(()) => self.save_error = None,

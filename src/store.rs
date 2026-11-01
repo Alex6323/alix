@@ -88,6 +88,8 @@ pub struct CardState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub walked_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_grade: Option<Grade>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recall: Option<FsrsState>,
     // Depth states are independent on purpose: no cross-crediting between
     // depths (a pass propagates credit downward; the states never merge).
@@ -114,6 +116,7 @@ impl CardState {
         Self {
             introduced_ms: None,
             walked_ms: None,
+            walk_grade: None,
             recall: None,
             reconstruct: None,
             recognize: None,
@@ -2623,6 +2626,23 @@ mod tests {
             st.schedule(Depth::Recognize).map(|f| f.stability)
         );
         assert_eq!(Depth::Reconstruct, st.history[0].depth);
+    }
+
+    #[test]
+    fn a_walk_grade_serializes_as_the_grade_name_and_is_absent_when_unset() {
+        let state = CardState {
+            walk_grade: Some(Grade::Partial),
+            ..CardState::new()
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains(r#""walk_grade":"Partial""#), "set: {json}");
+        assert_eq!(
+            state,
+            serde_json::from_str::<CardState>(&json).unwrap(),
+            "round trip"
+        );
+        let unset = serde_json::to_string(&CardState::new()).unwrap();
+        assert!(!unset.contains("walk_grade"), "unset: {unset}");
     }
 
     #[test]

@@ -1,12 +1,13 @@
 # 0051: Walk memory lives in the card state, and due means scheduled
 
 - Status: Accepted
+- Amended by: 0061 (decision 1: walk memory is `walked_ms` plus `walk_grade`)
 - Recorded: 2026-10-05
 - Retrospective: No
 - Evidence: pub walked_ms: Option<u64> in src/store.rs
 - Evidence: fn law_an_engaged_ungraded_card_takes_a_new_slot_never_a_due_slot in src/session.rs
 - Evidence: fn law_a_walked_card_is_graded_at_first_sight_once_the_settle_gap_passes in src/session.rs
-- Evidence: fn law_the_only_store_write_a_walk_makes_is_walked_ms_on_next in src/walk.rs
+- Evidence: fn law_a_walk_writes_only_walked_ms_and_walk_grade_on_grade in src/walk.rs
 
 ## Context
 
@@ -78,8 +79,8 @@ walks an item and checks it is engaged, not new, graded at first sight, and
 not served before `walked_ms` plus the settle gap.
 `session::tests::law_an_engaged_ungraded_card_takes_a_new_slot_never_a_due_slot`
 checks an engaged item with no schedule is served from the new-card share and
-never from the due pool. `walk::tests::law_the_only_store_write_a_walk_makes_is_walked_ms_on_next`
-checks a walk writes nothing but `walked_ms`.
+never from the due pool. `walk::tests::law_a_walk_writes_only_walked_ms_and_walk_grade_on_grade`
+checks a walk writes nothing but `walked_ms` and `walk_grade`.
 
 ## Reversal
 

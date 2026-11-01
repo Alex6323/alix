@@ -1374,7 +1374,12 @@ impl StudyState {
             StudyCommand::WalkNext(reply) => {
                 let dto = self.walking.as_mut().map(|w| {
                     let before = w.session.position();
-                    w.session.next(&mut self.store, now_ms());
+                    let grade = if w.session.pick() == Some(false) {
+                        crate::scheduler::Grade::Fail
+                    } else {
+                        crate::scheduler::Grade::Pass
+                    };
+                    w.session.grade(&mut self.store, grade, now_ms());
                     if w.session.position() != before {
                         flush_mutation(&self.store, &mut self.store_dirty, &mut self.save_error);
                         self.writes = self.writes.wrapping_add(1);
