@@ -55,8 +55,9 @@ listing.
 ## Walking a deck
 
 A **walk** reads a deck once, card by card, with an attempt before each
-answer and no grading. It is meant for material you want to go through rather
-than drill: preparing a talk or a code review, or re-reading a deck now and
+answer. You grade each answer, but nothing is scheduled: a walk only
+remembers what you missed so the next walk can bring it back. It is meant for
+material you want to go through rather than drill: preparing a talk or a code review, or re-reading a deck now and
 then. Start it from the focused deck's **Depth…** menu with **Walk** (key
 `w` while the menu is open). After that, the deck's main button is **Walk**
 until you start a session at a depth again. It is not offered for a trace
@@ -65,19 +66,25 @@ deck.
 Each item shows its front first. A card with authored choices is answered by
 picking (the pick shows right or wrong); every other item is a flip: try to
 recall it, then **Reveal** (`space`). A `reveal: line` card shows one answer
-line per **Reveal next** instead. **Next** (`space` again) moves on.
-Each direction of a two-way card and each blank of a cloze is its own item.
-The section's context sheet opens by itself the first time a walk reaches
-that section, and the tutor is available once an answer shows.
+line per **Reveal next** instead. A flip ends with **Missed it**, **Partly**
+or **Got it** (`1`/`2`/`3`). A correct pick ends with **Next** (`space`) or
+the quiet **I guessed** (`1`); a wrong pick ends with **Continue** (`space`).
+A card with an authored hint offers **Hint** (`i`) on its front; opening it
+turns a Got it on that card into Partly, as in a session. Each direction of
+a two-way card and each blank of a cloze is its own item. The section's
+context sheet opens by itself the first time a walk reaches that section, and
+the tutor is available once an answer shows.
 
-Moving past an answer records that the item was walked; nothing else about
-the attempt is kept. While a deck has items never walked, a walk serves only
-those, so leaving early and coming back continues where you stopped and the
-counter shows what is left of that pass. Adding a card to a fully walked deck
-makes the next walk that one card. Once every item has been walked, a walk is
-a full pass, the items walked longest ago first. At the end, **Next walk**
-(`r`) starts the next pass. Walking counts for the drill too: the drill
-grades a walked card at first sight instead of introducing it.
+A walk keeps only the time each item was walked and its last walk grade; it
+never touches the schedule or the review history. An item is waiting until
+its last walk grade is Got it (or Next on a pick). While any item waits, a
+walk serves only the waiting items, in deck order, so a missed card comes
+back in the next walk, leaving early and coming back continues where you
+stopped, and the counter shows what is left. Adding a card to a deck makes it
+waiting. Once nothing waits, a walk is a full pass, the items walked longest
+ago first. At the end, **Next walk** (`r`) starts the next walk. Walking
+counts for the drill too: the drill grades a walked card at first sight
+instead of introducing it.
 
 ## Library actions
 

@@ -39,15 +39,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the phone's own decks and the pulled desktop copy. Deck rows no longer show
   a placeholder icon.
 
-- Walk sessions on the server: `/api/walk` reads a deck once. While items
-  were never walked, a walk serves only those, so a left walk resumes where it
-  stopped; once all are walked, a walk is a full pass, least recently walked
-  first. It picks authored choices and flips everything else, with the tutor
-  available on each item. Moving past an answer records `walked_ms`.
+- Walk sessions on the server: `/api/walk` reads a deck once. Each answer is
+  graded as in a session (Missed it / Partly / Got it, or the pick flow on an
+  authored choice), and the last walk grade is kept per item as `walk_grade`
+  beside `walked_ms`; nothing is scheduled and no review history is written.
+  A walk serves the items not yet got in deck order, so a missed card comes
+  back and a left walk resumes where it stopped; once all are got, a walk is a
+  full pass, least recently walked first. Authored hints open on a walk's
+  front and cap a Got it at Partly, and the tutor is available on each item.
+  Walk mutations echo `X-Alix-Study-Revision`.
 
 - The phone can walk a deck: **Walk** in a deck's launch sheet, set off by a
   short centered hairline because Cram and Skip introduction do not apply to
-  it.
+  it. Walk answers are graded and hints open as on the web.
 
 - The web picker can start a walk: **Walk** in a deck's Depth… menu (key `w`).
 
@@ -144,6 +148,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Web: a code block in a card's question sits on a much lighter panel in the
   light palettes (6% black instead of 25%), so the code, not the box, draws
   the eye; dark palettes are unchanged.
+
 - Review: typing a cloze card on the web and the phone happens in the blanks
   themselves, and the result shows there (green when right; on a miss, what
   you typed, struck through, before the answer). Each blank is checked against
@@ -379,7 +384,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The web app now honors the `submit`, `continue`, and `quit` review bindings
   (a typed answer or a multiple-choice selection, moving on from an answered
-  card or a walked answer, and
+  card or a pick in a walk, and
   leaving a session, walk, or trace), and their buttons show the configured
   key. `continue` now defaults to `space`, then `enter`. Browse `quit` is
   rebindable in the web app; Backspace always leaves too. The picker's search

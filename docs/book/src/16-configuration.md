@@ -28,7 +28,7 @@ works. The rebindable `[keys.review]` actions are `failed`, `partly`, `passed`,
 (no default key), `remove` (no default key, deletes the card from the deck file),
 `ask` (default `a`), `context` (default `c`, open the card's section drawer), `hint`
 (default `i`, show the card's next hint while you answer), `continue`
-(default `space`/`enter`, moves on from an answered card or a walked answer),
+(default `space`/`enter`, moves on from an answered card or after a pick in a walk),
 `restart` (default `r`), `quit` (default `esc`, leaves the session, the walk, or
 the trace), `up`/`down` (defaults `k`/`j`) to move within a multiple-choice or
 key-point list (the arrow keys always work too), and the tutor's distill
