@@ -49,7 +49,7 @@ start it with the web picker's split **Depth…** button, whose small ▾ opens 
 of the three (on the keyboard: `v`, then `1`/`2`/`3`; `Esc` cancels; rebindable in
 [`[keys.picker]`](16-configuration.md)). The menu also carries the **cram**
 tick-box (`c`); see [Cramming](05-scheduling.md), the **confidence** tick-box
-([Confidence tracking](15-the-web-app.md#confidence-tracking)), **Walk** (`w`), an
+(`f`; [Confidence tracking](15-the-web-app.md#confidence-tracking)), **Walk** (`w`), an
 unscheduled read-through ([Walking a deck](15-the-web-app.md#walking-a-deck)),
 and **Exam** (`x`) on a deck with an exam ([The AI exam](12-the-ai-exam.md)). The main button repeats the
 deck's last launch, remembered per deck: **Learn** at its last depth, or

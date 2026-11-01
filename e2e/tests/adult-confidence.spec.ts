@@ -60,7 +60,10 @@ async function start(page: Page, deck: string, depth: Depth, opts: { cram?: bool
   await adultDeckRow(page, deck).click();
   await page.getByTitle("choose a depth").click();
   if (opts.cram) await page.getByRole("button", { name: /cram/i }).click();
-  if (opts.track) await page.getByRole("button", { name: /confidence/i }).click();
+  if (opts.track) {
+    await page.keyboard.press("f");
+    await expect(page.getByRole("button", { name: /confidence/i }), "f ticks the box").toContainText("☑");
+  }
   await Promise.all([
     page.waitForResponse((response) => response.url().includes("/api/select")),
     page.getByRole("button", { name: new RegExp(`^${depth}`) }).click(),

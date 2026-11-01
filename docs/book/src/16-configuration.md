@@ -54,8 +54,8 @@ alix.
 
 The picker's navigation is `[keys.picker]` (`up`, `down`, `open`, `back`,
 `filter`, `mastered`, plus `depth` to open the depth menu,
-`recognize`/`recall`/`reconstruct` to pick within it, and `cram` to toggle its
-tick-box, defaults `v`, `1`/`2`/`3`, and `c`), the browse overlay has its own `[keys.browse]` bindings, and
+`recognize`/`recall`/`reconstruct` to pick within it, and `cram` and
+`confidence` to toggle its tick-boxes, defaults `v`, `1`/`2`/`3`, `c`, and `f`), the browse overlay has its own `[keys.browse]` bindings, and
 the web server reads its default port from `[serve]`:
 
 ```toml

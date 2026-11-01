@@ -219,7 +219,7 @@ ones you already opened. `c` and `i` swap the sheet between the section and
 the hints. Opening a hint turns a pass on that card into Partial.
 ### Confidence tracking
 
-The depth menu's **confidence** tick-box switches tracking on or off for the
+The depth menu's **confidence** tick-box (`f`) switches tracking on or off for the
 deck; the choice is saved in the deck's progress (so it syncs with it) and
 kept for every later launch until you switch it again. It is off by default.
 With tracking on, a graded card asks **Sure** or **Unsure** in place of its

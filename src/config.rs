@@ -231,6 +231,7 @@ pub struct PickerKeys {
     pub recall: Vec<KeyPattern>,
     pub reconstruct: Vec<KeyPattern>,
     pub cram: Vec<KeyPattern>,
+    pub confidence: Vec<KeyPattern>,
 }
 
 impl Default for PickerKeys {
@@ -248,6 +249,7 @@ impl Default for PickerKeys {
             recall: keys(&["2"]),
             reconstruct: keys(&["3"]),
             cram: keys(&["c"]),
+            confidence: keys(&["f"]),
         }
     }
 }
@@ -776,6 +778,7 @@ struct RawPicker {
     recall: Option<Vec<String>>,
     reconstruct: Option<Vec<String>>,
     cram: Option<Vec<String>>,
+    confidence: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Default)]
@@ -894,6 +897,11 @@ impl Config {
             "picker.reconstruct",
         )?;
         assign(&mut picker.cram, raw.keys.picker.cram, "picker.cram")?;
+        assign(
+            &mut picker.confidence,
+            raw.keys.picker.confidence,
+            "picker.confidence",
+        )?;
 
         let mut browse = BrowseBindings::default();
         assign(&mut browse.next, raw.keys.browse.next, "browse.next")?;
@@ -1355,6 +1363,7 @@ pub fn default_config_toml() -> &'static str {
 # recall = ["2"]                #   Enter always starts the highlighted
 # reconstruct = ["3"]           #   (last-used) one
 # cram = ["c"]                  # toggle the menu's cram tick-box (serve not-yet-due cards too)
+# confidence = ["f"]            # toggle the menu's confidence tick-box (ask Sure/Unsure)
 
 # Key bindings for the read-only Browse overlay (b in the picker). Jumping to the first
 # and last card is fixed to g / G / Home / End, and the arrow keys always
@@ -2065,6 +2074,7 @@ mod tests {
             recall,
             reconstruct,
             cram,
+            confidence,
         } = PickerKeys::default();
         let BrowseBindings {
             next,
@@ -2100,6 +2110,7 @@ mod tests {
             ("picker.recall", recall),
             ("picker.reconstruct", reconstruct),
             ("picker.cram", cram),
+            ("picker.confidence", confidence),
             ("browse.next", next),
             ("browse.prev", prev),
             ("browse.quit", browse_quit),
@@ -2248,6 +2259,7 @@ mod tests {
                     "recall",
                     "reconstruct",
                     "cram",
+                    "confidence",
                 ],
             ),
         ];

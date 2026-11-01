@@ -630,7 +630,7 @@ stable `root_id`; paired clients compare the latter before any progress write.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/select` | `{deck, topology?, region?, depth?, cram?, skip_introduction?, session?}` | `StateDto` \| `TraceSessionDto` (branch on `kind`) | 400 bad body / unknown deck / build failure |
+| POST | `/api/select` | `{deck, topology?, region?, depth?, cram?, skip_introduction?, session?, track_confidence?}` | `StateDto` \| `TraceSessionDto` (branch on `kind`) | 400 bad body / unknown deck / build failure |
 | POST | `/api/browse` | `{deck}` | `BrowseDto` | 400 (same causes) |
 | POST | `/api/deck-drawer` | `{deck}` | `DeckDrawerDto` | never errors; empty DTO on any failure |
 | POST | `/api/reset` | `{deck}` | `ResetDto` | 400 bad body / unknown deck / load failure |

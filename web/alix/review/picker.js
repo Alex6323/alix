@@ -64,6 +64,7 @@ export function createPicker({
     recall: [{ k: "2", ctrl: false }],
     reconstruct: [{ k: "3", ctrl: false }],
     cram: [{ k: "c", ctrl: false }],
+    confidence: [{ k: "f", ctrl: false }],
   };
 
   function setKeys(next) {
@@ -545,6 +546,7 @@ export function createPicker({
           const tracking = trackOn === null ? !!it.track_confidence : trackOn;
           const track = el("button", "chip" + (tracking ? " primary" : ""), (tracking ? "☑" : "☐") + " confidence");
           track.title = "ask Sure or Unsure before each answer and record it with the review";
+          track.appendChild(el("span", "k", label(keys.confidence)));
           track.addEventListener("mousedown", e => e.preventDefault());
           track.addEventListener("click", () => { trackOn = !tracking; syncPrimary(); });
           legend.appendChild(track);
@@ -965,6 +967,10 @@ export function createPicker({
             startExam(f._item.name);
           } else if (hit(e, keys.cram)) {
             e.preventDefault(); e.stopPropagation(); cramOn = !cramOn; syncPrimary();
+          } else if (hit(e, keys.confidence) && f && f._item) {
+            e.preventDefault(); e.stopPropagation();
+            trackOn = !(trackOn === null ? !!f._item.track_confidence : trackOn);
+            syncPrimary();
           } else if (e.key === "Escape" || hit(e, keys.depth)) {
             e.preventDefault(); e.stopPropagation(); depthMenuOpen = false; syncPrimary();
           }
