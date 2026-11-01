@@ -27,10 +27,10 @@ String onlyProgressDocument(String stateRoot) {
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() async => RustLib.init());
 
   testWidgets('pick a deck, review a due card, the grade lands in the store',
       (tester) async {
-    await RustLib.init();
     final root = Directory.systemTemp.createTempSync('alix-e2e-');
     addTearDown(() => root.deleteSync(recursive: true));
     writeTestDeck(
@@ -69,5 +69,46 @@ void main() {
     final store = onlyProgressDocument(root.path);
     expect(store, contains('"stability"'));
     expect(store, contains('"history"'));
+  });
+
+  testWidgets('walk a deck, miss one card, and the next walk serves it first',
+      (tester) async {
+    final root = Directory.systemTemp.createTempSync('alix-e2e-walk-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    writeTestDeck(
+      '${root.path}/capitals.md',
+      '---\ntitle: Capitals\n---\n## capital of italy?\nRome\n\n'
+          '## capital of spain?\nMadrid\n',
+    );
+
+    await tester.pumpWidget(AlixApp(
+      prepared: Prepared(root: root.path, device: 'e2e-test'),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Capitals'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Walk'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('capital of italy?'), findsOneWidget);
+    await tester.tap(find.text('Reveal'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Missed it'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reveal'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Got it'));
+    await tester.pumpAndSettle();
+    expect(find.text('WALK COMPLETE'), findsOneWidget);
+
+    final store = onlyProgressDocument(root.path);
+    expect(store, contains(RegExp(r'"walk_grade":\s*"Fail"')));
+    expect(store, contains(RegExp(r'"walk_grade":\s*"Pass"')));
+    expect(store, isNot(contains('"history"')));
+
+    await tester.tap(find.text('Next walk'));
+    await tester.pumpAndSettle();
+    expect(find.text('capital of italy?'), findsOneWidget);
+    expect(find.text('1 left'), findsOneWidget);
   });
 }

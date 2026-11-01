@@ -20,7 +20,9 @@ abstract interface class WalkPort {
 
   WalkStateModel reveal();
 
-  WalkStateModel next();
+  WalkStateModel grade(ReviewGrade grade);
+
+  bool openHint(String cardId);
 
   WalkStateModel restart();
 

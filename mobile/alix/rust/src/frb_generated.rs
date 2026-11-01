@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 2066655373;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -370978249;
 
 // Section: executor
 
@@ -1502,6 +1502,60 @@ fn wire__crate__api__review__WalkSession_choose_multi_impl(
         },
     )
 }
+fn wire__crate__api__review__WalkSession_grade_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "WalkSession_grade",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<WalkSession>,
+            >>::sse_decode(&mut deserializer);
+            let api_grade = <crate::api::review::Grade>::sse_decode(&mut deserializer);
+            let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let mut api_that_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_that, 0, true,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_that_guard = Some(api_that.lockable_decode_sync_ref_mut()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let mut api_that_guard = api_that_guard.unwrap();
+                    let output_ok = crate::api::review::WalkSession::grade(
+                        &mut *api_that_guard,
+                        api_grade,
+                        api_now_ms,
+                    )?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
 fn wire__crate__api__review__WalkSession_mint_tutor_card_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1556,56 +1610,6 @@ fn wire__crate__api__review__WalkSession_mint_tutor_card_impl(
         },
     )
 }
-fn wire__crate__api__review__WalkSession_next_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "WalkSession_next",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_that = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<WalkSession>,
-            >>::sse_decode(&mut deserializer);
-            let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, ()>((move || {
-                let mut api_that_guard = None;
-                let decode_indices_ =
-                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
-                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                            &api_that, 0, true,
-                        ),
-                    ]);
-                for i in decode_indices_ {
-                    match i {
-                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref_mut()),
-                        _ => unreachable!(),
-                    }
-                }
-                let mut api_that_guard = api_that_guard.unwrap();
-                let output_ok = Result::<_, ()>::Ok(crate::api::review::WalkSession::next(
-                    &mut *api_that_guard,
-                    api_now_ms,
-                ))?;
-                Ok(output_ok)
-            })())
-        },
-    )
-}
 fn wire__crate__api__review__WalkSession_open_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1643,6 +1647,56 @@ fn wire__crate__api__review__WalkSession_open_impl(
                     Ok(output_ok)
                 })(),
             )
+        },
+    )
+}
+fn wire__crate__api__review__WalkSession_open_hint_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "WalkSession_open_hint",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<WalkSession>,
+            >>::sse_decode(&mut deserializer);
+            let api_card_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, true,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref_mut()),
+                        _ => unreachable!(),
+                    }
+                }
+                let mut api_that_guard = api_that_guard.unwrap();
+                let output_ok = Result::<_, ()>::Ok(crate::api::review::WalkSession::open_hint(
+                    &mut *api_that_guard,
+                    api_card_id,
+                ))?;
+                Ok(output_ok)
+            })())
         },
     )
 }
@@ -4244,6 +4298,17 @@ impl SseDecode for Option<u64> {
     }
 }
 
+impl SseDecode for Option<crate::api::review::WalkPick> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::review::WalkPick>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<Vec<String>> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4824,6 +4889,18 @@ impl SseDecode for crate::api::review::WalkPhase {
     }
 }
 
+impl SseDecode for crate::api::review::WalkPick {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::review::WalkPick::Correct,
+            1 => crate::api::review::WalkPick::Wrong,
+            _ => unreachable!("Invalid variant for WalkPick: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::review::WalkState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4839,6 +4916,7 @@ impl SseDecode for crate::api::review::WalkState {
         let mut var_position = <u32>::sse_decode(deserializer);
         let mut var_total = <u32>::sse_decode(deserializer);
         let mut var_label = <String>::sse_decode(deserializer);
+        let mut var_pick = <Option<crate::api::review::WalkPick>>::sse_decode(deserializer);
         let mut var_saveError = <Option<String>>::sse_decode(deserializer);
         return crate::api::review::WalkState {
             phase: var_phase,
@@ -4852,6 +4930,7 @@ impl SseDecode for crate::api::review::WalkState {
             position: var_position,
             total: var_total,
             label: var_label,
+            pick: var_pick,
             save_error: var_saveError,
         };
     }
@@ -4866,13 +4945,13 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        40 => wire__crate__api__listing__deck_strips_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__listing__list_members_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__listing__list_root_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__listing__list_searchable_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__sync__paired_apply_pull_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__simple__stamp_deck_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__listing__deck_strips_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__listing__list_members_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__listing__list_root_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__listing__list_searchable_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__sync__paired_apply_pull_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__simple__stamp_deck_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4952,38 +5031,39 @@ fn pde_ffi_dispatcher_sync_impl(
         }
         28 => wire__crate__api__review__WalkSession_choose_impl(ptr, rust_vec_len, data_len),
         29 => wire__crate__api__review__WalkSession_choose_multi_impl(ptr, rust_vec_len, data_len),
-        30 => {
+        30 => wire__crate__api__review__WalkSession_grade_impl(ptr, rust_vec_len, data_len),
+        31 => {
             wire__crate__api__review__WalkSession_mint_tutor_card_impl(ptr, rust_vec_len, data_len)
         }
-        31 => wire__crate__api__review__WalkSession_next_impl(ptr, rust_vec_len, data_len),
         32 => wire__crate__api__review__WalkSession_open_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__review__WalkSession_record_minted_card_impl(
+        33 => wire__crate__api__review__WalkSession_open_hint_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__review__WalkSession_record_minted_card_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        34 => wire__crate__api__review__WalkSession_restart_impl(ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__review__WalkSession_reveal_impl(ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__review__WalkSession_state_impl(ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__review__WalkSession_tutor_card_impl(ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__generate__apply_generated_deck_impl(ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__simple__core_version_impl(ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__listing__deck_title_impl(ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__sync__paired_entries_impl(ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__sync__paired_free_space_impl(ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__sync__paired_needs_space_impl(ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__sync__paired_orphans_impl(ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__sync__paired_plan_pushes_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__sync__paired_record_push_impl(ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__sync__paired_recover_impl(ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__sync__paired_remove_entry_impl(ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__sync__paired_resolve_conflict_impl(ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__sync__paired_root_dir_impl(ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__sync__paired_staging_zip_impl(ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__review__WalkSession_restart_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__review__WalkSession_reveal_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__review__WalkSession_state_impl(ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__review__WalkSession_tutor_card_impl(ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__generate__apply_generated_deck_impl(ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__simple__core_version_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__listing__deck_title_impl(ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__sync__paired_entries_impl(ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__sync__paired_free_space_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__sync__paired_needs_space_impl(ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__sync__paired_orphans_impl(ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__sync__paired_plan_pushes_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__sync__paired_record_push_impl(ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__sync__paired_recover_impl(ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__sync__paired_remove_entry_impl(ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__sync__paired_resolve_conflict_impl(ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__sync__paired_root_dir_impl(ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__sync__paired_staging_zip_impl(ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6382,6 +6462,24 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::WalkPhase>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::review::WalkPick {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Correct => 0.into_dart(),
+            Self::Wrong => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::review::WalkPick {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::review::WalkPick>
+    for crate::api::review::WalkPick
+{
+    fn into_into_dart(self) -> crate::api::review::WalkPick {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::review::WalkState {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -6396,6 +6494,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::review::WalkState {
             self.position.into_into_dart().into_dart(),
             self.total.into_into_dart().into_dart(),
             self.label.into_into_dart().into_dart(),
+            self.pick.into_into_dart().into_dart(),
             self.save_error.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -7411,6 +7510,16 @@ impl SseEncode for Option<u64> {
     }
 }
 
+impl SseEncode for Option<crate::api::review::WalkPick> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::review::WalkPick>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<Vec<String>> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7845,6 +7954,22 @@ impl SseEncode for crate::api::review::WalkPhase {
     }
 }
 
+impl SseEncode for crate::api::review::WalkPick {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::review::WalkPick::Correct => 0,
+                crate::api::review::WalkPick::Wrong => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::review::WalkState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7859,6 +7984,7 @@ impl SseEncode for crate::api::review::WalkState {
         <u32>::sse_encode(self.position, serializer);
         <u32>::sse_encode(self.total, serializer);
         <String>::sse_encode(self.label, serializer);
+        <Option<crate::api::review::WalkPick>>::sse_encode(self.pick, serializer);
         <Option<String>>::sse_encode(self.save_error, serializer);
     }
 }

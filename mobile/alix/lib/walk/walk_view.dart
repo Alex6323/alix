@@ -32,7 +32,8 @@ class WalkView extends StatelessWidget {
     required this.onReveal,
     required this.revealedLines,
     required this.onRevealNextLine,
-    required this.onNext,
+    required this.onGrade,
+    required this.onOpenHint,
     required this.onNextWalk,
     required this.onOpenTutor,
     required this.onOpenSection,
@@ -59,7 +60,8 @@ class WalkView extends StatelessWidget {
   final VoidCallback onReveal;
   final int revealedLines;
   final VoidCallback onRevealNextLine;
-  final VoidCallback onNext;
+  final ValueChanged<ReviewGrade> onGrade;
+  final ValueChanged<ReviewCardModel> onOpenHint;
   final VoidCallback onNextWalk;
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
   final ValueChanged<ReviewCardModel> onOpenSection;
@@ -133,10 +135,10 @@ class WalkView extends StatelessWidget {
             onReveal: onReveal,
             onRevealNextLine: onRevealNextLine,
             onIntroduce: () {},
-            onGrade: (_) {},
+            onGrade: onGrade,
             onOpenTutor: onOpenTutor,
             onOpenSection: onOpenSection,
-            onWalkNext: onNext,
+            onOpenHint: onOpenHint,
           );
   }
 }

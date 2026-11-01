@@ -992,7 +992,14 @@ pub struct WalkState {
     pub position: u32,
     pub total: u32,
     pub label: String,
+    pub pick: Option<WalkPick>,
     pub save_error: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WalkPick {
+    Correct,
+    Wrong,
 }
 
 pub struct WalkSession {
@@ -1072,6 +1079,13 @@ impl WalkSession {
             position: self.session.position() as u32,
             total: self.session.total() as u32,
             label: self.label.clone(),
+            pick: self.session.pick().map(|right| {
+                if right {
+                    WalkPick::Correct
+                } else {
+                    WalkPick::Wrong
+                }
+            }),
             save_error: self.save_error.clone(),
         }
     }
@@ -1094,22 +1108,21 @@ impl WalkSession {
     }
 
     #[flutter_rust_bridge::frb(sync)]
-    pub fn next(&mut self, now_ms: Option<u64>) -> WalkState {
+    pub fn grade(&mut self, grade: Grade, now_ms: Option<u64>) -> Result<WalkState> {
         let now = now_ms.unwrap_or_else(alix::time::now_ms);
-        let before = self.session.position();
-        let grade = if self.session.pick() == Some(false) {
-            alix::scheduler::Grade::Fail
-        } else {
-            alix::scheduler::Grade::Pass
-        };
-        self.session.grade(&mut self.store, grade, now);
-        if self.session.position() != before {
-            match self.store.save() {
-                Ok(()) => self.save_error = None,
-                Err(e) => self.save_error = Some(format!("{e:#}")),
-            }
+        if !self.session.grade(&mut self.store, grade.into(), now) {
+            bail!("this grade is not accepted on this item now");
         }
-        self.state()
+        match self.store.save() {
+            Ok(()) => self.save_error = None,
+            Err(e) => self.save_error = Some(format!("{e:#}")),
+        }
+        Ok(self.state())
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn open_hint(&mut self, card_id: String) -> bool {
+        self.session.open_hint(&card_id)
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -2910,7 +2923,7 @@ mod tests {
     }
 
     #[test]
-    fn law_a_walk_serves_each_item_once_and_stamps_walked_ms_on_next_only() {
+    fn law_a_walk_serves_each_item_once_and_saves_walked_ms_and_the_grade_on_grade_only() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let deck = root.join("walk.md");
@@ -2942,11 +2955,15 @@ mod tests {
                 "{label}: only the section's first item opens its sheet"
             );
             let at = LATER + step;
-            let unchanged = walk.next(Some(at));
+            assert!(
+                walk.grade(Grade::Pass, Some(at)).is_err(),
+                "{label}: a grade on the front is refused"
+            );
+            let unchanged = walk.state();
             assert_eq!(
                 (WalkPhase::Front, step as u32),
                 (unchanged.phase, unchanged.position),
-                "{label}: next on the front does nothing"
+                "{label}: a refused grade changes nothing"
             );
             assert_eq!(
                 None,
@@ -2986,11 +3003,21 @@ mod tests {
                 }
             };
             assert_eq!(WalkPhase::Answer, answered.phase, "{label}: the attempt opens the answer");
-            walk.next(Some(at));
+            let expected_pick = state.choices.is_some().then_some(WalkPick::Correct);
+            assert_eq!(expected_pick, answered.pick, "{label}: the pick result mirrors the lib");
+            if expected_pick.is_some() {
+                assert!(
+                    walk.grade(Grade::Partial, Some(at)).is_err(),
+                    "{label}: Partly after a correct pick is refused"
+                );
+            }
+            walk.grade(Grade::Pass, Some(at)).unwrap();
             assert_eq!(
-                Some(at),
-                reopened_store(root, "walk.md").get(&id).and_then(|s| s.walked_ms),
-                "{label}: next past the answer saves walked_ms"
+                Some((Some(at), Some(alix::scheduler::Grade::Pass))),
+                reopened_store(root, "walk.md")
+                    .get(&id)
+                    .map(|s| (s.walked_ms, s.walk_grade)),
+                "{label}: the grade saves walked_ms and the walk grade"
             );
             served.push(id);
         }
@@ -3014,6 +3041,42 @@ mod tests {
             Some(served[0].clone()),
             walk.tutor_card().map(|t| t.id),
             "restart: the least recently walked item leads"
+        );
+    }
+
+    #[test]
+    fn a_walk_hint_caps_a_pass_and_a_failed_save_still_advances() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let deck = root.join("walk.md");
+        write_deck(
+            &deck,
+            "## capital of italy?\n> [!TIP]\n> A river city.\n\n---\nRome\n\n## capital of spain?\nMadrid\n",
+        );
+        let mut walk = opened_walk(&deck, root);
+        let id = walk.tutor_card().expect("an item is current").id;
+        assert_eq!(
+            (false, true),
+            (walk.open_hint("card-other".to_string()), walk.open_hint(id.clone())),
+            "hint: another id is refused, the current card opens"
+        );
+        walk.reveal();
+        walk.grade(Grade::Pass, Some(LATER)).unwrap();
+        assert_eq!(
+            Some(alix::scheduler::Grade::Partial),
+            reopened_store(root, "walk.md").get(&id).and_then(|s| s.walk_grade),
+            "hint: the pass is stored as partly"
+        );
+
+        let store_file = walk.store.path().to_path_buf();
+        std::fs::remove_file(&store_file).unwrap();
+        std::fs::create_dir(&store_file).unwrap();
+        walk.reveal();
+        let after = walk.grade(Grade::Pass, Some(LATER + 1)).unwrap();
+        assert!(
+            after.save_error.is_some() && after.phase == WalkPhase::Done,
+            "a failed save surfaces and the walk still advances: {:?}",
+            after.save_error
         );
     }
 

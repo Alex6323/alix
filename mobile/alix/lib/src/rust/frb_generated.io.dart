@@ -185,6 +185,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
+  WalkPick dco_decode_box_autoadd_walk_pick(dynamic raw);
+
+  @protected
   CardView dco_decode_card_view(dynamic raw);
 
   @protected
@@ -425,6 +428,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
 
   @protected
+  WalkPick? dco_decode_opt_box_autoadd_walk_pick(dynamic raw);
+
+  @protected
   List<String>? dco_decode_opt_list_String(dynamic raw);
 
   @protected
@@ -522,6 +528,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   WalkPhase dco_decode_walk_phase(dynamic raw);
+
+  @protected
+  WalkPick dco_decode_walk_pick(dynamic raw);
 
   @protected
   WalkState dco_decode_walk_state(dynamic raw);
@@ -695,6 +704,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  WalkPick sse_decode_box_autoadd_walk_pick(SseDeserializer deserializer);
 
   @protected
   CardView sse_decode_card_view(SseDeserializer deserializer);
@@ -977,6 +989,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
+  WalkPick? sse_decode_opt_box_autoadd_walk_pick(SseDeserializer deserializer);
+
+  @protected
   List<String>? sse_decode_opt_list_String(SseDeserializer deserializer);
 
   @protected
@@ -1088,6 +1103,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   WalkPhase sse_decode_walk_phase(SseDeserializer deserializer);
+
+  @protected
+  WalkPick sse_decode_walk_pick(SseDeserializer deserializer);
 
   @protected
   WalkState sse_decode_walk_state(SseDeserializer deserializer);
@@ -1307,6 +1325,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_walk_pick(
+    WalkPick self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_card_view(CardView self, SseSerializer serializer);
@@ -1678,6 +1702,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_walk_pick(
+    WalkPick? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_list_String(List<String>? self, SseSerializer serializer);
 
   @protected
@@ -1814,6 +1844,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_walk_phase(WalkPhase self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_walk_pick(WalkPick self, SseSerializer serializer);
 
   @protected
   void sse_encode_walk_state(WalkState self, SseSerializer serializer);

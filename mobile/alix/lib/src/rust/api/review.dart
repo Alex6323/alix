@@ -9,7 +9,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'review.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `reopen_store`, `save_store`, `trace_excerpt`, `trace_state`, `tutor_card_of`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 Grade keypointGrade({required int covered, required int total}) => RustLib
     .instance
@@ -116,9 +116,9 @@ abstract class WalkSession implements RustOpaqueInterface {
 
   MultiChoiceFeedback? chooseMulti({required List<int> chosen});
 
-  String mintTutorCard({required String front, required List<String> back});
+  WalkState grade({required Grade grade, BigInt? nowMs});
 
-  WalkState next({BigInt? nowMs});
+  String mintTutorCard({required String front, required List<String> back});
 
   static WalkSession open({
     required String deckPath,
@@ -131,6 +131,8 @@ abstract class WalkSession implements RustOpaqueInterface {
     nowMs: nowMs,
     device: device,
   );
+
+  bool openHint({required String cardId});
 
   String recordMintedCard({required String block});
 
@@ -1093,6 +1095,8 @@ class TypedResult {
 
 enum WalkPhase { front, answer, done }
 
+enum WalkPick { correct, wrong }
+
 class WalkState {
   final WalkPhase phase;
   final CardView? card;
@@ -1105,6 +1109,7 @@ class WalkState {
   final int position;
   final int total;
   final String label;
+  final WalkPick? pick;
   final String? saveError;
 
   const WalkState({
@@ -1119,6 +1124,7 @@ class WalkState {
     required this.position,
     required this.total,
     required this.label,
+    this.pick,
     this.saveError,
   });
 
@@ -1135,6 +1141,7 @@ class WalkState {
       position.hashCode ^
       total.hashCode ^
       label.hashCode ^
+      pick.hashCode ^
       saveError.hashCode;
 
   @override
@@ -1153,5 +1160,6 @@ class WalkState {
           position == other.position &&
           total == other.total &&
           label == other.label &&
+          pick == other.pick &&
           saveError == other.saveError;
 }

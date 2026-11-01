@@ -72,10 +72,10 @@ void main() {
     expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
     expect(
       _linesContaining('lib/walk/walk_controller.dart', 'notifyListeners();'),
-      [58, 65, 70, 77, 82, 92, 97, 102, 107, 112, 117, 122, 127, 132, 147],
+      [60, 67, 72, 79, 84, 94, 99, 109, 117, 122, 127, 132, 137, 142, 147, 152, 167],
       reason:
           'setServerLive, choose, toggleChoice, submitChoices, reveal, '
-          'revealNextLine, next, nextWalk, the six '
+          'revealNextLine, grade, openHint, openNextHint, nextWalk, the six '
           'sketch transitions, and applyCardNote own every WalkController '
           'mutation',
     );
@@ -92,7 +92,7 @@ void main() {
         'lib/picker_screen.dart:650',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:225',
-        'lib/walk_screen.dart:188',
+        'lib/walk_screen.dart:202',
       ],
       reason:
           'sync wiring added imports, fields, and methods above build() in '
@@ -107,7 +107,9 @@ void main() {
           'showSectionSheet shortened the opener in review_screen.dart and '
           'walk_screen.dart by four lines; the review menu'"'"'s skip added a '
           'method to review_screen.dart; retirement moved into '
-          'TutorConversation.retire, shortening both screens; generate_sheet.dart is unchanged',
+          'TutorConversation.retire, shortening both screens; the walk hint '
+          'sheet added an import line and a method to walk_screen.dart; '
+          'generate_sheet.dart is unchanged',
     );
   });
 

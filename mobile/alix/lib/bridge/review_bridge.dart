@@ -129,7 +129,7 @@ class ReviewBridgePort implements ReviewPort {
   @override
   ReviewStateModel grade(ReviewGrade grade) {
     return _stateFromBridge(
-      _session.grade(grade: _gradeToBridge(grade)),
+      _session.grade(grade: gradeToBridge(grade)),
       _session.label(),
     );
   }
@@ -418,7 +418,7 @@ ReviewMode reviewModeFromBridge(bridge.Mode mode) {
   };
 }
 
-bridge.Grade _gradeToBridge(ReviewGrade grade) {
+bridge.Grade gradeToBridge(ReviewGrade grade) {
   return switch (grade) {
     ReviewGrade.fail => bridge.Grade.fail,
     ReviewGrade.partial => bridge.Grade.partial,

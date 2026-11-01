@@ -37,7 +37,7 @@ void main() {
   }
 
   test('law: every item opens on its front, an attempt opens its answer, and '
-      'Next clears the attempt', () {
+      'a grade clears the attempt', () {
     final controller = open();
     expect(controller.openError, isNull, reason: 'open: the deck walks');
     final total = controller.state.total;
@@ -98,7 +98,12 @@ void main() {
         WalkPhase.answer,
         reason: '$label: the attempt opens the answer',
       );
-      controller.next();
+      expect(
+        controller.state.pick,
+        options == null ? null : true,
+        reason: '$label: a correct pick is reported, a flip has none',
+      );
+      controller.grade(ReviewGrade.pass);
     }
     expect(kinds, {
       'single',
@@ -117,6 +122,28 @@ void main() {
       (WalkPhase.front, 0, 1),
       reason: 'next walk: back to the first item, one notification',
     );
+  });
+
+  test('a hint opens only on a hinted front and resets on the next item', () {
+    final root = Directory.systemTemp.createTempSync('alix-walk-hint-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    writeTestDeck(
+      '${root.path}/walk.md',
+      '## capital of italy?\n> [!TIP]\n> A river city.\n\n---\nRome\n\n'
+          '## capital of spain?\nMadrid\n',
+    );
+    final controller = WalkController(
+      factory: const WalkBridgeFactory(),
+      deckPath: '${root.path}/walk.md',
+      rootDir: root.path,
+    );
+    addTearDown(controller.dispose);
+    expect(controller.openHint(), isTrue, reason: 'hinted front: opens');
+    expect(controller.openedHints, 1, reason: 'hinted front: one shown');
+    controller.reveal();
+    controller.grade(ReviewGrade.pass);
+    expect(controller.openedHints, 0, reason: 'next item: reset');
+    expect(controller.openHint(), isFalse, reason: 'unhinted front: refused');
   });
 
   test('an open failure is reported, not thrown', () {

@@ -81,7 +81,11 @@ class WalkBridgePort implements WalkPort {
   WalkStateModel reveal() => _stateFromBridge(_session.reveal());
 
   @override
-  WalkStateModel next() => _stateFromBridge(_session.next());
+  WalkStateModel grade(ReviewGrade grade) =>
+      _stateFromBridge(_session.grade(grade: gradeToBridge(grade)));
+
+  @override
+  bool openHint(String cardId) => _session.openHint(cardId: cardId);
 
   @override
   WalkStateModel restart() => _stateFromBridge(_session.restart());
@@ -121,6 +125,11 @@ WalkStateModel _stateFromBridge(bridge.WalkState state) {
     position: state.position,
     total: state.total,
     label: state.label,
+    pick: switch (state.pick) {
+      bridge.WalkPick.correct => true,
+      bridge.WalkPick.wrong => false,
+      null => null,
+    },
     saveError: state.saveError,
   );
 }

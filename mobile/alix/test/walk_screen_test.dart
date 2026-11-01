@@ -93,13 +93,15 @@ void main() {
       opened.add(await dismissSheetIfOpen(tester));
       final step = 'item ${opened.length}';
       expect(
-        chip('Next'),
+        chip('Got it'),
         findsNothing,
-        reason: '$step: no Next before the attempt',
+        reason: '$step: no grade before the attempt',
       );
       await tap(tester, 'Reveal');
       expect(chip('Reveal'), findsNothing, reason: '$step: the answer is open');
-      await tap(tester, 'Next');
+      expect(chip('Missed it'), findsOneWidget, reason: '$step: Missed it');
+      expect(chip('Partly'), findsOneWidget, reason: '$step: Partly');
+      await tap(tester, 'Got it');
     }
     return opened;
   }
@@ -136,9 +138,17 @@ void main() {
     expect(sheetTitle, findsOneWidget, reason: 'the chip reopens it');
   });
 
-  testWidgets('a walk never offers a card hint', (tester) async {
+  testWidgets('a walk offers a card hint on the question only', (tester) async {
     await pumpWalk(tester, _hinted);
-    expect(chip('Hint'), findsNothing, reason: 'the question phase has no hint');
+    expect(chip('Hint'), findsOneWidget, reason: 'the question offers the hint');
+    await tap(tester, 'Hint');
+    expect(
+      find.text('a city on the Tiber'),
+      findsOneWidget,
+      reason: 'the hint opens in its sheet',
+    );
+    Navigator.of(tester.element(find.text('a city on the Tiber'))).pop();
+    await tester.pumpAndSettle();
     await tap(tester, 'Reveal');
     expect(chip('Hint'), findsNothing, reason: 'the answer phase has no hint');
   });
@@ -210,12 +220,26 @@ void main() {
     );
     await tester.tap(find.text('Paris'));
     await tester.pumpAndSettle();
+    expect(chip('I guessed'), findsOneWidget, reason: 'correct pick: guess');
+    expect(chip('Got it'), findsNothing, reason: 'correct pick: no trio');
     await tap(tester, 'Next');
     expect(find.text('WALK COMPLETE'), findsOneWidget, reason: 'done');
     expect(find.text('1'), findsOneWidget, reason: 'done: one item walked');
   });
 
-  testWidgets('a reveal: line item opens one line per press, then Next', (
+  testWidgets('a wrong pick offers only Continue', (tester) async {
+    await pumpWalk(tester, _choice);
+    await tester.tap(find.text('London'));
+    await tester.pumpAndSettle();
+    expect(chip('Continue'), findsOneWidget, reason: 'wrong pick: Continue');
+    for (final label in ['Next', 'I guessed', 'Got it']) {
+      expect(chip(label), findsNothing, reason: 'wrong pick: no $label');
+    }
+    await tap(tester, 'Continue');
+    expect(find.text('WALK COMPLETE'), findsOneWidget, reason: 'done');
+  });
+
+  testWidgets('a reveal: line item opens one line per press, then its grades', (
     tester,
   ) async {
     await pumpWalk(tester, _lines);
@@ -230,12 +254,12 @@ void main() {
         );
       }
       expect(
-        chip('Next'),
+        chip('Got it'),
         press == lines.length ? findsOneWidget : findsNothing,
-        reason: 'press $press: Next only after the last line',
+        reason: 'press $press: the grades only after the last line',
       );
     }
-    await tap(tester, 'Next');
+    await tap(tester, 'Got it');
     expect(find.text('WALK COMPLETE'), findsOneWidget, reason: 'done');
   });
 
@@ -262,7 +286,7 @@ void main() {
       );
       expectCountRule(tester, title, step);
       if (step == 'front') await tap(tester, 'Reveal');
-      if (step == 'answer') await tap(tester, 'Next');
+      if (step == 'answer') await tap(tester, 'Got it');
     }
   });
 }

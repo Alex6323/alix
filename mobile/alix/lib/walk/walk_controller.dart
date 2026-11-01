@@ -34,6 +34,7 @@ class WalkController extends ChangeNotifier {
   final Sketch _sketch = Sketch();
   bool _serverLive = false;
   int _revealedLines = 0;
+  int _openedHints = 0;
 
   WalkStateModel get state {
     final state = _state;
@@ -50,6 +51,7 @@ class WalkController extends ChangeNotifier {
   bool get hasChoices => state.choices?.isNotEmpty ?? false;
   bool get revealed => state.phase == WalkPhase.answer && !hasChoices;
   int get revealedLines => _revealedLines;
+  int get openedHints => _openedHints;
   ReviewTutorCardModel? get tutorCard => _requirePort().tutorCard;
 
   void setServerLive(bool live) {
@@ -92,8 +94,26 @@ class WalkController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void next() {
-    _install(_requirePort().next());
+  void grade(ReviewGrade grade) {
+    _install(_requirePort().grade(grade));
+    notifyListeners();
+  }
+
+  bool openHint() {
+    if (_openedHints > 0) return true;
+    final card = state.card;
+    final tutor = tutorCard;
+    if (card == null || card.hints.isEmpty || tutor == null) return false;
+    if (!_requirePort().openHint(tutor.id)) return false;
+    _openedHints = 1;
+    notifyListeners();
+    return true;
+  }
+
+  void openNextHint() {
+    final available = state.card?.hints.length ?? 0;
+    if (_openedHints == 0 || _openedHints >= available) return;
+    _openedHints++;
     notifyListeners();
   }
 
@@ -177,5 +197,6 @@ class WalkController extends ChangeNotifier {
     _multiSelected.clear();
     _sketch.reset();
     _revealedLines = 0;
+    _openedHints = 0;
   }
 }

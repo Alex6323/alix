@@ -6,7 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/bridge/walk_bridge.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
-import 'package:alix_mobile/review/review_card.dart' show showSectionSheet;
+import 'package:alix_mobile/review/review_card.dart'
+    show ReviewHelpMode, showReviewHelpSheet, showSectionSheet;
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/review_view.dart' show ReviewCantOpenView;
 import 'package:alix_mobile/server_client.dart';
@@ -165,6 +166,19 @@ class _WalkScreenState extends State<WalkScreen> {
     showSectionSheet(context, card);
   }
 
+  void _openHint(ReviewCardModel card) {
+    if (!_controller.openHint()) return;
+    showReviewHelpSheet(
+      context,
+      card,
+      initialMode: ReviewHelpMode.hint,
+      offerHints: true,
+      openedHints: () => _controller.openedHints,
+      onOpenHint: _controller.openHint,
+      onNextHint: _controller.openNextHint,
+    );
+  }
+
   void _autoOpenSection(bool sectionFirst, ReviewCardModel? card) {
     if (card == null || !sectionFirst || !card.hasSection) return;
     final key = card.section.join('\n');
@@ -212,7 +226,8 @@ class _WalkScreenState extends State<WalkScreen> {
           onReveal: _controller.reveal,
           revealedLines: _controller.revealedLines,
           onRevealNextLine: _controller.revealNextLine,
-          onNext: _controller.next,
+          onGrade: _controller.grade,
+          onOpenHint: _openHint,
           onNextWalk: _nextWalk,
           onOpenTutor: _openTutor,
           onOpenSection: _openSection,

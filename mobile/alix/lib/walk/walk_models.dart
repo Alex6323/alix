@@ -16,6 +16,7 @@ class WalkStateModel {
     required this.position,
     required this.total,
     this.label = '',
+    this.pick,
     this.saveError,
   }) : choices = choices == null ? null : List.unmodifiable(choices),
        choiceRuns = choiceRuns == null
@@ -36,6 +37,7 @@ class WalkStateModel {
   final int position;
   final int total;
   final String label;
+  final bool? pick;
   final String? saveError;
 
   bool get done => phase == WalkPhase.done;
