@@ -1001,6 +1001,7 @@ pub struct WalkSession {
     store: alix::store::Store,
     deck_path: PathBuf,
     deck_token: String,
+    citation_roots: alix::cite::CitationRoots,
     save_error: Option<String>,
 }
 
@@ -1036,6 +1037,7 @@ impl WalkSession {
             store,
             deck_path: deck,
             deck_token,
+            citation_roots: build.info.source_base,
             save_error: None,
         })
     }
@@ -1045,7 +1047,10 @@ impl WalkSession {
         let card = self.session.current();
         let question = self.session.question();
         let mut projector = alix::inline::DisplayProjector::default();
-        let card_view = card.map(|c| CardView::project(c, &mut projector));
+        let card_view = card.map(|c| CardView {
+            citations: alix::review::resolve_citations(c, Some(&self.citation_roots)),
+            ..CardView::project(c, &mut projector)
+        });
         let choice_runs = question.as_ref().map(|q| {
             q.options
                 .iter()
@@ -1275,6 +1280,31 @@ mod tests {
                 .as_ref()
                 .map(|excerpt| excerpt.lines.iter().map(|line| line.text.clone()).collect()),
             "the cited line reaches the phone"
+        );
+    }
+
+    #[test]
+    fn a_cited_cards_excerpt_reaches_the_phones_walk_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("source.rs"), "fn live() {}\n").unwrap();
+        let deck = root.join("cited.md");
+        write_deck(
+            &deck,
+            "---\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:source.rs:1 -->\n",
+        );
+        alix::source::stamp_citations(&deck).unwrap();
+        let walk = opened_walk(&deck, root);
+        let card = walk.state().card.expect("a current item");
+        let citation = &card.citations[0];
+        assert_eq!(None, citation.error, "the live line resolves");
+        assert_eq!(
+            Some(vec!["fn live() {}".to_string()]),
+            citation
+                .excerpt
+                .as_ref()
+                .map(|excerpt| excerpt.lines.iter().map(|line| line.text.clone()).collect()),
+            "the cited line reaches the phone's walk"
         );
     }
 
