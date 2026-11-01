@@ -6,6 +6,7 @@
 - Evidence: pub walk_grade: Option<Grade> in src/store.rs
 - Evidence: fn law_a_walk_writes_only_walked_ms_and_walk_grade_on_grade in src/walk.rs
 - Evidence: fn law_a_walk_grade_follows_the_accept_table_for_every_item_kind in src/walk.rs
+- Evidence: fn law_a_walk_serves_waiting_items_in_deck_order_else_every_item_oldest_first in src/walk.rs
 - Amends: 0051 (decision 1: walk memory is no longer one field)
 
 ## Context
@@ -67,6 +68,8 @@ No trust boundary changes.
 walks every item kind and checks only `walked_ms` and `walk_grade` change.
 `walk::tests::law_a_walk_grade_follows_the_accept_table_for_every_item_kind`
 checks the accepted grades and the hint cap for every item kind.
+`walk::tests::law_a_walk_serves_waiting_items_in_deck_order_else_every_item_oldest_first`
+checks the order over mixed walk grades.
 
 ## Reversal
 

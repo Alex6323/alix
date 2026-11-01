@@ -184,21 +184,28 @@ fn walk_order(cards: &[Card], store: &Store) -> Vec<usize> {
     let mut order: Vec<usize> = (0..cards.len())
         .filter(|&i| cards[i].id().is_some())
         .collect();
-    order.sort_by_cached_key(|&i| last_walked(&cards[i], store));
-    let unwalked = order
+    let waiting: Vec<usize> = order
         .iter()
-        .take_while(|&&i| last_walked(&cards[i], store).is_none())
-        .count();
-    if unwalked == 0 {
+        .copied()
+        .filter(|&i| !got(&cards[i], store))
+        .collect();
+    if waiting.is_empty() {
+        order.sort_by_cached_key(|&i| last_walked(&cards[i], store));
         return order;
     }
-    order.truncate(unwalked);
+    order = waiting;
     let mut spaced = Vec::with_capacity(order.len());
     for run in order.chunk_by(|&a, &b| cards[a].section_context == cards[b].section_context) {
         let run = session::round_robin_siblings(run.to_vec(), cards);
         spaced.extend(session::separate_siblings(run, cards));
     }
     spaced
+}
+
+fn got(card: &Card, store: &Store) -> bool {
+    card.id()
+        .and_then(|id| store.get(&id))
+        .is_some_and(|state| state.walk_grade == Some(Grade::Pass))
 }
 
 fn last_walked(card: &Card, store: &Store) -> Option<u64> {
@@ -277,51 +284,123 @@ mod tests {
     }
 
     #[test]
-    fn law_a_walk_serves_only_unwalked_items_while_any_remain_else_every_item_oldest_first() {
-        let cases: [[Option<u64>; 6]; 5] = [
-            [None; 6],
-            [Some(5), Some(4), Some(3), Some(2), Some(1), Some(0)],
-            [Some(9), None, Some(3), None, Some(3), Some(1)],
-            [Some(7), Some(7), Some(7), None, Some(7), None],
-            [None, Some(2), None, Some(1), None, Some(2)],
+    fn law_a_walk_serves_waiting_items_in_deck_order_else_every_item_oldest_first() {
+        use Grade::{Fail, Partial, Pass};
+        let got = |at: u64| (Some(at), Some(Pass));
+        let cases: [[(Option<u64>, Option<Grade>); 6]; 6] = [
+            [(None, None); 6],
+            [got(5), got(4), got(3), got(2), got(1), got(0)],
+            [
+                got(9),
+                (None, None),
+                (Some(3), Some(Fail)),
+                got(1),
+                (Some(3), Some(Partial)),
+                got(2),
+            ],
+            [
+                got(7),
+                (Some(8), None),
+                got(7),
+                (None, None),
+                got(7),
+                got(1),
+            ],
+            [
+                (Some(4), Some(Fail)),
+                got(2),
+                (None, None),
+                got(1),
+                (Some(1), Some(Partial)),
+                got(2),
+            ],
+            [got(3), got(3), got(1), got(3), got(2), got(1)],
         ];
-        for (case, walked) in cases.iter().enumerate() {
-            let cards: Vec<Card> = (0..walked.len()).map(|line| card(line, &[])).collect();
+        for (case, states) in cases.iter().enumerate() {
+            let cards: Vec<Card> = (0..states.len()).map(|line| card(line, &[])).collect();
             let (mut store, _dir) = store();
-            for (line, at) in walked.iter().enumerate() {
-                if let Some(at) = at {
-                    store.get_or_insert(&id(&cards[line])).walked_ms = Some(*at);
+            for (line, (walked, grade)) in states.iter().enumerate() {
+                if walked.is_some() || grade.is_some() {
+                    let state = store.get_or_insert(&id(&cards[line]));
+                    state.walked_ms = *walked;
+                    state.walk_grade = *grade;
                 }
             }
             let walk = WalkSession::new(cards, &store, 0);
-            let unwalked: Vec<usize> = (0..walked.len()).filter(|&i| walked[i].is_none()).collect();
-            let mut expected: Vec<usize> = if unwalked.is_empty() {
-                (0..walked.len()).collect()
+            let waiting: Vec<usize> = (0..states.len())
+                .filter(|&i| states[i].1 != Some(Pass))
+                .collect();
+            let expected: Vec<usize> = if waiting.is_empty() {
+                let mut all: Vec<usize> = (0..states.len()).collect();
+                all.sort_by_key(|&i| (states[i].0.unwrap_or(0), i));
+                all
             } else {
-                unwalked
+                waiting
             };
-            expected.sort_by_key(|&i| (walked[i].unwrap_or(0), i));
             assert_eq!(
                 (expected.len(), expected),
                 (walk.total(), walk.order.clone()),
-                "case {case} ({walked:?}): only the unwalked items while any remain, else all oldest first, ties in deck order"
+                "case {case} ({states:?}): the waiting items in deck order while any wait, else all oldest first, ties in deck order"
             );
         }
     }
 
     #[test]
-    fn law_a_walked_sibling_waits_while_unwalked_items_remain() {
+    fn law_a_got_sibling_stays_out_while_waiting_items_remain() {
         let section = ["# One"];
         let a = card(1, &section);
         let b = card(2, &section);
         let cards = vec![a.clone(), reversed(&a), b.clone()];
         let (mut store, _dir) = store();
-        store.get_or_insert(&id(&b)).walked_ms = Some(5);
+        let state = store.get_or_insert(&id(&b));
+        state.walked_ms = Some(5);
+        state.walk_grade = Some(Grade::Pass);
         let walk = WalkSession::new(cards, &store, 0);
         assert_eq!(
             vec![id(&a), id(&reversed(&a))],
             order_ids(&walk),
-            "both never-walked directions of A are served, the walked B is not"
+            "both never-walked directions of A are served, the got B is not"
+        );
+    }
+
+    #[test]
+    fn law_a_resumed_full_pass_opens_the_section_of_its_first_item() {
+        let cards: Vec<Card> = (0..4)
+            .map(|line| card(line, if line < 2 { &["# S1"] } else { &["# S2"] }))
+            .collect();
+        let (mut store, _dir) = store();
+        let mut walk = WalkSession::new(cards.clone(), &store, 0);
+        for at in 0..4 {
+            step(&mut walk, &mut store, 10 + at);
+        }
+        walk.restart(&store, 100);
+        step(&mut walk, &mut store, 200);
+        walk.restart(&store, 300);
+        assert_eq!(
+            (id(&cards[1]), true),
+            (id(walk.current().unwrap()), walk.section_first()),
+            "the resumed full pass starts at the least recently walked item and opens its section"
+        );
+    }
+
+    #[test]
+    fn law_a_missed_item_is_not_served_again_in_the_same_walk() {
+        let cards: Vec<Card> = (0..3).map(|line| card(line, &[])).collect();
+        let (mut store, _dir) = store();
+        let mut walk = WalkSession::new(cards, &store, 0);
+        let mut served = Vec::new();
+        while walk.phase() != Phase::Done {
+            served.push(id(walk.current().unwrap()));
+            walk.reveal();
+            walk.grade(&mut store, Grade::Fail, 5);
+        }
+        let mut unique = served.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(
+            (3, unique.len()),
+            (served.len(), served.len()),
+            "every missed item is served once: {served:?}"
         );
     }
 
