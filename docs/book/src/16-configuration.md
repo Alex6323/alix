@@ -207,7 +207,7 @@ settings:
   `review`. Per-run flags override the language, audience, and style defaults.
   The terminal shows calm live progress, but partial generated cards remain
   hidden until the result passes validation.
-- **`[exam]`**: the AI exam: `model`, `timeout_secs` (300), `num_questions` (5),
+- **`[exam]`**: the AI exam: `model`, `timeout_secs` (300), `num_questions` (3 per deck section),
   `pass_threshold` (1.0), `strictness` (`balanced`), `extra`,
   `retry_cooldown_secs` (3600; `0` disables the wait before re-sitting a
   failed trace exam; fact-deck exams never wait).

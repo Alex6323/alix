@@ -41,16 +41,25 @@ unlocking its dependents directly, even when it declares `cite:` roots.
 ## Sitting the exam
 
 The exam is a guided, one-question-at-a-time flow (answer, move Back/Next, then a
-per-question breakdown) in the browser. You reach it two ways:
+per-question breakdown) in the browser. You reach it three ways:
 
 - **From the picker:** choosing an `exam due` deck starts the exam instead of an
   empty review.
+- **From the depth menu:** the focused deck's **Depth…** menu has an **Exam**
+  chip (key `x`) next to Walk, so a deck with an exam can be sat again at any
+  time as practice.
 - **From the summary:** when you drill a deck's last cards and it turns exam due,
   the session-end summary offers it.
 
 `alix` asks the model to read the source (URLs via `WebFetch`, local files embedded)
-and write **fresh understanding questions** (application and connections, *not*
-the card facts) each with the key points a correct answer must hit. You type a
+and write **fresh understanding questions**, `num_questions` for each of the
+deck's `#` sections (cards before the first heading form one section of their
+own). Within a section the questions cycle through three shapes: a concrete
+**instance** no card shows, a **boundary** (when does the idea stop holding),
+and a **fix** (a statement with one seeded mistake to find and correct). The
+section's heading, prose and cards go into the prompt only as scope, so the
+model knows what the deck already asks and avoids it. Each question comes with
+the key points a correct answer must hit. You type a
 prose answer per question, and an examiner grades each **Pass / Partial / Fail
 against the source's rubric, never against your cards** (grading the cards would
 be circular). The model calls run on a background thread, so the UI stays
@@ -102,7 +111,7 @@ optionally overridden per workspace in `alix.toml`'s `[defaults]`. The levels:
 
 This dial (how hard each answer is judged) is independent of `pass_threshold` (how
 *many* answers must pass). Both, plus `model`, `timeout_secs` (default 300),
-`num_questions` (default 5), an `extra` guidance field, and
+`num_questions` (per section, default 3), an `extra` guidance field, and
 `retry_cooldown_secs` (default 3600; `0` disables the wait before re-sitting
 a failed *trace* exam; a failed fact-deck exam remediates instead), live in
 the `[exam]` config section.

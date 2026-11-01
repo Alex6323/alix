@@ -145,6 +145,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The exam writes its questions per deck section: `[exam] num_questions`
+  now counts questions for each `#` section (default 3, was 5 per sitting),
+  cycling through a new instance, a boundary, and a statement with a seeded
+  mistake to fix. The section's cards go into the prompt as scope, so the
+  questions avoid what the deck already asks.
+
 - Web: a code block in a card's question sits on a much lighter panel in the
   light palettes (6% black instead of 25%), so the code, not the box, draws
   the eye; dark palettes are unchanged.

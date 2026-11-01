@@ -523,6 +523,14 @@ export function createPicker({
           walk.addEventListener("mousedown", e => e.preventDefault());
           walk.addEventListener("click", () => { depthMenuOpen = false; launchWalk(it, f._wsName); });
           legend.appendChild(walk);
+          if (it.has_exam && !it.is_trace) {
+            const exam = el("button", "chip", "Exam");
+            exam.appendChild(el("span", "k exam-key", it.examable ? "x" : "\u{1F512}"));
+            exam.disabled = !it.examable;
+            exam.addEventListener("mousedown", e => e.preventDefault());
+            exam.addEventListener("click", () => { depthMenuOpen = false; lastWorkspace = f._wsName || null; startExam(it.name); });
+            legend.appendChild(exam);
+          }
           // The cram tick-box: include cards that aren't due (a due card still
           // grades as a normal review; an early pass only re-anchors).
           const cram = el("button", "chip" + (cramOn ? " primary" : ""), (cramOn ? "☑" : "☐") + " cram");
@@ -941,6 +949,11 @@ export function createPicker({
             e.preventDefault(); e.stopPropagation();
             depthMenuOpen = false;
             launchWalk(f._item, f._wsName);
+          } else if (e.key === "x" && !e.ctrlKey && f && f._item && f._item.examable && !f._item.is_trace) {
+            e.preventDefault(); e.stopPropagation();
+            depthMenuOpen = false;
+            lastWorkspace = f._wsName || null;
+            startExam(f._item.name);
           } else if (hit(e, keys.cram)) {
             e.preventDefault(); e.stopPropagation(); cramOn = !cramOn; syncPrimary();
           } else if (e.key === "Escape" || hit(e, keys.depth)) {

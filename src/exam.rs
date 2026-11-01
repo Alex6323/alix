@@ -23,6 +23,12 @@ pub struct ExamQuestion {
     pub points: Vec<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExamSection {
+    pub context: Vec<String>,
+    pub cards: Vec<String>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Verdict {
@@ -86,7 +92,33 @@ pub fn generate_questions(
         bail!("{error}");
     }
     let root = workspace::content_root(&deck.path);
-    generate_questions_from(&sources, Some(&root), cfg, ask_cfg)
+    generate_questions_from(&sources, Some(&root), &exam_sections(deck), cfg, ask_cfg)
+}
+
+fn exam_sections(deck: &Deck) -> Vec<ExamSection> {
+    let mut sections: Vec<ExamSection> = Vec::new();
+    for card in &deck.cards {
+        let heading = card.section_context.first();
+        let at = match sections.iter().position(|s| s.context.first() == heading) {
+            Some(at) => at,
+            None => {
+                sections.push(ExamSection {
+                    context: card.section_context.clone(),
+                    cards: Vec::new(),
+                });
+                sections.len() - 1
+            }
+        };
+        let scope = format!(
+            "Q: {}\nA: {}",
+            card.front.trim(),
+            card.back.join("\n").trim()
+        );
+        if !sections[at].cards.contains(&scope) {
+            sections[at].cards.push(scope);
+        }
+    }
+    sections
 }
 
 /// Both layers, told apart (ADR 0026): the deck's own sources are the primary
@@ -113,13 +145,14 @@ pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()
 fn generate_questions_from(
     sources: &ExamLayers,
     base: Option<&Path>,
+    sections: &[ExamSection],
     cfg: &ExamConfig,
     ask_cfg: &AskConfig,
 ) -> Result<Vec<ExamQuestion>> {
     for source in sources.own.iter().chain(&sources.workspace) {
         crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
     }
-    let prompt = questions_prompt(sources, base, cfg)?;
+    let prompt = questions_prompt(sources, base, sections, cfg)?;
     let raw = ask::run(&run_config(cfg, ask_cfg), &prompt, &[])?;
     let parsed: QuestionsDto = parse_json(&raw).context("parsing the generated questions")?;
     if parsed.questions.is_empty() {
@@ -200,12 +233,13 @@ pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig)
 pub fn spawn_questions(
     sources: ExamLayers,
     base: Option<PathBuf>,
+    sections: Vec<ExamSection>,
     cfg: ExamConfig,
     ask_cfg: AskConfig,
 ) -> Receiver<Result<Vec<ExamQuestion>, String>> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
-        let r = generate_questions_from(&sources, base.as_deref(), &cfg, &ask_cfg)
+        let r = generate_questions_from(&sources, base.as_deref(), &sections, &cfg, &ask_cfg)
             .map_err(|e| format!("{e:#}"));
         let _ = tx.send(r);
     });
@@ -323,6 +357,7 @@ impl Sitting {
             Pending::Questions(spawn_questions(
                 examination_sources(deck),
                 Some(workspace::content_root(&deck.path)),
+                exam_sections(deck),
                 cfg.clone(),
                 ask_cfg.clone(),
             ))
@@ -782,23 +817,77 @@ fn truncate(text: &str) -> (String, bool) {
     )
 }
 
-fn questions_prompt(sources: &ExamLayers, base: Option<&Path>, cfg: &ExamConfig) -> Result<String> {
+fn questions_prompt(
+    sources: &ExamLayers,
+    base: Option<&Path>,
+    sections: &[ExamSection],
+    cfg: &ExamConfig,
+) -> Result<String> {
     let sources = source_section(sources, base)?;
+    let n = cfg.num_questions;
+    let ask = if sections.is_empty() {
+        format!(
+            "Write exactly {n} open-ended questions grounded in the source above. \
+             Favor APPLICATION (\"given X, what happens / what would you do?\") and \
+             CONNECTIONS (how ideas relate, contrast or build on each other) over \
+             plain recall. Each question must be answerable from the source and \
+             demand reasoning in the student's own words.\n\n"
+        )
+    } else {
+        let mut scope = String::from(
+            "The student drilled a flashcard deck on this material, split into the \
+             sections below. Its cards are SCOPE ONLY: they show what the deck already \
+             asks. NEVER ask what a card states, and never rephrase a card; test the \
+             mental model behind the section instead.\n\n",
+        );
+        for (i, section) in sections.iter().enumerate() {
+            let heading = section
+                .context
+                .first()
+                .map(String::as_str)
+                .unwrap_or("(untitled)");
+            scope.push_str(&format!("Section {}: {heading}\n", i + 1));
+            for line in section.context.iter().skip(1) {
+                scope.push_str(line);
+                scope.push('\n');
+            }
+            scope.push_str("Cards:\n");
+            for card in &section.cards {
+                scope.push_str(&format!("- {}\n", card.replace('\n', "\n  ")));
+            }
+            scope.push('\n');
+        }
+        format!(
+            "{scope}Write exactly {n} questions for EACH section ({total} in total), \
+             grouped by section in deck order. Within a section, cycle through these \
+             three shapes in this order:\n\
+             - instance: a concrete case the source supports but no card shows \
+             (\"given this program, what does the compiler report?\");\n\
+             - boundary: when does the section's idea stop holding, or what changes \
+             if a condition flips;\n\
+             - fix: a short statement or snippet with exactly one seeded mistake about \
+             the section's idea; the student must find and correct it.\n\
+             Every question must be answerable from the source above and demand \
+             reasoning in the student's own words.\n\n",
+            total = n * sections.len(),
+        )
+    };
+    let shape = if sections.is_empty() {
+        "{\"questions\": [{\"prompt\": \"...\", \"points\": [\"...\", \"...\"]}]}"
+    } else {
+        "{\"questions\": [{\"section\": \"<the section heading as given>\", \"shape\": \
+         \"instance|boundary|fix\", \"prompt\": \"...\", \"points\": [\"...\", \"...\"]}]}"
+    };
     let mut prompt = format!(
         "You are a strict examiner writing an oral exam that verifies a student \
          truly UNDERSTANDS a topic — not whether they memorized isolated facts.\n\n\
          {sources}\n\
-         Write exactly {n} open-ended questions grounded in the source above. \
-         Favor APPLICATION (\"given X, what happens / what would you do?\") and \
-         CONNECTIONS (how ideas relate, contrast or build on each other) over \
-         plain recall. Each question must be answerable from the source and \
-         demand reasoning in the student's own words.\n\n\
+         {ask}\
          For each question, list the key points a correct answer MUST contain — \
          the specific, source-grounded facts or reasoning steps you will grade \
          against. Be concrete; these are the rubric.\n\n\
          Output ONLY JSON in exactly this shape, no prose, no code fences:\n\
-         {{\"questions\": [{{\"prompt\": \"...\", \"points\": [\"...\", \"...\"]}}]}}",
-        n = cfg.num_questions,
+         {shape}"
     );
     if let Some(extra) = cfg
         .extra
@@ -1160,15 +1249,16 @@ mod tests {
         );
     }
 
-    /// Spec law 8: a fact-deck exam grades against the source, never a card's
-    /// section context. This is a signature-name tripwire for that boundary,
-    /// not a generic ban on deck-derived values: trace compression deliberately
-    /// grounds on its path description and gradeable checkpoint answers.
+    /// A fact-deck exam grades against the source, never a card's section
+    /// context. This is a signature-name tripwire for that boundary, not a
+    /// generic ban on deck-derived values: question generation takes the
+    /// sections as scope, and trace compression grounds on its path
+    /// description and gradeable checkpoint answers.
     #[test]
     fn exam_prompt_signatures_ban_section_like_names_and_pin_trace_grounding() {
         let source = include_str!("exam.rs");
         let builders: [(&str, &[&str]); 4] = [
-            ("fn questions_prompt(", &[]),
+            ("fn questions_prompt(", &["sections: &[ExamSection]"]),
             ("fn grade_prompt(", &[]),
             (
                 "fn grade_compression_prompt(",
@@ -1185,9 +1275,12 @@ mod tests {
                 .find(" -> ")
                 .unwrap_or_else(|| panic!("{builder} signature"));
             let params = &rest[..end];
-            for banned in ["context", "section", "cards", "deck_body"] {
+            let unpinned = trace_grounding
+                .iter()
+                .fold(params.to_string(), |rest, pinned| rest.replace(pinned, ""));
+            for banned in ["context", "section", "Section", "cards", "deck_body"] {
                 assert!(
-                    !params.contains(banned),
+                    !unpinned.contains(banned),
                     "{builder} takes `{banned}`: section/card context must not enter \
                      exam prompt signatures.\n{params}"
                 );
@@ -1207,7 +1300,7 @@ mod tests {
             own: vec!["https://example.org/own".to_string()],
             workspace: vec!["https://example.org/context".to_string()],
         };
-        let p = questions_prompt(&sources, None, &ExamConfig::default()).unwrap();
+        let p = questions_prompt(&sources, None, &[], &ExamConfig::default()).unwrap();
         let own_at = p.find("https://example.org/own").unwrap();
         let workspace_at = p.find("https://example.org/context").unwrap();
         assert!(p.contains("primary grounding"));
@@ -1228,7 +1321,8 @@ mod tests {
             workspace: Vec::new(),
         };
 
-        let prompt = questions_prompt(&sources, Some(dir.path()), &ExamConfig::default()).unwrap();
+        let prompt =
+            questions_prompt(&sources, Some(dir.path()), &[], &ExamConfig::default()).unwrap();
 
         assert!(
             prompt.contains("Source file `a/notes.md`"),
@@ -1256,7 +1350,8 @@ mod tests {
             workspace: Vec::new(),
         };
 
-        let prompt = questions_prompt(&sources, Some(dir.path()), &ExamConfig::default()).unwrap();
+        let prompt =
+            questions_prompt(&sources, Some(dir.path()), &[], &ExamConfig::default()).unwrap();
 
         assert!(
             prompt.contains("Source file `deep/relative.md`"),
@@ -1286,7 +1381,7 @@ mod tests {
             workspace: vec![workspace.display().to_string()],
         };
 
-        let prompt = questions_prompt(&sources, None, &ExamConfig::default()).unwrap();
+        let prompt = questions_prompt(&sources, None, &[], &ExamConfig::default()).unwrap();
 
         assert_eq!(
             1,
@@ -1307,13 +1402,88 @@ mod tests {
     #[test]
     fn questions_prompt_carries_source_strictness_and_json_shape() {
         let sources = url_layers(&["https://example.org/ownership"]);
-        let p = questions_prompt(&sources, None, &ExamConfig::default()).unwrap();
+        let p = questions_prompt(&sources, None, &[], &ExamConfig::default()).unwrap();
         assert!(p.contains("https://example.org/ownership"));
         assert!(p.contains("WebFetch"));
         assert!(p.contains("strict examiner"));
         assert!(p.contains("APPLICATION"));
         assert!(p.contains("\"questions\""));
-        assert!(p.contains("exactly 5 open-ended questions"));
+        assert!(p.contains("exactly 3 open-ended questions"));
+    }
+
+    #[test]
+    fn questions_prompt_asks_per_section_in_the_three_shapes_with_cards_as_scope_only() {
+        let sources = url_layers(&["https://example.org/ownership"]);
+        let sections = [
+            ExamSection {
+                context: vec![
+                    "# Moves".to_string(),
+                    "Values move on assignment.".to_string(),
+                ],
+                cards: vec!["Q: What does `let b = a;` do to a String?\nA: Moves it".to_string()],
+            },
+            ExamSection {
+                context: vec!["# Borrows".to_string()],
+                cards: vec!["Q: How many &mut at once?\nA: One".to_string()],
+            },
+        ];
+        let cfg = ExamConfig {
+            num_questions: 3,
+            ..ExamConfig::default()
+        };
+        let p = questions_prompt(&sources, None, &sections, &cfg).unwrap();
+        let moves = p.find("# Moves").expect("first section heading");
+        let borrows = p.find("# Borrows").expect("second section heading");
+        assert!(moves < borrows, "sections keep deck order: {p}");
+        assert!(
+            p.contains("Values move on assignment."),
+            "section prose: {p}"
+        );
+        assert!(
+            p.contains("What does `let b = a;` do to a String?"),
+            "card scope: {p}"
+        );
+        assert!(
+            p.contains("NEVER ask what a card states"),
+            "scope only: {p}"
+        );
+        assert!(
+            p.contains("exactly 3 questions for EACH section (6 in total)"),
+            "count: {p}"
+        );
+        for shape in ["instance:", "boundary:", "fix:"] {
+            assert!(p.contains(shape), "shape {shape}: {p}");
+        }
+        assert!(p.contains("\"section\""), "json tags the section: {p}");
+    }
+
+    #[test]
+    fn exam_sections_group_cards_by_heading_in_deck_order_and_merge_repeated_headings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "# A\n\nAbout a.\n\n## a1?\none\n\n# B\n\n## b1?\ntwo\n\n# A\n\n## a2?\nthree\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&path).unwrap();
+        let sections = exam_sections(&deck);
+        let headings: Vec<_> = sections
+            .iter()
+            .map(|s| s.context.first().cloned())
+            .collect();
+        assert_eq!(
+            vec![Some("A".to_string()), Some("B".to_string())],
+            headings,
+            "same heading text merges; first appearance orders"
+        );
+        assert_eq!(
+            2,
+            sections[0].cards.len(),
+            "a1 and a2: {:?}",
+            sections[0].cards
+        );
+        assert!(sections[0].cards[0].contains("a1?") && sections[0].cards[0].contains("one"));
     }
 
     #[test]
@@ -1324,7 +1494,7 @@ mod tests {
             extra: Some("Focus on lifetimes.".to_string()),
             ..ExamConfig::default()
         };
-        let p = questions_prompt(&sources, None, &cfg).unwrap();
+        let p = questions_prompt(&sources, None, &[], &cfg).unwrap();
         assert!(p.contains("exactly 3 open-ended questions"));
         assert!(p.contains("Additional instructions:"));
         assert!(p.contains("Focus on lifetimes."));
@@ -1592,7 +1762,8 @@ mod tests {
             workspace: Vec::new(),
         };
 
-        let prompt = questions_prompt(&sources, Some(dir.path()), &ExamConfig::default()).unwrap();
+        let prompt =
+            questions_prompt(&sources, Some(dir.path()), &[], &ExamConfig::default()).unwrap();
 
         assert!(
             prompt.contains("[... source truncated ...]"),
@@ -1886,6 +2057,7 @@ mod tests {
         let rx = spawn_questions(
             url_layers(&["https://example.org/doc"]),
             None,
+            Vec::new(),
             ExamConfig::default(),
             ask_cfg,
         );
@@ -2636,7 +2808,8 @@ mod windows_tests {
             workspace: Vec::new(),
         };
 
-        let prompt = questions_prompt(&sources, Some(dir.path()), &ExamConfig::default()).unwrap();
+        let prompt =
+            questions_prompt(&sources, Some(dir.path()), &[], &ExamConfig::default()).unwrap();
 
         assert!(
             prompt.contains("Source file `notes.md`"),

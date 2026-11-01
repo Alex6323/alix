@@ -449,7 +449,7 @@ impl Default for ExamConfig {
         Self {
             model: None,
             timeout_secs: 300,
-            num_questions: 5,
+            num_questions: 3,
             pass_threshold: 1.0,
             strictness: Strictness::default(),
             retry_cooldown_secs: 3600,
@@ -1412,7 +1412,7 @@ pub fn default_config_toml() -> &'static str {
 [exam]
 # model = ""                    # --model override; empty = use [ask] / CLI default
 # timeout_secs = 300            # each exam call is slower than a single question
-# num_questions = 5             # questions asked per sitting
+# num_questions = 3             # questions per deck section
 # pass_threshold = 1.0          # fraction of questions that must fully pass (1.0 = all)
 # strictness = "balanced"       # answer grading: strict | balanced | lenient
 # retry_cooldown_secs = 3600    # wait this long before re-sitting a FAILED trace exam (0 = off)
@@ -2381,7 +2381,7 @@ mod tests {
         assert_eq!(Strictness::Strict, config.exam.strictness);
         let config = Config::from_toml("[exam]\nstrictness = \"LENIENT\"\n").unwrap();
         assert_eq!(Strictness::Lenient, config.exam.strictness);
-        assert_eq!(5, config.exam.num_questions);
+        assert_eq!(3, config.exam.num_questions);
     }
 
     #[test]
