@@ -47,6 +47,7 @@ export function createPicker({
   let drawerSel = { deck: null, topology: null, region: null };
   let topoCache = {};
   let cramOn = false;
+  let skipIntroOn = false;
   let trackOn = null; // the depth menu's confidence toggle: null until flipped, so a launch keeps what is stored
   let focusedEl = null;
   let iconNonce = 0;
@@ -65,6 +66,7 @@ export function createPicker({
     reconstruct: [{ k: "3", ctrl: false }],
     cram: [{ k: "c", ctrl: false }],
     confidence: [{ k: "f", ctrl: false }],
+    skip_introduction: [{ k: "s", ctrl: false }],
   };
 
   function setKeys(next) {
@@ -80,7 +82,7 @@ export function createPicker({
     return !!next && next.kind === "trace";
   }
 
-  function select(name, topology, region, depth, cram, trackConfidence) {
+  function select(name, topology, region, depth, cram, trackConfidence, skipIntroduction) {
     rememberLaunch(name);
     const body = {
       deck: name,
@@ -89,6 +91,7 @@ export function createPicker({
       depth: depth || null,
       cram: !!cram,
     };
+    if (skipIntroduction) body.skip_introduction = true;
     if (typeof trackConfidence === "boolean") body.track_confidence = trackConfidence;
     return api("/api/select", post(body)).then((next) => {
       if (isTraceSession(next)) openTraceSession(next);
@@ -288,7 +291,7 @@ export function createPicker({
       if (!cramOn && !canStartAt(it, gated, depth)) return;
       lastWorkspace = wsName || null;
       const sel = drawerSel.deck === it.name ? drawerSel : {};
-      select(it.name, sel.topology, sel.region, depth, cramOn, trackOn);
+      select(it.name, sel.topology, sel.region, depth, cramOn, trackOn, skipIntroOn);
     }
 
     function launchWalk(it, wsName) {
@@ -550,6 +553,12 @@ export function createPicker({
           track.addEventListener("mousedown", e => e.preventDefault());
           track.addEventListener("click", () => { trackOn = !tracking; syncPrimary(); });
           legend.appendChild(track);
+          const intro = el("button", "chip" + (skipIntroOn ? " primary" : ""), (skipIntroOn ? "☑" : "☐") + " skip intro");
+          intro.title = "grade new cards right away instead of introducing them first";
+          intro.appendChild(el("span", "k", label(keys.skip_introduction)));
+          intro.addEventListener("mousedown", e => e.preventDefault());
+          intro.addEventListener("click", () => { skipIntroOn = !skipIntroOn; syncPrimary(); });
+          legend.appendChild(intro);
           const cancel = el("button", "chip", "Cancel");
           cancel.appendChild(el("span", "k", "esc"));
           cancel.addEventListener("mousedown", e => e.preventDefault());
@@ -633,7 +642,7 @@ export function createPicker({
           // Keep focus on the deck row (see the depth menu above): the click
           // rebuilds the footer, which would otherwise strand focus on <body>.
           lv.addEventListener("mousedown", e => e.preventDefault());
-          lv.addEventListener("click", () => { depthMenuOpen = true; cramOn = false; trackOn = null; syncPrimary(); });
+          lv.addEventListener("click", () => { depthMenuOpen = true; cramOn = false; trackOn = null; skipIntroOn = false; syncPrimary(); });
           legend.appendChild(lv);
         }
         // A read-only Browse of the focused deck (key b).
@@ -967,6 +976,8 @@ export function createPicker({
             startExam(f._item.name);
           } else if (hit(e, keys.cram)) {
             e.preventDefault(); e.stopPropagation(); cramOn = !cramOn; syncPrimary();
+          } else if (hit(e, keys.skip_introduction)) {
+            e.preventDefault(); e.stopPropagation(); skipIntroOn = !skipIntroOn; syncPrimary();
           } else if (hit(e, keys.confidence) && f && f._item) {
             e.preventDefault(); e.stopPropagation();
             trackOn = !(trackOn === null ? !!f._item.track_confidence : trackOn);
@@ -997,7 +1008,7 @@ export function createPicker({
         else if (e.key === "b" && cur && cur._item) { e.preventDefault(); browse(cur._item, cur._wsName); }
         else if (e.key === "a" && cur && (cur._item || cur._open)) { e.preventDefault(); lastWorkspace = cur._wsName || null; openAugment(cur._item ? cur._item.name : cur._open.name); }
         else if (e.key === "d" && cur && cur._open && cur._open.state === "workspace") { e.preventDefault(); deadlinePromptOpen = true; syncPrimary(); }
-        else if (hit(e, keys.depth) && hasDepthSplit(cur) && canOpenDepths(cur._item, cur._gated)) { e.preventDefault(); depthMenuOpen = true; cramOn = false; trackOn = null; syncPrimary(); }
+        else if (hit(e, keys.depth) && hasDepthSplit(cur) && canOpenDepths(cur._item, cur._gated)) { e.preventDefault(); depthMenuOpen = true; cramOn = false; trackOn = null; skipIntroOn = false; syncPrimary(); }
         else if (e.key === "r") { e.preventDefault(); refresh(); } // re-scan the decks (also the ⟳ nav button)
         else if (opts.allowMastered && hit(e, keys.mastered)) { e.preventDefault(); renderMastered(); }
         else if (e.key === "x" && cur && cur._item && cur._item.examable) {

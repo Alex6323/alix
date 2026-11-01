@@ -556,6 +556,7 @@ pub(super) struct PickerKeysDto {
     reconstruct: Vec<KeyDto>,
     cram: Vec<KeyDto>,
     confidence: Vec<KeyDto>,
+    skip_introduction: Vec<KeyDto>,
 }
 
 impl PickerKeysDto {
@@ -573,6 +574,7 @@ impl PickerKeysDto {
             reconstruct: key_list(&k.reconstruct),
             cram: key_list(&k.cram),
             confidence: key_list(&k.confidence),
+            skip_introduction: key_list(&k.skip_introduction),
         }
     }
 }

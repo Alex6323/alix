@@ -232,6 +232,7 @@ pub struct PickerKeys {
     pub reconstruct: Vec<KeyPattern>,
     pub cram: Vec<KeyPattern>,
     pub confidence: Vec<KeyPattern>,
+    pub skip_introduction: Vec<KeyPattern>,
 }
 
 impl Default for PickerKeys {
@@ -250,6 +251,7 @@ impl Default for PickerKeys {
             reconstruct: keys(&["3"]),
             cram: keys(&["c"]),
             confidence: keys(&["f"]),
+            skip_introduction: keys(&["s"]),
         }
     }
 }
@@ -779,6 +781,7 @@ struct RawPicker {
     reconstruct: Option<Vec<String>>,
     cram: Option<Vec<String>>,
     confidence: Option<Vec<String>>,
+    skip_introduction: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Default)]
@@ -901,6 +904,11 @@ impl Config {
             &mut picker.confidence,
             raw.keys.picker.confidence,
             "picker.confidence",
+        )?;
+        assign(
+            &mut picker.skip_introduction,
+            raw.keys.picker.skip_introduction,
+            "picker.skip_introduction",
         )?;
 
         let mut browse = BrowseBindings::default();
@@ -1364,6 +1372,7 @@ pub fn default_config_toml() -> &'static str {
 # reconstruct = ["3"]           #   (last-used) one
 # cram = ["c"]                  # toggle the menu's cram tick-box (serve not-yet-due cards too)
 # confidence = ["f"]            # toggle the menu's confidence tick-box (ask Sure/Unsure)
+# skip_introduction = ["s"]     # toggle the menu's skip-intro tick-box (grade new cards at once)
 
 # Key bindings for the read-only Browse overlay (b in the picker). Jumping to the first
 # and last card is fixed to g / G / Home / End, and the arrow keys always
@@ -2075,6 +2084,7 @@ mod tests {
             reconstruct,
             cram,
             confidence,
+            skip_introduction,
         } = PickerKeys::default();
         let BrowseBindings {
             next,
@@ -2111,6 +2121,7 @@ mod tests {
             ("picker.reconstruct", reconstruct),
             ("picker.cram", cram),
             ("picker.confidence", confidence),
+            ("picker.skip_introduction", skip_introduction),
             ("browse.next", next),
             ("browse.prev", prev),
             ("browse.quit", browse_quit),
@@ -2260,6 +2271,7 @@ mod tests {
                     "reconstruct",
                     "cram",
                     "confidence",
+                    "skip_introduction",
                 ],
             ),
         ];

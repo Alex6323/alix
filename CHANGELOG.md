@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Web: the depth menu's **skip intro** tick-box (`s`) grades never-seen
+  cards at once instead of introducing them first, for that launch, as the
+  phone's launch sheet already could. The confidence tick-box gets `f`.
+
 - Confidence tracking on the web: the depth menu's **confidence** tick-box
   makes a deck ask **Sure** or **Unsure** in place of Reveal or Submit, and a
   single-answer choice card then selects first and submits on Sure/Unsure.

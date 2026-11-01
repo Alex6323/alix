@@ -56,10 +56,14 @@ test.afterEach(async ({ request }) => {
 
 type Depth = "Recognize" | "Recall";
 
-async function start(page: Page, deck: string, depth: Depth, opts: { cram?: boolean; track?: boolean } = {}) {
+async function start(page: Page, deck: string, depth: Depth, opts: { cram?: boolean; track?: boolean; skipIntro?: boolean } = {}) {
   await adultDeckRow(page, deck).click();
   await page.getByTitle("choose a depth").click();
   if (opts.cram) await page.getByRole("button", { name: /cram/i }).click();
+  if (opts.skipIntro) {
+    await page.keyboard.press("s");
+    await expect(page.getByRole("button", { name: /skip intro/i }), "s ticks the box").toContainText("☑");
+  }
   if (opts.track) {
     await page.keyboard.press("f");
     await expect(page.getByRole("button", { name: /confidence/i }), "f ticks the box").toContainText("☑");
@@ -137,4 +141,21 @@ test("a tracked single-choice pick waits for Sure or Unsure before it is submitt
     page.getByRole("button", { name: /^Next/ }).click(),
   ]);
   expect(lastMark("deck-00000000000000000000000072", "card-confpick0001")).toBe("unsure");
+});
+
+test("skip intro grades a never-seen card at once instead of introducing it", async ({ page }) => {
+  const introduces: string[] = [];
+  page.on("request", (request) => { if (request.url().includes("/api/introduce")) introduces.push(request.url()); });
+  const [select] = await Promise.all([
+    page.waitForRequest((request) => request.url().includes("/api/select")),
+    start(page, "Flip", "Recall", { skipIntro: true }),
+  ]);
+  expect(select.postDataJSON().skip_introduction, "the launch carries the tick-box").toBe(true);
+  await page.getByRole("button", { name: /^Reveal/ }).click();
+  await expect(page.getByRole("button", { name: /^Seen/ }), "no introduction").toHaveCount(0);
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/grade")),
+    page.getByRole("button", { name: /^Got it/ }).click(),
+  ]);
+  expect(introduces, "nothing was introduced").toEqual([]);
 });
