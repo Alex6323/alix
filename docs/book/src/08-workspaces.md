@@ -111,7 +111,9 @@ Initialization also makes the member portable. Cited excerpts are copied from
 explicit source files and source directories alike (never a whole file or
 repository), and local card images are copied into `assets/deck-<token>/`. Every managed filename is the
 SHA-256 address of its exact bytes. The deck is not initialized successfully if
-required evidence or an image cannot be copied.
+required evidence or an image cannot be copied. After a successful freeze,
+initialization deletes every file in `assets/deck-<token>/` that the deck no
+longer references, such as the excerpt of a citation whose range changed.
 
 ## Updating from the live source
 

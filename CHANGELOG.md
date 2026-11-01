@@ -593,6 +593,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix deck init` on a workspace member deletes the files in
+  `assets/deck-<token>/` the deck no longer references. Each re-freeze of a
+  changed citation used to leave the old excerpt behind, and sharing or
+  syncing the deck carried every one of them.
+
 - On the web, typing a `c` into an answer field (or the explain box) types
   it instead of opening the section context.
 

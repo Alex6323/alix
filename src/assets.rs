@@ -198,7 +198,19 @@ fn freeze_member_resolving_in(
             let _ = std::fs::remove_dir(workspace_root.join(ROOT));
         }
     }
-    result
+    let report = result?;
+    let frozen = Deck::load_with_defaults(path, &defaults).map_err(|source| AssetError::Deck {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    for orphan in unreferenced_objects(&frozen, &workspace_root)? {
+        let object = owned_dir.join(orphan);
+        std::fs::remove_file(&object).map_err(|source| AssetError::Io {
+            path: object,
+            source,
+        })?;
+    }
+    Ok(report)
 }
 
 pub fn initialize(path: &Path) -> Result<InitializeReport, InitializeError> {
@@ -3238,7 +3250,7 @@ mod tests {
     }
 
     #[test]
-    fn a_frozen_deck_references_every_object_until_a_range_change_orphans_the_old_excerpt() {
+    fn refreezing_a_changed_range_deletes_the_old_excerpt_but_a_failed_freeze_deletes_nothing() {
         let directory = workspace();
         let source = directory.path().join("notes.md");
         std::fs::write(&source, "one\ntwo\nthree\n").unwrap();
@@ -3275,10 +3287,30 @@ mod tests {
         freeze_member(&path).unwrap();
 
         let refrozen = Deck::load(&path).unwrap();
+        let owned = deck_dir(directory.path(), "deck-deck1").unwrap();
         assert_eq!(
-            vec![first_excerpt],
+            Vec::<String>::new(),
             unreferenced_objects(&refrozen, directory.path()).unwrap(),
-            "step 2: after re-freezing a changed range the old excerpt is orphaned"
+            "step 2: re-freezing a changed range leaves no unreferenced object"
+        );
+        assert!(
+            !owned.join(&first_excerpt).exists(),
+            "step 2: the old excerpt {first_excerpt} is deleted"
+        );
+        assert!(
+            owned.join(object_name(b"three\n", "md")).exists(),
+            "step 2: the new excerpt is kept"
+        );
+
+        let stray = write_object(directory.path(), "deck-deck1", b"stray\n", "md").unwrap();
+        let broken =
+            std::fs::read_to_string(&path).unwrap() + "## r\nb\n<!-- at: src:missing.md:1 -->\n";
+        std::fs::write(&path, broken).unwrap();
+        freeze_member(&path).unwrap_err();
+        assert!(
+            stray.exists(),
+            "step 3: a failed freeze deletes nothing, {} survives",
+            stray.display()
         );
     }
 }
