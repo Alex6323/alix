@@ -100,7 +100,15 @@ test("a tracked flip card asks Sure or Unsure in place of Reveal and records the
   await leave(page);
 
   await start(page, "Flip", "Recall", { cram: true, track: true });
-  expect(await legendLabels(page), "the bottom row before the answer").toEqual(["Unsure", "Sure"]);
+  expect(await legendLabels(page), "the bottom row before the answer").toEqual(["Unsure", "Sure", "Hint"]);
+  await expect(page.locator("#legend .chip", { hasText: /^Hint/ }), "no hint: shown, disabled").toBeDisabled();
+  await expect(page.getByRole("button", { name: /^Unsure/ }), "both are primary").toHaveClass(/primary/);
+  const unsureBox = (await page.getByRole("button", { name: /^Unsure/ }).boundingBox())!;
+  const sureBox = (await page.getByRole("button", { name: /^Sure/ }).boundingBox())!;
+  const axis = (unsureBox.x + unsureBox.width + sureBox.x) / 2;
+  const width = page.viewportSize()!.width;
+  expect(Math.abs(axis - width / 2), `the gap between Unsure and Sure sits on the centre (${axis} vs ${width / 2})`).toBeLessThan(2);
+  await page.screenshot({ path: path.join(__dirname, "..", ".tmp", "confidence-row.png"), clip: { x: 0, y: unsureBox.y - 20, width, height: unsureBox.height + 40 } });
   const [mark] = await Promise.all([
     page.waitForRequest((request) => request.url().includes("/api/confidence")),
     page.getByRole("button", { name: /^Sure/ }).click(),
@@ -115,7 +123,7 @@ test("a tracked flip card asks Sure or Unsure in place of Reveal and records the
 
   await leave(page);
   await start(page, "Flip", "Recall", { cram: true });
-  expect(await legendLabels(page), "the deck remembers tracking").toEqual(["Unsure", "Sure"]);
+  expect(await legendLabels(page), "the deck remembers tracking").toEqual(["Unsure", "Sure", "Hint"]);
 });
 
 test("a tracked single-choice pick waits for Sure or Unsure before it is submitted", async ({ page }) => {

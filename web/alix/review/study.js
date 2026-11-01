@@ -370,9 +370,18 @@ export function createStudy({
   function markThen(confidence, action) {
     fetchApi("/api/confidence", post({ card: state.card.id, confidence })).then(action, action);
   }
+  // Two halves of equal width put the axis between Unsure and Sure on the
+  // row's centre, whatever the side chips' widths.
+  let contextChip = null;
+  let confidenceRight = null;
   function confidenceChips(action, key, disabled) {
-    const unsure = chip("Unsure", "quiet", () => markThen("unsure", action), "u");
-    const sure = chip("Sure", "primary", () => markThen("sure", action), key);
+    const left = el("div", "half left");
+    const right = el("div", "half right");
+    if (contextChip) left.appendChild(contextChip);
+    legend.append(left, right);
+    confidenceRight = right;
+    const unsure = chip("Unsure", "primary", () => markThen("unsure", action), "u", left);
+    const sure = chip("Sure", "primary", () => markThen("sure", action), key, right);
     unsure.disabled = sure.disabled = !!disabled;
   }
   function confidenceKey(e, key, action) {
@@ -1737,9 +1746,10 @@ export function createStudy({
 
   function renderLegend() {
     legend.innerHTML = "";
+    contextChip = confidenceRight = null;
     clearLegendSides();
     if (state.card) setMenuContext(isWalking() ? "walk" : "review");
-    if (contextOffered()) chip("Context", "quiet", openSection, label(keys.context));
+    if (contextOffered()) contextChip = chip("Context", "quiet", openSection, label(keys.context));
     if (isWalking()) { renderWalkLegend(); return; }
     if (feedback) {
       if (isIntroducing()) {
@@ -1841,7 +1851,8 @@ export function createStudy({
       chip("Got it", "passed", () => grade("passed"), label(keys.passed));
       chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
     }
-    if (hintsOffered()) chip("Hint", "quiet", openHints, label(keys.hint));
+    if (confidenceRight) chip("Hint", "quiet", openHints, label(keys.hint), confidenceRight).disabled = !hintsOffered();
+    else if (hintsOffered()) chip("Hint", "quiet", openHints, label(keys.hint));
     chip("Leave", "", leaveSession, label(keys.quit), legendLeft); // pinned bottom-left; return to the deck picker
   }
 

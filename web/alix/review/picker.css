@@ -94,6 +94,10 @@
   /* three zones: Leave pinned left, action/grade chips centered, Ask (or a readout) right */
   .legend .keys { grid-column: 2; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
   .legend-side { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .legend .keys:has(> .half) { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .legend .keys .half { display: flex; align-items: center; gap: 8px; }
+  .legend .keys .half.left { justify-content: flex-end; }
+  .legend .keys .half.right { justify-content: flex-start; }
   #legendLeft { grid-column: 1; justify-self: start; }
   #legendRight { grid-column: 3; justify-self: end; }
   @media (max-width: 640px) {
