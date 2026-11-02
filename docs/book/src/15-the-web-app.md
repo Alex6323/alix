@@ -106,7 +106,8 @@ or `tutorial/profiles/<name>/` for a launch of profile `<name>`. A scoped
 rewritten on the next open, so an update brings the updated tutorial and an
 edit you make there does not last. In the tutorial the tutor offers **Ask**
 but not **Make this a note** or **Make this a card**, so nothing of yours is
-saved there. The tutorial is in English only.
+saved there. A kids-profile server refuses `/api/tutorial` with HTTP 403.
+The tutorial is in English only.
 
 ## Library actions
 
