@@ -30,7 +30,10 @@ workspace) into its decks folder on first run. Each copy was then
 initialized like any new deck (ADR 0018: a Markdown file becomes an Alix
 deck, which Alix may rewrite to add ids, only once a deck id is minted into
 it, by `alix deck init` or by a workflow that creates the deck), so every
-install minted its own deck and card ids. The tutorial was listed
+install minted its own deck and card ids. (The desktop web server is
+launched over one folder, the served folder: the folder named by `alix
+<dir>`, else the configured decks folder; its decks are the served decks.)
+The tutorial was listed
 in the picker beside the learner's own decks, it was retired by deleting the
 file, and an app update could not change a copy already on disk.
 
@@ -54,7 +57,8 @@ cards that survives an app update.
    - Phone: `tutorial/` in the app's support directory, beside its decks
      folder.
 2. **Profile name.** A profile is a named config file in a `profiles`
-   directory, launched with `alix profile <name>` or `--config`; its name
+   directory, launched with `alix profile <name>` or with `--config` and
+   that file's path; its name
    is the file's stem. `tutorial::base_dir` uses a profile name only when it
    passes the same validation as `alix profile add` (not empty, no `/`,
    `\` or `.`, not one of the reserved names `add`, `list`, `remove`,
@@ -66,20 +70,20 @@ cards that survives an app update.
    over one deck does, in the `.alix/` directory beside the deck (which
    holds that deck's progress), so in the tutorial folder. It never touches
    the learner's decks folder, the progress store of the served decks, or
-   the recently opened decks list.
+   the picker's recently opened decks list.
 4. **Identity ships with the asset.** The deck id, card ids, the blank's
-   `b:` and `position:` stamps (machine-written markers that identify a
-   fill-in-the-blank span) and the citation fingerprint are minted once
-   in the repository and committed. Every install shares these ids. Nothing
-   initializes, stamps or re-mints the tutorial at runtime: `materialize`
-   rewrites each of the two files only when its bytes differ from the
-   bundled ones, and a walk of the bundled deck leaves it byte-identical.
+   `b:` stamp (the id of its fill-in-the-blank span) and `position:` stamp
+   (where the hidden text sat when stamped, a drift signal) and the
+   citation fingerprint are minted in the repository, when the asset is
+   edited (decision 7), and committed. Every install shares these ids.
+   Nothing is minted at runtime: `materialize` rewrites each of the two
+   files only when its bytes differ from the bundled ones, and a walk of the bundled deck leaves it byte-identical.
 5. **No personal writes.** A walk opened as the tutorial is flagged
    (`WalkSession::mark_tutorial`), and every caller of a personal write
-   (a note or a card the learner creates through the in-session AI tutor)
-   asks `WalkSession::allows_personal_writes` first. The web
-   server answers 403 and the phone bridge returns an error. Asking the
-   tutor stays available.
+   (the complete list: a note, or a card the learner drafts or creates
+   through the in-session AI tutor) asks
+   `WalkSession::allows_personal_writes` first. The web server answers 403
+   and the phone bridge returns an error. Asking the tutor stays available.
 6. **No seeding.** Neither client copies the tutorial or any sample deck
    into a decks folder. A first desktop run still creates the decks folder.
 7. **Editing the asset.** A new card is minted by running
@@ -107,7 +111,7 @@ cards that survives an app update.
 
 Residuals, named and not handled:
 
-- Scoped launches (`alix <dir>`, which serve a named folder) and
+- Scoped launches (`alix <dir>`, which serve the named folder) and
   `--config` launches that name no profile share `tutorial/default/`.
 - Two servers using `tutorial/default/` at once save its progress as whole
   documents, so one can overwrite the other's tutorial progress. Untested.
@@ -169,8 +173,8 @@ after validation, so a crafted `--config` stem cannot move it out of
 `tutorial/`. The ADR 0018 boundary is unchanged for every other deck: the
 tutorial carries its own deck id and is never initialized at runtime. A
 tutorial walk refuses personal writes, so no learner content lands in the
-tutorial folder. A web server without a data root answers 503 and
-writes nothing.
+tutorial folder. A web server without a data root (the platform reports no
+per-user state or data directory) answers 503 and writes nothing.
 
 ## Verification
 
