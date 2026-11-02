@@ -23,7 +23,7 @@ const ROOT = __dirname;
 const SRC = path.join(ROOT, "fixtures", "decks");
 const TMP = path.join(ROOT, ".tmp");
 // One scratch copy per server in playwright.config.ts.
-const CLIENTS = ["kids", "adult", "kids-graded"];
+const CLIENTS = ["kids", "adult", "kids-graded", "adult-empty"];
 
 function isPrivateState(src) {
   const base = path.basename(src);
@@ -35,6 +35,7 @@ function prepareFixtures(name) {
   const dest = path.join(clientTmp, "decks");
   fs.rmSync(clientTmp, { recursive: true, force: true });
   fs.mkdirSync(dest, { recursive: true });
+  if (name === "adult-empty") return dest;
   fs.cpSync(SRC, dest, { recursive: true, filter: (src) => !isPrivateState(src) });
   return dest;
 }

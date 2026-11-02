@@ -17,6 +17,26 @@ const ADULT_CONFIG = path.join(ROOT, "fixtures", "adult.toml");
 const ADULT_DECKS_DIR = path.join(ROOT, ".tmp", "adult", "decks");
 const ADULT_PORT = 7789;
 const ADULT_BASE_URL = `http://127.0.0.1:${ADULT_PORT}`;
+// The tutorial folder lives under the platform state dir, so each adult server
+// gets its own scratch HOME and XDG dirs. CARGO_HOME and RUSTUP_HOME keep the
+// toolchain resolving, since `cargo run` inherits the same environment.
+const REAL_HOME = process.env.HOME ?? "";
+function scratchEnv(name: string): Record<string, string> {
+  const base = path.join(ROOT, ".tmp", name);
+  return {
+    HOME: path.join(base, "home"),
+    XDG_STATE_HOME: path.join(base, "state"),
+    XDG_DATA_HOME: path.join(base, "data"),
+    CARGO_HOME: process.env.CARGO_HOME ?? path.join(REAL_HOME, ".cargo"),
+    RUSTUP_HOME: process.env.RUSTUP_HOME ?? path.join(REAL_HOME, ".rustup"),
+  };
+}
+
+// The adult client again, over an empty decks folder, for the picker's
+// empty-state Tutorial button.
+const ADULT_EMPTY_DECKS_DIR = path.join(ROOT, ".tmp", "adult-empty", "decks");
+const ADULT_EMPTY_PORT = 7790;
+const ADULT_EMPTY_BASE_URL = `http://127.0.0.1:${ADULT_EMPTY_PORT}`;
 
 // The kids client again, on a server whose introduction cooldown is zero
 // (fixtures/kids-graded.toml): an introduced card is due at once, so a real
@@ -92,6 +112,7 @@ export default defineConfig({
       cwd: REPO_ROOT,
       url: ADULT_BASE_URL,
       timeout: 180_000,
+      env: scratchEnv("adult"),
       // Same {#server-subresource-stall} net as the kids server above.
       stderr: "pipe",
       // Never reuse: a server carries session state (and a handle on a decks
@@ -99,6 +120,17 @@ export default defineConfig({
       // previous run left mid-session made `/` render the review screen
       // instead of the picker — a test that passed alone and failed in suite.
       // The binary is already built, so a fresh spawn costs ~a second.
+      reuseExistingServer: false,
+    },
+    {
+      command:
+        `node "${PREPARE_SCRIPT}" adult-empty && ` +
+        `cargo run --quiet -- --config "${ADULT_CONFIG}" "${ADULT_EMPTY_DECKS_DIR}" --port ${ADULT_EMPTY_PORT} --log http`,
+      cwd: REPO_ROOT,
+      url: ADULT_EMPTY_BASE_URL,
+      timeout: 180_000,
+      env: scratchEnv("adult-empty"),
+      stderr: "pipe",
       reuseExistingServer: false,
     },
     {

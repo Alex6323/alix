@@ -10,6 +10,7 @@
   .select .lede .lede-deadline.near { color: var(--bolt); }
   .select .lede .lede-deadline.past { color: var(--warn); }
   .select .msg { color: var(--dim); }
+  .select .msg + .chip { align-self: flex-start; margin-top: 12px; }
   .deck-filter { width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 11px 14px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); border-radius: 11px; color: var(--ink); font: inherit; font-size: 0.95rem; }
   .deck-filter::placeholder { color: var(--dim); }
   .deck-filter:focus { outline: none; border-color: var(--bolt); }

@@ -113,8 +113,12 @@ export function createTutor({
     }).catch(() => study.load());
   }
 
+  function isTutorial() {
+    return !!(study.state() || {}).tutorial;
+  }
+
   function canDistill() {
-    return data.can_distill === true;
+    return data.can_distill === true && !isTutorial();
   }
 
   function saveNote() {
@@ -368,8 +372,9 @@ export function createTutor({
     legend.innerHTML = "";
     const sendButton = chip("Send", "primary", () => send(input.value), "shift+enter");
     sendButton.disabled = data.thinking;
-    chip("Make this a note", "distill", saveNote, label(keys().make_note)).disabled = !canDistill();
-    if (!trace.isOpen()) {
+    const personalWrites = !isTutorial();
+    if (personalWrites) chip("Make this a note", "distill", saveNote, label(keys().make_note)).disabled = !canDistill();
+    if (personalWrites && !trace.isOpen()) {
       chip("Make this a card", "distill", draftCard, label(keys().make_card)).disabled = !canDistill();
     }
     chip("Close", "", close, "esc");

@@ -138,6 +138,7 @@ const picker = createPicker({
   openTraceSession: (next) => trace.open(next),
   openBrowse: study.openBrowse,
   openWalk: study.openWalk,
+  openTutorial: study.openTutorial,
   startExam: (deck) => exam.start(deck),
   openAugment: (deck) => augment.open(deck),
   notice,
@@ -445,6 +446,10 @@ document.getElementById("mShare").addEventListener("click", () => { menu.classLi
 document.getElementById("mDelete").addEventListener("click", () => { menu.classList.remove("open"); sheets.openLibraryRemoval(); });
 document.getElementById("mReset").addEventListener("click", () => { menu.classList.remove("open"); sheets.openReset(); });
 document.getElementById("mDoctor").addEventListener("click", () => { menu.classList.remove("open"); sheets.openDoctor(); });
+document.getElementById("mTutorial").addEventListener("click", () => {
+  menu.classList.remove("open");
+  study.openTutorial().catch(() => notice("could not open the tutorial: the server log has details"));
+});
 document.getElementById("mPair").addEventListener("click", () => { menu.classList.remove("open"); sheets.openPair(); });
 document.getElementById("mAbout").addEventListener("click", () => { menu.classList.remove("open"); sheets.openAbout(); });
 

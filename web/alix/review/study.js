@@ -162,6 +162,10 @@ export function createStudy({
     autoOpenedSection = null;
     return api("/api/walk", post({ deck })).then(apply);
   }
+  function openTutorial() {
+    autoOpenedSection = null;
+    return api("/api/tutorial", post({})).then(apply);
+  }
   function walkReveal() {
     if (state.mode === "line" && revealed + 1 < stepCount()) {
       revealed += 1;
@@ -2422,6 +2426,7 @@ export function createStudy({
     openHints,
     openBrowse,
     openWalk,
+    openTutorial,
     prepareRender,
     prepareSurface,
     remove,
