@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Web: **Tutorial** in the deck picker's ☰ menu, and a **Tutorial** button
+  when the picker finds no decks, open a nine-card tutorial as a walk. It
+  ships with alix, is never listed in the picker or the recent list, and
+  keeps its files and progress in a folder of its own under the platform
+  state (else data) directory: `tutorial/default/`, or
+  `tutorial/profiles/<name>/` for a profile launch. Opening it again
+  continues where you stopped. Its tutor offers Ask but not notes or cards.
+  `POST /api/tutorial` opens it, and `WalkDto.tutorial` marks it.
+
 - The build's git commit, `-dirty` when built from uncommitted changes:
   `alix --version` prints it (`alix 0.8.0 (c152742caa38)`), and the server's
   startup banner, its log, the bug report, and `GET /api/version` (`commit`)
@@ -159,6 +168,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   notice; decks reach the phone through the paired desktop instead.
 
 ### Changed
+
+- The desktop no longer copies the tutorial deck into a new decks folder; a
+  first run creates the folder empty. A `tutorial.md` copied in by an
+  earlier version stays an ordinary deck. `alix profile remove` also
+  deletes that profile's tutorial folder.
 
 - Web: an answer typed into several fields (a cloze with several blanks)
   submits on Shift+Enter; Enter now moves to the next field. With confidence

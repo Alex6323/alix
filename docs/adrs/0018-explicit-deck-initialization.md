@@ -6,6 +6,9 @@
 - Retrospective: No
 - Refines: [ADR 0002](0002-markdown-native-decks.md)
 - Refined by: [ADR 0020](0020-source-excerpt-integrity.md)
+- Amended by: 0062 (the tutorial in two lists: "tutorial seeding" among the
+  workflows that may initialize their own output, and "tutorial" among the
+  decks initialized at creation)
 - Details evolved by
   [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md): the deck
   marker is now `id: deck-<token>`; the explicit initialization and local
@@ -45,6 +48,9 @@ alix deck init <file>
 That explicit command may mint the initial deck ID and missing card IDs.
 Workflows that explicitly create a deck, including generation, import, receive,
 library installation, and tutorial seeding, may initialize their own output.
+
+(Amended by ADR 0062: nothing seeds the tutorial any more. It ships with its
+deck and card ids already minted and is never initialized at runtime.)
 
 Automatic review and augmentation maintenance may assign missing card IDs only
 after a valid deck ID exists. It must refuse an uninitialized file without
@@ -109,6 +115,9 @@ ambiguous write-authority boundary. Explicit initialization refuses a generic
 
 Generated, imported, received, library, and tutorial decks initialize with
 `alix-id` at creation.
+
+(Amended by ADR 0062: the tutorial is no longer initialized at creation; it
+ships initialized.)
 
 Uninitialized hand-authored decks no longer appear in discovery and no longer
 start review automatically. The user must run `alix deck init <file>` once.

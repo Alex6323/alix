@@ -10,9 +10,9 @@ self-grade trace. Pick a look from an 18-theme color gallery, the same
 palettes the web app ships. Progress lives next to your decks as a plain
 file.
 
-A new install starts with a small tutorial deck that teaches the app while
-you review it. Delete it when it has nothing left to teach you; it will not
-come back.
+A short tutorial, opened from Settings or from the empty deck list, teaches
+the app by having you use it. It keeps its own progress and is never listed
+among your decks.
 
 Review, including tracing a trace deck, stays fully offline. Optionally, you
 can pair the app with your own alix desktop app on your Wi-Fi (paste the URL

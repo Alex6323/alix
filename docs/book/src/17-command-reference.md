@@ -57,6 +57,10 @@ bare `alix doctor` reports every existing pair without rewriting either
 profile. Paths are resolved before comparison, so symlink aliases count as the
 same folder.
 
+Each profile keeps its own [tutorial](15-the-web-app.md#the-tutorial)
+progress, and `alix profile remove` also deletes that profile's tutorial
+folder.
+
 ## Progress
 
 `alix stats`, `alix list`, and `alix reset` each take a **deck file, a plain

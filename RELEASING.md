@@ -115,9 +115,16 @@ at. **crates.io is not automated.**
    no per-release refresh.) Re-read the tutorial deck
    (`assets/decks/tutorial.md`) against what shipped this release: a card
    that teaches something that is no longer true must be fixed before the
-   tag (an outdated tutorial is worse than none). When a pre-1.0 release
-   changes persisted state, state the clean break explicitly and verify that
-   production contains no accidental compatibility branch.
+   tag (an outdated tutorial is worse than none). The tutorial ships stamped
+   (ADR 0062): keep its id lines, since every install's tutorial progress
+   hangs on them. After adding a card, run
+   `alix deck init assets/decks/tutorial.md`. After changing
+   `assets/decks/tutorial-sample.py`, run
+   `cargo test --lib -- --ignored stamp_the_shipped_tutorial`, which strips
+   the old citation fingerprint and stamps the new one. Then `make test`.
+   When a pre-1.0 release changes persisted state, state the clean break
+   explicitly and verify that production contains no accidental
+   compatibility branch.
 2. **Bump the version.** Set `version = "X.Y.Z"` in `Cargo.toml`, then refresh
    every lockfile that carries the crate's version: the root `Cargo.lock`
    (`cargo build`), `mobile/alix/rust/Cargo.lock` (`make mobile-unit`), and an

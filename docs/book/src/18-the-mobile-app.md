@@ -18,10 +18,11 @@ themes (the three Kids palettes are web-only; see
 Grab `alix-arm64-v8a.apk` from the project's GitHub Releases (the
 `alix mobile vX.Y.Z` releases) and install it. Android will warn about
 installing outside a store; that is expected for now. The app works on
-Android 7+ and keeps its decks in private app storage: a fresh install ships
-a few sample decks so there is something to review immediately, and pairing
-with a desktop server (see [Pairing a device](19-pairing.md)) adds the
-**Generate deck** row for bringing in more.
+Android 7+ and keeps its decks in private app storage. A fresh install's deck
+list is empty and offers a **Tutorial** button (see
+[The tutorial](#the-tutorial)); pairing with a desktop server (see
+[Pairing a device](19-pairing.md)) adds the **Generate deck** row for
+bringing in decks.
 
 Settings → **About** shows two versions: the app's own and the embedded
 core's. The app has its own release stream; it does not track the CLI's
@@ -81,6 +82,17 @@ partly cards come back first in the next walk. The section sheet opens by itself
 reaches a section, **Ask** reaches the tutor once an answer shows (when paired
 with a desktop that can run it), and the done screen's **Next walk** starts
 the next pass.
+
+## The tutorial
+
+Settings → **Tutorial**, or the **Tutorial** button on an empty deck list,
+opens the same tutorial as the web app (see
+[The tutorial](15-the-web-app.md#the-tutorial)) as a walk; leaving it returns
+to the deck list. It teaches the phone's own gestures too: tapping a revealed
+answer to hide it, and switching that sheet to **Source** on a cited card.
+The tutorial and its progress live in a `tutorial` folder in the app's
+private storage, beside the decks folder, and are never listed among your
+decks. Its tutor offers **Ask** (when paired) but not notes or cards.
 
 ## Reviewing
 

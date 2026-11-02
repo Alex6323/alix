@@ -18,8 +18,8 @@ meaning: it is how alix tells its own decks apart, and the same prefixed string
 travels everywhere the id appears, in a frontmatter key, a card marker, a
 filename, a prerequisite reference, or an error message. Markdown without that
 prefixed id is never listed or modified, so ordinary documents with `##`
-headings can sit in a decks folder untouched. Generated, imported, received, and
-tutorial decks are initialized when they are created.
+headings can sit in a decks folder untouched. Generated, imported, and received
+decks are initialized when they are created; the tutorial ships initialized.
 
 ## Choosing a card shape
 

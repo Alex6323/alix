@@ -40,7 +40,8 @@ Inspect every listed item. This explicitly includes:
   manifests and deck files;
 - the landing site, installer, legal pages, and `site/slides.html`;
 - the "What's new" page's hand-curated "Up next" list, `site/up-next.md`;
-- the desktop and mobile tutorial decks;
+- the tutorial deck `assets/decks/tutorial.md` and its sample file
+  `assets/decks/tutorial-sample.py`, shared by the desktop and mobile apps;
 - every image, screenshot, and SVG published by the site, book, slides, or
   README.
 

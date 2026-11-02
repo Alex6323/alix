@@ -86,6 +86,28 @@ ago first. At the end, **Next walk** (`r`) starts the next walk. Walking
 counts for the drill too: the drill grades a walked card at first sight
 instead of introducing it.
 
+## The tutorial
+
+**Tutorial** in the deck picker's ☰ menu, or the **Tutorial** button the
+picker shows when it finds no decks, opens a short tutorial deck as a walk.
+Its nine cards each teach one thing by having you do it: grade an answer,
+open the section's text and a hint, pick a choice, reveal line by line, fill
+a blank, hide an answer, and show a cited source. Opening it again continues
+where you stopped, as any walk does.
+
+The tutorial ships with alix and is kept apart from your library: it is
+never listed in the picker or the recent list, and neither it nor its
+progress is written into your decks folder. Each open writes the tutorial
+and the small sample file its cited card points into a folder of its own,
+under the same platform directory as the server log: `tutorial/default/`,
+or `tutorial/profiles/<name>/` for a launch of profile `<name>`. A scoped
+`alix <dir>` launch and a `--config` launch that names no profile share
+`tutorial/default/`. A file there that differs from the shipped one is
+rewritten on the next open, so an update brings the updated tutorial and an
+edit you make there does not last. In the tutorial the tutor offers **Ask**
+but not **Make this a note** or **Make this a card**, so nothing of yours is
+saved there. The tutorial is in English only.
+
 ## Library actions
 
 The picker's **☰ menu** carries six actions that used to be terminal-only:
@@ -240,7 +262,7 @@ holds; it can tick up when a card you missed cools back in for its retry. The
 **☰ menu** is context-aware: during review it holds **Ask** and,
 when available, **Context**; a trace holds **Ask**. On the deck
 picker, the library actions above plus **keyboard
-shortcuts** and **about**, with **Theme…** and **Draw
+shortcuts**, **Tutorial** and **about**, with **Theme…** and **Draw
 answers** (a per-device toggle, see below) in both. The ⟳ button (also key
 `r`) re-reads your config, so a changed `decks_dir` takes effect without
 restarting (scoped `alix <dir>` instances stay pinned to their folder), and

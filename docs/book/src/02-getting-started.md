@@ -41,11 +41,14 @@ the entire core without ever touching the AI layer.
 
 ## Your first deck
 
-On a first run (no decks directory yet), `alix` creates it and seeds **The alix
-tutorial**, a small deck that teaches alix while you review it, from grading
-honestly to the deck format below. Its last card tells you to delete it; alix
-seeds it only into a brand-new decks directory, so once deleted it never returns.
-If you already have decks, nothing is seeded.
+On a first run (no decks directory yet), `alix` creates it, empty. The web
+app's **Tutorial** (in the ☰ menu on the deck picker, and as a button when the
+picker finds no decks) opens a short tutorial: nine cards, walked one at a
+time, each teaching one thing by having you do it, from grading an answer to
+showing a cited source. The tutorial is never listed among your decks and
+never copied into your decks directory; it and its progress live in a folder
+of their own (see [The tutorial](15-the-web-app.md#the-tutorial)), and
+opening it again continues where you stopped.
 
 A deck is a plain `.md` file. A card is a `##` line (the question) with its answer
 on the plain lines beneath it:

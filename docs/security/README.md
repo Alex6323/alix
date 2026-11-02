@@ -108,9 +108,11 @@ key is an ordinary unknown frontmatter key: it lints and grants nothing,
 because only `id: deck-<token>` marks a file initialized. `alix deck init <file>` is
 the explicit opt-in that may mint the initial deck ID. Discovery and automatic
 review or augmentation never grant that authority from `##` headings alone, so
-ordinary Markdown remains byte-identical. Generated, imported, received,
-library, and tutorial creation workflows initialize the output they
-deliberately create (`src/parser/mod.rs`, `src/stamp.rs`, `src/workspace.rs`).
+ordinary Markdown remains byte-identical. Generated, imported, received, and
+library creation workflows initialize the output they deliberately create
+(`src/parser/mod.rs`, `src/stamp.rs`, `src/workspace.rs`). The tutorial ships
+with its deck and card ids already minted, and nothing initializes or stamps
+it at runtime (`src/tutorial.rs`, ADR 0062).
 
 Source citations fail closed behind a content fingerprint. Review, trace, and
 tutor grounding reveal a cited range only when its normalized displayed text
@@ -241,6 +243,24 @@ user-authored file names (alix's fixed relative file names and minted deck
 ids only) and is recorded with its class; the bug-report archive keeps that
 record after its redaction pass. The verbose content law covers a sync
 failure row and opens the archive.
+
+### Tutorial folder
+
+Opening the tutorial writes the bundled tutorial deck and its sample file
+into a folder outside every decks folder, and keeps the tutorial's progress
+in that folder's `.alix/` directory. On the desktop the folder is
+`tutorial/default/` or `tutorial/profiles/<name>/` under the same platform
+root as the server log; on the phone it is `tutorial/` in the app's support
+directory. Each open rewrites a file only when its bytes differ from the
+bundled ones, so edits made there are overwritten. A profile name selects
+the folder only after the profile-name validation, so a `--config` file stem
+such as `..` falls back to `tutorial/default/` instead of leaving
+`tutorial/`. A tutorial walk refuses tutor notes and tutor-made cards (server
+`403`, bridge error), so no learner-authored content is written there.
+`alix profile remove <name>` deletes that profile's tutorial folder. Named
+and unhandled: two servers sharing `tutorial/default/` can overwrite each
+other's tutorial progress, and a profile name containing `:` is unproven on
+Windows (`src/tutorial.rs`, `src/walk.rs`, `tests/api.rs`, ADR 0062).
 
 ### Bug-report archive
 

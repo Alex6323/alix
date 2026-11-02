@@ -9,6 +9,11 @@ Release notes, so a release without its section fails loud.
 
 ### Added
 
+- Settings → **Tutorial**, and a **Tutorial** button on an empty deck list,
+  open the tutorial as a walk. It keeps its files and progress in a
+  `tutorial` folder beside the decks folder and is never listed among the
+  decks. Its tutor offers Ask but not notes or cards.
+
 - The release attaches `alix-arm64-v8a.apk.sha256` beside the APK, so a
   download can be verified with `sha256sum -c` like the desktop archives.
 - A draw card is answerable on the mobile client. It asked for typed text
@@ -18,6 +23,12 @@ Release notes, so a release without its section fails loud.
   sketch survives a rotation and stays on screen beside the answer.
 
 ### Changed
+
+- A fresh install no longer copies in the tutorial, `basics.md`, or the
+  sample workspace, so its deck list starts empty. The empty list's "Add the
+  tutorial deck" button is replaced by **Tutorial**, which opens the tutorial
+  instead of copying it. Copies an earlier version put in the decks folder
+  stay there as ordinary decks.
 
 - A trace deck's session is called a trace, not a walk: the done screen
   reads "TRACE COMPLETE", "Trace finished.", "Trace again", and "Trace it
