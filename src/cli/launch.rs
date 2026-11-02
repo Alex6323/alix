@@ -58,9 +58,7 @@ fn log_settings(config: &Config, targets: &[alix::log::Target]) -> alix::log::Se
 }
 
 fn create_decks_dir(dir: &Path) {
-    if !dir.exists() {
-        let _ = std::fs::create_dir_all(dir);
-    }
+    let _ = std::fs::create_dir_all(dir);
 }
 
 pub(crate) fn launch(args: LaunchArgs, instance: &str) -> Result<()> {
