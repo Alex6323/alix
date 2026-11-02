@@ -255,8 +255,22 @@ fn profile_add_list_and_remove_are_hermetic() {
         stdout(&listed)
     );
 
+    let tutorial = test_state_dir(home.path()).join("tutorial");
+    for folder in ["profiles/x", "default"] {
+        std::fs::create_dir_all(tutorial.join(folder)).unwrap();
+        write(&tutorial.join(folder), "tutorial.md", VALID_DECK);
+    }
+
     let removed = alix_env(&["profile", "remove", "x", "--yes"], home.path(), &[]);
     assert!(removed.status.success(), "stderr: {}", stderr(&removed));
+    assert_eq!(
+        (false, true),
+        (
+            tutorial.join("profiles/x").exists(),
+            tutorial.join("default/tutorial.md").is_file()
+        ),
+        "(profile tutorial exists, default tutorial kept) after remove"
+    );
 
     let listed = alix_env(&["profile", "list"], home.path(), &[]);
     assert!(listed.status.success(), "stderr: {}", stderr(&listed));
@@ -7441,6 +7455,51 @@ fn a_bare_server_creates_the_default_instance_log_without_a_flag() {
 
     child.kill().expect("failed to stop the server");
     let _ = child.wait();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_first_launch_creates_the_decks_folder_and_seeds_nothing() {
+    let parent = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let decks = parent.path().join("fresh-decks");
+    let config = write(
+        parent.path(),
+        "config.toml",
+        &format!("decks_dir = {:?}\n", decks.to_str().unwrap()),
+    );
+
+    let mut child = RunningServer(
+        Command::new(env!("CARGO_BIN_EXE_alix"))
+            .args(["--config", config.as_str()])
+            .args(["--port", "0"])
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path())
+            .env("XDG_DATA_HOME", home.path())
+            .env("XDG_STATE_HOME", home.path())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("failed to spawn the alix server"),
+    );
+    let _port = take_server_port(&mut child);
+    child.kill().expect("failed to stop the server");
+    let _ = child.wait();
+
+    let markdown: Vec<_> = std::fs::read_dir(&decks)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|entry| entry.file_name())
+                .filter(|name| name.to_string_lossy().ends_with(".md"))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(
+        (true, Vec::<std::ffi::OsString>::new()),
+        (decks.is_dir(), markdown),
+        "(decks folder created, markdown files in it) after a first launch"
+    );
 }
 
 #[cfg(unix)]
