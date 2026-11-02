@@ -223,8 +223,10 @@ The depth menu's **confidence** tick-box (`f`) switches tracking on or off for t
 deck; the choice is saved in the deck's progress (so it syncs with it) and
 kept for every later launch until you switch it again. It is off by default.
 With tracking on, a graded card asks **Sure** or **Unsure** in place of its
-first action: **Sure** stands where Reveal or Submit would be (same keys),
-**Unsure** sits to its left (`u` outside a text field; inside one, click it).
+first action, as two buttons centred side by side: **Unsure** (Space) and
+**Sure** (Enter). Where Space already types or ticks an option (a typed
+answer, an explain box, a select-all card), they move to Shift+Space and
+Shift+Enter.
 Either one performs that action and records your mark with the review
 in the card's history. On a single-answer multiple-choice card a click (or the
 number keys) only selects an option, which you can change; Sure or Unsure then

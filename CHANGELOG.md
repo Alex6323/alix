@@ -155,6 +155,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Web: an answer typed into several fields (a cloze with several blanks)
+  submits on Shift+Enter; Enter now moves to the next field. With confidence
+  tracking, Space is Unsure and Enter is Sure (Shift+Space and Shift+Enter
+  where Space types or ticks), and both buttons sit centred side by side.
+
 - Progress files gain `track_confidence` on a deck and `confidence`
   (`"sure"` | `"unsure"`) on a review. A tracked deck's progress no longer
   loads in an older desktop or phone build, so update both before syncing it.

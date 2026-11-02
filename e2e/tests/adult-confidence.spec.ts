@@ -21,6 +21,27 @@ title: "Flip"
 Oslo
 <!-- id: card-confflip0001 -->
 `,
+  "pair.md": `---
+format-version: 1
+id: "deck-00000000000000000000000073"
+title: "Pair"
+---
+## The two Scandinavian capitals west of Finland
+Oslo
+Stockholm
+<!-- id: card-confpair0001 -->
+`,
+  "blanks.md": `---
+format-version: 1
+id: "deck-00000000000000000000000074"
+title: "Blanks"
+---
+## Fill in both capitals
+Norway's capital is Oslo and Sweden's is Stockholm.
+<!-- blank: span [both] hidden="Oslo" -->
+<!-- blank: span [both] hidden="Stockholm" -->
+<!-- id: card-confblanks001 -->
+`,
   "pick.md": `---
 format-version: 1
 id: "deck-00000000000000000000000072"
@@ -54,7 +75,7 @@ test.afterEach(async ({ request }) => {
   fs.rmSync(WORKSPACE, { recursive: true, force: true });
 });
 
-type Depth = "Recognize" | "Recall";
+type Depth = "Recognize" | "Recall" | "Reconstruct";
 
 async function start(page: Page, deck: string, depth: Depth, opts: { cram?: boolean; track?: boolean; skipIntro?: boolean } = {}) {
   await adultDeckRow(page, deck).click();
@@ -124,6 +145,14 @@ test("a tracked flip card asks Sure or Unsure in place of Reveal and records the
   await leave(page);
   await start(page, "Flip", "Recall", { cram: true });
   expect(await legendLabels(page), "the deck remembers tracking").toEqual(["Unsure", "Sure", "Hint"]);
+  await expect(page.getByRole("button", { name: /^Unsure/ }).locator(".k")).toHaveText("space");
+  await expect(page.getByRole("button", { name: /^Sure/ }).locator(".k")).toHaveText("enter");
+  const [byKey] = await Promise.all([
+    page.waitForRequest((request) => request.url().includes("/api/confidence")),
+    page.keyboard.press("Space"),
+  ]);
+  expect(byKey.postDataJSON().confidence, "Space is Unsure on a flip card").toBe("unsure");
+  await expect(page.getByText("Oslo"), "Space reveals the answer").toBeVisible();
 });
 
 test("a tracked single-choice pick waits for Sure or Unsure before it is submitted", async ({ page }) => {
@@ -166,4 +195,35 @@ test("skip intro grades a never-seen card at once instead of introducing it", as
     page.getByRole("button", { name: /^Got it/ }).click(),
   ]);
   expect(introduces, "nothing was introduced").toEqual([]);
+});
+
+test("a tracked multi-line typed answer takes Shift+Space as Unsure", async ({ page }) => {
+  await start(page, "Pair", "Reconstruct", { skipIntro: true, track: true });
+  await expect(page.getByRole("button", { name: /^Unsure/ }).locator(".k")).toHaveText("shift+space");
+  await expect(page.getByRole("button", { name: /^Sure/ }).locator(".k")).toHaveText("shift+enter");
+  await page.locator("textarea").fill("Oslo\nStockholm");
+  const [mark] = await Promise.all([
+    page.waitForRequest((request) => request.url().includes("/api/confidence")),
+    page.keyboard.press("Shift+Space"),
+  ]);
+  expect(mark.postDataJSON().confidence).toBe("unsure");
+  await expect(page.getByText("Stockholm", { exact: true }).first(), "the answer is revealed").toBeVisible();
+});
+
+test("several typed blanks: Enter moves to the next field, Shift+Enter submits", async ({ page }) => {
+  await start(page, "Blanks", "Reconstruct", { skipIntro: true });
+  const fields = page.locator("#card .blank-field");
+  await expect(fields).toHaveCount(2);
+  const checks: string[] = [];
+  page.on("request", (request) => { if (request.url().includes("/api/check")) checks.push(request.url()); });
+  await fields.nth(0).fill("Oslo");
+  await page.keyboard.press("Enter");
+  await expect(fields.nth(1), "Enter moves on").toBeFocused();
+  await fields.nth(1).fill("Stockholm");
+  await page.keyboard.press("Enter");
+  expect(checks, "Enter on the last field submits nothing").toEqual([]);
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/check")),
+    page.keyboard.press("Shift+Enter"),
+  ]);
 });

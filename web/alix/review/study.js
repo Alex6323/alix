@@ -374,21 +374,41 @@ export function createStudy({
   // row's centre, whatever the side chips' widths.
   let contextChip = null;
   let confidenceRight = null;
-  function confidenceChips(action, key, disabled) {
+  function confidenceChips(action, shifted, disabled) {
     const left = el("div", "half left");
     const right = el("div", "half right");
     if (contextChip) left.appendChild(contextChip);
     legend.append(left, right);
     confidenceRight = right;
-    const unsure = chip("Unsure", "primary", () => markThen("unsure", action), "u", left);
-    const sure = chip("Sure", "primary", () => markThen("sure", action), key, right);
+    const shift = shifted ? "shift+" : "";
+    const unsure = chip("Unsure", "primary", () => markThen("unsure", action), shift + "space", left);
+    const sure = chip("Sure", "primary", () => markThen("sure", action), shift + "enter", right);
     unsure.disabled = sure.disabled = !!disabled;
   }
-  function confidenceKey(e, key, action) {
-    if (!tracked()) return false;
-    if (hit(e, key)) { e.preventDefault(); markThen("sure", action); return true; }
-    if (!e.ctrlKey && !e.altKey && e.key === "u") { e.preventDefault(); markThen("unsure", action); return true; }
+  // Tracked keys: Enter is Sure and Space Unsure; where Space already
+  // types or toggles, Shift+Enter and Shift+Space.
+  const plain = (e) => !e.ctrlKey && !e.altKey && !e.metaKey;
+  function confidenceKey(e, action, shifted) {
+    if (!tracked() || !plain(e) || !!e.shiftKey !== !!shifted) return false;
+    if (e.key === "Enter") { e.preventDefault(); markThen("sure", action); return true; }
+    if (e.key === " ") { e.preventDefault(); markThen("unsure", action); return true; }
     return false;
+  }
+  // Tracking off, one field submits on the submit key and several on
+  // Shift+Enter, with Enter moving to the next field.
+  function typedFieldKey(e, inp, fields) {
+    const multi = fields.length > 1;
+    if (tracked()) {
+      if (confidenceKey(e, submitCheck, true)) return;
+      if (!multi && hit(e, keys.submit)) { e.preventDefault(); markThen("sure", submitCheck); return; }
+    } else if (multi ? (e.key === "Enter" && e.shiftKey && plain(e)) : hit(e, keys.submit)) {
+      e.preventDefault(); submitCheck(); return;
+    }
+    if (multi && e.key === "Enter" && !e.shiftKey && plain(e)) {
+      e.preventDefault();
+      const next = fields[fields.indexOf(inp) + 1];
+      if (next) next.focus();
+    }
   }
   function submitMultiChoice() {
     if (!selectedChoices.size) return;
@@ -640,11 +660,13 @@ export function createStudy({
   function inputBlanks(node) {
     const pills = node.querySelectorAll(".blank-pill:not(.muted)");
     if (pills.length !== holeSteps().length) return false;
+    const fields = [];
     pills.forEach((pill, k) => {
       const inp = el("input", "field blank-field");
       inp.type = "text"; inp.autocomplete = "off"; inp.spellcheck = false;
       inp.dataset.step = holeSteps()[k];
-      inp.addEventListener("keydown", e => { if (hit(e, keys.submit)) { e.preventDefault(); if (tracked()) markThen("sure", submitCheck); else submitCheck(); } });
+      inp.addEventListener("keydown", e => typedFieldKey(e, inp, fields));
+      fields.push(inp);
       pill.replaceWith(inp);
     });
     return true;
@@ -1218,10 +1240,12 @@ export function createStudy({
       return;
     }
     const wrap = el("div", "inputs");
+    const fields = [];
     gradeableSteps().forEach(() => {
       const inp = el("input", "field");
       inp.type = "text"; inp.autocomplete = "off"; inp.spellcheck = false;
-      inp.addEventListener("keydown", e => { if (hit(e, keys.submit)) { e.preventDefault(); if (tracked()) markThen("sure", submitCheck); else submitCheck(); } });
+      inp.addEventListener("keydown", e => typedFieldKey(e, inp, fields));
+      fields.push(inp);
       wrap.appendChild(inp);
     });
     a.appendChild(wrap);
@@ -1314,7 +1338,8 @@ export function createStudy({
         // Enter inserts a newline (compose freely); Shift+Enter reveals. Stop the
         // event here so the same keypress doesn't also reach the doc handler
         // and submit the (now visible) checklist in one go.
-        if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); e.stopPropagation(); if (tracked()) markThen("sure", explainReveal); else explainReveal(); }
+        if (confidenceKey(e, explainReveal, true)) { e.stopPropagation(); return; }
+        if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); e.stopPropagation(); explainReveal(); }
       });
       a.appendChild(ta);
       timers.setTimeout(() => ta.focus(), 0);
@@ -1803,28 +1828,28 @@ export function createStudy({
         chip("Reveal", "primary", reveal, label(keys.reveal));
       }
     } else if (effectiveDraw() && revealed === 0) {
-      if (tracked()) confidenceChips(drawReveal, label(keys.reveal));
+      if (tracked()) confidenceChips(drawReveal, false);
       else chip("Reveal", "primary", drawReveal, label(keys.reveal));
     } else if (isChoice()) {
       if (isMultiChoice() && tracked()) {
-        confidenceChips(submitMultiChoice, label(keys.submit), selectedChoices.size === 0);
+        confidenceChips(submitMultiChoice, true, selectedChoices.size === 0);
       } else if (isMultiChoice()) {
         const submit = chip("Submit", "primary", submitMultiChoice, label(keys.submit));
         submit.disabled = selectedChoices.size === 0;
       } else if (tracked()) {
-        confidenceChips(chooseSelected, label(keys.submit), selectedChoices.size === 0);
+        confidenceChips(chooseSelected, false, selectedChoices.size === 0);
       }
     } else if (isInput() && tracked()) {
-      confidenceChips(submitCheck, label(keys.submit));
+      confidenceChips(submitCheck, true);
     } else if (isInput()) {
       chip("Submit", "primary", submitCheck, label(keys.submit));
     } else if (isTypeLine()) {
       chip("Check", "primary", submitCurrentTypeLine, label(keys.submit));
     } else if (isExplain() && !fullyRevealed()) {
-      if (tracked()) confidenceChips(explainReveal, "shift+enter");
+      if (tracked()) confidenceChips(explainReveal, true);
       else chip("Reveal", "primary", explainReveal, "shift+enter");
     } else if (!fullyRevealed() && revealed === 0 && tracked()) {
-      confidenceChips(reveal, label(keys.reveal));
+      confidenceChips(reveal, false);
     } else if (!fullyRevealed()) {
       chip(state.mode === "line" && revealed > 0 ? "Reveal next" : "Reveal", "primary", reveal, label(keys.reveal));
     } else if (hasKeypoints()) {
@@ -2252,7 +2277,7 @@ export function createStudy({
       // (freezing the drawing) to match the "Reveal" chip; placed before the explain
       // and generic reveal branches so a flip/explain draw card reveals via drawReveal().
       if (effectiveDraw() && revealed === 0) {
-        if (confidenceKey(e, keys.reveal, drawReveal)) return;
+        if (confidenceKey(e, drawReveal)) return;
         if (hit(e, keys.reveal)) { e.preventDefault(); drawReveal(); }
         else if (hit(e, keys.skip)) { e.preventDefault(); skip(); }
         else if (hit(e, keys.remove)) { e.preventDefault(); remove(); }
@@ -2262,7 +2287,8 @@ export function createStudy({
       // Shift+Enter reveals. The textarea handles Shift+Enter when focused (and stops
       // it there); this covers the case where focus has left the textarea.
       if (isExplain() && !fullyRevealed()) {
-        if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); if (tracked()) markThen("sure", explainReveal); else explainReveal(); }
+        if (confidenceKey(e, explainReveal, true)) return;
+        if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); explainReveal(); }
         else if (e.ctrlKey && hit(e, keys.remove)) { e.preventDefault(); remove(); }
         else if (e.ctrlKey && hit(e, keys.skip)) { e.preventDefault(); skip(); }
         return;
@@ -2276,7 +2302,7 @@ export function createStudy({
       }
       if (!fullyRevealed()) {
         if (hit(e, keys.skip)) { e.preventDefault(); skip(); return; }
-        if (revealed === 0 && confidenceKey(e, keys.reveal, reveal)) return;
+        if (revealed === 0 && confidenceKey(e, reveal)) return;
         if (hit(e, keys.reveal)) { e.preventDefault(); reveal(); return; }
         return;
       }
@@ -2302,8 +2328,8 @@ export function createStudy({
   }
 
   function handleChoiceKey(e) {
-    if (isMultiChoice() && selectedChoices.size && confidenceKey(e, keys.submit, submitMultiChoice)) return;
-    if (picksBeforeSubmit() && selectedChoices.size && confidenceKey(e, keys.submit, chooseSelected)) return;
+    if (isMultiChoice() && selectedChoices.size && confidenceKey(e, submitMultiChoice, true)) return;
+    if (picksBeforeSubmit() && selectedChoices.size && confidenceKey(e, chooseSelected)) return;
     if (isMultiChoice() && hit(e, keys.submit)) { e.preventDefault(); submitMultiChoice(); return; }
     if (hit(e, keys.up) || e.key === "ArrowUp") { e.preventDefault(); moveChoiceFocus(-1); return; }
     if (hit(e, keys.down) || e.key === "ArrowDown") { e.preventDefault(); moveChoiceFocus(1); return; }

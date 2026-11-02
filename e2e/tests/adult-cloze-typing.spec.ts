@@ -75,7 +75,7 @@ async function typeAndSubmit(page: Page, values: string[]): Promise<string[]> {
   }
   const [request] = await Promise.all([
     page.waitForRequest((req) => req.url().includes("/api/check")),
-    page.keyboard.press("Enter"),
+    page.keyboard.press(values.length > 1 ? "Shift+Enter" : "Enter"),
   ]);
   await expect(page.locator("#card .region.q .blank-filled"), "the blanks fill after the check").toHaveCount(values.length);
   return request.postDataJSON().lines;
