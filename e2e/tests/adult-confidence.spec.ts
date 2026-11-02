@@ -214,6 +214,20 @@ test("a tracked multi-line typed answer takes Shift+Space as Unsure", async ({ p
   await expect(page.getByText("Stockholm", { exact: true }).first(), "the answer is revealed").toBeVisible();
 });
 
+test("a tracked single typed field marks only on Shift+Enter or Shift+Space, never on plain Enter", async ({ page }) => {
+  await start(page, "Flip", "Reconstruct", { skipIntro: true, track: true });
+  await expect(page.getByRole("button", { name: /^Sure/ }).locator(".k")).toHaveText("shift+enter");
+  const marks: string[] = [];
+  page.on("request", (request) => { if (request.url().includes("/api/confidence")) marks.push(request.postDataJSON().confidence); });
+  await page.locator("#card input").first().fill("Oslo");
+  await page.keyboard.press("Enter");
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/check")),
+    page.keyboard.press("Shift+Space"),
+  ]);
+  expect(marks, "plain Enter marked nothing; Shift+Space marked Unsure").toEqual(["unsure"]);
+});
+
 test("several typed blanks: Enter moves to the next field, Shift+Enter submits", async ({ page }) => {
   await start(page, "Blanks", "Reconstruct", { skipIntro: true });
   const fields = page.locator("#card .blank-field");

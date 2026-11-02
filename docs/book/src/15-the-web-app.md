@@ -226,7 +226,7 @@ With tracking on, a graded card asks **Sure** or **Unsure** in place of its
 first action, as one button split down the centre: **Unsure** (Space) and
 **Sure** (Enter). Where Space already types or ticks an option (a typed
 answer, an explain box, a select-all card), they move to Shift+Space and
-Shift+Enter.
+Shift+Enter, and plain Enter marks nothing.
 Either one performs that action and records your mark with the review
 in the card's history. On a single-answer multiple-choice card a click (or the
 number keys) only selects an option, which you can change; Sure or Unsure then

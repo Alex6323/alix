@@ -400,7 +400,7 @@ export function createStudy({
     const multi = fields.length > 1;
     if (tracked()) {
       if (confidenceKey(e, submitCheck, true)) return;
-      if (!multi && hit(e, keys.submit)) { e.preventDefault(); markThen("sure", submitCheck); return; }
+      if (!multi && hit(e, keys.submit)) { e.preventDefault(); return; }
     } else if (multi ? (e.key === "Enter" && e.shiftKey && plain(e)) : hit(e, keys.submit)) {
       e.preventDefault(); submitCheck(); return;
     }
