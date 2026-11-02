@@ -8,9 +8,7 @@ const EMPTY_SERVER = "http://127.0.0.1:7790";
 
 function resetTutorial(): void {
   for (const server of ["adult", "adult-empty"]) {
-    for (const dir of ["home", "state", "data"]) {
-      fs.rmSync(path.join(TMP, server, dir), { recursive: true, force: true });
-    }
+    fs.rmSync(path.join(TMP, server, "state", "alix", "tutorial"), { recursive: true, force: true });
   }
 }
 

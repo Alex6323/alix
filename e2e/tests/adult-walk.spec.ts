@@ -138,6 +138,26 @@ test("a walk serves the unwalked rest, then a full pass, with the section sheet 
   await expect(walked.locator("span"), "every item walked: no hint").toHaveCount(1);
 });
 
+test("the tutor on an ordinary walk offers Make a note and Make a card", async ({ page }) => {
+  await adultDeckRow(page, "Walk Tour").click();
+  const walk = await openWalkMenu(page);
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk") && r.request().method() === "POST" && r.ok()),
+    walk.click(),
+  ]);
+  await closeSectionSheet(page, "ordinary walk");
+  const octopus = page.locator(".option").filter({ has: page.locator(".opt", { hasText: "Octopus", exact: true }) });
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/choose") && r.ok()),
+    octopus.click(),
+  ]);
+  await page.getByRole("button", { name: /^Ask/ }).click();
+  await expect(page.locator(".ask-panel")).toBeVisible();
+  await expect(page.locator("#legend .chip.distill", { hasText: /^Make this a note/ }), "ordinary walk: Make a note").toHaveCount(1);
+  await expect(page.locator("#legend .chip.distill", { hasText: /^Make this a card/ }), "ordinary walk: Make a card").toHaveCount(1);
+  await page.keyboard.press("Escape");
+});
+
 test("a wrong pick survives a reload with only Continue, and the missed item leads the next walk", async ({ page }) => {
   await adultDeckRow(page, "Walk Tour").click();
   const walk = await openWalkMenu(page);

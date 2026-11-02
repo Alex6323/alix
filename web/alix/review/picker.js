@@ -207,7 +207,7 @@ export function createPicker({
       const wrap = el("div", "select");
       wrap.appendChild(el("div", "lede", "choose decks to study"));
       wrap.appendChild(el("div", "msg", "No decks found. Add .md decks to your decks folder."));
-      const tutorial = el("button", "chip", "Tutorial");
+      const tutorial = el("button", "chip tutorial-start", "Tutorial");
       tutorial.addEventListener("click", () => {
         openTutorial().catch(() => notice("could not open the tutorial: the server log has details"));
       });
