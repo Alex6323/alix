@@ -381,8 +381,8 @@ export function createStudy({
     legend.append(left, right);
     confidenceRight = right;
     const shift = shifted ? "shift+" : "";
-    const unsure = chip("Unsure", "primary", () => markThen("unsure", action), shift + "space", left);
-    const sure = chip("Sure", "primary", () => markThen("sure", action), shift + "enter", right);
+    const unsure = chip("Unsure", "primary split-start", () => markThen("unsure", action), shift + "space", left);
+    const sure = chip("Sure", "primary split-end", () => markThen("sure", action), shift + "enter", right);
     unsure.disabled = sure.disabled = !!disabled;
   }
   // Tracked keys: Enter is Sure and Space Unsure; where Space already

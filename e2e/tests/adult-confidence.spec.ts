@@ -129,6 +129,10 @@ test("a tracked flip card asks Sure or Unsure in place of Reveal and records the
   const axis = (unsureBox.x + unsureBox.width + sureBox.x) / 2;
   const width = page.viewportSize()!.width;
   expect(Math.abs(axis - width / 2), `the gap between Unsure and Sure sits on the centre (${axis} vs ${width / 2})`).toBeLessThan(2);
+  const seam = sureBox.x - (unsureBox.x + unsureBox.width);
+  expect(Math.abs(seam), `Unsure and Sure meet as one split button (seam ${seam}px)`).toBeLessThan(1);
+  const unsureRadius = await page.getByRole("button", { name: /^Unsure/ }).evaluate((b) => getComputedStyle(b).borderTopRightRadius);
+  expect(unsureRadius, "the seam side of Unsure is square").toBe("0px");
   await page.screenshot({ path: path.join(__dirname, "..", ".tmp", "confidence-row.png"), clip: { x: 0, y: unsureBox.y - 20, width, height: unsureBox.height + 40 } });
   const [mark] = await Promise.all([
     page.waitForRequest((request) => request.url().includes("/api/confidence")),

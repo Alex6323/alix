@@ -223,7 +223,7 @@ The depth menu's **confidence** tick-box (`f`) switches tracking on or off for t
 deck; the choice is saved in the deck's progress (so it syncs with it) and
 kept for every later launch until you switch it again. It is off by default.
 With tracking on, a graded card asks **Sure** or **Unsure** in place of its
-first action, as two buttons centred side by side: **Unsure** (Space) and
+first action, as one button split down the centre: **Unsure** (Space) and
 **Sure** (Enter). Where Space already types or ticks an option (a typed
 answer, an explain box, a select-all card), they move to Shift+Space and
 Shift+Enter.
