@@ -24,8 +24,8 @@ void main() {
     return dir;
   }
 
-  test('a fresh install lands on an empty app storage folder with a minted device',
-      () async {
+  test('a fresh install lands on an empty app storage folder with a minted '
+      'device', () async {
     final support = temp('alix-support-');
     final prepared = await prepare(support: support, env: '');
     expect(prepared.root, '${support.path}/decks');

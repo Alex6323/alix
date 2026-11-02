@@ -72,7 +72,10 @@ void main() {
     expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
     expect(
       _linesContaining('lib/walk/walk_controller.dart', 'notifyListeners();'),
-      [70, 77, 82, 89, 94, 104, 109, 119, 127, 132, 137, 142, 147, 152, 157, 162, 177],
+      [
+        70, 77, 82, 89, 94, 104, 109, 119, 127,
+        132, 137, 142, 147, 152, 157, 162, 177,
+      ],
       reason:
           'setServerLive, choose, toggleChoice, submitChoices, reveal, '
           'revealNextLine, grade, openHint, openNextHint, nextWalk, the six '

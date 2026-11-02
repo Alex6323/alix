@@ -55,15 +55,17 @@ void main() {
 
   void expectTutorialWalk(Directory support, String step) {
     expect(find.byType(WalkScreen), findsOneWidget, reason: '$step: a walk');
-    expect(find.byType(ReviewCantOpenView), findsNothing, reason: '$step: it opened');
+    expect(find.byType(ReviewCantOpenView), findsNothing,
+        reason: '$step: it opened');
     expect(sheetTitle, findsOneWidget,
         reason: '$step: the tutorial section opens on its first card');
     expect(File('${support.path}/tutorial/tutorial.md').existsSync(), isTrue,
-        reason: '$step: the tutorial lives in the support dir\'s tutorial folder');
+        reason:
+            '$step: the tutorial lives in the support dir\'s tutorial folder');
   }
 
-  testWidgets('the Settings Tutorial row opens the tutorial walk over the picker',
-      (tester) async {
+  testWidgets('the Settings Tutorial row opens the tutorial walk over the '
+      'picker', (tester) async {
     final support = temp('alix-tut-support-');
     final root = temp('alix-tut-decks-');
     writeTestDeck('${root.path}/mine.md', '---\ntitle: Mine\n---\n## q\na\n');
@@ -85,9 +87,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(find.byType(WalkScreen), findsNothing, reason: 'back: the walk closes');
-    expect(find.byType(SettingsScreen), findsNothing, reason: 'back: not Settings');
-    expect(find.byType(PickerScreen), findsOneWidget, reason: 'back: the picker');
+    expect(find.byType(WalkScreen), findsNothing,
+        reason: 'back: the walk closes');
+    expect(find.byType(SettingsScreen), findsNothing,
+        reason: 'back: not Settings');
+    expect(find.byType(PickerScreen), findsOneWidget,
+        reason: 'back: the picker');
   });
 
   testWidgets('the empty picker\'s Tutorial button opens the tutorial walk',
@@ -104,8 +109,8 @@ void main() {
         reason: 'empty picker button: nothing lands in the decks folder');
   });
 
-  testWidgets('a support folder that cannot be found shows a snack, not a crash',
-      (tester) async {
+  testWidgets('a support folder that cannot be found shows a snack, not a '
+      'crash', (tester) async {
     final root = temp('alix-tut-decks-');
     await tester.pumpWidget(
       MaterialApp(
@@ -141,6 +146,70 @@ void main() {
     await pumpPicker(tester, root: root, support: support, dir: root.path);
 
     expect(find.text('Tutorial'), findsNothing);
+  });
+
+  testWidgets('tutorial card 7 hides its revealed answer and brings it back',
+      (tester) async {
+    final support = temp('alix-tut-support-');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: alixDark(),
+        home: WalkScreen.tutorial(
+          baseDir: '${support.path}/tutorial',
+          supportDir: support,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(sheetTitle)).pop();
+    await tester.pumpAndSettle();
+
+    Finder chip(String label) => find.widgetWithText(InkWell, label);
+    Future<void> tapChip(String label) async {
+      await tester.tap(chip(label));
+      await tester.pumpAndSettle();
+    }
+
+    for (var number = 1; number <= 6; number++) {
+      if (number == 4) {
+        await tester.tap(find.text('Got it'));
+        await tester.pumpAndSettle();
+        await tapChip('I guessed');
+        continue;
+      }
+      while (chip('Got it').evaluate().isEmpty) {
+        final label = chip('Reveal next').evaluate().isEmpty
+            ? 'Reveal'
+            : 'Reveal next';
+        await tapChip(label);
+      }
+      await tapChip('Got it');
+    }
+
+    expect(
+      find.text(
+        'Reveal this answer, hide it again, then bring it back. '
+        'What is hiding for?',
+      ),
+      findsOneWidget,
+      reason: 'the shipped tutorial reached card 7',
+    );
+    await tapChip('Reveal');
+    final answerTap = find.byKey(const ValueKey('answer-tap'));
+    await tester.tap(answerTap);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('hide-sheet')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('hide-sheet-close')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('hide-sheet')), findsNothing);
+    expect(
+      find.text(
+        'A second try at recalling before you grade, with the answer out of '
+        'sight.',
+      ),
+      findsOneWidget,
+      reason: 'closing the hide sheet brings the card 7 answer back',
+    );
   });
 
   group('the tutor sheet on a walk', () {
