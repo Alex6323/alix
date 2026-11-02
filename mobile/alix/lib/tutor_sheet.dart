@@ -265,6 +265,8 @@ class _TutorSheetState extends State<TutorSheet> {
                         ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
                 )
+              : !conversation.personalWrites
+              ? const SizedBox.shrink()
               : Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

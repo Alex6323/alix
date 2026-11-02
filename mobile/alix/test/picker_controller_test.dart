@@ -124,7 +124,7 @@ void main() {
   });
 
   test(
-    'mastered entries bypass listing and tutorial reload is named',
+    'mastered entries bypass listing',
     () async {
       final port = _FakePickerPort(rootEntries: [_entry('from bridge')]);
       final controller = PickerController(
@@ -133,18 +133,9 @@ void main() {
         masteredEntries: [_entry('mastered', mastered: true)],
       );
       await pumpEventQueue();
-      var notifications = 0;
-      controller.addListener(() => notifications++);
 
       expect(controller.entries.single.title, 'mastered');
       expect(port.listRootCalls, 0);
-
-      await controller.addTutorial();
-      await pumpEventQueue();
-      expect(port.tutorialRoots, ['/decks']);
-      expect(controller.entries.single.title, 'mastered');
-      expect(port.listRootCalls, 0);
-      expect(notifications, 1);
     },
   );
   test(
@@ -587,7 +578,6 @@ class _FakePickerPort implements PickerPort {
   int listRootCalls = 0;
   Completer<PickerListing>? rootReply;
   final List<(String, String?)> deadlineWrites = [];
-  final List<String> tutorialRoots = [];
   final List<(String, List<String>)> stripRequests = [];
   Completer<Map<String, PickerStrip>>? stripReply;
   final List<Completer<Map<String, PickerStrip>>> stripReplies = [];
@@ -646,11 +636,6 @@ class _FakePickerPort implements PickerPort {
   @override
   void setWorkspaceDeadline({required String dir, required String? date}) {
     deadlineWrites.add((dir, date));
-  }
-
-  @override
-  Future<void> addTutorialDeck(String root) async {
-    tutorialRoots.add(root);
   }
 
   @override

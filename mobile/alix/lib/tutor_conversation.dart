@@ -74,6 +74,7 @@ class TutorConversation extends ChangeNotifier {
     required this.record,
     required this.onNote,
     required this.onMessage,
+    this.personalWrites = true,
     this.pollInterval = const Duration(milliseconds: 400),
   }) {
     slot.addListener(_changed);
@@ -108,6 +109,8 @@ class TutorConversation extends ChangeNotifier {
   /// Every one-line message for the learner, as it is set on [message]; the
   /// owner surfaces it when the sheet is not there to show it inline.
   final void Function(String text) onMessage;
+
+  final bool personalWrites;
 
   /// How often to poll `GET /api/remote/ask` while a turn, a draft or a
   /// note is in flight. Tests shrink this well below the default.

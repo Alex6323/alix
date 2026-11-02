@@ -218,11 +218,6 @@ class PickerController extends ChangeNotifier {
     reload();
   }
 
-  Future<void> addTutorial() async {
-    await _port.addTutorialDeck(_root);
-    reload();
-  }
-
   Future<void> _load() async {
     _listingGeneration++;
     final fixed = _masteredEntries;

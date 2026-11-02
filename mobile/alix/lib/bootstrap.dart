@@ -3,21 +3,10 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 
-import 'package:alix_mobile/bridge/seed_bridge.dart';
 import 'package:alix_mobile/bridge/sync_bridge.dart' as sync_bridge;
 import 'package:alix_mobile/server_client.dart';
-
-/// The bundled sample decks, copied into a fresh decks dir on first run.
-/// Keep in step with the `assets:` list in pubspec.yaml.
-const _samples = [
-  'decks/basics.md',
-  'decks/sample-workspace/alix.toml',
-  'decks/sample-workspace/decks/capitals.md',
-  'decks/sample-workspace/decks/steps.md',
-];
 
 /// What [prepare] resolved for this launch.
 class Prepared {
@@ -37,10 +26,8 @@ class Prepared {
 /// Resolves the decks root and this install's device label.
 ///
 /// Order: `ALIX_DECKS_DIR` (the Linux desktop pointing at a real host
-/// folder), else the app-private `<support>/decks`, seeded with the bundled
-/// samples on first run. Existing files are never overwritten, so the file
-/// names the store keys on stay stable. `support` and `env` inject the
-/// platform pieces for tests.
+/// folder), else the app-private `<support>/decks`. `support` and `env`
+/// inject the platform pieces for tests.
 Future<Prepared> prepare({Directory? support, String? env}) async {
   support ??= await getApplicationSupportDirectory();
   final settings = readSettings(support);
@@ -82,58 +69,10 @@ Future<Prepared> prepareWithPairing({Directory? support, String? env}) async {
   return prepared;
 }
 
-/// The app-private decks dir, created and sample-seeded on first use.
 Future<String> _appPrivate(Directory support) async {
   final root = Directory('${support.path}/decks');
-  // The tutorial seeds ONLY into a brand-new decks dir (unlike the samples
-  // below, which re-seed per file): its last card says "delete me when
-  // done", so a deletion must be final. Mirrors the desktop rule in the
-  // core's `tutorial::seed_new_decks_dir`; the bundled copy is pinned to
-  // the canonical assets/decks/tutorial.md by a core test.
-  final fresh = !await root.exists();
   await root.create(recursive: true);
-  if (fresh) {
-    final content = await rootBundle.loadString('assets/decks/tutorial.md');
-    await File('${root.path}/tutorial.md').writeAsString(content);
-    await _stampSeed('${root.path}/tutorial.md');
-  }
-  for (final sample in _samples) {
-    final target = File('${support.path}/$sample');
-    if (!await target.exists()) {
-      await target.parent.create(recursive: true);
-      final content = await rootBundle.loadString('assets/$sample');
-      await target.writeAsString(content);
-      if (sample.endsWith('.md')) await _stampSeed(target.path);
-    }
-  }
   return root.path;
-}
-
-// A seeded copy needs minted ids to be discovered (the bundled assets carry
-// none; the tutorial asset is pinned byte-identical to the desktop's, which
-// stamps at seed time too). Best-effort like the desktop seeder: a failed
-// stamp leaves the file present but undiscovered until `alix deck init`.
-Future<void> _stampSeed(String path) async {
-  try {
-    await stampSeededDeck(path);
-  } on Object catch (error) {
-    debugPrint('seed stamp failed for $path: $error');
-  }
-}
-
-/// Copies the bundled tutorial deck into [root] (the current decks folder)
-/// unless a `tutorial.md` is already there. The first-run seed only ever fills
-/// a brand-new app-private dir, so this is how a folder that never got it (an
-/// emptied one) can still start the tutorial from the picker's empty state.
-Future<void> addTutorialDeck(String root) async {
-  final file = File('$root/tutorial.md');
-  if (!await file.exists()) {
-    final content = await rootBundle.loadString('assets/decks/tutorial.md');
-    await file.writeAsString(content);
-  }
-  // Stamp even when the file already existed: an unstamped copy (stranded by
-  // a pre-stamping build) never lists, and stamping a stamped deck is a no-op.
-  await _stampSeed(file.path);
 }
 
 File _settingsFile(Directory support) => File('${support.path}/settings.json');

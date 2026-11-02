@@ -50,7 +50,7 @@ void main() {
       reason:
           'setServerReachable and _notifyIfLive own every picker mutation; '
           'listing, strip, and search transitions notify through it, and '
-          'deadline, tutorial, and setPairedRoot transitions reload',
+          'deadline and setPairedRoot transitions reload',
     );
     expect(
       _linesContaining(
@@ -72,7 +72,7 @@ void main() {
     expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
     expect(
       _linesContaining('lib/walk/walk_controller.dart', 'notifyListeners();'),
-      [60, 67, 72, 79, 84, 94, 99, 109, 117, 122, 127, 132, 137, 142, 147, 152, 167],
+      [70, 77, 82, 89, 94, 104, 109, 119, 127, 132, 137, 142, 147, 152, 157, 162, 177],
       reason:
           'setServerLive, choose, toggleChoice, submitChoices, reveal, '
           'revealNextLine, grade, openHint, openNextHint, nextWalk, the six '
@@ -89,10 +89,10 @@ void main() {
       ],
       [
         'lib/review_screen.dart:429',
-        'lib/picker_screen.dart:650',
+        'lib/picker_screen.dart:658',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:225',
-        'lib/walk_screen.dart:202',
+        'lib/walk_screen.dart:222',
       ],
       reason:
           'sync wiring added imports, fields, and methods above build() in '
@@ -109,7 +109,9 @@ void main() {
           'method to review_screen.dart; retirement moved into '
           'TutorConversation.retire, shortening both screens; the walk hint '
           'sheet added an import line and a method to walk_screen.dart; '
-          'generate_sheet.dart is unchanged',
+          'the tutorial entry added a constructor and the opener choice to '
+          'walk_screen.dart and replaced the copy with a push in '
+          'picker_screen.dart; generate_sheet.dart is unchanged',
     );
   });
 

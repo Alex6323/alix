@@ -373,6 +373,7 @@ class _PickerScreenState extends State<PickerScreen> {
           onConnectedDevices: _pairSheet,
           onTheme: _themeSheet,
           onAbout: _about,
+          onTutorial: _openTutorial,
           onGenerate: _controller.serverReachable ? _generateSheet : null,
           onPairedDesktop: _hasPairings ? _rootSwitcherSheet : null,
         ),
@@ -637,12 +638,19 @@ class _PickerScreenState extends State<PickerScreen> {
     );
   }
 
-  Future<void> _addTutorial() async {
-    try {
-      await _controller.addTutorial();
-    } catch (_) {
-      if (mounted) _snack('could not add the tutorial deck here.');
-    }
+  Future<void> _openTutorial() async {
+    final support = await _support();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WalkScreen.tutorial(
+          baseDir: '${support.path}/tutorial',
+          device: widget.device,
+          supportDir: widget.supportDir,
+          buildClient: widget.buildClient,
+        ),
+      ),
+    );
   }
 
   @override
@@ -676,7 +684,7 @@ class _PickerScreenState extends State<PickerScreen> {
           onOpenEntry: _openEntry,
           onLongPressEntry: _deadlineSheet,
           onOpenMastered: _openMastered,
-          onAddTutorial: _addTutorial,
+          onAddTutorial: _openTutorial,
           syncStatus: syncController?.statusLine,
           onOpenSyncReport: syncController == null ? null : _openSyncReport,
           pairedLabel: isPairedRootScreen ? _pairedLabel : null,

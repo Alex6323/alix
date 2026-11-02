@@ -82,14 +82,7 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # The sample decks copied into the app's data dir on first run
-  # (bootstrap.dart carries the matching manifest list).
   assets:
-    - assets/decks/tutorial.md
-    - assets/decks/basics.md
-    - assets/decks/sample-workspace/alix.toml
-    - assets/decks/sample-workspace/decks/capitals.md
-    - assets/decks/sample-workspace/decks/steps.md
     - assets/icon/alix-192.png
 
   # IBM Plex (OFL, assets/fonts/OFL.txt): the web app's identity faces,

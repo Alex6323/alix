@@ -18,8 +18,6 @@ abstract interface class PickerPort {
 
   void setWorkspaceDeadline({required String dir, required String? date});
 
-  Future<void> addTutorialDeck(String root);
-
   String get coreVersion;
 
   String applyGeneratedDeck({

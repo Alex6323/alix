@@ -458,7 +458,7 @@ class PickerEmptyHint extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: onAddTutorial,
             icon: const Icon(Icons.school_outlined),
-            label: const Text('Add the tutorial deck'),
+            label: const Text('Tutorial'),
           ),
         ],
       ],

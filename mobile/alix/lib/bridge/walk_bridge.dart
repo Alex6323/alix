@@ -27,6 +27,17 @@ class WalkBridgeFactory implements WalkPortFactory {
       throw WalkOpenFailure(bridgeErrorText(error));
     }
   }
+
+  @override
+  WalkPort openTutorial({required String baseDir, String? device}) {
+    try {
+      return WalkBridgePort(
+        bridge.WalkSession.openTutorial(baseDir: baseDir, device: device),
+      );
+    } catch (error) {
+      throw WalkOpenFailure(bridgeErrorText(error));
+    }
+  }
 }
 
 class WalkBridgePort implements WalkPort {
@@ -36,6 +47,9 @@ class WalkBridgePort implements WalkPort {
 
   @override
   WalkStateModel get state => _stateFromBridge(_session.state());
+
+  @override
+  bool get isTutorial => _session.isTutorial();
 
   @override
   ReviewTutorCardModel? get tutorCard {

@@ -13,17 +13,26 @@ class WalkController extends ChangeNotifier {
     required String rootDir,
     String? device,
   }) {
-    return WalkController._(factory, deckPath, rootDir, device);
+    return WalkController._(
+      () => factory.open(deckPath: deckPath, rootDir: rootDir, device: device),
+    );
   }
 
-  WalkController._(this._factory, this._deckPath, this._rootDir, this._device) {
+  factory WalkController.tutorial({
+    required WalkPortFactory factory,
+    required String baseDir,
+    String? device,
+  }) {
+    return WalkController._(
+      () => factory.openTutorial(baseDir: baseDir, device: device),
+    );
+  }
+
+  WalkController._(this._opener) {
     _open();
   }
 
-  final WalkPortFactory _factory;
-  final String _deckPath;
-  final String _rootDir;
-  final String? _device;
+  final WalkPort Function() _opener;
 
   WalkPort? _port;
   WalkStateModel? _state;
@@ -48,6 +57,7 @@ class WalkController extends ChangeNotifier {
   Set<int> get multiSelected => Set.unmodifiable(_multiSelected);
   Sketch get sketch => _sketch;
   bool get serverLive => _serverLive;
+  bool get isTutorial => _port?.isTutorial ?? false;
   bool get hasChoices => state.choices?.isNotEmpty ?? false;
   bool get revealed => state.phase == WalkPhase.answer && !hasChoices;
   int get revealedLines => _revealedLines;
@@ -175,11 +185,7 @@ class WalkController extends ChangeNotifier {
 
   void _open() {
     try {
-      final port = _factory.open(
-        deckPath: _deckPath,
-        rootDir: _rootDir,
-        device: _device,
-      );
+      final port = _opener();
       _port = port;
       _openError = null;
       _install(port.state);

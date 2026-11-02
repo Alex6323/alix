@@ -20,16 +20,28 @@ import 'package:alix_mobile/walk/walk_view.dart';
 class WalkScreen extends StatefulWidget {
   const WalkScreen({
     super.key,
-    required this.deckPath,
-    required this.rootDir,
+    required String this.deckPath,
+    required String this.rootDir,
     this.device,
     this.supportDir,
     this.buildClient,
     this.factory = const WalkBridgeFactory(),
-  });
+  }) : tutorialBase = null;
 
-  final String deckPath;
-  final String rootDir;
+  const WalkScreen.tutorial({
+    super.key,
+    required String baseDir,
+    this.device,
+    this.supportDir,
+    this.buildClient,
+    this.factory = const WalkBridgeFactory(),
+  }) : tutorialBase = baseDir,
+       deckPath = null,
+       rootDir = null;
+
+  final String? deckPath;
+  final String? rootDir;
+  final String? tutorialBase;
   final String? device;
   final Directory? supportDir;
   final ServerClient Function(ServerConfig)? buildClient;
@@ -54,12 +66,19 @@ class _WalkScreenState extends State<WalkScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = WalkController(
-      factory: widget.factory,
-      deckPath: widget.deckPath,
-      rootDir: widget.rootDir,
-      device: widget.device,
-    );
+    final base = widget.tutorialBase;
+    _controller = base != null
+        ? WalkController.tutorial(
+            factory: widget.factory,
+            baseDir: base,
+            device: widget.device,
+          )
+        : WalkController(
+            factory: widget.factory,
+            deckPath: widget.deckPath!,
+            rootDir: widget.rootDir!,
+            device: widget.device,
+          );
     if (_controller.openError == null) _probeServer();
   }
 
@@ -149,6 +168,7 @@ class _WalkScreenState extends State<WalkScreen> {
       record: (block) async => _controller.recordMintedCard(block: block),
       onNote: (notes) => _controller.applyCardNote(id: tutor.id, notes: notes),
       onMessage: _tutorMessage,
+      personalWrites: !_controller.isTutorial,
     );
   }
 

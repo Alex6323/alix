@@ -18,7 +18,7 @@ CustomPaint
                             SizedBox(width=18.0, height=18.0)
                               Center
                           Flexible
-                            Text("Add the tutorial deck")
+                            Text("Tutorial")
         SizedBox(width=null, height=8.0)
         Padding(EdgeInsets(2.0, 0.0, 2.0, 10.0))
           Row

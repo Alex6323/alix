@@ -78,9 +78,10 @@ then grade yourself
 ## Reveal this answer, hide it again, then bring it back. What is hiding for?
 A second try at recalling before you grade, with the answer out of sight.
 > [!NOTE]
-> On the phone, tap the revealed answer to hide it. On the web, press `h` or
-> click the answer; the corner marker says what the next press does. A
-> choice pick, a typed check and a sketch have nothing to hide.
+> On the phone, tap the revealed answer to hide it and tap the sheet's × to
+> bring it back. On the web, press `h` or click the answer; the corner
+> marker says what the next press does. A choice pick, a typed check and a
+> sketch have nothing to hide.
 <!-- id: card-1k18gbc9wcjfh82a736dm0axt9 -->
 
 ## This card cites a file. Reveal, then show the source it rests on: what does `greet("Ada")` return?

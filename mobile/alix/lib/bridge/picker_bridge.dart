@@ -1,4 +1,3 @@
-import 'package:alix_mobile/bootstrap.dart' as bootstrap;
 import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/picker_port.dart';
 import 'package:alix_mobile/src/rust/api/generate.dart' as generate_bridge;
@@ -80,9 +79,6 @@ class PickerBridge implements PickerPort {
   void setWorkspaceDeadline({required String dir, required String? date}) {
     listing_bridge.setWorkspaceDeadline(dir: dir, date: date);
   }
-
-  @override
-  Future<void> addTutorialDeck(String root) => bootstrap.addTutorialDeck(root);
 
   @override
   String get coreVersion => simple_bridge.coreVersion();

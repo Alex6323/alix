@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1856094936;
+  int get rustContentHash => -1706273197;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -376,8 +376,6 @@ abstract class RustLibApi extends BaseApi {
   });
 
   void crateApiListingSetWorkspaceDeadline({required String dir, String? date});
-
-  Future<void> crateApiSimpleStampDeck({required String path});
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_ReviewSession;
@@ -2443,34 +2441,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "set_workspace_deadline",
         argNames: ["dir", "date"],
       );
-
-  @override
-  Future<void> crateApiSimpleStampDeck({required String path}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(path, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 65,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiSimpleStampDeckConstMeta,
-        argValues: [path],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiSimpleStampDeckConstMeta =>
-      const TaskConstMeta(debugName: "stamp_deck", argNames: ["path"]);
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_ReviewSession => wire

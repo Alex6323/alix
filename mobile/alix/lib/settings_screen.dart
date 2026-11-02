@@ -12,6 +12,7 @@ class SettingsScreen extends StatelessWidget {
     required this.onConnectedDevices,
     required this.onTheme,
     required this.onAbout,
+    required this.onTutorial,
     this.onGenerate,
     this.onPairedDesktop,
   });
@@ -20,6 +21,7 @@ class SettingsScreen extends StatelessWidget {
   final VoidCallback onConnectedDevices;
   final VoidCallback onTheme;
   final VoidCallback onAbout;
+  final VoidCallback onTutorial;
 
   /// Non-null only when a paired desktop is reachable (generate needs it); the
   /// row is omitted otherwise.
@@ -76,6 +78,11 @@ class SettingsScreen extends StatelessWidget {
                 title: const Text('Paired desktop'),
                 onTap: () => popThen(onPairedDesktop!),
               ),
+            ListTile(
+              leading: const Icon(Icons.school_outlined),
+              title: const Text('Tutorial'),
+              onTap: () => popThen(onTutorial),
+            ),
             ListTile(
               leading: const Icon(Icons.palette_outlined),
               title: const Text('Theme'),

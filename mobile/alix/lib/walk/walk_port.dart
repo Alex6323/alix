@@ -7,10 +7,14 @@ abstract interface class WalkPortFactory {
     required String rootDir,
     String? device,
   });
+
+  WalkPort openTutorial({required String baseDir, String? device});
 }
 
 abstract interface class WalkPort {
   WalkStateModel get state;
+
+  bool get isTutorial;
 
   ReviewTutorCardModel? get tutorCard;
 

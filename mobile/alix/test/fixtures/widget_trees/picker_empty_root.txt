@@ -16,7 +16,7 @@ Scaffold
                           SizedBox(width=18.0, height=18.0)
                             Center
                         Flexible
-                          Text("Add the tutorial deck")
+                          Text("Tutorial")
     ConstrainedBox
       AppBar
         Material

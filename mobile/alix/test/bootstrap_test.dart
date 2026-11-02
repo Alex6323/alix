@@ -24,67 +24,17 @@ void main() {
     return dir;
   }
 
-  test('a fresh install lands on app storage, seeded, with a minted device',
+  test('a fresh install lands on an empty app storage folder with a minted device',
       () async {
     final support = temp('alix-support-');
     final prepared = await prepare(support: support, env: '');
     expect(prepared.root, '${support.path}/decks');
-    expect(File('${support.path}/decks/basics.md').existsSync(), isTrue,
-        reason: 'samples seed the fresh dir');
+    expect(Directory('${support.path}/decks').listSync(), isEmpty,
+        reason: 'nothing is seeded: the tutorial opens from the menu');
     expect(prepared.device, matches(RegExp(r'^phone-[0-9a-f]{4}$')));
 
     final again = await prepare(support: support, env: '');
     expect(again.device, prepared.device, reason: 'the label is minted once');
-  });
-
-  test('a fresh install seeds the tutorial deck', () async {
-    final support = temp('alix-support-');
-    await prepare(support: support, env: '');
-    final tutorial = File('${support.path}/decks/tutorial.md');
-    expect(tutorial.existsSync(), isTrue);
-    expect(tutorial.readAsStringSync(), contains('The alix tutorial'));
-  });
-
-  test('adding the tutorial to a folder stamps it, healing a stranded copy',
-      () async {
-    final root = temp('alix-root-');
-    await addTutorialDeck(root.path);
-    final tutorial = File('${root.path}/tutorial.md');
-    expect(tutorial.readAsStringSync(), matches(RegExp(r'id: "deck-')),
-        reason: 'a fresh add must stamp, or the deck never lists');
-    final stranded = File('${root.path}/stranded/tutorial.md')
-      ..parent.createSync(recursive: true);
-    stranded.writeAsStringSync('---\ntitle: The alix tutorial\n---\n## q\na\n');
-    await addTutorialDeck('${root.path}/stranded');
-    expect(stranded.readAsStringSync(), matches(RegExp(r'id: "deck-')),
-        reason: 'an existing unstamped copy must be healed, not skipped');
-  });
-
-  test('every seeded deck is stamped so a fresh install can review it',
-      () async {
-    final support = temp('alix-support-');
-    await prepare(support: support, env: '');
-    final seeded = [
-      '${support.path}/decks/tutorial.md',
-      '${support.path}/decks/basics.md',
-      '${support.path}/decks/sample-workspace/decks/capitals.md',
-      '${support.path}/decks/sample-workspace/decks/steps.md',
-    ];
-    for (final path in seeded) {
-      final text = File(path).readAsStringSync();
-      expect(text, matches(RegExp(r'id: "deck-[0-9a-z]{26}"')),
-          reason: '$path must carry a minted deck id to be discovered');
-    }
-  });
-
-  test('a deleted tutorial stays deleted on the next launch', () async {
-    final support = temp('alix-support-');
-    await prepare(support: support, env: '');
-    final tutorial = File('${support.path}/decks/tutorial.md');
-    tutorial.deleteSync();
-    await prepare(support: support, env: '');
-    expect(tutorial.existsSync(), isFalse,
-        reason: 'deleting the tutorial is the graduation; it must not return');
   });
 
   test('the env var wins over app storage', () async {
@@ -231,7 +181,7 @@ void main() {
 
   test(
     'a pairing does not replace the app-private decks root: it stays the '
-    "phone's own, samples and all, even with a pairing active",
+    "phone's own, created even with a pairing active",
     () async {
       final support = temp('alix-support-');
       await savePairing(
@@ -248,9 +198,9 @@ void main() {
 
       expect(prepared.root, '${support.path}/decks');
       expect(
-        File('${support.path}/decks/basics.md').existsSync(),
+        Directory('${support.path}/decks').existsSync(),
         isTrue,
-        reason: 'pairing must never hide the bundled samples',
+        reason: 'pairing must never skip creating the phone\'s own folder',
       );
     },
   );
