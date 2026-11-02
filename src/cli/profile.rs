@@ -196,27 +196,29 @@ pub(crate) fn profile_folders_in(dir: &Path) -> Result<Vec<ProfileFolder>> {
 
 fn remove(name: &str, yes: bool) -> Result<()> {
     let dir = profiles_dir()?;
-    let tutorial_root = alix::tutorial::data_root()
-        .context("cannot determine the alix data directory")?
-        .join("tutorial");
-    remove_in(&dir, &tutorial_root, name, yes)
+    let data_root =
+        alix::tutorial::data_root().context("cannot determine the alix data directory")?;
+    remove_in(&dir, &data_root, name, yes)
 }
 
-fn remove_in(dir: &Path, tutorial_root: &Path, name: &str, yes: bool) -> Result<()> {
+fn remove_in(dir: &Path, data_root: &Path, name: &str, yes: bool) -> Result<()> {
     validate_profile_name(name)?;
     let path = config_path_in(dir, name);
     if !path.exists() {
         bail!("no profile `{name}` (looked in {})", path.display());
     }
-    if !confirm(&format!("Delete profile `{name}`?"), yes)? {
+    if !confirm(
+        &format!("Delete profile `{name}` and its tutorial progress?"),
+        yes,
+    )? {
         return Ok(());
     }
-    fs::remove_file(&path).with_context(|| format!("cannot remove {}", path.display()))?;
-    let tutorial = tutorial_root.join("profiles").join(name);
+    let tutorial = alix::tutorial::base_dir(data_root, Some(name));
     if tutorial.exists() {
         fs::remove_dir_all(&tutorial)
             .with_context(|| format!("cannot remove {}", tutorial.display()))?;
     }
+    fs::remove_file(&path).with_context(|| format!("cannot remove {}", path.display()))?;
     println!("removed profile `{name}`");
     Ok(())
 }
@@ -504,18 +506,37 @@ mod tests {
             profile_rows_in(&dir).unwrap()
         );
 
-        let tutorial_root = temp.path().join("tutorial");
-        let own = tutorial_root.join("profiles/timmy");
-        let other = tutorial_root.join("profiles/other");
+        let data_root = temp.path().join("state");
+        let own = data_root.join("tutorial/profiles/timmy");
+        let other = data_root.join("tutorial/profiles/other");
         fs::create_dir_all(&own).unwrap();
         fs::create_dir_all(&other).unwrap();
-        remove_in(&dir, &tutorial_root, "timmy", true).unwrap();
+        remove_in(&dir, &data_root, "timmy", true).unwrap();
         assert_eq!(
             (false, false, true),
             (path.exists(), own.exists(), other.exists()),
             "(profile config, own tutorial, other tutorial) after remove"
         );
         assert!(profile_rows_in(&dir).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_tutorial_folder_that_cannot_be_removed_leaves_the_profile_intact() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("profiles");
+        fs::create_dir_all(&dir).unwrap();
+        let path = config_path_in(&dir, "timmy");
+        fs::write(&path, "").unwrap();
+        let data_root = temp.path().join("state");
+        let tutorial = data_root.join("tutorial/profiles/timmy");
+        fs::create_dir_all(tutorial.parent().unwrap()).unwrap();
+        fs::write(&tutorial, "a file where the folder belongs").unwrap();
+
+        assert!(remove_in(&dir, &data_root, "timmy", true).is_err());
+        assert!(
+            path.exists(),
+            "profile config after a failed tutorial removal"
+        );
     }
 
     #[test]
