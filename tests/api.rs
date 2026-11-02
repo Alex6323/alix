@@ -279,6 +279,7 @@ fn review_options(base: &str, auth: Option<String>) -> ReviewOptions {
             lan: false,
         },
         scoped: true,
+        tutorial_base: None,
         // Callers always overwrite this via a `..` struct-update once they
         // know the fixture's own store path — see `spawn_test_server_fixture`
         // / `spawn_full_server`.
@@ -7793,6 +7794,313 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
     );
 }
 
+const OLD_TUTORIAL_DECK: &str = "---\nformat-version: 1\nid: \"deck-oldtutorial\"\n---\n\
+## an old seeded tutorial card\nkept as an ordinary deck\n<!-- id: card-oldtut1 -->\n";
+
+fn spawn_tutorial_server(tutorial_base: &Path, ask_command: Option<&Path>) -> (String, Guard) {
+    let tutorial_base = tutorial_base.to_path_buf();
+    spawn_full_server_fixture(
+        ask_command,
+        |dir| {
+            write_walk_deck(dir);
+            std::fs::write(dir.join("tutorial.md"), OLD_TUTORIAL_DECK).unwrap();
+        },
+        |opts| opts.tutorial_base = Some(tutorial_base),
+    )
+}
+
+fn tutorial_card_ids() -> Vec<String> {
+    parser::parse(alix::tutorial::TUTORIAL_FILE, alix::tutorial::TUTORIAL_DECK)
+        .unwrap()
+        .cards
+        .iter()
+        .map(|card| card.id().unwrap())
+        .collect()
+}
+
+/// The 1-based deck position of the walk's current item.
+fn tutorial_number(dto: &serde_json::Value, ids: &[String]) -> usize {
+    let item = dto["card"]["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the walk serves no item: {dto}"));
+    ids.iter()
+        .position(|id| item == id || item.starts_with(&format!("{id}-")))
+        .map(|index| index + 1)
+        .unwrap_or_else(|| panic!("{item} is not a shipped tutorial card"))
+}
+
+/// Answers the current item (the correct pick on a choice item, else a
+/// reveal) and grades it, returning the next `WalkDto`.
+fn walk_item(base: &str, dto: &serde_json::Value, grade: &str) -> serde_json::Value {
+    let opened = if dto["mode"] == "choice" {
+        let index = dto["choices"]
+            .as_array()
+            .and_then(|choices| choices.iter().position(|choice| choice == "Got it"))
+            .unwrap_or_else(|| panic!("the pick offers Got it: {dto}"));
+        post_walk(base, "/api/walk/choose", &format!(r#"{{"index":{index}}}"#)).status
+    } else {
+        post_walk(base, "/api/walk/reveal", "{}").status
+    };
+    let graded = post_walk(
+        base,
+        "/api/walk/grade",
+        &format!(r#"{{"grade":"{grade}"}}"#),
+    );
+    assert_eq!(
+        (200, 200),
+        (opened, graded.status),
+        "answer then grade {grade} on {}",
+        dto["card"]["id"]
+    );
+    json_of(&graded)
+}
+
+#[test]
+fn the_menu_tutorial_is_a_walk_outside_the_library() {
+    let tutorial_home = TempDir::new().unwrap();
+    let tutorial_base = tutorial_home.path().join("tutorial").join("default");
+    let (base, guard) = spawn_tutorial_server(&tutorial_base, None);
+    let ids = tutorial_card_ids();
+    let listed_before = json_of(&http(&base, "GET", "/api/decks", &[], &[]));
+    let decks_before = snapshot_dir(guard.dir());
+
+    // open: the shipped deck, flagged, starting at card 1 with its section
+    let opened = post_json(&base, "/api/tutorial", "");
+    assert_eq!(
+        200,
+        opened.status,
+        "open: {}",
+        String::from_utf8_lossy(&opened.body)
+    );
+    let mut dto = json_of(&opened);
+    assert_eq!(
+        ("walk", true, 1, true, 9, true),
+        (
+            dto["kind"].as_str().unwrap_or_default(),
+            dto["tutorial"] == true,
+            tutorial_number(&dto, &ids),
+            dto["section_first"] == true,
+            dto["total"].as_u64().unwrap_or_default(),
+            tutorial_base.join(alix::tutorial::TUTORIAL_FILE).is_file(),
+        ),
+        "open: (kind, tutorial, first card, section_first, total, deck in the base): {dto}"
+    );
+
+    // first sitting: card 3 is partly known, the learner leaves after card 5
+    for expected in 1..=5 {
+        assert_eq!(
+            expected,
+            tutorial_number(&dto, &ids),
+            "first sitting: the walk serves deck order: {dto}"
+        );
+        dto = walk_item(&base, &dto, if expected == 3 { "partly" } else { "passed" });
+    }
+    assert_eq!(
+        200,
+        post_json(&base, "/api/walk/leave", "{}").status,
+        "first sitting: leave"
+    );
+
+    // resume: card 3 waits first and the section opens on it; the cited card shows its source
+    dto = json_of(&post_json(&base, "/api/tutorial", ""));
+    assert_eq!(
+        (3, true, true),
+        (
+            tutorial_number(&dto, &ids),
+            dto["section_first"] == true,
+            dto["tutorial"] == true
+        ),
+        "resume: (first card, section_first, tutorial): {dto}"
+    );
+    let mut served = Vec::new();
+    while dto["phase"] != "done" {
+        let number = tutorial_number(&dto, &ids);
+        served.push(number);
+        if number == 8 {
+            let excerpt = &dto["card"]["citations"][0]["excerpt"];
+            assert_eq!(
+                Some(6),
+                excerpt["lines"].as_array().map(Vec::len),
+                "resume: the cited card resolves lines 1-6 of the sample: {dto}"
+            );
+        }
+        dto = walk_item(&base, &dto, "passed");
+    }
+    assert_eq!(
+        vec![3, 6, 7, 8, 9],
+        served,
+        "resume: the waiting cards, in deck order"
+    );
+    post_json(&base, "/api/walk/leave", "{}");
+
+    // full pass: nothing waits, so every card, least recently walked first
+    let tutorial_store = alix::state::open_store(
+        &tutorial_base.join(alix::tutorial::TUTORIAL_FILE),
+        &tutorial_base,
+    )
+    .unwrap();
+    let walked: Vec<Option<u64>> = ids
+        .iter()
+        .map(|id| tutorial_store.get(id).and_then(|state| state.walked_ms))
+        .collect();
+    assert!(
+        walked.iter().all(Option::is_some),
+        "full pass: the tutorial's own store holds every walk: {walked:?}"
+    );
+    let oldest = (0..ids.len())
+        .min_by_key(|&index| (walked[index], index))
+        .map(|index| index + 1);
+    dto = json_of(&post_json(&base, "/api/tutorial", ""));
+    assert_eq!(
+        (oldest, 9, true),
+        (
+            Some(tutorial_number(&dto, &ids)),
+            dto["total"].as_u64().unwrap_or_default(),
+            dto["section_first"] == true
+        ),
+        "full pass: (first card, total, section_first): {dto}"
+    );
+    post_json(&base, "/api/walk/leave", "{}");
+
+    // the library: no file, no progress, no recent entry
+    let listed_after = json_of(&http(&base, "GET", "/api/decks", &[], &[]));
+    assert!(
+        decks_before == snapshot_dir(guard.dir()),
+        "library: the decks folder and its store are byte-identical after the tutorial"
+    );
+    assert_eq!(
+        listed_before["recent"], listed_after["recent"],
+        "library: the recent list is unchanged"
+    );
+
+    // the old seeded tutorial.md stays an ordinary deck with the decks folder's store
+    assert!(
+        listed_after.to_string().contains("\"tutorial.md\""),
+        "old deck: the picker still lists it: {listed_after}"
+    );
+    let base_before = snapshot_dir(&tutorial_base);
+    let old = json_of(&post_json(&base, "/api/walk", r#"{"deck":"tutorial.md"}"#));
+    assert_eq!(
+        (Some("card-oldtut1"), true),
+        (old["card"]["id"].as_str(), old.get("tutorial").is_none()),
+        "old deck: walked as an ordinary deck: {old}"
+    );
+    walk_item(&base, &old, "passed");
+    assert_eq!(
+        (true, true),
+        (
+            walked_ms_in(guard.dir(), "tutorial.md", "card-oldtut1").is_some(),
+            base_before == snapshot_dir(&tutorial_base)
+        ),
+        "old deck: (progress in the decks folder's store, the tutorial base untouched)"
+    );
+}
+
+fn walked_ms_in(dir: &Path, deck: &str, card: &str) -> Option<u64> {
+    open_deck_store(dir, deck)
+        .get(card)
+        .and_then(|state| state.walked_ms)
+}
+
+#[test]
+fn law_no_personal_write_reaches_a_tutorial_walk() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = fake_reply(scripts.path(), "## term?\ndefinition\n");
+    let tutorial_home = TempDir::new().unwrap();
+    let tutorial_base = tutorial_home.path().join("tutorial").join("default");
+    let (base, _guard) = spawn_tutorial_server(&tutorial_base, Some(&fake));
+    let rows = [
+        ("/api/walk/ask/note", "{}"),
+        ("/api/walk/ask/card/draft", "{}"),
+        (
+            "/api/walk/ask/card/create",
+            r#"{"front":"a learner card","back":["its answer"]}"#,
+        ),
+    ];
+    let ask = |label: &str| {
+        let status = post_json(&base, "/api/walk/ask", r#"{"question":"why?"}"#).status;
+        assert_eq!(200, status, "{label}: Ask is offered");
+        poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
+    };
+
+    // an ordinary walk: every row passes the gate
+    assert_eq!(
+        200,
+        post_json(&base, "/api/walk", r#"{"deck":"walk.md"}"#).status,
+        "ordinary: the walk opens"
+    );
+    ask("ordinary");
+    for (path, body) in rows {
+        let status = post_json(&base, path, body).status;
+        assert_ne!(403, status, "ordinary: {path} passes the gate");
+        poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
+    }
+
+    // a stale tab: the tutorial replaced the walk it still shows
+    assert_eq!(
+        200,
+        post_json(&base, "/api/tutorial", "").status,
+        "stale tab: the tutorial opens"
+    );
+    assert_eq!(
+        403,
+        post_json(&base, rows[2].0, rows[2].1).status,
+        "stale tab: create reaches the tutorial walk"
+    );
+
+    // the tutorial walk: Ask stays, every personal write is refused
+    ask("tutorial");
+    for (path, body) in rows {
+        let status = post_json(&base, path, body).status;
+        assert_eq!(403, status, "tutorial: {path} is refused");
+        poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
+    }
+    let mut files: Vec<String> = std::fs::read_dir(&tutorial_base)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".md"))
+        .collect();
+    files.sort();
+    assert_eq!(
+        vec![alix::tutorial::TUTORIAL_FILE.to_string()],
+        files,
+        "tutorial: the base holds the deck and no sidecar"
+    );
+}
+
+#[test]
+fn an_unwritable_tutorial_base_fails_without_touching_the_library() {
+    let tutorial_home = TempDir::new().unwrap();
+    let locked = tutorial_home.path().join("locked");
+    std::fs::create_dir(&locked).unwrap();
+    let tutorial_base = locked.join("tutorial").join("default");
+    let (base, guard) = spawn_tutorial_server(&tutorial_base, None);
+    let listed_before = json_of(&http(&base, "GET", "/api/decks", &[], &[]));
+    let decks_before = snapshot_dir(guard.dir());
+
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let resp = post_json(&base, "/api/tutorial", "");
+    let walk = http(&base, "GET", "/api/walk", &[], &[]).status;
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let listed_after = json_of(&http(&base, "GET", "/api/decks", &[], &[]));
+    assert_eq!(
+        (500, false, 409),
+        (resp.status, resp.body.is_empty(), walk),
+        "open: (status, empty body, walk poll): {}",
+        String::from_utf8_lossy(&resp.body)
+    );
+    assert!(
+        decks_before == snapshot_dir(guard.dir()),
+        "library: the decks folder and its store are byte-identical"
+    );
+    assert_eq!(
+        listed_before["recent"], listed_after["recent"],
+        "library: the recent list is unchanged"
+    );
+}
+
 #[test]
 fn law_every_other_session_transition_ends_a_running_walk() {
     let (base, _guard) = spawn_full_server_fixture(None, write_walk_deck, |_| {});
@@ -8638,7 +8946,11 @@ fn remote_ask_answers_409_while_a_turn_is_thinking_and_the_loop_stays_live() {
 fn remote_draft_and_card_create_are_refused_for_the_kids_audience() {
     let (base, _guard) = spawn_kids_server();
 
-    for path in ["/api/remote/ask/draft", "/api/remote/ask/card"] {
+    for path in [
+        "/api/remote/ask/draft",
+        "/api/remote/ask/card",
+        "/api/tutorial",
+    ] {
         let resp = post_json(&base, path, "{}");
         assert_eq!(403, resp.status, "{path}");
         assert!(resp.body.is_empty(), "{path}: body: {:?}", resp.body);

@@ -120,6 +120,9 @@ pub(crate) fn launch(args: LaunchArgs, instance: &str) -> Result<()> {
         )
     })?;
     let pair = announce(addr, args.lan, token.as_deref(), &decks_dir);
+    let profile = alix::config::profile_name_for(args.config.as_deref());
+    let tutorial_base =
+        alix::tutorial::data_root().map(|root| alix::tutorial::base_dir(&root, profile.as_deref()));
 
     let opts = serve::ReviewOptions {
         keys: config.keys.clone(),
@@ -134,6 +137,7 @@ pub(crate) fn launch(args: LaunchArgs, instance: &str) -> Result<()> {
         log_path,
         pair,
         scoped,
+        tutorial_base,
         cfg: assemble::AssembleConfig {
             review: config.review,
             ask: config.ask.clone(),

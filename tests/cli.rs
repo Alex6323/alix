@@ -7445,6 +7445,48 @@ fn a_bare_server_creates_the_default_instance_log_without_a_flag() {
 
 #[cfg(unix)]
 #[test]
+fn a_profile_launch_keeps_its_own_tutorial() {
+    let dir = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    write(dir.path(), "d.md", VALID_DECK);
+    let profiles = test_config_dir(home.path()).join("profiles");
+    std::fs::create_dir_all(&profiles).unwrap();
+    let config = write(&profiles, "x.toml", "");
+
+    let mut child = RunningServer(
+        Command::new(env!("CARGO_BIN_EXE_alix"))
+            .args(["--config", config.as_str()])
+            .arg(dir.path())
+            .args(["--port", "0"])
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path())
+            .env("XDG_DATA_HOME", home.path())
+            .env("XDG_STATE_HOME", home.path())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("failed to spawn the alix server"),
+    );
+    let port = take_server_port(&mut child);
+
+    let response = server_request(port, "POST", "/api/tutorial", "");
+    child.kill().expect("failed to stop the server");
+    let _ = child.wait();
+    let tutorial = test_state_dir(home.path()).join("tutorial");
+    assert_eq!(
+        (true, true, false),
+        (
+            response.starts_with(b"HTTP/1.1 200"),
+            tutorial.join("profiles/x/tutorial.md").is_file(),
+            tutorial.join("default").exists()
+        ),
+        "(200, the profile's tutorial, no default tutorial): {}",
+        String::from_utf8_lossy(&response)
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn selecting_a_card_writes_its_id_and_decision_to_the_normal_log() {
     let dir = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();

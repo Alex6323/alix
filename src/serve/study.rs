@@ -28,6 +28,7 @@ pub(super) struct StudyConfig {
     pub(super) exam_cfg: ExamConfig,
     pub(super) review_cfg: ReviewConfig,
     pub(super) audience: Audience,
+    pub(super) tutorial_base: Option<PathBuf>,
 }
 
 pub(super) struct StudyState {
@@ -89,8 +90,21 @@ pub(super) enum Feedback<T> {
 pub(super) enum CreateOutcome {
     Ok(CreateCardResp),
     NoSession,
+    Forbidden,
     Invalid,
     MintFailed,
+}
+
+pub(super) enum WalkAskOutcome {
+    Ok(AskDto),
+    NoSession,
+    Forbidden,
+}
+
+pub(super) enum TutorialOpened {
+    NoBase,
+    Failed(anyhow::Error),
+    Opened(Box<Transition<WalkDto>>),
 }
 
 /// A command that replaces the active progress document: refused whenever
@@ -413,6 +427,7 @@ pub(super) enum StudyCommand {
         path: PathBuf,
         reply: Reply<Transition<WalkDto>>,
     },
+    TutorialOpen(Reply<TutorialOpened>),
     WalkPoll(Reply<Option<WalkDto>>),
     WalkChoose {
         choice: WalkChoice,
@@ -440,8 +455,9 @@ pub(super) enum StudyCommand {
     WalkLeave(Reply<Transition<StateDto>>),
     WalkAsk {
         action: Option<AskAction>,
+        personal: bool,
         ask_cfg: crate::config::AskConfig,
-        reply: Reply<Option<AskDto>>,
+        reply: Reply<WalkAskOutcome>,
     },
     WalkAskPoll(Reply<Option<AskDto>>),
     WalkAskCreate {
@@ -760,6 +776,9 @@ impl StudyHandle {
     pub(super) fn walk_open(&self, path: PathBuf) -> Option<Transition<WalkDto>> {
         self.call(|reply| StudyCommand::WalkOpen { path, reply })
     }
+    pub(super) fn tutorial_open(&self) -> Option<TutorialOpened> {
+        self.call(StudyCommand::TutorialOpen)
+    }
     pub(super) fn walk_poll(&self) -> Option<Option<WalkDto>> {
         self.call(StudyCommand::WalkPoll)
     }
@@ -804,10 +823,12 @@ impl StudyHandle {
     pub(super) fn walk_ask(
         &self,
         action: Option<AskAction>,
+        personal: bool,
         ask_cfg: crate::config::AskConfig,
-    ) -> Option<Option<AskDto>> {
+    ) -> Option<WalkAskOutcome> {
         self.call(|reply| StudyCommand::WalkAsk {
             action,
+            personal,
             ask_cfg,
             reply,
         })
@@ -1410,7 +1431,10 @@ impl StudyState {
                 let _ = reply.send(out);
             }
             StudyCommand::WalkOpen { path, reply } => {
-                let _ = reply.send(self.walk_open(path));
+                let _ = reply.send(self.walk_open(path, false));
+            }
+            StudyCommand::TutorialOpen(reply) => {
+                let _ = reply.send(self.tutorial_open());
             }
             StudyCommand::WalkPoll(reply) => {
                 let dto = self
@@ -1522,17 +1546,24 @@ impl StudyState {
             }
             StudyCommand::WalkAsk {
                 action,
+                personal,
                 ask_cfg,
                 reply,
             } => {
                 let audience = self.config.audience;
-                let dto = self.walking.as_mut().map(|w| {
-                    if let Some(action) = action {
-                        w.start_ask(&ask_cfg, audience, action);
+                let out = match self.walking.as_mut() {
+                    None => WalkAskOutcome::NoSession,
+                    Some(w) if personal && !w.session.allows_personal_writes() => {
+                        WalkAskOutcome::Forbidden
                     }
-                    w.ask_dto(None, None)
-                });
-                let _ = reply.send(dto);
+                    Some(w) => {
+                        if let Some(action) = action {
+                            w.start_ask(&ask_cfg, audience, action);
+                        }
+                        WalkAskOutcome::Ok(w.ask_dto(None, None))
+                    }
+                };
+                let _ = reply.send(out);
             }
             StudyCommand::WalkAskCreate { req, reply } => {
                 let _ = reply.send(self.walk_ask_create(req));
@@ -1754,7 +1785,17 @@ impl StudyState {
         }
     }
 
-    fn walk_open(&mut self, path: PathBuf) -> Transition<WalkDto> {
+    fn tutorial_open(&mut self) -> TutorialOpened {
+        let Some(base) = self.config.tutorial_base.clone() else {
+            return TutorialOpened::NoBase;
+        };
+        match crate::tutorial::materialize(&base) {
+            Ok(path) => TutorialOpened::Opened(Box::new(self.walk_open(path, true))),
+            Err(e) => TutorialOpened::Failed(e),
+        }
+    }
+
+    fn walk_open(&mut self, path: PathBuf, tutorial: bool) -> Transition<WalkDto> {
         if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
             return Transition::FlushFailed;
         }
@@ -1772,7 +1813,10 @@ impl StudyState {
             Ok(build) => {
                 self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);
-                let walking = Walking::new(build);
+                let mut walking = Walking::new(build);
+                if tutorial {
+                    walking.session.mark_tutorial();
+                }
                 let dto = walk_dto(&walking, self.revision + 1, self.save_error.as_deref());
                 self.walking = Some(walking);
                 self.reviewing = None;
@@ -2090,6 +2134,9 @@ impl StudyState {
         let Some(w) = self.walking.as_ref() else {
             return CreateOutcome::NoSession;
         };
+        if !w.session.allows_personal_writes() {
+            return CreateOutcome::Forbidden;
+        }
         if w.session.current().is_none() {
             return CreateOutcome::NoSession;
         }
@@ -2281,6 +2328,7 @@ mod tests {
                     exam_cfg: defaults.exam,
                     review_cfg: defaults.review,
                     audience: defaults.serve.audience,
+                    tutorial_base: None,
                 },
                 store,
                 retained: HashMap::new(),
@@ -2337,6 +2385,7 @@ mod tests {
                 exam_cfg: defaults.exam,
                 review_cfg: defaults.review,
                 audience: defaults.serve.audience,
+                tutorial_base: None,
             },
             store: crate::state::open_aggregate_store(dir.path()).unwrap(),
             retained: HashMap::new(),
@@ -2485,6 +2534,7 @@ mod tests {
                 exam_cfg: defaults.exam,
                 review_cfg: defaults.review,
                 audience: defaults.serve.audience,
+                tutorial_base: None,
             },
             store: crate::state::open_aggregate_store(&active_root).unwrap(),
             retained: HashMap::new(),

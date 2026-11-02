@@ -235,7 +235,8 @@ so does the walk (§4.13): `/api/walk/ask`, `/api/walk/ask/note`,
 `/api/walk/ask/card/draft`, `/api/walk/ask/card/create`, `GET /api/walk/ask`,
 always about the walk's current item and minting into the walked deck. The
 walk's card routes take no `X-Alix-Study-Revision` and `403` for a kids
-audience like their review counterparts.
+audience like their review counterparts. On the tutorial walk (§4.13) the note
+and both card routes answer `403`; asking stays open.
 Frozen excerpts are always supplied as evidence. When no usable live
 `exam:` (deck or workspace) is available, `status` carries a deterministic
 warning that the tutor has only the frozen evidence rather than the full
@@ -604,6 +605,20 @@ a hint do not. A client answers any 409 with `GET /api/walk`, which is a 409
 only when no walk is open.
 `GET /api/state` does not report a walk; poll `GET /api/walk`.
 
+`POST /api/tutorial` (no body) opens the tutorial: the deck that ships with
+alix, written into a folder of its own outside the served decks folder (one
+per profile, one shared by every other launch), where its progress is kept
+too. It is a walk like any other,
+served by the `/api/walk/*` routes, with three differences: its `WalkDto`
+carries `tutorial: true`, opening it adds nothing to the recent list, and
+nothing personal is written while it runs:
+`/api/walk/ask/note`, `/api/walk/ask/card/draft` and
+`/api/walk/ask/card/create` answer `403`, including a request from a client
+that still shows an earlier walk. Every open rewrites the tutorial's files
+when they differ from the shipped ones and resumes its progress. A failure to
+write them is a 500 with the error as a plain-text body; a server with no
+platform data folder answers 503. A kids audience gets `403`.
+
 ## 5. Endpoint reference
 
 Statuses: all endpoints can additionally return 401 (token) — omitted below.
@@ -773,6 +788,7 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
 | POST | `/api/walk` | `{deck}` | `WalkDto` | 400 bad body / unknown deck / folder / trace deck / unreadable progress / load failure; 500 progress flush failure |
+| POST | `/api/tutorial` | – | `WalkDto` (`tutorial: true`) | 403 kids; 500 tutorial files not writable (text body) / progress unreadable / flush failure; 503 no data folder |
 | GET | `/api/walk` | – | `WalkDto` (poll) | 409 not walking |
 | POST | `/api/walk/choose` | `{index}` or `{indices}` | `ChooseFeedbackDto` \| `MultiChooseFeedbackDto` | 400 no revision / bad body / not on the front / not a choice item / shape mismatch; 409 |
 | POST | `/api/walk/reveal` | – | `WalkDto` | 400 no revision; 409 |
@@ -781,9 +797,9 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 | POST | `/api/walk/restart` | – | `WalkDto` | 400 no revision; 409 |
 | POST | `/api/walk/ask` | `{question}` | `AskDto` (empty question: 200, no call started) | 409 |
 | GET | `/api/walk/ask` | – | `AskDto` | 409 |
-| POST | `/api/walk/ask/note` | – | `AskDto` | 409 |
-| POST | `/api/walk/ask/card/draft` | – | `AskDto` | 409, 403 (kids) |
-| POST | `/api/walk/ask/card/create` | `CreateCardReq` | `CreateCardResp` | 400, 409, 422, 500, 403 (kids) |
+| POST | `/api/walk/ask/note` | – | `AskDto` | 409, 403 (tutorial) |
+| POST | `/api/walk/ask/card/draft` | – | `AskDto` | 409, 403 (kids, tutorial) |
+| POST | `/api/walk/ask/card/create` | `CreateCardReq` | `CreateCardResp` | 400, 409, 422, 500, 403 (kids, tutorial) |
 | POST | `/api/walk/leave` | – | `StateDto` | 500 progress flush failure |
 
 ### Remote (paired clients) (since 0.6.0)
@@ -1554,6 +1570,7 @@ attempted and failed; one target's error doesn't stop the rest from running).
 | `study_revision` | number | The revision every walk mutation echoes in `X-Alix-Study-Revision`. |
 | `pick` | string? | `correct` \| `wrong` after a pick on this item; absent otherwise. |
 | `save_error` | string? | Absent while saving works; set as on `StateDto` once a grade could not be saved. |
+| `tutorial` | bool? | `true` on the tutorial walk (`POST /api/tutorial`): hide note and card creation. Absent otherwise. |
 
 ### HopDto
 

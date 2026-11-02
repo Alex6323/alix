@@ -28,6 +28,7 @@ pub struct WalkSession {
     choice_seed: u64,
     pick: Option<bool>,
     hint_opened: bool,
+    tutorial: bool,
 }
 
 impl WalkSession {
@@ -42,6 +43,7 @@ impl WalkSession {
             choice_seed: now_ms,
             pick: None,
             hint_opened: false,
+            tutorial: false,
         };
         walk.restart(store, now_ms);
         walk
@@ -77,6 +79,14 @@ impl WalkSession {
 
     pub fn current_mut(&mut self) -> Option<&mut Card> {
         self.order.get(self.position).map(|&i| &mut self.cards[i])
+    }
+
+    pub fn mark_tutorial(&mut self) {
+        self.tutorial = true;
+    }
+
+    pub fn allows_personal_writes(&self) -> bool {
+        !self.tutorial
     }
 
     pub fn section_first(&self) -> bool {
@@ -281,6 +291,27 @@ mod tests {
             walk.reveal();
         }
         walk.grade(store, Grade::Pass, now_ms);
+    }
+
+    #[test]
+    fn a_walk_allows_personal_writes_until_marked_tutorial() {
+        let (mut store, _dir) = store();
+        let mut walk = WalkSession::new(vec![card(1, &[]), card(2, &[])], &store, 1);
+        assert!(
+            walk.allows_personal_writes(),
+            "new: an ordinary walk allows personal writes"
+        );
+        walk.mark_tutorial();
+        assert!(
+            !walk.allows_personal_writes(),
+            "marked: a tutorial walk refuses personal writes"
+        );
+        step(&mut walk, &mut store, 2);
+        walk.restart(&store, 3);
+        assert!(
+            !walk.allows_personal_writes(),
+            "restart: the next tutorial walk still refuses personal writes"
+        );
     }
 
     #[test]

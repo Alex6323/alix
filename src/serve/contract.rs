@@ -711,6 +711,7 @@ fn walkdto_front_phase_wire_shape() {
         study_revision: 4,
         pick: None,
         save_error: None,
+        tutorial: true,
     };
     pin(
         "WalkDto.front",
@@ -744,7 +745,8 @@ fn walkdto_front_phase_wire_shape() {
             "position": 0,
             "total": 3,
             "label": "Geography",
-            "study_revision": 4
+            "study_revision": 4,
+            "tutorial": true
         }),
     );
 }
@@ -767,6 +769,7 @@ fn walkdto_answer_after_pick_wire_shape() {
         study_revision: 5,
         pick: Some("wrong"),
         save_error: None,
+        tutorial: false,
     };
     pin(
         "WalkDto.answer",
@@ -808,6 +811,7 @@ fn walkdto_done_phase_wire_shape() {
         study_revision: 7,
         pick: None,
         save_error: Some("progress could not be saved".to_string()),
+        tutorial: false,
     };
     pin(
         "WalkDto.done",

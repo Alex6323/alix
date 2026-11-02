@@ -189,6 +189,8 @@ pub(super) struct WalkDto {
     pub(super) pick: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) save_error: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) tutorial: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -1350,6 +1352,7 @@ pub(super) fn walk_dto(w: &Walking, study_revision: u64, save_error: Option<&str
             .pick()
             .map(|right| if right { "correct" } else { "wrong" }),
         save_error: save_error.map(str::to_string),
+        tutorial: !session.allows_personal_writes(),
     }
 }
 

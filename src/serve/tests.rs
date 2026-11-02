@@ -157,6 +157,7 @@ fn sync_push_handler_commits_once_on_the_study_owner_thread() {
             lan: false,
         },
         scoped: true,
+        tutorial_base: None,
         cfg: assemble::AssembleConfig {
             review: config.review,
             ask: config.ask,
@@ -264,6 +265,7 @@ fn law_review_server_lives_until_it_is_unblocked() {
             lan: false,
         },
         scoped: true,
+        tutorial_base: None,
         cfg: assemble::AssembleConfig {
             review: config.review,
             ask: config.ask,

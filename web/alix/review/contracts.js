@@ -43,6 +43,7 @@ export function validatorFor(path) {
     case "/api/walk/leave":
       return isStudyState;
     case "/api/walk":
+    case "/api/tutorial":
     case "/api/walk/reveal":
     case "/api/walk/grade":
     case "/api/walk/restart":

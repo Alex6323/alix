@@ -141,6 +141,7 @@ pub struct ReviewOptions {
     pub log_path: Option<PathBuf>,
     pub pair: PairInfo,
     pub scoped: bool,
+    pub tutorial_base: Option<PathBuf>,
     pub cfg: assemble::AssembleConfig,
 }
 
@@ -252,6 +253,7 @@ pub fn run_review(
         log_path,
         pair,
         scoped,
+        tutorial_base,
         cfg,
     } = opts;
     let ask_cfg = cfg.ask.clone();
@@ -276,6 +278,7 @@ pub fn run_review(
                 exam_cfg: exam_cfg.clone(),
                 review_cfg,
                 audience,
+                tutorial_base,
             },
             store,
             retained: HashMap::new(),
@@ -1393,6 +1396,7 @@ pub fn run_review(
                 match study.ask_create(req, expected) {
                     None => respond_status(request, 503),
                     Some(CreateOutcome::NoSession) => respond_status(request, 409),
+                    Some(CreateOutcome::Forbidden) => respond_status(request, 403),
                     Some(CreateOutcome::Invalid) => respond_status(request, 422),
                     Some(CreateOutcome::MintFailed) => respond_status(request, 500),
                     Some(CreateOutcome::Ok(resp)) => respond_json(request, &resp),
@@ -1667,6 +1671,22 @@ pub fn run_review(
                     }
                 }
             }
+            (Method::Post, "/api/tutorial") => {
+                if audience == Audience::Kids {
+                    respond_status(request, 403);
+                    continue;
+                }
+                match study.tutorial_open() {
+                    None | Some(TutorialOpened::NoBase) => respond_status(request, 503),
+                    Some(TutorialOpened::Failed(e)) => respond_error(request, 500, &e),
+                    Some(TutorialOpened::Opened(opened)) => match *opened {
+                        Transition::Done(dto) => respond_json(request, &dto),
+                        Transition::Rejected | Transition::FlushFailed => {
+                            respond_status(request, 500)
+                        }
+                    },
+                }
+            }
             (Method::Get, "/api/walk") => match study.walk_poll() {
                 None => respond_status(request, 503),
                 Some(None) => respond_status(request, 409),
@@ -1772,17 +1792,19 @@ pub fn run_review(
                     .map(|b| b.question)
                     .filter(|q| !q.trim().is_empty())
                     .map(AskAction::Question);
-                match study.walk_ask(action, ask_cfg.clone()) {
+                match study.walk_ask(action, false, ask_cfg.clone()) {
                     None => respond_status(request, 503),
-                    Some(None) => respond_status(request, 409),
-                    Some(Some(dto)) => respond_json(request, &dto),
+                    Some(WalkAskOutcome::NoSession) => respond_status(request, 409),
+                    Some(WalkAskOutcome::Forbidden) => respond_status(request, 403),
+                    Some(WalkAskOutcome::Ok(dto)) => respond_json(request, &dto),
                 }
             }
             (Method::Post, "/api/walk/ask/note") => {
-                match study.walk_ask(Some(AskAction::Condense), ask_cfg.clone()) {
+                match study.walk_ask(Some(AskAction::Condense), true, ask_cfg.clone()) {
                     None => respond_status(request, 503),
-                    Some(None) => respond_status(request, 409),
-                    Some(Some(dto)) => respond_json(request, &dto),
+                    Some(WalkAskOutcome::NoSession) => respond_status(request, 409),
+                    Some(WalkAskOutcome::Forbidden) => respond_status(request, 403),
+                    Some(WalkAskOutcome::Ok(dto)) => respond_json(request, &dto),
                 }
             }
             (Method::Post, "/api/walk/ask/card/draft") => {
@@ -1790,10 +1812,11 @@ pub fn run_review(
                     respond_status(request, 403);
                     continue;
                 }
-                match study.walk_ask(Some(AskAction::DraftCard), ask_cfg.clone()) {
+                match study.walk_ask(Some(AskAction::DraftCard), true, ask_cfg.clone()) {
                     None => respond_status(request, 503),
-                    Some(None) => respond_status(request, 409),
-                    Some(Some(dto)) => respond_json(request, &dto),
+                    Some(WalkAskOutcome::NoSession) => respond_status(request, 409),
+                    Some(WalkAskOutcome::Forbidden) => respond_status(request, 403),
+                    Some(WalkAskOutcome::Ok(dto)) => respond_json(request, &dto),
                 }
             }
             (Method::Post, "/api/walk/ask/card/create") => {
@@ -1808,6 +1831,7 @@ pub fn run_review(
                 match study.walk_ask_create(req) {
                     None => respond_status(request, 503),
                     Some(CreateOutcome::NoSession) => respond_status(request, 409),
+                    Some(CreateOutcome::Forbidden) => respond_status(request, 403),
                     Some(CreateOutcome::Invalid) => respond_status(request, 422),
                     Some(CreateOutcome::MintFailed) => respond_status(request, 500),
                     Some(CreateOutcome::Ok(resp)) => respond_json(request, &resp),
