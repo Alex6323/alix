@@ -2125,6 +2125,7 @@ fn askinfodto_and_versiondto_wire_shape() {
     );
     let version = VersionDto {
         version: env!("CARGO_PKG_VERSION"),
+        commit: "c152742caa38",
         root_id: "root-00000000000000000000000000".to_string(),
         profile: Some("study".to_string()),
     };
@@ -2133,6 +2134,7 @@ fn askinfodto_and_versiondto_wire_shape() {
         &version,
         json!({
             "version": env!("CARGO_PKG_VERSION"),
+            "commit": "c152742caa38",
             "root_id": "root-00000000000000000000000000",
             "profile": "study",
         }),
@@ -2147,6 +2149,7 @@ fn askinfodto_and_versiondto_wire_shape() {
         .unwrap(),
         json!({
             "version": env!("CARGO_PKG_VERSION"),
+            "commit": "c152742caa38",
             "root_id": "root-00000000000000000000000000",
             "profile": null,
         }),

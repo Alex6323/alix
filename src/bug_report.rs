@@ -82,8 +82,9 @@ pub fn write_bundle_with(options: &BundleOptions<'_>) -> Result<Bundle> {
     }
     let deck_inventory = deck_inventory(options.root);
     let report = format!(
-        "# Alix bug report\n\nGenerated: {timestamp}\nAlix: {}\nBuild: {}\nOS: {}\nArchitecture: {}\nDecks: {}\nLogs: {}\nIncluded deck: {}\n\nThis archive was written locally and was not sent anywhere. Review every file before attaching it to a bug report. In particular, inspect the diagnostic text under `log/` and the verbatim `deck.md` when present.\n",
+        "# Alix bug report\n\nGenerated: {timestamp}\nAlix: {}\nCommit: {}\nBuild: {}\nOS: {}\nArchitecture: {}\nDecks: {}\nLogs: {}\nIncluded deck: {}\n\nThis archive was written locally and was not sent anywhere. Review every file before attaching it to a bug report. In particular, inspect the diagnostic text under `log/` and the verbatim `deck.md` when present.\n",
         crate::VERSION,
+        crate::commit_label(),
         if cfg!(debug_assertions) {
             "debug"
         } else {

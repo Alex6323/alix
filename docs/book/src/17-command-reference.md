@@ -230,9 +230,9 @@ notes it.
 - `alix config`: show the active key bindings; `alix config --init` writes the
   file.
 - `alix bug-report [--out <dir>] [--include-deck <path>]`: write a local ZIP
-  containing the bounded diagnostic logs, platform and version details, a
-  config without tokens or AI prompt guidance, and hashed deck identities with
-  aggregate counts. Every included file is plain
+  containing the bounded diagnostic logs, platform, version, and build
+  commit details, a config without tokens or AI prompt guidance, and hashed
+  deck identities with aggregate counts. Every included file is plain
   text. No deck content is included by default. `--include-deck` adds exactly
   the named deck verbatim, including its card text and authored notes, and
   names it in `report.md`. Personal sidecars, prompts, and responses always

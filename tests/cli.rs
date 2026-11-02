@@ -151,6 +151,16 @@ fn server_request(port: u16, method: &str, path: &str, body: &str) -> Vec<u8> {
 }
 
 /// Writes `contents` to `dir/name` and returns its path as a string.
+#[test]
+fn version_prints_the_version_and_the_build_commit() {
+    let out = alix(&["--version"]);
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim_end(),
+        format!("alix {}", alix::long_version())
+    );
+}
+
 fn write(dir: &Path, name: &str, contents: &str) -> String {
     let path = dir.join(name);
     std::fs::write(&path, contents).unwrap();
@@ -3558,6 +3568,11 @@ fn bug_report_include_deck_adds_exactly_the_requested_deck_verbatim() {
             .unwrap();
     }
     assert!(report.contains("requested-private-name.md"), "{report}");
+    let commit = alix::commit_label();
+    assert!(
+        report.contains(&format!("\nCommit: {commit}\n")),
+        "the report names the build's commit: {report}"
+    );
 
     let mut all = String::new();
     for index in 0..zip.len() {

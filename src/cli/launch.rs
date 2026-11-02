@@ -175,6 +175,7 @@ fn announce_with(
             lan: false,
         },
     };
+    say!("alix {}", alix::long_version());
     match (lan, token) {
         (true, Some(t)) => match lan_ip {
             Some(ip) => {

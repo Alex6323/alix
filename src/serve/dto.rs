@@ -331,6 +331,8 @@ pub(super) struct AskInfoDto {
 #[derive(Serialize)]
 pub(super) struct VersionDto {
     pub(super) version: &'static str,
+    /// Empty when the server was built without a git checkout.
+    pub(super) commit: &'static str,
     pub(super) root_id: String,
     /// The launch profile serving this root, when it has one; a client shows
     /// what it already knows about the server (its address) when it is null.

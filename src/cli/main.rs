@@ -25,7 +25,7 @@ use launch::launch;
 /// picker over your decks directory, or over the folder you name.
 /// Manual: https://alix.study/book
 #[derive(Parser)]
-#[command(version, about)]
+#[command(version = alix::long_version(), about)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,

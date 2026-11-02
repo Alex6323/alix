@@ -249,8 +249,8 @@ The endpoint is under the existing `/api/*` token guard and returns
 `Cache-Control: no-store`. Both surfaces write or download a local ZIP only;
 Alix has no submission or upload path. The user must inspect and attach it.
 
-The archive includes bounded current logs and their one rollover, version and
-platform data, a config rendered after recursively removing every `token`,
+The archive includes bounded current logs and their one rollover, version,
+build commit, and platform data, a config rendered after recursively removing every `token`,
 `prompt`, and `extra` key, and deck counts keyed by a SHA-256 hash of the stable
 deck ID. By default it includes no deck text. `--include-deck <path>` adds only
 that deck verbatim, including its card text and authored notes, and names it in

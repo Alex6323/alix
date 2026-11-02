@@ -235,6 +235,17 @@ fn capture_line(line: &str) {
     });
 }
 
+fn record_start(sink: &Sink) {
+    let commit = crate::commit_label();
+    if let Ok(mut writer) = sink.writer.lock() {
+        let _ = writeln!(
+            writer,
+            "target=start version={} commit={commit}",
+            crate::VERSION
+        );
+    }
+}
+
 fn format_line(target: Target, fields: fmt::Arguments<'_>) -> String {
     format!("target={} {fields}\n", target.name())
 }
@@ -359,6 +370,9 @@ pub fn init(instance: &str, settings: Settings) -> io::Result<()> {
             "the server log is already initialized",
         )
     })?;
+    if let Some(sink) = SINK.get() {
+        record_start(sink);
+    }
     install_panic_hook();
     Ok(())
 }
@@ -540,6 +554,25 @@ mod tests {
 
         assert_eq!(
             "target=error kind=parse code=front_without_answer line=7\n",
+            std::fs::read_to_string(path).unwrap()
+        );
+    }
+
+    #[test]
+    fn even_a_quiet_log_opens_with_the_version_and_the_build_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("alix.log");
+        let sink = Sink {
+            writer: Mutex::new(CappedWriter::open(path.clone(), 1024).unwrap()),
+            verbose: false,
+            stderr: Targets::default(),
+        };
+
+        record_start(&sink);
+
+        let commit = crate::commit_label();
+        assert_eq!(
+            format!("target=start version={} commit={commit}\n", crate::VERSION),
             std::fs::read_to_string(path).unwrap()
         );
     }

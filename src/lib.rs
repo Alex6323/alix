@@ -6,6 +6,28 @@
 #![recursion_limit = "256"]
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+// Empty when the build had no git checkout to describe.
+pub const COMMIT: &str = git_version::git_version!(
+    args = ["--always", "--dirty=-dirty", "--abbrev=12"],
+    fallback = ""
+);
+
+pub fn commit_label() -> &'static str {
+    if COMMIT.is_empty() { "unknown" } else { COMMIT }
+}
+
+pub fn long_version() -> &'static str {
+    static LONG: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    LONG.get_or_init(|| version_with(COMMIT))
+}
+
+fn version_with(commit: &str) -> String {
+    if commit.is_empty() {
+        VERSION.to_string()
+    } else {
+        format!("{VERSION} ({commit})")
+    }
+}
 
 pub mod answer;
 #[cfg(feature = "full")]
@@ -99,3 +121,27 @@ pub mod workspace_update;
 // it. Its exec lock is taken by every forking test, not only those modules'.
 #[cfg(all(test, feature = "full", unix))]
 mod testutil;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_long_version_names_the_commit_and_falls_back_to_the_version_alone() {
+        assert_eq!(version_with(""), VERSION, "no git: the version alone");
+        assert_eq!(
+            version_with("c152742caa38-dirty"),
+            format!("{VERSION} (c152742caa38-dirty)"),
+            "a commit rides in parentheses"
+        );
+    }
+
+    #[test]
+    fn the_commit_is_empty_or_twelve_hex_digits_with_an_optional_dirty_mark() {
+        let hash = COMMIT.strip_suffix("-dirty").unwrap_or(COMMIT);
+        assert!(
+            COMMIT.is_empty() || (hash.len() == 12 && hash.bytes().all(|b| b.is_ascii_hexdigit())),
+            "unexpected commit stamp {COMMIT:?}"
+        );
+    }
+}

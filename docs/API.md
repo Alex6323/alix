@@ -47,7 +47,7 @@ so is every client.
   one decks folder with its own state (`--lan --port <p>` per instance). Each
   instance is its own host/port/token triple to pair against.
 - `GET /api/version` →
-  `{"version":"0.8.0","root_id":"root-00000000000000000000000000","profile":"study"}`
+  `{"version":"0.8.0","commit":"c152742caa38","root_id":"root-00000000000000000000000000","profile":"study"}`
   is the cheap "am I talking to alix, and which served folder" check. `profile`
   names the launch profile serving this root, and is `null` when the server was
   started any other way (an explicit config path, a scoped folder, the default
@@ -623,8 +623,10 @@ Statuses: all endpoints can additionally return 401 (token) — omitted below.
 | GET | `/api/picker-keys` | – | web-private (§7) | – |
 | GET | `/api/browse-keys` | – | web-private (§7) | – |
 
-`GET /api/version` returns both the build `version` and the served folder's
-stable `root_id`; paired clients compare the latter before any progress write.
+`GET /api/version` returns the build `version`, the build's git `commit` (12
+hex digits, `-dirty` when built from uncommitted changes, empty when built
+without a git checkout), and the served folder's stable `root_id`; paired
+clients compare the latter before any progress write.
 
 ### Review session
 

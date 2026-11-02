@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The build's git commit, `-dirty` when built from uncommitted changes:
+  `alix --version` prints it (`alix 0.8.0 (c152742caa38)`), and the server's
+  startup banner, its log, the bug report, and `GET /api/version` (`commit`)
+  carry it. A build without a git checkout shows the version alone.
+
 - Web: the depth menu's **skip intro** tick-box (`s`) grades never-seen
   cards at once instead of introducing them first, for that launch, as the
   phone's launch sheet already could. The confidence tick-box gets `f`.

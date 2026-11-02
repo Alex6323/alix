@@ -450,6 +450,7 @@ pub fn run_review(
                                 request,
                                 &VersionDto {
                                     version: env!("CARGO_PKG_VERSION"),
+                                    commit: crate::COMMIT,
                                     root_id: root.root_id,
                                     profile: root.profile,
                                 },
