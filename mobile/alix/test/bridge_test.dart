@@ -455,6 +455,20 @@ void main() {
     );
   });
 
+  test('openTutorial opens the shipped tutorial as a tutorial walk', () {
+    final base = Directory.systemTemp.createTempSync('alix-tutorial-');
+    addTearDown(() => base.deleteSync(recursive: true));
+
+    final walk = WalkSession.openTutorial(baseDir: base.path, nowMs: t0);
+    expect(
+      walk.isTutorial(),
+      isTrue,
+      reason: 'the tutorial walk carries its flag',
+    );
+    expect(walk.state().total, 9, reason: 'the tutorial serves nine cards');
+    expect(File('${base.path}/tutorial.md').existsSync(), isTrue);
+  });
+
   test('choice options and feedback stay in lockstep', () {
     final root = makeRoot();
     addTearDown(() => root.deleteSync(recursive: true));

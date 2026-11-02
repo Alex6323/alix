@@ -1020,9 +1020,34 @@ impl WalkSession {
         now_ms: Option<u64>,
         device: Option<String>,
     ) -> Result<WalkSession> {
-        let deck = PathBuf::from(deck_path);
         let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
-        let mut store = alix::assemble::store_for(std::slice::from_ref(&deck), Some(&root_store))?;
+        Self::open_deck(PathBuf::from(deck_path), Some(&root_store), now_ms, device)
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn open_tutorial(
+        base_dir: String,
+        now_ms: Option<u64>,
+        device: Option<String>,
+    ) -> Result<WalkSession> {
+        let deck = alix::tutorial::materialize(Path::new(&base_dir))?;
+        let mut walk = Self::open_deck(deck, None, now_ms, device)?;
+        walk.session.mark_tutorial();
+        Ok(walk)
+    }
+
+    #[flutter_rust_bridge::frb(sync)]
+    pub fn is_tutorial(&self) -> bool {
+        !self.session.allows_personal_writes()
+    }
+
+    fn open_deck(
+        deck: PathBuf,
+        root_store: Option<&Path>,
+        now_ms: Option<u64>,
+        device: Option<String>,
+    ) -> Result<WalkSession> {
+        let mut store = alix::assemble::store_for(std::slice::from_ref(&deck), root_store)?;
         if device.is_some() {
             store.device = device;
         }
@@ -1139,6 +1164,7 @@ impl WalkSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn mint_tutor_card(&mut self, front: String, back: Vec<String>) -> Result<String> {
+        self.refuse_on_the_tutorial()?;
         if self.session.current().is_none() {
             bail!("no card is current to mint a tutor card against");
         }
@@ -1162,6 +1188,7 @@ impl WalkSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn record_minted_card(&mut self, block: String) -> Result<String> {
+        self.refuse_on_the_tutorial()?;
         let deck_fingerprints: HashSet<u64> = self
             .session
             .cards()
@@ -1181,6 +1208,7 @@ impl WalkSession {
 
     #[flutter_rust_bridge::frb(sync)]
     pub fn apply_card_note(&mut self, id: String, notes: Vec<String>) -> Result<()> {
+        self.refuse_on_the_tutorial()?;
         if notes.is_empty() {
             return Ok(());
         }
@@ -1199,6 +1227,13 @@ impl WalkSession {
             .filter(|cur| cur.id().as_deref() == Some(id.as_str()))
         {
             cur.append_note(&notes);
+        }
+        Ok(())
+    }
+
+    fn refuse_on_the_tutorial(&self) -> Result<()> {
+        if !self.session.allows_personal_writes() {
+            bail!("the tutorial keeps no cards or notes");
         }
         Ok(())
     }
@@ -3118,5 +3153,104 @@ mod tests {
         .err()
         .expect("a trace deck has its own session");
         assert!(format!("{err:#}").contains("trace"), "{err}");
+    }
+
+    fn opened_tutorial(base: &Path) -> WalkSession {
+        WalkSession::open_tutorial(base.to_string_lossy().into_owned(), Some(T0), None).unwrap()
+    }
+
+    #[test]
+    fn open_tutorial_walks_to_a_resolved_excerpt() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("tutorial");
+        let mut walk = opened_tutorial(&base);
+        assert!(
+            walk.is_tutorial(),
+            "the opened walk carries the tutorial flag"
+        );
+        let sample = std::fs::read_to_string(base.join("tutorial-sample.py")).unwrap();
+        let expected: Vec<String> = sample.lines().take(6).map(str::to_string).collect();
+        let mut cited = Vec::new();
+        while walk.state().phase != WalkPhase::Done {
+            let state = walk.state();
+            let card = state.card.expect("a current item before Done");
+            if let Some(citation) = card.citations.first() {
+                let lines: Option<Vec<String>> = citation
+                    .excerpt
+                    .as_ref()
+                    .map(|excerpt| excerpt.lines.iter().map(|line| line.text.clone()).collect());
+                cited.push((state.position, citation.error.clone(), lines));
+            }
+            if state.phase == WalkPhase::Front {
+                if state.choices.is_some() {
+                    walk.choose(0);
+                } else {
+                    walk.reveal();
+                }
+            }
+            walk.grade(Grade::Fail, Some(T0)).unwrap();
+        }
+        assert_eq!(
+            vec![(7, None, Some(expected))],
+            cited,
+            "card 8 alone cites, and its excerpt is lines 1-6 of the sample"
+        );
+    }
+
+    #[test]
+    fn law_the_tutorial_walk_refuses_each_personal_write() {
+        type Write = fn(&mut WalkSession) -> Result<String>;
+        let rows: [(&str, Write); 3] = [
+            ("mint_tutor_card", |walk| {
+                walk.mint_tutor_card("a new front?".to_string(), vec!["a new back".to_string()])
+            }),
+            ("record_minted_card", |walk| {
+                walk.record_minted_card(
+                    "## a new front?\na new back\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n"
+                        .to_string(),
+                )
+            }),
+            ("apply_card_note", |walk| {
+                let id = walk.tutor_card().expect("an item is current").id;
+                walk.apply_card_note(id, vec!["a note".to_string()])
+                    .map(|()| String::new())
+            }),
+        ];
+        for (name, write) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            let base = dir.path().join("tutorial");
+            let mut tutorial = opened_tutorial(&base);
+            let deck = base.join("tutorial.md");
+            let before = std::fs::read(&deck).unwrap();
+            let refused = write(&mut tutorial);
+            assert!(
+                matches!(&refused, Err(e) if e.to_string() == "the tutorial keeps no cards or notes"),
+                "{name}: the tutorial walk refuses, got {refused:?}"
+            );
+            assert_eq!(
+                before,
+                std::fs::read(&deck).unwrap(),
+                "{name}: the refusal left the tutorial deck untouched"
+            );
+            assert!(
+                !alix::personal::sidecar_path(&deck).exists(),
+                "{name}: the refusal wrote no personal file"
+            );
+
+            let root = dir.path().join("ordinary");
+            std::fs::create_dir_all(&root).unwrap();
+            let ordinary = root.join("walk.md");
+            write_deck(&ordinary, "## capital of italy?\nRome\n");
+            let mut walk = opened_walk(&ordinary, &root);
+            assert!(
+                !walk.is_tutorial(),
+                "{name}: an ordinary walk is not the tutorial"
+            );
+            let written = write(&mut walk);
+            assert!(
+                written.is_ok(),
+                "{name}: an ordinary walk accepts the write, got {written:?}"
+            );
+        }
     }
 }

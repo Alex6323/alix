@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'review.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `reopen_store`, `save_store`, `trace_excerpt`, `trace_state`, `tutor_card_of`
+// These functions are ignored because they are not marked as `pub`: `open_deck`, `refuse_on_the_tutorial`, `reopen_store`, `save_store`, `trace_excerpt`, `trace_state`, `tutor_card_of`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 Grade keypointGrade({required int covered, required int total}) => RustLib
@@ -118,6 +118,8 @@ abstract class WalkSession implements RustOpaqueInterface {
 
   WalkState grade({required Grade grade, BigInt? nowMs});
 
+  bool isTutorial();
+
   String mintTutorCard({required String front, required List<String> back});
 
   static WalkSession open({
@@ -133,6 +135,16 @@ abstract class WalkSession implements RustOpaqueInterface {
   );
 
   bool openHint({required String cardId});
+
+  static WalkSession openTutorial({
+    required String baseDir,
+    BigInt? nowMs,
+    String? device,
+  }) => RustLib.instance.api.crateApiReviewWalkSessionOpenTutorial(
+    baseDir: baseDir,
+    nowMs: nowMs,
+    device: device,
+  );
 
   String recordMintedCard({required String block});
 
