@@ -8104,9 +8104,9 @@ fn tutorial_open_failures_share_one_body_without_touching_the_library() {
     assert_eq!(
         (
             500,
-            "the tutorial folder could not be written",
+            "the tutorial could not be opened",
             500,
-            "the tutorial folder could not be written",
+            "the tutorial could not be opened",
             409,
         ),
         (

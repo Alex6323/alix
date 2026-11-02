@@ -1682,7 +1682,7 @@ pub fn run_review(
                         request,
                         500,
                         &e,
-                        "the tutorial folder could not be written",
+                        "the tutorial could not be opened",
                     ),
                     Some(TutorialOpened::Opened(dto)) => respond_json(request, &dto),
                 }
