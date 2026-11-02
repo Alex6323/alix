@@ -169,6 +169,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("base");
         let deck_path = materialize(&base).unwrap();
+        let shipped = std::fs::read(&deck_path).unwrap();
         let deck = Deck::load(&deck_path).unwrap();
         let roots = CitationRoots::for_deck(&deck);
         let mut store = assemble::store_for(std::slice::from_ref(&deck_path), None).unwrap();
@@ -189,7 +190,20 @@ mod tests {
             served.push(number);
             match number {
                 1 => {
+                    assert_eq!(
+                        (
+                            "Reveal this answer, then end the card with one of the three buttons under it. What do they mean?",
+                            vec!["Missed it, Partly, Got it: how recalling went, in your own honest judgement.".to_string()],
+                        ),
+                        (card.front.as_str(), card.back.clone()),
+                        "card 1: the instruction and answer no longer teach the grade trio"
+                    );
                     walk.reveal();
+                    assert_eq!(
+                        Phase::Answer,
+                        walk.phase(),
+                        "card 1: Reveal did not open the answer"
+                    );
                     for grade in [Grade::Fail, Grade::Partial, Grade::Pass] {
                         assert!(
                             walk.accepts(grade),
@@ -197,15 +211,33 @@ mod tests {
                         );
                     }
                 }
-                2 => assert!(
-                    !card.section_context.is_empty(),
-                    "card 2: no section context to open"
+                2 => assert_eq!(
+                    (
+                        "This deck has a section: the text that framed it before the first card. Open it again with the Context chip, then reveal.",
+                        Some("Your first walk"),
+                        true,
+                        false,
+                    ),
+                    (
+                        card.front.as_str(),
+                        card.section_context.first().map(String::as_str),
+                        card.section_context
+                            .iter()
+                            .any(|line| line.starts_with("Welcome to Alix.")),
+                        walk.section_first(),
+                    ),
+                    "card 2: the instruction, section title, prose, or manual Context state changed"
                 ),
                 3 => {
                     assert!(!card.hints.is_empty(), "card 3: no hint to open");
                     assert!(
                         walk.open_hint(&card.id().unwrap()),
                         "card 3: the hint chip does not open"
+                    );
+                    assert_eq!(
+                        shipped,
+                        std::fs::read(&deck_path).unwrap(),
+                        "card 3: opening the hint changed the shipped deck"
                     );
                 }
                 4 => assert_eq!(Mode::Choice, walk.mode(), "card 4: no choices to pick from"),
@@ -245,6 +277,11 @@ mod tests {
             assert!(
                 walk.grade(&mut store, Grade::Fail, now),
                 "card {number}: Missed it was refused"
+            );
+            assert_eq!(
+                shipped,
+                std::fs::read(&deck_path).unwrap(),
+                "card {number}: grading changed the shipped deck"
             );
         }
         assert_eq!(

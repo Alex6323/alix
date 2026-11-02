@@ -650,6 +650,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `POST /api/tutorial` now returns its documented plain-text 500 body when
+  opening the walk rejects the progress or cannot flush an earlier session.
+
 - Profile names now reject `:` so a Windows drive prefix cannot select a
   config or tutorial folder outside the profile directories.
 

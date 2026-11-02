@@ -104,7 +104,7 @@ pub(super) enum WalkAskOutcome {
 pub(super) enum TutorialOpened {
     NoBase,
     Failed(anyhow::Error),
-    Opened(Box<Transition<WalkDto>>),
+    Opened(WalkDto),
 }
 
 /// A command that replaces the active progress document: refused whenever
@@ -1790,7 +1790,15 @@ impl StudyState {
             return TutorialOpened::NoBase;
         };
         match crate::tutorial::materialize(&base) {
-            Ok(path) => TutorialOpened::Opened(Box::new(self.walk_open(path, true))),
+            Ok(path) => match self.walk_open(path, true) {
+                Transition::Done(dto) => TutorialOpened::Opened(dto),
+                Transition::Rejected => {
+                    TutorialOpened::Failed(anyhow::anyhow!("the tutorial walk was rejected"))
+                }
+                Transition::FlushFailed => TutorialOpened::Failed(anyhow::anyhow!(
+                    "progress could not be flushed before opening the tutorial"
+                )),
+            },
             Err(e) => TutorialOpened::Failed(e),
         }
     }

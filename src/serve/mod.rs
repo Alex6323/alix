@@ -1684,12 +1684,7 @@ pub fn run_review(
                         &e,
                         "the tutorial folder could not be written",
                     ),
-                    Some(TutorialOpened::Opened(opened)) => match *opened {
-                        Transition::Done(dto) => respond_json(request, &dto),
-                        Transition::Rejected | Transition::FlushFailed => {
-                            respond_status(request, 500)
-                        }
-                    },
+                    Some(TutorialOpened::Opened(dto)) => respond_json(request, &dto),
                 }
             }
             (Method::Get, "/api/walk") => match study.walk_poll() {

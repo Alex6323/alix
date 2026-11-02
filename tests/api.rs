@@ -7818,7 +7818,6 @@ fn tutorial_card_ids() -> Vec<String> {
         .collect()
 }
 
-/// The 1-based deck position of the walk's current item.
 fn tutorial_number(dto: &serde_json::Value, ids: &[String]) -> usize {
     let item = dto["card"]["id"]
         .as_str()
@@ -7829,8 +7828,6 @@ fn tutorial_number(dto: &serde_json::Value, ids: &[String]) -> usize {
         .unwrap_or_else(|| panic!("{item} is not a shipped tutorial card"))
 }
 
-/// Answers the current item (the correct pick on a choice item, else a
-/// reveal) and grades it, returning the next `WalkDto`.
 fn walk_item(base: &str, dto: &serde_json::Value, grade: &str) -> serde_json::Value {
     let opened = if dto["mode"] == "choice" {
         let index = dto["choices"]
@@ -7864,7 +7861,6 @@ fn the_menu_tutorial_is_a_walk_outside_the_library() {
     let listed_before = json_of(&http(&base, "GET", "/api/decks", &[], &[]));
     let decks_before = snapshot_dir(guard.dir());
 
-    // open: the shipped deck, flagged, starting at card 1 with its section
     let opened = post_json(&base, "/api/tutorial", "");
     assert_eq!(
         200,
@@ -7886,7 +7882,6 @@ fn the_menu_tutorial_is_a_walk_outside_the_library() {
         "open: (kind, tutorial, first card, section_first, total, deck in the base): {dto}"
     );
 
-    // first sitting: card 3 is partly known, the learner leaves after card 5
     for expected in 1..=5 {
         assert_eq!(
             expected,
@@ -7901,7 +7896,6 @@ fn the_menu_tutorial_is_a_walk_outside_the_library() {
         "first sitting: leave"
     );
 
-    // resume: card 3 waits first and the section opens on it; the cited card shows its source
     dto = json_of(&post_json(&base, "/api/tutorial", ""));
     assert_eq!(
         (3, true, true),
@@ -7933,7 +7927,6 @@ fn the_menu_tutorial_is_a_walk_outside_the_library() {
     );
     post_json(&base, "/api/walk/leave", "{}");
 
-    // full pass: nothing waits, so every card, least recently walked first
     let tutorial_store = alix::state::open_store(
         &tutorial_base.join(alix::tutorial::TUTORIAL_FILE),
         &tutorial_base,
@@ -7974,7 +7967,6 @@ fn the_menu_tutorial_is_a_walk_outside_the_library() {
     );
     post_json(&base, "/api/walk/leave", "{}");
 
-    // the library: no file, no progress, no recent entry
     let listed_after = json_of(&http(&base, "GET", "/api/decks", &[], &[]));
     assert!(
         decks_before == snapshot_dir(guard.dir()),
@@ -7985,7 +7977,6 @@ fn the_menu_tutorial_is_a_walk_outside_the_library() {
         "library: the recent list is unchanged"
     );
 
-    // the old seeded tutorial.md stays an ordinary deck with the decks folder's store
     assert!(
         listed_after.to_string().contains("\"tutorial.md\""),
         "old deck: the picker still lists it: {listed_after}"
@@ -8036,7 +8027,6 @@ fn law_no_personal_write_reaches_a_tutorial_walk() {
         poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
     };
 
-    // an ordinary walk: every row passes the gate
     assert_eq!(
         200,
         post_json(&base, "/api/walk", r#"{"deck":"walk.md"}"#).status,
@@ -8049,19 +8039,20 @@ fn law_no_personal_write_reaches_a_tutorial_walk() {
         poll_until(&base, "/api/walk/ask", |b| b["thinking"] == false);
     }
 
-    // a stale tab: the tutorial replaced the walk it still shows
     assert_eq!(
         200,
         post_json(&base, "/api/tutorial", "").status,
         "stale tab: the tutorial opens"
     );
+    let deck = tutorial_base.join(alix::tutorial::TUTORIAL_FILE);
+    let before = std::fs::read(&deck).unwrap();
+    let refused = post_json(&base, rows[2].0, rows[2].1);
     assert_eq!(
-        403,
-        post_json(&base, rows[2].0, rows[2].1).status,
-        "stale tab: create reaches the tutorial walk"
+        (403, before),
+        (refused.status, std::fs::read(&deck).unwrap()),
+        "stale tab: create is refused without changing the tutorial deck"
     );
 
-    // the tutorial walk: Ask stays, every personal write is refused
     ask("tutorial");
     for (path, body) in rows {
         let status = post_json(&base, path, body).status;
@@ -8082,7 +8073,7 @@ fn law_no_personal_write_reaches_a_tutorial_walk() {
 }
 
 #[test]
-fn an_unwritable_tutorial_base_fails_without_touching_the_library() {
+fn tutorial_open_failures_share_one_body_without_touching_the_library() {
     let tutorial_home = TempDir::new().unwrap();
     let locked = tutorial_home.path().join("locked");
     std::fs::create_dir(&locked).unwrap();
@@ -8097,14 +8088,35 @@ fn an_unwritable_tutorial_base_fails_without_touching_the_library() {
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let listed_after = json_of(&http(&base, "GET", "/api/decks", &[], &[]));
+
+    let progress_home = TempDir::new().unwrap();
+    let progress_base = progress_home.path().join("tutorial").join("default");
+    let deck_id = parser::parse(alix::tutorial::TUTORIAL_FILE, alix::tutorial::TUTORIAL_DECK)
+        .unwrap()
+        .deck_token
+        .unwrap();
+    let progress = alix::state::UserFiles::new(&progress_base).progress_for(&deck_id);
+    std::fs::create_dir_all(progress.parent().unwrap()).unwrap();
+    std::fs::write(&progress, "not json").unwrap();
+    let (progress_server, _progress_guard) = spawn_tutorial_server(&progress_base, None);
+    let progress_resp = post_json(&progress_server, "/api/tutorial", "");
+
     assert_eq!(
-        (500, "the tutorial folder could not be written", 409),
+        (
+            500,
+            "the tutorial folder could not be written",
+            500,
+            "the tutorial folder could not be written",
+            409,
+        ),
         (
             resp.status,
             String::from_utf8_lossy(&resp.body).as_ref(),
+            progress_resp.status,
+            String::from_utf8_lossy(&progress_resp.body).as_ref(),
             walk
         ),
-        "open: (status, body without the path, walk poll)"
+        "open: both failure paths use the public body and leave no walk"
     );
     assert!(
         decks_before == snapshot_dir(guard.dir()),
