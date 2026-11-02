@@ -1123,6 +1123,21 @@ pub fn profiles_dir() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", "alix").map(|dirs| dirs.config_dir().join("profiles"))
 }
 
+pub const RESERVED_PROFILE_NAMES: [&str; 4] = ["add", "list", "remove", "default"];
+
+pub fn validate_profile_name(name: &str) -> Result<()> {
+    if name.is_empty() || name.contains(['/', '\\', '.']) {
+        bail!("a profile name cannot be empty or contain `/`, `\\`, or `.`");
+    }
+    if RESERVED_PROFILE_NAMES.contains(&name) {
+        bail!(
+            "`{name}` is a reserved profile command; pick another name (reserved: {})",
+            RESERVED_PROFILE_NAMES.join(", ")
+        );
+    }
+    Ok(())
+}
+
 /// The launch profile a config path names: a file directly inside a
 /// `profiles` directory is named by its stem. Every other way of starting
 /// alix (an explicit config path, a scoped folder, the default config) has
@@ -1483,6 +1498,55 @@ pub fn default_config_toml() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn law_profile_names_reject_emptiness_separators_dots_and_reserved_verbs() {
+        let rows = [
+            ("timmy", None),
+            ("Default", None),
+            ("a-b_c", None),
+            (
+                "",
+                Some("a profile name cannot be empty or contain `/`, `\\`, or `.`"),
+            ),
+            (
+                "a/b",
+                Some("a profile name cannot be empty or contain `/`, `\\`, or `.`"),
+            ),
+            (
+                "a\\b",
+                Some("a profile name cannot be empty or contain `/`, `\\`, or `.`"),
+            ),
+            (
+                ".",
+                Some("a profile name cannot be empty or contain `/`, `\\`, or `.`"),
+            ),
+            (
+                "..",
+                Some("a profile name cannot be empty or contain `/`, `\\`, or `.`"),
+            ),
+            (
+                "default",
+                Some(
+                    "`default` is a reserved profile command; pick another name (reserved: add, list, remove, default)",
+                ),
+            ),
+        ];
+        for (name, rejection) in rows {
+            let verdict = validate_profile_name(name).map_err(|error| error.to_string());
+            assert_eq!(
+                rejection.map(str::to_string),
+                verdict.err(),
+                "profile name {name:?}"
+            );
+        }
+        for verb in RESERVED_PROFILE_NAMES {
+            assert!(
+                validate_profile_name(verb).is_err(),
+                "reserved verb {verb:?} was accepted as a profile name"
+            );
+        }
+    }
 
     #[test]
     fn review_defaults_when_unset() {

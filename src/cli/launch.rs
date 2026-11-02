@@ -4,9 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use alix::{
-    assemble, config::Config, recent::RecentDecks, serve, state::UserFiles, tutorial, workspace,
-};
+use alix::{assemble, config::Config, recent::RecentDecks, serve, state::UserFiles, workspace};
 use anyhow::{Context, Result, bail};
 
 use crate::LaunchArgs;
@@ -59,6 +57,12 @@ fn log_settings(config: &Config, targets: &[alix::log::Target]) -> alix::log::Se
     }
 }
 
+fn create_decks_dir(dir: &Path) {
+    if !dir.exists() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+}
+
 pub(crate) fn launch(args: LaunchArgs, instance: &str) -> Result<()> {
     let config = Config::load(args.config.as_deref())?;
     let logging = log_settings(&config, &args.log);
@@ -70,7 +74,7 @@ pub(crate) fn launch(args: LaunchArgs, instance: &str) -> Result<()> {
     let (decks_dir, user_root) = match &args.dir {
         None => {
             let dir = config.decks_dir().context("cannot determine ~/decks")?;
-            tutorial::seed_new_decks_dir(&dir);
+            create_decks_dir(&dir);
             let user_root = workspace::root_store_path(&dir);
             (dir, user_root)
         }

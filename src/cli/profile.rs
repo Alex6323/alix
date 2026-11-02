@@ -4,12 +4,10 @@ use std::{
     process::Command,
 };
 
-use alix::config::{Audience, Config, ProfileFolder};
+use alix::config::{Audience, Config, ProfileFolder, validate_profile_name};
 use anyhow::{Context, Result, bail};
 
 use crate::{ProfileAddArgs, ProfileCommand, ProfileDefaultArgs, common::confirm};
-
-pub(crate) const RESERVED: [&str; 4] = ["add", "list", "remove", "default"];
 
 pub(crate) fn profiles_dir() -> Result<PathBuf> {
     alix::config::profiles_dir().context("cannot determine the alix config directory")
@@ -21,19 +19,6 @@ pub(crate) fn config_path_in(dir: &Path, name: &str) -> PathBuf {
 
 pub(crate) fn default_marker_in(dir: &Path) -> PathBuf {
     dir.join("default")
-}
-
-pub(crate) fn validate_name(name: &str) -> Result<()> {
-    if name.is_empty() || name.contains(['/', '\\', '.']) {
-        bail!("a profile name cannot be empty or contain `/`, `\\`, or `.`");
-    }
-    if RESERVED.contains(&name) {
-        bail!(
-            "`{name}` is a reserved profile command; pick another name (reserved: {})",
-            RESERVED.join(", ")
-        );
-    }
-    Ok(())
 }
 
 pub(crate) fn run(cmd: ProfileCommand) -> Result<()> {
@@ -53,7 +38,7 @@ fn add(args: ProfileAddArgs) -> Result<()> {
 }
 
 fn add_in(dir: &Path, args: &ProfileAddArgs, config: &Config) -> Result<()> {
-    validate_name(&args.name)?;
+    validate_profile_name(&args.name)?;
     let path = config_path_in(dir, &args.name);
     if path.exists() {
         bail!("profile `{}` already exists; remove it first", args.name);
@@ -215,7 +200,7 @@ fn remove(name: &str, yes: bool) -> Result<()> {
 }
 
 fn remove_in(dir: &Path, name: &str, yes: bool) -> Result<()> {
-    validate_name(name)?;
+    validate_profile_name(name)?;
     let path = config_path_in(dir, name);
     if !path.exists() {
         bail!("no profile `{name}` (looked in {})", path.display());
@@ -245,7 +230,7 @@ fn default_cmd_in(dir: &Path, args: ProfileDefaultArgs) -> Result<()> {
     }
 
     if let Some(name) = args.name {
-        validate_name(&name)?;
+        validate_profile_name(&name)?;
         let path = config_path_in(dir, &name);
         if !path.exists() {
             bail!("no profile `{name}` (looked in {})", path.display());
@@ -296,7 +281,7 @@ pub(crate) fn launch_profile(name: &str) -> Result<()> {
 }
 
 pub(crate) fn launch_profile_with_log(name: &str, log: Vec<alix::log::Target>) -> Result<()> {
-    validate_name(name)?;
+    validate_profile_name(name)?;
     let path = config_path_in(&profiles_dir()?, name);
     if !path.exists() {
         bail!("no profile `{name}` (looked in {})", path.display());
@@ -342,7 +327,7 @@ fn resolve_default_in(dir: &Path) -> Result<Option<String>> {
     let Some(name) = read_default_in(dir)? else {
         return Ok(None);
     };
-    validate_name(&name)?;
+    validate_profile_name(&name)?;
     let path = config_path_in(dir, &name);
     if !path.exists() {
         bail!(
@@ -440,16 +425,6 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-
-    #[test]
-    fn reserved_verbs_are_rejected_as_names() {
-        for verb in RESERVED {
-            assert!(validate_name(verb).is_err(), "{verb} should be reserved");
-        }
-        assert!(validate_name("timmy").is_ok());
-        assert!(validate_name("").is_err());
-        assert!(validate_name("a/b").is_err());
-    }
 
     #[test]
     fn config_path_is_name_dot_toml_under_the_dir() {
