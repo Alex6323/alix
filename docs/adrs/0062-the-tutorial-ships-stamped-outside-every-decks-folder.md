@@ -19,13 +19,18 @@ Alix ships a tutorial: a deck (`assets/decks/tutorial.md`) whose cards
 teach the app by having the learner use the feature each card describes
 (grade, open a section's text, open a hint, pick a choice, reveal line by
 line, fill a blank, hide an answer, show a cited source). One card cites a
-small sample file shipped beside it (`assets/decks/tutorial-sample.py`), so
-the learner can see a source excerpt.
+small sample file shipped beside it (`assets/decks/tutorial-sample.py`): its
+locator names a line range in that file, so the learner can see the excerpt.
+A citation carries a fingerprint, a hash of the cited lines that flags when
+the file has drifted from what the card was written against.
 
 Before this record, the desktop copied the tutorial into a brand-new decks
-folder and the phone copied it (with two sample decks) into its decks folder
-on first run. Each copy was then initialized like any new deck (ADR 0018),
-so every install minted its own deck and card ids. The tutorial was listed
+folder and the phone copied it (with a `basics.md` deck and a sample
+workspace) into its decks folder on first run. Each copy was then
+initialized like any new deck (ADR 0018: a Markdown file becomes an Alix
+deck, which Alix may rewrite to add ids, only once a deck id is minted into
+it, by `alix deck init` or by a workflow that creates the deck), so every
+install minted its own deck and card ids. The tutorial was listed
 in the picker beside the learner's own decks, it was retired by deleting the
 file, and an app update could not change a copy already on disk.
 
@@ -41,34 +46,40 @@ cards that survives an app update.
 1. **Location.** The library function `tutorial::materialize(base)` writes
    the bundled deck and sample file into a tutorial folder and returns the
    deck path. The folder is outside every decks folder:
-   - Desktop: under the platform data root (the state directory of the
-     `alix` project directories, else its data directory, the same root
-     the log uses), `tutorial/default/` for a launch without a profile name
-     and `tutorial/profiles/<name>/` for a profile launch.
+   - Desktop: under the data root (the per-user state directory for alix,
+     on Linux `$XDG_STATE_HOME/alix`, else the per-user data directory on
+     platforms without one, such as macOS Application Support; the same
+     root the server log uses), `tutorial/default/` for a launch without a
+     profile name and `tutorial/profiles/<name>/` for a profile launch.
    - Phone: `tutorial/` in the app's support directory, beside its decks
      folder.
-2. **Profile name.** `tutorial::base_dir` uses a profile name only when it
+2. **Profile name.** A profile is a named config file in a `profiles`
+   directory, launched with `alix profile <name>` or `--config`; its name
+   is the file's stem. `tutorial::base_dir` uses a profile name only when it
    passes the same validation as `alix profile add` (not empty, no `/`,
    `\` or `.`, not one of the reserved names `add`, `list`, `remove`,
    `default`); any other name falls
    back to `tutorial/default/`. A name taken from a `--config` path is not
    otherwise validated, so this keeps the folder inside `tutorial/`.
    `alix profile remove <name>` deletes `tutorial/profiles/<name>/`.
-3. **Progress.** The tutorial walk stores its progress the way any
-   single-deck walk does, in the `.alix/` directory beside the deck, so in
-   the tutorial folder. It never touches the learner's decks folder, its
-   progress store, or the recent list.
+3. **Progress.** The tutorial walk stores its progress the way any walk
+   over one deck does, in the `.alix/` directory beside the deck (which
+   holds that deck's progress), so in the tutorial folder. It never touches
+   the learner's decks folder, the progress store of the served decks, or
+   the recently opened decks list.
 4. **Identity ships with the asset.** The deck id, card ids, the blank's
-   `b:` and `position:` stamps and the citation fingerprint are minted once
+   `b:` and `position:` stamps (machine-written markers that identify a
+   fill-in-the-blank span) and the citation fingerprint are minted once
    in the repository and committed. Every install shares these ids. Nothing
    initializes, stamps or re-mints the tutorial at runtime: `materialize`
    rewrites each of the two files only when its bytes differ from the
    bundled ones, and a walk of the bundled deck leaves it byte-identical.
 5. **No personal writes.** A walk opened as the tutorial is flagged
    (`WalkSession::mark_tutorial`), and every caller of a personal write
-   (a tutor note, a tutor-drafted card, a minted card) asks
-   `WalkSession::allows_personal_writes` first. The server answers 403 and
-   the phone bridge returns an error. Asking the tutor stays available.
+   (a note or a card the learner creates through the in-session AI tutor)
+   asks `WalkSession::allows_personal_writes` first. The web
+   server answers 403 and the phone bridge returns an error. Asking the
+   tutor stays available.
 6. **No seeding.** Neither client copies the tutorial or any sample deck
    into a decks folder. A first desktop run still creates the decks folder.
 7. **Editing the asset.** A new card is minted by running
@@ -96,8 +107,8 @@ cards that survives an app update.
 
 Residuals, named and not handled:
 
-- Scoped launches (`alix <dir>`) and `--config` launches that name no
-  profile share `tutorial/default/`.
+- Scoped launches (`alix <dir>`, which serve a named folder) and
+  `--config` launches that name no profile share `tutorial/default/`.
 - Two servers using `tutorial/default/` at once save its progress as whole
   documents, so one can overwrite the other's tutorial progress. Untested.
 - `alix --config <dir>/profiles/<name>.toml` with a `<dir>` other than the
@@ -129,12 +140,12 @@ rewrote the deck file would drop those ids and mint new ones, resetting the
 learner's tutorial progress on every update; keeping them would require
 merging the update into the stamped copy. Shipping the ids avoids both.
 
-### Keep the tutorial's progress in the instance's store
+### Keep the tutorial's progress with the served decks' progress
 
-The tutorial's progress would then sit in the same progress document as the
-learner's library. A separate folder keeps the two apart and needs no new
-store machinery, because a single-deck walk already stores progress beside
-its deck.
+The tutorial's progress would then sit in the progress store of the served
+decks, beside the learner's library. A separate folder keeps the two apart
+and needs no new store machinery, because a walk over one deck already
+stores progress beside its deck.
 
 ### Use the profile name unvalidated
 
@@ -146,7 +157,8 @@ is decided now.
 
 The on-disk layout `tutorial/default/` and `tutorial/profiles/<name>/` under
 the data root, and the shipped deck and card ids, are persisted. Changing
-either loses tutorial progress (not library progress). Pre-1.0, no reader
+either loses tutorial progress (not library progress). Pre-1.0 (the
+project's rule: no backwards compatibility before 1.0), no reader
 recognizes an earlier seeded copy; it is an ordinary deck.
 
 ## Security
@@ -157,7 +169,7 @@ after validation, so a crafted `--config` stem cannot move it out of
 `tutorial/`. The ADR 0018 boundary is unchanged for every other deck: the
 tutorial carries its own deck id and is never initialized at runtime. A
 tutorial walk refuses personal writes, so no learner content lands in the
-tutorial folder. A server without a platform data root answers 503 and
+tutorial folder. A web server without a data root answers 503 and
 writes nothing.
 
 ## Verification
