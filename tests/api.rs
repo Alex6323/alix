@@ -7947,18 +7947,30 @@ fn the_menu_tutorial_is_a_walk_outside_the_library() {
         walked.iter().all(Option::is_some),
         "full pass: the tutorial's own store holds every walk: {walked:?}"
     );
-    let oldest = (0..ids.len())
-        .min_by_key(|&index| (walked[index], index))
-        .map(|index| index + 1);
+    let mut least_recent: Vec<usize> = (1..=ids.len()).collect();
+    least_recent.sort_by_key(|&number| walked[number - 1]);
+    assert_ne!(
+        (1..=ids.len()).collect::<Vec<_>>(),
+        least_recent,
+        "full pass: the stored walks differ from deck order, so the order below discriminates"
+    );
     dto = json_of(&post_json(&base, "/api/tutorial", ""));
     assert_eq!(
-        (oldest, 9, true),
+        (9, true),
         (
-            Some(tutorial_number(&dto, &ids)),
             dto["total"].as_u64().unwrap_or_default(),
             dto["section_first"] == true
         ),
-        "full pass: (first card, total, section_first): {dto}"
+        "full pass: (total, section_first): {dto}"
+    );
+    let mut served = Vec::new();
+    while dto["phase"] != "done" {
+        served.push(tutorial_number(&dto, &ids));
+        dto = walk_item(&base, &dto, "passed");
+    }
+    assert_eq!(
+        least_recent, served,
+        "full pass: every card, least recently walked first"
     );
     post_json(&base, "/api/walk/leave", "{}");
 
@@ -8086,10 +8098,13 @@ fn an_unwritable_tutorial_base_fails_without_touching_the_library() {
 
     let listed_after = json_of(&http(&base, "GET", "/api/decks", &[], &[]));
     assert_eq!(
-        (500, false, 409),
-        (resp.status, resp.body.is_empty(), walk),
-        "open: (status, empty body, walk poll): {}",
-        String::from_utf8_lossy(&resp.body)
+        (500, "the tutorial folder could not be written", 409),
+        (
+            resp.status,
+            String::from_utf8_lossy(&resp.body).as_ref(),
+            walk
+        ),
+        "open: (status, body without the path, walk poll)"
     );
     assert!(
         decks_before == snapshot_dir(guard.dir()),

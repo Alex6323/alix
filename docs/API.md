@@ -616,7 +616,9 @@ nothing personal is written while it runs:
 `/api/walk/ask/card/create` answer `403`, including a request from a client
 that still shows an earlier walk. Every open rewrites the tutorial's files
 when they differ from the shipped ones and resumes its progress. A failure to
-write them is a 500 with the error as a plain-text body; a server with no
+write them is a 500 with the plain-text body `the tutorial folder could not be
+written` (the detail, which names the folder, goes to the server's stderr only);
+a server with no
 platform data folder answers 503. A kids audience gets `403`.
 
 ## 5. Endpoint reference

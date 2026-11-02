@@ -1678,7 +1678,12 @@ pub fn run_review(
                 }
                 match study.tutorial_open() {
                     None | Some(TutorialOpened::NoBase) => respond_status(request, 503),
-                    Some(TutorialOpened::Failed(e)) => respond_error(request, 500, &e),
+                    Some(TutorialOpened::Failed(e)) => respond_failure(
+                        request,
+                        500,
+                        &e,
+                        "the tutorial folder could not be written",
+                    ),
                     Some(TutorialOpened::Opened(opened)) => match *opened {
                         Transition::Done(dto) => respond_json(request, &dto),
                         Transition::Rejected | Transition::FlushFailed => {

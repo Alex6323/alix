@@ -228,6 +228,17 @@ pub(super) fn respond_error(request: Request, code: u16, error: &dyn std::fmt::D
     let _ = request.respond(Response::from_string(format!("{error:#}")).with_status_code(code));
 }
 
+pub(super) fn respond_failure(
+    request: Request,
+    code: u16,
+    error: &dyn std::fmt::Display,
+    body: &str,
+) {
+    report_failure(&request, code, error);
+    log_http_error(&request, code);
+    let _ = request.respond(Response::from_string(body).with_status_code(code));
+}
+
 /// Printed, never logged: the log carries no paths.
 pub(super) fn report_failure(request: &Request, code: u16, error: &dyn std::fmt::Display) {
     eprintln!(
