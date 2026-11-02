@@ -2262,6 +2262,28 @@ test("the tutor names the previous card while its note settles and the leave pro
   await expect(page.locator(".ask-thinking")).toBeVisible();
 });
 
+test("ctrl-s in the tutor makes the conversation a note, and the button shows the key", async ({ page }) => {
+  await openWildCram(page, "Recall");
+  await answerCurrentWildCard(page);
+  const exchange = {
+    transcript: [{ q: "Why?", a: "Because the source says so." }],
+    thinking: false,
+    previous_card: false,
+    can_distill: true,
+    status: null,
+    error: null,
+    draft: null,
+  };
+  await page.route("**/api/ask", (route) => route.fulfill({ json: exchange }));
+  await page.route("**/api/ask/note", (route) => route.fulfill({ json: { ...exchange, status: "note saved" } }));
+  await page.getByRole("button", { name: /^Ask/ }).click();
+  const note = page.locator("#legend .chip.distill", { hasText: /^Make this a note/ });
+  await expect(note, "note button: shows its default key").toContainText("ctrl-s");
+  const noteRequest = page.waitForRequest((r) => r.url().endsWith("/api/ask/note") && r.method() === "POST");
+  await page.keyboard.press("Control+s");
+  await noteRequest;
+});
+
 // Question and answer prose are left-aligned text inside a block that is
 // centred while its natural width is under the column; a block as wide as the
 // column fills it. A note stays left-aligned at its full measure.

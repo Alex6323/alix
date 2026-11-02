@@ -169,6 +169,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The tutor's **Make this a note** gets a default key, `ctrl-s`
+  (`[keys.review] make_note`), so both distill buttons have one.
+
 - The desktop no longer copies the tutorial deck into a new decks folder; a
   first run creates the folder empty. A `tutorial.md` copied in by an
   earlier version stays an ordinary deck. `alix profile remove` also

@@ -32,7 +32,7 @@ works. The rebindable `[keys.review]` actions are `failed`, `partly`, `passed`,
 `restart` (default `r`), `quit` (default `esc`, leaves the session, the walk, or
 the trace), `up`/`down` (defaults `k`/`j`) to move within a multiple-choice or
 key-point list (the arrow keys always work too), and the tutor's distill
-actions `make_note` (no default key) and `make_card` (default `ctrl-d`). Each
+actions `make_note` (default `ctrl-s`) and `make_card` (default `ctrl-d`). Each
 button shows the first key bound to its action, and no key hint when the action
 has none. While you're typing an answer
 (a reconstruct check), plain-character bindings are ignored so they can't

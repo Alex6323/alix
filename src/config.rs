@@ -110,7 +110,7 @@ impl Default for Bindings {
             ask: keys(&["a"]),
             context: keys(&["c"]),
             hint: keys(&["i"]),
-            make_note: keys(&[]),
+            make_note: keys(&["ctrl-s"]),
             make_card: keys(&["ctrl-d"]),
             quit: keys(&["esc"]),
         }
@@ -1367,7 +1367,7 @@ pub fn default_config_toml() -> &'static str {
 # ask = ["a"]                   # ask the tutor about an answered card
 # context = ["c"]               # swap the question for the card's section
 # hint = ["i"]                  # show the card's next hint
-# make_note = []                # ask view: condense the conversation into a note
+# make_note = ["ctrl-s"]        # ask view: condense the conversation into a note
 # make_card = ["ctrl-d"]        # ask view: distill the conversation into a card
 # quit = ["esc"]                # leave the session
 
@@ -2202,7 +2202,10 @@ mod tests {
 
     #[test]
     fn tutor_distill_keys_default_and_can_be_rebound() {
-        assert_eq!(Vec::<KeyPattern>::new(), Bindings::default().make_note);
+        assert_eq!(
+            vec![parse_key("ctrl-s").unwrap()],
+            Bindings::default().make_note
+        );
         assert_eq!(
             vec![parse_key("ctrl-d").unwrap()],
             Bindings::default().make_card
