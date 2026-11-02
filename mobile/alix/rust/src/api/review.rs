@@ -3198,6 +3198,37 @@ mod tests {
     }
 
     #[test]
+    fn a_graded_tutorial_item_is_stored_in_the_tutorial_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("tutorial");
+        let mut walk = opened_tutorial(&base);
+        let id = walk.tutor_card().expect("an item is current").id;
+        walk.reveal();
+        walk.grade(Grade::Pass, Some(T0)).unwrap();
+
+        assert!(
+            walk.store.path().starts_with(base.join(".alix")),
+            "the store file sits under the tutorial's own .alix: {}",
+            walk.store.path().display()
+        );
+        let stored = alix::state::open_store(&base.join("tutorial.md"), &base).unwrap();
+        assert_eq!(
+            Some(T0),
+            stored.get(&id).and_then(|state| state.walked_ms),
+            "the grade is read back from the tutorial folder"
+        );
+        let outside: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(
+            vec![std::ffi::OsString::from("tutorial")],
+            outside,
+            "nothing lands beside the tutorial folder"
+        );
+    }
+
+    #[test]
     fn law_the_tutorial_walk_refuses_each_personal_write() {
         type Write = fn(&mut WalkSession) -> Result<String>;
         let rows: [(&str, Write); 3] = [

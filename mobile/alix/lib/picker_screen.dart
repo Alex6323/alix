@@ -639,7 +639,13 @@ class _PickerScreenState extends State<PickerScreen> {
   }
 
   Future<void> _openTutorial() async {
-    final support = await _support();
+    final Directory support;
+    try {
+      support = await _support();
+    } catch (_) {
+      _snack('could not open the tutorial.');
+      return;
+    }
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
@@ -101,6 +102,36 @@ void main() {
     expectTutorialWalk(support, 'empty picker button');
     expect(Directory(root.path).listSync(), isEmpty,
         reason: 'empty picker button: nothing lands in the decks folder');
+  });
+
+  testWidgets('a support folder that cannot be found shows a snack, not a crash',
+      (tester) async {
+    final root = temp('alix-tut-decks-');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: alixDark(),
+        home: PickerScreen(
+          root: root.path,
+          currentThemeId: 'dark',
+          onSetTheme: (_) async {},
+        ),
+      ),
+    );
+    await settlePicker(tester);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (call) async => throw PlatformException(code: 'unavailable'),
+    );
+
+    await tester.tap(find.text('Tutorial'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('could not open the tutorial.'), findsOneWidget);
+    expect(find.byType(WalkScreen), findsNothing);
   });
 
   testWidgets('a drilled-in empty workspace does not offer the tutorial',
