@@ -183,6 +183,7 @@ const exam = createExam({
   },
   ui: {
     alert: window.alert.bind(window),
+    appendUnits,
     chip,
     deckEl,
     document,

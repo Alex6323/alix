@@ -979,14 +979,7 @@ impl RemoteExamining {
                     .iter()
                     .zip(s.answers())
                     .zip(&r.grades)
-                    .map(|((q, a), g)| ExamGradeDto {
-                        question: q.prompt.clone(),
-                        points: q.points.clone(),
-                        answer: a.clone(),
-                        verdict: g.verdict.label(),
-                        feedback: g.feedback.clone(),
-                        missed: g.missed.clone(),
-                    })
+                    .map(|((q, a), g)| exam_grade_dto(q, a, g))
                     .collect()
             })
             .unwrap_or_default();
@@ -997,6 +990,11 @@ impl RemoteExamining {
             // prompts only: the rubric never leaves the server outside a
             // graded result
             questions: s.questions().iter().map(|q| q.prompt.clone()).collect(),
+            questions_units: s
+                .questions()
+                .iter()
+                .map(|q| crate::render::exam_text_units(&q.prompt))
+                .collect(),
             passed: result.map(|r| r.passed),
             grades,
             gaps: s.gaps(),
@@ -1016,6 +1014,7 @@ pub(super) fn remote_exam_idle_dto() -> RemoteExamDto {
         deck: String::new(),
         strictness: "balanced",
         questions: Vec::new(),
+        questions_units: Vec::new(),
         passed: None,
         grades: Vec::new(),
         gaps: Vec::new(),

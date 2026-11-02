@@ -1498,6 +1498,7 @@ Example (from the pinned test):
 | `strictness` | string | `strict` \| `balanced` \| `lenient` *(closed)*. |
 | `total` / `current` | number | Question count / current index. |
 | `question` | string? | The current prompt (answering phase). |
+| `question_units` | [ContentUnit]? | `question` parsed like a tutor answer, except a prose run stays one unit: inline code, math, and fenced code blocks. |
 | `answer` | string | Saved answer for the current question. |
 | `on_last` | bool | |
 | `grades` | [ExamGradeDto] | Populated in results. |
@@ -1515,7 +1516,10 @@ Example (from the pinned test):
 ### ExamGradeDto
 
 `question`, `points: [string]`, `answer`, `verdict`, `feedback`,
-`missed: [string]`. **`verdict` is uppercase**: `PASS` \| `PARTIAL` \| `FAIL`
+`missed: [string]`, and the model-written ones parsed as `ExamDto.question_units`
+is: `question_units: [ContentUnit]`, `points_units: [[ContentUnit]]`,
+`feedback_units: [ContentUnit]`, `missed_units: [[ContentUnit]]` (one list per
+point or miss). `answer` is the learner's own text and stays raw. **`verdict` is uppercase**: `PASS` \| `PARTIAL` \| `FAIL`
 *(closed; note this vocabulary differs from grade tokens — two domains)*.
 
 ### AugmentDto / AugmentRowDto
@@ -1672,6 +1676,7 @@ deck, distinguished by `is_trace` (since 0.6.0).
 | `deck` | string | Deck name; empty at `idle`. |
 | `strictness` | string | `strict` \| `balanced` \| `lenient` *(closed)*. |
 | `questions` | [string] | Prompts only: the rubric (`ExamQuestion.points`) never leaves the server. A trace sitting has exactly one, the path's fixed compression question. |
+| `questions_units` | [[ContentUnit]] | Each of `questions` parsed as `ExamDto.question_units` is. |
 | `passed` | bool? | Null until graded. |
 | `grades` | [ExamGradeDto] | Populated in `results`/`remediated`. A trace sitting's is always one holistic grade. |
 | `gaps` | [string] | Named understanding gaps. |

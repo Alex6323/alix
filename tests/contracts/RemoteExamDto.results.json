@@ -11,13 +11,61 @@
     {
       "answer": "it has a garbage collector",
       "feedback": "Rust has no GC",
+      "feedback_units": [
+        {
+          "kind": "sentence",
+          "runs": [
+            {
+              "text": "Rust has no GC"
+            }
+          ],
+          "text": "Rust has no GC"
+        }
+      ],
       "missed": [
         "memory safety without a GC"
+      ],
+      "missed_units": [
+        [
+          {
+            "kind": "sentence",
+            "runs": [
+              {
+                "text": "memory safety without a GC"
+              }
+            ],
+            "text": "memory safety without a GC"
+          }
+        ]
       ],
       "points": [
         "memory safety without a GC"
       ],
+      "points_units": [
+        [
+          {
+            "kind": "sentence",
+            "runs": [
+              {
+                "text": "memory safety without a GC"
+              }
+            ],
+            "text": "memory safety without a GC"
+          }
+        ]
+      ],
       "question": "Why does Rust use ownership?",
+      "question_units": [
+        {
+          "kind": "sentence",
+          "runs": [
+            {
+              "text": "Why does Rust use ownership?"
+            }
+          ],
+          "text": "Why does Rust use ownership?"
+        }
+      ],
       "verdict": "FAIL"
     }
   ],
@@ -26,6 +74,19 @@
   "phase": "results",
   "questions": [
     "Why does Rust use ownership?"
+  ],
+  "questions_units": [
+    [
+      {
+        "kind": "sentence",
+        "runs": [
+          {
+            "text": "Why does Rust use ownership?"
+          }
+        ],
+        "text": "Why does Rust use ownership?"
+      }
+    ]
   ],
   "strictness": "balanced",
   "thinking": false

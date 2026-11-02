@@ -11,11 +11,60 @@
     {
       "answer": "it frees memory deterministically",
       "feedback": "solid",
+      "feedback_units": [
+        {
+          "kind": "sentence",
+          "runs": [
+            {
+              "text": "solid"
+            }
+          ],
+          "text": "solid"
+        }
+      ],
       "missed": [],
+      "missed_units": [],
       "points": [
         "memory safety without a GC"
       ],
-      "question": "Why does Rust use ownership?",
+      "points_units": [
+        [
+          {
+            "kind": "sentence",
+            "runs": [
+              {
+                "text": "memory safety without a GC"
+              }
+            ],
+            "text": "memory safety without a GC"
+          }
+        ]
+      ],
+      "question": "Why does `drop` run here?\n\n```rust\nlet s = String::new();\n```",
+      "question_units": [
+        {
+          "kind": "sentence",
+          "runs": [
+            {
+              "text": "Why does "
+            },
+            {
+              "code": true,
+              "text": "drop"
+            },
+            {
+              "text": " run here?"
+            }
+          ],
+          "text": "Why does `drop` run here?"
+        },
+        {
+          "kind": "code",
+          "lines": [
+            "let s = String::new();"
+          ]
+        }
+      ],
       "verdict": "PASS"
     }
   ],
@@ -24,6 +73,7 @@
   "passed": true,
   "phase": "results",
   "question": null,
+  "question_units": null,
   "remediated_count": null,
   "strictness": "balanced",
   "thinking": false,

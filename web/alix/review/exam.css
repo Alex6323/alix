@@ -17,10 +17,14 @@
   .exam-fail { color: var(--again); font-family: var(--mono); font-weight: 700; font-size: 1.15rem; }
   .exam-unlocks { color: var(--good); font-size: 0.9rem; }
   .exam-result { border-left: 3px solid var(--line); padding: 2px 0 4px 12px; }
-  .exam-rq { color: var(--ink); margin-bottom: 2px; }
+  .exam-rq { color: var(--ink); margin-bottom: 2px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 6px; }
+  .exam-q p, .exam-rq-text p, .exam-verdict .vfb p, .exam-points p, .exam-missed p { margin: 0 0 0.4em; }
+  .exam-q p:last-child, .exam-rq-text p:last-child, .exam-verdict .vfb p:last-child, .exam-points p:last-child, .exam-missed p:last-child { margin-bottom: 0; }
+  .exam-code { margin: 8px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--excerpt-bg); }
+  .exam-q .exam-code .source-line { font-size: 0.95rem; }
   /* per-question verdict: a bordered-mono PASS/PARTIAL/FAIL pill + neutral feedback text. */
   .exam-verdict { display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px; font-size: 0.92rem; }
-  .exam-verdict .vfb { color: var(--text); line-height: 1.45; }
+  .exam-verdict .vfb { flex: 1 1 0; min-width: 0; color: var(--text); line-height: 1.45; }
   .v-pill { flex: none; font-family: var(--mono); font-size: 0.64rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; }
   .v-pill.v-pass { color: var(--good); border-color: color-mix(in srgb, var(--good) 42%, transparent); }
   .v-pill.v-partial { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 42%, transparent); }

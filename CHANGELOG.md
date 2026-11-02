@@ -169,6 +169,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Exam questions stand alone: the examiner is told to reproduce any example
+  it builds on, to put code in a fenced block one statement per line, to drop
+  thinking aloud, and never to name a fix question's mistake. The web exam
+  renders questions, feedback and key points as formatted text (inline code,
+  math, code blocks), and a question's code block shows line numbers.
+  `ExamDto.question_units`, `ExamGradeDto.{question,points,feedback,missed}_units`
+  and `RemoteExamDto.questions_units` carry the parsed text.
+
 - The tutor's **Make this a note** gets a default key, `ctrl-s`
   (`[keys.review] make_note`), so both distill buttons have one.
 

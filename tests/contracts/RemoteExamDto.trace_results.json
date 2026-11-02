@@ -11,13 +11,61 @@
     {
       "answer": "it reads the file",
       "feedback": "missed the second hop",
+      "feedback_units": [
+        {
+          "kind": "sentence",
+          "runs": [
+            {
+              "text": "missed the second hop"
+            }
+          ],
+          "text": "missed the second hop"
+        }
+      ],
       "missed": [
         "it reads the second line"
+      ],
+      "missed_units": [
+        [
+          {
+            "kind": "sentence",
+            "runs": [
+              {
+                "text": "it reads the second line"
+              }
+            ],
+            "text": "it reads the second line"
+          }
+        ]
       ],
       "points": [
         "it reads the first line"
       ],
+      "points_units": [
+        [
+          {
+            "kind": "sentence",
+            "runs": [
+              {
+                "text": "it reads the first line"
+              }
+            ],
+            "text": "it reads the first line"
+          }
+        ]
+      ],
       "question": "how it works",
+      "question_units": [
+        {
+          "kind": "sentence",
+          "runs": [
+            {
+              "text": "how it works"
+            }
+          ],
+          "text": "how it works"
+        }
+      ],
       "verdict": "FAIL"
     }
   ],
@@ -26,6 +74,19 @@
   "phase": "results",
   "questions": [
     "how it works"
+  ],
+  "questions_units": [
+    [
+      {
+        "kind": "sentence",
+        "runs": [
+          {
+            "text": "how it works"
+          }
+        ],
+        "text": "how it works"
+      }
+    ]
   ],
   "strictness": "balanced",
   "thinking": false

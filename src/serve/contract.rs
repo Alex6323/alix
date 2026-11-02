@@ -3,6 +3,7 @@ use serde_json::json;
 use super::*;
 use crate::{
     answer::TypedResult,
+    exam,
     inline::InlineRun,
     math::MathView,
     render::{AnswerStep, CellAlign, ChecklistItem, ContentUnit},
@@ -844,16 +845,22 @@ fn examdto_results_phase_wire_shape() {
         total: 1,
         current: 1,
         question: None,
+        question_units: None,
         answer: String::new(),
         on_last: true,
-        grades: vec![ExamGradeDto {
-            question: "Why does Rust use ownership?".to_string(),
-            points: vec!["memory safety without a GC".to_string()],
-            answer: "it frees memory deterministically".to_string(),
-            verdict: "PASS",
-            feedback: "solid".to_string(),
-            missed: Vec::new(),
-        }],
+        grades: vec![exam_grade_dto(
+            &exam::ExamQuestion {
+                prompt: "Why does `drop` run here?\n\n```rust\nlet s = String::new();\n```"
+                    .to_string(),
+                points: vec!["memory safety without a GC".to_string()],
+            },
+            "it frees memory deterministically",
+            &exam::AnswerGrade {
+                verdict: exam::Verdict::Pass,
+                feedback: "solid".to_string(),
+                missed: Vec::new(),
+            },
+        )],
         passed: Some(true),
         gaps: Vec::new(),
         can_remediate: false,
@@ -875,15 +882,27 @@ fn examdto_results_phase_wire_shape() {
             "total": 1,
             "current": 1,
             "question": null,
+            "question_units": null,
             "answer": "",
             "on_last": true,
             "grades": [{
-                "question": "Why does Rust use ownership?",
+                "question": "Why does `drop` run here?\n\n```rust\nlet s = String::new();\n```",
+                "question_units": [
+                    {
+                        "kind": "sentence",
+                        "text": "Why does `drop` run here?",
+                        "runs": [{"text": "Why does "}, {"text": "drop", "code": true}, {"text": " run here?"}]
+                    },
+                    {"kind": "code", "lines": ["let s = String::new();"]}
+                ],
                 "points": ["memory safety without a GC"],
+                "points_units": [[{"kind": "sentence", "text": "memory safety without a GC", "runs": [{"text": "memory safety without a GC"}]}]],
                 "answer": "it frees memory deterministically",
                 "verdict": "PASS",
                 "feedback": "solid",
-                "missed": []
+                "feedback_units": [{"kind": "sentence", "text": "solid", "runs": [{"text": "solid"}]}],
+                "missed": [],
+                "missed_units": []
             }],
             "passed": true,
             "gaps": [],
@@ -912,6 +931,7 @@ fn examdto_cooldown_phase_wire_shape() {
             "total": 0,
             "current": 0,
             "question": null,
+            "question_units": null,
             "answer": "",
             "on_last": false,
             "grades": [],
@@ -2623,6 +2643,13 @@ fn remoteaskdto_note_wire_shape() {
     );
 }
 
+fn dto_questions_units(questions: &[String]) -> Vec<Vec<ContentUnit>> {
+    questions
+        .iter()
+        .map(|q| crate::render::exam_text_units(q))
+        .collect()
+}
+
 #[test]
 fn remoteexamdto_idle_wire_shape() {
     let dto = RemoteExamDto {
@@ -2630,6 +2657,7 @@ fn remoteexamdto_idle_wire_shape() {
         deck: String::new(),
         strictness: "balanced",
         questions: Vec::new(),
+        questions_units: dto_questions_units(&[]),
         passed: None,
         grades: Vec::new(),
         gaps: Vec::new(),
@@ -2648,6 +2676,7 @@ fn remoteexamdto_idle_wire_shape() {
             "deck": "",
             "strictness": "balanced",
             "questions": [],
+            "questions_units": [],
             "passed": null,
             "grades": [],
             "gaps": [],
@@ -2671,6 +2700,10 @@ fn remoteexamdto_answering_wire_shape() {
             "Why does Rust use ownership?".to_string(),
             "What is borrowing?".to_string(),
         ],
+        questions_units: dto_questions_units(&[
+            "Why does Rust use ownership?".to_string(),
+            "What is borrowing?".to_string(),
+        ]),
         passed: None,
         grades: Vec::new(),
         gaps: Vec::new(),
@@ -2689,6 +2722,7 @@ fn remoteexamdto_answering_wire_shape() {
             "deck": "rust.md",
             "strictness": "balanced",
             "questions": ["Why does Rust use ownership?", "What is borrowing?"],
+            "questions_units": [[{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}], [{"kind": "sentence", "text": "What is borrowing?", "runs": [{"text": "What is borrowing?"}]}]],
             "passed": null,
             "grades": [],
             "gaps": [],
@@ -2709,15 +2743,20 @@ fn remoteexamdto_results_wire_shape() {
         deck: "rust.md".to_string(),
         strictness: "balanced",
         questions: vec!["Why does Rust use ownership?".to_string()],
+        questions_units: dto_questions_units(&["Why does Rust use ownership?".to_string()]),
         passed: Some(false),
-        grades: vec![ExamGradeDto {
-            question: "Why does Rust use ownership?".to_string(),
-            points: vec!["memory safety without a GC".to_string()],
-            answer: "it has a garbage collector".to_string(),
-            verdict: "FAIL",
-            feedback: "Rust has no GC".to_string(),
-            missed: vec!["memory safety without a GC".to_string()],
-        }],
+        grades: vec![exam_grade_dto(
+            &exam::ExamQuestion {
+                prompt: "Why does Rust use ownership?".to_string(),
+                points: vec!["memory safety without a GC".to_string()],
+            },
+            "it has a garbage collector",
+            &exam::AnswerGrade {
+                verdict: exam::Verdict::Fail,
+                feedback: "Rust has no GC".to_string(),
+                missed: vec!["memory safety without a GC".to_string()],
+            },
+        )],
         gaps: vec!["ownership and the GC-free memory model".to_string()],
         can_remediate: true,
         cards: None,
@@ -2734,14 +2773,19 @@ fn remoteexamdto_results_wire_shape() {
             "deck": "rust.md",
             "strictness": "balanced",
             "questions": ["Why does Rust use ownership?"],
+            "questions_units": [[{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}]],
             "passed": false,
             "grades": [{
                 "question": "Why does Rust use ownership?",
+                "question_units": [{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}],
                 "points": ["memory safety without a GC"],
+                "points_units": [[{"kind": "sentence", "text": "memory safety without a GC", "runs": [{"text": "memory safety without a GC"}]}]],
                 "answer": "it has a garbage collector",
                 "verdict": "FAIL",
                 "feedback": "Rust has no GC",
-                "missed": ["memory safety without a GC"]
+                "feedback_units": [{"kind": "sentence", "text": "Rust has no GC", "runs": [{"text": "Rust has no GC"}]}],
+                "missed": ["memory safety without a GC"],
+                "missed_units": [[{"kind": "sentence", "text": "memory safety without a GC", "runs": [{"text": "memory safety without a GC"}]}]]
             }],
             "gaps": ["ownership and the GC-free memory model"],
             "can_remediate": true,
@@ -2761,15 +2805,20 @@ fn remoteexamdto_remediated_wire_shape() {
         deck: "rust.md".to_string(),
         strictness: "balanced",
         questions: vec!["Why does Rust use ownership?".to_string()],
+        questions_units: dto_questions_units(&["Why does Rust use ownership?".to_string()]),
         passed: Some(false),
-        grades: vec![ExamGradeDto {
-            question: "Why does Rust use ownership?".to_string(),
-            points: vec!["memory safety without a GC".to_string()],
-            answer: "it has a garbage collector".to_string(),
-            verdict: "FAIL",
-            feedback: "Rust has no GC".to_string(),
-            missed: vec!["memory safety without a GC".to_string()],
-        }],
+        grades: vec![exam_grade_dto(
+            &exam::ExamQuestion {
+                prompt: "Why does Rust use ownership?".to_string(),
+                points: vec!["memory safety without a GC".to_string()],
+            },
+            "it has a garbage collector",
+            &exam::AnswerGrade {
+                verdict: exam::Verdict::Fail,
+                feedback: "Rust has no GC".to_string(),
+                missed: vec!["memory safety without a GC".to_string()],
+            },
+        )],
         gaps: vec!["ownership and the GC-free memory model".to_string()],
         can_remediate: false,
         cards: Some(
@@ -2788,14 +2837,19 @@ fn remoteexamdto_remediated_wire_shape() {
             "deck": "rust.md",
             "strictness": "balanced",
             "questions": ["Why does Rust use ownership?"],
+            "questions_units": [[{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}]],
             "passed": false,
             "grades": [{
                 "question": "Why does Rust use ownership?",
+                "question_units": [{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}],
                 "points": ["memory safety without a GC"],
+                "points_units": [[{"kind": "sentence", "text": "memory safety without a GC", "runs": [{"text": "memory safety without a GC"}]}]],
                 "answer": "it has a garbage collector",
                 "verdict": "FAIL",
                 "feedback": "Rust has no GC",
-                "missed": ["memory safety without a GC"]
+                "feedback_units": [{"kind": "sentence", "text": "Rust has no GC", "runs": [{"text": "Rust has no GC"}]}],
+                "missed": ["memory safety without a GC"],
+                "missed_units": [[{"kind": "sentence", "text": "memory safety without a GC", "runs": [{"text": "memory safety without a GC"}]}]]
             }],
             "gaps": ["ownership and the GC-free memory model"],
             "can_remediate": false,
@@ -2815,15 +2869,20 @@ fn remoteexamdto_trace_results_wire_shape() {
         deck: "trace.md".to_string(),
         strictness: "balanced",
         questions: vec!["how it works".to_string()],
+        questions_units: dto_questions_units(&["how it works".to_string()]),
         passed: Some(false),
-        grades: vec![ExamGradeDto {
-            question: "how it works".to_string(),
-            points: vec!["it reads the first line".to_string()],
-            answer: "it reads the file".to_string(),
-            verdict: "FAIL",
-            feedback: "missed the second hop".to_string(),
-            missed: vec!["it reads the second line".to_string()],
-        }],
+        grades: vec![exam_grade_dto(
+            &exam::ExamQuestion {
+                prompt: "how it works".to_string(),
+                points: vec!["it reads the first line".to_string()],
+            },
+            "it reads the file",
+            &exam::AnswerGrade {
+                verdict: exam::Verdict::Fail,
+                feedback: "missed the second hop".to_string(),
+                missed: vec!["it reads the second line".to_string()],
+            },
+        )],
         gaps: vec!["it reads the second line".to_string()],
         // A trace sitting never offers remediation (a failed compression is
         // retraced, not remediated into cards): true here would be a bug.
@@ -2842,14 +2901,19 @@ fn remoteexamdto_trace_results_wire_shape() {
             "deck": "trace.md",
             "strictness": "balanced",
             "questions": ["how it works"],
+            "questions_units": [[{"kind": "sentence", "text": "how it works", "runs": [{"text": "how it works"}]}]],
             "passed": false,
             "grades": [{
                 "question": "how it works",
+                "question_units": [{"kind": "sentence", "text": "how it works", "runs": [{"text": "how it works"}]}],
                 "points": ["it reads the first line"],
+                "points_units": [[{"kind": "sentence", "text": "it reads the first line", "runs": [{"text": "it reads the first line"}]}]],
                 "answer": "it reads the file",
                 "verdict": "FAIL",
                 "feedback": "missed the second hop",
-                "missed": ["it reads the second line"]
+                "feedback_units": [{"kind": "sentence", "text": "missed the second hop", "runs": [{"text": "missed the second hop"}]}],
+                "missed": ["it reads the second line"],
+                "missed_units": [[{"kind": "sentence", "text": "it reads the second line", "runs": [{"text": "it reads the second line"}]}]]
             }],
             "gaps": ["it reads the second line"],
             "can_remediate": false,

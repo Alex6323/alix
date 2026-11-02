@@ -11,7 +11,7 @@ use crate::{
     depth::{Depth, depth_name},
     doctor, exam,
     inline::{DisplayProjector, InlineRun},
-    render::ContentUnit,
+    render::{ContentUnit, exam_text_units},
     review::{self, CardView},
     session::{Cell, now_ms},
     source::Excerpt,
@@ -660,6 +660,7 @@ pub(super) struct ExamDto {
     pub(super) total: usize,
     pub(super) current: usize,
     pub(super) question: Option<String>,
+    pub(super) question_units: Option<Vec<ContentUnit>>,
     pub(super) answer: String,
     pub(super) on_last: bool,
     pub(super) grades: Vec<ExamGradeDto>,
@@ -684,6 +685,7 @@ pub(super) fn cooldown_dto(deck: &str, cooldown_ms: u64) -> ExamDto {
         total: 0,
         current: 0,
         question: None,
+        question_units: None,
         answer: String::new(),
         on_last: false,
         grades: Vec::new(),
@@ -703,11 +705,35 @@ pub(super) fn cooldown_dto(deck: &str, cooldown_ms: u64) -> ExamDto {
 #[derive(Serialize)]
 pub(super) struct ExamGradeDto {
     pub(super) question: String,
+    pub(super) question_units: Vec<ContentUnit>,
     pub(super) points: Vec<String>,
+    pub(super) points_units: Vec<Vec<ContentUnit>>,
     pub(super) answer: String,
     pub(super) verdict: &'static str,
     pub(super) feedback: String,
+    pub(super) feedback_units: Vec<ContentUnit>,
     pub(super) missed: Vec<String>,
+    pub(super) missed_units: Vec<Vec<ContentUnit>>,
+}
+
+pub(super) fn exam_grade_dto(
+    question: &exam::ExamQuestion,
+    answer: &str,
+    grade: &exam::AnswerGrade,
+) -> ExamGradeDto {
+    let each = |texts: &[String]| texts.iter().map(|t| exam_text_units(t)).collect();
+    ExamGradeDto {
+        question: question.prompt.clone(),
+        question_units: exam_text_units(&question.prompt),
+        points: question.points.clone(),
+        points_units: each(&question.points),
+        answer: answer.to_string(),
+        verdict: grade.verdict.label(),
+        feedback: grade.feedback.clone(),
+        feedback_units: exam_text_units(&grade.feedback),
+        missed: grade.missed.clone(),
+        missed_units: each(&grade.missed),
+    }
 }
 
 pub(super) fn exam_phase_name(phase: &exam::Phase) -> &'static str {
@@ -738,14 +764,7 @@ pub(super) fn exam_dto(ex: &Examining) -> ExamDto {
                 .iter()
                 .zip(s.answers())
                 .zip(&r.grades)
-                .map(|((q, a), g)| ExamGradeDto {
-                    question: q.prompt.clone(),
-                    points: q.points.clone(),
-                    answer: a.clone(),
-                    verdict: g.verdict.label(),
-                    feedback: g.feedback.clone(),
-                    missed: g.missed.clone(),
-                })
+                .map(|((q, a), g)| exam_grade_dto(q, a, g))
                 .collect()
         })
         .unwrap_or_default();
@@ -762,6 +781,7 @@ pub(super) fn exam_dto(ex: &Examining) -> ExamDto {
         total: s.total(),
         current: s.current_index(),
         question: s.question().map(|q| q.prompt.clone()),
+        question_units: s.question().map(|q| exam_text_units(&q.prompt)),
         answer: s.answer().to_string(),
         on_last: s.on_last(),
         grades,
@@ -848,6 +868,7 @@ pub(super) struct RemoteExamDto {
     pub(super) strictness: &'static str,
     /// Prompts only: the rubric never leaves the server.
     pub(super) questions: Vec<String>,
+    pub(super) questions_units: Vec<Vec<ContentUnit>>,
     pub(super) passed: Option<bool>,
     pub(super) grades: Vec<ExamGradeDto>,
     pub(super) gaps: Vec<String>,

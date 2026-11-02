@@ -13,6 +13,30 @@
     "Why does Rust use ownership?",
     "What is borrowing?"
   ],
+  "questions_units": [
+    [
+      {
+        "kind": "sentence",
+        "runs": [
+          {
+            "text": "Why does Rust use ownership?"
+          }
+        ],
+        "text": "Why does Rust use ownership?"
+      }
+    ],
+    [
+      {
+        "kind": "sentence",
+        "runs": [
+          {
+            "text": "What is borrowing?"
+          }
+        ],
+        "text": "What is borrowing?"
+      }
+    ]
+  ],
   "strictness": "balanced",
   "thinking": false
 }

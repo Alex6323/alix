@@ -13,6 +13,7 @@
   "passed": null,
   "phase": "cooldown",
   "question": null,
+  "question_units": null,
   "remediated_count": null,
   "strictness": "balanced",
   "thinking": false,

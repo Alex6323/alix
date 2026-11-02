@@ -58,8 +58,11 @@ own). Within a section the questions cycle through three shapes: a concrete
 **instance** no card shows, a **boundary** (when does the idea stop holding),
 and a **fix** (a statement with one seeded mistake to find and correct). The
 section's heading, prose and cards go into the prompt only as scope, so the
-model knows what the deck already asks and avoids it. Each question comes with
-the key points a correct answer must hit. You type a
+model knows what the deck already asks and avoids it. A question stands alone:
+it shows any program or claim it asks about instead of pointing at the source,
+and a program comes as a code block with numbered lines, so an answer can name
+"line 3". Questions, feedback and key points render inline code and math. Each
+question comes with the key points a correct answer must hit. You type a
 prose answer per question, and an examiner grades each **Pass / Partial / Fail
 against the source's rubric, never against your cards** (grading the cards would
 be circular). The model calls run on a background thread, so the UI stays

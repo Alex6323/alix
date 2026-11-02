@@ -10,6 +10,7 @@
   "passed": null,
   "phase": "idle",
   "questions": [],
+  "questions_units": [],
   "strictness": "balanced",
   "thinking": false
 }

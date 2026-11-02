@@ -883,10 +883,12 @@ fn questions_prompt(
          truly UNDERSTANDS a topic — not whether they memorized isolated facts.\n\n\
          {sources}\n\
          {ask}\
+         {QUESTION_FORM}\
          For each question, list the key points a correct answer MUST contain — \
          the specific, source-grounded facts or reasoning steps you will grade \
          against. Be concrete; these are the rubric.\n\n\
-         Output ONLY JSON in exactly this shape, no prose, no code fences:\n\
+         Output ONLY JSON in exactly this shape, no prose, no code fences around \
+         it (a fence inside a `prompt` string is fine):\n\
          {shape}"
     );
     if let Some(extra) = cfg
@@ -900,6 +902,25 @@ fn questions_prompt(
     }
     Ok(prompt)
 }
+
+const QUESTION_FORM: &str = "\
+How each question reads:
+- It stands alone. The student sees only the question, never the source: \
+reproduce any example, listing or claim you build on in full. Never point at \
+what the student cannot see (\"the book's shadowing example\", \"the \
+Reference shows\", \"the idiom's form\"); naming the source is fine only \
+beside the reproduced content, never instead of it.
+- Code goes in a fenced block (```rust and so on) after the prose, one \
+statement per line, so the student can refer to its lines; a quoted claim \
+goes in a `>` quote. Inline backticks only for a short name or expression \
+inside a sentence.
+- Write only the finished question: no thinking aloud and no self-correction \
+(\"wait\", \"actually\") in the question or in a claim it quotes.
+- Never give the answer away. A fix question names neither the mistake, nor \
+its line, nor the rule it breaks; any question avoids wording that states \
+what the student must work out.
+
+";
 
 fn strictness_criteria(strictness: Strictness) -> &'static str {
     match strictness {
@@ -1484,6 +1505,34 @@ mod tests {
             sections[0].cards
         );
         assert!(sections[0].cards[0].contains("a1?") && sections[0].cards[0].contains("one"));
+    }
+
+    #[test]
+    fn questions_prompt_asks_for_standalone_fenced_questions_that_hide_the_answer() {
+        let sources = url_layers(&["https://example.org/ownership"]);
+        for sections in [
+            Vec::new(),
+            vec![ExamSection {
+                context: vec!["# Moves".to_string()],
+                cards: vec!["Q: a\nA: b".to_string()],
+            }],
+        ] {
+            let p = questions_prompt(&sources, None, &sections, &ExamConfig::default()).unwrap();
+            for rule in [
+                "It stands alone.",
+                "Code goes in a fenced block",
+                "one statement per line",
+                "no thinking aloud and no self-correction",
+                "Never give the answer away.",
+                "a fence inside a `prompt` string is fine",
+            ] {
+                assert!(
+                    p.contains(rule),
+                    "{} sections: missing {rule:?}",
+                    sections.len()
+                );
+            }
+        }
     }
 
     #[test]

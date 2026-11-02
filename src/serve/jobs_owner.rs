@@ -39,7 +39,7 @@ pub(super) enum Started<T> {
 }
 
 pub(super) enum RemoteGradeReply {
-    Dto(RemoteExamDto),
+    Dto(Box<RemoteExamDto>),
     NoSitting,
     WrongPhaseOrCount,
 }
@@ -545,7 +545,7 @@ impl JobsState {
                                 RemoteGradeReply::WrongPhaseOrCount
                             } else {
                                 ex.sitting.submit();
-                                RemoteGradeReply::Dto(ex.dto())
+                                RemoteGradeReply::Dto(Box::new(ex.dto()))
                             }
                         }
                     }

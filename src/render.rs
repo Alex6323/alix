@@ -402,6 +402,13 @@ pub fn tutor_answer_units(text: &str) -> Vec<ContentUnit> {
     text_units_with(text, &mut projector, true, &mut plain_fences(&[]))
 }
 
+/// Exam text (a question, a rubric point, feedback) in the tutor's grammar,
+/// but a prose run stays one unit: a question reads as one paragraph.
+pub fn exam_text_units(text: &str) -> Vec<ContentUnit> {
+    let mut projector = DisplayProjector::default();
+    text_units_with(text, &mut projector, false, &mut plain_fences(&[]))
+}
+
 /// With `split_prose_sentences` set, one prose run can yield several units,
 /// and they share that run's span; the answer path, the only caller that
 /// reads spans, passes false.
@@ -2091,6 +2098,30 @@ mod tests {
         assert_eq!(
             vec![sentence("First idea."), sentence("Second idea.")],
             tutor_answer_units("First idea. Second idea.")
+        );
+    }
+
+    #[test]
+    fn exam_text_keeps_prose_whole_with_code_runs_and_fences_its_program() {
+        let units = exam_text_units(
+            "Does this compile? Name the line that fails.\n\n```rust\nlet x = 5;\nx += 1;\n```\n\nExplain what `mut` changes.",
+        );
+        let [
+            ContentUnit::Sentence { text: ask, .. },
+            ContentUnit::Code { lines },
+            ContentUnit::Sentence { runs, .. },
+        ] = units.as_slice()
+        else {
+            panic!("question, program, follow-up expected: {units:?}");
+        };
+        assert_eq!("Does this compile? Name the line that fails.", ask);
+        assert_eq!(
+            &vec!["let x = 5;".to_string(), "x += 1;".to_string()],
+            lines
+        );
+        assert!(
+            runs.iter().any(|run| run.code && run.text == "mut"),
+            "the backtick body must stay a code run: {runs:?}"
         );
     }
 

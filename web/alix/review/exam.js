@@ -11,6 +11,7 @@ export function createExam({
 }) {
   const {
     alert: alertUser,
+    appendUnits,
     chip,
     deckEl,
     document: doc,
@@ -25,6 +26,29 @@ export function createExam({
   let data = null;
   let confirmingQuit = false;
   let poll = null;
+
+  function numberedCode(lines) {
+    const code = el("div", "source-code exam-code");
+    lines.forEach((line, index) => {
+      const row = el("div", "source-line");
+      row.appendChild(el("span", "source-number", String(index + 1)));
+      row.appendChild(el("span", "source-text", line));
+      code.appendChild(row);
+    });
+    return code;
+  }
+
+  function appendExamText(parent, units, text) {
+    if (!units) {
+      parent.appendChild(doc.createTextNode(text || ""));
+      return parent;
+    }
+    for (const unit of units) {
+      if (unit.kind === "code") parent.appendChild(numberedCode(unit.lines || []));
+      else appendUnits(parent, [unit]);
+    }
+    return parent;
+  }
 
   function isOpen() {
     return data !== null;
@@ -177,7 +201,7 @@ export function createExam({
 
     if (current.phase === "answering") {
       wrap.appendChild(el("div", "exam-progress", `Question ${current.current + 1} / ${current.total}`));
-      wrap.appendChild(el("div", "exam-q", current.question || ""));
+      wrap.appendChild(appendExamText(el("div", "exam-q"), current.question_units, current.question));
       const input = el("textarea", "exam-input");
       input.placeholder = "Type your answer… (Shift+Enter to continue)";
       input.value = current.answer || "";
@@ -207,22 +231,29 @@ export function createExam({
       }
       current.grades.forEach((grade, index) => {
         const question = el("div", "exam-result");
-        question.appendChild(el("div", "exam-rq", `Q${index + 1}. ${grade.question}`));
+        const asked = el("div", "exam-rq");
+        asked.appendChild(el("span", "exam-qn", `Q${index + 1}.`));
+        asked.appendChild(appendExamText(el("div", "exam-rq-text"), grade.question_units, grade.question));
+        question.appendChild(asked);
         const verdict = el("div", "exam-verdict");
         verdict.appendChild(el("span", `v-pill v-${grade.verdict.toLowerCase()}`, grade.verdict));
-        verdict.appendChild(el("span", "vfb", grade.feedback));
+        verdict.appendChild(appendExamText(el("div", "vfb"), grade.feedback_units, grade.feedback));
         question.appendChild(verdict);
         if (grade.verdict !== "PASS") {
           if (grade.points.length) {
             question.appendChild(el("div", "exam-label", "A complete answer covers:"));
             const points = el("ul", "exam-points");
-            grade.points.forEach((point) => points.appendChild(el("li", null, point)));
+            grade.points.forEach((point, i) => {
+              points.appendChild(appendExamText(el("li"), grade.points_units?.[i], point));
+            });
             question.appendChild(points);
           }
           if (grade.missed.length) {
             question.appendChild(el("div", "exam-label", "You missed:"));
             const missed = el("ul", "exam-missed");
-            grade.missed.forEach((point) => missed.appendChild(el("li", null, point)));
+            grade.missed.forEach((point, i) => {
+              missed.appendChild(appendExamText(el("li"), grade.missed_units?.[i], point));
+            });
             question.appendChild(missed);
           }
         }
