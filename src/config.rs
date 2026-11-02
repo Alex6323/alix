@@ -1126,8 +1126,8 @@ pub fn profiles_dir() -> Option<PathBuf> {
 pub const RESERVED_PROFILE_NAMES: [&str; 4] = ["add", "list", "remove", "default"];
 
 pub fn validate_profile_name(name: &str) -> Result<()> {
-    if name.is_empty() || name.contains(['/', '\\', '.']) {
-        bail!("a profile name cannot be empty or contain `/`, `\\`, or `.`");
+    if name.is_empty() || name.contains(['/', '\\', '.', ':']) {
+        bail!("a profile name cannot be empty or contain `/`, `\\`, `.`, or `:`");
     }
     if RESERVED_PROFILE_NAMES.contains(&name) {
         bail!(
@@ -1500,31 +1500,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn law_profile_names_reject_emptiness_separators_dots_and_reserved_verbs() {
+    fn law_profile_names_reject_emptiness_separators_dots_colons_and_reserved_verbs() {
+        let invalid = Some("a profile name cannot be empty or contain `/`, `\\`, `.`, or `:`");
         let rows = [
             ("timmy", None),
             ("Default", None),
             ("a-b_c", None),
-            (
-                "",
-                Some("a profile name cannot be empty or contain `/`, `\\`, or `.`"),
-            ),
-            (
-                "a/b",
-                Some("a profile name cannot be empty or contain `/`, `\\`, or `.`"),
-            ),
-            (
-                "a\\b",
-                Some("a profile name cannot be empty or contain `/`, `\\`, or `.`"),
-            ),
-            (
-                ".",
-                Some("a profile name cannot be empty or contain `/`, `\\`, or `.`"),
-            ),
-            (
-                "..",
-                Some("a profile name cannot be empty or contain `/`, `\\`, or `.`"),
-            ),
+            ("", invalid),
+            ("a/b", invalid),
+            ("a\\b", invalid),
+            (".", invalid),
+            ("..", invalid),
+            ("C:", invalid),
             (
                 "default",
                 Some(

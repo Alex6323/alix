@@ -35,6 +35,8 @@ household, with its own decks folder, port, and adult or kids frontend. Each
 profile is a normal config file under the platform config directory's
 `profiles/` folder.
 
+A profile name cannot be empty or contain `/`, `\`, `.`, or `:`.
+
 ```sh
 alix profile add timmy --decks ~/decks-timmy --port 7002 --kids
 alix profile list

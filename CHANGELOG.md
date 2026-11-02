@@ -650,6 +650,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Profile names now reject `:` so a Windows drive prefix cannot select a
+  config or tutorial folder outside the profile directories.
+
 - `alix deck init` on a workspace member deletes the files in
   `assets/deck-<token>/` the deck no longer references. Each re-freeze of a
   changed citation used to leave the old excerpt behind, and sharing or

@@ -253,14 +253,15 @@ in that folder's `.alix/` directory. On the desktop the folder is
 root as the server log; on the phone it is `tutorial/` in the app's support
 directory. Each open rewrites a file only when its bytes differ from the
 bundled ones, so edits made there are overwritten. A profile name selects
-the folder only after the profile-name validation, so a `--config` file stem
-such as `..` falls back to `tutorial/default/` instead of leaving
-`tutorial/`. A tutorial walk refuses tutor notes and tutor-made cards (server
+the folder only after the profile-name validation. Profile names containing
+path separators, `.`, or `:` are rejected, and a `--config` file stem such as
+`..` falls back to `tutorial/default/` instead of leaving `tutorial/`. A
+tutorial walk refuses tutor notes and tutor-made cards (server
 `403`, bridge error), so no learner-authored content is written there.
 `alix profile remove <name>` deletes that profile's tutorial folder. Named
 and unhandled: two servers sharing `tutorial/default/` can overwrite each
-other's tutorial progress, and a profile name containing `:` is unproven on
-Windows (`src/tutorial.rs`, `src/walk.rs`, `tests/api.rs`, ADR 0062).
+other's tutorial progress (`src/tutorial.rs`, `src/walk.rs`, `tests/api.rs`,
+ADR 0062).
 
 ### Bug-report archive
 
