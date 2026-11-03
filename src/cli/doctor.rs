@@ -468,6 +468,14 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             ));
         }
     }
+    if !deck.is_trace() {
+        for (_, reason) in alix::exam::unreadable_exam_entries(deck) {
+            report.warn(format!(
+                "{}: {reason}; the exam refuses to start",
+                deck.path.display()
+            ));
+        }
+    }
     for (key, root) in &deck.cite {
         if exam_points_into_assets(root) {
             report.warn(format!(
@@ -2424,6 +2432,38 @@ mod tests {
         assert!(!exam_points_into_assets(
             "https://example.test/assets/deck-one/object.md"
         ));
+    }
+
+    #[test]
+    fn an_exam_entry_the_exam_cannot_read_is_a_warning_but_a_trace_scope_directory_is_not() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        w(dir.path(), "fact.md", "---\nexam: src\n---\n## q\na\n");
+        w(
+            dir.path(),
+            "walk.md",
+            "---\ntrace: how a walk goes\nexam: src\n---\n## hop\nstep\n",
+        );
+
+        let mut fact = Report::default();
+        deck_resource_findings(&Deck::load(dir.path().join("fact.md")).unwrap(), &mut fact);
+        assert!(
+            fact.warnings
+                .iter()
+                .any(|warning| warning.contains("cannot read `exam:`") && warning.contains("src")),
+            "fact deck: a directory entry is a warning: {:#?}",
+            fact.warnings
+        );
+
+        let mut walk = Report::default();
+        deck_resource_findings(&Deck::load(dir.path().join("walk.md")).unwrap(), &mut walk);
+        assert!(
+            walk.warnings
+                .iter()
+                .all(|warning| !warning.contains("cannot read `exam:`")),
+            "trace deck: `exam:` is its walk scope, not exam material: {:#?}",
+            walk.warnings
+        );
     }
 
     #[test]

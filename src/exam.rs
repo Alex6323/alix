@@ -722,6 +722,23 @@ struct LayerSection {
     files: Vec<(String, String)>,
 }
 
+pub fn unreadable_exam_entries(deck: &Deck) -> Vec<(String, String)> {
+    deck.exam
+        .iter()
+        .filter(|src| !deck::is_url(src))
+        .filter_map(|src| {
+            let path = crate::source::source_path(src, deck.path.parent())?;
+            read_exam_file(&path)
+                .err()
+                .map(|error| (src.trim().to_string(), format!("{error:#}")))
+        })
+        .collect()
+}
+
+fn read_exam_file(path: &Path) -> Result<String> {
+    std::fs::read_to_string(path).with_context(|| format!("cannot read `exam:` {}", path.display()))
+}
+
 fn split_layer(sources: &[String], base: Option<&Path>) -> Result<LayerSection> {
     let mut urls = Vec::new();
     let mut files = Vec::new();
@@ -733,8 +750,7 @@ fn split_layer(sources: &[String], base: Option<&Path>) -> Result<LayerSection> 
         let Some(path) = crate::source::source_path(src, base) else {
             continue;
         };
-        let text = std::fs::read_to_string(&path)
-            .with_context(|| format!("cannot read `exam:` {}", path.display()))?;
+        let text = read_exam_file(&path)?;
         let declared = src.trim();
         let label = if Path::new(declared).has_root() {
             path.file_name()
@@ -1177,6 +1193,35 @@ struct GradesDto {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unreadable_exam_entries_names_a_directory_and_a_missing_file_but_not_a_file_or_url() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("notes.md"), "n").unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "---\nexam: [notes.md, src, ghost.md, https://example.test/page]\n---\n## q\na\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&path).unwrap();
+
+        let unreadable = unreadable_exam_entries(&deck);
+
+        let names: Vec<&str> = unreadable.iter().map(|(entry, _)| entry.as_str()).collect();
+        assert_eq!(
+            vec!["src", "ghost.md"],
+            names,
+            "unreadable entries: {unreadable:#?}"
+        );
+        assert!(
+            unreadable
+                .iter()
+                .all(|(_, why)| why.starts_with("cannot read `exam:`")),
+            "each reason is the exam's own start error: {unreadable:#?}"
+        );
+    }
 
     fn deck_with_exam(srcs: &[&str]) -> Deck {
         Deck {

@@ -183,6 +183,12 @@ export function createExam({
     const wrap = el("div", "exam");
     if (current.error) wrap.appendChild(el("div", "exam-error", `⚠ ${current.error}`));
 
+    if (current.phase === "generating" && current.error && !current.thinking) {
+      stage.appendChild(wrap);
+      chip("Close", "", close, "esc");
+      return;
+    }
+
     if (["generating", "grading", "remediating"].includes(current.phase)) {
       const message = {
         generating: "Preparing your exam…",

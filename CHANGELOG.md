@@ -650,6 +650,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The web exam no longer shows "Preparing your exam…" and a working
+  indicator forever when its questions could not be generated (for
+  example, an unreadable `exam:` entry); it shows the error and Close.
+- `alix doctor` warns about an `exam:` file the exam cannot read (missing,
+  or a directory); it used to stay silent, and the exam then refused to
+  start. The book no longer lists directories as exam material.
 - `POST /api/tutorial` answers every failure to open with one 500 body,
   `the tutorial could not be opened`; a rejected walk or a failed progress
   flush used to return an empty body.

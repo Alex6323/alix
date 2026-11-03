@@ -11,8 +11,9 @@ you to pass an exam *against that source* before it counts.
 
 ## Declaring the exam material: `exam:`
 
-Name one or more sources in the deck's frontmatter, each a URL, a file, or a
-directory:
+Name one or more sources in the deck's frontmatter, each a URL or a file. A
+directory is not exam material: the exam refuses to start on one, and
+`alix doctor` reports any `exam:` file it cannot read:
 
 ```
 ---

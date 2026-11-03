@@ -92,3 +92,19 @@ test("exam results render the question, feedback, and rubric points from their u
   await expect(result, "results: no literal backticks").not.toContainText("`");
   if (process.env.ALIX_RENDER_DIR) await page.screenshot({ path: `${process.env.ALIX_RENDER_DIR}/exam-results.png`, animations: "disabled" });
 });
+
+test("an exam whose questions could not be generated shows the error without a working indicator", async ({ page }) => {
+  await startMockedExam(page, {
+    ...base,
+    phase: "generating",
+    total: 0,
+    question: null,
+    question_units: null,
+    thinking: false,
+    error: "cannot read `exam:` /decks/src: Is a directory (os error 21)",
+  });
+  await expect(page.locator(".exam-error"), "failed generation: the error shows").toContainText("Is a directory");
+  await expect(page.locator(".exam-wait"), "failed generation: no 'Preparing your exam…'").toHaveCount(0);
+  await expect(page.locator(".exam-elapsed"), "failed generation: no pulsing working dot").toHaveCount(0);
+  await expect(page.locator(".chip", { hasText: /^Close/ }), "failed generation: Close is offered").toBeVisible();
+});
