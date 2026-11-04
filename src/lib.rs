@@ -122,6 +122,9 @@ pub mod workspace_update;
 #[cfg(all(test, feature = "full", unix))]
 mod testutil;
 
+#[cfg(all(test, feature = "full"))]
+mod exam_probes;
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -9,7 +9,7 @@
 RUST_TOOLCHAIN := $(shell sed -n 's/^channel = "\([^"]*\)"$$/\1/p' rust-toolchain.toml)
 RUST_NIGHTLY := $(shell cat .rust-nightly-version)
 
-.PHONY: build build-core lean-check mobile-unit mobile-test-one windows-check test parser-hostility-test locator-hostility-test zip-receive-fault-test store-fault-test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap risk-matrix-check check ci preflight package-check coverage coverage-lcov calibrate shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants mutants-pins fuzz-stamp bump-rust gfm-measure package-verify publish
+.PHONY: build build-core lean-check mobile-unit mobile-test-one windows-check test parser-hostility-test locator-hostility-test zip-receive-fault-test store-fault-test test-inventory tooling-test lint lint-js unit-js deps-check audit docs-audit docs-audit-manifest-check pre-1-0-check old-format-audit toolchain-check fmt fmt-check fmt-roadmap fmt-changelog changelog-check adr-check roadmap risk-matrix-check check ci preflight package-check coverage coverage-lcov calibrate exam-probes shape-eval run web web-debug phone tablet desktop frb-check push-decks mobile-test apk aab book site site-media-check example-media-check example-shots slides install clean sdd-clean heartbeat check-backends check-mail e2e shots stats gate gate-guard mutants mutants-pins fuzz-stamp bump-rust gfm-measure package-verify publish
 
 # Compile the workspace.
 build:
@@ -395,6 +395,12 @@ coverage-lcov:
 # release and after changing grade_prompt.
 calibrate:
 	cargo test --test calibrate -- --ignored --nocapture --test-threads=1
+
+# Exam generation probes (src/exam_probes.rs): real, costed examiner and judge
+# calls over the decks in ALIX_EXAM_PROBE_DECKS (colon-separated paths of
+# initialized decks with `exam:` files). A release-style gate, never CI.
+exam-probes:
+	cargo test --lib exam_probes -- --ignored --nocapture --test-threads=1
 
 # Does the shape rule actually STEER the generator? A deterministic test can
 # prove docs/include/card-shapes.md reached the prompt; only a real call proves a
