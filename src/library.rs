@@ -775,7 +775,7 @@ pub fn reset_decks<'a>(
     let mut n = 0;
     for deck in decks {
         let deck_id = deck.deck_token.as_deref().unwrap_or_default();
-        store.clear_deck_mastered(deck_id);
+        store.remove_deck_progress(deck_id);
         // The personal file itself is the user's, like the deck: a reset
         // clears its cards' schedules and leaves the content alone.
         let ids = deck
@@ -794,6 +794,28 @@ pub fn reset_decks<'a>(
     }
     store.save()?;
     Ok(n)
+}
+
+pub fn decks_an_exam_reset_locks(
+    scope: &[Deck],
+    targets: &[Deck],
+    store: &Store,
+    decks_dir: Option<&Path>,
+) -> Vec<String> {
+    let mut after = store.clone();
+    for deck in targets {
+        after.clear_deck_exam(deck);
+    }
+    let mut before_table = crate::deck::LoadedDecks::default();
+    let mut after_table = crate::deck::LoadedDecks::default();
+    scope
+        .iter()
+        .filter(|deck| {
+            !crate::deck::is_locked_with(deck, decks_dir, store, &mut before_table)
+                && crate::deck::is_locked_with(deck, decks_dir, &after, &mut after_table)
+        })
+        .map(Deck::display_name)
+        .collect()
 }
 
 #[cfg(test)]
@@ -922,7 +944,7 @@ mod tests {
         store
             .get_or_insert(&deck_b.cards[0].id().unwrap())
             .introduced_ms = Some(0);
-        store.set_deck_mastered(deck_a.deck_token.as_deref().unwrap(), 0);
+        store.set_deck_passed(deck_a.deck_token.as_deref().unwrap(), 0);
 
         let n = reset_decks(&mut store, [&deck_a]).unwrap();
         assert_eq!(1, n);
@@ -934,7 +956,7 @@ mod tests {
             store.get(&deck_b.cards[0].id().unwrap()).is_some(),
             "b's schedule intact"
         );
-        assert!(!store.deck_mastered(deck_a.deck_token.as_deref().unwrap()));
+        assert!(!store.deck_passed(deck_a.deck_token.as_deref().unwrap()));
     }
 
     /// Writes a personal card into the sidecar beside `deck` and files its
@@ -1682,10 +1704,10 @@ mod tests {
 
         // Deck A: a card schedule, deck-family mastery, records.
         store.get_or_insert("card-c1").introduced_ms = Some(0);
-        store.set_deck_mastered("deck-da1", 1);
+        store.set_deck_passed("deck-da1", 1);
         // Deck B (shares the store): its own schedule + mastery.
         store.get_or_insert("card-cb1").introduced_ms = Some(0);
-        store.set_deck_mastered("deck-db1", 1);
+        store.set_deck_passed("deck-db1", 1);
         store.save().unwrap();
 
         let cache_path = WorkspaceFiles::new(dir.path()).augment();
@@ -1708,9 +1730,9 @@ mod tests {
 
         assert_eq!(1, report.wiped_cards);
         assert!(store.get("card-c1").is_none());
-        assert!(!store.deck_mastered("deck-da1"));
+        assert!(!store.deck_passed("deck-da1"));
         assert!(store.get("card-cb1").is_some());
-        assert!(store.deck_mastered("deck-db1"));
+        assert!(store.deck_passed("deck-db1"));
 
         let cache = AugmentCache::open(&cache_path);
         assert!(cache.distractors("card-c1", 1).is_none());
@@ -1725,7 +1747,7 @@ mod tests {
         write_deck(dir.path(), "a.md", "da1", "c1");
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
         store.get_or_insert("card-c1").introduced_ms = Some(0);
-        store.set_deck_mastered("deck-da1", 1);
+        store.set_deck_passed("deck-da1", 1);
         store.save().unwrap();
 
         replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();
@@ -1986,5 +2008,67 @@ mod tests {
             store.get(&id_other).is_some(),
             "another deck's personal schedule survives"
         );
+    }
+
+    #[test]
+    fn an_exam_reset_names_the_never_examined_dependents_it_locks_transitively() {
+        type Row = (
+            &'static str,
+            &'static [&'static str],
+            &'static [&'static str],
+            Vec<&'static str>,
+        );
+        let rows: [Row; 4] = [
+            (
+                "nobody downstream has sat",
+                &["a", "b"],
+                &[],
+                vec!["b", "c"],
+            ),
+            (
+                "b has sat, so only c locks through b",
+                &["a", "b"],
+                &["b"],
+                vec!["c"],
+            ),
+            ("both have sat", &["a", "b"], &["b", "c"], vec![]),
+            (
+                "c was locked already, so only b is news",
+                &["a"],
+                &[],
+                vec!["b"],
+            ),
+        ];
+        for (label, passed, sat, expected) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            for (name, requires) in [("a", ""), ("b", "requires: a\n"), ("c", "requires: b\n")] {
+                std::fs::write(
+                    dir.path().join(format!("{name}.md")),
+                    format!(
+                        "---\nformat-version: 1\nid: deck-{name}\ntitle: {name}\nexam: https://x\n{requires}---\n## {name}\n1\n<!-- id: card-{name}1 -->\n"
+                    ),
+                )
+                .unwrap();
+            }
+            let decks: Vec<Deck> = ["a", "b", "c"]
+                .iter()
+                .map(|name| Deck::load(dir.path().join(format!("{name}.md"))).unwrap())
+                .collect();
+            let mut store = Store::open(dir.path().join("p.json")).unwrap();
+            for name in passed {
+                store.set_deck_passed(&format!("deck-{name}"), 1);
+            }
+            for name in sat {
+                store.get_or_insert(&format!("card-{name}1")).exam_result =
+                    Some(crate::store::ExamRecord {
+                        at_ms: 1,
+                        pass: true,
+                    });
+            }
+
+            let locked = decks_an_exam_reset_locks(&decks, &decks[..1], &store, Some(dir.path()));
+
+            assert_eq!(expected, locked, "{label}");
+        }
     }
 }

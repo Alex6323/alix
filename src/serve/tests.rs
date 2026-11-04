@@ -1341,7 +1341,10 @@ fn a_dependent_member_reads_its_prerequisites_active_owner_projection() {
         &crate::workspace::store_path(&ws),
     )
     .unwrap();
-    owner.set_deck_mastered("deck-base", now_ms());
+    owner.record_full_marks(
+        &crate::deck::Deck::load(ws.join("decks/base.md")).unwrap(),
+        now_ms(),
+    );
 
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let dto = deck_catalog(

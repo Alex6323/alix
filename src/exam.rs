@@ -7,6 +7,10 @@ use std::{
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
+pub use crate::exam_status::{
+    ExamFilter, ExamSection, ExamStatus, SECTION_NUDGE_CARDS, SectionStatus, SectionTally,
+    exam_sections, exam_status, oversized_sections,
+};
 use crate::{
     ask::{self, parse_json},
     config::{AskConfig, ExamConfig, Strictness},
@@ -33,15 +37,6 @@ pub enum Shape {
     Instance,
     Boundary,
     Fix,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ExamSection {
-    pub label: String,
-    pub context: Vec<String>,
-    pub card_ids: Vec<String>,
-    pub cards: Vec<String>,
-    pub size: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -113,47 +108,6 @@ pub fn generate_questions(
 pub fn open_for_exam(path: &Path) -> Result<Deck> {
     crate::assemble::stamp_for_session(path)?;
     Deck::load(path).with_context(|| format!("loading {}", path.display()))
-}
-
-pub const SECTION_NUDGE_CARDS: usize = 15;
-
-pub fn oversized_sections(deck: &Deck) -> Vec<(String, usize)> {
-    exam_sections(deck)
-        .into_iter()
-        .filter(|section| section.size > SECTION_NUDGE_CARDS)
-        .map(|section| (section.label, section.size))
-        .collect()
-}
-
-pub(crate) fn exam_sections(deck: &Deck) -> Vec<ExamSection> {
-    let mut sections: Vec<ExamSection> = Vec::new();
-    for card in &deck.cards {
-        let heading = card.section_context.first();
-        let at = match sections.iter().position(|s| s.context.first() == heading) {
-            Some(at) => at,
-            None => {
-                sections.push(ExamSection {
-                    label: heading.cloned().unwrap_or_else(|| deck.display_name()),
-                    context: card.section_context.clone(),
-                    ..Default::default()
-                });
-                sections.len() - 1
-            }
-        };
-        sections[at].size += 1;
-        if let Some(id) = card.id() {
-            sections[at].card_ids.push(id);
-        }
-        let scope = format!(
-            "Q: {}\nA: {}",
-            card.front.trim(),
-            card.back.join("\n").trim()
-        );
-        if !sections[at].cards.contains(&scope) {
-            sections[at].cards.push(scope);
-        }
-    }
-    sections
 }
 
 /// Both layers, told apart (ADR 0026): the deck's own sources are the primary
@@ -678,7 +632,7 @@ impl Sitting {
         let mut store_mutated = false;
         match effect {
             Some(Effect::Passed) => {
-                store.set_deck_mastered(&self.deck_token, now_ms);
+                store.set_deck_passed(&self.deck_token, now_ms);
                 store_mutated = true;
             }
             Some(Effect::RemediationCards(cards)) => {
@@ -1645,6 +1599,99 @@ mod tests {
             sections[0].cards
         );
         assert!(sections[0].cards[0].contains("a1?") && sections[0].cards[0].contains("one"));
+    }
+
+    #[test]
+    fn section_status_follows_member_records_and_any_fail_wins() {
+        use SectionStatus::*;
+        type Row = (
+            &'static str,
+            [Option<bool>; 3],
+            [SectionStatus; 2],
+            ExamFilter,
+        );
+        let rows: [Row; 7] = [
+            (
+                "never examined",
+                [None, None, None],
+                [Unexamined, Unexamined],
+                ExamFilter::All,
+            ),
+            (
+                "all passed",
+                [Some(true), Some(true), Some(true)],
+                [Passed, Passed],
+                ExamFilter::None,
+            ),
+            (
+                "a card without a record among passes",
+                [Some(true), None, Some(true)],
+                [NewCards, Passed],
+                ExamFilter::Partial,
+            ),
+            (
+                "a fail beside a missing record",
+                [Some(false), None, Some(true)],
+                [NeedsWork, Passed],
+                ExamFilter::Partial,
+            ),
+            (
+                "any fail wins over a pass",
+                [Some(true), Some(false), Some(true)],
+                [NeedsWork, Passed],
+                ExamFilter::Partial,
+            ),
+            (
+                "one section unexamined",
+                [Some(true), Some(true), None],
+                [Passed, Unexamined],
+                ExamFilter::Partial,
+            ),
+            (
+                "every section needs work",
+                [Some(false), Some(false), Some(false)],
+                [NeedsWork, NeedsWork],
+                ExamFilter::All,
+            ),
+        ];
+        for (label, records, expected, filter) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("s.md");
+            std::fs::write(
+                &path,
+                "---\nformat-version: 1\nid: deck-s\nexam: source.txt\n---\n\
+                 # A\n\n## a1\nx\n<!-- id: card-a1 -->\n\n## a2\nx\n<!-- id: card-a2 -->\n\n\
+                 # B\n\n## b1\nx\n<!-- id: card-b1 -->\n",
+            )
+            .unwrap();
+            let deck = Deck::load(&path).unwrap();
+            let mut store = Store::open(dir.path().join("p.json")).unwrap();
+            for (id, pass) in ["card-a1", "card-a2", "card-b1"].iter().zip(records) {
+                if let Some(pass) = pass {
+                    store.get_or_insert(id).exam_result =
+                        Some(crate::store::ExamRecord { at_ms: 1, pass });
+                }
+            }
+            let status = deck.exam_status(&store);
+            assert_eq!(expected.to_vec(), status.sections, "{label}: statuses");
+            assert_eq!(filter, status.filter(), "{label}: filter");
+            let tally = status.tally();
+            assert_eq!(
+                2,
+                tally.passed + tally.needs_work + tally.new_cards + tally.unexamined,
+                "{label}: the tally counts every section once"
+            );
+            assert_eq!(
+                expected.iter().filter(|s| **s == Passed).count(),
+                tally.passed,
+                "{label}: passed tally"
+            );
+            assert_eq!(
+                expected == [Passed, Passed],
+                status.all_passed(),
+                "{label}: all passed"
+            );
+        }
     }
 
     #[test]
@@ -2804,7 +2851,7 @@ mod tests {
         assert_eq!(&Phase::Results, s.phase());
         assert!(!s.result().unwrap().passed);
         assert_eq!(vec!["the move rule"], s.gaps());
-        assert!(!store.deck_mastered("deck-d1"));
+        assert!(!store.deck_passed("deck-d1"));
 
         assert!(s.can_remediate());
         let snapshot = std::fs::read(dir.path().join("d.md")).unwrap();
@@ -2881,7 +2928,7 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Results, s.phase());
         assert!(s.result().unwrap().passed);
-        assert!(store.deck_mastered("deck-d1"));
+        assert!(store.deck_passed("deck-d1"));
         assert!(!s.can_remediate());
     }
 
@@ -2984,7 +3031,7 @@ mod tests {
         s2.submit();
         drain(&mut s2, &mut store);
         assert!(s2.result().unwrap().passed);
-        assert!(store.deck_mastered("deck-d1"));
+        assert!(store.deck_passed("deck-d1"));
 
         for card in sidecar_cards(&dir.path().join("d.md"), "deck-d1") {
             let id = card.id().expect("a personal card carries its id");

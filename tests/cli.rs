@@ -1333,7 +1333,7 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
         .unwrap();
         store.get_or_insert(&cards[0].id().unwrap());
     }
-    store.set_deck_mastered("deck-decka", 0);
+    store.set_deck_passed("deck-decka", 0);
     store.save().unwrap();
 
     let out = alix(&["reset", ws.to_str().unwrap(), "--yes"]);
@@ -1352,9 +1352,52 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
     let reloaded = decks_store(&[&a, &b]);
     assert_eq!(0, reloaded.len(), "member card progress should be gone");
     assert!(
-        !reloaded.deck_mastered("deck-decka"),
+        !reloaded.deck_passed("deck-decka"),
         "the mastered flag should be cleared"
     );
+}
+
+#[test]
+fn reset_exam_clears_exam_state_only_and_lists_never_examined_dependents() {
+    let dir = TempDir::new().unwrap();
+    let a = write(
+        dir.path(),
+        "a.md",
+        "---\nformat-version: 1\nid: deck-exa\ntitle: Alpha\nexam: https://x\n---\n## qa\nans-a\n<!-- id: card-exa1 -->\n",
+    );
+    let b = write(
+        dir.path(),
+        "b.md",
+        "---\nformat-version: 1\nid: deck-exb\ntitle: Beta\nexam: https://x\nrequires: a\n---\n## qb\nans-b\n<!-- id: card-exb1 -->\n",
+    );
+    let mut store = decks_store(&[&a, &b]);
+    store.get_or_insert("card-exa1").total_reviews = 3;
+    store.get_or_insert("card-exa1").exam_result = Some(alix::store::ExamRecord {
+        at_ms: 1,
+        pass: true,
+    });
+    store.set_deck_passed("deck-exa", 1);
+    store.save().unwrap();
+
+    let refused = alix(&["reset", &a, "--exam", "--card", "qa", "--yes"]);
+    assert!(!refused.status.success(), "--exam with --card is refused");
+
+    let out = alix(&["reset", &a, "--exam", "--yes"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("These decks' exams will lock: Beta"),
+        "the never-examined dependent is named: {}",
+        stdout(&out)
+    );
+
+    let reloaded = decks_store(&[&a, &b]);
+    assert!(
+        !reloaded.deck_passed("deck-exa"),
+        "the passed instant is cleared"
+    );
+    let card = reloaded.get("card-exa1").expect("drilling progress kept");
+    assert_eq!(None, card.exam_result, "the card's exam record is cleared");
+    assert_eq!(3, card.total_reviews, "drilling progress kept");
 }
 
 #[test]
@@ -1834,20 +1877,46 @@ fn stats_never_counts_an_introduced_or_walked_but_ungraded_card_as_due() {
 }
 
 #[test]
-fn stats_reserves_mastered_for_a_recorded_mastery_marker() {
-    let dir = TempDir::new().unwrap();
-    let deck = write(dir.path(), "math.md", VALID_DECK);
-    let mut store = deck_store(&deck);
-    store.set_deck_mastered("deck-mathdeck", alix::time::now_ms());
-    store.save().unwrap();
+fn stats_says_passed_for_a_pass_and_reserves_mastered_for_full_marks() {
+    for (label, full_marks, expected) in [
+        ("passed only", false, "  state:   passed ✓"),
+        ("a full sitting at 100%", true, "  state:   mastered ✓"),
+    ] {
+        let dir = TempDir::new().unwrap();
+        let deck = write(dir.path(), "math.md", VALID_DECK);
+        let mut store = deck_store(&deck);
+        if full_marks {
+            let loaded = alix::deck::Deck::load(&deck).unwrap();
+            let sections: Vec<alix::store::SectionRecord> =
+                alix::exam_status::exam_sections(&loaded)
+                    .into_iter()
+                    .map(|section| alix::store::SectionRecord {
+                        card_ids: section.card_ids,
+                        pass: true,
+                    })
+                    .collect();
+            let total = sections.len() as u32;
+            let record = alix::store::SittingRecord {
+                sections,
+                full: true,
+                pass: total,
+                partial: 0,
+                total,
+            };
+            store.record_exam_result(&loaded, &record, alix::time::now_ms());
+        } else {
+            store.set_deck_passed("deck-mathdeck", alix::time::now_ms());
+        }
+        store.save().unwrap();
 
-    let out = alix(&["stats", &deck]);
-    assert!(out.status.success(), "stderr: {}", stderr(&out));
-    assert!(
-        stdout(&out).contains("  state:   mastered ✓"),
-        "stdout: {}",
-        stdout(&out)
-    );
+        let out = alix(&["stats", &deck]);
+        assert!(out.status.success(), "{label}: stderr: {}", stderr(&out));
+        assert!(
+            stdout(&out).contains(expected),
+            "{label}: stdout: {}",
+            stdout(&out)
+        );
+    }
 }
 
 #[test]
@@ -2621,7 +2690,7 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
         .unwrap();
     let mut store = deck_store(&deck);
     store.get_or_insert(&card_id);
-    store.set_deck_mastered("deck-mathdeck", 0);
+    store.set_deck_passed("deck-mathdeck", 0);
     let personal_id = sample_personal_card(&deck, "deck-mathdeck");
     store.get_or_insert(&personal_id);
     store.save().unwrap();
@@ -2640,10 +2709,7 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
         "the store on disk must be untouched by a declined/failed reset"
     );
     let reloaded = deck_store(&deck);
-    assert!(
-        reloaded.deck_mastered("deck-mathdeck"),
-        "mastered flag wiped"
-    );
+    assert!(reloaded.deck_passed("deck-mathdeck"), "mastered flag wiped");
     assert!(reloaded.get(&card_id).is_some(), "authored progress wiped");
     assert!(
         reloaded.get(&personal_id).is_some(),
@@ -2656,7 +2722,7 @@ fn deck_reset_clears_a_mastery_only_store() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let mut store = deck_store(&deck);
-    store.set_deck_mastered("deck-mathdeck", alix::time::now_ms());
+    store.set_deck_passed("deck-mathdeck", alix::time::now_ms());
     store.save().unwrap();
 
     let out = alix(&["reset", &deck, "--yes"]);
@@ -2667,7 +2733,7 @@ fn deck_reset_clears_a_mastery_only_store() {
         stdout(&out)
     );
     assert!(
-        !deck_store(&deck).deck_mastered("deck-mathdeck"),
+        !deck_store(&deck).deck_passed("deck-mathdeck"),
         "the mastery marker survived the reset"
     );
 }

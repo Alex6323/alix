@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix reset <target> --exam` clears only exam state (card exam results, the
+  deck's passed and mastered instants, its last full count) and keeps drilling
+  progress. It names the decks whose exams it will lock before asking.
+
 - `alix doctor` warns when two sections of a deck share a heading (the exam
   merges them into one section) and, on a deck with an exam, when a section
   holds more than 15 cards.
@@ -173,10 +177,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Exam results are kept per card: each examined card stores its section's
+  latest verdict (`exam_result`), and a section's status (unexamined, needs
+  work, new cards, passed) is read from its cards. A deck's progress gains
+  `passed_at_ms` (every section passed at `pass_threshold`; unlocks
+  dependents' exams), `mastered_at_ms` now means a full sitting with every
+  answer PASS, and `full_exam_result` keeps the last full sitting's counts.
+  Neither instant moves on a re-pass. A deck that has sat its exam once is
+  never locked again by its prerequisites. `exam_failed_at_ms` is removed: a
+  progress file that still carries it fails to load.
+
 - The exam no longer asks a fixed number of questions per section: a first
   call lists each section's mental models from the source, a second asks at
   least one question about each, with no upper limit, and a reply that skips
-  a listed model or names one that was not listed is generated once more. The `[exam]`
+  a listed model or names one that was not listed is generated once more. The
+  `[exam]`
   `num_questions` key is removed; a config that still sets it fails to load.
 
 - Trace decks are drill-only: finishing their checkpoint path no longer opens
@@ -190,7 +205,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   thinking aloud, and never to name a fix question's mistake. The web exam
   renders questions, feedback and key points as formatted text (inline code,
   math, code blocks), and a question's code block shows line numbers.
-  `ExamDto.question_units`, `ExamGradeDto.{question,points,feedback,missed}_units`
+  `ExamDto.question_units`,
+  `ExamGradeDto.{question,points,feedback,missed}_units`
   and `RemoteExamDto.questions_units` carry the parsed text.
 
 - The tutor's **Make this a note** gets a default key, `ctrl-s`
@@ -213,7 +229,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   loads in an older desktop or phone build, so update both before syncing it.
 
 - The exam writes its questions per deck section, cycling through a new
-  instance, a boundary, and a statement with a seeded mistake to fix. The section's cards go into the prompt as scope, so the
+  instance, a boundary, and a statement with a seeded mistake to fix. The
+  section's cards go into the prompt as scope, so the
   questions avoid what the deck already asks.
 
 - Web: a code block in a card's question sits on a much lighter panel in the
@@ -667,9 +684,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The web exam no longer shows "Preparing your exam…" and a working
   indicator forever when its questions could not be generated (for
   example, an unreadable `exam:` entry); it shows the error and Close.
+
 - `alix doctor` warns about an `exam:` file the exam cannot read (missing,
   or a directory); it used to stay silent, and the exam then refused to
   start. The book no longer lists directories as exam material.
+
 - `POST /api/tutorial` answers every failure to open with one 500 body,
   `the tutorial could not be opened`; a rejected walk or a failed progress
   flush used to return an empty body.

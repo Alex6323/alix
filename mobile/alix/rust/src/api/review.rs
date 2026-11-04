@@ -681,7 +681,7 @@ impl ReviewSession {
     #[flutter_rust_bridge::frb(sync)]
     pub fn apply_exam_passed(&mut self, now_ms: u64) -> Result<()> {
         self.store = reopen_store(&self.store, &self.deck_path, &self.root_store)?;
-        self.store.set_deck_mastered(&self.deck_token, now_ms);
+        self.store.set_deck_passed(&self.deck_token, now_ms);
         self.store.save()?;
         Ok(())
     }
@@ -2223,15 +2223,15 @@ mod tests {
             .deck_token
             .unwrap();
         assert!(
-            !reopened_store(root, "d.md").deck_mastered(&deck_id),
+            !reopened_store(root, "d.md").deck_passed(&deck_id),
             "fresh store: not mastered"
         );
 
         s.apply_exam_passed(LATER).unwrap();
 
         let reopened = reopened_store(root, "d.md");
-        assert!(reopened.deck_mastered(&deck_id));
-        assert_eq!(reopened.deck_mastered_at(&deck_id), Some(LATER));
+        assert!(reopened.deck_passed(&deck_id));
+        assert_eq!(reopened.deck_passed_at(&deck_id), Some(LATER));
     }
 
     #[test]

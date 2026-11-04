@@ -270,6 +270,10 @@ impl Deck {
         self.trace.is_some()
     }
 
+    pub fn exam_status(&self, store: &Store) -> crate::exam_status::ExamStatus {
+        crate::exam_status::exam_status(self, store)
+    }
+
     pub fn has_exam(&self) -> bool {
         !self.is_trace()
             && (!self.exam.is_empty()
@@ -298,7 +302,7 @@ impl Deck {
         if total == 0 {
             return DeckState::NotStarted;
         }
-        if store.deck_mastered(self.deck_token.as_deref().unwrap_or_default()) {
+        if store.deck_passed(self.deck_token.as_deref().unwrap_or_default()) {
             return DeckState::Finished;
         }
         let gated = self.cards.iter().all(|c| session::has_graduated(c, store));
@@ -598,7 +602,7 @@ impl LoadedDecks {
         self.satisfied.insert(key.clone(), Satisfied::Pending);
         let mut satisfied = true;
         let mut provisional = false;
-        if deck.has_exam() && deck.state(store) != DeckState::Finished {
+        if deck.has_exam() && !store.deck_passed(deck.deck_token.as_deref().unwrap_or_default()) {
             satisfied = false;
         } else {
             for req in &deck.requires {
@@ -634,6 +638,9 @@ pub fn is_locked_with(
     store: &Store,
     table: &mut LoadedDecks,
 ) -> bool {
+    if store.ever_examined(deck) {
+        return false;
+    }
     !deck.requires.iter().all(|req| {
         table
             .edge_satisfied(req, decks_dir, deck.path.parent(), store)
@@ -1342,7 +1349,7 @@ mod tests {
         retire(&mut store, &deck.cards[0].id().unwrap());
         assert_eq!(DeckState::ExamDue, deck.state(&store));
 
-        store.set_deck_mastered(deck.deck_token.as_deref().unwrap(), 1);
+        store.set_deck_passed(deck.deck_token.as_deref().unwrap(), 1);
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
 
@@ -1450,7 +1457,7 @@ mod tests {
         let (mut store, _s) = empty_store();
         assert_eq!(DeckState::NotStarted, deck.state(&store));
 
-        store.set_deck_mastered(deck.deck_token.as_deref().unwrap(), 1);
+        store.set_deck_passed(deck.deck_token.as_deref().unwrap(), 1);
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
 
@@ -1486,7 +1493,7 @@ mod tests {
         assert_eq!(DeckState::ExamDue, basics.state(&store));
         assert!(is_locked(&advanced, dd, &store));
 
-        store.set_deck_mastered(basics.deck_token.as_deref().unwrap(), 1);
+        store.set_deck_passed(basics.deck_token.as_deref().unwrap(), 1);
         assert!(!is_locked(&advanced, dd, &store));
     }
 
@@ -1666,7 +1673,7 @@ mod tests {
         assert!(is_locked(&c, dd, &store));
         retire(&mut store, &b.cards[0].id().unwrap());
         assert!(is_locked(&c, dd, &store));
-        store.set_deck_mastered(a.deck_token.as_deref().unwrap(), 1);
+        store.set_deck_passed(a.deck_token.as_deref().unwrap(), 1);
         assert!(!is_locked(&c, dd, &store));
     }
 
@@ -1736,7 +1743,7 @@ mod tests {
             "the id edge must survive the prerequisite's rename"
         );
 
-        store.set_deck_mastered(CANONICAL_DECK_ID, 1);
+        store.set_deck_passed(CANONICAL_DECK_ID, 1);
         assert!(!is_locked(&advanced, dd, &store));
     }
 
@@ -1830,6 +1837,74 @@ mod tests {
             is_locked(&c, Some(dir.path()), &store),
             "c is locked by b's unfinished exam, not by whether b itself is locked"
         );
+    }
+
+    #[test]
+    fn locks_gate_exams_by_passed_at_ms_exempt_ever_sat_and_recurse_f44() {
+        type Row = (
+            &'static str,
+            &'static [&'static str],
+            &'static [&'static str],
+            [bool; 2],
+        );
+        let rows: [Row; 6] = [
+            ("nothing passed", &[], &[], [true, true]),
+            ("a passed", &["a"], &[], [false, true]),
+            ("a and b passed", &["a", "b"], &[], [false, false]),
+            (
+                "a reset after b passed: b sat, c never did",
+                &["b"],
+                &["b"],
+                [false, true],
+            ),
+            (
+                "a reset after b passed: c sat too",
+                &["b"],
+                &["b", "c"],
+                [false, false],
+            ),
+            (
+                "b sat and failed, a never passed",
+                &[],
+                &["b"],
+                [false, true],
+            ),
+        ];
+        for (label, passed, sat, [b_locked, c_locked]) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            for (name, requires) in [("a", ""), ("b", "requires: a\n"), ("c", "requires: b\n")] {
+                write_deck(
+                    dir.path(),
+                    &format!("{name}.md"),
+                    &format!(
+                        "---\nformat-version: 1\nid: deck-{name}\nexam: https://x\n{requires}---\n## {name}\n1\n<!-- id: card-{name}1 -->\n"
+                    ),
+                );
+            }
+            let (mut store, _s) = empty_store();
+            for name in passed {
+                store.set_deck_passed(&format!("deck-{name}"), 1);
+            }
+            for name in sat {
+                store.get_or_insert(&format!("card-{name}1")).exam_result =
+                    Some(crate::store::ExamRecord {
+                        at_ms: 1,
+                        pass: false,
+                    });
+            }
+            let b = Deck::load(dir.path().join("b.md")).unwrap();
+            let c = Deck::load(dir.path().join("c.md")).unwrap();
+            assert_eq!(
+                b_locked,
+                is_locked(&b, Some(dir.path()), &store),
+                "{label}: b locked"
+            );
+            assert_eq!(
+                c_locked,
+                is_locked(&c, Some(dir.path()), &store),
+                "{label}: c locked"
+            );
+        }
     }
 
     #[test]

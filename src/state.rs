@@ -260,7 +260,7 @@ mod tests {
         deck(&old_path, "deck1", "card1");
         let mut store = open_store(&old_path, dir.path()).unwrap();
         store.get_or_insert("card-card1");
-        store.set_deck_mastered("deck-deck1", 1);
+        store.set_deck_passed("deck-deck1", 1);
         store.save().unwrap();
         std::fs::rename(&old_path, &new_path).unwrap();
 
@@ -271,7 +271,7 @@ mod tests {
             renamed.path()
         );
         assert!(renamed.get("card-card1").is_some());
-        assert!(renamed.deck_mastered("deck-deck1"));
+        assert!(renamed.deck_passed("deck-deck1"));
     }
 
     #[test]
@@ -286,7 +286,7 @@ mod tests {
         let old_path = dir.path().join("old.md");
         deck(&old_path, "deck1", "card1");
         let mut store = open_store(&old_path, dir.path()).unwrap();
-        store.set_deck_mastered("deck-deck1", 1);
+        store.set_deck_passed("deck-deck1", 1);
         store.set_last_launch("deck-deck1", crate::depth::Launch::Recall);
         store.save().unwrap();
 
@@ -295,7 +295,7 @@ mod tests {
 
         let aggregate = open_aggregate_store(dir.path()).unwrap();
         assert!(
-            aggregate.deck_mastered("deck-deck1"),
+            aggregate.deck_passed("deck-deck1"),
             "deck-level state must survive a rename, found by the deck id"
         );
         assert_eq!(
