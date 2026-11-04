@@ -224,9 +224,14 @@ impl SyncCatalog {
                 let deck = if deck.deck_token.is_some()
                     && deck.cards.iter().any(|card| card.id().is_none())
                 {
-                    match crate::assemble::stamp_and_load_deck(&deck_path) {
-                        Ok(stamped) => stamped,
-                        Err(_) => {
+                    match crate::stamp::stamp_initialized_deck(&deck_path)
+                        .ok()
+                        .and_then(|_| crate::deck::Deck::load(&deck_path).ok())
+                        .filter(|stamped| stamped.cards.iter().all(|card| card.id().is_some()))
+                    {
+                        Some(stamped) => stamped,
+                        None => {
+                            excluded_deck_ids.extend(deck.deck_token);
                             excluded_decks.insert(deck_path);
                             left_out.push(wire_relative_path);
                             continue;
@@ -997,6 +1002,37 @@ mod tests {
             .map(|card| card.front.clone())
             .collect();
         assert!(unstamped.is_empty(), "served without an id: {unstamped:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_deck_whose_new_card_cannot_be_stamped_is_left_out() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let served = tempfile::tempdir().unwrap();
+        let deck = served.path().join("inside.md");
+        let original = concat!(
+            "---\nformat-version: 1\nid: \"deck-inside\"\n---\n",
+            "## old\na\n<!-- id: card-inside -->\n\n## new\nb\n",
+        );
+        std::fs::write(&deck, original).unwrap();
+        std::fs::set_permissions(served.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let catalog = SyncCatalog::load(
+            served.path(),
+            &crate::recent::RecentDecks::load(served.path().join("recent.json")),
+            &mut crate::cache::DeckCache::default(),
+        )
+        .unwrap();
+
+        std::fs::set_permissions(served.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let entry = &catalog.entries()[0];
+        assert_eq!(
+            0, entry.members,
+            "a deck with an unstamped card must not travel"
+        );
+        assert_eq!(vec!["inside.md"], entry.left_out);
+        assert_eq!(original, std::fs::read_to_string(deck).unwrap());
     }
 
     #[test]
