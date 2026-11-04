@@ -434,8 +434,8 @@ fn choice_answer(front: &str) -> &'static str {
     }
 }
 
-/// A two-hop predict-and-verify trace over [`TRACE_SOURCE`], for the trace and
-/// (trace) exam endpoint families — mirrors `src/serve/tests.rs`'s
+/// A two-hop predict-and-verify trace over [`TRACE_SOURCE`], for the trace
+/// endpoint family; mirrors `src/serve/tests.rs`'s
 /// `trace_deck` fixture in miniature (kept to two hops; that's enough to
 /// exercise a hop transition without a bigger fixture to maintain).
 const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nexam: source.txt\ncite:\n  - src: .\n---\n\
@@ -457,7 +457,7 @@ const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 /// with cached AI distractors, so a Recognize-depth session quizzes it as a real
 /// multiple-choice — see `current_question`, `src/serve/dto.rs`) — and
 /// [`TRACE_DECK`] (routed to a real `TraceSession` by the real
-/// classifier in `assemble::select`, for the trace and trace-exam families).
+/// classifier in `assemble::select`, for the trace family).
 ///
 /// `ask_command`, when `Some`, points `[ask] command` at a fake CLI (see this
 /// module's `fake_reply`); `None` keeps every AI path off, which is what every
@@ -5840,33 +5840,11 @@ fn icon_target_generates_the_workspace_emblem_with_its_steer() {
     );
 }
 
-// ── Exam (start / close on a trace deck — no AI needed for that path;
-// grading is additionally covered end-to-end via the fake backend) ───────
-
-#[test]
-fn post_api_exam_start_on_a_trace_deck_opens_directly_in_the_answering_phase() {
-    // A trace's "exam" is the graded compression, one fixed question — it
-    // opens straight into `answering` with nothing in flight
-    // (`exam::Sitting::start_trace`), unlike a fact deck's exam, which would
-    // need the AI backend to generate questions.
-    let (base, _guard) = spawn_full_server(None);
-
-    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"trace.md"}"#);
-
-    assert_eq!(200, resp.status);
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!("answering", body["phase"], "body: {body}");
-    assert_eq!(true, body["is_trace"], "body: {body}");
-    assert_eq!("trace.md", body["deck"], "body: {body}");
-    assert_eq!(1, body["total"], "body: {body}");
-    assert_eq!(0, body["current"], "body: {body}");
-    assert!(body["question"].as_str().is_some(), "body: {body}");
-}
+// ── Exam ────────────────────────────────────────────────────────────────
 
 #[test]
 fn post_api_exam_close_returns_the_picker_state_dto() {
     let (base, _guard) = spawn_full_server(None);
-    post_json(&base, "/api/exam/start", r#"{"deck":"trace.md"}"#);
 
     let resp = post_json(&base, "/api/exam/close", "{}");
 
@@ -5886,14 +5864,17 @@ fn post_api_exam_start_with_an_unknown_deck_yields_400() {
 }
 
 #[test]
-fn post_api_exam_start_on_a_deck_with_no_exam_yields_409() {
-    // `sample.md` declares no `exam:` and isn't a trace — `has_exam()`
-    // is false, so it can never be sat.
+fn post_api_exam_start_on_each_deck_with_no_exam_yields_409() {
     let (base, _guard) = spawn_full_server(None);
 
-    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"sample.md"}"#);
-
-    assert_eq!(409, resp.status);
+    for deck in ["sample.md", "trace.md"] {
+        let resp = post_json(
+            &base,
+            "/api/exam/start",
+            &serde_json::json!({ "deck": deck }).to_string(),
+        );
+        assert_eq!(409, resp.status, "{deck}");
+    }
 }
 
 #[test]
@@ -5906,21 +5887,21 @@ fn get_api_exam_with_no_active_sitting_yields_409() {
 }
 
 #[test]
-fn exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_fake_backend() {
+fn exam_grade_on_a_fact_deck_walks_from_answering_to_a_passing_result_via_the_fake_backend() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
-    let fake = fake_reply(
-        scripts.path(),
-        r#"{"verdict":"pass","feedback":"nice work retracing it","missed":[]}"#,
-    );
-    let (base, _guard) = spawn_full_server(Some(&fake));
-    post_json(&base, "/api/exam/start", r#"{"deck":"trace.md"}"#);
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"pass","feedback":"good","missed":[]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
+    post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+    poll_until(&base, "/api/exam", |b| b["phase"] == "answering");
 
-    let resp = post_json(
-        &base,
-        "/api/exam/grade",
-        r#"{"text":"it forwards the value hop by hop, first then second"}"#,
-    );
+    let resp = post_json(&base, "/api/exam/grade", r#"{"text":"a1"}"#);
 
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -6152,17 +6133,22 @@ fn exam_answer_and_remediate_arms_exist_without_a_sitting() {
 fn exam_answer_sets_the_text_the_grade_submits() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
-    let fake = fake_reply(
-        scripts.path(),
-        r#"{"verdict":"pass","feedback":"good","missed":[]}"#,
-    );
-    let (base, _guard) = spawn_full_server(Some(&fake));
-    post_json(&base, "/api/exam/start", r#"{"deck":"trace.md"}"#);
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"pass","feedback":"good","missed":[]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
+    post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+    poll_until(&base, "/api/exam", |b| b["phase"] == "answering");
 
     let resp = post_json(&base, "/api/exam/answer", r#"{"text":"my answer"}"#);
     assert_eq!(200, resp.status);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!("answering", body["phase"], "body: {body}");
+    assert_eq!("my answer", body["answer"], "body: {body}");
 
     let resp = post_json(&base, "/api/exam/grade", r#"{"text":"my answer"}"#);
     assert_eq!(200, resp.status);
@@ -7227,20 +7213,20 @@ fn a_tutor_draft_arriving_after_a_card_advance_is_dropped() {
 fn a_mastery_save_failure_surfaces_and_the_mastery_survives_repair() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
-    let fake = fake_reply(
-        scripts.path(),
-        r#"{"verdict":"pass","feedback":"nice work retracing it","missed":[]}"#,
-    );
-    let (base, guard) = spawn_full_server(Some(&fake));
-    post_json(&base, "/api/exam/start", r#"{"deck":"trace.md"}"#);
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"pass","feedback":"good","missed":[]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
+    post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+    poll_until(&base, "/api/exam", |b| b["phase"] == "answering");
     let state_dir = private_state_root(guard.dir());
     break_state_dir(&state_dir);
 
-    post_json(
-        &base,
-        "/api/exam/grade",
-        r#"{"text":"it forwards the value hop by hop, first then second"}"#,
-    );
+    post_json(&base, "/api/exam/grade", r#"{"text":"a1"}"#);
     let body = poll_until(&base, "/api/exam", |b| b["phase"] != "grading");
     assert_eq!(true, body["passed"], "body: {body}");
 
@@ -7261,7 +7247,7 @@ fn a_mastery_save_failure_surfaces_and_the_mastery_survives_repair() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|d| d["name"] == "trace.md")
+        .find(|d| d["name"] == "examdeck.md")
         .map(|d| d["mastered"].clone());
     assert_eq!(
         Some(serde_json::Value::Bool(true)),
@@ -8130,13 +8116,29 @@ fn tutorial_open_failures_share_one_body_without_touching_the_library() {
 
 #[test]
 fn law_every_other_session_transition_ends_a_running_walk() {
-    let (base, _guard) = spawn_full_server_fixture(None, write_walk_deck, |_| {});
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"pass","feedback":"good","missed":[]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, _guard) = spawn_full_server_fixture(
+        Some(&fake),
+        |dir| {
+            write_walk_deck(dir);
+            write_exam_deck_fixture(dir);
+        },
+        |_| {},
+    );
     let transitions = [
         ("/api/select", r#"{"deck":"sample.md"}"#),
         ("/api/select", r#"{"deck":"trace.md"}"#),
         ("/api/browse", r#"{"deck":"sample.md"}"#),
         ("/api/deselect", "{}"),
-        ("/api/exam/start", r#"{"deck":"trace.md"}"#),
+        ("/api/exam/start", r#"{"deck":"examdeck.md"}"#),
         ("/api/exam/close", "{}"),
         ("/api/augment/open", r#"{"deck":"sample.md"}"#),
         ("/api/trace/leave", "{}"),
@@ -8462,7 +8464,7 @@ fn ask_card_draft_create_round_trips_a_learner_card_into_the_session() {
     // The wait idiom this test reuses verbatim: `poll_until` (this file,
     // defined above at the `fn poll_until` declaration), a loop on the
     // `thinking` condition bounded by HANG_BUDGET, the same idiom
-    // `exam_grade_on_a_trace_deck_walks_from_answering_to_a_passing_result_via_the_fake_backend`
+    // `exam_grade_on_a_fact_deck_walks_from_answering_to_a_passing_result_via_the_fake_backend`
     // already uses to wait on this exact kind of background ask/exam job.
     let body = poll_until(&base, "/api/ask", |b| !b["thinking"].as_bool().unwrap());
     assert_eq!(
@@ -8782,14 +8784,10 @@ fn write_exam_deck_fixture(dir: &Path) {
 /// reachable from this integration test, so replicated). `"grades"` reads
 /// its reply from `grades_path` (a test can rewrite that file between calls
 /// to vary the verdict across sittings); `"questions"` always answers with
-/// one fixed question; `compression` (the trace grader's own prompt, which
-/// carries no `"grades"` marker, see `grade_compression_prompt`) ALSO reads
-/// `grades_path`, so a test drives a trace grade the same way: rewrite the
-/// file to a bare `{"verdict": ...}` (not wrapped in `{"grades": [...]}`,
-/// [`exam::AnswerGrade`]'s own shape) before the call; anything else (a
-/// remediation call, or a tutor ask/draft call) gets a one-card deck-format
-/// reply, which is valid input for all three: a tutor question stores it
-/// as-is, and both remediation and draft-parsing accept deck-format text.
+/// one fixed question; anything else (a remediation call, or a tutor
+/// ask/draft call) gets a one-card deck-format reply, which is valid input
+/// for both: a tutor question stores it as-is, and remediation and
+/// draft-parsing accept deck-format text.
 fn branching_exam_cli(dir: &Path, grades_path: &Path) -> PathBuf {
     let path = dir.join("fake-claude");
     std::fs::write(
@@ -8798,7 +8796,6 @@ fn branching_exam_cli(dir: &Path, grades_path: &Path) -> PathBuf {
             "#!/bin/sh\nPATH=/usr/bin:/bin\ninput=$(cat)\ncase \"$input\" in\n\
              *'\"grades\"'*) cat {grades} ;;\n\
              *'\"questions\"'*) printf '%s' '{{\"questions\":[{{\"prompt\":\"Q1\",\"points\":[\"p1\"]}}]}}' ;;\n\
-             *compression*) cat {grades} ;;\n\
              *) printf '## term?\\ndefinition\\n' ;;\n\
              esac\n",
             grades = grades_path.display(),
@@ -9316,119 +9313,19 @@ fn remote_exam_grade_rejects_wrong_arity_with_400_and_wrong_phase_with_409() {
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
 }
 
-/// A trace deck now starts a remote exam sitting: `start_trace` opens
-/// straight in `answering` with the path's one fixed compression question,
-/// mirroring the browser's own trace-exam start (mod.rs, near the cooldown
-/// gate) minus that gate: a remote sitting checks no cooldown, the phone's
-/// own. `can_remediate` is false from the moment it starts (a trace sitting
-/// never remediates), not just after a fail.
 #[test]
-fn remote_exam_start_accepts_a_trace_deck_and_opens_answering() {
+fn remote_exam_start_refuses_each_deck_with_no_exam_with_409() {
     let (base, _guard) = spawn_full_server(None);
 
-    let resp = post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
-    assert_eq!(200, resp.status);
-
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!("answering", body["phase"], "body: {body}");
-    assert_eq!(
-        1,
-        body["questions"].as_array().unwrap().len(),
-        "body: {body}"
-    );
-    assert_eq!(true, body["is_trace"], "body: {body}");
-    assert_eq!(false, body["can_remediate"], "body: {body}");
-}
-
-/// A non-trace deck with no `exam:` still has nothing to examine, so it
-/// still 409s at start (the refusal `deck.is_trace() || deck.exam.is_empty()`
-/// narrowed to `!deck.is_trace() && deck.exam.is_empty()`, not dropped).
-#[test]
-fn remote_exam_start_still_refuses_a_source_less_non_trace_deck_with_409() {
-    let (base, _guard) = spawn_full_server(None);
-
-    let resp = post_json(&base, "/api/remote/exam/start", r#"{"deck":"sample.md"}"#);
-
-    assert_eq!(409, resp.status);
-    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
-}
-
-/// A trace exam that PASSES: one graded compression settles into `results`
-/// with `passed: true`, `is_trace: true`, and `can_remediate` still false,
-/// and, the iron rule's other half, the server's own store is untouched (a
-/// passing trace exam masters nothing server-side; the phone applies that to
-/// its own store).
-#[test]
-fn remote_exam_trace_grade_pass_settles_to_results_and_writes_no_store() {
-    let _lock = exec_lock();
-    let scripts = TempDir::new().unwrap();
-    let fake = fake_reply(
-        scripts.path(),
-        r#"{"verdict":"pass","feedback":"re-derives the chain","missed":[]}"#,
-    );
-    let (base, guard) = spawn_full_server(Some(&fake));
-    let fixture_state = private_state_root(guard.dir());
-    let _ = sync_root_id(&base);
-    let before = snapshot_dir(&fixture_state);
-
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
-    let resp = post_json(
-        &base,
-        "/api/remote/exam/grade",
-        r#"{"answers":["it reads the first line, then the second"]}"#,
-    );
-    assert_eq!(200, resp.status);
-
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
-    assert_eq!(true, body["passed"], "body: {body}");
-    assert_eq!(true, body["is_trace"], "body: {body}");
-    assert_eq!(false, body["can_remediate"], "body: {body}");
-
-    let after = snapshot_dir(&fixture_state);
-    assert_eq!(
-        before, after,
-        "a passing remote trace exam must not write the server's store"
-    );
-}
-
-/// A trace exam that FAILS: `results` with `passed: false`, and
-/// `can_remediate` stays false (a trace is retraced, not remediated), so
-/// `/api/remote/exam/remediate` 409s with no extra guard needed. The re-sit
-/// cooldown a failed trace normally starts is store-side and browser-only,
-/// unwritten here, the byte-compare's other half.
-#[test]
-fn remote_exam_trace_grade_fail_refuses_remediation_and_writes_no_store() {
-    let _lock = exec_lock();
-    let scripts = TempDir::new().unwrap();
-    let fake = fake_reply(
-        scripts.path(),
-        r#"{"verdict":"fail","feedback":"missed the second hop","missed":["it reads the second line"]}"#,
-    );
-    let (base, guard) = spawn_full_server(Some(&fake));
-    let fixture_state = private_state_root(guard.dir());
-    let _ = sync_root_id(&base);
-    let before = snapshot_dir(&fixture_state);
-
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
-    post_json(
-        &base,
-        "/api/remote/exam/grade",
-        r#"{"answers":["it reads the first line"]}"#,
-    );
-
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
-    assert_eq!(false, body["passed"], "body: {body}");
-    assert_eq!(true, body["is_trace"], "body: {body}");
-    assert_eq!(false, body["can_remediate"], "body: {body}");
-
-    let resp = post_json(&base, "/api/remote/exam/remediate", "{}");
-    assert_eq!(409, resp.status);
-
-    let after = snapshot_dir(&fixture_state);
-    assert_eq!(
-        before, after,
-        "a failed remote trace exam must not write the server's store (no cooldown set remotely)"
-    );
+    for deck in ["sample.md", "trace.md"] {
+        let resp = post_json(
+            &base,
+            "/api/remote/exam/start",
+            &serde_json::json!({ "deck": deck }).to_string(),
+        );
+        assert_eq!(409, resp.status, "{deck}");
+        assert!(resp.body.is_empty(), "{deck}: body: {:?}", resp.body);
+    }
 }
 
 #[test]
@@ -9529,12 +9426,10 @@ fn snapshot_dir(dir: &Path) -> HashMap<PathBuf, Vec<u8>> {
 /// owns its mastery/progress/cards (and, for generation, its own
 /// destination), and the desktop only computes answers for it. Runs a full
 /// PASSING remote exam, a full FAILING-then-remediated remote exam, a
-/// PASSING remote trace exam, a FAILING remote trace exam, a tutor
-/// ask+draft+note round trip, and a full remote deck generation against ONE
+/// tutor ask+draft+note round trip, and a full remote deck generation against ONE
 /// server, then diffs the store file's bytes AND a whole-tree snapshot of the
 /// decks dir before and after: a passing exam must not mark the deck
 /// mastered, a remediation must not create server-side virtual cards, a
-/// failed trace must not start the store-side re-sit cooldown, and a
 /// generation must not save the deck it returns: any of those would show up
 /// here as changed bytes or a new file.
 #[test]
@@ -9583,43 +9478,7 @@ fn remote_endpoints_never_write_the_server_store() {
     );
     post_json(&base, "/api/remote/exam/close", "{}");
 
-    // (c) a remote trace exam that PASSES.
-    std::fs::write(
-        &grades_path,
-        r#"{"verdict":"pass","feedback":"re-derives the chain","missed":[]}"#,
-    )
-    .unwrap();
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
-    poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
-    post_json(
-        &base,
-        "/api/remote/exam/grade",
-        r#"{"answers":["it reads the first line, then the second"]}"#,
-    );
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
-    assert_eq!(true, body["passed"], "body: {body}");
-    assert_eq!(true, body["is_trace"], "body: {body}");
-    post_json(&base, "/api/remote/exam/close", "{}");
-
-    // (d) a remote trace exam that FAILS (no remediation: a trace is retraced).
-    std::fs::write(
-        &grades_path,
-        r#"{"verdict":"fail","feedback":"missed the second hop","missed":["it reads the second line"]}"#,
-    )
-    .unwrap();
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"trace.md"}"#);
-    poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
-    post_json(
-        &base,
-        "/api/remote/exam/grade",
-        r#"{"answers":["it reads the first line"]}"#,
-    );
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
-    assert_eq!(false, body["passed"], "body: {body}");
-    assert_eq!(false, body["can_remediate"], "body: {body}");
-    post_json(&base, "/api/remote/exam/close", "{}");
-
-    // (e) a tutor ask + draft round trip.
+    // (c) a tutor ask + draft round trip.
     post_json(
         &base,
         "/api/remote/ask",

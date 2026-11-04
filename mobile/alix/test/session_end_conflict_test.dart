@@ -85,7 +85,6 @@ void main() {
     required String rowTitle,
     bool review = false,
     FakeServerClient? examClient,
-    bool directTrace = false,
   }) async {
     final fixture = workspace();
     if (examClient != null) {
@@ -105,41 +104,26 @@ void main() {
       workspace: fixture.workspace,
     );
     addTearDown(syncController.dispose);
-    if (directTrace) {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: TraceSessionScreen(
-            deckPath: '${fixture.workspace.path}/$deckPath',
-            rootDir: fixture.root.path,
-            supportDir: fixture.support,
-            buildClient: (_) => examClient!,
-            syncController: syncController,
-          ),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PickerScreen(
+          root: fixture.root.path,
+          dir: fixture.workspace.path,
+          title: 'Ws',
+          supportDir: fixture.support,
+          buildClient: examClient == null ? null : (_) => examClient,
+          syncController: syncController,
+          isPairedSubtree: true,
+          isPushedRoute: true,
         ),
-      );
+      ),
+    );
+    await settlePicker(tester);
+    await tester.tap(find.text(rowTitle));
+    await tester.pumpAndSettle();
+    if (rowTitle == 'Deck' || review) {
+      await tester.tap(find.text('Recall'));
       await tester.pumpAndSettle();
-    } else {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PickerScreen(
-            root: fixture.root.path,
-            dir: fixture.workspace.path,
-            title: 'Ws',
-            supportDir: fixture.support,
-            buildClient: examClient == null ? null : (_) => examClient,
-            syncController: syncController,
-            isPairedSubtree: true,
-            isPushedRoute: true,
-          ),
-        ),
-      );
-      await settlePicker(tester);
-      await tester.tap(find.text(rowTitle));
-      await tester.pumpAndSettle();
-      if (rowTitle == 'Deck' || review) {
-        await tester.tap(find.text('Recall'));
-        await tester.pumpAndSettle();
-      }
     }
     syncController.publish();
     await tester.pumpAndSettle();
@@ -368,7 +352,7 @@ void main() {
     (tester) async {
       final client = FakeServerClient(
         versionReply: '0.8.0',
-        examGetReplies: [_passedExam(isTrace: false)],
+        examGetReplies: [_passedExam],
       );
       final syncController = await openSession(
         tester,
@@ -398,86 +382,12 @@ void main() {
   );
 
   testWidgets(
-    'passing the exam after taking desktop on a finished trace keeps the '
-    'desktop card progress',
-    (tester) async {
-      final client = FakeServerClient(
-        versionReply: '0.8.0',
-        examGetReplies: [_passedExam(isTrace: true)],
-      );
-      final syncController = await openSession(
-        tester,
-        deckId: 'trace-1',
-        deckPath: 'decks/trace.md',
-        rowTitle: 'Trace',
-        examClient: client,
-        directTrace: true,
-      );
-      await tester.enterText(find.byType(TextField), 'a guess');
-      await tester.tap(find.text('Reveal'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Got it'));
-      await tester.pumpAndSettle();
-      expect(find.text('TRACE COMPLETE'), findsOneWidget);
-
-      await resolveAndExpectPicker(tester, syncController);
-      expect(_cards(syncController.workspace), isEmpty);
-      await tester.tap(find.text('Take the exam'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Passed.'), findsOneWidget);
-      expect(
-        _cards(syncController.workspace),
-        isEmpty,
-        reason: 'exam mastery must not restore the discarded phone trace',
-      );
-    },
-  );
-
-  testWidgets(
-    'failing the exam after taking desktop on a finished trace keeps the '
-    'desktop card progress',
-    (tester) async {
-      final client = FakeServerClient(
-        versionReply: '0.8.0',
-        examGetReplies: [_failedExam(isTrace: true)],
-      );
-      final syncController = await openSession(
-        tester,
-        deckId: 'trace-1',
-        deckPath: 'decks/trace.md',
-        rowTitle: 'Trace',
-        examClient: client,
-        directTrace: true,
-      );
-      await tester.enterText(find.byType(TextField), 'a guess');
-      await tester.tap(find.text('Reveal'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Got it'));
-      await tester.pumpAndSettle();
-      expect(find.text('TRACE COMPLETE'), findsOneWidget);
-
-      await resolveAndExpectPicker(tester, syncController);
-      expect(_cards(syncController.workspace), isEmpty);
-      await tester.tap(find.text('Take the exam'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Not yet.'), findsOneWidget);
-      expect(
-        _cards(syncController.workspace),
-        isEmpty,
-        reason: 'exam cooldown must not restore the discarded phone trace',
-      );
-    },
-  );
-
-  testWidgets(
     'remediating after taking desktop on a finished review keeps only the '
     'new remediation card',
     (tester) async {
       final client = FakeServerClient(
         versionReply: '0.8.0',
-        examGetReplies: [_failedExam(isTrace: false), _remediatedExam],
+        examGetReplies: [_failedExam, _remediatedExam],
       );
       final syncController = await openSession(
         tester,
@@ -512,7 +422,7 @@ void main() {
   );
 }
 
-RemoteExam _passedExam({required bool isTrace}) => RemoteExam(
+const _passedExam = RemoteExam(
   phase: 'results',
   deck: 'ws/deck.md',
   strictness: 'balanced',
@@ -521,11 +431,10 @@ RemoteExam _passedExam({required bool isTrace}) => RemoteExam(
   grades: const [],
   gaps: const [],
   canRemediate: false,
-  isTrace: isTrace,
   thinking: false,
 );
 
-RemoteExam _failedExam({required bool isTrace}) => RemoteExam(
+const _failedExam = RemoteExam(
   phase: 'results',
   deck: 'ws/deck.md',
   strictness: 'balanced',
@@ -533,8 +442,7 @@ RemoteExam _failedExam({required bool isTrace}) => RemoteExam(
   passed: false,
   grades: const [],
   gaps: const ['the tested idea'],
-  canRemediate: !isTrace,
-  isTrace: isTrace,
+  canRemediate: true,
   thinking: false,
 );
 
@@ -548,7 +456,6 @@ const _remediatedExam = RemoteExam(
   gaps: ['the tested idea'],
   canRemediate: false,
   cards: '## remediation question?\nremediation answer\n',
-  isTrace: false,
   thinking: false,
 );
 

@@ -1,14 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 
-import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/bridge/trace_bridge.dart';
-import 'package:alix_mobile/exam_screen.dart';
 import 'package:alix_mobile/leave_guard.dart';
-import 'package:alix_mobile/pairing_sheet.dart';
-import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/sync/sync_controller.dart';
 import 'package:alix_mobile/sync/sync_sheet.dart';
 import 'package:alix_mobile/trace/trace_controller.dart';
@@ -17,7 +10,7 @@ import 'package:alix_mobile/trace/trace_view.dart';
 
 /// The on-device trace route.
 ///
-/// The screen owns Flutter lifecycle, navigation, pairing, and exam handoff.
+/// The screen owns Flutter lifecycle and navigation.
 /// Bridge-backed session state and named transitions live in [TraceSessionController],
 /// while the rendered tree lives below [TraceSessionView].
 class TraceSessionScreen extends StatefulWidget {
@@ -26,8 +19,6 @@ class TraceSessionScreen extends StatefulWidget {
     required this.deckPath,
     required this.rootDir,
     this.device,
-    this.supportDir,
-    this.buildClient,
     this.syncController,
   });
 
@@ -36,12 +27,6 @@ class TraceSessionScreen extends StatefulWidget {
 
   /// This install's label for the store's last-writer marker.
   final String? device;
-
-  /// The support dir the pairing config is read from. Tests inject a temp one.
-  final Directory? supportDir;
-
-  /// Builds the exam handoff's client. Tests inject a fake.
-  final ServerClient Function(ServerConfig)? buildClient;
 
   /// Non-null only when [rootDir] is the active paired root.
   final SyncController? syncController;
@@ -54,8 +39,6 @@ class _TraceSessionScreenState extends State<TraceSessionScreen> {
   late final TraceSessionController _controller;
   final TextEditingController _predict = TextEditingController();
 
-  ServerClient? _client;
-  Directory? _support;
   bool _endChecked = false;
 
   @override
@@ -70,7 +53,6 @@ class _TraceSessionScreenState extends State<TraceSessionScreen> {
     if (_controller.openError != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _bailToCaller());
     } else {
-      _probeServer();
       _controller.addListener(_checkConflictAtDone);
     }
   }
@@ -101,50 +83,7 @@ class _TraceSessionScreenState extends State<TraceSessionScreen> {
     _predict.dispose();
     _controller.removeListener(_checkConflictAtDone);
     _controller.dispose();
-    _client?.close();
     super.dispose();
-  }
-
-  Future<void> _probeServer() async {
-    final support = widget.supportDir ?? await getApplicationSupportDirectory();
-    _support = support;
-    final config = readActivePairing(support);
-    if (config == null) return;
-    final client = (widget.buildClient ?? HttpServerClient.new)(config);
-    ServerVersion? probe;
-    try {
-      probe = await client.version();
-    } on PairingExpired {
-      client.close();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Pairing expired. Pair again from Settings → Connected devices.',
-          ),
-          action: SnackBarAction(
-            label: 'Re-pair',
-            onPressed: () {
-              if (!mounted) return;
-              showPairingSheet(
-                context,
-                support: support,
-                buildClient: widget.buildClient ?? HttpServerClient.new,
-              );
-            },
-          ),
-        ),
-      );
-      return;
-    }
-    final live =
-        probe != null && compareVersions(probe.version, minServerVersion) >= 0;
-    if (!live || !mounted) {
-      client.close();
-      return;
-    }
-    _client = client;
-    _controller.setServerLive(true);
   }
 
   void _bailToCaller() {
@@ -168,41 +107,6 @@ class _TraceSessionScreenState extends State<TraceSessionScreen> {
   void _submitPredict() {
     _controller.predict(_predict.text);
     _predict.clear();
-  }
-
-  String _deckName() {
-    var relative = widget.deckPath;
-    if (relative.startsWith(widget.rootDir)) {
-      relative = relative.substring(widget.rootDir.length);
-    }
-    final parts = relative
-        .split(RegExp(r'[\\/]+'))
-        .where((part) => part.isNotEmpty)
-        .toList();
-    if (parts.length >= 2 && parts[parts.length - 2] == 'decks') {
-      parts.removeAt(parts.length - 2);
-    }
-    return parts.join('/');
-  }
-
-  void _openExam() {
-    final client = _client;
-    final support = _support;
-    if (client == null || support == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ExamScreen(
-          deckName: _deckName(),
-          client: client,
-          support: support,
-          buildClient: widget.buildClient ?? HttpServerClient.new,
-          applyPassed: (nowMs) => _controller.applyExamPassed(nowMs.toInt()),
-          applyFailed: (nowMs) => _controller.applyExamFailed(nowMs.toInt()),
-          applyRemediation: (_) => 0,
-          nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
-        ),
-      ),
-    );
   }
 
   Future<bool> _confirmLeave(BuildContext context) async {
@@ -229,19 +133,12 @@ class _TraceSessionScreenState extends State<TraceSessionScreen> {
           return const SizedBox.shrink();
         }
         final state = _controller.state;
-        final done = state.phase == TraceSessionPhaseModel.done;
-        final cooldown = done && _client != null
-            ? _controller.examCooldownMs(DateTime.now().millisecondsSinceEpoch)
-            : null;
         return TraceSessionView(
           state: state,
           predictionController: _predict,
-          examAvailable: _controller.serverLive && cooldown == null,
-          cooldownMs: cooldown,
           confirmLeave: _confirmLeave,
           onReveal: _submitPredict,
           onGrade: _controller.grade,
-          onOpenExam: _openExam,
           onRestart: _restart,
         );
       },

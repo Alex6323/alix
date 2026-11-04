@@ -15,7 +15,7 @@ use crate::{
     assemble::AssembleConfig,
     config::{AskConfig, Audience, ExamConfig, GenerateDeckConfig},
     deck::Deck,
-    exam, generate, share, trace,
+    exam, generate, share,
 };
 
 pub(super) struct JobsState {
@@ -761,25 +761,10 @@ impl JobsState {
             return Started::Conflict;
         }
         let strictness = deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
-        let sitting = if deck.is_trace() {
-            match trace::Trace::from_deck(&deck) {
-                Ok(t) => exam::Sitting::start_trace(
-                    t.description.clone(),
-                    t.compression_rubric(),
-                    deck.subject.clone(),
-                    deck.deck_token.clone().unwrap_or_default(),
-                    strictness,
-                    exam_cfg,
-                    ask_cfg,
-                ),
-                Err(_) => return Started::Conflict,
-            }
-        } else {
-            if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
-                return Started::Conflict;
-            }
-            exam::Sitting::start(&deck, strictness, exam_cfg, ask_cfg)
-        };
+        if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
+            return Started::Conflict;
+        }
+        let sitting = exam::Sitting::start(&deck, strictness, exam_cfg, ask_cfg);
         let ex = RemoteExamining {
             sitting,
             cards: None,

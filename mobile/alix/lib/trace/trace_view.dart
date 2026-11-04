@@ -13,23 +13,17 @@ class TraceSessionView extends StatelessWidget {
     super.key,
     required this.state,
     required this.predictionController,
-    required this.examAvailable,
-    required this.cooldownMs,
     required this.confirmLeave,
     required this.onReveal,
     required this.onGrade,
-    required this.onOpenExam,
     required this.onRestart,
   });
 
   final TraceSessionStateModel state;
   final TextEditingController predictionController;
-  final bool examAvailable;
-  final int? cooldownMs;
   final Future<bool> Function(BuildContext context) confirmLeave;
   final VoidCallback onReveal;
   final ValueChanged<TraceSessionGrade> onGrade;
-  final VoidCallback onOpenExam;
   final VoidCallback onRestart;
 
   @override
@@ -70,9 +64,6 @@ class TraceSessionView extends StatelessWidget {
                 child: done
                     ? TraceSessionSummaryView(
                         state: state,
-                        examAvailable: examAvailable,
-                        cooldownMs: cooldownMs,
-                        onOpenExam: onOpenExam,
                         onRestart: onRestart,
                       )
                     : Column(

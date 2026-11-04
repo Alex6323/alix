@@ -81,14 +81,6 @@ abstract class ReviewSession implements RustOpaqueInterface {
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<TraceSession>>
 abstract class TraceSession implements RustOpaqueInterface {
-  void applyExamFailed({required BigInt nowMs});
-
-  void applyExamPassed({required BigInt nowMs});
-
-  bool deckHasExam();
-
-  BigInt? examCooldownMs({required BigInt nowMs});
-
   TraceSessionState grade({required TraceSessionDelta delta, BigInt? nowMs});
 
   static TraceSession open({

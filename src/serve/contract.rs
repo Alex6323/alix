@@ -865,12 +865,10 @@ fn examdto_results_phase_wire_shape() {
         gaps: Vec::new(),
         can_remediate: false,
         remediated_count: None,
-        is_trace: false,
         unlocks: vec!["next.md".to_string()],
         thinking: false,
         error: None,
         elapsed: None,
-        cooldown_ms: None,
     };
     pin(
         "ExamDto.results",
@@ -908,43 +906,10 @@ fn examdto_results_phase_wire_shape() {
             "gaps": [],
             "can_remediate": false,
             "remediated_count": null,
-            "is_trace": false,
             "unlocks": ["next.md"],
             "thinking": false,
             "error": null,
-            "elapsed": null,
-            "cooldown_ms": null
-        }),
-    );
-}
-
-#[test]
-fn examdto_cooldown_phase_wire_shape() {
-    let dto = cooldown_dto("deck.md", 90000);
-    pin(
-        "ExamDto.cooldown",
-        &dto,
-        json!({
-            "phase": "cooldown",
-            "deck": "deck.md",
-            "strictness": "balanced",
-            "total": 0,
-            "current": 0,
-            "question": null,
-            "question_units": null,
-            "answer": "",
-            "on_last": false,
-            "grades": [],
-            "passed": null,
-            "gaps": [],
-            "can_remediate": false,
-            "remediated_count": null,
-            "is_trace": true,
-            "unlocks": [],
-            "thinking": false,
-            "error": null,
-            "elapsed": null,
-            "cooldown_ms": 90000
+            "elapsed": null
         }),
     );
 }
@@ -2663,7 +2628,6 @@ fn remoteexamdto_idle_wire_shape() {
         gaps: Vec::new(),
         can_remediate: false,
         cards: None,
-        is_trace: false,
         thinking: false,
         elapsed: None,
         error: None,
@@ -2682,7 +2646,6 @@ fn remoteexamdto_idle_wire_shape() {
             "gaps": [],
             "can_remediate": false,
             "cards": null,
-            "is_trace": false,
             "thinking": false,
             "elapsed": null,
             "error": null
@@ -2709,7 +2672,6 @@ fn remoteexamdto_answering_wire_shape() {
         gaps: Vec::new(),
         can_remediate: false,
         cards: None,
-        is_trace: false,
         thinking: false,
         elapsed: None,
         error: None,
@@ -2728,7 +2690,6 @@ fn remoteexamdto_answering_wire_shape() {
             "gaps": [],
             "can_remediate": false,
             "cards": null,
-            "is_trace": false,
             "thinking": false,
             "elapsed": null,
             "error": null
@@ -2760,7 +2721,6 @@ fn remoteexamdto_results_wire_shape() {
         gaps: vec!["ownership and the GC-free memory model".to_string()],
         can_remediate: true,
         cards: None,
-        is_trace: false,
         thinking: false,
         elapsed: None,
         error: None,
@@ -2790,7 +2750,6 @@ fn remoteexamdto_results_wire_shape() {
             "gaps": ["ownership and the GC-free memory model"],
             "can_remediate": true,
             "cards": null,
-            "is_trace": false,
             "thinking": false,
             "elapsed": null,
             "error": null
@@ -2824,7 +2783,6 @@ fn remoteexamdto_remediated_wire_shape() {
         cards: Some(
             "## Why does Rust use ownership?\nso drops are deterministic, no GC needed".to_string(),
         ),
-        is_trace: false,
         thinking: false,
         elapsed: None,
         error: None,
@@ -2854,71 +2812,6 @@ fn remoteexamdto_remediated_wire_shape() {
             "gaps": ["ownership and the GC-free memory model"],
             "can_remediate": false,
             "cards": "## Why does Rust use ownership?\nso drops are deterministic, no GC needed",
-            "is_trace": false,
-            "thinking": false,
-            "elapsed": null,
-            "error": null
-        }),
-    );
-}
-
-#[test]
-fn remoteexamdto_trace_results_wire_shape() {
-    let dto = RemoteExamDto {
-        phase: "results",
-        deck: "trace.md".to_string(),
-        strictness: "balanced",
-        questions: vec!["how it works".to_string()],
-        questions_units: dto_questions_units(&["how it works".to_string()]),
-        passed: Some(false),
-        grades: vec![exam_grade_dto(
-            &exam::ExamQuestion {
-                prompt: "how it works".to_string(),
-                points: vec!["it reads the first line".to_string()],
-            },
-            "it reads the file",
-            &exam::AnswerGrade {
-                verdict: exam::Verdict::Fail,
-                feedback: "missed the second hop".to_string(),
-                missed: vec!["it reads the second line".to_string()],
-            },
-        )],
-        gaps: vec!["it reads the second line".to_string()],
-        // A trace sitting never offers remediation (a failed compression is
-        // retraced, not remediated into cards): true here would be a bug.
-        can_remediate: false,
-        cards: None,
-        is_trace: true,
-        thinking: false,
-        elapsed: None,
-        error: None,
-    };
-    pin(
-        "RemoteExamDto.trace_results",
-        &dto,
-        json!({
-            "phase": "results",
-            "deck": "trace.md",
-            "strictness": "balanced",
-            "questions": ["how it works"],
-            "questions_units": [[{"kind": "sentence", "text": "how it works", "runs": [{"text": "how it works"}]}]],
-            "passed": false,
-            "grades": [{
-                "question": "how it works",
-                "question_units": [{"kind": "sentence", "text": "how it works", "runs": [{"text": "how it works"}]}],
-                "points": ["it reads the first line"],
-                "points_units": [[{"kind": "sentence", "text": "it reads the first line", "runs": [{"text": "it reads the first line"}]}]],
-                "answer": "it reads the file",
-                "verdict": "FAIL",
-                "feedback": "missed the second hop",
-                "feedback_units": [{"kind": "sentence", "text": "missed the second hop", "runs": [{"text": "missed the second hop"}]}],
-                "missed": ["it reads the second line"],
-                "missed_units": [[{"kind": "sentence", "text": "it reads the second line", "runs": [{"text": "it reads the second line"}]}]]
-            }],
-            "gaps": ["it reads the second line"],
-            "can_remediate": false,
-            "cards": null,
-            "is_trace": true,
             "thinking": false,
             "elapsed": null,
             "error": null

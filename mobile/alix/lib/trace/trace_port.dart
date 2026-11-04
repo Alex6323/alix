@@ -14,12 +14,6 @@ abstract interface class TraceSessionPort {
   void predict(String text);
 
   TraceSessionStateModel grade(TraceSessionGrade grade);
-
-  int? examCooldownMs(int nowMs);
-
-  void applyExamPassed(int nowMs);
-
-  void applyExamFailed(int nowMs);
 }
 
 class TraceSessionOpenFailure implements Exception {

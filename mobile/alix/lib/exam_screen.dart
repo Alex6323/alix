@@ -40,7 +40,6 @@ class ExamScreen extends StatefulWidget {
     required this.applyPassed,
     required this.applyRemediation,
     required this.nowMs,
-    this.applyFailed,
     this.pollInterval = const Duration(milliseconds: 400),
   });
 
@@ -70,13 +69,6 @@ class ExamScreen extends StatefulWidget {
   /// were created or revived.
   final int Function(String cardsText) applyRemediation;
 
-  /// Records a FAILED trace exam so a re-sit waits out the cooldown; the
-  /// phone owns this write (a closure over the trace session's
-  /// `applyExamFailed`). Null for fact-deck exams, which never call it: a
-  /// fact-deck fail remediates instead of persisting a cooldown-triggering
-  /// failure.
-  final void Function(BigInt nowMs)? applyFailed;
-
   /// The wall clock, injected so tests can fake it.
   final BigInt Function() nowMs;
 
@@ -104,9 +96,6 @@ class _ExamScreenState extends State<ExamScreen> {
 
   /// Same guard, for turning `remediated` cards into store entries.
   bool _remediationApplied = false;
-
-  /// Same guard, for persisting a failed trace exam (starts its cooldown).
-  bool _failedApplied = false;
 
   /// How many consecutive null first-poll replies to tolerate before
   /// falling back to the refusal path (Polish 8b): a slow sitting start
@@ -197,14 +186,6 @@ class _ExamScreenState extends State<ExamScreen> {
     if (dto.phase == 'results' && dto.passed == true && !_passedApplied) {
       _passedApplied = true;
       widget.applyPassed(widget.nowMs());
-    }
-    if (dto.phase == 'results' &&
-        dto.passed == false &&
-        dto.isTrace &&
-        widget.applyFailed != null &&
-        !_failedApplied) {
-      _failedApplied = true;
-      widget.applyFailed!(widget.nowMs());
     }
     if (dto.phase == 'remediated' && !_remediationApplied) {
       _remediationApplied = true;
@@ -462,10 +443,6 @@ class _ExamScreenState extends State<ExamScreen> {
             onPressed: _remediating ? null : _remediate,
             child: const Text('Turn the gaps into cards'),
           ),
-        ],
-        if (!passed && exam.isTrace) ...[
-          const SizedBox(height: 12),
-          Text('Trace it again before re-sitting.', style: TextStyle(color: tokens.dim)),
         ],
       ],
     );

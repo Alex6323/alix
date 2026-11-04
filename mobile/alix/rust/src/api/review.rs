@@ -859,14 +859,6 @@ fn reopen_store(stale: &alix::store::Store, deck_path: &Path, root_store: &Path)
 pub struct TraceSession {
     session: alix::trace::TraceSession,
     store: alix::store::Store,
-    deck_path: PathBuf,
-    root_store: PathBuf,
-    // The stable deck id: deck-level store state (mastery, exam cooldown) is
-    // keyed by this, captured off the loaded Deck rather than re-derived.
-    deck_token: String,
-    #[expect(dead_code)] // no trace-side remediation flow yet to dedup against
-    deck_fingerprints: HashSet<u64>,
-    has_exam: bool,
     // See ReviewSession::save_error: same non-fatal per-grade semantics.
     save_error: Option<String>,
 }
@@ -880,12 +872,6 @@ impl TraceSession {
         device: Option<String>,
     ) -> Result<TraceSession> {
         let deck = PathBuf::from(deck_path);
-        let loaded = alix::deck::Deck::load(&deck)?;
-        let deck_token = loaded.deck_token.clone().unwrap_or_default();
-        let deck_fingerprints: HashSet<u64> =
-            loaded.cards.iter().map(|c| c.block_fingerprint).collect();
-        let has_exam = loaded.has_exam();
-        let deck_path = deck.clone();
 
         let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
         let mut store = alix::assemble::store_for(std::slice::from_ref(&deck), Some(&root_store))?;
@@ -916,11 +902,6 @@ impl TraceSession {
         Ok(TraceSession {
             session: build.session,
             store,
-            deck_path,
-            root_store,
-            deck_token,
-            deck_fingerprints,
-            has_exam,
             save_error: None,
         })
     }
@@ -948,36 +929,6 @@ impl TraceSession {
         Ok(self.state())
     }
 
-    #[flutter_rust_bridge::frb(sync)]
-    pub fn deck_has_exam(&self) -> bool {
-        self.has_exam
-    }
-
-    #[flutter_rust_bridge::frb(sync)]
-    pub fn exam_cooldown_ms(&self, now_ms: u64) -> Option<u64> {
-        alix::store::cooldown_remaining_ms(
-            &self.store,
-            &self.deck_token,
-            alix::config::ExamConfig::default().retry_cooldown_secs,
-            now_ms,
-        )
-    }
-
-    #[flutter_rust_bridge::frb(sync)]
-    pub fn apply_exam_passed(&mut self, now_ms: u64) -> Result<()> {
-        self.store = reopen_store(&self.store, &self.deck_path, &self.root_store)?;
-        self.store.set_deck_mastered(&self.deck_token, now_ms);
-        self.store.save()?;
-        Ok(())
-    }
-
-    #[flutter_rust_bridge::frb(sync)]
-    pub fn apply_exam_failed(&mut self, now_ms: u64) -> Result<()> {
-        self.store = reopen_store(&self.store, &self.deck_path, &self.root_store)?;
-        self.store.set_exam_failed(&self.deck_token, now_ms);
-        self.store.save()?;
-        Ok(())
-    }
 }
 
 pub struct WalkState {
@@ -2827,51 +2778,6 @@ mod tests {
         assert_eq!(state.phase, TraceSessionPhase::Reveal);
         assert!(state.excerpt.is_none(), "no panic, just an honest fallback");
         assert!(state.excerpt_error.is_some());
-    }
-
-    #[test]
-    fn exam_cooldown_gates_a_resit_after_a_failed_trace_exam_and_a_pass_clears_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let deck = trace_fixture(root);
-        let deck_id = alix::deck::Deck::load(&deck).unwrap().deck_token.unwrap();
-        let mut s = TraceSession::open(
-            deck.to_string_lossy().into_owned(),
-            root.to_string_lossy().into_owned(),
-            Some(T0),
-            None,
-        )
-        .unwrap();
-        assert!(s.deck_has_exam(), "a trace always sits an exam");
-        assert_eq!(s.exam_cooldown_ms(T0), None, "never failed: no cooldown");
-
-        s.apply_exam_failed(T0).unwrap();
-        let cooldown_ms = alix::config::ExamConfig::default().retry_cooldown_secs * 1000;
-        assert_eq!(s.exam_cooldown_ms(T0), Some(cooldown_ms));
-        assert_eq!(
-            s.exam_cooldown_ms(T0 + cooldown_ms + 1),
-            None,
-            "the cooldown elapsed"
-        );
-
-        let store_path = alix::workspace::root_store_path(root);
-        assert!(
-            !alix::state::open_store(&deck, &store_path)
-                .unwrap()
-                .deck_mastered(&deck_id),
-            "fresh: not yet mastered"
-        );
-        s.apply_exam_passed(T0 + cooldown_ms + 1).unwrap();
-        assert!(
-            s.deck_has_exam(),
-            "the flag is captured at open, not derived from the store"
-        );
-        let reopened = alix::state::open_store(&deck, &store_path).unwrap();
-        assert!(reopened.deck_mastered(&deck_id));
-        assert_eq!(
-            reopened.deck_mastered_at(&deck_id),
-            Some(T0 + cooldown_ms + 1)
-        );
     }
 
     #[test]

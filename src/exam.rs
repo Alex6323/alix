@@ -196,25 +196,6 @@ pub fn grade_answers(
     })
 }
 
-pub fn grade_compression(
-    description: &str,
-    points: &[String],
-    compression: &str,
-    strictness: Strictness,
-    cfg: &ExamConfig,
-    ask_cfg: &AskConfig,
-) -> Result<ExamResult> {
-    let prompt = grade_compression_prompt(description, points, compression, strictness);
-    let mut run = run_config(cfg, ask_cfg);
-    run.allowed_tools.clear(); // pure reasoning over the supplied text
-    let raw = ask::run(&run, &prompt, &[])?;
-    let grade: AnswerGrade = parse_json(&raw).context("parsing the compression grade")?;
-    Ok(ExamResult {
-        passed: grade.verdict == Verdict::Pass,
-        grades: vec![grade],
-    })
-}
-
 pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig) -> Result<String> {
     if gaps.is_empty() {
         bail!("no gaps to remediate");
@@ -262,30 +243,6 @@ pub fn spawn_grade(
     rx
 }
 
-pub fn spawn_grade_compression(
-    description: String,
-    points: Vec<String>,
-    compression: String,
-    strictness: Strictness,
-    cfg: ExamConfig,
-    ask_cfg: AskConfig,
-) -> Receiver<Result<ExamResult, String>> {
-    let (tx, rx) = channel();
-    std::thread::spawn(move || {
-        let r = grade_compression(
-            &description,
-            &points,
-            &compression,
-            strictness,
-            &cfg,
-            &ask_cfg,
-        )
-        .map_err(|e| format!("{e:#}"));
-        let _ = tx.send(r);
-    });
-    rx
-}
-
 pub fn spawn_remediation(
     gaps: Vec<String>,
     cfg: ExamConfig,
@@ -312,7 +269,6 @@ pub enum Phase {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     Passed,
-    TraceFailed,
     RemediationCards(String),
 }
 
@@ -322,17 +278,9 @@ enum Pending {
     Remediation(Receiver<Result<String, String>>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SittingKind {
-    Source,
-    Trace,
-}
-
 pub struct Sitting {
-    kind: SittingKind,
     subject: String,
     deck_token: String,
-    /// Absent for a trace sitting, which has no deck file to write beside.
     deck_path: Option<std::path::PathBuf>,
     deck_fingerprints: HashSet<u64>,
     strictness: Strictness,
@@ -363,7 +311,6 @@ impl Sitting {
             ))
         });
         Self {
-            kind: SittingKind::Source,
             subject: deck.subject.clone(),
             deck_token: deck.deck_token.clone().unwrap_or_default(),
             deck_path: Some(deck.path.clone()),
@@ -385,44 +332,6 @@ impl Sitting {
             pending_since: source_ready.then(crate::time::now_ms),
             remediated_count: None,
         }
-    }
-
-    pub fn start_trace(
-        description: String,
-        rubric: Vec<String>,
-        subject: String,
-        deck_token: String,
-        strictness: Strictness,
-        cfg: ExamConfig,
-        ask_cfg: AskConfig,
-    ) -> Self {
-        let question = ExamQuestion {
-            prompt: description,
-            points: rubric,
-        };
-        Self {
-            kind: SittingKind::Trace,
-            subject,
-            deck_token,
-            deck_path: None,
-            deck_fingerprints: HashSet::new(),
-            strictness,
-            cfg,
-            ask_cfg,
-            phase: Phase::Answering,
-            questions: vec![question],
-            answers: vec![String::new()],
-            current: 0,
-            result: None,
-            pending: None,
-            error: None,
-            pending_since: None,
-            remediated_count: None,
-        }
-    }
-
-    pub fn kind(&self) -> SittingKind {
-        self.kind
     }
 
     pub fn phase(&self) -> &Phase {
@@ -517,26 +426,13 @@ impl Sitting {
             return;
         }
         self.error = None;
-        let rx = match self.kind {
-            SittingKind::Source => spawn_grade(
-                self.questions.clone(),
-                self.answers.clone(),
-                self.strictness,
-                self.cfg.clone(),
-                self.ask_cfg.clone(),
-            ),
-            SittingKind::Trace => {
-                let q = &self.questions[0];
-                spawn_grade_compression(
-                    q.prompt.clone(),
-                    q.points.clone(),
-                    self.answers[0].clone(),
-                    self.strictness,
-                    self.cfg.clone(),
-                    self.ask_cfg.clone(),
-                )
-            }
-        };
+        let rx = spawn_grade(
+            self.questions.clone(),
+            self.answers.clone(),
+            self.strictness,
+            self.cfg.clone(),
+            self.ask_cfg.clone(),
+        );
         self.pending = Some(Pending::Grade(rx));
         self.pending_since = Some(crate::time::now_ms());
         self.phase = Phase::Grading;
@@ -550,8 +446,7 @@ impl Sitting {
     }
 
     pub fn can_remediate(&self) -> bool {
-        self.kind == SittingKind::Source
-            && self.phase == Phase::Results
+        self.phase == Phase::Results
             && self.result.as_ref().is_some_and(|r| !r.passed)
             && !self.gaps().is_empty()
     }
@@ -605,13 +500,7 @@ impl Sitting {
                 None
             }
             Reply::Grade(Ok(result)) => {
-                let effect = if result.passed {
-                    Some(Effect::Passed)
-                } else if self.kind == SittingKind::Trace {
-                    Some(Effect::TraceFailed)
-                } else {
-                    None
-                };
+                let effect = result.passed.then_some(Effect::Passed);
                 self.result = Some(result);
                 self.phase = Phase::Results;
                 effect
@@ -646,10 +535,6 @@ impl Sitting {
         match effect {
             Some(Effect::Passed) => {
                 store.set_deck_mastered(&self.deck_token, now_ms);
-                store_mutated = true;
-            }
-            Some(Effect::TraceFailed) => {
-                store.set_exam_failed(&self.deck_token, now_ms);
                 store_mutated = true;
             }
             Some(Effect::RemediationCards(cards)) => {
@@ -695,8 +580,6 @@ enum Reply {
 fn thread_gone() -> String {
     "the exam helper exited unexpectedly".to_string()
 }
-
-pub use crate::store::cooldown_remaining_ms;
 
 fn passed(grades: &[AnswerGrade], threshold: f64) -> bool {
     if grades.is_empty() {
@@ -1015,84 +898,6 @@ fn grade_prompt(questions: &[ExamQuestion], answers: &[String], strictness: Stri
     prompt
 }
 
-fn compression_strictness_criteria(strictness: Strictness) -> &'static str {
-    match strictness {
-        Strictness::Strict => {
-            "\
-Grade strictly: the retrace must name every load-bearing step and the causal \
-link from each to the next. A missing step, a wrong order, or a hand-waved \"and \
-then it works\" is a gap.\n\
-- \"pass\": the whole chain is re-derived — each step and link present.\n\
-- \"partial\": the gist is right but a step or a link is missing or wrong.\n\
-- \"fail\": the chain is mostly absent, out of order, or wrong."
-        }
-        Strictness::Balanced => {
-            "\
-Grade for whether the learner can RE-DERIVE the path: the main steps and how \
-each leads to the next, in their own words. Forgive omitted minor detail and \
-loose wording — a two-sentence gist that captures the causal spine passes. Mark \
-a point missed only when a load-bearing step or link is absent or wrong.\n\
-- \"pass\": the causal spine is re-derived end to end.\n\
-- \"partial\": part of the chain is there, but a key step or link is missing or \
-wrong.\n\
-- \"fail\": little of the path's chain is reconstructed."
-        }
-        Strictness::Lenient => {
-            "\
-Grade generously: pass if the compression broadly captures the path's shape — \
-roughly where it starts, the main move, and where it ends — even if thin. Fail \
-only a retrace that is clearly wrong or essentially absent.\n\
-- \"pass\": broadly traces the path, even thinly.\n\
-- \"partial\": gestures at the path but with a clear error or gap.\n\
-- \"fail\": wrong or essentially no retrace."
-        }
-    }
-}
-
-fn grade_compression_prompt(
-    description: &str,
-    points: &[String],
-    compression: &str,
-    strictness: Strictness,
-) -> String {
-    let mut prompt = String::from(
-        "You are grading the final exam of a trace, a guided predict-and-verify \
-         path through a source. The learner traced the path hop by hop; \
-         now, from memory, they RETRACE THE WHOLE PATH in a sentence or two. This \
-         compression IS the exam: it verifies they can RE-DERIVE the path (the \
-         steps and how they connect), not merely recognize each step.\n\n\
-         The path answers this question:\n",
-    );
-    prompt.push_str(description.trim());
-    prompt.push_str(
-        "\n\nA faithful retrace re-derives these load-bearing points, in order \
-         (drawn from the path's checkpoints — the ground truth):\n",
-    );
-    for point in points {
-        prompt.push_str("  - ");
-        prompt.push_str(point);
-        prompt.push('\n');
-    }
-    prompt.push_str("\nThe learner's compression:\n");
-    let answer = compression.trim();
-    prompt.push_str(if answer.is_empty() {
-        "(no answer given)"
-    } else {
-        answer
-    });
-    prompt.push_str("\n\n");
-    prompt.push_str(compression_strictness_criteria(strictness));
-    prompt.push_str(
-        "\nJudge the CAUSAL CHAIN, not verbatim coverage — a short retrace that \
-         re-derives the spine passes even if it omits detail, while a confident \
-         retrace that gets the mechanism wrong does not. Put the specific missing \
-         or wrong steps in `missed`. Keep `feedback` to one or two sentences.\n\
-         Output ONLY JSON in exactly this shape, no prose, no code fences:\n\
-         {\"verdict\": \"pass|partial|fail\", \"feedback\": \"...\", \"missed\": [\"...\"]}",
-    );
-    prompt
-}
-
 fn remediation_prompt(gaps: &[String]) -> String {
     let mut prompt = String::from(
         "A student failed an understanding exam on the concepts below. Turn them \
@@ -1318,18 +1123,13 @@ mod tests {
     /// A fact-deck exam grades against the source, never a card's section
     /// context. This is a signature-name tripwire for that boundary, not a
     /// generic ban on deck-derived values: question generation takes the
-    /// sections as scope, and trace compression grounds on its path
-    /// description and gradeable checkpoint answers.
+    /// sections as scope.
     #[test]
-    fn exam_prompt_signatures_ban_section_like_names_and_pin_trace_grounding() {
+    fn exam_prompt_signatures_ban_section_like_names() {
         let source = include_str!("exam.rs");
-        let builders: [(&str, &[&str]); 4] = [
+        let builders: [(&str, &[&str]); 3] = [
             ("fn questions_prompt(", &["sections: &[ExamSection]"]),
             ("fn grade_prompt(", &[]),
-            (
-                "fn grade_compression_prompt(",
-                &["description: &str", "points: &[String]"],
-            ),
             ("fn remediation_prompt(", &[]),
         ];
         for (builder, trace_grounding) in builders {
@@ -2057,15 +1857,7 @@ mod tests {
 
     #[test]
     fn sitting_navigation_accepts_only_question_indices() {
-        let mut sitting = Sitting::start_trace(
-            "first".to_string(),
-            vec!["point".to_string()],
-            "trace".to_string(),
-            "deck-trace".to_string(),
-            Strictness::Strict,
-            ExamConfig::default(),
-            AskConfig::default(),
-        );
+        let mut sitting = test_sitting(Strictness::Strict);
         sitting.accept_questions(vec![
             ExamQuestion {
                 prompt: "first".to_string(),
@@ -2091,21 +1883,37 @@ mod tests {
 
     #[test]
     fn elapsed_seconds_use_a_saturating_millisecond_boundary() {
-        let mut sitting = Sitting::start_trace(
-            "trace".to_string(),
-            vec!["point".to_string()],
-            "trace".to_string(),
-            "deck-trace".to_string(),
-            Strictness::Balanced,
-            ExamConfig::default(),
-            AskConfig::default(),
-        );
+        let mut sitting = test_sitting(Strictness::Balanced);
         assert_eq!(None, sitting.elapsed_secs_at(3_500));
         sitting.pending_since = Some(1_000);
         assert_eq!(Some(2), sitting.elapsed_secs_at(3_500));
         assert_eq!(Some(0), sitting.elapsed_secs_at(500));
         sitting.pending_since = Some(crate::time::now_ms().saturating_sub(2_500));
         assert!(sitting.elapsed_secs().is_some_and(|elapsed| elapsed >= 2));
+    }
+
+    fn test_sitting(strictness: Strictness) -> Sitting {
+        Sitting {
+            subject: "deck.md".to_string(),
+            deck_token: "deck-test".to_string(),
+            deck_path: Some(PathBuf::from("deck.md")),
+            deck_fingerprints: HashSet::new(),
+            strictness,
+            cfg: ExamConfig::default(),
+            ask_cfg: AskConfig::default(),
+            phase: Phase::Answering,
+            questions: vec![ExamQuestion {
+                prompt: "first".to_string(),
+                points: vec!["point".to_string()],
+            }],
+            answers: vec![String::new()],
+            current: 0,
+            result: None,
+            pending: None,
+            error: None,
+            pending_since: None,
+            remediated_count: None,
+        }
     }
 
     #[test]
@@ -2756,130 +2564,6 @@ mod tests {
 
         assert!(s.set_answers(vec!["a1".to_string(), "a2".to_string()]));
         assert_eq!(vec!["a1".to_string(), "a2".to_string()], s.answers());
-    }
-
-    #[test]
-    fn grade_compression_prompt_carries_path_points_and_answer() {
-        let p = grade_compression_prompt(
-            "how a keypress becomes a saved grade",
-            &[
-                "the keypress posts only the grade".to_string(),
-                "the server reschedules the card".to_string(),
-            ],
-            "you press a key and it saves",
-            Strictness::Balanced,
-        );
-        assert!(p.contains("how a keypress becomes a saved grade"));
-        assert!(p.contains("posts only the grade"));
-        assert!(p.contains("you press a key and it saves"));
-        assert!(p.contains("RE-DERIVE"));
-        assert!(p.contains("\"verdict\""));
-    }
-
-    #[test]
-    fn grade_compression_prompt_does_not_call_a_trace_a_walk() {
-        let prompt = grade_compression_prompt(
-            "path",
-            &["point".to_string()],
-            "answer",
-            Strictness::Balanced,
-        );
-
-        assert!(
-            !prompt.to_ascii_lowercase().contains("walk"),
-            "the renamed trace-session vocabulary must reach its exam prompt:\n{prompt}"
-        );
-    }
-
-    #[test]
-    fn grade_compression_prompt_marks_an_empty_answer() {
-        let p = grade_compression_prompt("d", &["p".to_string()], "   ", Strictness::Strict);
-        assert!(p.contains("(no answer given)"));
-    }
-
-    #[test]
-    fn compression_criteria_vary_by_strictness() {
-        assert!(compression_strictness_criteria(Strictness::Strict).contains("every load-bearing"));
-        assert!(compression_strictness_criteria(Strictness::Balanced).contains("RE-DERIVE"));
-        assert!(compression_strictness_criteria(Strictness::Lenient).contains("generously"));
-    }
-
-    #[test]
-    fn grade_compression_end_to_end_pass() {
-        let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let cli = fake_reply(
-            dir.path(),
-            "{\"verdict\":\"pass\",\"feedback\":\"passed the chain\",\"missed\":[]}",
-        );
-        let result = grade_compression(
-            "how X becomes Y",
-            &["step one".to_string()],
-            "my retrace",
-            Strictness::Balanced,
-            &ExamConfig::default(),
-            &ask_config(&cli),
-        )
-        .unwrap();
-        assert!(result.passed);
-        assert_eq!(Verdict::Pass, result.grades[0].verdict);
-    }
-
-    fn trace_sitting(cli: &std::path::Path) -> Sitting {
-        Sitting::start_trace(
-            "how a moves".to_string(),
-            vec!["it advances".to_string()],
-            "t.txt".to_string(),
-            "t1".to_string(),
-            Strictness::Balanced,
-            ExamConfig::default(),
-            ask_config(cli),
-        )
-    }
-
-    #[test]
-    fn trace_sitting_passes_and_masters() {
-        let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let cli = fake_reply(
-            dir.path(),
-            "{\"verdict\":\"pass\",\"feedback\":\"good\",\"missed\":[]}",
-        );
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-
-        let mut s = trace_sitting(&cli);
-        assert_eq!(SittingKind::Trace, s.kind());
-        assert_eq!(&Phase::Answering, s.phase());
-        assert_eq!(1, s.total());
-        s.set_answer("my retrace of the path".to_string());
-        s.submit();
-        assert_eq!(&Phase::Grading, s.phase());
-        drain(&mut s, &mut store);
-        assert_eq!(&Phase::Results, s.phase());
-        assert!(s.result().unwrap().passed);
-        assert!(store.deck_mastered("t1"));
-        assert!(!s.can_remediate());
-    }
-
-    #[test]
-    fn trace_sitting_fail_starts_cooldown_without_mastering() {
-        let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let cli = fake_reply(
-            dir.path(),
-            "{\"verdict\":\"fail\",\"feedback\":\"missed the return path\",\"missed\":[\"the return\"]}",
-        );
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-
-        let mut s = trace_sitting(&cli);
-        s.set_answer("wrong".to_string());
-        s.submit();
-        drain(&mut s, &mut store);
-        assert_eq!(&Phase::Results, s.phase());
-        assert!(!s.result().unwrap().passed);
-        assert!(!store.deck_mastered("t1"));
-        assert!(store.exam_failed_at("t1").is_some());
-        assert!(!s.can_remediate());
     }
 }
 

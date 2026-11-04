@@ -1763,7 +1763,7 @@ mod tests {
         assert!(advanced.locked);
         let walk = rows.iter().find(|r| r.title == "How It Flows").unwrap();
         assert!(walk.is_trace);
-        assert!(walk.has_exam);
+        assert!(!walk.has_exam);
 
         let mut store = crate::state::open_stores(&paths, &store_path).unwrap();
         let base_deck = Deck::load(ws.join("decks/base.md")).unwrap();

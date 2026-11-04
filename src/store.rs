@@ -1214,22 +1214,10 @@ impl Store {
         self.decks.get(deck_id).and_then(|d| d.mastered_at_ms)
     }
 
-    // A pass clears any prior failed-exam cooldown.
     pub fn set_deck_mastered(&mut self, deck_id: &str, now_ms: u64) {
         let entry = self.decks.entry(deck_id.to_string()).or_default();
         entry.mastered_at_ms = Some(now_ms);
         entry.exam_failed_at_ms = None;
-    }
-
-    pub fn exam_failed_at(&self, deck_id: &str) -> Option<u64> {
-        self.decks.get(deck_id).and_then(|d| d.exam_failed_at_ms)
-    }
-
-    pub fn set_exam_failed(&mut self, deck_id: &str, now_ms: u64) {
-        self.decks
-            .entry(deck_id.to_string())
-            .or_default()
-            .exam_failed_at_ms = Some(now_ms);
     }
 
     pub fn clear_deck_mastered(&mut self, deck_id: &str) -> bool {
@@ -1362,21 +1350,6 @@ impl Orphans {
     pub fn len(&self) -> usize {
         self.cards.len() + self.decks.len()
     }
-}
-
-pub fn cooldown_remaining_ms(
-    store: &Store,
-    deck_id: &str,
-    cooldown_secs: u64,
-    now_ms: u64,
-) -> Option<u64> {
-    if cooldown_secs == 0 {
-        return None;
-    }
-    let until = store
-        .exam_failed_at(deck_id)?
-        .saturating_add(cooldown_secs.saturating_mul(1000));
-    (until > now_ms).then(|| until - now_ms)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -2472,76 +2445,6 @@ mod tests {
         assert!(reloaded.clear_deck_mastered("deck1"));
         assert!(!reloaded.deck_mastered("deck1"));
         assert!(!reloaded.clear_deck_mastered("deck1"));
-    }
-
-    #[test]
-    fn exam_failed_records_and_a_pass_clears_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("deck1.json");
-
-        let mut store = Store::open(&path).unwrap();
-        assert_eq!(None, store.exam_failed_at("deck1"));
-        store.set_exam_failed("deck1", 5000);
-        assert_eq!(Some(5000), store.exam_failed_at("deck1"));
-        assert!(!store.deck_mastered("deck1"));
-        store.save().unwrap();
-
-        let mut reloaded = Store::open(&path).unwrap();
-        assert_eq!(Some(5000), reloaded.exam_failed_at("deck1"));
-        reloaded.set_deck_mastered("deck1", 9000);
-        assert!(reloaded.deck_mastered("deck1"));
-        assert_eq!(None, reloaded.exam_failed_at("deck1"));
-    }
-
-    #[test]
-    fn per_deck_clear_drops_the_cooldown_too() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_exam_failed("t", 1);
-        assert!(store.clear_deck_mastered("t"));
-        assert_eq!(None, store.exam_failed_at("t"));
-    }
-
-    #[test]
-    fn cooldown_remaining_is_none_for_a_deck_that_never_failed() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path().join("p.json")).unwrap();
-        assert_eq!(None, cooldown_remaining_ms(&store, "t", 3600, 0));
-    }
-
-    #[test]
-    fn cooldown_remaining_is_none_when_the_cooldown_is_disabled() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_exam_failed("t", 1_000);
-        assert_eq!(None, cooldown_remaining_ms(&store, "t", 0, 1_030_000));
-    }
-
-    #[test]
-    fn cooldown_remaining_reports_the_exact_ms_left_inside_the_window() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_exam_failed("t", 1_000);
-        let now = 1_000 + 30_000;
-        assert_eq!(
-            Some(3_600_000 - 30_000),
-            cooldown_remaining_ms(&store, "t", 3600, now)
-        );
-    }
-
-    #[test]
-    fn cooldown_remaining_is_none_at_and_after_the_window_boundary() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_exam_failed("t", 1_000);
-        assert_eq!(
-            None,
-            cooldown_remaining_ms(&store, "t", 3600, 1_000 + 3_600_000)
-        );
-        assert_eq!(
-            None,
-            cooldown_remaining_ms(&store, "t", 3600, 1_000 + 3_600_001)
-        );
     }
 
     #[test]

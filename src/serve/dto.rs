@@ -666,40 +666,12 @@ pub(super) struct ExamDto {
     pub(super) grades: Vec<ExamGradeDto>,
     pub(super) passed: Option<bool>,
     pub(super) gaps: Vec<String>,
-    /// A trace deck is retraced on fail, never remediated (fact decks only).
     pub(super) can_remediate: bool,
     pub(super) remediated_count: Option<usize>,
-    pub(super) is_trace: bool,
     pub(super) unlocks: Vec<String>,
     pub(super) thinking: bool,
     pub(super) error: Option<String>,
     pub(super) elapsed: Option<u64>,
-    pub(super) cooldown_ms: Option<u64>,
-}
-
-pub(super) fn cooldown_dto(deck: &str, cooldown_ms: u64) -> ExamDto {
-    ExamDto {
-        phase: "cooldown",
-        deck: deck.to_string(),
-        strictness: "balanced",
-        total: 0,
-        current: 0,
-        question: None,
-        question_units: None,
-        answer: String::new(),
-        on_last: false,
-        grades: Vec::new(),
-        passed: None,
-        gaps: Vec::new(),
-        can_remediate: false,
-        remediated_count: None,
-        is_trace: true,
-        unlocks: Vec::new(),
-        thinking: false,
-        error: None,
-        elapsed: None,
-        cooldown_ms: Some(cooldown_ms),
-    }
 }
 
 #[derive(Serialize)]
@@ -789,12 +761,10 @@ pub(super) fn exam_dto(ex: &Examining) -> ExamDto {
         gaps: s.gaps(),
         can_remediate: s.can_remediate(),
         remediated_count: s.remediated_count(),
-        is_trace: s.kind() == exam::SittingKind::Trace,
         unlocks,
         thinking: s.thinking(),
         error: s.error().map(str::to_string),
         elapsed: s.elapsed_secs(),
-        cooldown_ms: None,
     }
 }
 
@@ -874,7 +844,6 @@ pub(super) struct RemoteExamDto {
     pub(super) gaps: Vec<String>,
     pub(super) can_remediate: bool,
     pub(super) cards: Option<String>,
-    pub(super) is_trace: bool,
     pub(super) thinking: bool,
     pub(super) elapsed: Option<u64>,
     pub(super) error: Option<String>,
@@ -1634,25 +1603,35 @@ mod tests {
         let _lock = crate::testutil::exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("base.md");
-        std::fs::write(&base, "## base\nanswer\n").unwrap();
+        std::fs::write(
+            &base,
+            "---\nformat-version: 1\nid: deck-base\nexam: source.txt\n---\n## base\nanswer\n<!-- id: card-base -->\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("source.txt"), "ground truth\n").unwrap();
         std::fs::write(
             dir.path().join("advanced.md"),
             "---\nrequires: base\n---\n## advanced\nanswer\n",
         )
         .unwrap();
-        let cli = crate::testutil::fake_reply(
+        let cli = crate::testutil::fake_cli(
             dir.path(),
-            "{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}",
+            "input=$(cat)\ncase \"$input\" in\n*'\"grades\"'*) printf '%s' '{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}' ;;\n*) printf '%s' '{\"questions\":[{\"prompt\":\"why\",\"points\":[\"ground truth\"]}]}' ;;\nesac",
         );
-        let mut sitting = exam::Sitting::start_trace(
-            "trace".to_string(),
-            vec!["point".to_string()],
-            "base.md".to_string(),
-            "deck-base".to_string(),
+        let deck = crate::deck::Deck::load(&base).unwrap();
+        let mut sitting = exam::Sitting::start(
+            &deck,
             Strictness::Balanced,
             crate::config::ExamConfig::default(),
             crate::testutil::ask_config(&cli),
         );
+        for _ in 0..500 {
+            let _ = sitting.advance(0);
+            if !sitting.thinking() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         sitting.set_answer("answer".to_string());
         sitting.submit();
         for _ in 0..500 {

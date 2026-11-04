@@ -145,32 +145,10 @@ hop by hop:
    resets, a partly shortens its next interval (FSRS *Hard*), while a passed hop
    advances and fades. Each checkpoint is an ordinary card underneath, so this
    is the normal per-card SRS.
-4. **Done** — after the last hop the trace is complete. That's the *drill*; the
-   *verification* (what masters the trace) is its separate **exam**, below.
-
-## The exam — the compression
-
-A trace's `trace:` is a *question* ("how X becomes Y"). The **exam** is to
-answer it: retrace the whole path in a sentence or two, from memory. The model grades
-that compression against the path's checkpoints (AI-graded, exactly like a
-[fact deck's exam](12-the-ai-exam.md)) and
-**passing masters the trace**, which unlocks its dependents. So the symmetry is:
-
-- tracing the checkpoints (predict → verify each edge) is the **drill**;
-- the compression is the **exam**.
-
-You reach it in the browser: the **capstone** offered at the end of a trace
-(`Take the exam?`), or the picker's
-**"Take exam"** button. A [paired phone](19-pairing.md) offers the same
-capstone from its own trace. Like a fact deck, you can sit it **early to test
-out** — gated only by `requires:` (a trace's sourced prerequisites must be
-mastered first).
-
-A **failed** trace exam is **retraced**, not turned into remediation cards (a
-trace is a path, not a card pile) — the weak checkpoints already resurface sooner
-through their own SRS. After a fail the exam **cools down** for a while before you
-can re-sit it, so the graded feedback can't simply be pasted back into the one
-fixed question (`[exam] retry_cooldown_secs`, default one hour; `0` disables it).
+4. **Done** - after the last hop the trace drill is complete. There is no exam
+   or separate capstone. The checkpoints keep their ordinary SRS state, and the
+   trace reaches **Finished** when they graduate. A dependent deck that names the
+   trace in `requires:` waits for that state.
 
 ## Immediate freezing
 
@@ -198,8 +176,7 @@ and path retain provenance for drift reporting, judged against that key's own
 root, and a future deliberate source update. When that root is available and
 `source_access` permits it, the tutor browses it for surrounding context and
 staleness detection; offline, it reports the missing live source rather than
-silently degrading. The exam never reads cited text. A loose trace over a live
-source is left as-is.
+silently degrading. A loose trace over a live source is left as-is.
 
 ## Checking the locators
 

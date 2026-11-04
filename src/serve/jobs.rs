@@ -966,7 +966,7 @@ impl RemoteExamining {
     pub(super) fn advance(&mut self) {
         match self.sitting.advance(now_ms()) {
             Some(exam::Effect::RemediationCards(text)) => self.cards = Some(text),
-            Some(exam::Effect::Passed | exam::Effect::TraceFailed) | None => {}
+            Some(exam::Effect::Passed) | None => {}
         }
     }
 
@@ -1000,7 +1000,6 @@ impl RemoteExamining {
             gaps: s.gaps(),
             can_remediate: s.can_remediate(),
             cards: self.cards.clone(),
-            is_trace: s.kind() == exam::SittingKind::Trace,
             thinking: s.thinking(),
             elapsed: s.elapsed_secs(),
             error: s.error().map(str::to_string),
@@ -1020,7 +1019,6 @@ pub(super) fn remote_exam_idle_dto() -> RemoteExamDto {
         gaps: Vec::new(),
         can_remediate: false,
         cards: None,
-        is_trace: false,
         thinking: false,
         elapsed: None,
         error: None,

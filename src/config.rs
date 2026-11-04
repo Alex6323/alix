@@ -444,7 +444,6 @@ pub struct ExamConfig {
     pub num_questions: usize,
     pub pass_threshold: f64,
     pub strictness: Strictness,
-    pub retry_cooldown_secs: u64,
     pub extra: Option<String>,
 }
 
@@ -456,7 +455,6 @@ impl Default for ExamConfig {
             num_questions: 3,
             pass_threshold: 1.0,
             strictness: Strictness::default(),
-            retry_cooldown_secs: 3600,
             extra: None,
         }
     }
@@ -753,7 +751,6 @@ struct RawExam {
     num_questions: Option<usize>,
     pass_threshold: Option<f64>,
     strictness: Option<String>,
-    retry_cooldown_secs: Option<u64>,
     extra: Option<String>,
 }
 
@@ -996,9 +993,6 @@ impl Config {
         }
         if let Some(t) = raw.exam.pass_threshold {
             exam.pass_threshold = t;
-        }
-        if let Some(secs) = raw.exam.retry_cooldown_secs {
-            exam.retry_cooldown_secs = secs;
         }
         if let Some(s) = raw.exam.strictness.filter(|s| !s.trim().is_empty()) {
             match Strictness::parse(s.trim()) {
@@ -1448,7 +1442,6 @@ pub fn default_config_toml() -> &'static str {
 # num_questions = 3             # questions per deck section
 # pass_threshold = 1.0          # fraction of questions that must fully pass (1.0 = all)
 # strictness = "balanced"       # answer grading: strict | balanced | lenient
-# retry_cooldown_secs = 3600    # wait this long before re-sitting a FAILED trace exam (0 = off)
 # extra = ""                    # extra guidance appended to question generation
 
 # Trace building (`alix deck generate <trace-stub>` / `--trace`). Explores the `exam:`
@@ -2466,6 +2459,13 @@ mod tests {
     fn invalid_exam_strictness_is_rejected() {
         let err = Config::from_toml("[exam]\nstrictness = \"harsh\"\n").unwrap_err();
         assert!(format!("{err:#}").contains("strictness"));
+    }
+
+    #[test]
+    fn a_config_setting_retry_cooldown_secs_fails_to_load() {
+        let err = Config::from_toml("[exam]\nretry_cooldown_secs = 0\n").unwrap_err();
+        let message = format!("{err:#}");
+        assert!(message.contains("retry_cooldown_secs"), "{message}");
     }
 
     #[test]

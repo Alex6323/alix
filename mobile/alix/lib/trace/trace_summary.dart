@@ -12,16 +12,10 @@ class TraceSessionSummaryView extends StatelessWidget {
   const TraceSessionSummaryView({
     super.key,
     required this.state,
-    required this.examAvailable,
-    required this.cooldownMs,
-    required this.onOpenExam,
     required this.onRestart,
   });
 
   final TraceSessionStateModel state;
-  final bool examAvailable;
-  final int? cooldownMs;
-  final VoidCallback onOpenExam;
   final VoidCallback onRestart;
 
   @override
@@ -107,27 +101,11 @@ class TraceSessionSummaryView extends StatelessWidget {
               valueColor: tokens.good,
             ),
           const SizedBox(height: 24),
-          if (examAvailable) ...[
-            TraceSessionChip(
-              label: 'Take the exam',
-              kind: TraceSessionChipKind.primary,
-              onTap: onOpenExam,
-            ),
-            const SizedBox(height: 12),
-          ],
           TraceSessionChip(
             label: 'Trace again',
-            kind: examAvailable ? TraceSessionChipKind.base : TraceSessionChipKind.primary,
+            kind: TraceSessionChipKind.primary,
             onTap: onRestart,
           ),
-          if (cooldownMs case final cooldown?) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Trace it again before re-sitting; '
-              '${_humanizeCooldown(cooldown)} left.',
-              style: TextStyle(color: tokens.dim, fontSize: 13),
-            ),
-          ],
         ],
       ),
     );
@@ -160,10 +138,5 @@ class TraceSessionSummaryView extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  String _humanizeCooldown(int ms) {
-    final minutes = (ms / 60000).ceil();
-    return minutes <= 1 ? 'about a minute' : 'about ${minutes}m';
   }
 }

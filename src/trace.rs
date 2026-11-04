@@ -126,15 +126,6 @@ impl Trace {
         })
     }
 
-    /// Drawn from the checkpoints (which already paraphrase the source), so
-    /// grading needs no source read.
-    pub fn compression_rubric(&self) -> Vec<String> {
-        self.checkpoints
-            .iter()
-            .flat_map(|cp| cp.points.iter().cloned())
-            .collect()
-    }
-
     pub fn excerpt(&self, checkpoint: &Checkpoint) -> Result<Excerpt> {
         let locator = checkpoint
             .locator
@@ -202,8 +193,7 @@ pub struct LocatorIssue {
 pub enum Phase {
     Predict,
     Reveal,
-    /// Every checkpoint traced; verification is the trace's separate
-    /// AI-graded exam, not an ungraded compression step here.
+    /// Every checkpoint traced.
     Done,
 }
 
@@ -565,7 +555,7 @@ mod tests {
         }
 
         assert!(!store.deck_mastered(&deck_id));
-        assert_eq!(DeckState::ExamDue, deck.state(&store));
+        assert_eq!(DeckState::Finished, deck.state(&store));
 
         store.set_deck_mastered(&deck_id, 99);
         assert_eq!(DeckState::Finished, deck.state(&store));
@@ -623,21 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn compression_rubric_preserves_every_checkpoint_point_in_trace_order() {
-        let dir = tempfile::tempdir().unwrap();
-        let trace = Trace::from_deck(&trace_deck(dir.path())).unwrap();
-
-        assert_eq!(
-            vec![
-                "it reads the first line".to_string(),
-                "it reads lines two and three".to_string(),
-            ],
-            trace.compression_rubric()
-        );
-    }
-
-    #[test]
-    fn trace_points_and_exam_rubric_exclude_supporting_quotations() {
+    fn trace_points_exclude_supporting_quotations() {
         let dir = tempfile::tempdir().unwrap();
         let path = write(
             dir.path(),
@@ -652,11 +628,6 @@ mod tests {
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
 
         assert_eq!(trace.checkpoints[0].points, ["the checkpoint claim"]);
-        assert_eq!(
-            trace.compression_rubric(),
-            ["the checkpoint claim"],
-            "the final trace exam grades claims, not supporting source prose"
-        );
     }
 
     #[test]

@@ -25,7 +25,6 @@ class TraceSessionController extends ChangeNotifier {
   TraceSessionPort? _port;
   TraceSessionStateModel? _state;
   String? _openError;
-  bool _serverLive = false;
 
   TraceSessionStateModel get state {
     final state = _state;
@@ -34,14 +33,6 @@ class TraceSessionController extends ChangeNotifier {
   }
 
   String? get openError => _openError;
-
-  bool get serverLive => _serverLive;
-
-  void setServerLive(bool live) {
-    if (_serverLive == live) return;
-    _serverLive = live;
-    notifyListeners();
-  }
 
   void predict(String text) {
     final port = _requirePort();
@@ -59,12 +50,6 @@ class TraceSessionController extends ChangeNotifier {
     _open();
     notifyListeners();
   }
-
-  int? examCooldownMs(int nowMs) => _requirePort().examCooldownMs(nowMs);
-
-  void applyExamPassed(int nowMs) => _requirePort().applyExamPassed(nowMs);
-
-  void applyExamFailed(int nowMs) => _requirePort().applyExamFailed(nowMs);
 
   TraceSessionPort _requirePort() {
     final port = _port;

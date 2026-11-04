@@ -35,10 +35,6 @@ void main() {
     List<BigInt> passedCalls = const [],
     List<String> remediationCalls = const [],
     int remediationCountReply = 1,
-    // Left null by default, matching review_screen.dart's real fact-deck
-    // wiring (which never passes applyFailed): pass a list here only for
-    // trace-exam tests that need to observe it fire.
-    List<BigInt>? failedCalls,
   }) async {
     await tester.pumpWidget(MaterialApp(
       home: ExamScreen(
@@ -51,7 +47,6 @@ void main() {
           remediationCalls.add(cardsText);
           return remediationCountReply;
         },
-        applyFailed: failedCalls == null ? null : (nowMs) => failedCalls.add(nowMs),
         nowMs: () => BigInt.from(1000),
         pollInterval: _pollInterval,
       ),
@@ -67,7 +62,6 @@ void main() {
     grades: [],
     gaps: [],
     canRemediate: false,
-    isTrace: false,
     thinking: false,
   );
 
@@ -79,7 +73,6 @@ void main() {
     grades: [],
     gaps: [],
     canRemediate: false,
-    isTrace: false,
     thinking: true,
     elapsed: 1,
   );
@@ -92,7 +85,6 @@ void main() {
     grades: [],
     gaps: [],
     canRemediate: false,
-    isTrace: false,
     thinking: true,
     elapsed: 2,
   );
@@ -115,7 +107,6 @@ void main() {
     ],
     gaps: [],
     canRemediate: false,
-    isTrace: false,
     thinking: false,
   );
 
@@ -137,53 +128,6 @@ void main() {
     ],
     gaps: ['ownership and the GC-free memory model'],
     canRemediate: true,
-    isTrace: false,
-    thinking: false,
-  );
-
-  const traceResultsPassed = RemoteExam(
-    phase: 'results',
-    deck: 'rust.md',
-    strictness: 'balanced',
-    questions: ['Trace the borrow checker through this function.'],
-    passed: true,
-    grades: [
-      RemoteExamGrade(
-        question: 'Trace the borrow checker through this function.',
-        points: ['identifies the move'],
-        answer: 'ownership moves into the callee',
-        verdict: 'PASS',
-        feedback: 'Right on.',
-        missed: [],
-      ),
-    ],
-    gaps: [],
-    canRemediate: false,
-    isTrace: true,
-    thinking: false,
-  );
-
-  const traceResultsFailed = RemoteExam(
-    phase: 'results',
-    deck: 'rust.md',
-    strictness: 'balanced',
-    questions: ['Trace the borrow checker through this function.'],
-    passed: false,
-    grades: [
-      RemoteExamGrade(
-        question: 'Trace the borrow checker through this function.',
-        points: ['identifies the move'],
-        answer: 'it copies',
-        verdict: 'FAIL',
-        feedback: 'This moves ownership, it does not copy.',
-        missed: ['identifies the move'],
-      ),
-    ],
-    gaps: ['ownership transfer at the call site'],
-    // A trace exam never remediates: the server's can_remediate is always
-    // false for it (T2.3).
-    canRemediate: false,
-    isTrace: true,
     thinking: false,
   );
 
@@ -196,7 +140,6 @@ void main() {
     grades: [],
     gaps: ['ownership and the GC-free memory model'],
     canRemediate: true,
-    isTrace: false,
     thinking: true,
   );
 
@@ -210,7 +153,6 @@ void main() {
     gaps: ['ownership and the GC-free memory model'],
     canRemediate: false,
     cards: '## q?\na\n',
-    isTrace: false,
     thinking: false,
   );
 
@@ -287,68 +229,13 @@ void main() {
   });
 
   testWidgets(
-      'trace fail: applyFailed exactly once (no double-apply on a duplicate results poll), '
-      'applyPassed never, a retrace hint renders with no remediate affordance', (tester) async {
-    // Same double-in-flight-poll shape as the applyPassed guard test above:
-    // two ticks resolve to the same terminal trace-fail results DTO, proving
-    // this is a genuine one-shot guard, not just "it happens to poll once".
-    final gate0 = Completer<RemoteExam?>();
-    final gate1 = Completer<RemoteExam?>();
-    final client = FakeServerClient(
-      examGetReplies: const [grading],
-      examGetGates: {1: gate0, 2: gate1},
-    );
-    final passedCalls = <BigInt>[];
-    final failedCalls = <BigInt>[];
-    await pumpExam(tester, client: client, passedCalls: passedCalls, failedCalls: failedCalls);
-    await tester.pump(); // examStart -> call 0: grading (schedules the timer)
-
-    await tester.pump(_pollInterval); // tick #1 -> call 1, parked on gate0
-    await tester.pump(_pollInterval); // tick #2 -> call 2, parked on gate1
-
-    gate0.complete(traceResultsFailed);
-    await tester.pump();
-    await tester.pump();
-    expect(find.text('Not yet.'), findsOneWidget);
-    expect(find.text('Trace it again before re-sitting.'), findsOneWidget);
-    expect(find.text('Turn the gaps into cards'), findsNothing);
-
-    gate1.complete(traceResultsFailed);
-    await tester.pump();
-    await tester.pump();
-
-    expect(failedCalls, hasLength(1), reason: 'the second, already-in-flight poll must not double-apply');
-    expect(failedCalls.single, BigInt.from(1000));
-    expect(passedCalls, isEmpty);
-  });
-
-  testWidgets('trace pass: applyPassed once, applyFailed never, the pass state renders', (tester) async {
-    final client = FakeServerClient(examGetReplies: const [traceResultsPassed]);
-    final passedCalls = <BigInt>[];
-    final failedCalls = <BigInt>[];
-    await pumpExam(tester, client: client, passedCalls: passedCalls, failedCalls: failedCalls);
-    await tester.pump();
-
-    expect(find.text('Passed.'), findsOneWidget);
-    expect(find.text('Right on.'), findsOneWidget);
-    expect(passedCalls, hasLength(1));
-    expect(failedCalls, isEmpty);
-  });
-
-  testWidgets(
-      'FACT-deck fail leaves the remediate path unchanged and never calls applyFailed '
-      '(mutation guard: proves the trace branch cannot hijack fact decks)', (tester) async {
+      'a failed exam leaves the remediate path available', (tester) async {
     final client = FakeServerClient(examGetReplies: const [resultsFailed]);
-    // No failedCalls passed: applyFailed stays null, exactly like
-    // review_screen.dart's real fact-deck wiring. If the trace-fail branch
-    // ever fired here despite isTrace: false, it would call a null closure
-    // and this test would crash rather than merely mis-assert.
     await pumpExam(tester, client: client);
     await tester.pump();
 
     expect(find.text('Not yet.'), findsOneWidget);
     expect(find.text('Turn the gaps into cards'), findsOneWidget);
-    expect(find.text('Trace it again before re-sitting.'), findsNothing);
   });
 
   testWidgets('first-poll-null: a slow start recovers once the sitting is ready', (tester) async {
@@ -556,7 +443,6 @@ void main() {
       grades: [],
       gaps: [],
       canRemediate: false,
-      isTrace: false,
       thinking: false,
     );
     final client = FakeServerClient(examGetReplies: const [oneQuestion], examGradeReplies: const [false]);
