@@ -461,7 +461,6 @@ class RemoteExam {
     required this.gaps,
     required this.canRemediate,
     this.cards,
-    required this.isTrace,
     required this.thinking,
     this.elapsed,
     this.error,
@@ -480,9 +479,6 @@ class RemoteExam {
   /// and stores these cards, the server never keeps them (the iron rule).
   final String? cards;
 
-  /// A trace (compression) sitting vs a fact-deck sitting. Tolerant,
-  /// defaults to false when absent (the idle baseline omits it).
-  final bool isTrace;
   final bool thinking;
   final int? elapsed;
   final String? error;
@@ -499,7 +495,6 @@ class RemoteExam {
         gaps: _asStringList(json['gaps']),
         canRemediate: _asBool(json['can_remediate']),
         cards: _asString(json['cards']),
-        isTrace: _asBool(json['is_trace']),
         thinking: _asBool(json['thinking']),
         elapsed: _asInt(json['elapsed']),
         error: _asString(json['error']),

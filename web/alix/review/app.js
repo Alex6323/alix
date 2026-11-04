@@ -236,12 +236,9 @@ const tutor = createTutor({
 
 const trace = createTraceSession({
   api,
-  fetchApi: apiClient.fetch,
   post,
   rerender: render,
   applyStudy: study.apply,
-  sessionStorage,
-  examStart: exam.start,
   tutor: {
     isOpen: tutor.isOpen,
     open: tutor.show,

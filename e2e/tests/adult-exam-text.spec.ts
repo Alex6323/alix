@@ -30,12 +30,10 @@ const base = {
   gaps: [],
   can_remediate: false,
   remediated_count: null,
-  is_trace: false,
   unlocks: [],
   thinking: false,
   error: null,
   elapsed: null,
-  cooldown_ms: null,
 };
 
 async function startMockedExam(page: Page, dto: object) {

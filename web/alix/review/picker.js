@@ -221,10 +221,10 @@ export function createPicker({
     for (const g of workspaces.concat(folders)) for (const m of g.members) if (m.mastered) mastered.push(m);
 
     // Can a row be started now, at *any* depth? Drilling is never gated by the
-    // prerequisite lock (only the exam is — an exam-locked deck's `examable` is
+    // prerequisite lock (only the exam is - an exam-locked deck's `examable` is
     // false), so a gated view refuses only a deck with nothing due at any depth.
-    // `reviewable` already folds in the trace/exam-due special cases alongside
-    // the per-depth due-ness, so this reads as "any depth (or the trace/exam)
+    // `reviewable` already folds in the trace and exam-due special cases alongside
+    // the per-depth due-ness, so this reads as "any depth, trace, or exam
     // is startable" — the gate for the ▾ split button. The Mastered window is
     // ungated — a finished deck can be reopened to cram or re-examine.
     // An "error" row (unreadable progress document) is never startable, even
@@ -269,17 +269,15 @@ export function createPicker({
         : walksFirst(it) ? canWalk(it)
         : (canDoDepth(it, it.last_launch) && canStartAt(it, gated, it.last_launch));
 
-    // Launch one deck/member. An exam-due deck sits its exam; a trace will trace
-    // once the web hosts traces (for now it reviews its explain cards — the single
-    // place to change). Launching inside a workspace remembers it so leaving the
-    // session returns here.
+    // Launch one deck/member. An exam-due deck sits its exam; a trace starts its
+    // drill. Launching inside a workspace remembers it so leaving the session
+    // returns here.
     function launch(it, wsName, gated) {
       if (!canStartPrimary(it, gated)) return;
       if (walksFirst(it)) { launchWalk(it, wsName); return; }
       lastWorkspace = wsName || null;
-      // A trace's primary action is always the TRACE (its exam is reached via the
-      // "Take exam" button, or the trace's capstone). An exam-due fact deck sits its
-      // exam when available (sourced + prerequisites passed); else it reviews.
+      // A trace's primary action is always the trace. An exam-due fact deck sits
+      // its exam when available (sourced + prerequisites passed); else it reviews.
       if (!it.is_trace && it.state === "examdue" && it.examable) startExam(it.name);
       else {
         // Apply the focus drawer's topology/region pick, but only when it belongs
@@ -681,12 +679,10 @@ export function createPicker({
           legend.appendChild(rb);
         }
         // Back is the header ← nav button (and Esc/Backspace); no footer chip.
-        // "Take exam" sits to the RIGHT of Back for any deck that HAS an exam but
-        // isn't already exam-due (where the primary is the exam): enabled to test
-        // out early, or disabled with a 🔒 key hint when its exam is locked. A trace
-        // always shows it — its primary is the Trace, so this is the only way to reach
-        // its compression exam (whatever its drill state).
-        if (f && f._item && f._item.has_exam && (f._item.is_trace || f._item.state !== "examdue")) {
+        // "Take exam" sits to the RIGHT of Back for any fact deck that has an
+        // exam but isn't already exam-due (where the primary is the exam): enabled
+        // to test out early, or disabled with a lock key hint when its exam is locked.
+        if (f && f._item && f._item.has_exam && f._item.state !== "examdue") {
           const it = f._item;
           const ex = el("button", "chip", "Take exam");
           ex.appendChild(el("span", "k exam-key", it.examable ? "x" : "\u{1F512}"));

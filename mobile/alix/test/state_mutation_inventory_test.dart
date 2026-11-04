@@ -64,9 +64,9 @@ void main() {
     expect(_linesContaining('lib/trace_screen.dart', 'setState('), isEmpty);
     expect(
       _linesContaining('lib/trace/trace_controller.dart', 'notifyListeners();'),
-      [43, 50, 55, 60],
+      [41, 46, 51],
       reason:
-          'setServerLive, predict, grade, and restart are the four named '
+          'predict, grade, and restart are the three named '
           'TraceSessionController mutations',
     );
     expect(_linesContaining('lib/walk_screen.dart', 'setState('), isEmpty);
@@ -92,9 +92,9 @@ void main() {
       ],
       [
         'lib/review_screen.dart:429',
-        'lib/picker_screen.dart:664',
+        'lib/picker_screen.dart:663',
         'lib/picker/generate_sheet.dart:42',
-        'lib/trace_screen.dart:225',
+        'lib/trace_screen.dart:129',
         'lib/walk_screen.dart:222',
       ],
       reason:

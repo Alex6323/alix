@@ -20,7 +20,7 @@ use crate::{
     exam, review,
     session::now_ms,
     store::{self, Store},
-    trace, workspace,
+    workspace,
 };
 
 pub(super) struct StudyConfig {
@@ -2215,39 +2215,13 @@ impl StudyState {
                     .settings
                     .exam_strictness
                     .unwrap_or(self.config.exam_cfg.strictness);
-                let sitting = if deck.is_trace() {
-                    match trace::Trace::from_deck(&deck) {
-                        Ok(t) => {
-                            if let Some(ms) = exam::cooldown_remaining_ms(
-                                &candidate,
-                                deck.deck_token.as_deref().unwrap_or_default(),
-                                self.config.exam_cfg.retry_cooldown_secs,
-                                now_ms(),
-                            ) {
-                                // One response shape per endpoint: the cooldown
-                                // is an ExamDto phase, not untagged.
-                                return Transition::Done(Box::new(cooldown_dto(&deck.subject, ms)));
-                            }
-                            exam::Sitting::start_trace(
-                                t.description.clone(),
-                                t.compression_rubric(),
-                                deck.subject.clone(),
-                                deck.deck_token.clone().unwrap_or_default(),
-                                strictness,
-                                self.config.exam_cfg.clone(),
-                                ask_cfg,
-                            )
-                        }
-                        Err(_) => return Transition::Rejected,
-                    }
-                } else {
-                    // Check backend capability before starting, so a gap is a
-                    // clean refusal, not a mid-exam poll error.
-                    if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
-                        return Transition::Rejected;
-                    }
-                    exam::Sitting::start(&deck, strictness, self.config.exam_cfg.clone(), ask_cfg)
-                };
+                // Check backend capability before starting, so a gap is a
+                // clean refusal, not a mid-exam poll error.
+                if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
+                    return Transition::Rejected;
+                }
+                let sitting =
+                    exam::Sitting::start(&deck, strictness, self.config.exam_cfg.clone(), ask_cfg);
                 let ex = Examining {
                     sitting,
                     deck_path: path,

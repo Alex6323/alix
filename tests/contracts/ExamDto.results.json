@@ -1,7 +1,6 @@
 {
   "answer": "",
   "can_remediate": false,
-  "cooldown_ms": null,
   "current": 1,
   "deck": "rust.md",
   "elapsed": null,
@@ -68,7 +67,6 @@
       "verdict": "PASS"
     }
   ],
-  "is_trace": false,
   "on_last": true,
   "passed": true,
   "phase": "results",

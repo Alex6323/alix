@@ -1,11 +1,8 @@
 export function createTraceSession({
   api,
-  fetchApi,
   post,
   rerender,
   applyStudy,
-  sessionStorage,
-  examStart,
   tutor,
   ui,
 }) {
@@ -74,15 +71,6 @@ export function createTraceSession({
 
   function restart() {
     return api("/api/trace/restart", post({})).then(applyNext);
-  }
-
-  function takeExam() {
-    const deck = sessionStorage.getItem("alix.lastDeck") || "";
-    return fetchApi("/api/trace/leave", post({})).catch(() => {}).finally(() => {
-      replace(null);
-      if (deck) examStart(deck);
-      else api("/api/state").then(applyStudy);
-    });
   }
 
   function leave() {
@@ -278,14 +266,8 @@ export function createTraceSession({
     } else if (summary.total) {
       row("every checkpoint landed", "✓");
     }
-    wrap.appendChild(el(
-      "div",
-      "lede",
-      "Verify it: retrace the whole path in the exam to master this trace.",
-    ));
     stage.appendChild(wrap);
-    chip("Take the exam", "primary", takeExam, "enter");
-    chip("Trace again", "", restart, "");
+    chip("Trace again", "primary", restart, "enter");
   }
 
   function handleKey(event) {

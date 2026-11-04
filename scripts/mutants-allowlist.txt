@@ -191,9 +191,9 @@ src/parser/cloze.rs:161: replace - with / in unbracketed_src
 # `:` and `skipping` is still false, so the branch pushes the line unchanged;
 # outside the branch it is pushed unchanged too, since no `at:` rewrite can
 # sit on a fence. The output is identical for every input. Line-pinned.
-src/deck.rs:896: replace > with >= in with_exam
-src/deck.rs:962: replace > with >= in with_added_cite
-src/deck.rs:1013: replace > with >= in rewrite_frozen_assets
+src/deck.rs:906: replace > with >= in with_exam
+src/deck.rs:972: replace > with >= in with_added_cite
+src/deck.rs:1023: replace > with >= in rewrite_frozen_assets
 
 # EQUIVALENT. `candidate_count` returns 0 for a card without both a table
 # token and a row, and only card-table rows carry those; the parser rejects a
@@ -223,7 +223,7 @@ src/assets.rs:163: replace default_diagram_command -> Option<&'static str> with 
 # a repair only for a flag that is set. Forcing `any` to true therefore
 # runs `run` with every flag false, which does nothing; the one extra cost
 # is listing the deck files. No output or file differs. Line-pinned.
-src/cli/doctor.rs:1599: replace Repairs::any -> bool with true
+src/cli/doctor.rs:1607: replace Repairs::any -> bool with true
 
 # EQUIVALENT. `locate` returns the piece that contains the probed byte, so
 # `range.start` is never before its piece and `range.end` never after it.

@@ -442,7 +442,6 @@ class _PickerScreenState extends State<PickerScreen> {
           deckPath: entry.path,
           rootDir: root,
           device: widget.device,
-          buildClient: widget.buildClient,
           syncController: isPaired ? _syncController : null,
         ),
       ),

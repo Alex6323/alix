@@ -43,20 +43,6 @@ class TraceSessionBridgePort implements TraceSessionPort {
     return _stateFromBridge(_session.grade(delta: _gradeToBridge(grade)));
   }
 
-  @override
-  int? examCooldownMs(int nowMs) {
-    return _session.examCooldownMs(nowMs: BigInt.from(nowMs))?.toInt();
-  }
-
-  @override
-  void applyExamPassed(int nowMs) {
-    _session.applyExamPassed(nowMs: BigInt.from(nowMs));
-  }
-
-  @override
-  void applyExamFailed(int nowMs) {
-    _session.applyExamFailed(nowMs: BigInt.from(nowMs));
-  }
 }
 
 TraceSessionStateModel _stateFromBridge(bridge.TraceSessionState state) {

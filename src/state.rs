@@ -287,7 +287,6 @@ mod tests {
         deck(&old_path, "deck1", "card1");
         let mut store = open_store(&old_path, dir.path()).unwrap();
         store.set_deck_mastered("deck-deck1", 1);
-        store.set_exam_failed("deck-deck1", 42);
         store.set_last_launch("deck-deck1", crate::depth::Launch::Recall);
         store.save().unwrap();
 
@@ -298,11 +297,6 @@ mod tests {
         assert!(
             aggregate.deck_mastered("deck-deck1"),
             "deck-level state must survive a rename, found by the deck id"
-        );
-        assert_eq!(
-            Some(42),
-            aggregate.exam_failed_at("deck-deck1"),
-            "exam-failed state must survive a rename, found by the deck id"
         );
         assert_eq!(
             Some(crate::depth::Launch::Recall),

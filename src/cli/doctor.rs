@@ -659,11 +659,19 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
         }
     }
     for prereq in alix::deck::nongating_prerequisites(deck) {
-        report.warn(format!(
-            "{}: requires ungrounded `{prereq}`: this edge doesn't gate its exam; \
-             give it a `exam:` (deck or workspace) to make it a real prerequisite",
-            deck.subject
-        ));
+        if prereq.is_trace {
+            report.warn(format!(
+                "{}: requires trace deck `{}`: this edge doesn't gate its exam; \
+                 convert it to a fact deck with an `exam:` to make it a real prerequisite",
+                deck.subject, prereq.requirement
+            ));
+        } else {
+            report.warn(format!(
+                "{}: requires ungrounded `{}`: this edge doesn't gate its exam; \
+                 give it an `exam:` (deck or workspace) to make it a real prerequisite",
+                deck.subject, prereq.requirement
+            ));
+        }
     }
     let dir = deck.path.parent();
     let unparseable_prereq = |report: &mut Report, req: &str, path: &Path| {
@@ -4388,6 +4396,36 @@ printf ']}}'
             "{:#?}",
             report.warnings
         );
+    }
+
+    #[test]
+    fn a_requirement_on_a_trace_gates_no_exam_and_doctor_names_the_trace_case() {
+        let dir = tempfile::tempdir().unwrap();
+        w(
+            dir.path(),
+            "trace.md",
+            "---\ntrace: how the request flows\nexam: .\n---\n## enter\nrequest enters\n",
+        );
+        let exam_path = dir.path().join("exam.md");
+        w(
+            dir.path(),
+            "exam.md",
+            "---\nexam: https://example.test\nrequires: trace\n---\n## explain\nanswer\n",
+        );
+        let exam = alix::deck::Deck::load(&exam_path).unwrap();
+        let store = alix::store::Store::open(dir.path().join("progress.json")).unwrap();
+
+        assert!(!alix::deck::is_locked(&exam, Some(dir.path()), &store));
+
+        let mut report = Report::default();
+        deck_findings(&exam_path, &mut report);
+        let warning = report
+            .warnings
+            .iter()
+            .find(|warning| warning.contains("requires") && warning.contains("trace"))
+            .expect("the non-gating trace requirement is explained");
+        assert!(warning.contains("trace deck"), "{warning}");
+        assert!(warning.contains("convert it to a fact deck"), "{warning}");
     }
 
     #[test]

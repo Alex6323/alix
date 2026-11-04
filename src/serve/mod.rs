@@ -1931,8 +1931,8 @@ pub fn run_review(
                     Some(RemoteCreateOutcome::Ok(resp)) => respond_json(request, &resp),
                 }
             }
-            // The requires-lock and the trace re-sit cooldown are the
-            // browser's own truth; both are deliberately skipped here.
+            // The requires-lock is the browser's own truth and is deliberately
+            // skipped here.
             (Method::Post, "/api/remote/exam/start") => {
                 let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
                     respond_status(request, 400);

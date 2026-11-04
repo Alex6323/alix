@@ -10,7 +10,6 @@ export function createExam({
   ui,
 }) {
   const {
-    alert: alertUser,
     appendUnits,
     chip,
     deckEl,
@@ -61,14 +60,6 @@ export function createExam({
   function start(deck) {
     rememberLaunch(deck);
     return api("/api/exam/start", post({ deck })).then((next) => {
-      if (next && next.phase === "cooldown") {
-        const mins = Math.max(1, Math.round(next.cooldown_ms / 60000));
-        alertUser(
-          "This trace exam is cooling down after a recent fail.\n" +
-          `Retrace it and try again in about ${mins} min.`,
-        );
-        return next;
-      }
       if (next && next.phase) {
         data = next;
         rerender();
@@ -265,13 +256,6 @@ export function createExam({
         }
         wrap.appendChild(question);
       });
-      if (!current.passed && current.is_trace) {
-        wrap.appendChild(el(
-          "div",
-          "exam-wait",
-          "Trace it again to strengthen the weak hops, then re-sit.",
-        ));
-      }
       stage.appendChild(wrap);
       if (!current.passed && current.can_remediate) {
         chip(

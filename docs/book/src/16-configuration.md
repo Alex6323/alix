@@ -209,9 +209,7 @@ settings:
   The terminal shows calm live progress, but partial generated cards remain
   hidden until the result passes validation.
 - **`[exam]`**: the AI exam: `model`, `timeout_secs` (300),
-  `pass_threshold` (1.0), `strictness` (`balanced`), `extra`,
-  `retry_cooldown_secs` (3600; `0` disables the wait before re-sitting a
-  failed trace exam; fact-deck exams never wait).
+  `pass_threshold` (1.0), `strictness` (`balanced`), and `extra`.
 - **`[trace]`**: the `generate deck --trace` and `workspace generate` planning
   passes: `model` defaults to
   unset, which resolves to the backend's strong model where it defines one

@@ -271,11 +271,11 @@ impl Deck {
     }
 
     pub fn has_exam(&self) -> bool {
-        self.is_trace()
-            || !self.exam.is_empty()
-            || *self
-                .workspace_has_exam
-                .get_or_init(|| !self.workspace_exam().is_empty())
+        !self.is_trace()
+            && (!self.exam.is_empty()
+                || *self
+                    .workspace_has_exam
+                    .get_or_init(|| !self.workspace_exam().is_empty()))
     }
 
     /// `title:` else the condensed `trace:` else the filename stem (D10).
@@ -641,18 +641,28 @@ pub fn is_locked_with(
     })
 }
 
-pub fn nongating_prerequisites(deck: &Deck) -> Vec<String> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NongatingPrerequisite {
+    pub requirement: String,
+    pub is_trace: bool,
+}
+
+pub fn nongating_prerequisites(deck: &Deck) -> Vec<NongatingPrerequisite> {
     if !deck.has_exam() {
         return Vec::new();
     }
     let dir = deck.path.parent();
     let mut out = Vec::new();
     for req in &deck.requires {
-        let sourceless = resolve_require(req, dir, dir)
+        let nongating = resolve_require(req, dir, dir)
             .and_then(|path| Deck::load(&path).ok())
-            .is_some_and(|prereq| !prereq.has_exam());
-        if sourceless {
-            out.push(req.clone());
+            .filter(|prereq| !prereq.has_exam())
+            .map(|prereq| NongatingPrerequisite {
+                requirement: req.clone(),
+                is_trace: prereq.is_trace(),
+            });
+        if let Some(nongating) = nongating {
+            out.push(nongating);
         }
     }
     out
@@ -1356,6 +1366,24 @@ mod tests {
     }
 
     #[test]
+    fn a_trace_deck_has_no_exam_and_reaches_finished_when_its_checkpoints_graduate() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_deck(
+            dir.path(),
+            "trace.md",
+            "---\ntrace: how the request flows\nexam: .\n---\n## enter\nrequest enters\n<!-- id: card-trace1 -->\n## leave\nresponse leaves\n<!-- id: card-trace2 -->\n",
+        );
+        let deck = Deck::load(&path).unwrap();
+        let (mut store, _s) = empty_store();
+
+        assert!(!deck.has_exam());
+        for card in &deck.cards {
+            graduate(&mut store, &card.id().unwrap());
+        }
+        assert_eq!(DeckState::Finished, deck.state(&store));
+    }
+
+    #[test]
     fn a_sourceless_deck_finishes_once_every_card_graduates() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(dir.path(), "d.md", "## a\n1\n<!-- id: card-q1 -->\n");
@@ -1387,7 +1415,13 @@ mod tests {
             "---\nexam: https://x\nrequires:\n  - a\n  - c\n---\n## b\n1\n",
         );
         let b = Deck::load(&b_path).unwrap();
-        assert_eq!(vec!["a".to_string()], nongating_prerequisites(&b));
+        assert_eq!(
+            vec![NongatingPrerequisite {
+                requirement: "a".to_string(),
+                is_trace: false,
+            }],
+            nongating_prerequisites(&b)
+        );
     }
 
     #[test]

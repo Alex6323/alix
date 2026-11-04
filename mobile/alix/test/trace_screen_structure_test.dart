@@ -3,15 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:alix_mobile/bootstrap.dart';
-import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/trace_screen.dart';
 
 import 'support/deck_fixture.dart';
-import 'support/fake_server_client.dart';
 import 'support/widget_tree_dump.dart';
 
 void main() {
@@ -57,8 +54,6 @@ void main() {
   Future<void> pumpTraceSession(
     WidgetTester tester, {
     required Directory root,
-    Directory? support,
-    ServerClient Function(ServerConfig)? buildClient,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -67,8 +62,6 @@ void main() {
           key: UniqueKey(),
           deckPath: '${root.path}/trace.md',
           rootDir: root.path,
-          supportDir: support ?? tempDir('alix-trace-structure-support-'),
-          buildClient: buildClient,
         ),
       ),
     );
@@ -123,59 +116,13 @@ void main() {
     );
   });
 
-  testWidgets('trace tree: done offline, exam available, and exam cooldown', (
-    tester,
-  ) async {
+  testWidgets('trace tree: done', (tester) async {
     final offline = traceRoot('alix-trace-structure-done-offline-', hops: 1);
     await pumpTraceSession(tester, root: offline);
     await finishOneHop(tester);
     await expectWidgetTree(
       tester,
       'trace_done_offline',
-      root: find.byType(TraceSessionScreen),
-    );
-
-    final live = traceRoot('alix-trace-structure-done-live-', hops: 1);
-    final liveSupport = tempDir('alix-trace-structure-live-support-');
-    await savePairing(
-      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc', rootId: 'root-test0000000000000000000000'),
-      support: liveSupport,
-    );
-    await pumpTraceSession(
-      tester,
-      root: live,
-      support: liveSupport,
-      buildClient: (_) => FakeServerClient(versionReply: minServerVersion),
-    );
-    await finishOneHop(tester);
-    await expectWidgetTree(
-      tester,
-      'trace_done_exam_available',
-      root: find.byType(TraceSessionScreen),
-    );
-
-    final cooldown = traceRoot('alix-trace-structure-cooldown-', hops: 1);
-    final cooldownSupport = tempDir('alix-trace-structure-cooldown-support-');
-    await savePairing(
-      const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc', rootId: 'root-test0000000000000000000000'),
-      support: cooldownSupport,
-    );
-    TraceSession.open(
-      deckPath: '${cooldown.path}/trace.md',
-      rootDir: cooldown.path,
-    ).applyExamFailed(
-      nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch - 500),
-    );
-    await pumpTraceSession(
-      tester,
-      root: cooldown,
-      support: cooldownSupport,
-      buildClient: (_) => FakeServerClient(versionReply: minServerVersion),
-    );
-    await finishOneHop(tester);
-    await expectWidgetTree(
-      tester,
-      'trace_done_exam_cooldown',
       root: find.byType(TraceSessionScreen),
     );
   });
@@ -213,7 +160,6 @@ void main() {
                   builder: (_) => TraceSessionScreen(
                     deckPath: '${invalid.path}/trace.md',
                     rootDir: invalid.path,
-                    supportDir: tempDir('alix-trace-structure-invalid-support-'),
                   ),
                 ),
               ),

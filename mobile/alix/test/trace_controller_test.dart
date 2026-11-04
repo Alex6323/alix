@@ -5,7 +5,7 @@ import 'package:alix_mobile/trace/trace_models.dart';
 import 'package:alix_mobile/trace/trace_port.dart';
 
 void main() {
-  test('named transitions own server liveness, prediction, and grading', () {
+  test('named transitions own prediction and grading', () {
     final port = _FakeTraceSessionPort(_state(TraceSessionPhaseModel.predict));
     final controller = TraceSessionController(
       factory: _FakeTraceSessionFactory([port]),
@@ -16,15 +16,13 @@ void main() {
     var notifications = 0;
     controller.addListener(() => notifications++);
 
-    controller.setServerLive(true);
     controller.predict('my prediction');
     controller.grade(TraceSessionGrade.got);
 
-    expect(controller.serverLive, isTrue);
     expect(port.predictions, ['my prediction']);
     expect(port.grades, [TraceSessionGrade.got]);
     expect(controller.state.phase, TraceSessionPhaseModel.done);
-    expect(notifications, 3);
+    expect(notifications, 2);
   });
 
   test(
@@ -117,13 +115,4 @@ class _FakeTraceSessionPort implements TraceSessionPort {
     );
     return _state;
   }
-
-  @override
-  int? examCooldownMs(int nowMs) => null;
-
-  @override
-  void applyExamFailed(int nowMs) {}
-
-  @override
-  void applyExamPassed(int nowMs) {}
 }

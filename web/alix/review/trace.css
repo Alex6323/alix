@@ -38,9 +38,5 @@
   .wfield { flex: 1 1 auto; width: 100%; resize: none; min-height: 120px; padding: 14px 16px; border-radius: 13px; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); font: 1.02rem/1.5 var(--sans); outline: none; }
   .wfield:focus { border-color: var(--bolt); }
   .wlede { flex: none; color: var(--dim); font-size: 0.9rem; line-height: 1.5; }
-  /* trace's done summary compression block */
-  .summary .compression { margin-top: 18px; border-left: 3px solid var(--bolt); padding: 4px 0 4px 14px; }
-  .summary .compression .wlbl { display: block; color: var(--bolt); margin-bottom: 6px; }
-  .summary .compression p { margin: 0; line-height: 1.55; white-space: pre-wrap; color: var(--ink); }
   /* leave-confirmation message, colored for the trace context */
   .leave-trace-msg { color: var(--dim); font-size: 0.9rem; margin-right: auto; }

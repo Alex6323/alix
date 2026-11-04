@@ -179,6 +179,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a listed model or names one that was not listed is generated once more. The `[exam]`
   `num_questions` key is removed; a config that still sets it fails to load.
 
+- Trace decks are drill-only: finishing their checkpoint path no longer opens
+  an AI compression exam, and graduated checkpoints move the trace to
+  Finished for dependency gates. The web and phone no longer show trace exam
+  capstones or cooldowns. `[exam] retry_cooldown_secs` is removed, and a
+  config that still sets it now fails to load.
+
 - Exam questions stand alone: the examiner is told to reproduce any example
   it builds on, to put code in a fenced block one statement per line, to drop
   thinking aloud, and never to name a fix question's mistake. The web exam
@@ -206,10 +212,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`"sure"` | `"unsure"`) on a review. A tracked deck's progress no longer
   loads in an older desktop or phone build, so update both before syncing it.
 
-- The exam writes its questions per deck section: `[exam] num_questions`
-  now counts questions for each `#` section (default 3, was 5 per sitting),
-  cycling through a new instance, a boundary, and a statement with a seeded
-  mistake to fix. The section's cards go into the prompt as scope, so the
+- The exam writes its questions per deck section, cycling through a new
+  instance, a boundary, and a statement with a seeded mistake to fix. The section's cards go into the prompt as scope, so the
   questions avoid what the deck already asks.
 
 - Web: a code block in a card's question sits on a much lighter panel in the
@@ -851,14 +855,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The manual said a card removed mid-session is deleted from the deck file when
   the session ends; it is deleted right away.
-
-- On the phone, taking the desktop's side of a sync conflict at the end of a
-  review or trace and then passing the deck's exam no longer writes the
-  session's older progress back over the desktop's.
-
-- On the phone, failing a trace exam or creating review-exam remediation cards
-  after taking the desktop's side of an end-of-session sync conflict no longer
-  restores the phone progress that the learner discarded.
 
 - On the phone, a sync conflict that a background sync records during a trace
   on a paired deck now opens the conflict choice when the trace ends, finished

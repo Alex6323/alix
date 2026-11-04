@@ -5,8 +5,7 @@ the same core (parser, scheduler, progress store) compiled into the app, so
 it works entirely offline, including a [trace deck](13-trace-decks.md)'s
 predict/reveal/self-grade trace. It is early software with a deliberately
 small surface: reviewing decks. Pairing it with a running `alix` server on
-your network lends it the tutor, the AI exam (a trace's compression exam
-included), deck generation, and note-taking: see
+your network lends it the tutor, the AI exam, deck generation, and note-taking: see
 [Pairing a device](19-pairing.md).
 
 Settings (the ☰ button) → **Theme** picks from the web gallery’s 18 non-kids

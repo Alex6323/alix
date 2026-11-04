@@ -1,8 +1,8 @@
 // T5.2 widget tests: the on-device trace, driven against the REAL
 // embedded core (RustLib.init in setUpAll; real deck files on disk),
 // mirroring bridge_test.dart's own fixtures/pattern and the review screen's
-// exam-chip tests (review_screen_exam_chip_test.dart) for the client-
-// acquisition seam. A trace fixture always carries an in-folder `% exam:`
+// exam-chip tests (review_screen_exam_chip_test.dart). A trace fixture always
+// carries an in-folder `% exam:`
 // so its checkpoints resolve real gutter lines, matching the rust bridge's
 // own `trace_fixture` (mobile/alix/rust/src/api/review.rs).
 import 'dart:async';
@@ -11,17 +11,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:alix_mobile/bootstrap.dart';
-import 'package:alix_mobile/exam_screen.dart';
 import 'package:alix_mobile/picker_screen.dart';
-import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/trace_screen.dart';
 
 import 'support/deck_fixture.dart';
-import 'support/fake_server_client.dart';
 import 'support/picker_listing.dart';
 
 void main() {
@@ -30,14 +26,6 @@ void main() {
 
   Directory tempRoot(String prefix) {
     final dir = Directory.systemTemp.createTempSync(prefix);
-    addTearDown(() {
-      if (dir.existsSync()) dir.deleteSync(recursive: true);
-    });
-    return dir;
-  }
-
-  Directory tempSupport() {
-    final dir = Directory.systemTemp.createTempSync('alix-trace-support-');
     addTearDown(() {
       if (dir.existsSync()) dir.deleteSync(recursive: true);
     });
@@ -69,7 +57,7 @@ void main() {
   }
 
   /// A one-hop trace, for tests only interested in reaching the done
-  /// screen quickly (the exam-handoff visibility rules).
+  /// screen quickly.
   Directory oneHopRoot() {
     final root = tempRoot('alix-trace-1hop-');
     File('${root.path}/source.txt').writeAsStringSync('first\nsecond\n');
@@ -136,7 +124,6 @@ void main() {
             home: TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
-              supportDir: tempSupport(),
             ),
           ),
         );
@@ -184,6 +171,8 @@ void main() {
         expect(find.text('partly'), findsOneWidget);
         expect(find.text('missed it'), findsOneWidget);
         expect(find.text('Trace again'), findsOneWidget);
+        expect(find.text('Take the exam'), findsNothing);
+        expect(find.textContaining('re-sitting'), findsNothing);
 
         // No hop rail, no live-grade chrome: only the delta chips + the
         // done actions ever appear; a fresh predict/reveal is what advances.
@@ -201,7 +190,6 @@ void main() {
             home: TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
-              supportDir: tempSupport(),
             ),
           ),
         );
@@ -230,7 +218,6 @@ void main() {
             home: TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
-              supportDir: tempSupport(),
             ),
           ),
         );
@@ -271,7 +258,7 @@ void main() {
     );
   });
 
-  group('the exam handoff on the done screen', () {
+  group('the done screen', () {
     Future<void> traceOneHopToDone(WidgetTester tester) async {
       await tester.enterText(find.byType(TextField), 'a guess');
       await tester.tap(find.text('Reveal'));
@@ -280,82 +267,8 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets(
-      'paired, a live probe, no cooldown: "Take the exam" is offered and pushes the exam screen',
-      (tester) async {
-        final root = oneHopRoot();
-        final support = tempSupport();
-        await savePairing(
-          const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test0000000000000000000000'),
-          support: support,
-        );
-
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: alixDark(),
-            home: TraceSessionScreen(
-              deckPath: '${root.path}/t.md',
-              rootDir: root.path,
-              supportDir: support,
-              buildClient: (_) =>
-                  FakeServerClient(versionReply: '0.6.0', examStartReply: true),
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        await traceOneHopToDone(tester);
-
-        expect(find.text('Take the exam'), findsOneWidget);
-
-        await tester.tap(find.text('Take the exam'));
-        // Two pumps: one resolves the tap's gesture arena and schedules the
-        // Navigator's push, the next actually builds the pushed route.
-        await tester.pump();
-        await tester.pump();
-        expect(find.byType(ExamScreen), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'paired but the probe fails (unreachable): "Take the exam" does not exist even '
-      'though a config exists, and the trace itself never touched the server to get here',
-      (tester) async {
-        final root = oneHopRoot();
-        final support = tempSupport();
-        await savePairing(
-          const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test0000000000000000000000'),
-          support: support,
-        );
-
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: alixDark(),
-            home: TraceSessionScreen(
-              deckPath: '${root.path}/t.md',
-              rootDir: root.path,
-              supportDir: support,
-              buildClient: (_) =>
-                  FakeServerClient(versionReply: null, examStartReply: true),
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        await traceOneHopToDone(tester);
-
-        expect(find.text('Take the exam'), findsNothing);
-        expect(find.text('Trace again'), findsOneWidget);
-      },
-    );
-
-    testWidgets('an older paired server: "Take the exam" does not exist', (
-      tester,
-    ) async {
+    testWidgets('the trace summary shows no exam chip', (tester) async {
       final root = oneHopRoot();
-      final support = tempSupport();
-      await savePairing(
-        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test0000000000000000000000'),
-        support: support,
-      );
 
       await tester.pumpWidget(
         MaterialApp(
@@ -363,8 +276,6 @@ void main() {
           home: TraceSessionScreen(
             deckPath: '${root.path}/t.md',
             rootDir: root.path,
-            supportDir: support,
-            buildClient: (_) => FakeServerClient(versionReply: '0.5.0'),
           ),
         ),
       );
@@ -372,117 +283,10 @@ void main() {
       await traceOneHopToDone(tester);
 
       expect(find.text('Take the exam'), findsNothing);
+      expect(find.textContaining('re-sitting'), findsNothing);
+      expect(find.text('Trace again'), findsOneWidget);
     });
 
-    testWidgets(
-      'a refused token (401 on the probe): the exact re-pair SnackBar, '
-      'and Re-pair opens the pairing sheet, matching review_screen.dart',
-      (tester) async {
-        final root = oneHopRoot();
-        final support = tempSupport();
-        await savePairing(
-          const ServerConfig(host: '127.0.0.1', port: 7777, token: 'stale', rootId: 'root-test0000000000000000000000'),
-          support: support,
-        );
-
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: alixDark(),
-            home: TraceSessionScreen(
-              deckPath: '${root.path}/t.md',
-              rootDir: root.path,
-              supportDir: support,
-              buildClient: (_) => FakeServerClient(expireOnVersion: true),
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        // Mirrors review_screen_ask_chip_test.dart's own 401 test: this
-        // screen never pops itself on a 401 (unlike exam_screen.dart), so its
-        // own context is still alive; the action must open the sheet on it
-        // without throwing. Stays on the predict screen (a still-showing
-        // SnackBar occupies the same footer area a reveal tap would need,
-        // matching the pre-existing review test's own scope).
-        expect(
-          find.text('Pairing expired. Pair again from Settings → Connected devices.'),
-          findsOneWidget,
-        );
-
-        await tester.tap(find.text('Re-pair'));
-        await tester.pumpAndSettle();
-
-        expect(find.byKey(const ValueKey('pairing-url-field')), findsOneWidget);
-        expect(tester.takeException(), isNull);
-      },
-    );
-
-    testWidgets(
-      'unpaired: "Take the exam" does not exist, the trace stays fully offline',
-      (tester) async {
-        final root = oneHopRoot();
-        final support = tempSupport();
-
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: alixDark(),
-            home: TraceSessionScreen(
-              deckPath: '${root.path}/t.md',
-              rootDir: root.path,
-              supportDir: support,
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        await traceOneHopToDone(tester);
-
-        expect(find.text('Take the exam'), findsNothing);
-        expect(find.textContaining('re-sitting'), findsNothing);
-        expect(find.text('Trace again'), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'paired but cooling down from a recent failed sitting: a hint, not the button',
-      (tester) async {
-        final root = oneHopRoot();
-        final support = tempSupport();
-        await savePairing(
-          const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test0000000000000000000000'),
-          support: support,
-        );
-
-        // Fail the trace exam moments ago (through the bridge directly, like
-        // the rust test `exam_cooldown_gates_a_resit_...`): the default
-        // cooldown is an hour, so this is still deep inside the window when
-        // the widget checks real wall-clock "now" a moment later.
-        final justNow = BigInt.from(
-          DateTime.now().millisecondsSinceEpoch - 500,
-        );
-        TraceSession.open(
-          deckPath: '${root.path}/t.md',
-          rootDir: root.path,
-        ).applyExamFailed(nowMs: justNow);
-
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: alixDark(),
-            home: TraceSessionScreen(
-              deckPath: '${root.path}/t.md',
-              rootDir: root.path,
-              supportDir: support,
-              buildClient: (_) => FakeServerClient(versionReply: '0.6.0'),
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        await traceOneHopToDone(tester);
-
-        expect(find.text('Take the exam'), findsNothing);
-        expect(find.textContaining('re-sitting'), findsOneWidget);
-        expect(find.text('Trace again'), findsOneWidget);
-      },
-    );
   });
 
   group('the picker routes a trace row to the trace', () {
@@ -508,7 +312,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             theme: alixDark(),
-            home: PickerScreen(root: root.path, supportDir: tempSupport()),
+            home: PickerScreen(root: root.path),
           ),
         );
         await settlePicker(tester);
@@ -540,7 +344,6 @@ void main() {
             builder: (_) => TraceSessionScreen(
               deckPath: '${root.path}/t.md',
               rootDir: root.path,
-              supportDir: tempSupport(),
             ),
           ),
         ),

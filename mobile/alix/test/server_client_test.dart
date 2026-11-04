@@ -525,34 +525,6 @@ void main() {
       });
     });
 
-    test('examGet parses is_trace: true from the trace_results corpus', () async {
-      final corpus =
-          jsonDecode(File('../../tests/contracts/RemoteExamDto.trace_results.json').readAsStringSync());
-      final s = await startServer((request) async {
-        await request.drain<void>();
-        await respondJson(request, 200, corpus);
-      });
-      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
-      addTearDown(client.close);
-
-      final exam = await client.examGet();
-      expect(exam, isNotNull);
-      expect(exam!.isTrace, isTrue);
-    });
-
-    test('examGet defaults isTrace to false when is_trace is absent from the wire', () async {
-      final s = await startServer((request) async {
-        await request.drain<void>();
-        await respondJson(request, 200, <String, dynamic>{}); // an older server, no is_trace at all
-      });
-      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
-      addTearDown(client.close);
-
-      final exam = await client.examGet();
-      expect(exam, isNotNull);
-      expect(exam!.isTrace, isFalse);
-    });
-
     test('postNote sends card+history to /api/remote/ask/note and returns true on 2xx', () async {
       String? seenMethod;
       String? seenPath;

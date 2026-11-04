@@ -17,7 +17,7 @@ among your decks.
 Review, including tracing a trace deck, stays fully offline. Optionally, you
 can pair the app with your own alix desktop app on your Wi-Fi (paste the URL
 alix prints), and the phone borrows the desktop for the tutor, the AI exam
-(a trace's compression exam included), turning a tutor conversation into
+on fact decks, turning a tutor conversation into
 notes on the deck, and generating a new deck from a URL. The phone talks
 only to your desktop, with a token, on your local network; your desktop
 answers using whatever AI backend you have configured there. The alix
