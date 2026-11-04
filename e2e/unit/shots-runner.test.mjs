@@ -198,6 +198,13 @@ test("the capture rejects an unknown --only above the encoder probe", async () =
   assert.equal(source.match(/unknownRequests\(/g).length, 1);
 });
 
+test("the AI exam shot finds the due exam through its accent class", () => {
+  const shot4 = capture.SHOTS.find(([number]) => number === 4)?.[2];
+  assert.ok(shot4, "shot 4 is registered");
+  assert.match(String(shot4), /locator\("\.chip\.exam-due", \{ hasText: "Take exam" \}\)/);
+  assert.doesNotMatch(String(shot4), /locator\("\.chip\.primary", \{ hasText: "Take exam" \}\)/);
+});
+
 const good = (n) => [n, `shot-${n}-x.webp`, named(n, async () => true)];
 
 test("the runner refuses a registry it cannot trust, row by row", async () => {

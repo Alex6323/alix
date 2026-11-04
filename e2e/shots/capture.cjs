@@ -757,7 +757,7 @@ async function shot4(page, out) {
   await page.waitForTimeout(600);
 
   // Drive the page the way a user reaches an exam: focus the graduated deck's
-  // row; its primary chip reads "Take exam" (picker.js examPrimary).
+  // row; its .chip.exam-due control reads "Take exam".
   const row = page.locator(".deckrow", { hasText: "what-is-ownership" });
   if (!(await row.count())) {
     log("FAILED shot 4: hero row not listed");
@@ -765,7 +765,7 @@ async function shot4(page, out) {
   }
   await row.first().click();
   await page.waitForTimeout(300);
-  const chip = page.locator(".chip.primary", { hasText: "Take exam" });
+  const chip = page.locator(".chip.exam-due", { hasText: "Take exam" });
   if (!(await chip.count())) {
     log("FAILED shot 4: no Take exam chip (deck not exam-due?)");
     return false;
