@@ -591,7 +591,7 @@ class PickerDepthSheet extends StatefulWidget {
 class _PickerDepthSheetState extends State<PickerDepthSheet> {
   bool _cram = false;
   bool _skipIntroduction = false;
-  bool _needsWorkOnly = false;
+  bool _needsWorkOnly = true;
 
   @override
   Widget build(BuildContext context) {
@@ -666,14 +666,13 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
               ),
             ],
             if (widget.exam case final exam?) ...[
-              if (exam.filterable)
-                SwitchListTile(
-                  value: _needsWorkOnly,
-                  onChanged: exam.enabled
-                      ? (on) => setState(() => _needsWorkOnly = on)
-                      : null,
-                  title: const Text('Only what needs work'),
-                ),
+              SwitchListTile(
+                value: exam.filterable && _needsWorkOnly,
+                onChanged: exam.enabled && exam.filterable
+                    ? (on) => setState(() => _needsWorkOnly = on)
+                    : null,
+                title: const Text('Only what needs work'),
+              ),
               _PickerLaunchRow(
                 label: 'Exam',
                 hint: exam.locked

@@ -315,21 +315,28 @@ void main() {
     expect(fill(tester), isNull);
   });
 
-  testWidgets('the filter switch shows only when the filter would change the '
-      'sitting, defaults off, and rides along when on', (tester) async {
-    await tester.pumpWidget(_sheet((_) {}, exam: offer()));
-    expect(find.text('Only what needs work'), findsNothing);
+  testWidgets('the filter switch is always shown, on by default, and off and '
+      'disabled when it would select nothing', (tester) async {
+    SwitchListTile filterSwitch() =>
+        tester.widget<SwitchListTile>(find.byType(SwitchListTile).last);
+
+    final idle = <bool>[];
+    await tester.pumpWidget(_sheet((_) {}, exam: offer(onStart: idle.add)));
+    expect(find.text('Only what needs work'), findsOneWidget);
+    expect(filterSwitch().value, isFalse);
+    expect(filterSwitch().onChanged, isNull);
+    await tester.tap(find.text('Exam'));
+    expect(idle, [false], reason: 'nothing to filter: a full sitting');
 
     final starts = <bool>[];
     await tester.pumpWidget(
       _sheet((_) {}, exam: offer(filterable: true, onStart: starts.add)),
     );
-    expect(tester.widget<SwitchListTile>(find.byType(SwitchListTile).last).value, isFalse);
-
+    expect(filterSwitch().value, isTrue);
     await tester.tap(find.text('Exam'));
     await tester.tap(find.text('Only what needs work'));
     await tester.pump();
     await tester.tap(find.text('Exam'));
-    expect(starts, [false, true]);
+    expect(starts, [true, false]);
   });
 }

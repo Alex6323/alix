@@ -201,8 +201,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `sections` tally and `exam_filter`. `StateDto.exam_due` is removed.
 
 - Phone: the exam moves to the deck's launch sheet (an **Exam** row below
-  Walk, with an "Only what needs work" switch when some sections passed and
-  some did not); the session summary no longer offers it. Every sitting,
+  Walk, with an "Only what needs work" switch, on by default); the session
+  summary no longer offers it. Every sitting,
   passed or not, records its per-card results on the phone, and the deck row
   shows the same exam badge as the web.
 

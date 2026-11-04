@@ -54,10 +54,12 @@ too:
   phone sits the exam through a [paired](19-pairing.md) desktop, so the row is
   disabled while no desktop is reachable.
 
-When some sections of the deck have passed and some have not, both offer
-**only what needs work**: the sitting then asks only about the sections that
-have not passed. On a fresh deck, or one whose sections all passed, the
-sitting covers the whole deck either way and the option is hidden.
+Both offer **only what needs work**, on by default: the sitting then asks
+only about the sections that have not passed (failed, with new cards, or
+never examined). The browser shows the tick only when some sections passed
+and some did not, since otherwise the sitting covers the whole deck either
+way; the phone always shows the switch and disables it when every section
+has passed.
 
 Starting the exam gives ids to cards added since the deck was last opened,
 the way opening a review does, so their results can be recorded.

@@ -562,7 +562,7 @@ class _PickerScreenState extends State<PickerScreen> {
                 locked: entry.locked,
                 serverLive: isPaired && _controller.serverReachable,
                 due: entry.examDue,
-                filterable: entry.examFilter == 'partial',
+                filterable: entry.examFilter != 'none',
                 onStart: (needsWorkOnly) {
                   examNeedsWorkOnly = needsWorkOnly;
                   Navigator.of(sheet).pop();
