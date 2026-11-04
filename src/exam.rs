@@ -843,11 +843,12 @@ struct LayerSection {
 }
 
 pub fn unreadable_exam_entries(deck: &Deck) -> Vec<(String, String)> {
+    let root = workspace::content_root(&deck.path);
     deck.exam
         .iter()
         .filter(|src| !deck::is_url(src))
         .filter_map(|src| {
-            let path = crate::source::source_path(src, deck.path.parent())?;
+            let path = crate::source::source_path(src, Some(&root))?;
             read_exam_file(&path)
                 .err()
                 .map(|error| (src.trim().to_string(), format!("{error:#}")))
@@ -1318,6 +1319,28 @@ struct GradesDto {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_workspace_deck_resolves_its_exam_files_from_the_workspace_root_as_the_exam_does() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
+        std::fs::create_dir_all(dir.path().join("sources")).unwrap();
+        std::fs::write(dir.path().join("sources/notes.md"), "n").unwrap();
+        std::fs::create_dir_all(dir.path().join("decks")).unwrap();
+        let path = dir.path().join("decks/d.md");
+        std::fs::write(&path, "---\nexam: sources/notes.md\n---\n## q\na\n").unwrap();
+        crate::stamp::stamp_deck(&path).unwrap();
+        let deck = Deck::load(&path).unwrap();
+        assert!(
+            workspace::root_for_deck(&deck.path).is_some(),
+            "setup: the deck is a workspace member"
+        );
+        assert_eq!(
+            Vec::<(String, String)>::new(),
+            unreadable_exam_entries(&deck),
+            "a file the exam reads from the workspace root is not reported"
+        );
+    }
 
     #[test]
     fn unreadable_exam_entries_names_a_directory_and_a_missing_file_but_not_a_file_or_url() {
