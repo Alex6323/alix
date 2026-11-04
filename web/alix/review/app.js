@@ -76,7 +76,6 @@ study = createStudy({
   traceData: () => trace.data(),
   replaceTraceSession: (next) => trace.replace(next),
   openTutor: () => tutor.show(),
-  startExam: (deck) => exam.start(deck),
   closeMenu: () => menu.classList.remove("open"),
   notice,
   timers: {
@@ -139,7 +138,7 @@ const picker = createPicker({
   openBrowse: study.openBrowse,
   openWalk: study.openWalk,
   openTutorial: study.openTutorial,
-  startExam: (deck) => exam.start(deck),
+  startExam: (deck, needsWorkOnly) => exam.start(deck, needsWorkOnly),
   openAugment: (deck) => augment.open(deck),
   notice,
   timers: { setTimeout: window.setTimeout.bind(window) },

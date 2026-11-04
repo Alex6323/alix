@@ -26,7 +26,10 @@ const base = {
   answer: "",
   on_last: true,
   grades: [],
-  passed: null,
+  sections: [],
+  verdicts: null,
+  full: true,
+  mastered: false,
   gaps: [],
   can_remediate: false,
   remediated_count: null,
@@ -40,8 +43,7 @@ async function startMockedExam(page: Page, dto: object) {
   await page.route("**/api/exam/start", (route) => route.fulfill({ json: dto }));
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "Source Fact").click();
-  await page.getByTitle("choose a depth").click();
-  await page.locator(".legend .chip", { hasText: /^Exam/ }).click();
+  await page.getByRole("button", { name: /^Take exam/ }).click();
 }
 
 test("an exam question renders inline code and numbers its program's lines", async ({ page }) => {
@@ -66,7 +68,13 @@ test("exam results render the question, feedback, and rubric points from their u
     current: 1,
     question: null,
     question_units: null,
-    passed: false,
+    sections: [{
+      label: "Bindings",
+      cards: ["card-0123456789abcdefghjkmnpqrs"],
+      pass: false,
+      verdicts: { pass: 0, partial: 1, total: 1 },
+    }],
+    verdicts: { pass: 0, partial: 1, total: 1 },
     grades: [
       {
         question: "raw",
@@ -74,6 +82,9 @@ test("exam results render the question, feedback, and rubric points from their u
         points: ["raw point"],
         points_units: [[sentence([{ text: "Only " }, { text: "v", code: true }, { text: " is mutable." }])]],
         answer: "w is not mutable",
+        section: 0,
+        shape: "boundary",
+        model: "pattern binding mutability",
         verdict: "PARTIAL",
         feedback: "raw feedback",
         feedback_units: [sentence([{ text: "Right line, but " }, { text: "mut", code: true }, { text: " binds per name." }])],

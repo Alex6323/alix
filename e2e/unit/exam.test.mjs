@@ -38,7 +38,7 @@ test("exam owns its open and close transitions", async () => {
     "/api/exam/close": picker,
   });
 
-  await run.exam.start("facts.md");
+  await run.exam.start("facts.md", true);
 
   assert.equal(run.exam.isOpen(), true);
   assert.equal(run.exam.data(), generating);
@@ -46,7 +46,7 @@ test("exam owns its open and close transitions", async () => {
   assert.equal(run.renders(), 1);
   assert.deepEqual(run.calls[0], {
     path: "/api/exam/start",
-    options: { method: "POST", body: { deck: "facts.md" } },
+    options: { method: "POST", body: { deck: "facts.md", needs_work_only: true } },
   });
 
   await run.exam.close();

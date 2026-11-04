@@ -39,6 +39,16 @@ this screen; there's no direct deck launch. A focused deck's split
 **Depth…** button opens the depth menu ([Scheduling](05-scheduling.md))
 without starting it.
 
+A fact deck with an exam has one separate **Take exam** action (`x`).
+**Learn** and Enter still start a drill when the exam is due; they never
+start the exam. **Take exam** fills with the accent color only when the exam
+is due and unlocked. A locked exam stays unfilled and disabled with a lock
+glyph. The Depth menu does not repeat the exam action, and a session summary
+does not offer an exam. When some sections need work, **only what needs work**
+is ticked by default; untick it to take a full sitting. Results show the point
+total, each section's count and status, and the shape of every question.
+**mastered** appears only after a perfect full sitting.
+
 A workspace row that has a personal [deadline](08-workspaces.md) set shows a
 small chip: a date, days left, and ready percent, colored to flag urgency
 inside the last week or past due; the same readout sits inline behind the

@@ -162,8 +162,8 @@ export function createPicker({
 
   // The deck-selection screen, mirroring the terminal picker. Three sections —
   // Workspaces (each with its last-progress time), loose Decks, and
-  // Folders — and single-launch: click a deck to start it (a trace deck traces, a deck
-  // reviews, an exam-due deck sits its exam) or open a workspace/folder to drill
+  // Folders and single-launch: click a deck to start its trace or review, or
+  // open a workspace/folder to drill
   // into its unlock dependency tree. 🔒 exam locked (still drillable) · 🕒 nothing due ·
   // mastered 🎉 decks live in the Mastered window (m). The filter searches every
   // loose deck.
@@ -223,9 +223,9 @@ export function createPicker({
     // Can a row be started now, at *any* depth? Drilling is never gated by the
     // prerequisite lock (only the exam is - an exam-locked deck's `examable` is
     // false), so a gated view refuses only a deck with nothing due at any depth.
-    // `reviewable` already folds in the trace and exam-due special cases alongside
-    // the per-depth due-ness, so this reads as "any depth, trace, or exam
-    // is startable" — the gate for the ▾ split button. The Mastered window is
+    // `reviewable` already folds in trace handling alongside the per-depth
+    // due-ness, so this reads as "any depth or trace is startable". The
+    // Mastered window is
     // ungated — a finished deck can be reopened to cram or re-examine.
     // An "error" row (unreadable progress document) is never startable, even
     // ungated: the server refuses the select, so offering it is a dead click.
@@ -254,37 +254,29 @@ export function createPicker({
     // on augmentation.
     const canDoDepth = (it, depth) => depth !== "recognize" || !!it.can_recognize;
 
-    // Rows that carry the depth split (the Learn ▾ chip and its v key): a deck —
-    // not a workspace/folder — that isn't exam-primary, has a remembered depth,
-    // and isn't a trace (traced — depths don't apply).
+    // Rows that carry the depth split (the Learn ▾ chip and its v key): a deck
+    // with a remembered depth that is not a workspace, folder, or trace.
     const hasDepthSplit = (row) => !!(row && row._item && !row._open
-      && row._item.state !== "examdue" && row._item.last_launch && !row._item.is_trace);
+      && row._item.last_launch && !row._item.is_trace);
 
-    // The plain Learn/primary button's gate: a trace always traces and an
-    // exam-due deck's primary is its exam (both non-depth, via `canStart`);
-    // otherwise it reviews at the deck's own last-used depth.
-    const walksFirst = (it) => it.last_launch === "walk" && !it.is_trace && it.state !== "examdue";
+    // The plain Learn/primary button's gate: a trace always traces; a fact deck
+    // reviews at its own last-used depth or resumes its last walk.
+    const walksFirst = (it) => it.last_launch === "walk" && !it.is_trace;
     const canStartPrimary = (it, gated) =>
-      (it.is_trace || it.state === "examdue") ? canStart(it, gated)
+      it.is_trace ? canStart(it, gated)
         : walksFirst(it) ? canWalk(it)
         : (canDoDepth(it, it.last_launch) && canStartAt(it, gated, it.last_launch));
 
-    // Launch one deck/member. An exam-due deck sits its exam; a trace starts its
-    // drill. Launching inside a workspace remembers it so leaving the session
-    // returns here.
+    // Launch one deck/member for a drill. Launching inside a workspace remembers
+    // it so leaving the session returns here.
     function launch(it, wsName, gated) {
       if (!canStartPrimary(it, gated)) return;
       if (walksFirst(it)) { launchWalk(it, wsName); return; }
       lastWorkspace = wsName || null;
-      // A trace's primary action is always the trace. An exam-due fact deck sits
-      // its exam when available (sourced + prerequisites passed); else it reviews.
-      if (!it.is_trace && it.state === "examdue" && it.examable) startExam(it.name);
-      else {
-        // Apply the focus drawer's topology/region pick, but only when it belongs
-        // to the deck being launched (the drawer follows the focused row).
-        const sel = drawerSel.deck === it.name ? drawerSel : {};
-        select(it.name, sel.topology, sel.region);
-      }
+      // Apply the focus drawer's topology/region pick, but only when it belongs
+      // to the deck being launched (the drawer follows the focused row).
+      const sel = drawerSel.deck === it.name ? drawerSel : {};
+      select(it.name, sel.topology, sel.region);
     }
 
     // Launch at an explicit depth (from the split Learn button's ▾ menu), same
@@ -426,6 +418,7 @@ export function createPicker({
       // launching outright; Review / Enter then launches.
       row.addEventListener("click", () => row.focus());
       row._item = it; row._gated = gated; row._wsName = wsName;
+      row._examNeedsWorkOnly = true;
       row._search = (it.label || it.name).toLowerCase();
       row._default = dflt !== false;
       return row;
@@ -494,6 +487,13 @@ export function createPicker({
       const visibleRows = () =>
         Array.from(lists.querySelectorAll(".deckrow")).filter(r => r.style.display !== "none");
 
+      function launchExam(row) {
+        const it = row._item;
+        const needsWorkOnly = it.exam_filter === "partial" && row._examNeedsWorkOnly;
+        lastWorkspace = row._wsName || null;
+        startExam(it.name, needsWorkOnly);
+      }
+
       // The primary button reflects the focused row: Open a workspace/folder,
       // Start/Take exam a deck (disabled when locked or nothing due).
       function syncPrimary() {
@@ -534,14 +534,6 @@ export function createPicker({
           walk.addEventListener("mousedown", e => e.preventDefault());
           walk.addEventListener("click", () => { depthMenuOpen = false; launchWalk(it, f._wsName); });
           legend.appendChild(walk);
-          if (it.has_exam && !it.is_trace) {
-            const exam = el("button", "chip", "Exam");
-            exam.appendChild(el("span", "k exam-key", it.examable ? "x" : "\u{1F512}"));
-            exam.disabled = !it.examable;
-            exam.addEventListener("mousedown", e => e.preventDefault());
-            exam.addEventListener("click", () => { depthMenuOpen = false; lastWorkspace = f._wsName || null; startExam(it.name); });
-            legend.appendChild(exam);
-          }
           // The cram tick-box: include cards that aren't due (a due card still
           // grades as a normal review; an early pass only re-anchors).
           const cram = el("button", "chip" + (cramOn ? " primary" : ""), (cramOn ? "☑" : "☐") + " cram");
@@ -617,15 +609,11 @@ export function createPicker({
           primary.addEventListener("click", () => renderDrill(f._open));
         } else if (f && f._item) {
           const it = f._item;
-          const examPrimary = it.state === "examdue"; // a drilled deck's main action is its exam
-          primary = el("button", "chip primary", examPrimary ? "Take exam" : walksFirst(it) ? "Walk" : "Learn");
-          // A plain Learn subtly names the depth it'll resume at (the deck's own
-          // remembered last depth); an exam-due deck's primary names its exam instead.
-          // A trace has no depth (it's traced — depths don't apply), so it never gets a tag.
-          if (!examPrimary && !walksFirst(it) && it.last_launch && !it.is_trace) primary.appendChild(el("span", "depth-tag", " ·" + it.last_launch));
-          // Learn (facts → review, trace → tracing) is Enter; an exam-due deck's
-          // primary is its exam (also enter, or 🔒 when that exam is locked).
-          primary.appendChild(el("span", "k", examPrimary && !it.examable ? "\u{1F512}" : "enter"));
+          primary = el("button", "chip primary", walksFirst(it) ? "Walk" : "Learn");
+          // A plain Learn subtly names the depth it will resume at. A trace has
+          // no depth, so it never gets a tag.
+          if (!walksFirst(it) && it.last_launch && !it.is_trace) primary.appendChild(el("span", "depth-tag", " ·" + it.last_launch));
+          primary.appendChild(el("span", "k", "enter"));
           primary.disabled = !canStartPrimary(it, f._gated);
           primary.addEventListener("click", () => launch(it, f._wsName, f._gated));
         } else {
@@ -678,17 +666,30 @@ export function createPicker({
           rb.addEventListener("click", () => { deadlinePromptOpen = true; syncPrimary(); });
           legend.appendChild(rb);
         }
-        // Back is the header ← nav button (and Esc/Backspace); no footer chip.
-        // "Take exam" sits to the RIGHT of Back for any fact deck that has an
-        // exam but isn't already exam-due (where the primary is the exam): enabled
-        // to test out early, or disabled with a lock key hint when its exam is locked.
-        if (f && f._item && f._item.has_exam && f._item.state !== "examdue") {
+        // "Take exam" is the one exam entry for every fact deck that has an
+        // exam. It is filled only when the exam is due and unlocked.
+        if (f && f._item && f._item.has_exam && !f._item.is_trace) {
           const it = f._item;
-          const ex = el("button", "chip", "Take exam");
+          const accent = it.state === "examdue" && it.examable;
+          const ex = el("button", "chip" + (accent ? " primary" : ""), "Take exam");
           ex.appendChild(el("span", "k exam-key", it.examable ? "x" : "\u{1F512}"));
           ex.disabled = !it.examable;
-          if (it.examable) ex.addEventListener("click", () => { lastWorkspace = f._wsName || null; startExam(it.name); });
+          if (it.examable) ex.addEventListener("click", () => launchExam(f));
           legend.appendChild(ex);
+          if (it.exam_filter === "partial") {
+            const needsWork = el(
+              "button",
+              "chip exam-filter",
+              (f._examNeedsWorkOnly ? "☑" : "☐") + " only what needs work",
+            );
+            needsWork.setAttribute("aria-pressed", String(f._examNeedsWorkOnly));
+            needsWork.addEventListener("mousedown", e => e.preventDefault());
+            needsWork.addEventListener("click", () => {
+              f._examNeedsWorkOnly = !f._examNeedsWorkOnly;
+              syncPrimary();
+            });
+            legend.appendChild(needsWork);
+          }
         }
       }
 
@@ -971,11 +972,6 @@ export function createPicker({
             e.preventDefault(); e.stopPropagation();
             depthMenuOpen = false;
             launchWalk(f._item, f._wsName);
-          } else if (e.key === "x" && !e.ctrlKey && f && f._item && f._item.examable && !f._item.is_trace) {
-            e.preventDefault(); e.stopPropagation();
-            depthMenuOpen = false;
-            lastWorkspace = f._wsName || null;
-            startExam(f._item.name);
           } else if (hit(e, keys.cram)) {
             e.preventDefault(); e.stopPropagation(); cramOn = !cramOn; syncPrimary();
           } else if (hit(e, keys.skip_introduction)) {
@@ -995,7 +991,7 @@ export function createPicker({
         // Up/down move between decks. Left/right step the drawer's region selection
         // when it's open (the drawer owns h/l/←/→); with no drawer, right enters a
         // workspace and left is inert (returning is Esc/Backspace). The primary
-        // action — Learn a deck / Open a workspace / Take exam — is Enter, not l.
+        // action, Learn a deck or Open a workspace, is Enter, not l.
         // g/G/Home/End jump to ends; / or Ctrl-F focus the filter; b browses;
         // a augments; d opens "Ready by…" (a real workspace only); the depth
         // key (v) opens the depth menu (same gate as its ▾ chip, and only when
@@ -1014,7 +1010,7 @@ export function createPicker({
         else if (e.key === "r") { e.preventDefault(); refresh(); } // re-scan the decks (also the ⟳ nav button)
         else if (opts.allowMastered && hit(e, keys.mastered)) { e.preventDefault(); renderMastered(); }
         else if (e.key === "x" && cur && cur._item && cur._item.examable) {
-          e.preventDefault(); lastWorkspace = cur._wsName || null; startExam(cur._item.name);
+          e.preventDefault(); launchExam(cur);
         }
       });
 
