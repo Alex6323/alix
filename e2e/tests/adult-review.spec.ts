@@ -276,18 +276,18 @@ test("the drawer keeps one exam entry and accents only a due unlocked exam", asy
   await expect(page.getByRole("button", { name: /^Learn/ })).toBeVisible();
   await expect(takeExam).toHaveCount(1);
   await expect(takeExam).toBeEnabled();
-  await expect(takeExam).toHaveClass(/\bprimary\b/);
+  await expect(takeExam).toHaveClass(/\bexam-due\b/);
   await captureAssignment24(page, "drawer");
 
   await adultDeckRow(page, "cats").click();
   await expect(takeExam).toHaveCount(1);
   await expect(takeExam).toBeDisabled();
-  await expect(takeExam).not.toHaveClass(/\bprimary\b/);
+  await expect(takeExam).not.toHaveClass(/\bexam-due\b/);
 
   await adultDeckRow(page, "Source Fact").click();
   await expect(takeExam).toHaveCount(1);
   await expect(takeExam).toBeEnabled();
-  await expect(takeExam).not.toHaveClass(/\bprimary\b/);
+  await expect(takeExam).not.toHaveClass(/\bexam-due\b/);
   await page.getByTitle("choose a depth").click();
   await expect(page.getByRole("button", { name: "Exam", exact: true })).toHaveCount(0);
 });

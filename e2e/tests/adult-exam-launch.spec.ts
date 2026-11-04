@@ -57,7 +57,7 @@ async function capture(page: Page, stem: string) {
   }
 }
 
-test("the drawer filters partial exams, accents only due unlocked exams, and renders the server badge", async ({ page }) => {
+test("the drawer always shows the exam filter, accents only due unlocked exams, and renders the server badge", async ({ page }) => {
   await mockExamRows(page, {
     "wild.md": {
       state: "examdue",
@@ -67,6 +67,7 @@ test("the drawer filters partial exams, accents only due unlocked exams, and ren
     },
     "cats.md": { state: "examdue", examable: false, exam_filter: "partial" },
     "source-fact.md": { state: "new", examable: true, exam_filter: "all" },
+    "fronts.md": { state: "examdue", examable: true, exam_filter: "none" },
   });
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Animals").click();
@@ -75,7 +76,7 @@ test("the drawer filters partial exams, accents only due unlocked exams, and ren
   const filter = page.getByRole("button", { name: /only what needs work/ });
 
   await adultDeckRow(page, "wild").click();
-  await expect(takeExam).toHaveClass(/\bprimary\b/);
+  await expect(takeExam).toHaveClass(/\bexam-due\b/);
   await expect(filter).toHaveText(/☑ only what needs work/);
   await filter.click();
   await expect(filter).toHaveText(/☐ only what needs work/);
@@ -86,15 +87,21 @@ test("the drawer filters partial exams, accents only due unlocked exams, and ren
 
   await adultDeckRow(page, "cats").click();
   await expect(takeExam).toBeDisabled();
-  await expect(takeExam).not.toHaveClass(/\bprimary\b/);
-  await expect(filter).toHaveCount(1);
+  await expect(takeExam).not.toHaveClass(/\bexam-due\b/);
+  await expect(filter).toBeDisabled();
+  await expect(filter).toHaveText(/☐ only what needs work/);
   await capture(page, "drawer-locked-filter");
 
   await adultDeckRow(page, "Source Fact").click();
   await expect(takeExam).toBeEnabled();
-  await expect(takeExam).not.toHaveClass(/\bprimary\b/);
-  await expect(filter).toHaveCount(0);
+  await expect(takeExam).not.toHaveClass(/\bexam-due\b/);
+  await expect(filter).toBeEnabled();
   await capture(page, "drawer-new-unfilled");
+
+  await adultDeckRow(page, "fronts").click();
+  await expect(filter).toBeDisabled();
+  await expect(filter).toHaveText(/☐ only what needs work/);
+  await capture(page, "drawer-nothing-to-filter");
 
   await adultDeckRow(page, "wild").click();
   await page.route("**/api/exam/start", (route) => route.fulfill({

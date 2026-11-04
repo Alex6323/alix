@@ -242,7 +242,7 @@ void main() {
     onStart: onStart ?? (_) {},
   );
 
-  Color? fill(WidgetTester tester) {
+  BoxDecoration examFrame(WidgetTester tester) {
     final framed = find.descendant(
       of: find.widgetWithText(InkWell, 'Exam'),
       matching: find.byWidgetPredicate(
@@ -252,9 +252,10 @@ void main() {
             (widget.decoration! as BoxDecoration).border != null,
       ),
     );
-    return ((tester.widget<Container>(framed)).decoration! as BoxDecoration)
-        .color;
+    return (tester.widget<Container>(framed)).decoration! as BoxDecoration;
   }
+
+  Color? fill(WidgetTester tester) => examFrame(tester).color;
 
   testWidgets('without an exam offer the sheet has no Exam row or filter', (
     tester,
@@ -310,6 +311,11 @@ void main() {
   ) async {
     await tester.pumpWidget(_sheet((_) {}, exam: offer(due: true)));
     expect(fill(tester), isNotNull);
+    expect(
+      (examFrame(tester).border! as Border).top.color,
+      Colors.transparent,
+      reason: 'a filled row carries no highlighted border',
+    );
 
     await tester.pumpWidget(_sheet((_) {}, exam: offer(due: false)));
     expect(fill(tester), isNull);

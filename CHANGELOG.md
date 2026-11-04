@@ -176,11 +176,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Web: **Take exam** is the only exam entry for a fact deck. It fills only
-  when the exam is due and unlocked; a locked exam stays unfilled and
+- Web: **Take exam** is the only exam entry for a fact deck. It fills, in the
+  theme's accent color, only when the exam is due and unlocked; a locked exam
+  stays unfilled and
   disabled. **Learn** and Enter always drill, including on an exam-due deck,
   and session summaries no longer offer an exam or announce that one is
-  ready. A partial exam defaults to **only what needs work**, and its result
+  ready. A partial exam defaults to **only what needs work** (a tick that
+  stays visible and is disabled when it would change nothing), and its result
   shows the point total, per-section counts, and each question's shape;
   **mastered** appears only for a perfect full sitting.
 

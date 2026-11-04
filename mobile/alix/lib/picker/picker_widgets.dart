@@ -724,7 +724,7 @@ class _PickerLaunchRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
               decoration: BoxDecoration(
                 color: filled ? tokens.bolt.withValues(alpha: 0.2) : null,
-                border: Border.all(color: filled ? tokens.bolt : tokens.line),
+                border: Border.all(color: filled ? Colors.transparent : tokens.line),
                 borderRadius: BorderRadius.circular(11),
               ),
               child: Row(

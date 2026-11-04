@@ -56,10 +56,9 @@ too:
 
 Both offer **only what needs work**, on by default: the sitting then asks
 only about the sections that have not passed (those that need work, have new
-cards, or were never examined). The browser shows the tick only when some sections passed
-and some did not, since otherwise the sitting covers the whole deck either
-way; the phone always shows the switch and disables it when every section
-has passed.
+cards, or were never examined). Both always show the control and disable it
+when every section has passed, since the sitting then covers the whole deck
+either way.
 
 Starting the exam gives ids to cards added since the deck was last opened,
 the way opening a review does, so their results can be recorded.

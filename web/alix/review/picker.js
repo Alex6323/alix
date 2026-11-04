@@ -671,25 +671,24 @@ export function createPicker({
         if (f && f._item && f._item.has_exam && !f._item.is_trace) {
           const it = f._item;
           const accent = it.state === "examdue" && it.examable;
-          const ex = el("button", "chip" + (accent ? " primary" : ""), "Take exam");
+          const ex = el("button", "chip" + (accent ? " exam-due" : ""), "Take exam");
           ex.appendChild(el("span", "k exam-key", it.examable ? "x" : "\u{1F512}"));
           ex.disabled = !it.examable;
           if (it.examable) ex.addEventListener("click", () => launchExam(f));
           legend.appendChild(ex);
-          if (it.exam_filter === "partial") {
-            const needsWork = el(
-              "button",
-              "chip exam-filter",
-              (f._examNeedsWorkOnly ? "☑" : "☐") + " only what needs work",
-            );
-            needsWork.setAttribute("aria-pressed", String(f._examNeedsWorkOnly));
-            needsWork.addEventListener("mousedown", e => e.preventDefault());
+          const filterable = it.examable && it.exam_filter !== "none";
+          const ticked = filterable && f._examNeedsWorkOnly;
+          const needsWork = el("button", "chip exam-filter", (ticked ? "☑" : "☐") + " only what needs work");
+          needsWork.setAttribute("aria-pressed", String(ticked));
+          needsWork.disabled = !filterable;
+          needsWork.addEventListener("mousedown", e => e.preventDefault());
+          if (filterable) {
             needsWork.addEventListener("click", () => {
               f._examNeedsWorkOnly = !f._examNeedsWorkOnly;
               syncPrimary();
             });
-            legend.appendChild(needsWork);
           }
+          legend.appendChild(needsWork);
         }
       }
 
