@@ -112,6 +112,28 @@ test("the drawer always shows the exam filter, accents only due unlocked exams, 
   expect((await request).postDataJSON()).toEqual({ deck: "animals/wild.md", needs_work_only: true });
 });
 
+test("the checked filter on an all-needs-work deck reaches the exam request", async ({ page }) => {
+  await mockExamRows(page, {
+    "source-fact.md": { state: "new", examable: true, exam_filter: "all" },
+  });
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "Source Fact").click();
+
+  const filter = page.getByRole("button", { name: /only what needs work/ });
+  await expect(filter).toHaveText(/☑ only what needs work/);
+  await page.route("**/api/exam/start", (route) => route.fulfill({
+    json: { phase: "generating", deck: "source-fact.md", strictness: "balanced", thinking: false },
+  }));
+  const request = page.waitForRequest("**/api/exam/start");
+  await page.getByRole("button", { name: /^Take exam/ }).click();
+
+  expect((await request).postDataJSON()).toEqual({
+    deck: "animals/source-fact.md",
+    needs_work_only: true,
+  });
+});
+
 const sentence = (text: string) => ({ kind: "sentence", text, runs: [{ text }] });
 
 function resultsDto({ mastered, pass, partial }: { mastered: boolean; pass: number; partial: number }) {

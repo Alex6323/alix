@@ -489,7 +489,7 @@ export function createPicker({
 
       function launchExam(row) {
         const it = row._item;
-        const needsWorkOnly = it.exam_filter === "partial" && row._examNeedsWorkOnly;
+        const needsWorkOnly = it.examable && it.exam_filter !== "none" && row._examNeedsWorkOnly;
         lastWorkspace = row._wsName || null;
         startExam(it.name, needsWorkOnly);
       }

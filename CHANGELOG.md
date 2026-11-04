@@ -725,6 +725,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The web's checked **only what needs work** filter now reaches the exam request
+  when every section needs work, not only after part of the deck has passed.
+
 - `alix reset --exam --all` no longer follows a directory symlink outside the
   configured decks root and clears another folder's exam progress.
 
