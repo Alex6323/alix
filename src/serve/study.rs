@@ -2206,7 +2206,7 @@ impl StudyState {
         ) else {
             return Transition::Rejected;
         };
-        match Deck::load(&path) {
+        match exam::open_for_exam(&path) {
             Ok(deck)
                 if deck.has_exam()
                     && !deck::is_locked(&deck, Some(decks_root.as_path()), &candidate) =>

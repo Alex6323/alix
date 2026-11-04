@@ -41,6 +41,7 @@ pub struct ExamSection {
     pub context: Vec<String>,
     pub card_ids: Vec<String>,
     pub cards: Vec<String>,
+    pub size: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -119,8 +120,8 @@ pub const SECTION_NUDGE_CARDS: usize = 15;
 pub fn oversized_sections(deck: &Deck) -> Vec<(String, usize)> {
     exam_sections(deck)
         .into_iter()
-        .filter(|section| section.cards.len() > SECTION_NUDGE_CARDS)
-        .map(|section| (section.label, section.cards.len()))
+        .filter(|section| section.size > SECTION_NUDGE_CARDS)
+        .map(|section| (section.label, section.size))
         .collect()
 }
 
@@ -139,6 +140,7 @@ pub(crate) fn exam_sections(deck: &Deck) -> Vec<ExamSection> {
                 sections.len() - 1
             }
         };
+        sections[at].size += 1;
         if let Some(id) = card.id() {
             sections[at].card_ids.push(id);
         }
@@ -191,7 +193,7 @@ fn generate_questions_from(
     let run = run_config(cfg, ask_cfg);
     let models = with_one_retry(
         &run,
-        &models_prompt(sources, base, sections)?,
+        &models_prompt(sources, base, sections, cfg)?,
         |raw| checked_models(sections.len(), raw),
         "the listed models",
     )?;
@@ -263,7 +265,10 @@ fn checked_questions(
     let mut covered: Vec<Vec<bool>> = models.iter().map(|m| vec![false; m.len()]).collect();
     let mut questions = Vec::new();
     for generated in dto.questions {
-        if generated.prompt.trim().is_empty() || generated.points.is_empty() {
+        if generated.prompt.trim().is_empty()
+            || generated.points.is_empty()
+            || generated.points.iter().any(|point| point.trim().is_empty())
+        {
             return Err("a question has an empty prompt or no key points".to_string());
         }
         let Some(at) = generated
@@ -877,10 +882,11 @@ fn models_prompt(
     sources: &ExamLayers,
     base: Option<&Path>,
     sections: &[ExamSection],
+    cfg: &ExamConfig,
 ) -> Result<String> {
     let sources = source_section(sources, base)?;
     let scope = section_scope(sections);
-    Ok(format!(
+    let mut prompt = format!(
         "You are preparing an oral exam that verifies a student truly UNDERSTANDS a \
          topic.\n\n\
          {sources}\n\
@@ -894,7 +900,21 @@ fn models_prompt(
          name each model in a short phrase.\n\n\
          Output ONLY JSON in exactly this shape, no prose, no code fences:\n\
          {{\"sections\": [{{\"section\": 1, \"models\": [\"...\", \"...\"]}}]}}"
-    ))
+    );
+    push_extra(&mut prompt, cfg);
+    Ok(prompt)
+}
+
+fn push_extra(prompt: &mut String, cfg: &ExamConfig) {
+    if let Some(extra) = cfg
+        .extra
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        prompt.push_str("\n\nAdditional instructions:\n");
+        prompt.push_str(extra);
+    }
 }
 
 fn questions_prompt(
@@ -956,15 +976,7 @@ fn questions_prompt(
          it (a fence inside a `prompt` string is fine):\n\
          {shape}"
     );
-    if let Some(extra) = cfg
-        .extra
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        prompt.push_str("\n\nAdditional instructions:\n");
-        prompt.push_str(extra);
-    }
+    push_extra(&mut prompt, cfg);
     Ok(prompt)
 }
 
@@ -1731,6 +1743,33 @@ mod tests {
     }
 
     #[test]
+    fn exam_extra_reaches_the_model_listing_call_that_decides_coverage() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(
+            dir.path(),
+            &[
+                "{\"sections\":[{\"section\":1,\"models\":[\"ownership\"]}]}",
+                "{\"questions\":[{\"section\":1,\"shape\":\"instance\",\
+                 \"model\":\"ownership\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
+            ],
+        );
+        let cfg = ExamConfig {
+            extra: Some("Focus on lifetimes.".to_string()),
+            ..ExamConfig::default()
+        };
+        let deck = deck_with_exam_and_card(&["https://x"]);
+
+        generate_questions(&deck, &cfg, &ask_config(&cli)).unwrap();
+
+        let first = std::fs::read_to_string(dir.path().join("prompt-1")).unwrap();
+        assert!(
+            first.contains("Focus on lifetimes."),
+            "the first call fixes the allowed model list, so exam guidance must reach it: {first}"
+        );
+    }
+
+    #[test]
     fn grade_prompt_includes_rubric_and_answers() {
         let qs = vec![ExamQuestion {
             prompt: "Why move?".to_string(),
@@ -2416,6 +2455,16 @@ mod tests {
                     models.clone(),
                     questions(&[q(1, "m", " ", "\"p\""), q(1, "n", "Q", "\"p\"")]),
                     questions(&[q(1, "m", "Q", ""), q(1, "n", "Q", "\"p\"")]),
+                ],
+                3,
+                Some("empty prompt or no key points"),
+            ),
+            (
+                "a blank key point, twice",
+                vec![
+                    models.clone(),
+                    questions(&[q(1, "m", "Q", "\" \""), q(1, "n", "Q", "\"p\"")]),
+                    questions(&[q(1, "m", "Q", "\"\""), q(1, "n", "Q", "\"p\"")]),
                 ],
                 3,
                 Some("empty prompt or no key points"),

@@ -2493,7 +2493,7 @@ mod tests {
             |n: usize| -> String { (1..=n).map(|i| format!("## q{i}?\na{i}\n\n")).collect() };
         let dir = tempfile::tempdir().unwrap();
         w(dir.path(), "notes.md", "n");
-        let rows: [(&str, String, bool); 4] = [
+        let rows: [(&str, String, bool); 5] = [
             (
                 "at the nudge size",
                 format!("---\nexam: notes.md\n---\n# Big\n\n{}", cards(15)),
@@ -2507,6 +2507,14 @@ mod tests {
             (
                 "unsectioned, one above it",
                 format!("---\nexam: notes.md\n---\n{}", cards(16)),
+                true,
+            ),
+            (
+                "one above it with duplicate card text",
+                format!(
+                    "---\nexam: notes.md\n---\n# Big\n\n{}",
+                    "## repeated?\na\n\n".repeat(16)
+                ),
                 true,
             ),
             ("no exam", format!("# Big\n\n{}", cards(16)), false),

@@ -8807,6 +8807,33 @@ fn branching_exam_cli(dir: &Path, grades_path: &Path) -> PathBuf {
     path
 }
 
+#[test]
+fn remote_exam_start_stamps_a_card_added_after_initialization() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
+    let path = guard.dir().join("examdeck.md");
+    let initialized = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, format!("{initialized}\n## new card\nnew answer\n")).unwrap();
+
+    let response = post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.md"}"#);
+    assert_eq!(200, response.status);
+
+    let deck = alix::deck::Deck::load(&path).unwrap();
+    assert!(
+        deck.cards.iter().all(|card| card.id().is_some()),
+        "exam start must stamp every examined card: {:?}",
+        deck.cards.iter().map(|card| card.id()).collect::<Vec<_>>()
+    );
+}
+
 /// Releases a fifo-gated fake CLI exactly once, on an explicit call or on
 /// drop (including a panic unwind), so a failing assertion in a fifo-gated
 /// test can never leave the fake CLI, and this file's global `EXEC_LOCK`,

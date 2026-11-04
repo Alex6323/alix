@@ -43,6 +43,27 @@ fn card_list(section: &ExamSection) -> String {
         .collect()
 }
 
+fn answerability_is_within_bar(answerable: usize, total: usize) -> bool {
+    answerable * 5 <= total
+}
+
+fn independent_source(deck: &Deck) -> String {
+    let root = crate::workspace::content_root(&deck.path);
+    let layers = deck.exam_layers();
+    layers
+        .own
+        .iter()
+        .chain(&layers.workspace)
+        .filter(|entry| !crate::deck::is_url(entry))
+        .map(|entry| {
+            let text = crate::source::source_path(entry, Some(&root))
+                .and_then(|path| std::fs::read_to_string(path).ok())
+                .unwrap_or_default();
+            format!("=== {entry} ===\n{text}\n")
+        })
+        .collect()
+}
+
 #[derive(Deserialize)]
 struct Answerable {
     answerable: Vec<bool>,
@@ -98,8 +119,8 @@ fn per_section_questions_are_not_answerable_from_an_existing_card() {
     println!("probe: answerable {yes} of {total}");
     assert!(total > 0, "no questions were generated");
     assert!(
-        yes * 5 < total,
-        "{yes} of {total} questions are answerable from an existing card (the bar is under one in five)"
+        answerability_is_within_bar(yes, total),
+        "{yes} of {total} questions are answerable from an existing card (the bar is at most one in five)"
     );
 }
 
@@ -127,18 +148,7 @@ fn an_independent_model_list_finds_few_models_no_question_covers() {
     for deck in probe_decks() {
         let sections = exam::exam_sections(&deck);
         let questions = exam::generate_questions(&deck, &exam_cfg, &ask).unwrap();
-        let root = crate::workspace::content_root(&deck.path);
-        let source: String = deck
-            .exam
-            .iter()
-            .filter(|entry| !crate::deck::is_url(entry))
-            .map(|entry| {
-                let text = crate::source::source_path(entry, Some(&root))
-                    .and_then(|path| std::fs::read_to_string(path).ok())
-                    .unwrap_or_default();
-                format!("=== {entry} ===\n{text}\n")
-            })
-            .collect();
+        let source = independent_source(&deck);
         let headings: String = sections
             .iter()
             .enumerate()
@@ -230,5 +240,38 @@ fn one_grade_call_grades_every_answer_of_a_long_sitting() {
         questions.len(),
         result.grades.len(),
         "every answer graded in one call"
+    );
+}
+
+#[test]
+fn the_answerability_bar_allows_exactly_one_question_in_five() {
+    assert!(answerability_is_within_bar(1, 5));
+    assert!(!answerability_is_within_bar(2, 5));
+}
+
+#[test]
+fn the_independent_model_probe_reads_workspace_exam_sources() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("alix.toml"),
+        "exam = \"sources/workspace.md\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.path().join("sources")).unwrap();
+    std::fs::write(
+        dir.path().join("sources/workspace.md"),
+        "workspace-only model",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.path().join("decks")).unwrap();
+    let deck_path = dir.path().join("decks/d.md");
+    std::fs::write(&deck_path, "## q\na\n").unwrap();
+    let deck = Deck::load(&deck_path).unwrap();
+
+    let source = independent_source(&deck);
+
+    assert!(
+        source.contains("workspace-only model"),
+        "the independent list must inspect every source generation inspects: {source:?}"
     );
 }

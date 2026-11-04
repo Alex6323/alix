@@ -14,7 +14,6 @@ use super::{catalog_owner::CatalogHandle, dto::*, jobs::*};
 use crate::{
     assemble::AssembleConfig,
     config::{AskConfig, Audience, ExamConfig, GenerateDeckConfig},
-    deck::Deck,
     exam, generate, share,
 };
 
@@ -754,7 +753,7 @@ impl JobsState {
         if self.remote_exam.is_some() {
             return Started::Conflict;
         }
-        let Ok(deck) = Deck::load(&path) else {
+        let Ok(deck) = exam::open_for_exam(&path) else {
             return Started::Conflict;
         };
         if !deck.has_exam() {
