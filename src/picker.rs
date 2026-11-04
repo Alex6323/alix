@@ -507,6 +507,7 @@ mod tests {
             reviewable_reconstruct: false,
             passed,
             mastered: false,
+            exam: Default::default(),
             is_trace: false,
             examable: false,
             has_exam,

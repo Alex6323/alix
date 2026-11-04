@@ -1401,6 +1401,37 @@ fn reset_exam_clears_exam_state_only_and_lists_never_examined_dependents() {
 }
 
 #[test]
+fn reset_exam_all_reaches_decks_inside_configured_workspaces() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("root");
+    let ws = root.join("ws");
+    let members = ws.join("decks");
+    std::fs::create_dir_all(&members).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+    let deck = write(
+        &members,
+        "a.md",
+        "---\nformat-version: 1\nid: deck-a\nexam: https://x\n---\n\
+         ## q\na\n<!-- id: card-a -->\n",
+    );
+    let config = decks_config(&root);
+    let mut store = decks_store(&[&deck]);
+    store.get_or_insert("card-a").exam_result = Some(alix::store::ExamRecord {
+        at_ms: 1,
+        pass: true,
+    });
+    store.set_deck_passed("deck-a", 1);
+    store.save().unwrap();
+
+    let out = alix(&["reset", "--exam", "--all", "--yes", "--config", &config]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let reloaded = decks_store(&[&deck]);
+    assert!(!reloaded.deck_passed("deck-a"));
+    assert_eq!(None, reloaded.get("card-a").unwrap().exam_result);
+}
+
+#[test]
 fn a_target_reset_ignores_an_unreadable_default_store() {
     // The configured decks dir's store is NOT the target's store: a garbage
     // progress document there must not gate resetting a workspace that

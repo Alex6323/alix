@@ -960,6 +960,7 @@ pub(super) struct Examining {
 pub(super) struct RemoteExamining {
     pub(super) sitting: exam::Sitting,
     pub(super) cards: Option<String>,
+    pub(super) unknown_cards: Vec<String>,
 }
 
 impl RemoteExamining {
@@ -973,6 +974,7 @@ impl RemoteExamining {
     pub(super) fn dto(&self) -> RemoteExamDto {
         let s = &self.sitting;
         let result = s.result();
+        let parts = exam_result_parts(s);
         let grades = result
             .map(|r| {
                 s.questions()
@@ -995,8 +997,12 @@ impl RemoteExamining {
                 .iter()
                 .map(|q| crate::render::exam_text_units(&q.prompt))
                 .collect(),
-            passed: result.map(|r| r.passed()),
             grades,
+            sections: parts.sections,
+            verdicts: parts.verdicts,
+            full: s.full(),
+            mastered: parts.mastered,
+            unknown_cards: self.unknown_cards.clone(),
             gaps: s.gaps(),
             can_remediate: s.can_remediate(),
             cards: self.cards.clone(),
@@ -1014,8 +1020,12 @@ pub(super) fn remote_exam_idle_dto() -> RemoteExamDto {
         strictness: "balanced",
         questions: Vec::new(),
         questions_units: Vec::new(),
-        passed: None,
         grades: Vec::new(),
+        sections: Vec::new(),
+        verdicts: None,
+        full: false,
+        mastered: false,
+        unknown_cards: Vec::new(),
         gaps: Vec::new(),
         can_remediate: false,
         cards: None,

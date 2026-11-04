@@ -628,6 +628,7 @@ pub struct DeckStatus {
     pub reviewable_reconstruct: bool,
     pub passed: bool,
     pub mastered: bool,
+    pub exam: crate::exam_status::ExamRow,
     pub is_trace: bool,
     pub examable: bool,
     pub has_exam: bool,
@@ -768,6 +769,11 @@ pub fn deck_status(
         reviewable_reconstruct: reviewable_reconstruct && !progress_error,
         passed: store.deck_passed(deck_id) && !progress_error,
         mastered: mastered && !progress_error,
+        exam: if progress_error {
+            crate::exam_status::ExamRow::default()
+        } else {
+            crate::exam_status::exam_row(deck, store)
+        },
         is_trace: deck.is_trace(),
         examable: examable && !progress_error,
         has_exam,
@@ -2733,6 +2739,7 @@ mod tests {
             reviewable_reconstruct: false,
             passed,
             mastered: false,
+            exam: Default::default(),
             is_trace: false,
             examable: false,
             has_exam,

@@ -205,9 +205,6 @@
   "deck_total": 9,
   "depth": "recall",
   "due_left": 0,
-  "exam_due": [
-    "rust.md"
-  ],
   "failed": 1,
   "initial": 5,
   "input": "type",

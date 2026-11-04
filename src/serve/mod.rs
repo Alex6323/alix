@@ -1411,6 +1411,8 @@ pub fn run_review(
                 #[derive(Deserialize)]
                 struct Body {
                     deck: String,
+                    #[serde(default)]
+                    needs_work_only: bool,
                 }
                 let Some(body) = json_body::<Body>(&mut request)
                 else {
@@ -1427,7 +1429,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                match study.exam_start(path, decks_root, ask_cfg.clone()) {
+                match study.exam_start(path, decks_root, body.needs_work_only, ask_cfg.clone()) {
                     None => respond_status(request, 503),
                     Some(Transition::Done(dto)) => respond_json(request, &dto),
                     Some(Transition::Rejected) => respond_status(request, 409),
@@ -1941,6 +1943,8 @@ pub fn run_review(
                 #[derive(Deserialize)]
                 struct Body {
                     deck: String,
+                    #[serde(default)]
+                    cards: Option<Vec<String>>,
                 }
                 let Ok(body) = serde_json::from_slice::<Body>(&bytes) else {
                     respond_status(request, 400);
@@ -1950,7 +1954,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                match jobs.remote_exam_start(path, exam_cfg.clone(), ask_cfg.clone()) {
+                match jobs.remote_exam_start(path, body.cards, exam_cfg.clone(), ask_cfg.clone()) {
                     None => respond_status(request, 503),
                     Some(Started::Conflict) => respond_status(request, 409),
                     Some(Started::Dto(dto)) => respond_json(request, &dto),

@@ -391,6 +391,7 @@ pub(super) enum StudyCommand {
     ExamStart {
         path: PathBuf,
         decks_root: PathBuf,
+        needs_work_only: bool,
         ask_cfg: crate::config::AskConfig,
         reply: Reply<Transition<Box<ExamDto>>>,
     },
@@ -717,11 +718,13 @@ impl StudyHandle {
         &self,
         path: PathBuf,
         decks_root: PathBuf,
+        needs_work_only: bool,
         ask_cfg: crate::config::AskConfig,
     ) -> Option<Transition<Box<ExamDto>>> {
         self.call(|reply| StudyCommand::ExamStart {
             path,
             decks_root,
+            needs_work_only,
             ask_cfg,
             reply,
         })
@@ -1276,10 +1279,11 @@ impl StudyState {
             StudyCommand::ExamStart {
                 path,
                 decks_root,
+                needs_work_only,
                 ask_cfg,
                 reply,
             } => {
-                let _ = reply.send(self.exam_start(path, decks_root, ask_cfg));
+                let _ = reply.send(self.exam_start(path, decks_root, needs_work_only, ask_cfg));
             }
             StudyCommand::ExamPoll(reply) => {
                 let dto = match self.examining.as_mut() {
@@ -2192,6 +2196,7 @@ impl StudyState {
         &mut self,
         path: PathBuf,
         decks_root: PathBuf,
+        needs_work_only: bool,
         ask_cfg: crate::config::AskConfig,
     ) -> Transition<Box<ExamDto>> {
         if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
@@ -2220,8 +2225,19 @@ impl StudyState {
                 if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
                     return Transition::Rejected;
                 }
-                let sitting =
-                    exam::Sitting::start(&deck, strictness, self.config.exam_cfg.clone(), ask_cfg);
+                let scope = if needs_work_only {
+                    exam::ExamScope::NeedsWork(&candidate)
+                } else {
+                    exam::ExamScope::Full
+                };
+                let sections = crate::exam_status::select_sections(&deck, scope).sections;
+                let sitting = exam::Sitting::start_with(
+                    &deck,
+                    sections,
+                    strictness,
+                    self.config.exam_cfg.clone(),
+                    ask_cfg,
+                );
                 let ex = Examining {
                     sitting,
                     deck_path: path,

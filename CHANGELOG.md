@@ -189,6 +189,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   share of PASS answers reaches `pass_threshold`, and remediation is offered
   whenever an answer missed key points, even in a sitting that passed.
 
+- Exam wire: `ExamDto` and `RemoteExamDto` drop `passed` and gain
+  `sections` (label, card ids, pass, verdict counts per examined section),
+  `verdicts` (the sitting's counts), `full` and `mastered`; each grade row
+  gains `section`, `shape` and `model`. `ExamDto.unlocks` names the decks
+  this sitting unlocked. `POST /api/exam/start` takes `needs_work_only` to
+  examine only the sections that have not passed; `POST
+  /api/remote/exam/start` takes `cards` and examines the sections holding
+  them, listing ids it does not know in `RemoteExamDto.unknown_cards`.
+  `DeckItemDto` and `MemberDto` gain `passed_at_ms`, `full_exam_result`, a
+  `sections` tally and `exam_filter`. `StateDto.exam_due` is removed.
+
 - The exam no longer asks a fixed number of questions per section: a first
   call lists each section's mental models from the source, a second asks at
   least one question about each, with no upper limit, and a reply that skips
