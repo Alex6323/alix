@@ -8797,6 +8797,7 @@ fn branching_exam_cli(dir: &Path, grades_path: &Path) -> PathBuf {
         format!(
             "#!/bin/sh\nPATH=/usr/bin:/bin\ninput=$(cat)\ncase \"$input\" in\n\
              *'\"grades\"'*) cat {grades} ;;\n\
+             *'\"models\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}]}}' ;;\n\
              *'\"questions\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"section\":1,\"shape\":\"instance\",\"model\":\"m\",\"prompt\":\"Q1\",\"points\":[\"p1\"]}}]}}' ;;\n\
              *compression*) cat {grades} ;;\n\
              *) printf '## term?\\ndefinition\\n' ;;\n\

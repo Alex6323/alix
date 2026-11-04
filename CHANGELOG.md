@@ -173,10 +173,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- The exam no longer asks a fixed number of questions per section: for each
-  section the examiner lists the section's mental models and asks at least one
-  question about each, with no upper limit, and a reply that skips a listed
-  model or names one it did not list is generated once more. The `[exam]`
+- The exam no longer asks a fixed number of questions per section: a first
+  call lists each section's mental models from the source, a second asks at
+  least one question about each, with no upper limit, and a reply that skips
+  a listed model or names one that was not listed is generated once more. The `[exam]`
   `num_questions` key is removed; a config that still sets it fails to load.
 
 - Exam questions stand alone: the examiner is told to reproduce any example

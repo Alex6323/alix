@@ -55,10 +55,12 @@ per-question breakdown) in the browser. You reach it three ways:
 `alix` asks the model to read the source (URLs via `WebFetch`, local files embedded)
 and write **fresh understanding questions** for each of the deck's `#`
 sections (cards before the first heading form one section, named after the
-deck). For each section the model first lists its mental models, the distinct
-ideas the section holds, then writes at least one question per model, with no
-upper limit; questions that skip a listed model, or name a model or section
-that was not listed, are rejected and generated once more. Within a section the
+deck). A first call lists each section's mental models from the source, the
+distinct ideas its topic holds, whether or not a card states them; a second
+call writes at least one question per listed model, with no upper limit, and
+asks the student to apply a model a card states rather than recite the card.
+A reply that skips a listed model, or names a model or section that was not
+listed, is rejected and generated once more. Within a section the
 questions cycle through three shapes: a concrete
 **instance** no card shows, a **boundary** (when does the idea stop holding),
 and a **fix** (a statement with one seeded mistake to find and correct). The

@@ -188,37 +188,47 @@ fn generate_questions_from(
     if sections.is_empty() {
         bail!("the deck has no cards to examine");
     }
-    let prompt = questions_prompt(sources, base, sections, cfg)?;
     let run = run_config(cfg, ask_cfg);
-    let reason = match ask_questions(&run, &prompt, sections.len())? {
-        Ok(questions) => return Ok(questions),
+    let models = with_one_retry(
+        &run,
+        &models_prompt(sources, base, sections)?,
+        |raw| checked_models(sections.len(), raw),
+        "the listed models",
+    )?;
+    with_one_retry(
+        &run,
+        &questions_prompt(sources, base, sections, &models, cfg)?,
+        |raw| checked_questions(&models, raw),
+        "the generated questions",
+    )
+}
+
+fn with_one_retry<T>(
+    run: &AskConfig,
+    prompt: &str,
+    check: impl Fn(&str) -> std::result::Result<T, String>,
+    what: &str,
+) -> Result<T> {
+    let reason = match check(&ask::run(run, prompt, &[])?) {
+        Ok(value) => return Ok(value),
         Err(reason) => reason,
     };
     let retry = format!(
         "{prompt}\n\nYour previous answer was rejected: {reason}. Write the whole answer \
          again and follow every rule above."
     );
-    match ask_questions(&run, &retry, sections.len())? {
-        Ok(questions) => Ok(questions),
-        Err(reason) => bail!("the generated questions were rejected twice: {reason}"),
+    match check(&ask::run(run, &retry, &[])?) {
+        Ok(value) => Ok(value),
+        Err(reason) => bail!("{what} were rejected twice: {reason}"),
     }
 }
 
-fn ask_questions(
-    run: &AskConfig,
-    prompt: &str,
+fn checked_models(
     section_count: usize,
-) -> Result<std::result::Result<Vec<ExamQuestion>, String>> {
-    let raw = ask::run(run, prompt, &[])?;
-    Ok(parse_json::<QuestionsDto>(&raw)
-        .map_err(|error| format!("it was not the JSON asked for ({error:#})"))
-        .and_then(|dto| checked_questions(section_count, dto)))
-}
-
-fn checked_questions(
-    section_count: usize,
-    dto: QuestionsDto,
-) -> std::result::Result<Vec<ExamQuestion>, String> {
+    raw: &str,
+) -> std::result::Result<Vec<Vec<String>>, String> {
+    let dto: ModelsDto =
+        parse_json(raw).map_err(|error| format!("it was not the JSON asked for ({error:#})"))?;
     let mut models: Vec<Vec<String>> = vec![Vec::new(); section_count];
     for listed in dto.sections {
         let Some(slot) = listed
@@ -240,6 +250,16 @@ fn checked_questions(
     if let Some(at) = models.iter().position(Vec::is_empty) {
         return Err(format!("section {} lists no mental model", at + 1));
     }
+    Ok(models)
+}
+
+fn checked_questions(
+    models: &[Vec<String>],
+    raw: &str,
+) -> std::result::Result<Vec<ExamQuestion>, String> {
+    let dto: QuestionsDto =
+        parse_json(raw).map_err(|error| format!("it was not the JSON asked for ({error:#})"))?;
+    let section_count = models.len();
     let mut covered: Vec<Vec<bool>> = models.iter().map(|m| vec![false; m.len()]).collect();
     let mut questions = Vec::new();
     for generated in dto.questions {
@@ -954,22 +974,8 @@ fn truncate(text: &str) -> (String, bool) {
     )
 }
 
-fn questions_prompt(
-    sources: &ExamLayers,
-    base: Option<&Path>,
-    sections: &[ExamSection],
-    cfg: &ExamConfig,
-) -> Result<String> {
-    let sources = source_section(sources, base)?;
-    if sections.is_empty() {
-        bail!("the deck has no cards to examine");
-    }
-    let mut scope = String::from(
-        "The student drilled a flashcard deck on this material, split into the \
-         sections below. Its cards are SCOPE ONLY: they show what the deck already \
-         asks. NEVER ask what a card states, and never rephrase a card; test the \
-         mental model behind the section instead.\n\n",
-    );
+fn section_scope(sections: &[ExamSection]) -> String {
+    let mut scope = String::new();
     for (i, section) in sections.iter().enumerate() {
         scope.push_str(&format!("Section {}: {}\n", i + 1, section.label));
         for line in section.context.iter().skip(1) {
@@ -982,13 +988,65 @@ fn questions_prompt(
         }
         scope.push('\n');
     }
+    scope
+}
+
+fn models_prompt(
+    sources: &ExamLayers,
+    base: Option<&Path>,
+    sections: &[ExamSection],
+) -> Result<String> {
+    let sources = source_section(sources, base)?;
+    let scope = section_scope(sections);
+    Ok(format!(
+        "You are preparing an oral exam that verifies a student truly UNDERSTANDS a \
+         topic.\n\n\
+         {sources}\n\
+         The student drilled a flashcard deck on this material, split into the sections \
+         below. Each section's heading and cards mark out its topic.\n\n\
+         {scope}\
+         For EACH section, in deck order, list its mental models: the distinct ideas a \
+         student must understand to master that section's topic, as the source above \
+         teaches them. Include an idea whether or not a card states it, and stay within \
+         the section's topic. List as many as the section really holds, at least one; \
+         name each model in a short phrase.\n\n\
+         Output ONLY JSON in exactly this shape, no prose, no code fences:\n\
+         {{\"sections\": [{{\"section\": 1, \"models\": [\"...\", \"...\"]}}]}}"
+    ))
+}
+
+fn questions_prompt(
+    sources: &ExamLayers,
+    base: Option<&Path>,
+    sections: &[ExamSection],
+    models: &[Vec<String>],
+    cfg: &ExamConfig,
+) -> Result<String> {
+    let sources = source_section(sources, base)?;
+    if sections.is_empty() {
+        bail!("the deck has no cards to examine");
+    }
+    let mut scope = String::from(
+        "The student drilled a flashcard deck on this material, split into the \
+         sections below. Its cards are SCOPE ONLY: they show what the deck already \
+         asks. NEVER ask what a card states, and never rephrase a card; test the \
+         mental model behind the section instead.\n\n",
+    );
+    scope.push_str(&section_scope(sections));
+    scope.push_str("The mental models to examine, per section:\n");
+    for (i, listed) in models.iter().enumerate() {
+        scope.push_str(&format!("Section {}:\n", i + 1));
+        for model in listed {
+            scope.push_str(&format!("- {model}\n"));
+        }
+    }
+    scope.push('\n');
     let ask = format!(
-        "{scope}For EACH section, in deck order: first list its mental models, the \
-         distinct ideas a student must understand to master that section, as many as \
-         it really holds and at least one. Then write at least one question for every \
-         model you listed; a model may get more when it needs them. There is no upper \
-         limit. Across a section, start with an instance and then take the three shapes \
-         in turn:\n\
+        "{scope}For EACH section, in deck order, write at least one question for every \
+         mental model listed for it; a model may get more when it needs them. There is \
+         no upper limit. A model a card states is still examined: ask the student to \
+         apply it, never to recite the card. Across a section, start with an instance \
+         and then take the three shapes in turn:\n\
          - instance: a concrete case the source supports but no card shows \
          (\"given this program, what does the compiler report?\");\n\
          - boundary: when does the section's idea stop holding, or what changes \
@@ -997,11 +1055,10 @@ fn questions_prompt(
          the section's idea; the student must find and correct it.\n\
          Every question must be answerable from the source above and demand \
          reasoning in the student's own words. Tag every question with its section's \
-         number, its shape, and the model it tests, spelled exactly as you listed it \
-         for that section.\n\n"
+         number, its shape, and the model it tests, spelled exactly as listed for that \
+         section.\n\n"
     );
-    let shape = "{\"sections\": [{\"section\": 1, \"models\": [\"...\", \"...\"]}], \
-                 \"questions\": [{\"section\": 1, \"shape\": \"instance|boundary|fix\", \
+    let shape = "{\"questions\": [{\"section\": 1, \"shape\": \"instance|boundary|fix\", \
                  \"model\": \"<a model listed for that section>\", \"prompt\": \"...\", \
                  \"points\": [\"...\", \"...\"]}]}";
     let mut prompt = format!(
@@ -1291,8 +1348,12 @@ fn clean_deck_output(raw: &str) -> String {
 }
 
 #[derive(Debug, Deserialize)]
-struct QuestionsDto {
+struct ModelsDto {
     sections: Vec<SectionModelsDto>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QuestionsDto {
     questions: Vec<GeneratedQuestionDto>,
 }
 
@@ -1380,6 +1441,10 @@ mod tests {
             cards: parser::parse_str("deck-d", "## Why move?\nownership\n").unwrap(),
             ..deck_with_exam(srcs)
         }
+    }
+
+    fn models_for(sections: usize) -> Vec<Vec<String>> {
+        vec![vec!["m".to_string()]; sections]
     }
 
     fn one_section() -> Vec<ExamSection> {
@@ -1491,8 +1556,9 @@ mod tests {
     #[test]
     fn exam_prompt_signatures_ban_section_like_names_and_pin_trace_grounding() {
         let source = include_str!("exam.rs");
-        let builders: [(&str, &[&str]); 4] = [
+        let builders: [(&str, &[&str]); 5] = [
             ("fn questions_prompt(", &["sections: &[ExamSection]"]),
+            ("fn models_prompt(", &["sections: &[ExamSection]"]),
             ("fn grade_prompt(", &[]),
             (
                 "fn grade_compression_prompt(",
@@ -1534,7 +1600,14 @@ mod tests {
             own: vec!["https://example.org/own".to_string()],
             workspace: vec!["https://example.org/context".to_string()],
         };
-        let p = questions_prompt(&sources, None, &one_section(), &ExamConfig::default()).unwrap();
+        let p = questions_prompt(
+            &sources,
+            None,
+            &one_section(),
+            &models_for(1),
+            &ExamConfig::default(),
+        )
+        .unwrap();
         let own_at = p.find("https://example.org/own").unwrap();
         let workspace_at = p.find("https://example.org/context").unwrap();
         assert!(p.contains("primary grounding"));
@@ -1559,6 +1632,7 @@ mod tests {
             &sources,
             Some(dir.path()),
             &one_section(),
+            &models_for(1),
             &ExamConfig::default(),
         )
         .unwrap();
@@ -1593,6 +1667,7 @@ mod tests {
             &sources,
             Some(dir.path()),
             &one_section(),
+            &models_for(1),
             &ExamConfig::default(),
         )
         .unwrap();
@@ -1625,8 +1700,14 @@ mod tests {
             workspace: vec![workspace.display().to_string()],
         };
 
-        let prompt =
-            questions_prompt(&sources, None, &one_section(), &ExamConfig::default()).unwrap();
+        let prompt = questions_prompt(
+            &sources,
+            None,
+            &one_section(),
+            &models_for(1),
+            &ExamConfig::default(),
+        )
+        .unwrap();
 
         assert_eq!(
             1,
@@ -1647,7 +1728,14 @@ mod tests {
     #[test]
     fn questions_prompt_carries_source_strictness_and_json_shape() {
         let sources = url_layers(&["https://example.org/ownership"]);
-        let p = questions_prompt(&sources, None, &one_section(), &ExamConfig::default()).unwrap();
+        let p = questions_prompt(
+            &sources,
+            None,
+            &one_section(),
+            &models_for(1),
+            &ExamConfig::default(),
+        )
+        .unwrap();
         assert!(p.contains("https://example.org/ownership"));
         assert!(p.contains("WebFetch"));
         assert!(p.contains("strict examiner"));
@@ -1674,7 +1762,14 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let p = questions_prompt(&sources, None, &sections, &ExamConfig::default()).unwrap();
+        let p = questions_prompt(
+            &sources,
+            None,
+            &sections,
+            &models_for(sections.len()),
+            &ExamConfig::default(),
+        )
+        .unwrap();
         let moves = p.find("# Moves").expect("first section heading");
         let borrows = p.find("# Borrows").expect("second section heading");
         assert!(moves < borrows, "sections keep deck order: {p}");
@@ -1691,10 +1786,15 @@ mod tests {
             "scope only: {p}"
         );
         for rule in [
-            "first list its mental models",
-            "at least one question for every model you listed",
-            "There is no upper limit.",
-            "spelled exactly as you listed it",
+            "The mental models to examine, per section:",
+            "at least one question for every \
+             mental model listed for it",
+            "There is \
+             no upper limit.",
+            "ask the student to \
+             apply it, never to recite the card",
+            "spelled exactly as listed for that \
+             section",
         ] {
             assert!(p.contains(rule), "models rule {rule:?}: {p}");
         }
@@ -1702,13 +1802,7 @@ mod tests {
         for shape in ["instance:", "boundary:", "fix:"] {
             assert!(p.contains(shape), "shape {shape}: {p}");
         }
-        for tag in [
-            "\"sections\"",
-            "\"models\"",
-            "\"section\"",
-            "\"shape\"",
-            "\"model\"",
-        ] {
+        for tag in ["\"section\"", "\"shape\"", "\"model\""] {
             assert!(p.contains(tag), "json carries {tag}: {p}");
         }
     }
@@ -1800,7 +1894,14 @@ mod tests {
             cards: vec!["Q: a\nA: b".to_string()],
             ..Default::default()
         }]] {
-            let p = questions_prompt(&sources, None, &sections, &ExamConfig::default()).unwrap();
+            let p = questions_prompt(
+                &sources,
+                None,
+                &sections,
+                &models_for(sections.len()),
+                &ExamConfig::default(),
+            )
+            .unwrap();
             for rule in [
                 "It stands alone.",
                 "Code goes in a fenced block",
@@ -1825,7 +1926,7 @@ mod tests {
             extra: Some("Focus on lifetimes.".to_string()),
             ..ExamConfig::default()
         };
-        let p = questions_prompt(&sources, None, &one_section(), &cfg).unwrap();
+        let p = questions_prompt(&sources, None, &one_section(), &models_for(1), &cfg).unwrap();
         assert!(p.contains("Additional instructions:"));
         assert!(p.contains("Focus on lifetimes."));
     }
@@ -2100,6 +2201,7 @@ mod tests {
             &sources,
             Some(dir.path()),
             &one_section(),
+            &models_for(1),
             &ExamConfig::default(),
         )
         .unwrap();
@@ -2424,117 +2526,153 @@ mod tests {
     }
 
     #[test]
-    fn generation_rejects_unattributed_questions_and_uncovered_models_with_one_retry() {
+    fn generation_lists_models_then_questions_and_retries_each_call_once() {
         let _lock = exec_lock();
-        let good = ONE_SECTION_REPLY;
-        let rows: [(&str, &str, &str, Result<usize, &str>); 7] = [
-            ("good first time", good, good, Ok(1)),
+        let models = "{\"sections\":[{\"section\":1,\"models\":[\"m\",\"n\"]}]}".to_string();
+        let no_models = "{\"sections\":[]}".to_string();
+        let q = |section: usize, model: &str, prompt: &str, points: &str| {
+            format!(
+                "{{\"section\":{section},\"shape\":\"fix\",\"model\":\"{model}\",\
+                 \"prompt\":\"{prompt}\",\"points\":[{points}]}}"
+            )
+        };
+        let questions = |items: &[String]| format!("{{\"questions\":[{}]}}", items.join(","));
+        let good = questions(&[q(1, "m", "Q1", "\"p\""), q(1, "n", "Q2", "\"p\"")]);
+        let only_m = questions(&[q(1, "m", "Q", "\"p\"")]);
+        let rows: Vec<(&str, Vec<String>, usize, Option<&str>)> = vec![
             (
-                "bad then good",
-                "{\"sections\":[],\"questions\":[]}",
-                good,
-                Ok(2),
+                "good first time",
+                vec![models.clone(), good.clone()],
+                2,
+                None,
+            ),
+            (
+                "models bad then good",
+                vec![no_models.clone(), models.clone(), good.clone()],
+                3,
+                None,
+            ),
+            (
+                "questions bad then good",
+                vec![models.clone(), only_m.clone(), good.clone()],
+                3,
+                None,
             ),
             (
                 "no model listed, twice",
-                "{\"sections\":[],\"questions\":[]}",
-                "{\"sections\":[{\"section\":1,\"models\":[\" \"]}],\"questions\":[]}",
-                Err("section 1 lists no mental model"),
+                vec![
+                    no_models.clone(),
+                    "{\"sections\":[{\"section\":1,\"models\":[\" \"]}]}".to_string(),
+                ],
+                2,
+                Some("the listed models were rejected twice: section 1 lists no mental model"),
+            ),
+            (
+                "models for a section that does not exist, twice",
+                vec![
+                    "{\"sections\":[{\"section\":2,\"models\":[\"m\"]}]}".to_string(),
+                    "{\"sections\":[{\"section\":0,\"models\":[\"m\"]}]}".to_string(),
+                ],
+                2,
+                Some("lists models for section 0"),
             ),
             (
                 "a question outside every section, twice",
-                "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\"questions\":[{\"section\":2,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
-                "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\"questions\":[{\"section\":0,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
-                Err("names section 0"),
+                vec![
+                    models.clone(),
+                    questions(&[q(2, "m", "Q", "\"p\"")]),
+                    questions(&[q(0, "m", "Q", "\"p\"")]),
+                ],
+                3,
+                Some("the generated questions were rejected twice: a question names section 0"),
             ),
             (
                 "an unlisted model, twice",
-                "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"other\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
-                "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"other\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
-                Err("names the model `other`"),
+                vec![
+                    models.clone(),
+                    questions(&[q(1, "other", "Q", "\"p\"")]),
+                    questions(&[q(1, "other", "Q", "\"p\"")]),
+                ],
+                3,
+                Some("names the model `other`"),
             ),
             (
                 "an uncovered model, twice",
-                "{\"sections\":[{\"section\":1,\"models\":[\"m\",\"n\"]}],\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
-                "{\"sections\":[{\"section\":1,\"models\":[\"m\",\"n\"]}],\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
-                Err("lists the model `n` but asks no question"),
+                vec![models.clone(), only_m.clone(), only_m.clone()],
+                3,
+                Some("lists the model `n` but asks no question"),
             ),
             (
-                "an empty prompt, twice",
-                "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\" \",\"points\":[\"p\"]}]}",
-                "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\"Q\",\"points\":[]}]}",
-                Err("empty prompt or no key points"),
+                "an empty prompt, then no key points",
+                vec![
+                    models.clone(),
+                    questions(&[q(1, "m", " ", "\"p\""), q(1, "n", "Q", "\"p\"")]),
+                    questions(&[q(1, "m", "Q", ""), q(1, "n", "Q", "\"p\"")]),
+                ],
+                3,
+                Some("empty prompt or no key points"),
             ),
         ];
-        for (label, first, second, expected) in rows {
+        for (label, replies, calls, failure) in rows {
             let dir = tempfile::tempdir().unwrap();
-            let cli = crate::testutil::fake_replies(dir.path(), &[first, second]);
+            let replies: Vec<&str> = replies.iter().map(String::as_str).collect();
+            let cli = crate::testutil::fake_replies(dir.path(), &replies);
             let deck = deck_with_exam_and_card(&["https://x"]);
             let result = generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli));
-            let calls = crate::testutil::fake_reply_calls(dir.path());
-            match (expected, result) {
-                (Ok(want_calls), Ok(questions)) => {
-                    assert_eq!(want_calls, calls, "{label}: calls");
-                    assert_eq!(1, questions.len(), "{label}: questions");
-                }
-                (Err(want), Err(error)) => {
-                    assert_eq!(2, calls, "{label}: exactly one retry");
-                    let message = format!("{error:#}");
-                    assert!(
-                        message.contains("rejected twice") && message.contains(want),
-                        "{label}: {message}"
+            assert_eq!(
+                calls,
+                crate::testutil::fake_reply_calls(dir.path()),
+                "{label}: calls"
+            );
+            match (failure, result) {
+                (None, Ok(questions)) => {
+                    let tested: Vec<&str> = questions.iter().map(|q| q.model.as_str()).collect();
+                    assert_eq!(
+                        vec!["m", "n"],
+                        tested,
+                        "{label}: every listed model is tested"
                     );
                 }
-                (expected, got) => panic!("{label}: expected {expected:?}, got {got:?}"),
+                (Some(want), Err(error)) => {
+                    let message = format!("{error:#}");
+                    assert!(message.contains(want), "{label}: {message}");
+                }
+                (failure, result) => panic!("{label}: expected {failure:?}, got {result:?}"),
             }
         }
     }
 
     #[test]
-    fn a_retry_names_the_reason_the_first_answer_was_rejected() {
+    fn the_question_call_gets_the_listed_models_and_a_retry_names_the_rejection() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = crate::testutil::fake_replies(
             dir.path(),
-            &["{\"sections\":[],\"questions\":[]}", ONE_SECTION_REPLY],
+            &[
+                "{\"sections\":[]}",
+                "{\"sections\":[{\"section\":1,\"models\":[\"moves transfer ownership\"]}]}",
+                "{\"questions\":[{\"section\":1,\"shape\":\"instance\",\
+                 \"model\":\"moves transfer ownership\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
+            ],
         );
         let deck = deck_with_exam_and_card(&["https://x"]);
         generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap();
-        let second = std::fs::read_to_string(dir.path().join("prompt-2")).unwrap();
+        let read =
+            |n: usize| std::fs::read_to_string(dir.path().join(format!("prompt-{n}"))).unwrap();
         assert!(
-            second.contains("Your previous answer was rejected: section 1 lists no mental model"),
-            "{second}"
+            read(1).contains("list its mental models"),
+            "call 1 lists models: {}",
+            read(1)
         );
-    }
-
-    #[test]
-    fn opening_a_deck_for_the_exam_stamps_new_cards_and_refuses_an_uninitialized_deck() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.md");
-        std::fs::write(&path, "## old?\na\n").unwrap();
-        crate::stamp::stamp_deck(&path).unwrap();
-        std::fs::write(
-            &path,
-            format!("{}\n## new?\nb\n", std::fs::read_to_string(&path).unwrap()),
-        )
-        .unwrap();
-        let deck = open_for_exam(&path).unwrap();
         assert!(
-            deck.cards.iter().all(|card| card.id().is_some()),
-            "a card added after init gets its id before the sitting: {:?}",
-            deck.cards.iter().map(|card| card.id()).collect::<Vec<_>>()
+            read(2).contains("Your previous answer was rejected: section 1 lists no mental model"),
+            "call 2 retries the listing with the reason: {}",
+            read(2)
         );
-
-        let raw = dir.path().join("raw.md");
-        std::fs::write(&raw, "## q?\na\n").unwrap();
         assert!(
-            open_for_exam(&raw).is_err(),
-            "an uninitialized deck is refused"
-        );
-        assert_eq!(
-            "## q?\na\n",
-            std::fs::read_to_string(&raw).unwrap(),
-            "and left untouched"
+            read(3).contains("- moves transfer ownership"),
+            "call 3 writes questions for the listed models: {}",
+            read(3)
         );
     }
 
@@ -2747,6 +2885,7 @@ mod tests {
             "input=$(cat)\n\
              case \"$input\" in\n\
              *'\"grades\"'*) printf '%s' '{grades}' ;;\n\
+             *'\"models\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}]}}' ;;\n\
              *'\"questions\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"section\":1,\"shape\":\"instance\",\"model\":\"m\",\"prompt\":\"Q1\",\"points\":[\"p1\"]}},{{\"section\":1,\"shape\":\"boundary\",\"model\":\"m\",\"prompt\":\"Q2\",\"points\":[\"p2\"]}}]}}' ;;\n\
              *) printf '## Why does X?\\npoint one\\n' ;;\n\
              esac"
@@ -3248,6 +3387,7 @@ mod windows_tests {
             &sources,
             Some(dir.path()),
             &one_section(),
+            &models_for(1),
             &ExamConfig::default(),
         )
         .unwrap();
