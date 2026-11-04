@@ -377,7 +377,7 @@ fn reset_exam(args: &ResetArgs, config: &Config) -> Result<()> {
             let root = decks_dir
                 .clone()
                 .context("`--exam --all` needs a configured decks dir")?;
-            workspace::roots_under(&root)
+            workspace::deck_dirs_under(&root)
                 .iter()
                 .map(|dir| workspace::deck_files(dir))
                 .filter(|decks| !decks.is_empty())

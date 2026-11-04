@@ -346,6 +346,43 @@ pub fn roots_under(dir: &Path) -> Vec<PathBuf> {
     roots
 }
 
+/// `dir` and every folder or workspace below it, each physical directory
+/// once; a workspace's member folder is left to the workspace itself.
+pub fn deck_dirs_under(dir: &Path) -> Vec<PathBuf> {
+    let mut visited = HashSet::new();
+    let mut dirs = Vec::new();
+    collect_deck_dirs(dir, &mut visited, &mut dirs);
+    dirs
+}
+
+fn collect_deck_dirs(dir: &Path, visited: &mut HashSet<PathBuf>, dirs: &mut Vec<PathBuf>) {
+    let Ok(identity) = std::fs::canonicalize(dir) else {
+        return;
+    };
+    if !visited.insert(identity) {
+        return;
+    }
+    dirs.push(dir.to_path_buf());
+    let members = has_manifest(dir).then(|| member_dir(dir));
+    let mut nested: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir() && Some(path) != members.as_ref())
+        .filter(|path| {
+            !path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with('.'))
+        })
+        .collect();
+    nested.sort();
+    for path in nested {
+        collect_deck_dirs(&path, visited, dirs);
+    }
+}
+
 fn collect_roots(dir: &Path, visited: &mut HashSet<PathBuf>, roots: &mut Vec<PathBuf>) {
     let Ok(identity) = std::fs::canonicalize(dir) else {
         return;
