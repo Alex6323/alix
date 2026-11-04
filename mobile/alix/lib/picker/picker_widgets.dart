@@ -209,6 +209,7 @@ class PickerDeckRow extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
+                            ...pickerExamBadgeLine(theme, entry),
                             if (entry.deadline case final deadline?)
                               Text(
                                 pickerDeadlineChipText(deadline),
@@ -300,6 +301,7 @@ class _PickerMemberRow extends StatelessWidget {
                               ...pickerTrailingMarker(theme, entry),
                             ],
                           ),
+                          ...pickerExamBadgeLine(theme, entry),
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: PickerTierStrip(strip: strip),
@@ -550,17 +552,37 @@ typedef PickerLaunch = ({
   bool skipIntroduction,
 });
 
+class PickerExamOffer {
+  const PickerExamOffer({
+    required this.locked,
+    required this.serverLive,
+    required this.due,
+    required this.filterable,
+    required this.onStart,
+  });
+
+  final bool locked;
+  final bool serverLive;
+  final bool due;
+  final bool filterable;
+  final ValueChanged<bool> onStart;
+
+  bool get enabled => !locked && serverLive;
+}
+
 class PickerDepthSheet extends StatefulWidget {
   const PickerDepthSheet({
     super.key,
     required this.canRecognize,
     required this.onChoose,
     this.onWalk,
+    this.exam,
   });
 
   final bool canRecognize;
   final ValueChanged<PickerLaunch> onChoose;
   final VoidCallback? onWalk;
+  final PickerExamOffer? exam;
 
   @override
   State<PickerDepthSheet> createState() => _PickerDepthSheetState();
@@ -569,6 +591,7 @@ class PickerDepthSheet extends StatefulWidget {
 class _PickerDepthSheetState extends State<PickerDepthSheet> {
   bool _cram = false;
   bool _skipIntroduction = false;
+  bool _needsWorkOnly = false;
 
   @override
   Widget build(BuildContext context) {
@@ -642,6 +665,28 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                 onTap: onWalk,
               ),
             ],
+            if (widget.exam case final exam?) ...[
+              if (exam.filterable)
+                SwitchListTile(
+                  value: _needsWorkOnly,
+                  onChanged: exam.enabled
+                      ? (on) => setState(() => _needsWorkOnly = on)
+                      : null,
+                  title: const Text('Only what needs work'),
+                ),
+              _PickerLaunchRow(
+                label: 'Exam',
+                hint: exam.locked
+                    ? 'locked'
+                    : !exam.serverLive
+                    ? 'needs a paired desktop'
+                    : 'graded by your paired desktop',
+                filled: exam.enabled && exam.due,
+                onTap: exam.enabled
+                    ? () => exam.onStart(exam.filterable && _needsWorkOnly)
+                    : null,
+              ),
+            ],
           ],
         ),
       ),
@@ -654,11 +699,13 @@ class _PickerLaunchRow extends StatelessWidget {
     required this.label,
     required this.hint,
     required this.onTap,
+    this.filled = false,
   });
 
   final String label;
   final String hint;
   final VoidCallback? onTap;
+  final bool filled;
 
   @override
   Widget build(BuildContext context) {
@@ -677,7 +724,8 @@ class _PickerLaunchRow extends StatelessWidget {
               constraints: const BoxConstraints(minHeight: 54),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
               decoration: BoxDecoration(
-                border: Border.all(color: tokens.line),
+                color: filled ? tokens.bolt.withValues(alpha: 0.2) : null,
+                border: Border.all(color: filled ? tokens.bolt : tokens.line),
                 borderRadius: BorderRadius.circular(11),
               ),
               child: Row(
@@ -856,6 +904,23 @@ String pickerDeadlineChipText(PickerDeadline deadline) {
 Color pickerDeadlineTint(PickerDeadline deadline, AlixTokens tokens) {
   if (deadline.daysLeft < 0) return tokens.warn;
   return deadline.daysLeft <= 7 ? tokens.bolt : tokens.dim;
+}
+
+List<Widget> pickerExamBadgeLine(ThemeData theme, PickerEntry entry) {
+  final badge = entry.examBadge;
+  if (badge == null || entry.progressError) return const [];
+  return [
+    Text(
+      badge,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontFamily: 'IBM Plex Mono',
+        fontSize: 11,
+        color: theme.alix.dim,
+      ),
+    ),
+  ];
 }
 
 List<Widget> pickerTrailingMarker(ThemeData theme, PickerEntry entry) {

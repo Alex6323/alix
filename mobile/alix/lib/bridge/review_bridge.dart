@@ -59,9 +59,6 @@ class ReviewBridgePort implements ReviewPort {
   }
 
   @override
-  bool get deckHasExam => _session.deckHasExam();
-
-  @override
   ReviewCrumbModel? crumb(int nowMs) {
     final crumb = _session.crumb(nowMs: BigInt.from(nowMs));
     return crumb == null
@@ -154,16 +151,6 @@ class ReviewBridgePort implements ReviewPort {
   @override
   void applyCardNote({required String id, required List<String> notes}) {
     _session.applyCardNote(id: id, notes: notes);
-  }
-
-  @override
-  void applyExamPassed(int nowMs) {
-    _session.applyExamPassed(nowMs: BigInt.from(nowMs));
-  }
-
-  @override
-  int applyRemediation({required String cardsText}) {
-    return _session.applyRemediation(cardsText: cardsText);
   }
 }
 

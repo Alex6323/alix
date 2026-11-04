@@ -82,7 +82,6 @@ class ReviewView extends StatelessWidget {
     required this.serverLive,
     required this.tutorCard,
     required this.verdictGrade,
-    required this.examAvailable,
     required this.cram,
     required this.nowMs,
     required this.confirmLeave,
@@ -100,7 +99,6 @@ class ReviewView extends StatelessWidget {
     required this.onOpenSection,
     required this.onOpenHint,
     required this.onRestart,
-    required this.onOpenExam,
     required this.onSkip,
   });
 
@@ -127,7 +125,6 @@ class ReviewView extends StatelessWidget {
   final bool serverLive;
   final ReviewTutorCardModel? tutorCard;
   final ReviewGrade verdictGrade;
-  final bool examAvailable;
   final bool cram;
   final int nowMs;
   final Future<bool> Function(BuildContext context) confirmLeave;
@@ -145,7 +142,6 @@ class ReviewView extends StatelessWidget {
   final ValueChanged<ReviewCardModel> onOpenSection;
   final ValueChanged<ReviewCardModel> onOpenHint;
   final VoidCallback onRestart;
-  final VoidCallback onOpenExam;
   final VoidCallback onSkip;
 
   @override
@@ -226,10 +222,8 @@ class ReviewView extends StatelessWidget {
                     ? ReviewSummaryView(
                         state: state,
                         nowMs: nowMs,
-                        examAvailable: examAvailable,
                         cram: cram,
                         onRestart: onRestart,
-                        onOpenExam: onOpenExam,
                       )
                     : cardView!,
               ),

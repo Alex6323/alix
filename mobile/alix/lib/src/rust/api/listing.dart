@@ -93,6 +93,9 @@ class DeckEntry {
   final bool canRecognize;
   final bool isTrace;
   final bool mastered;
+  final bool passed;
+  final String? examBadge;
+  final String examFilter;
   final bool examDue;
   final bool hasExam;
   final bool locked;
@@ -110,6 +113,9 @@ class DeckEntry {
     required this.canRecognize,
     required this.isTrace,
     required this.mastered,
+    required this.passed,
+    this.examBadge,
+    required this.examFilter,
     required this.examDue,
     required this.hasExam,
     required this.locked,
@@ -129,6 +135,9 @@ class DeckEntry {
       canRecognize.hashCode ^
       isTrace.hashCode ^
       mastered.hashCode ^
+      passed.hashCode ^
+      examBadge.hashCode ^
+      examFilter.hashCode ^
       examDue.hashCode ^
       hasExam.hashCode ^
       locked.hashCode ^
@@ -150,6 +159,9 @@ class DeckEntry {
           canRecognize == other.canRecognize &&
           isTrace == other.isTrace &&
           mastered == other.mastered &&
+          passed == other.passed &&
+          examBadge == other.examBadge &&
+          examFilter == other.examFilter &&
           examDue == other.examDue &&
           hasExam == other.hasExam &&
           locked == other.locked &&

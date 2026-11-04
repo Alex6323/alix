@@ -1,7 +1,7 @@
 // Widget tests for the exam screen: a fake ServerClient (no network, no
 // Rust dylib) drives examStart/examGet/examGrade/examRemediate/examClose,
-// and recording fake callbacks stand in for the bridge's applyExamPassed/
-// applyRemediation. Poll interval is shrunk well below the default so
+// and recording fake callbacks stand in for the bridge's applyExamResult/
+// applyExamRemediation. Poll interval is shrunk well below the default so
 // `tester.pump` can step through the fake's canned phase-walk without a
 // long real wait (Timer.periodic only advances when pumped).
 import 'dart:async';
@@ -32,7 +32,8 @@ void main() {
   Future<void> pumpExam(
     WidgetTester tester, {
     required ServerClient client,
-    List<BigInt> passedCalls = const [],
+    List<(RemoteExam, BigInt)>? resultCalls,
+    List<String>? cards,
     List<String> remediationCalls = const [],
     int remediationCountReply = 1,
   }) async {
@@ -42,7 +43,8 @@ void main() {
         client: client,
         support: tempSupport(),
         buildClient: (_) => client,
-        applyPassed: (nowMs) => passedCalls.add(nowMs),
+        applyResult: (exam, nowMs) => resultCalls?.add((exam, nowMs)),
+        cards: cards,
         applyRemediation: (cardsText) {
           remediationCalls.add(cardsText);
           return remediationCountReply;
@@ -89,12 +91,22 @@ void main() {
     elapsed: 2,
   );
 
-  const resultsPassed = RemoteExam(
+  const resultsMastered = RemoteExam(
     phase: 'results',
     deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Why ownership?', 'What is borrowing?'],
-    passed: true,
+    sections: [
+      RemoteExamSection(
+        label: 'Ownership',
+        cards: ['card-a'],
+        pass: true,
+        verdicts: ExamVerdicts(pass: 1, partial: 0, total: 1),
+      ),
+    ],
+    verdicts: ExamVerdicts(pass: 1, partial: 0, total: 1),
+    full: true,
+    mastered: true,
     grades: [
       RemoteExamGrade(
         question: 'Why ownership?',
@@ -103,6 +115,7 @@ void main() {
         verdict: 'PASS',
         feedback: 'Right on.',
         missed: [],
+        shape: 'instance',
       ),
     ],
     gaps: [],
@@ -115,7 +128,16 @@ void main() {
     deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Why ownership?'],
-    passed: false,
+    sections: [
+      RemoteExamSection(
+        label: 'Ownership',
+        cards: ['card-a'],
+        pass: false,
+        verdicts: ExamVerdicts(pass: 1, partial: 1, total: 2),
+      ),
+    ],
+    verdicts: ExamVerdicts(pass: 1, partial: 1, total: 2),
+    full: false,
     grades: [
       RemoteExamGrade(
         question: 'Why ownership?',
@@ -136,7 +158,6 @@ void main() {
     deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Why ownership?'],
-    passed: false,
     grades: [],
     gaps: ['ownership and the GC-free memory model'],
     canRemediate: true,
@@ -148,7 +169,6 @@ void main() {
     deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Why ownership?'],
-    passed: false,
     grades: [],
     gaps: ['ownership and the GC-free memory model'],
     canRemediate: false,
@@ -156,13 +176,13 @@ void main() {
     thinking: false,
   );
 
-  testWidgets('full pass walk: generating -> answering -> grading -> results, applyPassed exactly once',
+  testWidgets('full pass walk: generating -> answering -> grading -> results, applyResult exactly once',
       (tester) async {
     final client = FakeServerClient(
-      examGetReplies: [generating, answering2, grading, resultsPassed],
+      examGetReplies: [generating, answering2, grading, resultsMastered],
     );
-    final passedCalls = <BigInt>[];
-    await pumpExam(tester, client: client, passedCalls: passedCalls);
+    final resultCalls = <(RemoteExam, BigInt)>[];
+    await pumpExam(tester, client: client, resultCalls: resultCalls);
 
     // examStart -> the first examGet (generating).
     await tester.pump();
@@ -186,16 +206,19 @@ void main() {
     await tester.pump(_pollInterval);
     await tester.pumpAndSettle();
 
-    expect(find.text('Passed.'), findsOneWidget);
+    expect(find.text('1 / 1'), findsWidgets);
+    expect(find.text('mastered'), findsOneWidget);
     expect(find.text('Right on.'), findsOneWidget);
-    expect(passedCalls, hasLength(1));
-    expect(passedCalls.single, BigInt.from(1000));
+    expect(find.text('instance'), findsOneWidget);
+    expect(resultCalls, hasLength(1));
+    expect(resultCalls.single.$1, resultsMastered);
+    expect(resultCalls.single.$2, BigInt.from(1000));
 
     expect(client.gradeAnswers, hasLength(1));
     expect(client.gradeAnswers.single, ['a1', 'a2']);
   });
 
-  testWidgets('applyPassed still applies exactly once when two in-flight polls both resolve to results',
+  testWidgets('applyResult still applies exactly once when two in-flight polls both resolve to results',
       (tester) async {
     // Two ticks of the periodic timer both fire (and both start a poll)
     // before either poll resolves: the same shape as a real server reply
@@ -208,24 +231,24 @@ void main() {
       examGetReplies: const [grading],
       examGetGates: {1: gate0, 2: gate1},
     );
-    final passedCalls = <BigInt>[];
-    await pumpExam(tester, client: client, passedCalls: passedCalls);
+    final resultCalls = <(RemoteExam, BigInt)>[];
+    await pumpExam(tester, client: client, resultCalls: resultCalls);
     await tester.pump(); // examStart -> call 0: grading (schedules the timer)
     expect(find.textContaining('The server is working'), findsOneWidget);
 
     await tester.pump(_pollInterval); // tick #1 -> call 1, parked on gate0
     await tester.pump(_pollInterval); // tick #2 -> call 2, parked on gate1
 
-    gate0.complete(resultsPassed);
+    gate0.complete(resultsMastered);
     await tester.pump();
     await tester.pump();
-    expect(find.text('Passed.'), findsOneWidget, reason: 'the first settled poll renders results');
+    expect(find.text('Right on.'), findsOneWidget, reason: 'the first settled poll renders results');
 
-    gate1.complete(resultsPassed);
+    gate1.complete(resultsMastered);
     await tester.pump();
     await tester.pump();
 
-    expect(passedCalls, hasLength(1), reason: 'the second, already-in-flight poll must not double-apply');
+    expect(resultCalls, hasLength(1), reason: 'the second, already-in-flight poll must not double-apply');
   });
 
   testWidgets(
@@ -234,8 +257,53 @@ void main() {
     await pumpExam(tester, client: client);
     await tester.pump();
 
-    expect(find.text('Not yet.'), findsOneWidget);
+    expect(find.text('1.5 / 2'), findsWidgets);
+    expect(find.text('mastered'), findsNothing);
     expect(find.text('Turn the gaps into cards'), findsOneWidget);
+  });
+
+  testWidgets('results show a per-section count and mark', (tester) async {
+    final client = FakeServerClient(examGetReplies: const [resultsFailed]);
+    await pumpExam(tester, client: client);
+    await tester.pump();
+
+    expect(find.text('Ownership'), findsOneWidget);
+    expect(find.text('needs work'), findsOneWidget);
+    expect(find.text('pass'), findsNothing);
+  });
+
+  testWidgets('no result wording says passed or failed', (tester) async {
+    for (final reply in const [resultsMastered, resultsFailed]) {
+      final client = FakeServerClient(examGetReplies: [reply]);
+      await pumpExam(tester, client: client);
+      await tester.pump();
+
+      expect(find.textContaining(RegExp('passed|failed', caseSensitive: false)), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
+  testWidgets('a failed sitting records its result too, once', (tester) async {
+    final client = FakeServerClient(examGetReplies: const [resultsFailed]);
+    final resultCalls = <(RemoteExam, BigInt)>[];
+    await pumpExam(tester, client: client, resultCalls: resultCalls);
+    await tester.pump();
+
+    expect(resultCalls, hasLength(1));
+    expect(resultCalls.single.$1.full, isFalse);
+  });
+
+  testWidgets('a filtered sitting starts with its cards and a full one with none', (tester) async {
+    final filtered = FakeServerClient(examGetReplies: const [answering2]);
+    await pumpExam(tester, client: filtered, cards: const ['card-a', 'card-b']);
+    await tester.pump();
+    expect(filtered.startedCards, ['card-a', 'card-b']);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    final full = FakeServerClient(examGetReplies: const [answering2]);
+    await pumpExam(tester, client: full);
+    await tester.pump();
+    expect(full.startedCards, isNull);
   });
 
   testWidgets('first-poll-null: a slow start recovers once the sitting is ready', (tester) async {
@@ -270,7 +338,7 @@ void main() {
                 client: client,
                 support: tempSupport(),
                 buildClient: (_) => client,
-                applyPassed: (_) {},
+                applyResult: (_, _) {},
                 applyRemediation: (_) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,
@@ -341,7 +409,6 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Not yet.'), findsOneWidget);
     expect(find.text('Turn the gaps into cards'), findsOneWidget);
 
     await tester.tap(find.text('Turn the gaps into cards'));
@@ -370,7 +437,7 @@ void main() {
                 client: client,
                 support: tempSupport(),
                 buildClient: (_) => client,
-                applyPassed: (_) {},
+                applyResult: (_, _) {},
                 applyRemediation: (_) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,
@@ -402,7 +469,7 @@ void main() {
                 client: client,
                 support: tempSupport(),
                 buildClient: (_) => client,
-                applyPassed: (_) {},
+                applyResult: (_, _) {},
                 applyRemediation: (_) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,
@@ -458,5 +525,10 @@ void main() {
     expect(find.text('Question 1 of 1'), findsOneWidget);
     final field = tester.widget<TextField>(find.byKey(const ValueKey('exam-answer-field')));
     expect(field.controller?.text, 'a1');
+  });
+
+  test('examDeckName resolves a workspace member to <workspace>/<file>', () {
+    expect(examDeckName(deckPath: '/r/wsfolder/decks/member.md', rootDir: '/r'), 'wsfolder/member.md');
+    expect(examDeckName(deckPath: '/r/rust.md', rootDir: '/r'), 'rust.md');
   });
 }

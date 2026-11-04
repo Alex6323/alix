@@ -471,7 +471,18 @@ void main() {
       expect(exam.grades.single.verdict, 'FAIL');
       expect(exam.gaps, ['ownership and the GC-free memory model']);
       expect(exam.canRemediate, isFalse);
-      expect(exam.passed, isFalse);
+      expect(exam.full, isTrue);
+      expect(exam.mastered, isFalse);
+      expect(exam.unknownCards, isEmpty);
+      expect(exam.verdicts, isNotNull);
+      expect(exam.verdicts!.total, 1);
+      expect(exam.sections, hasLength(1));
+      expect(exam.sections.single.label, 'Ownership');
+      expect(exam.sections.single.pass, isFalse);
+      expect(exam.sections.single.cards, ['card-0123456789abcdefghjkmnpqrs']);
+      expect(exam.grades.single.section, 0);
+      expect(exam.grades.single.shape, 'instance');
+      expect(exam.grades.single.model, '');
     });
 
     group('RemoteAsk.note (three wire states)', () {

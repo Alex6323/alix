@@ -403,14 +403,10 @@ pub struct ReviewSession {
     topology_name: Option<String>,
     label: String,
     deck_path: PathBuf,
-    root_store: PathBuf,
     // The stable deck id: deck-level store state (mastery, personal-card
     // association) is keyed by this, captured off the loaded Deck rather
     // than re-derived from deck_path by hand.
     deck_token: String,
-    // Dedup baseline for remediation/tutor cards, keyed by content not id:
-    // a fresh mint carries a random token, so only content can catch a dupe.
-    deck_fingerprints: HashSet<u64>,
     has_exam: bool,
     // The last failed per-grade save, kept until one succeeds (the serve
     // loop's banner semantics): review continues in memory, never dies on a
@@ -433,8 +429,6 @@ impl ReviewSession {
         let deck = PathBuf::from(deck_path);
         let loaded = alix::deck::Deck::load(&deck)?;
         let deck_token = loaded.deck_token.clone().unwrap_or_default();
-        let deck_fingerprints: HashSet<u64> =
-            loaded.cards.iter().map(|c| c.block_fingerprint).collect();
         let has_exam = loaded.has_exam();
         // Captured before `deck` moves into `assemble::select` below.
         let deck_path = deck.clone();
@@ -477,9 +471,7 @@ impl ReviewSession {
             topology_name: build.topology_name,
             label: build.label,
             deck_path,
-            root_store,
             deck_token,
-            deck_fingerprints,
             has_exam,
             save_error: None,
             load_warnings,
@@ -677,30 +669,6 @@ impl ReviewSession {
     pub fn deck_has_exam(&self) -> bool {
         self.has_exam
     }
-
-    #[flutter_rust_bridge::frb(sync)]
-    pub fn apply_exam_passed(&mut self, now_ms: u64) -> Result<()> {
-        self.store = reopen_store(&self.store, &self.deck_path, &self.root_store)?;
-        self.store.set_deck_passed(&self.deck_token, now_ms);
-        self.store.save()?;
-        Ok(())
-    }
-
-    // No accessor yet reads a session's resolved `retire_after` cap back out
-    // of `Session`, so this passes None: no retire cap applied on the phone.
-    #[flutter_rust_bridge::frb(sync)]
-    pub fn apply_remediation(&mut self, cards_text: String) -> Result<u32> {
-        self.store = reopen_store(&self.store, &self.deck_path, &self.root_store)?;
-        let count = alix::store::store_remediation_cards(
-            &mut self.store,
-            Some(&self.deck_path),
-            &self.deck_token,
-            &self.deck_fingerprints,
-            &cards_text,
-            None,
-        )?;
-        Ok(count as u32)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -848,12 +816,6 @@ fn trace_state(session: &alix::trace::TraceSession) -> TraceSessionState {
     }
 
     state
-}
-
-fn reopen_store(stale: &alix::store::Store, deck_path: &Path, root_store: &Path) -> Result<alix::store::Store> {
-    let mut store = alix::assemble::store_for(&[deck_path.to_path_buf()], Some(root_store))?;
-    store.device = stale.device.clone();
-    Ok(store)
 }
 
 pub struct TraceSession {
@@ -1926,16 +1888,6 @@ mod tests {
             matches!(&recorded, Err(e) if e.to_string().contains("already exists")),
             "record_minted_card: a block equal to the cloze block is a duplicate, got {recorded:?}"
         );
-        let remediated = s
-            .apply_remediation(
-                "## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" -->\n"
-                    .to_string(),
-            )
-            .unwrap();
-        assert_eq!(
-            0, remediated,
-            "apply_remediation: a block equal to the cloze block creates nothing"
-        );
         assert!(
             !alix::personal::sidecar_path(&deck).exists(),
             "no refusal reached disk"
@@ -2209,73 +2161,6 @@ mod tests {
         assert!(
             sidecar.contains("> stale"),
             "the sidecar append is unconditional (id-keyed): {sidecar}"
-        );
-    }
-
-    #[test]
-    fn apply_exam_passed_marks_the_phone_store_mastered() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        write(&root.join("d.md"), "## q\na\n");
-        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
-        let deck_id = alix::deck::Deck::load(root.join("d.md"))
-            .unwrap()
-            .deck_token
-            .unwrap();
-        assert!(
-            !reopened_store(root, "d.md").deck_passed(&deck_id),
-            "fresh store: not mastered"
-        );
-
-        s.apply_exam_passed(LATER).unwrap();
-
-        let reopened = reopened_store(root, "d.md");
-        assert!(reopened.deck_passed(&deck_id));
-        assert_eq!(reopened.deck_passed_at(&deck_id), Some(LATER));
-    }
-
-    #[test]
-    fn apply_remediation_creates_personal_cards_and_dedups_and_counts() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        write(&root.join("d.md"), "## capital of france?\nParis\n");
-        let mut s = opened_after_introduction(&root.join("d.md"), root, None);
-        let deck_id = alix::deck::Deck::load(root.join("d.md"))
-            .unwrap()
-            .deck_token
-            .unwrap();
-        let remediation =
-            "## capital of france?\nParis\n\n## capital of germany?\nBerlin\n".to_string();
-        let created = s.apply_remediation(remediation.clone()).unwrap();
-        assert_eq!(created, 1, "the Paris block already matches a deck card");
-
-        let personal = alix::personal::read(&root.join("d.md"), &deck_id);
-        assert_eq!(
-            1,
-            personal.cards.len(),
-            "only the new Berlin block became a personal card"
-        );
-        let fingerprint =
-            alix::parser::content_fingerprint("capital of germany?", &["Berlin".to_string()]);
-        assert_eq!(
-            fingerprint, personal.cards[0].content_fingerprint,
-            "the berlin block is what landed in the personal file"
-        );
-        assert!(
-            reopened_store(root, "d.md")
-                .get(&personal.cards[0].id().unwrap())
-                .is_some(),
-            "and it carries a schedule"
-        );
-
-        let created_again = s.apply_remediation(remediation).unwrap();
-        assert_eq!(
-            created_again, 0,
-            "an active dupe is left alone, no schedule reset"
-        );
-        assert_eq!(
-            1,
-            alix::personal::read(&root.join("d.md"), &deck_id).cards.len()
         );
     }
 

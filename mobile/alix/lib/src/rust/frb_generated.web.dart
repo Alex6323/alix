@@ -6,6 +6,7 @@
 // Static analysis wrongly picks the IO variant, thus ignore this
 // ignore_for_file: argument_type_not_assignable
 
+import 'api/exam.dart';
 import 'api/generate.dart';
 import 'api/listing.dart';
 import 'api/review.dart';
@@ -148,6 +149,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth dco_decode_box_autoadd_depth(dynamic raw);
 
   @protected
+  ExamOutcome dco_decode_box_autoadd_exam_outcome(dynamic raw);
+
+  @protected
   ExcerptView dco_decode_box_autoadd_excerpt_view(dynamic raw);
 
   @protected
@@ -229,6 +233,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth dco_decode_depth(dynamic raw);
 
   @protected
+  ExamOutcome dco_decode_exam_outcome(dynamic raw);
+
+  @protected
+  ExamSectionOutcome dco_decode_exam_section_outcome(dynamic raw);
+
+  @protected
   ExcerptLine dco_decode_excerpt_line(dynamic raw);
 
   @protected
@@ -281,6 +291,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeckStrip> dco_decode_list_deck_strip(dynamic raw);
+
+  @protected
+  List<ExamSectionOutcome> dco_decode_list_exam_section_outcome(dynamic raw);
 
   @protected
   List<ExcerptLine> dco_decode_list_excerpt_line(dynamic raw);
@@ -653,6 +666,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth sse_decode_box_autoadd_depth(SseDeserializer deserializer);
 
   @protected
+  ExamOutcome sse_decode_box_autoadd_exam_outcome(SseDeserializer deserializer);
+
+  @protected
   ExcerptView sse_decode_box_autoadd_excerpt_view(SseDeserializer deserializer);
 
   @protected
@@ -750,6 +766,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth sse_decode_depth(SseDeserializer deserializer);
 
   @protected
+  ExamOutcome sse_decode_exam_outcome(SseDeserializer deserializer);
+
+  @protected
+  ExamSectionOutcome sse_decode_exam_section_outcome(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ExcerptLine sse_decode_excerpt_line(SseDeserializer deserializer);
 
   @protected
@@ -806,6 +830,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeckStrip> sse_decode_list_deck_strip(SseDeserializer deserializer);
+
+  @protected
+  List<ExamSectionOutcome> sse_decode_list_exam_section_outcome(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<ExcerptLine> sse_decode_list_excerpt_line(SseDeserializer deserializer);
@@ -1254,6 +1283,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_depth(Depth self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_exam_outcome(
+    ExamOutcome self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_excerpt_view(
     ExcerptView self,
     SseSerializer serializer,
@@ -1377,6 +1412,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_depth(Depth self, SseSerializer serializer);
 
   @protected
+  void sse_encode_exam_outcome(ExamOutcome self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_exam_section_outcome(
+    ExamSectionOutcome self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_excerpt_line(ExcerptLine self, SseSerializer serializer);
 
   @protected
@@ -1448,6 +1492,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_deck_strip(
     List<DeckStrip> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_exam_section_outcome(
+    List<ExamSectionOutcome> self,
     SseSerializer serializer,
   );
 

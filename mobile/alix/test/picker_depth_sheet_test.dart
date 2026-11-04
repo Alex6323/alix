@@ -5,7 +5,11 @@ import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/picker_widgets.dart';
 import 'package:alix_mobile/theme.dart';
 
-Widget _sheet(ValueChanged<PickerLaunch> onChoose, {VoidCallback? onWalk}) {
+Widget _sheet(
+  ValueChanged<PickerLaunch> onChoose, {
+  VoidCallback? onWalk,
+  PickerExamOffer? exam,
+}) {
   return MaterialApp(
     theme: alixDark(),
     home: Scaffold(
@@ -13,6 +17,7 @@ Widget _sheet(ValueChanged<PickerLaunch> onChoose, {VoidCallback? onWalk}) {
         canRecognize: true,
         onChoose: onChoose,
         onWalk: onWalk,
+        exam: exam,
       ),
     ),
   );
@@ -221,5 +226,110 @@ void main() {
         reason: '$launch shows a chevron',
       );
     }
+  });
+
+  PickerExamOffer offer({
+    bool locked = false,
+    bool serverLive = true,
+    bool due = false,
+    bool filterable = false,
+    ValueChanged<bool>? onStart,
+  }) => PickerExamOffer(
+    locked: locked,
+    serverLive: serverLive,
+    due: due,
+    filterable: filterable,
+    onStart: onStart ?? (_) {},
+  );
+
+  Color? fill(WidgetTester tester) {
+    final framed = find.descendant(
+      of: find.widgetWithText(InkWell, 'Exam'),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is Container &&
+            widget.decoration is BoxDecoration &&
+            (widget.decoration! as BoxDecoration).border != null,
+      ),
+    );
+    return ((tester.widget<Container>(framed)).decoration! as BoxDecoration)
+        .color;
+  }
+
+  testWidgets('without an exam offer the sheet has no Exam row or filter', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sheet((_) {}, onWalk: () {}));
+    expect(find.text('Exam'), findsNothing);
+    expect(find.text('Only what needs work'), findsNothing);
+  });
+
+  testWidgets('the Exam row sits below Walk and starts a full sitting', (
+    tester,
+  ) async {
+    final starts = <bool>[];
+    await tester.pumpWidget(
+      _sheet((_) {}, onWalk: () {}, exam: offer(onStart: starts.add)),
+    );
+
+    expect(
+      tester.getTopLeft(find.text('Exam')).dy,
+      greaterThan(tester.getTopLeft(find.text('Walk')).dy),
+    );
+    await tester.tap(find.text('Exam'));
+    expect(starts, [false]);
+  });
+
+  testWidgets('a locked exam is disabled and says so', (tester) async {
+    final starts = <bool>[];
+    await tester.pumpWidget(
+      _sheet((_) {}, exam: offer(locked: true, due: true, onStart: starts.add)),
+    );
+
+    await tester.tap(find.text('Exam'));
+    expect(starts, isEmpty);
+    expect(find.text('locked'), findsOneWidget);
+    expect(fill(tester), isNull, reason: 'a locked exam is never filled');
+  });
+
+  testWidgets('an exam with no live paired server is disabled and says so', (
+    tester,
+  ) async {
+    final starts = <bool>[];
+    await tester.pumpWidget(
+      _sheet((_) {}, exam: offer(serverLive: false, onStart: starts.add)),
+    );
+
+    await tester.tap(find.text('Exam'));
+    expect(starts, isEmpty);
+    expect(find.text('needs a paired desktop'), findsOneWidget);
+  });
+
+  testWidgets('the Exam row is filled only when due and unlocked', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sheet((_) {}, exam: offer(due: true)));
+    expect(fill(tester), isNotNull);
+
+    await tester.pumpWidget(_sheet((_) {}, exam: offer(due: false)));
+    expect(fill(tester), isNull);
+  });
+
+  testWidgets('the filter switch shows only when the filter would change the '
+      'sitting, defaults off, and rides along when on', (tester) async {
+    await tester.pumpWidget(_sheet((_) {}, exam: offer()));
+    expect(find.text('Only what needs work'), findsNothing);
+
+    final starts = <bool>[];
+    await tester.pumpWidget(
+      _sheet((_) {}, exam: offer(filterable: true, onStart: starts.add)),
+    );
+    expect(tester.widget<SwitchListTile>(find.byType(SwitchListTile).last).value, isFalse);
+
+    await tester.tap(find.text('Exam'));
+    await tester.tap(find.text('Only what needs work'));
+    await tester.pump();
+    await tester.tap(find.text('Exam'));
+    expect(starts, [false, true]);
   });
 }

@@ -16,8 +16,6 @@ abstract interface class ReviewPort {
 
   ReviewTutorCardModel? get tutorCard;
 
-  bool get deckHasExam;
-
   ReviewCrumbModel? crumb(int nowMs);
 
   ReviewChoiceFeedbackModel? choose(int chosen);
@@ -41,10 +39,6 @@ abstract interface class ReviewPort {
   String recordMintedCard({required String block});
 
   void applyCardNote({required String id, required List<String> notes});
-
-  void applyExamPassed(int nowMs);
-
-  int applyRemediation({required String cardsText});
 }
 
 class ReviewOpenFailure implements Exception {

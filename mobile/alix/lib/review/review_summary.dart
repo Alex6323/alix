@@ -11,18 +11,14 @@ class ReviewSummaryView extends StatelessWidget {
     super.key,
     required this.state,
     required this.nowMs,
-    required this.examAvailable,
     required this.cram,
     required this.onRestart,
-    required this.onOpenExam,
   });
 
   final ReviewStateModel state;
   final int nowMs;
-  final bool examAvailable;
   final bool cram;
   final VoidCallback onRestart;
-  final VoidCallback onOpenExam;
 
   @override
   Widget build(BuildContext context) {
@@ -107,14 +103,6 @@ class ReviewSummaryView extends StatelessWidget {
                 fontSize: 12,
                 color: tokens.dim,
               ),
-            ),
-          ],
-          if (examAvailable) ...[
-            const SizedBox(height: 12),
-            ReviewChip(
-              label: 'Take the exam',
-              kind: ReviewChipKind.quiet,
-              onTap: onOpenExam,
             ),
           ],
         ],

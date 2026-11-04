@@ -125,6 +125,9 @@ class FakeServerClient implements ServerClient {
   final List<List<TutorTurn>> postNoteHistories = [];
   final List<PostCardCall> postCardCalls = [];
 
+  /// The cards argument of the most recent `examStart` call.
+  List<String>? startedCards;
+
   /// The deck argument of the most recent `examStart` call.
   String? startedDeck;
 
@@ -212,8 +215,9 @@ class FakeServerClient implements ServerClient {
   }
 
   @override
-  Future<bool> examStart(String deck) async {
+  Future<bool> examStart(String deck, {List<String>? cards}) async {
     startedDeck = deck;
+    startedCards = cards;
     if (expireOnExamStart) throw const PairingExpired();
     return examStartReply;
   }

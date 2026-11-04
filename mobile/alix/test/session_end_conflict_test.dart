@@ -347,7 +347,7 @@ void main() {
   );
 
   testWidgets(
-    'passing the exam after taking desktop on a finished review keeps the '
+    'sitting the exam from the launch sheet after taking desktop on a finished review keeps the '
     'desktop card progress',
     (tester) async {
       final client = FakeServerClient(
@@ -369,10 +369,14 @@ void main() {
 
       await resolveAndExpectPicker(tester, syncController);
       expect(_cards(syncController.workspace), isEmpty);
-      await tester.tap(find.text('Take the exam'));
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Deck'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Exam'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Passed.'), findsOneWidget);
+      expect(find.text('1 / 1'), findsOneWidget);
       expect(
         _cards(syncController.workspace),
         isEmpty,
@@ -404,9 +408,13 @@ void main() {
 
       await resolveAndExpectPicker(tester, syncController);
       expect(_cards(syncController.workspace), isEmpty);
-      await tester.tap(find.text('Take the exam'));
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
-      expect(find.text('Not yet.'), findsOneWidget);
+      await tester.tap(find.text('Deck'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Exam'));
+      await tester.pumpAndSettle();
+      expect(find.text('0 / 1'), findsOneWidget);
       await tester.tap(find.text('Turn the gaps into cards'));
       await tester.pumpAndSettle();
 
@@ -426,10 +434,11 @@ const _passedExam = RemoteExam(
   phase: 'results',
   deck: 'ws/deck.md',
   strictness: 'balanced',
-  questions: const [],
-  passed: true,
-  grades: const [],
-  gaps: const [],
+  questions: [],
+  verdicts: ExamVerdicts(pass: 1, partial: 0, total: 1),
+  full: true,
+  grades: [],
+  gaps: [],
   canRemediate: false,
   thinking: false,
 );
@@ -438,10 +447,11 @@ const _failedExam = RemoteExam(
   phase: 'results',
   deck: 'ws/deck.md',
   strictness: 'balanced',
-  questions: const ['What did the card explain?'],
-  passed: false,
-  grades: const [],
-  gaps: const ['the tested idea'],
+  questions: ['What did the card explain?'],
+  verdicts: ExamVerdicts(pass: 0, partial: 0, total: 1),
+  full: true,
+  grades: [],
+  gaps: ['the tested idea'],
   canRemediate: true,
   thinking: false,
 );
@@ -451,7 +461,6 @@ const _remediatedExam = RemoteExam(
   deck: 'ws/deck.md',
   strictness: 'balanced',
   questions: ['What did the card explain?'],
-  passed: false,
   grades: [],
   gaps: ['the tested idea'],
   canRemediate: false,

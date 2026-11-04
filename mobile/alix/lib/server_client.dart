@@ -417,6 +417,9 @@ class RemoteExamGrade {
     required this.verdict,
     required this.feedback,
     required this.missed,
+    this.section = 0,
+    this.shape = '',
+    this.model = '',
   });
 
   final String question;
@@ -425,6 +428,9 @@ class RemoteExamGrade {
   final String verdict;
   final String feedback;
   final List<String> missed;
+  final int section;
+  final String shape;
+  final String model;
 
   static RemoteExamGrade? fromJson(dynamic json) {
     if (json is! Map) return null;
@@ -442,6 +448,58 @@ class RemoteExamGrade {
       verdict: verdict,
       feedback: feedback,
       missed: _asStringList(json['missed']),
+      section: _asInt(json['section']) ?? 0,
+      shape: _asString(json['shape']) ?? '',
+      model: _asString(json['model']) ?? '',
+    );
+  }
+}
+
+/// Pass, partial and total counts of one section or one whole sitting.
+class ExamVerdicts {
+  const ExamVerdicts({required this.pass, required this.partial, required this.total});
+
+  final int pass;
+  final int partial;
+  final int total;
+
+  /// Half a point per partial.
+  double get points => pass + partial / 2;
+
+  static ExamVerdicts? fromJson(dynamic json) {
+    if (json is! Map) return null;
+    return ExamVerdicts(
+      pass: _asInt(json['pass']) ?? 0,
+      partial: _asInt(json['partial']) ?? 0,
+      total: _asInt(json['total']) ?? 0,
+    );
+  }
+}
+
+/// One examined section of a sitting. Mirrors `RemoteExamSectionDto`.
+class RemoteExamSection {
+  const RemoteExamSection({
+    required this.label,
+    required this.cards,
+    required this.pass,
+    required this.verdicts,
+  });
+
+  final String label;
+  final List<String> cards;
+  final bool pass;
+  final ExamVerdicts verdicts;
+
+  static RemoteExamSection? fromJson(dynamic json) {
+    if (json is! Map) return null;
+    final label = _asString(json['label']);
+    final verdicts = ExamVerdicts.fromJson(json['verdicts']);
+    if (label == null || verdicts == null) return null;
+    return RemoteExamSection(
+      label: label,
+      cards: _asStringList(json['cards']),
+      pass: _asBool(json['pass']),
+      verdicts: verdicts,
     );
   }
 }
@@ -456,7 +514,6 @@ class RemoteExam {
     required this.deck,
     required this.strictness,
     required this.questions,
-    this.passed,
     required this.grades,
     required this.gaps,
     required this.canRemediate,
@@ -464,13 +521,22 @@ class RemoteExam {
     required this.thinking,
     this.elapsed,
     this.error,
+    this.sections = const [],
+    this.verdicts,
+    this.full = false,
+    this.mastered = false,
+    this.unknownCards = const [],
   });
 
   final String phase;
   final String deck;
   final String strictness;
   final List<String> questions;
-  final bool? passed;
+  final List<RemoteExamSection> sections;
+  final ExamVerdicts? verdicts;
+  final bool full;
+  final bool mastered;
+  final List<String> unknownCards;
   final List<RemoteExamGrade> grades;
   final List<String> gaps;
   final bool canRemediate;
@@ -488,7 +554,13 @@ class RemoteExam {
         deck: _asString(json['deck']) ?? '',
         strictness: _asString(json['strictness']) ?? 'balanced',
         questions: _asStringList(json['questions']),
-        passed: json['passed'] is bool ? json['passed'] as bool : null,
+        sections: json['sections'] is List
+            ? (json['sections'] as List).map(RemoteExamSection.fromJson).whereType<RemoteExamSection>().toList()
+            : const [],
+        verdicts: ExamVerdicts.fromJson(json['verdicts']),
+        full: _asBool(json['full']),
+        mastered: _asBool(json['mastered']),
+        unknownCards: _asStringList(json['unknown_cards']),
         grades: json['grades'] is List
             ? (json['grades'] as List).map(RemoteExamGrade.fromJson).whereType<RemoteExamGrade>().toList()
             : const [],
@@ -585,7 +657,7 @@ abstract class ServerClient {
 
   /// `POST /api/remote/exam/start`: opens a sitting on [deck] (a bare name
   /// or `<workspace>/<file>`, resolved the same way `/api/select` does).
-  Future<bool> examStart(String deck);
+  Future<bool> examStart(String deck, {List<String>? cards});
 
   /// `GET /api/remote/exam`: polls the open sitting.
   Future<RemoteExam?> examGet();
@@ -743,8 +815,8 @@ class HttpServerClient implements ServerClient {
   }
 
   @override
-  Future<bool> examStart(String deck) async {
-    final json = await _post('/api/remote/exam/start', {'deck': deck});
+  Future<bool> examStart(String deck, {List<String>? cards}) async {
+    final json = await _post('/api/remote/exam/start', {'deck': deck, 'cards': ?cards});
     return json != null;
   }
 

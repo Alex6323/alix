@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/bridge/exam_bridge.dart' as exam_bridge;
 import 'package:alix_mobile/bridge/picker_bridge.dart';
 import 'package:alix_mobile/bridge/sync_bridge.dart' as sync_bridge;
+import 'package:alix_mobile/exam_screen.dart';
 import 'package:alix_mobile/folder_browser.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/picker/generate_controller.dart';
@@ -464,6 +466,55 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.reload();
   }
 
+  Future<void> _openExam(
+    PickerEntry entry, {
+    required String root,
+    required bool needsWorkOnly,
+  }) async {
+    final support = await _support();
+    final config = readActivePairing(support);
+    if (config == null || !mounted) return;
+    final List<String>? cards;
+    try {
+      cards = exam_bridge.examStartCards(
+        deckPath: entry.path,
+        rootDir: root,
+        needsWorkOnly: needsWorkOnly,
+      );
+    } on Object catch (error) {
+      _snack('could not prepare the exam: $error');
+      return;
+    }
+    final client = (widget.buildClient ?? HttpServerClient.new)(config);
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ExamScreen(
+          deckName: examDeckName(deckPath: entry.path, rootDir: root),
+          client: client,
+          support: support,
+          buildClient: widget.buildClient ?? HttpServerClient.new,
+          cards: cards,
+          applyResult: (exam, nowMs) => exam_bridge.applyExamResult(
+            deckPath: entry.path,
+            rootDir: root,
+            exam: exam,
+            nowMs: nowMs,
+            device: widget.device,
+          ),
+          applyRemediation: (cardsText) => exam_bridge.applyExamRemediation(
+            deckPath: entry.path,
+            rootDir: root,
+            cardsText: cardsText,
+            device: widget.device,
+          ),
+          nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
+        ),
+      ),
+    );
+    client.close();
+    _controller.reload();
+  }
+
   SyncPendingConflict? _pendingConflictFor(
     PickerEntry entry, {
     required String root,
@@ -495,6 +546,7 @@ class _PickerScreenState extends State<PickerScreen> {
     }
     if (!mounted) return;
     var walk = false;
+    bool? examNeedsWorkOnly;
     final launch = await showModalBottomSheet<PickerLaunch>(
       context: context,
       isScrollControlled: true,
@@ -505,6 +557,18 @@ class _PickerScreenState extends State<PickerScreen> {
           walk = true;
           Navigator.of(sheet).pop();
         },
+        exam: entry.hasExam
+            ? PickerExamOffer(
+                locked: entry.locked,
+                serverLive: isPaired && _controller.serverReachable,
+                due: entry.examDue,
+                filterable: entry.examFilter == 'partial',
+                onStart: (needsWorkOnly) {
+                  examNeedsWorkOnly = needsWorkOnly;
+                  Navigator.of(sheet).pop();
+                },
+              )
+            : null,
       ),
     );
     if (!mounted) return;
@@ -519,6 +583,10 @@ class _PickerScreenState extends State<PickerScreen> {
     }
     if (walk) {
       await _openWalk(entry, root: root);
+      return;
+    }
+    if (examNeedsWorkOnly case final needsWorkOnly?) {
+      await _openExam(entry, root: root, needsWorkOnly: needsWorkOnly);
       return;
     }
     if (launch == null) return;

@@ -200,6 +200,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `DeckItemDto` and `MemberDto` gain `passed_at_ms`, `full_exam_result`, a
   `sections` tally and `exam_filter`. `StateDto.exam_due` is removed.
 
+- Phone: the exam moves to the deck's launch sheet (an **Exam** row below
+  Walk, with an "Only what needs work" switch when some sections passed and
+  some did not); the session summary no longer offers it. Every sitting,
+  passed or not, records its per-card results on the phone, and the deck row
+  shows the same exam badge as the web.
+
 - The deck row badge shows an examined deck's highest exam state with the
   last full sitting's points (`15 / 18`, `passed · 15.5 / 18`, `mastered 🎉 ·
   3d · 17 / 18`), plus how many sections need work or have new cards since

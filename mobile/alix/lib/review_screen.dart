@@ -5,7 +5,6 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/bridge/review_bridge.dart';
-import 'package:alix_mobile/exam_screen.dart';
 import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/review/review_card.dart'
@@ -71,7 +70,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
   final TextEditingController _attempt = TextEditingController();
 
   ServerClient? _client;
-  Directory? _support;
   String? _autoOpenedSection;
   bool _helpSheetOpen = false;
   bool _summaryPushed = false;
@@ -170,7 +168,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   Future<void> _probeServer() async {
     final support = widget.supportDir ?? await getApplicationSupportDirectory();
-    _support = support;
     final config = readActivePairing(support);
     if (config == null) return;
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
@@ -303,41 +300,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
     });
   }
 
-  String _deckName() {
-    var relative = widget.deckPath;
-    if (relative.startsWith(widget.rootDir)) {
-      relative = relative.substring(widget.rootDir.length);
-    }
-    final parts = relative
-        .split(RegExp(r'[\\/]+'))
-        .where((part) => part.isNotEmpty)
-        .toList();
-    if (parts.length >= 2 && parts[parts.length - 2] == 'decks') {
-      parts.removeAt(parts.length - 2);
-    }
-    return parts.join('/');
-  }
-
-  void _openExam() {
-    final client = _client;
-    final support = _support;
-    if (client == null || support == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ExamScreen(
-          deckName: _deckName(),
-          client: client,
-          support: support,
-          buildClient: widget.buildClient ?? HttpServerClient.new,
-          applyPassed: (nowMs) => _controller.applyExamPassed(nowMs.toInt()),
-          applyRemediation: (cardsText) =>
-              _controller.applyRemediation(cardsText: cardsText),
-          nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
-        ),
-      ),
-    );
-  }
-
   void _resetInputs() {
     final state = _controller.state;
     final lines = state.card?.gradeableSteps.length ?? 1;
@@ -464,8 +426,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
           serverLive: _controller.serverLive,
           tutorCard: card == null ? null : _controller.tutorCard,
           verdictGrade: explain ? _controller.verdictGrade : ReviewGrade.pass,
-          examAvailable:
-              card == null && _controller.serverLive && _controller.deckHasExam,
           cram: _controller.cram,
           nowMs: nowMs,
           confirmLeave: _confirmLeave,
@@ -483,7 +443,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
           onOpenSection: _openSection,
           onOpenHint: _openHint,
           onRestart: _restart,
-          onOpenExam: _openExam,
           onSkip: _skip,
         );
       },

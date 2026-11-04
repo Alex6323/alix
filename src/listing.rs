@@ -30,6 +30,9 @@ pub struct DeckSummary {
     pub is_trace: bool,
     pub last_launch: Launch,
     pub mastered: bool,
+    pub passed: bool,
+    pub exam_badge: Option<String>,
+    pub exam_filter: crate::exam_status::ExamFilter,
     pub exam_due: bool,
     pub has_exam: bool,
     pub locked: bool,
@@ -453,6 +456,9 @@ fn folder_summary(
         is_trace: false,
         last_launch: Launch::default(),
         mastered: false,
+        passed: false,
+        exam_badge: None,
+        exam_filter: crate::exam_status::ExamFilter::None,
         exam_due: false,
         has_exam: false,
         locked: false,
@@ -514,6 +520,10 @@ fn deck_summary(
         }
         _ => (false, false, false, false),
     };
+    let exam = match (deck, store) {
+        (Some(d), Some(s)) => crate::exam_status::exam_row(d, s),
+        _ => crate::exam_status::ExamRow::default(),
+    };
     let last_launch = match (deck, store, augment, &pools) {
         (Some(d), Some(s), Some(a), Some(p)) => s
             .last_launch(d.deck_token.as_deref().unwrap_or_default())
@@ -534,6 +544,13 @@ fn deck_summary(
         is_trace,
         last_launch,
         mastered: mastered && !progress_error,
+        passed: exam.passed_at_ms.is_some() && !progress_error,
+        exam_badge: exam.badge(now_ms).filter(|_| !progress_error),
+        exam_filter: if progress_error {
+            crate::exam_status::ExamFilter::None
+        } else {
+            exam.filter
+        },
         exam_due: exam_due && !progress_error,
         has_exam,
         locked,
@@ -1123,6 +1140,46 @@ mod tests {
             "the bad later document must not erase the healthy sibling's loaded progress"
         );
         assert!(b.progress_error);
+    }
+
+    #[test]
+    fn a_listed_row_carries_the_exam_unlock_badge_and_filter() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("d.md"),
+            "---\nformat-version: 1\nid: deck-d\nexam: source.txt\n---\n\
+             # A\n\n## a1\nx\n<!-- id: card-a1 -->\n\n# B\n\n## b1\nx\n<!-- id: card-b1 -->\n",
+        );
+        let deck = Deck::load(root.join("d.md")).unwrap();
+        let mut store = crate::state::open_store(&root.join("d.md"), root).unwrap();
+        let section = |id: &str, pass| crate::store::SectionRecord {
+            card_ids: vec![id.to_string()],
+            pass,
+        };
+        store.record_exam_result(
+            &deck,
+            &crate::store::SittingRecord {
+                sections: vec![section("card-a1", true), section("card-b1", false)],
+                full: true,
+                pass: 1,
+                partial: 1,
+                total: 2,
+            },
+            T0,
+        );
+        store.save().unwrap();
+
+        let rows = list_root(root, &ReviewConfig::default(), T0);
+        let row = rows.iter().find(|r| r.title == "d").unwrap();
+
+        assert!(!row.passed, "one section still needs work");
+        assert_eq!(
+            Some("1.5 / 2 · 1 section needs work"),
+            row.exam_badge.as_deref(),
+            "the badge is the lib's"
+        );
+        assert_eq!(crate::exam_status::ExamFilter::Partial, row.exam_filter);
     }
 
     /// Cram serves cards regardless of due-ness, so a deck settled or in

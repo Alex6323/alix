@@ -1,6 +1,5 @@
-// The "Take the exam" chip's gating: it exists only on the done summary,
-// only with a reachable, current-enough paired desktop AND a deck that
-// sits an AI exam (`% exam:`, never a trace). ReviewScreen's own
+// F48: the review summary has no exam entry. The exam is launched from the
+// picker's launch sheet only. ReviewScreen's own
 // listing/session calls the real bridge in initState, so RustLib.init() is
 // required to mount it, same as review_screen_ask_chip_test.dart (T5).
 import 'dart:io';
@@ -75,7 +74,7 @@ void main() {
   }
 
   testWidgets(
-    'an examinable deck with a live paired desktop: the chip appears on the done summary',
+    'an examinable deck with a live paired desktop: the done summary offers no exam chip',
     (tester) async {
       final support = tempSupport();
       await savePairing(
@@ -92,12 +91,12 @@ void main() {
       await finishReview(tester);
 
       expect(find.text('SESSION COMPLETE'), findsOneWidget);
-      expect(find.text('Take the exam'), findsOneWidget);
+      expect(find.text('Take the exam'), findsNothing);
     },
   );
 
   testWidgets(
-    'a deck with no source: the chip does not exist even with a live paired desktop',
+    'a deck with no source: the done summary offers no exam chip either',
     (tester) async {
       final support = tempSupport();
       await savePairing(
@@ -113,72 +112,8 @@ void main() {
       );
       await finishReview(tester);
 
+      expect(find.text('SESSION COMPLETE'), findsOneWidget);
       expect(find.text('Take the exam'), findsNothing);
-    },
-  );
-
-  testWidgets(
-    'an examinable deck with no pairing config: the chip does not exist',
-    (tester) async {
-      await pumpReview(tester, support: tempSupport(), examinable: true);
-      await finishReview(tester);
-
-      expect(find.text('Take the exam'), findsNothing);
-    },
-  );
-
-  // T8.3 regression: review_screen.dart's `_deckName()` (~:210) must resolve
-  // a workspace member to `<workspace>/<member>`, the key the desktop's own
-  // catalog looks decks up by (`resolve_row`, src/serve/catalog.rs) -- never
-  // the device-absolute path, and never a bare basename (a naive
-  // `path.basename` would collapse this to `member.md` and pass the chip's
-  // own visibility tests above without ever exercising the join).
-  testWidgets(
-    'a workspace member deck: "Take the exam" starts the sitting on "<workspace>/<member>"',
-    (tester) async {
-      final root = Directory.systemTemp.createTempSync(
-        'alix-exam-chip-ws-decks-',
-      );
-      addTearDown(() => root.deleteSync(recursive: true));
-      Directory('${root.path}/wsfolder/decks').createSync(recursive: true);
-      File(
-        '${root.path}/wsfolder/alix.toml',
-      ).writeAsStringSync('title = "Ws"\n');
-      writeTestDeck(
-        '${root.path}/wsfolder/decks/member.md',
-        '---\nexam: https://example.com\n---\n## q?\na\n',
-      );
-
-      final support = tempSupport();
-      await savePairing(
-        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'tok', rootId: 'root-test0000000000000000000000'),
-        support: support,
-      );
-
-      final client = FakeServerClient(
-        versionReply: '0.6.0',
-        examStartReply: false,
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: alixDark(),
-          home: ReviewScreen(
-            deckPath: '${root.path}/wsfolder/decks/member.md',
-            rootDir: root.path,
-            depth: ReviewDepth.recall,
-            supportDir: support,
-            buildClient: (_) => client,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await finishReview(tester);
-
-      expect(find.text('Take the exam'), findsOneWidget);
-      await tester.tap(find.text('Take the exam'));
-      await tester.pumpAndSettle();
-
-      expect(client.startedDeck, 'wsfolder/member.md');
     },
   );
 }

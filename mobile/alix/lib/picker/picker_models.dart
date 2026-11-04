@@ -38,6 +38,9 @@ class PickerEntry {
     required this.canRecognize,
     required this.isTrace,
     required this.mastered,
+    this.passed = false,
+    this.examBadge,
+    this.examFilter = 'none',
     required this.examDue,
     required this.hasExam,
     required this.locked,
@@ -55,6 +58,9 @@ class PickerEntry {
   final bool canRecognize;
   final bool isTrace;
   final bool mastered;
+  final bool passed;
+  final String? examBadge;
+  final String examFilter;
   final bool examDue;
   final bool hasExam;
   final bool locked;

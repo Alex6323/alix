@@ -88,7 +88,6 @@ class ReviewController extends ChangeNotifier {
   bool get cram => _cram;
   int get openedHints => _openedHints;
   ReviewTutorCardModel? get tutorCard => _requirePort().tutorCard;
-  bool get deckHasExam => _requirePort().deckHasExam;
 
   bool get hasChoices => state.choices?.isNotEmpty ?? false;
   bool get isTyping =>
@@ -248,12 +247,6 @@ class ReviewController extends ChangeNotifier {
     _requirePort().applyCardNote(id: id, notes: notes);
     _state = _requirePort().state;
     notifyListeners();
-  }
-
-  void applyExamPassed(int nowMs) => _requirePort().applyExamPassed(nowMs);
-
-  int applyRemediation({required String cardsText}) {
-    return _requirePort().applyRemediation(cardsText: cardsText);
   }
 
   ReviewPort _requirePort() {

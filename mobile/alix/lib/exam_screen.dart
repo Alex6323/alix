@@ -1,7 +1,7 @@
 // The AI exam, run on the phone against a paired desktop: it generates
 // questions and grades against its own deck copy while every outcome
-// (mastery, remediation cards) lands in the PHONE's store via the bridge
-// callbacks review_screen.dart hands in. Data and callbacks only: this file
+// (the sitting's result, remediation cards) lands in the PHONE's store via
+// the bridge callbacks picker_screen.dart hands in. Data and callbacks only: this file
 // never imports the generated bridge (`src/rust/*`), so its tests run
 // without a Rust dylib, the same seam tutor_sheet.dart plays.
 import 'dart:async';
@@ -12,6 +12,24 @@ import 'package:flutter/material.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/theme.dart';
+
+/// The name the paired server's own catalog resolves a deck by: a bare
+/// top-level file name, or `<workspace>/<file>` for a workspace member.
+/// Never a device-absolute path.
+String examDeckName({required String deckPath, required String rootDir}) {
+  var relative = deckPath;
+  if (relative.startsWith(rootDir)) {
+    relative = relative.substring(rootDir.length);
+  }
+  final parts = relative
+      .split(RegExp(r'[\\/]+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
+  if (parts.length >= 2 && parts[parts.length - 2] == 'decks') {
+    parts.removeAt(parts.length - 2);
+  }
+  return parts.join('/');
+}
 
 /// The exact wording for a 401 at any phase: the paired server is right
 /// there but rejects this app's token. Every [ServerClient] call can throw
@@ -37,15 +55,16 @@ class ExamScreen extends StatefulWidget {
     required this.client,
     required this.support,
     required this.buildClient,
-    required this.applyPassed,
+    required this.applyResult,
     required this.applyRemediation,
     required this.nowMs,
+    this.cards,
     this.pollInterval = const Duration(milliseconds: 400),
   });
 
   /// The name the paired server's own catalog resolves this deck by: a bare
   /// top-level file name, or `<workspace>/<file>` for a workspace member.
-  /// Never a device-absolute path; see review_screen.dart's `_deckName()`.
+  /// Never a device-absolute path; see [examDeckName].
   final String deckName;
 
   /// The paired desktop's AI backend, over `/api/remote/*`.
@@ -60,9 +79,13 @@ class ExamScreen extends StatefulWidget {
   /// resolves its own.
   final ServerClient Function(ServerConfig) buildClient;
 
-  /// Applies a PASSED sitting to the phone's own store (a closure over the
-  /// bridge session's `applyExamPassed`). Called at most once per sitting.
-  final void Function(BigInt nowMs) applyPassed;
+  /// Records a settled sitting, whatever its outcome, in the phone's own
+  /// store (a closure over `applyExamResult`). Called at most once per
+  /// sitting, with the terminal DTO.
+  final void Function(RemoteExam exam, BigInt nowMs) applyResult;
+
+  /// The card ids whose sections to examine; null sits the full deck.
+  final List<String>? cards;
 
   /// Turns a failed sitting's remediation deck-text into phone-store
   /// personal cards (a closure over `applyRemediation`), returning how many
@@ -89,10 +112,10 @@ class _ExamScreenState extends State<ExamScreen> {
   bool _submitting = false;
   bool _remediating = false;
 
-  /// Guards against a passed sitting applying its mastery more than once:
-  /// a stray extra poll landing on the same terminal `results` DTO (e.g.
-  /// two periodic ticks resolving out of order) must not double-apply.
-  bool _passedApplied = false;
+  /// Guards against a sitting recording its result more than once: a stray
+  /// extra poll landing on the same terminal `results` DTO (e.g. two
+  /// periodic ticks resolving out of order) must not double-apply.
+  bool _resultApplied = false;
 
   /// Same guard, for turning `remediated` cards into store entries.
   bool _remediationApplied = false;
@@ -128,7 +151,7 @@ class _ExamScreenState extends State<ExamScreen> {
   Future<void> _start() async {
     bool ok;
     try {
-      ok = await widget.client.examStart(widget.deckName);
+      ok = await widget.client.examStart(widget.deckName, cards: widget.cards);
     } on PairingExpired {
       _expirePairingAndPop();
       return;
@@ -183,9 +206,9 @@ class _ExamScreenState extends State<ExamScreen> {
   /// whether to keep polling.
   void _applyDto(RemoteExam dto) {
     if (!mounted) return;
-    if (dto.phase == 'results' && dto.passed == true && !_passedApplied) {
-      _passedApplied = true;
-      widget.applyPassed(widget.nowMs());
+    if (dto.phase == 'results' && !_resultApplied) {
+      _resultApplied = true;
+      widget.applyResult(dto, widget.nowMs());
     }
     if (dto.phase == 'remediated' && !_remediationApplied) {
       _remediationApplied = true;
@@ -408,24 +431,29 @@ class _ExamScreenState extends State<ExamScreen> {
 
   Widget _results(BuildContext context, RemoteExam exam) {
     final tokens = Theme.of(context).alix;
-    final passed = exam.passed ?? false;
+    final verdicts = exam.verdicts;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          passed ? 'Passed.' : 'Not yet.',
-          // Matches the web's `.exam-pass`/`.exam-fail` color tokens.
-          style: TextStyle(
+        if (verdicts != null)
+          Text(
+            '${_points(verdicts.points)} / ${verdicts.total}',
+            style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w600,
-              color: passed ? tokens.good : tokens.again),
-        ),
+              color: tokens.text,
+            ),
+          ),
+        if (exam.mastered)
+          Text('mastered', style: TextStyle(color: tokens.good, fontSize: 13)),
         const SizedBox(height: 16),
         Expanded(
           child: ListView(
             children: [
+              for (final section in exam.sections) _sectionRow(section, tokens),
+              if (exam.sections.isNotEmpty) const SizedBox(height: 8),
               for (final g in exam.grades) _gradeRow(g, tokens),
-              if (!passed && exam.gaps.isNotEmpty) ...[
+              if (exam.gaps.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text('gaps', style: TextStyle(color: tokens.faint, fontSize: 11, letterSpacing: 1.4)),
                 for (final gap in exam.gaps)
@@ -437,7 +465,7 @@ class _ExamScreenState extends State<ExamScreen> {
             ],
           ),
         ),
-        if (!passed && exam.canRemediate) ...[
+        if (exam.canRemediate) ...[
           const SizedBox(height: 12),
           FilledButton(
             onPressed: _remediating ? null : _remediate,
@@ -445,6 +473,32 @@ class _ExamScreenState extends State<ExamScreen> {
           ),
         ],
       ],
+    );
+  }
+
+  String _points(double points) =>
+      points == points.roundToDouble() ? '${points.toInt()}' : points.toStringAsFixed(1);
+
+  Widget _sectionRow(RemoteExamSection section, AlixTokens tokens) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(section.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            '${_points(section.verdicts.points)} / ${section.verdicts.total}',
+            style: TextStyle(color: tokens.dim),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            section.pass ? 'pass' : 'needs work',
+            style: TextStyle(color: section.pass ? tokens.good : tokens.again, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 
@@ -459,7 +513,15 @@ class _ExamScreenState extends State<ExamScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(g.verdict, style: TextStyle(fontWeight: FontWeight.w600, color: color)),
+          Row(
+            children: [
+              Text(g.verdict, style: TextStyle(fontWeight: FontWeight.w600, color: color)),
+              if (g.shape.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Text(g.shape, style: TextStyle(color: tokens.faint, fontSize: 11)),
+              ],
+            ],
+          ),
           const SizedBox(height: 4),
           Text(g.feedback, style: TextStyle(color: tokens.dim)),
         ],

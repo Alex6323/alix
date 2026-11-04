@@ -412,9 +412,6 @@ class _FakeReviewPort implements ReviewPort {
   ReviewCrumbModel? crumb(int nowMs) => null;
 
   @override
-  bool get deckHasExam => false;
-
-  @override
   ReviewStateModel grade(ReviewGrade grade) {
     grades.add(grade);
     return _state = gradeResult ?? _state;
@@ -432,12 +429,6 @@ class _FakeReviewPort implements ReviewPort {
   void applyCardNote({required String id, required List<String> notes}) {
     _state = applyCardNoteResult ?? _state;
   }
-
-  @override
-  void applyExamPassed(int nowMs) {}
-
-  @override
-  int applyRemediation({required String cardsText}) => 0;
 
   @override
   String mintTutorCard({required String front, required List<String> back}) =>
