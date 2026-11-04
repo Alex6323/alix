@@ -200,6 +200,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `DeckItemDto` and `MemberDto` gain `passed_at_ms`, `full_exam_result`, a
   `sections` tally and `exam_filter`. `StateDto.exam_due` is removed.
 
+- The deck row badge shows an examined deck's highest exam state with the
+  last full sitting's points (`15 / 18`, `passed · 15.5 / 18`, `mastered 🎉 ·
+  3d · 17 / 18`), plus how many sections need work or have new cards since
+  the exam.
+
 - The exam no longer asks a fixed number of questions per section: a first
   call lists each section's mental models from the source, a second asks at
   least one question about each, with no upper limit, and a reply that skips

@@ -676,23 +676,20 @@ pub fn deck_status(
     // grounding that's merely fully drilled stays "done".
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
     let mastered = matches!(state, DeckState::Finished) && store.deck_mastered(deck_id);
-    let badge = match state {
-        DeckState::Finished if mastered => {
-            let mut s = "mastered 🎉".to_string();
-            if let Some(at) = store.deck_mastered_at(deck_id) {
-                let ago = crate::time::humanize_ms(session::now_ms().saturating_sub(at));
-                s.push_str(&format!(" · {ago} ago"));
-            }
+    let exam = crate::exam_status::exam_row(deck, store);
+    let badge = match exam.badge(session::now_ms()) {
+        Some(mut badge) => {
             let to_drill = total - retired;
-            if to_drill > 0 {
-                s.push_str(&format!(" · {to_drill} to drill"));
+            if exam.mastered_at_ms.is_some() && to_drill > 0 {
+                badge.push_str(&format!(" · {to_drill} to drill"));
             }
-            s
+            badge
         }
-        DeckState::Finished if store.deck_passed(deck_id) => "passed ✓".to_string(),
-        DeckState::Finished => "done ✓".to_string(),
-        DeckState::ExamDue => "exam due".to_string(),
-        DeckState::NotStarted | DeckState::Started => String::new(),
+        None => match state {
+            DeckState::Finished => "done ✓".to_string(),
+            DeckState::ExamDue => "exam due".to_string(),
+            DeckState::NotStarted | DeckState::Started => String::new(),
+        },
     };
     let actually_locked = deck::is_locked(deck, decks_dir, store);
     let locked = enforce_locks && actually_locked;
@@ -772,7 +769,7 @@ pub fn deck_status(
         exam: if progress_error {
             crate::exam_status::ExamRow::default()
         } else {
-            crate::exam_status::exam_row(deck, store)
+            exam
         },
         is_trace: deck.is_trace(),
         examable: examable && !progress_error,
@@ -1290,7 +1287,7 @@ mod tests {
         let badge_path = dir.path().join("badge.md");
         write(
             &badge_path,
-            "## one\na\n<!-- id: card-one -->\n## two\nb\n<!-- id: card-two -->\n",
+            "---\nformat-version: 1\nid: deck-badge\nexam: source.txt\n---\n## one\na\n<!-- id: card-one -->\n## two\nb\n<!-- id: card-two -->\n",
         );
         let badge_deck = Deck::load(&badge_path).unwrap();
         let mut badge_store = Store::open(dir.path().join("badge.json")).unwrap();

@@ -1620,6 +1620,7 @@ fn decklistdto_wire_shape() {
                 mastered: false,
                 exam: crate::exam_status::ExamRow {
                     passed_at_ms: Some(1_700_000_000_000),
+                    mastered_at_ms: None,
                     full_exam_result: Some(crate::store::FullExamResult {
                         at_ms: 1_700_000_000_000,
                         pass: 5,

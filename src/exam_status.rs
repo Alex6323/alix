@@ -87,9 +87,47 @@ impl ExamFilter {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ExamRow {
     pub passed_at_ms: Option<u64>,
+    pub mastered_at_ms: Option<u64>,
     pub full_exam_result: Option<crate::store::FullExamResult>,
     pub tally: SectionTally,
     pub filter: ExamFilter,
+}
+
+impl ExamRow {
+    pub fn badge(&self, now_ms: u64) -> Option<String> {
+        let result = self.full_exam_result?;
+        let count = format!("{} / {}", points(result.pass, result.partial), result.total);
+        let mut badge = match (self.mastered_at_ms, self.passed_at_ms) {
+            (Some(at), _) => {
+                let ago = crate::time::humanize_ms(now_ms.saturating_sub(at));
+                format!("mastered 🎉 · {ago} · {count}")
+            }
+            (None, Some(_)) => format!("passed · {count}"),
+            (None, None) => count,
+        };
+        let tally = self.tally;
+        if tally.needs_work > 0 {
+            badge.push_str(&match tally.needs_work {
+                1 => " · 1 section needs work".to_string(),
+                n => format!(" · {n} sections need work"),
+            });
+        } else if tally.new_cards > 0 {
+            badge.push_str(&match tally.new_cards {
+                1 => " · 1 section has new cards since the exam".to_string(),
+                n => format!(" · {n} sections have new cards since the exam"),
+            });
+        }
+        Some(badge)
+    }
+}
+
+fn points(pass: u32, partial: u32) -> String {
+    let doubled = 2 * pass + partial;
+    if doubled.is_multiple_of(2) {
+        (doubled / 2).to_string()
+    } else {
+        format!("{}.5", doubled / 2)
+    }
 }
 
 pub fn exam_row(deck: &Deck, store: &Store) -> ExamRow {
@@ -100,6 +138,7 @@ pub fn exam_row(deck: &Deck, store: &Store) -> ExamRow {
     let status = exam_status(deck, store);
     ExamRow {
         passed_at_ms: store.deck_passed_at(deck_id),
+        mastered_at_ms: store.deck_mastered_at(deck_id),
         full_exam_result: store.full_exam_result(deck_id),
         tally: status.tally(),
         filter: status.filter(),
@@ -247,7 +286,91 @@ pub fn needs_work_card_ids(deck: &Deck, store: &Store) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::ExamRecord;
+    use crate::store::{ExamRecord, FullExamResult};
+
+    #[test]
+    fn the_badge_shows_the_highest_exam_state_with_the_last_full_count() {
+        const DAY_MS: u64 = 86_400_000;
+        let now = 10 * DAY_MS;
+        let full = |pass, partial, total| {
+            Some(FullExamResult {
+                at_ms: 1,
+                pass,
+                partial,
+                total,
+            })
+        };
+        let tally = |needs_work, new_cards| SectionTally {
+            needs_work,
+            new_cards,
+            ..SectionTally::default()
+        };
+        type Row = (&'static str, ExamRow, Option<&'static str>);
+        let rows: [Row; 7] = [
+            ("never examined", ExamRow::default(), None),
+            (
+                "examined",
+                ExamRow {
+                    full_exam_result: full(15, 0, 18),
+                    ..ExamRow::default()
+                },
+                Some("15 / 18"),
+            ),
+            (
+                "a partial is half a point",
+                ExamRow {
+                    full_exam_result: full(15, 1, 18),
+                    ..ExamRow::default()
+                },
+                Some("15.5 / 18"),
+            ),
+            (
+                "passed",
+                ExamRow {
+                    passed_at_ms: Some(1),
+                    full_exam_result: full(15, 0, 18),
+                    ..ExamRow::default()
+                },
+                Some("passed · 15 / 18"),
+            ),
+            (
+                "mastered wins over passed",
+                ExamRow {
+                    passed_at_ms: Some(1),
+                    mastered_at_ms: Some(now - 3 * DAY_MS),
+                    full_exam_result: full(17, 0, 18),
+                    ..ExamRow::default()
+                },
+                Some("mastered 🎉 · 3d · 17 / 18"),
+            ),
+            (
+                "needs work wins over new cards",
+                ExamRow {
+                    full_exam_result: full(15, 0, 18),
+                    tally: tally(2, 1),
+                    ..ExamRow::default()
+                },
+                Some("15 / 18 · 2 sections need work"),
+            ),
+            (
+                "new cards since the exam",
+                ExamRow {
+                    passed_at_ms: Some(1),
+                    full_exam_result: full(18, 0, 18),
+                    tally: tally(0, 1),
+                    ..ExamRow::default()
+                },
+                Some("passed · 18 / 18 · 1 section has new cards since the exam"),
+            ),
+        ];
+        for (label, row, expected) in rows {
+            assert_eq!(
+                expected.map(str::to_string),
+                row.badge(now),
+                "{label}: {row:?}"
+            );
+        }
+    }
 
     #[test]
     fn a_scope_selects_the_sections_it_names_and_reports_unknown_cards() {
