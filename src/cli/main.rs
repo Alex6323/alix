@@ -709,6 +709,12 @@ struct ResetArgs {
     #[arg(long, conflicts_with_all = ["card", "all"])]
     orphans: bool,
 
+    /// Clear only exam state (each card's exam result, the deck's passed and
+    /// mastered instants, its last full count); drilling progress stays.
+    /// Lists the decks whose exams this locks before asking.
+    #[arg(long, conflicts_with_all = ["card", "orphans"])]
+    exam: bool,
+
     /// Skip the confirmation prompt (for scripts / test loops).
     #[arg(short = 'y', long)]
     yes: bool,

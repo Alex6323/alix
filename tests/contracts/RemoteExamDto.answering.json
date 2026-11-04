@@ -4,9 +4,10 @@
   "deck": "rust.md",
   "elapsed": null,
   "error": null,
+  "full": true,
   "gaps": [],
   "grades": [],
-  "passed": null,
+  "mastered": false,
   "phase": "answering",
   "questions": [
     "Why does Rust use ownership?",
@@ -36,6 +37,9 @@
       }
     ]
   ],
+  "sections": [],
   "strictness": "balanced",
-  "thinking": false
+  "thinking": false,
+  "unknown_cards": [],
+  "verdicts": null
 }

@@ -1341,7 +1341,10 @@ fn a_dependent_member_reads_its_prerequisites_active_owner_projection() {
         &crate::workspace::store_path(&ws),
     )
     .unwrap();
-    owner.set_deck_mastered("deck-base", now_ms());
+    owner.record_full_marks(
+        &crate::deck::Deck::load(ws.join("decks/base.md")).unwrap(),
+        now_ms(),
+    );
 
     let recent = RecentDecks::load(dir.path().join("recent.json"));
     let dto = deck_catalog(
@@ -2474,37 +2477,6 @@ fn poll_ask_draft_surfaces_a_parsed_card() {
         !r.ask_dto(None, None).can_distill,
         "a drafted card crosses the same transcript watermark as a note"
     );
-}
-
-#[test]
-fn exam_due_reports_the_decks_name_not_its_routing_id() {
-    let dir = tempfile::tempdir().unwrap();
-    let deck_path = dir.path().join("d.md");
-    // The deck id deliberately differs from the filename: `r.files.paths` is
-    // keyed by it, but the wire value must stay the resolvable deck name.
-    std::fs::write(
-        &deck_path,
-        "---\nformat-version: 1\nid: \"deck-examduedeck\"\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
-    )
-    .unwrap();
-    let deck = crate::deck::Deck::load(&deck_path).unwrap();
-    let card = deck.cards[0].clone();
-    assert_eq!("deck-examduedeck", card.deck_id.as_ref());
-
-    let mut store = Store::open(dir.path().join("p.json")).unwrap();
-    let id = card.id().unwrap();
-    // A year-out review: graduated and long past due, so the deck reads as
-    // exam-due rather than merely started.
-    store.get_or_insert(&id).recall = Some(crate::store::FsrsState {
-        state: 2,
-        scheduled_days: 100_000,
-        ..Default::default()
-    });
-
-    let r = reviewing_at(deck_path, vec![card], &mut store, Depth::Recall);
-    let dto = review_state(Some(&r), &store, None, 0);
-    assert_eq!("done", dto.phase, "expected a finished session: {dto:?}");
-    assert_eq!(vec!["d.md".to_string()], dto.exam_due);
 }
 
 fn trace_deck(dir: &Path) -> crate::trace::Trace {

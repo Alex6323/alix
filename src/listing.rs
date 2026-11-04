@@ -499,12 +499,16 @@ fn deck_summary(
     };
     let (mastered, exam_due, ready, locked) = match (deck, store) {
         (Some(d), Some(s)) => {
-            let mastered = s.deck_mastered(d.deck_token.as_deref().unwrap_or_default());
+            let deck_id = d.deck_token.as_deref().unwrap_or_default();
             let state = d.state(s);
             (
-                mastered,
+                s.deck_mastered(deck_id),
                 state == DeckState::ExamDue,
-                deadline_ready(mastered, state == DeckState::Finished, has_exam),
+                deadline_ready(
+                    s.deck_passed(deck_id),
+                    state == DeckState::Finished,
+                    has_exam,
+                ),
                 deck::is_locked_with(d, Some(decks_dir), s, table),
             )
         }
@@ -592,8 +596,8 @@ fn deck_due(
         )
 }
 
-pub fn deadline_ready(mastered: bool, finished: bool, has_exam: bool) -> bool {
-    mastered || (finished && !has_exam)
+pub fn deadline_ready(passed: bool, finished: bool, has_exam: bool) -> bool {
+    passed || (finished && !has_exam)
 }
 
 pub struct WorkspaceReadiness {
@@ -604,7 +608,7 @@ pub struct WorkspaceReadiness {
 pub fn workspace_readiness(statuses: &[DeckStatus]) -> WorkspaceReadiness {
     let ready = statuses
         .iter()
-        .filter(|s| deadline_ready(s.mastered, s.state == DeckState::Finished, s.has_exam))
+        .filter(|s| deadline_ready(s.passed, s.state == DeckState::Finished, s.has_exam))
         .count();
     WorkspaceReadiness {
         ready,
@@ -622,7 +626,9 @@ pub struct DeckStatus {
     pub can_recognize: bool,
     pub reviewable_recall: bool,
     pub reviewable_reconstruct: bool,
+    pub passed: bool,
     pub mastered: bool,
+    pub exam: crate::exam_status::ExamRow,
     pub is_trace: bool,
     pub examable: bool,
     pub has_exam: bool,
@@ -670,22 +676,20 @@ pub fn deck_status(
     // grounding that's merely fully drilled stays "done".
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
     let mastered = matches!(state, DeckState::Finished) && store.deck_mastered(deck_id);
-    let badge = match state {
-        DeckState::Finished if mastered => {
-            let mut s = "mastered 🎉".to_string();
-            if let Some(at) = store.deck_mastered_at(deck_id) {
-                let ago = crate::time::humanize_ms(session::now_ms().saturating_sub(at));
-                s.push_str(&format!(" · {ago} ago"));
-            }
+    let exam = crate::exam_status::exam_row(deck, store);
+    let badge = match exam.badge(session::now_ms()) {
+        Some(mut badge) => {
             let to_drill = total - retired;
-            if to_drill > 0 {
-                s.push_str(&format!(" · {to_drill} to drill"));
+            if exam.mastered_at_ms.is_some() && to_drill > 0 {
+                badge.push_str(&format!(" · {to_drill} to drill"));
             }
-            s
+            badge
         }
-        DeckState::Finished => "done ✓".to_string(),
-        DeckState::ExamDue => "exam due".to_string(),
-        DeckState::NotStarted | DeckState::Started => String::new(),
+        None => match state {
+            DeckState::Finished => "done ✓".to_string(),
+            DeckState::ExamDue => "exam due".to_string(),
+            DeckState::NotStarted | DeckState::Started => String::new(),
+        },
     };
     let actually_locked = deck::is_locked(deck, decks_dir, store);
     let locked = enforce_locks && actually_locked;
@@ -760,7 +764,13 @@ pub fn deck_status(
         can_recognize,
         reviewable_recall: reviewable_recall && !progress_error,
         reviewable_reconstruct: reviewable_reconstruct && !progress_error,
+        passed: store.deck_passed(deck_id) && !progress_error,
         mastered: mastered && !progress_error,
+        exam: if progress_error {
+            crate::exam_status::ExamRow::default()
+        } else {
+            exam
+        },
         is_trace: deck.is_trace(),
         examable: examable && !progress_error,
         has_exam,
@@ -1099,7 +1109,7 @@ mod tests {
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::write(
             progress.join("deck-a.json"),
-            r#"{"version":1,"deck_id":"deck-a","subject":"a.md","revision":1,"cards":{},"deck":{"mastered_at_ms":1}}"#,
+            r#"{"version":1,"deck_id":"deck-a","subject":"a.md","revision":1,"cards":{},"deck":{"passed_at_ms":1,"mastered_at_ms":1}}"#,
         )
         .unwrap();
         std::fs::write(progress.join("deck-b.json"), "{ not json").unwrap();
@@ -1277,11 +1287,11 @@ mod tests {
         let badge_path = dir.path().join("badge.md");
         write(
             &badge_path,
-            "## one\na\n<!-- id: card-one -->\n## two\nb\n<!-- id: card-two -->\n",
+            "---\nformat-version: 1\nid: deck-badge\nexam: source.txt\n---\n## one\na\n<!-- id: card-one -->\n## two\nb\n<!-- id: card-two -->\n",
         );
         let badge_deck = Deck::load(&badge_path).unwrap();
         let mut badge_store = Store::open(dir.path().join("badge.json")).unwrap();
-        badge_store.set_deck_mastered(badge_deck.deck_token.as_deref().unwrap(), now);
+        badge_store.record_full_marks(&badge_deck, now);
         badge_store.get_or_insert("card-one").recall = Some(crate::store::FsrsState {
             state: 2,
             scheduled_days: cap,
@@ -1767,7 +1777,7 @@ mod tests {
 
         let mut store = crate::state::open_stores(&paths, &store_path).unwrap();
         let base_deck = Deck::load(ws.join("decks/base.md")).unwrap();
-        store.set_deck_mastered(base_deck.deck_token.as_deref().unwrap(), T0 + 1_000);
+        store.record_full_marks(&base_deck, T0 + 1_000);
         store.save().unwrap();
 
         let rows = list_members(root, &ws, &review, T0 + 1_000).rows;
@@ -2715,7 +2725,7 @@ mod tests {
 
     #[test]
     fn workspace_readiness_keeps_finished_polarity_independent_of_mastery_and_exam() {
-        let status = |state, mastered, has_exam| DeckStatus {
+        let status = |state, passed, has_exam| DeckStatus {
             state,
             badge: String::new(),
             locked: false,
@@ -2724,7 +2734,9 @@ mod tests {
             can_recognize: false,
             reviewable_recall: false,
             reviewable_reconstruct: false,
-            mastered,
+            passed,
+            mastered: false,
+            exam: Default::default(),
             is_trace: false,
             examable: false,
             has_exam,
@@ -2752,11 +2764,11 @@ mod tests {
                 true,
                 false,
             ),
-            ("mastered with exam", DeckState::Finished, true, true, true),
+            ("passed with exam", DeckState::Finished, true, true, true),
         ];
 
-        for (label, state, mastered, has_exam, expected) in cases {
-            let readiness = workspace_readiness(&[status(state, mastered, has_exam)]);
+        for (label, state, passed, has_exam, expected) in cases {
+            let readiness = workspace_readiness(&[status(state, passed, has_exam)]);
             assert_eq!(
                 (usize::from(expected), 1),
                 (readiness.ready, readiness.total),

@@ -5,6 +5,7 @@
   "deck": "rust.md",
   "elapsed": null,
   "error": null,
+  "full": true,
   "gaps": [],
   "grades": [
     {
@@ -23,6 +24,7 @@
       ],
       "missed": [],
       "missed_units": [],
+      "model": "scope ends drop values",
       "points": [
         "memory safety without a GC"
       ],
@@ -64,19 +66,40 @@
           ]
         }
       ],
+      "section": 0,
+      "shape": "instance",
       "verdict": "PASS"
     }
   ],
+  "mastered": true,
   "on_last": true,
-  "passed": true,
   "phase": "results",
   "question": null,
   "question_units": null,
   "remediated_count": null,
+  "sections": [
+    {
+      "cards": [
+        "card-0123456789abcdefghjkmnpqrs"
+      ],
+      "label": "Ownership",
+      "pass": true,
+      "verdicts": {
+        "partial": 0,
+        "pass": 1,
+        "total": 1
+      }
+    }
+  ],
   "strictness": "balanced",
   "thinking": false,
   "total": 1,
   "unlocks": [
     "next.md"
-  ]
+  ],
+  "verdicts": {
+    "partial": 0,
+    "pass": 1,
+    "total": 1
+  }
 }

@@ -388,10 +388,6 @@ mod tests {
         );
         write_deck(root.join("fresh.md"), "## q\na\n");
 
-        let base_deck_id = alix::deck::Deck::load(root.join("base.md"))
-            .unwrap()
-            .deck_token
-            .unwrap();
         let base_id = alix::deck::Deck::load(root.join("base.md")).unwrap().cards[0]
             .id()
             .expect("the fixture stamps its own id");
@@ -410,11 +406,22 @@ mod tests {
         assert!(!fresh.has_exam);
 
         let mut store = alix::state::open_store(&root.join("base.md"), &store_path).unwrap();
-        store.set_deck_mastered(&base_deck_id, T0 + 1_000);
+        let base_deck = alix::deck::Deck::load(root.join("base.md")).unwrap();
+        let full_marks = alix::store::SittingRecord {
+            sections: vec![alix::store::SectionRecord {
+                card_ids: vec![base_id.clone()],
+                pass: true,
+            }],
+            full: true,
+            pass: 1,
+            partial: 0,
+            total: 1,
+        };
+        store.record_exam_result(&base_deck, &full_marks, T0 + 1_000);
         store.save().unwrap();
         let rows = list_root(root.to_string_lossy().into_owned(), Some(T0 + 1_000), false).entries;
         let base = rows.iter().find(|r| r.title == "base").unwrap();
-        assert!(base.mastered, "mastered once the exam is recorded passed");
+        assert!(base.mastered, "mastered once a full sitting scores every point");
         assert!(!base.exam_due, "no longer awaiting the exam");
     }
 

@@ -115,6 +115,15 @@ pub struct CardState {
     // Capped to HISTORY_CAP; oldest entries drop first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<Review>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exam_result: Option<ExamRecord>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ExamRecord {
+    pub at_ms: u64,
+    pub pass: bool,
 }
 
 impl CardState {
@@ -133,6 +142,7 @@ impl CardState {
             total_passes: 0,
             streak: 0,
             history: Vec::new(),
+            exam_result: None,
         }
     }
 
@@ -199,9 +209,11 @@ impl CardState {
 #[serde(deny_unknown_fields)]
 pub struct DeckProgress {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passed_at_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mastered_at_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exam_failed_at_ms: Option<u64>,
+    pub full_exam_result: Option<FullExamResult>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_launch: Option<Launch>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -218,6 +230,31 @@ impl DeckProgress {
     pub(crate) fn is_empty(&self) -> bool {
         *self == DeckProgress::default()
     }
+}
+
+// Raw verdict counts; points are derived as pass + partial / 2.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct FullExamResult {
+    pub at_ms: u64,
+    pub pass: u32,
+    pub partial: u32,
+    pub total: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SittingRecord {
+    pub sections: Vec<SectionRecord>,
+    pub full: bool,
+    pub pass: u32,
+    pub partial: u32,
+    pub total: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SectionRecord {
+    pub card_ids: Vec<String>,
+    pub pass: bool,
 }
 
 // 21 days: the FSRS-community convention for a "mature" card.
@@ -1206,6 +1243,14 @@ impl Store {
         Ok(())
     }
 
+    pub fn deck_passed(&self, deck_id: &str) -> bool {
+        self.deck_passed_at(deck_id).is_some()
+    }
+
+    pub fn deck_passed_at(&self, deck_id: &str) -> Option<u64> {
+        self.decks.get(deck_id).and_then(|d| d.passed_at_ms)
+    }
+
     pub fn deck_mastered(&self, deck_id: &str) -> bool {
         self.deck_mastered_at(deck_id).is_some()
     }
@@ -1214,13 +1259,111 @@ impl Store {
         self.decks.get(deck_id).and_then(|d| d.mastered_at_ms)
     }
 
-    pub fn set_deck_mastered(&mut self, deck_id: &str, now_ms: u64) {
-        let entry = self.decks.entry(deck_id.to_string()).or_default();
-        entry.mastered_at_ms = Some(now_ms);
-        entry.exam_failed_at_ms = None;
+    pub fn full_exam_result(&self, deck_id: &str) -> Option<FullExamResult> {
+        self.decks.get(deck_id).and_then(|d| d.full_exam_result)
     }
 
-    pub fn clear_deck_mastered(&mut self, deck_id: &str) -> bool {
+    pub fn set_deck_passed(&mut self, deck_id: &str, now_ms: u64) {
+        let entry = self.decks.entry(deck_id.to_string()).or_default();
+        entry.passed_at_ms.get_or_insert(now_ms);
+    }
+
+    pub fn record_exam_result(&mut self, deck: &Deck, record: &SittingRecord, now_ms: u64) -> bool {
+        let deck_id = deck.deck_token.clone().unwrap_or_default();
+        let sections = crate::exam_status::exam_sections(deck);
+        self.record_sitting(&deck_id, &sections, record, now_ms)
+    }
+
+    /// Returns whether this sitting set the deck's `passed_at_ms`.
+    pub fn record_sitting(
+        &mut self,
+        deck_id: &str,
+        deck_sections: &[crate::exam_status::ExamSection],
+        record: &SittingRecord,
+        now_ms: u64,
+    ) -> bool {
+        for section in &record.sections {
+            let result = ExamRecord {
+                at_ms: now_ms,
+                pass: section.pass,
+            };
+            for id in &section.card_ids {
+                self.get_or_insert(id).exam_result = Some(result);
+            }
+        }
+        if record.full {
+            self.decks
+                .entry(deck_id.to_string())
+                .or_default()
+                .full_exam_result = Some(FullExamResult {
+                at_ms: now_ms,
+                pass: record.pass,
+                partial: record.partial,
+                total: record.total,
+            });
+        }
+        let newly_passed = !self.deck_passed(deck_id)
+            && crate::exam_status::status_of(deck_sections, self).all_passed();
+        if newly_passed {
+            self.set_deck_passed(deck_id, now_ms);
+        }
+        if record.full && record.total > 0 && record.pass == record.total {
+            self.decks
+                .entry(deck_id.to_string())
+                .or_default()
+                .mastered_at_ms
+                .get_or_insert(now_ms);
+        }
+        newly_passed
+    }
+
+    #[cfg(test)]
+    pub(crate) fn record_full_marks(&mut self, deck: &Deck, now_ms: u64) {
+        let sections: Vec<SectionRecord> = crate::exam_status::exam_sections(deck)
+            .into_iter()
+            .map(|section| SectionRecord {
+                card_ids: section.card_ids,
+                pass: true,
+            })
+            .collect();
+        let total = sections.len() as u32;
+        let record = SittingRecord {
+            sections,
+            full: true,
+            pass: total,
+            partial: 0,
+            total,
+        };
+        self.record_exam_result(deck, &record, now_ms);
+    }
+
+    pub fn ever_examined(&self, deck: &Deck) -> bool {
+        let deck_id = deck.deck_token.as_deref().unwrap_or_default();
+        self.full_exam_result(deck_id).is_some()
+            || deck.cards.iter().filter_map(|card| card.id()).any(|id| {
+                self.get(&id)
+                    .is_some_and(|state| state.exam_result.is_some())
+            })
+    }
+
+    pub fn clear_deck_exam(&mut self, deck: &Deck) {
+        for id in deck.cards.iter().filter_map(|card| card.id()) {
+            if let Some(state) = self.cards.get_mut(&id) {
+                state.exam_result = None;
+            }
+        }
+        let deck_id = deck.deck_token.as_deref().unwrap_or_default();
+        if let Some(progress) = self.decks.get_mut(deck_id) {
+            progress.passed_at_ms = None;
+            progress.mastered_at_ms = None;
+            progress.full_exam_result = None;
+            if progress.is_empty() {
+                self.decks.remove(deck_id);
+            }
+        }
+    }
+
+    pub fn remove_deck_progress(&mut self, deck_id: &str) -> bool {
         self.decks.remove(deck_id).is_some()
     }
 
@@ -1958,9 +2101,9 @@ mod tests {
 
         store.get_or_insert("card-doom").introduced_ms = Some(0);
         store.get_or_insert("card-doom-ba1b2c3").introduced_ms = Some(0);
-        store.set_deck_mastered("doomed", 1);
+        store.set_deck_passed("doomed", 1);
         store.get_or_insert("keep").introduced_ms = Some(0);
-        store.set_deck_mastered("keep", 1);
+        store.set_deck_passed("keep", 1);
 
         let tokens: HashSet<String> = ["card-doom".to_string()].into_iter().collect();
         let wiped = store.wipe_deck(&tokens, "doomed");
@@ -1968,9 +2111,9 @@ mod tests {
         assert_eq!(2, wiped, "the base and the span schedule both count");
         assert!(store.get("card-doom").is_none());
         assert!(store.get("card-doom-ba1b2c3").is_none());
-        assert!(!store.deck_mastered("doomed"));
+        assert!(!store.deck_passed("doomed"));
         assert!(store.get("keep").is_some());
-        assert!(store.deck_mastered("keep"));
+        assert!(store.deck_passed("keep"));
     }
 
     #[test]
@@ -2283,7 +2426,7 @@ mod tests {
         let path = dir.path().join("progress/deck1.json");
         let mut store = Store::open_deck(&path, "deck1", "old.md").unwrap();
         store.get_or_insert("card1").introduced_ms = Some(1);
-        store.set_deck_mastered("deck1", 2);
+        store.set_deck_passed("deck1", 2);
         store.save().unwrap();
 
         let text = std::fs::read_to_string(&path).unwrap();
@@ -2293,7 +2436,7 @@ mod tests {
 
         let reopened = Store::open_deck(&path, "deck1", "old.md").unwrap();
         assert!(reopened.get("card1").is_some());
-        assert!(reopened.deck_mastered("deck1"));
+        assert!(reopened.deck_passed("deck1"));
     }
 
     #[test]
@@ -2301,7 +2444,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress/deck1.json");
         let mut store = Store::open_deck(&path, "deck1", "old.md").unwrap();
-        store.set_deck_mastered("deck1", 2);
+        store.set_deck_passed("deck1", 2);
         store.get_or_insert("card-one").introduced_ms = Some(1);
         store.save().unwrap();
 
@@ -2309,7 +2452,7 @@ mod tests {
         // (same document, same deck_id) still finds it: the subject argument
         // no longer rebinds anything.
         let renamed = Store::open_deck(&path, "deck1", "new.md").unwrap();
-        assert!(renamed.deck_mastered("deck1"));
+        assert!(renamed.deck_passed("deck1"));
         assert!(renamed.get("card-one").is_some());
     }
 
@@ -2427,33 +2570,33 @@ mod tests {
     }
 
     #[test]
-    fn deck_mastered_roundtrips_and_clears() {
+    fn deck_passed_roundtrips_and_clears() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("deck1.json");
 
         let mut store = Store::open(&path).unwrap();
-        assert!(!store.deck_mastered("deck1"));
-        assert_eq!(None, store.deck_mastered_at("deck1"));
-        store.set_deck_mastered("deck1", 1234);
-        assert!(store.deck_mastered("deck1"));
-        assert_eq!(Some(1234), store.deck_mastered_at("deck1"));
+        assert!(!store.deck_passed("deck1"));
+        assert_eq!(None, store.deck_passed_at("deck1"));
+        store.set_deck_passed("deck1", 1234);
+        assert!(store.deck_passed("deck1"));
+        assert_eq!(Some(1234), store.deck_passed_at("deck1"));
         store.save().unwrap();
 
         let mut reloaded = Store::open(&path).unwrap();
-        assert!(reloaded.deck_mastered("deck1"));
-        assert_eq!(Some(1234), reloaded.deck_mastered_at("deck1"));
-        assert!(reloaded.clear_deck_mastered("deck1"));
-        assert!(!reloaded.deck_mastered("deck1"));
-        assert!(!reloaded.clear_deck_mastered("deck1"));
+        assert!(reloaded.deck_passed("deck1"));
+        assert_eq!(Some(1234), reloaded.deck_passed_at("deck1"));
+        assert!(reloaded.remove_deck_progress("deck1"));
+        assert!(!reloaded.deck_passed("deck1"));
+        assert!(!reloaded.remove_deck_progress("deck1"));
     }
 
     #[test]
-    fn clear_also_drops_deck_mastered() {
+    fn clear_also_drops_deck_passed() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_deck_mastered("a", 1);
+        store.set_deck_passed("a", 1);
         store.clear();
-        assert!(!store.deck_mastered("a"));
+        assert!(!store.deck_passed("a"));
     }
 
     #[test]
@@ -3656,5 +3799,243 @@ mod tests {
         let mut reviewed = CardState::new();
         reviewed.total_reviews = 1;
         assert!(reviewed.engaged());
+    }
+
+    #[test]
+    fn a_progress_document_with_exam_failed_at_ms_fails_to_parse() {
+        let parsed = serde_json::from_str::<DeckProgress>(r#"{"exam_failed_at_ms":1}"#);
+        assert!(parsed.is_err(), "{parsed:?}");
+    }
+
+    #[test]
+    fn an_exam_record_round_trips_and_a_later_result_overwrites_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deck1.json");
+        let mut store = Store::open(&path).unwrap();
+        store.get_or_insert("card-a").exam_result = Some(ExamRecord {
+            at_ms: 1,
+            pass: true,
+        });
+        store.save().unwrap();
+        let mut reloaded = Store::open(&path).unwrap();
+        assert_eq!(
+            Some(ExamRecord {
+                at_ms: 1,
+                pass: true
+            }),
+            reloaded.get("card-a").unwrap().exam_result,
+            "round trip"
+        );
+        reloaded.get_or_insert("card-a").exam_result = Some(ExamRecord {
+            at_ms: 2,
+            pass: false,
+        });
+        assert_eq!(
+            Some(ExamRecord {
+                at_ms: 2,
+                pass: false
+            }),
+            reloaded.get("card-a").unwrap().exam_result,
+            "a later result overwrites"
+        );
+    }
+
+    #[test]
+    fn a_card_with_only_an_exam_result_is_not_engaged() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.get_or_insert("card-a").exam_result = Some(ExamRecord {
+            at_ms: 1,
+            pass: true,
+        });
+        assert!(!store.get("card-a").unwrap().engaged());
+        assert!(store.progress("card-a").is_none());
+    }
+
+    const TWO_SECTION_DECK: &str = "---\nformat-version: 1\nid: deck-rec\nexam: source.txt\n---\n\
+        # A\n\n## a1\nx\n<!-- id: card-a1 -->\n\n## a2\nx\n<!-- id: card-a2 -->\n\n\
+        # B\n\n## b1\nx\n<!-- id: card-b1 -->\n";
+
+    fn record(deck: &Deck, examined: &[Option<bool>], counts: (u32, u32, u32)) -> SittingRecord {
+        let sections = crate::exam_status::exam_sections(deck);
+        SittingRecord {
+            sections: sections
+                .iter()
+                .zip(examined)
+                .filter_map(|(section, pass)| {
+                    pass.map(|pass| SectionRecord {
+                        card_ids: section.card_ids.clone(),
+                        pass,
+                    })
+                })
+                .collect(),
+            full: examined.iter().all(Option::is_some),
+            pass: counts.0,
+            partial: counts.1,
+            total: counts.2,
+        }
+    }
+
+    #[test]
+    fn recording_follows_the_four_steps() {
+        type Sitting = (&'static [Option<bool>], (u32, u32, u32));
+        struct Row {
+            label: &'static str,
+            sittings: &'static [Sitting],
+            cards: [Option<bool>; 3],
+            full: Option<(u64, u32, u32, u32)>,
+            passed_at: Option<u64>,
+            mastered_at: Option<u64>,
+            newly_passed: [bool; 2],
+        }
+        let rows = [
+            Row {
+                label: "full pass at 100%",
+                sittings: &[(&[Some(true), Some(true)], (3, 0, 3))],
+                cards: [Some(true), Some(true), Some(true)],
+                full: Some((1, 3, 0, 3)),
+                passed_at: Some(1),
+                mastered_at: Some(1),
+                newly_passed: [true, false],
+            },
+            Row {
+                label: "full pass below 100%",
+                sittings: &[(&[Some(true), Some(true)], (2, 1, 3))],
+                cards: [Some(true), Some(true), Some(true)],
+                full: Some((1, 2, 1, 3)),
+                passed_at: Some(1),
+                mastered_at: None,
+                newly_passed: [true, false],
+            },
+            Row {
+                label: "filtered pass completing every section",
+                sittings: &[
+                    (&[Some(true), Some(false)], (2, 0, 3)),
+                    (&[None, Some(true)], (1, 0, 1)),
+                ],
+                cards: [Some(true), Some(true), Some(true)],
+                full: Some((1, 2, 0, 3)),
+                passed_at: Some(2),
+                mastered_at: None,
+                newly_passed: [false, true],
+            },
+            Row {
+                label: "fail after pass",
+                sittings: &[
+                    (&[Some(true), Some(true)], (3, 0, 3)),
+                    (&[Some(false), Some(false)], (0, 0, 3)),
+                ],
+                cards: [Some(false), Some(false), Some(false)],
+                full: Some((2, 0, 0, 3)),
+                passed_at: Some(1),
+                mastered_at: Some(1),
+                newly_passed: [true, false],
+            },
+            Row {
+                label: "a re-pass keeps the first instants",
+                sittings: &[
+                    (&[Some(true), Some(true)], (3, 0, 3)),
+                    (&[Some(true), Some(true)], (3, 0, 3)),
+                ],
+                cards: [Some(true), Some(true), Some(true)],
+                full: Some((2, 3, 0, 3)),
+                passed_at: Some(1),
+                mastered_at: Some(1),
+                newly_passed: [true, false],
+            },
+            Row {
+                label: "a filtered sitting never writes the count",
+                sittings: &[(&[None, Some(true)], (1, 0, 1))],
+                cards: [None, None, Some(true)],
+                full: None,
+                passed_at: None,
+                mastered_at: None,
+                newly_passed: [false, false],
+            },
+        ];
+        for row in rows {
+            let dir = tempfile::tempdir().unwrap();
+            let deck_path = dir.path().join("rec.md");
+            std::fs::write(&deck_path, TWO_SECTION_DECK).unwrap();
+            let deck = Deck::load(&deck_path).unwrap();
+            let mut store = Store::open(dir.path().join("p.json")).unwrap();
+            let mut newly = [false; 2];
+            for (at, (examined, counts)) in row.sittings.iter().enumerate() {
+                newly[at] = store.record_exam_result(
+                    &deck,
+                    &record(&deck, examined, *counts),
+                    at as u64 + 1,
+                );
+            }
+            let label = row.label;
+            let cards: Vec<Option<bool>> = ["card-a1", "card-a2", "card-b1"]
+                .iter()
+                .map(|id| store.get(id).and_then(|s| s.exam_result).map(|r| r.pass))
+                .collect();
+            assert_eq!(row.cards.to_vec(), cards, "{label}: card records");
+            assert_eq!(
+                row.full,
+                store
+                    .full_exam_result("deck-rec")
+                    .map(|f| (f.at_ms, f.pass, f.partial, f.total)),
+                "{label}: full_exam_result"
+            );
+            assert_eq!(
+                row.passed_at,
+                store.deck_passed_at("deck-rec"),
+                "{label}: passed_at_ms"
+            );
+            assert_eq!(
+                row.mastered_at,
+                store.deck_mastered_at("deck-rec"),
+                "{label}: mastered_at_ms"
+            );
+            assert_eq!(row.newly_passed, newly, "{label}: newly passed per sitting");
+        }
+    }
+
+    #[test]
+    fn clearing_a_decks_exam_keeps_drilling_and_the_rest_of_its_progress() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("rec.md");
+        std::fs::write(&deck_path, TWO_SECTION_DECK).unwrap();
+        let deck = Deck::load(&deck_path).unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        store.record_exam_result(
+            &deck,
+            &record(&deck, &[Some(true), Some(true)], (3, 0, 3)),
+            1,
+        );
+        store.get_or_insert("card-a1").total_reviews = 4;
+        store.set_last_launch("deck-rec", Launch::Recall);
+        assert!(store.ever_examined(&deck), "examined before the clear");
+
+        store.clear_deck_exam(&deck);
+
+        assert!(!store.ever_examined(&deck), "no exam state after the clear");
+        assert_eq!(None, store.deck_passed_at("deck-rec"));
+        assert_eq!(None, store.deck_mastered_at("deck-rec"));
+        assert_eq!(None, store.full_exam_result("deck-rec"));
+        assert_eq!(
+            4,
+            store.get("card-a1").unwrap().total_reviews,
+            "drilling kept"
+        );
+        assert_eq!(
+            Some(Launch::Recall),
+            store.last_launch("deck-rec"),
+            "the deck entry's other fields kept"
+        );
+
+        let count_only = SittingRecord {
+            full: true,
+            total: 3,
+            ..Default::default()
+        };
+        store.record_exam_result(&deck, &count_only, 2);
+        assert!(
+            store.ever_examined(&deck),
+            "a stored full count alone means the deck has sat its exam"
+        );
     }
 }

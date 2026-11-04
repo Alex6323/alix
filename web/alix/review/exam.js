@@ -57,9 +57,9 @@ export function createExam({
     return poll !== null;
   }
 
-  function start(deck) {
+  function start(deck, needsWorkOnly = false) {
     rememberLaunch(deck);
-    return api("/api/exam/start", post({ deck })).then((next) => {
+    return api("/api/exam/start", post({ deck, needs_work_only: needsWorkOnly })).then((next) => {
       if (next && next.phase) {
         data = next;
         rerender();
@@ -134,6 +134,11 @@ export function createExam({
 
   function elapsedText(current) {
     return workingText(current.elapsed || 0);
+  }
+
+  function countText(verdicts) {
+    const points = verdicts.pass + verdicts.partial / 2;
+    return `${Number.isInteger(points) ? points : points.toFixed(1)} / ${verdicts.total}`;
   }
 
   function navigate(goto) {
@@ -218,18 +223,33 @@ export function createExam({
     }
 
     if (current.phase === "results") {
-      wrap.appendChild(el(
-        "div",
-        current.passed ? "exam-pass" : "exam-fail",
-        current.passed ? "PASSED: deck mastered ✓" : "FAILED",
-      ));
-      if (current.passed && current.unlocks.length) {
+      const summary = el("div", "exam-summary");
+      summary.appendChild(el("div", "exam-score", countText(current.verdicts)));
+      if (current.mastered) summary.appendChild(el("div", "exam-mastered", "mastered"));
+      wrap.appendChild(summary);
+      const sections = el("div", "exam-sections");
+      current.sections.forEach((section) => {
+        const sectionEl = el("div", "exam-section");
+        sectionEl.appendChild(el("span", "exam-section-label", section.label));
+        sectionEl.appendChild(el("span", "exam-section-count", countText(section.verdicts)));
+        sectionEl.appendChild(el(
+          "span",
+          "exam-section-state " + (section.pass ? "pass" : "needs-work"),
+          section.pass ? "✓ pass" : "needs work",
+        ));
+        sections.appendChild(sectionEl);
+      });
+      wrap.appendChild(sections);
+      if (current.unlocks && current.unlocks.length) {
         wrap.appendChild(el("div", "exam-unlocks", `Unlocks: ${current.unlocks.join(", ")}`));
       }
       current.grades.forEach((grade, index) => {
         const question = el("div", "exam-result");
         const asked = el("div", "exam-rq");
-        asked.appendChild(el("span", "exam-qn", `Q${index + 1}.`));
+        const questionMeta = el("div", "exam-question-meta");
+        questionMeta.appendChild(el("span", "exam-qn", `Q${index + 1}.`));
+        questionMeta.appendChild(el("span", "exam-shape", grade.shape));
+        asked.appendChild(questionMeta);
         asked.appendChild(appendExamText(el("div", "exam-rq-text"), grade.question_units, grade.question));
         question.appendChild(asked);
         const verdict = el("div", "exam-verdict");
@@ -257,7 +277,7 @@ export function createExam({
         wrap.appendChild(question);
       });
       stage.appendChild(wrap);
-      if (!current.passed && current.can_remediate) {
+      if (current.can_remediate) {
         chip(
           current.error ? "Try remediation again" : "Add remediation cards",
           "primary",

@@ -105,6 +105,14 @@ fn per_section_questions_are_not_answerable_from_an_existing_card() {
                 verdicts.answerable.len(),
                 "one verdict per question"
             );
+            for (question, _) in asked.iter().zip(&verdicts.answerable).filter(|(_, v)| **v) {
+                println!(
+                    "probe: answerable [{:?} / {}] {}",
+                    question.shape,
+                    question.model,
+                    question.prompt.replace('\n', " ")
+                );
+            }
             let section_yes = verdicts.answerable.iter().filter(|v| **v).count();
             println!(
                 "probe: deck={} section={:?} questions={} answerable_from_a_card={section_yes}",

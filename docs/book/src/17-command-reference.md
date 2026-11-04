@@ -79,8 +79,13 @@ relevant documents in memory without creating an authoritative combined file.
   deep (Recognize | Recall | Reconstruct), each carrying that depth's state
   and due time; a retired card reads `resting` instead.
 - `alix reset <target>`: clear progress (`--card`, `--all`; `-y` to
-  skip the prompt). On a workspace it also clears the mastered flags and
+  skip the prompt). On a workspace it also clears each deck's exam state and
   personal-card schedules in the workspace's own store, after one confirmation.
+- `alix reset <target> --exam` (or `--exam --all`): clear only exam state, per
+  deck: each card's exam result, the deck's passed and mastered instants, and
+  its last full count. Drilling progress stays. Before asking, it names the
+  decks whose exams this will lock: dependents in the same folder or workspace
+  that have never sat their own exam. Not combinable with `--card`.
   A target progress document that does not parse is removed with the rest,
   and the prompt says so first; documents outside the target are never
   opened, and an I/O failure stops the reset before anything is erased.

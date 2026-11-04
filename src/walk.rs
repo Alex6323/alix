@@ -621,7 +621,7 @@ mod tests {
             ..Default::default()
         });
         store.set_last_launch("deck-walk", crate::depth::Launch::Recognize);
-        store.set_deck_mastered("deck-walk", 60);
+        store.set_deck_passed("deck-walk", 60);
         let before = store.clone();
         let snapshot = |store: &Store| -> Vec<Option<CardState>> {
             cards
@@ -692,13 +692,13 @@ mod tests {
             (
                 before.len() + absent,
                 before.last_launch("deck-walk"),
-                before.deck_mastered_at("deck-walk"),
+                before.deck_passed_at("deck-walk"),
                 before.last_review_ms()
             ),
             (
                 store.len(),
                 store.last_launch("deck-walk"),
-                store.deck_mastered_at("deck-walk"),
+                store.deck_passed_at("deck-walk"),
                 store.last_review_ms()
             ),
             "deck progress is untouched and only never-touched items gain an entry"

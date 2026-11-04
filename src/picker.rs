@@ -495,7 +495,7 @@ mod tests {
         assert_eq!(1, entries.len());
     }
 
-    fn status_for_readiness(state: DeckState, mastered: bool, has_exam: bool) -> DeckStatus {
+    fn status_for_readiness(state: DeckState, passed: bool, has_exam: bool) -> DeckStatus {
         DeckStatus {
             state,
             badge: String::new(),
@@ -505,7 +505,9 @@ mod tests {
             can_recognize: false,
             reviewable_recall: false,
             reviewable_reconstruct: false,
-            mastered,
+            passed,
+            mastered: false,
+            exam: Default::default(),
             is_trace: false,
             examable: false,
             has_exam,

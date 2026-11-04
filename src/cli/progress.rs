@@ -114,6 +114,7 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
             DeckState::Started => "in progress",
             DeckState::ExamDue => "exam due",
             DeckState::Finished if store.deck_mastered(deck_id) => "mastered ✓",
+            DeckState::Finished if store.deck_passed(deck_id) => "passed ✓",
             DeckState::Finished => "finished ✓",
         };
         let ignored = match deck.ignored.len() {
@@ -201,6 +202,9 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
     // `--orphans` is explicit opt-in only, never folded into a plain reset.
     if args.orphans {
         return reset_orphans(&args, &config);
+    }
+    if args.exam {
+        return reset_exam(&args, &config);
     }
 
     // Opened only by the branches that use it (`--all`, exact `--card`): a
@@ -299,7 +303,7 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         let mut ids: HashSet<String> = HashSet::new();
         let mut mastered = false;
         for (store, deck) in &readable {
-            mastered |= store.deck_mastered(deck_id(deck));
+            mastered |= store.deck_passed(deck_id(deck));
             let deck_ids = deck
                 .cards
                 .iter()
@@ -363,6 +367,75 @@ pub(crate) fn reset(args: ResetArgs) -> Result<()> {
         false,
         args.yes,
     )
+}
+
+fn reset_exam(args: &ResetArgs, config: &Config) -> Result<()> {
+    let decks_dir = config.decks_dir();
+    let groups: Vec<Vec<PathBuf>> = match (&args.target, args.all) {
+        (Some(path), _) => vec![expand_target(path)?.decks],
+        (None, true) => {
+            let root = decks_dir
+                .clone()
+                .context("`--exam --all` needs a configured decks dir")?;
+            workspace::roots_under(&root)
+                .iter()
+                .map(|dir| workspace::deck_files(dir))
+                .filter(|decks| !decks.is_empty())
+                .collect()
+        }
+        (None, false) => {
+            bail!("name a deck, folder, or workspace whose exam to reset, or pass `--all`")
+        }
+    };
+
+    let mut planned = Vec::new();
+    let mut locks = Vec::new();
+    for target_paths in groups {
+        let scope_dir = target_paths[0]
+            .parent()
+            .map(|dir| workspace::root_for_member_dir(dir).unwrap_or_else(|| dir.to_path_buf()))
+            .context("a deck has no folder")?;
+        let mut scope_paths = workspace::deck_files(&scope_dir);
+        for path in &target_paths {
+            if !scope_paths.contains(path) {
+                scope_paths.push(path.clone());
+            }
+        }
+        let store_path = store_path_for(&scope_paths).context("decks do not share a store")?;
+        let store = state::open_stores(&scope_paths, &store_path)?;
+        let scope: Vec<Deck> = scope_paths
+            .iter()
+            .map(Deck::load)
+            .collect::<Result<_, _>>()?;
+        let targets: Vec<Deck> = target_paths
+            .iter()
+            .map(Deck::load)
+            .collect::<Result<_, _>>()?;
+        locks.extend(alix::library::decks_an_exam_reset_locks(
+            &scope,
+            &targets,
+            &store,
+            decks_dir.as_deref(),
+        ));
+        planned.push((store, targets));
+    }
+
+    if !locks.is_empty() {
+        println!("These decks' exams will lock: {}", locks.join(", "));
+    }
+    let n: usize = planned.iter().map(|(_, targets)| targets.len()).sum();
+    if !confirm(&format!("Reset the exam of {n} deck(s)?"), args.yes)? {
+        println!("Cancelled.");
+        return Ok(());
+    }
+    for (mut store, targets) in planned {
+        for deck in &targets {
+            store.clear_deck_exam(deck);
+        }
+        store.save()?;
+    }
+    println!("Reset the exam of {n} deck(s).");
+    Ok(())
 }
 
 fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {

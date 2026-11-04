@@ -56,9 +56,15 @@ a **dangling** `requires:`, one naming a deck that does not exist, so a renamed
 or deleted prerequisite is caught rather than silently dropping the edge, and
 distinguishes an id-mode value that points nowhere from a card id pasted by
 mistake or a file that merely shares a required id's name; see
-[the doctor reference](17-command-reference.md).) (A **trace** masters by passing
-its exam (retracing the path from memory) so it gates and unlocks like any
-exam-grounded deck.)
+[the doctor reference](17-command-reference.md).) A **trace** deck has no exam,
+so a required trace never gates.
+
+A prerequisite counts as passed once every one of its sections has passed at
+`[exam] pass_threshold`, across one sitting or several. That moment is kept: a
+later weaker sitting never locks a dependent again. A deck that has sat its own
+exam at least once, pass or fail, stays unlocked from then on, even if a
+prerequisite's exam is reset later; the reset can only lock dependents that
+never sat theirs.
 
 In the picker a deck whose exam is locked shows a 🔒, but it stays **drillable**:
 only the exam waits on the prerequisites.

@@ -4,12 +4,16 @@
   "deck": "",
   "elapsed": null,
   "error": null,
+  "full": false,
   "gaps": [],
   "grades": [],
-  "passed": null,
+  "mastered": false,
   "phase": "idle",
   "questions": [],
   "questions_units": [],
+  "sections": [],
   "strictness": "balanced",
-  "thinking": false
+  "thinking": false,
+  "unknown_cards": [],
+  "verdicts": null
 }

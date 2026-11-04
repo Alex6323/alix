@@ -4,6 +4,7 @@
   "deck": "rust.md",
   "elapsed": null,
   "error": null,
+  "full": true,
   "gaps": [
     "ownership and the GC-free memory model"
   ],
@@ -38,6 +39,7 @@
           }
         ]
       ],
+      "model": "",
       "points": [
         "memory safety without a GC"
       ],
@@ -66,10 +68,12 @@
           "text": "Why does Rust use ownership?"
         }
       ],
+      "section": 0,
+      "shape": "instance",
       "verdict": "FAIL"
     }
   ],
-  "passed": false,
+  "mastered": false,
   "phase": "results",
   "questions": [
     "Why does Rust use ownership?"
@@ -87,6 +91,26 @@
       }
     ]
   ],
+  "sections": [
+    {
+      "cards": [
+        "card-0123456789abcdefghjkmnpqrs"
+      ],
+      "label": "Ownership",
+      "pass": false,
+      "verdicts": {
+        "partial": 0,
+        "pass": 0,
+        "total": 1
+      }
+    }
+  ],
   "strictness": "balanced",
-  "thinking": false
+  "thinking": false,
+  "unknown_cards": [],
+  "verdicts": {
+    "partial": 0,
+    "pass": 0,
+    "total": 1
+  }
 }

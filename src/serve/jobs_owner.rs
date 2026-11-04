@@ -106,6 +106,7 @@ pub(super) enum JobsCommand {
     },
     RemoteExamStart {
         path: PathBuf,
+        cards: Option<Vec<String>>,
         exam_cfg: ExamConfig,
         ask_cfg: AskConfig,
         reply: Reply<Started<RemoteExamDto>>,
@@ -242,11 +243,13 @@ impl JobsHandle {
     pub(super) fn remote_exam_start(
         &self,
         path: PathBuf,
+        cards: Option<Vec<String>>,
         exam_cfg: ExamConfig,
         ask_cfg: AskConfig,
     ) -> Option<Started<RemoteExamDto>> {
         self.call(|reply| JobsCommand::RemoteExamStart {
             path,
+            cards,
             exam_cfg,
             ask_cfg,
             reply,
@@ -510,11 +513,12 @@ impl JobsState {
             }
             JobsCommand::RemoteExamStart {
                 path,
+                cards,
                 exam_cfg,
                 ask_cfg,
                 reply,
             } => {
-                let _ = reply.send(self.remote_exam_start(path, exam_cfg, ask_cfg));
+                let _ = reply.send(self.remote_exam_start(path, cards, exam_cfg, ask_cfg));
             }
             JobsCommand::RemoteExamPoll(reply) => {
                 // advance() only, never poll(): poll() writes the store,
@@ -747,6 +751,7 @@ impl JobsState {
     fn remote_exam_start(
         &mut self,
         path: PathBuf,
+        cards: Option<Vec<String>>,
         exam_cfg: ExamConfig,
         ask_cfg: AskConfig,
     ) -> Started<RemoteExamDto> {
@@ -763,10 +768,20 @@ impl JobsState {
         if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
             return Started::Conflict;
         }
-        let sitting = exam::Sitting::start(&deck, strictness, exam_cfg, ask_cfg);
+        let scope = match &cards {
+            Some(ids) => exam::ExamScope::Cards(ids),
+            None => exam::ExamScope::Full,
+        };
+        let selection = crate::exam_status::select_sections(&deck, scope);
+        if selection.sections.is_empty() {
+            return Started::Conflict;
+        }
+        let sitting =
+            exam::Sitting::start_with(&deck, selection.sections, strictness, exam_cfg, ask_cfg);
         let ex = RemoteExamining {
             sitting,
             cards: None,
+            unknown_cards: selection.unknown_cards,
         };
         let dto = ex.dto();
         self.remote_exam = Some(ex);

@@ -201,12 +201,16 @@ picker `StateDto`.
 
 ### 4.3 The exam
 
-`POST /api/exam/start {deck}` → `ExamDto` with `phase` walking
+`POST /api/exam/start {deck, needs_work_only?}` → `ExamDto` with `phase` walking
 `"generating"` → `"answering"` → `"grading"` → `"results"`
 (→ `"remediating"` → `"remediated"`). Poll `GET /api/exam` while `thinking`.
 `POST /api/exam/answer {text, goto?}` saves and moves; `POST /api/exam/grade
 {text}` submits the last answer and starts grading; `POST /api/exam/remediate`
-generates remediation cards after a fail; `POST /api/exam/close` → `StateDto`.
+generates remediation cards when an answer missed key points; `POST /api/exam/close` → `StateDto`.
+With `needs_work_only: true` the sitting examines only the sections that have
+not passed (needs work, new cards, unexamined), read from the server's own
+store; when every section has passed, or none has, it examines all of them.
+The result is recorded on the examined cards when grading settles.
 
 ### 4.4 Augment
 
@@ -436,7 +440,7 @@ make, with nothing else in its block, the answer is `200` with that card's
 `{id, block}` (its bytes as stored) and nothing is appended. A match against
 the authored deck stays `422`, even when the sidecar holds the same card.
 
-A remote exam sitting starts with `POST /api/remote/exam/start {deck}`: the
+A remote exam sitting starts with `POST /api/remote/exam/start {deck, cards?}`: the
 server resolves **its own copy** of the named deck, by the same resolution
 `/api/select` uses (a bare name, or a qualified `<workspace>/<file>`). A
 deck with no `exam:` at either level (deck or workspace) is refused outright
@@ -744,7 +748,7 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/exam/start` | `{deck}` | `ExamDto` (phase `cooldown` when a re-sit is cooling down) | 400 unknown deck; 409 not examable / locked / backend can't reach the deck's source |
+| POST | `/api/exam/start` | `{deck, needs_work_only?}` | `ExamDto` | 400 unknown deck; 409 not examable / locked / backend can't reach the deck's source |
 | GET | `/api/exam` | – | `ExamDto` (poll) | 409 |
 | POST | `/api/exam/answer` | `{text, goto?}` | `ExamDto` | 409 |
 | POST | `/api/exam/grade` | `{text}` | `ExamDto` | 409 |
@@ -807,7 +811,7 @@ first, same as a double `POST`.
 | POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 403 kids; 409 a turn is already thinking |
 | POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 409 a turn is already thinking |
 | POST | `/api/remote/ask/card` | `{deck_id, front, back}` (`RemoteCreateCardReq`) | `RemoteCreateCardResp` | 400 bad/oversized body; 403 kids; 404 the desktop does not serve `deck_id`; 422 duplicate (except an identical retry of a sidecar card, which answers 200 with it) or malformed; 500 the id could not be minted |
-| POST | `/api/remote/exam/start` | `{deck}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / the deck has no exam or the backend cannot reach its grounding |
+| POST | `/api/remote/exam/start` | `{deck, cards?: [card-id]}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / the deck has no exam or the backend cannot reach its grounding / `cards` names no card of the deck |
 | GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when no sitting is open) | – |
 | POST | `/api/remote/exam/grade` | `{answers: [string]}` | `RemoteExamDto` | 400 bad/oversized body / wrong number of answers; 409 no sitting open / not in the answering phase |
 | POST | `/api/remote/exam/remediate` | – | `RemoteExamDto` | 409 no sitting open / nothing to remediate |
@@ -856,7 +860,6 @@ The review-session payload; returned by every review action.
 | `input` | string | `type` \| `draw`. |
 | `remaining` / `initial` / `reviews` / `passed` / `failed` / `introduced` | number | Session counters; `introduced` counts new cards introduced this sitting (a first pass is introduction-only, so `reviews` alone reads 0). |
 | `partial` | number | Partial passes this sitting, at any depth. Recognize grades are ordinary FSRS reviews and land in `reviews`/`passed`/`failed` like every depth; this is the one extra grade nuance a summary may want. |
-| `exam_due` | [string] | Deck names whose exam unlocked; populated at `done`. |
 | `can_restart` | bool | Anything servable right now (would a restart build a non-empty sitting). |
 | `next_due_ms` | number? | Present only at `done`: the soonest epoch-millis instant a card of this sitting becomes servable (introduction floors included; at Recognize this is the only source), falling back to the schedule-wide next due instant, so an empty or cooling sitting can say when to return. Absent on a live session and when nothing is scheduled. Clients format it terse and approximate (e.g. "next due in 4 min"), never ticking. |
 | `due_left` / `new_left` | number | Backlog beyond this sitting, computed only at `done` (0 on a live session): how many due and never-met cards a chained sitting would still find, minus what this sitting drilled. Lets the summary say "N still due" or "Start N new" and chain the drain. |
@@ -1107,13 +1110,17 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `name` | string | The stable resolution key for this row (also used by `/api/reset`, `/api/browse`, and import's/generate's `dest`). **Only deck rows are selectable:** a group row (`is_workspace`, or a folder) is a container — `/api/select` rejects it with 400. Drill into `members` and select one of those. |
 | `selectable` | bool | **structural**: this row's `name` is the kind of thing `/api/select` accepts (a deck; false for workspace/folder rows). `reviewable*` is state, not structure. |
 | `label` | string | Display title. |
-| `meta` | string? | Badge text for a completion state (`done ✓`, `exam due`, `mastered 🎉 · …`), a group's `N decks`, or an `error` row's generic explanation line; `null` for `new`/`started` rows, whose state chip is their only signal *(presentational: parse nothing from it)*. |
+| `meta` | string? | Badge text: for an examined deck the highest exam state with the last full sitting's points (`15 / 18`, `passed · 15.5 / 18`, `mastered 🎉 · 3d · 17 / 18`), plus how many sections need work or have new cards since the exam; otherwise a completion state (`done ✓`, `exam due`); a group's `N decks`, or an `error` row's generic explanation line; `null` for `new`/`started` rows, whose state chip is their only signal *(presentational: parse nothing from it)*. |
 | `state` | string | `new` \| `started` \| `finished` \| `examdue` \| `error` for decks; `workspace` \| `folder` for groups (open set). An `error` deck's own progress document cannot be read: render it red, and treat it as unstartable: every `reviewable*` flag is false and `/api/select` and `/api/browse` both reject it with 400. |
 | `locked` | bool | A `requires:` prerequisite isn't passed (exam-gating only — drilling stays allowed). |
 | `reviewable` | bool | Anything to do at any depth (or trace/exam special cases). On a **group** row this aggregates its members — it describes what's due inside, not that the group itself can be selected. |
 | `reviewable_recognize` / `reviewable_recall` / `reviewable_reconstruct` | bool | Per-depth honest due-ness — gate depth choices on these. Same group-aggregates-members caveat as `reviewable`. `reviewable_recognize` is pick-only: it needs a card that is both due at Recognize **and** recognizable (see `can_recognize`). |
 | `can_recognize` | bool | The deck has at least one recognizable card: authored task-list options, or cached choice distractors (`alix deck augment --target choices`), that build a pick. Gate the **Recognize** depth on this: a deck without it can build no pick, so Recognize is unavailable (grey it out) even under cram. Group rows aggregate members. |
-| `mastered` | bool | Exam passed. |
+| `mastered` | bool | A full sitting scored every answer PASS (`mastered_at_ms`). |
+| `passed_at_ms` | number? | When every section of the deck first passed at `pass_threshold`; unlocks dependents' exams. Null when never. |
+| `full_exam_result` | {pass, partial, total}? | Raw verdict counts of the last full sitting (points are pass + partial / 2). Null when none. |
+| `sections` | {passed, needs_work, new_cards, unexamined} | Section counts by status, read from the cards' exam records. All zero for a deck without an exam. |
+| `exam_filter` | string | What "only sections needing work" would select: `none` (every section passed) \| `partial` \| `all` (no section passed) *(closed)*. `none` for a deck without an exam. |
 | `is_trace` | bool | Selecting it traces instead of reviewing. |
 | `examable` | bool | Its exam can be sat right now. |
 | `has_exam` | bool | Has an exam at all (even if locked). |
@@ -1139,7 +1146,7 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 |---|---|---|
 | `date` | string | ISO `YYYY-MM-DD`. |
 | `days_left` | number | `date` minus today, in local days. Goes negative past the date (render "was due", not an error). |
-| `ready` | number | Member decks counted ready: mastered, or finished with no exam grounding to pass. |
+| `ready` | number | Member decks counted ready: passed, or finished with no exam grounding to pass. |
 | `total` | number | The workspace's member decks. |
 
 ### MemberDto
@@ -1491,17 +1498,29 @@ Example (from the pinned test):
 | `answer` | string | Saved answer for the current question. |
 | `on_last` | bool | |
 | `grades` | [ExamGradeDto] | Populated in results. |
-| `passed` | bool? | Null until graded. |
+| `sections` | [ExamSectionDto] | The examined sections in deck order, populated in results. |
+| `verdicts` | {pass, partial, total}? | The sitting's raw verdict counts; null until graded. A client shows points as pass + partial / 2 over total. |
+| `full` | bool | The sitting examines every section of the deck. |
+| `mastered` | bool | A full sitting where every answer was PASS. |
 | `gaps` | [string] | Named understanding gaps. |
-| `can_remediate` | bool | |
+| `can_remediate` | bool | An answer missed key points. |
 | `remediated_count` | number? | Null until remediation completes. |
-| `unlocks` | [string] | Deck names a pass unlocks. |
+| `unlocks` | [string] | Deck names this sitting unlocked (it set the deck's `passed_at_ms`). |
 | `thinking` | bool | Poll while true. |
 | `error` | string? | |
 | `elapsed` | number? | Seconds the in-flight call has run. |
 
+### ExamSectionDto
+
+`label: string` (the section's heading, or the deck title for cards without
+one), `cards: [card-id]` (the section's member cards, which the result is
+recorded on), `pass: bool` (the share of PASS reached `pass_threshold`),
+`verdicts: {pass, partial, total}`.
+
 ### ExamGradeDto
 
+`section: number` (index into `sections`), `shape` (`instance` \| `boundary`
+\| `fix`, closed), `model: string` (the mental model the question tests),
 `question`, `points: [string]`, `answer`, `verdict`, `feedback`,
 `missed: [string]`, and the model-written ones parsed as `ExamDto.question_units`
 is: `question_units: [ContentUnit]`, `points_units: [[ContentUnit]]`,
@@ -1662,17 +1681,17 @@ phone applies it to its own state).
 | `strictness` | string | `strict` \| `balanced` \| `lenient` *(closed)*. |
 | `questions` | [string] | Prompts only: the rubric (`ExamQuestion.points`) never leaves the server. |
 | `questions_units` | [[ContentUnit]] | Each of `questions` parsed as `ExamDto.question_units` is. |
-| `passed` | bool? | Null until graded. |
 | `grades` | [ExamGradeDto] | Populated in `results`/`remediated`. |
+| `sections` / `verdicts` / `full` / `mastered` | | As in `ExamDto`. The phone records each section's `pass` on its `cards` in its own store; the server never writes. |
+| `unknown_cards` | [card-id] | Ids from the start request's `cards` that the desktop's copy of the deck does not hold. |
 | `gaps` | [string] | Named understanding gaps. |
-| `can_remediate` | bool | Whether a failed sitting can generate remediation cards. |
+| `can_remediate` | bool | An answer missed key points. |
 | `cards` | string? | Deck-format text, set in the `remediated` phase: the client parses and stores these; the server never does. |
 | `thinking` | bool | Poll while true. |
 | `elapsed` | number? | Seconds the in-flight call has run. |
 | `error` | string? | |
 
-Example, remediated (from the pinned test):
-`{"phase":"remediated","deck":"rust.md","strictness":"balanced","questions":["Why does Rust use ownership?"],"passed":false,"grades":[{"question":"Why does Rust use ownership?","points":["memory safety without a GC"],"answer":"it has a garbage collector","verdict":"FAIL","feedback":"Rust has no GC","missed":["memory safety without a GC"]}],"gaps":["ownership and the GC-free memory model"],"can_remediate":false,"cards":"## Why does Rust use ownership?\nso drops are deterministic, no GC needed","thinking":false,"elapsed":null,"error":null}`.
+Example, remediated: `tests/contracts/RemoteExamDto.remediated.json` (written by the pinned test).
 
 ### RemoteGenerateDto (since 0.6.0)
 

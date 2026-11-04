@@ -143,7 +143,6 @@ pub(super) struct StateDto {
     pub(super) failed: u32,
     pub(super) introduced: u32,
     pub(super) partial: u32,
-    pub(super) exam_due: Vec<String>,
     pub(super) can_restart: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) next_due_ms: Option<u64>,
@@ -226,6 +225,8 @@ pub(super) struct DeckItemDto {
     pub(super) reviewable_recall: bool,
     pub(super) reviewable_reconstruct: bool,
     pub(super) mastered: bool,
+    #[serde(flatten)]
+    pub(super) exam: ExamRowDto,
     pub(super) is_trace: bool,
     pub(super) examable: bool,
     pub(super) has_exam: bool,
@@ -269,6 +270,8 @@ pub(super) struct MemberDto {
     pub(super) reviewable_recall: bool,
     pub(super) reviewable_reconstruct: bool,
     pub(super) mastered: bool,
+    #[serde(flatten)]
+    pub(super) exam: ExamRowDto,
     pub(super) is_trace: bool,
     pub(super) examable: bool,
     pub(super) has_exam: bool,
@@ -664,7 +667,10 @@ pub(super) struct ExamDto {
     pub(super) answer: String,
     pub(super) on_last: bool,
     pub(super) grades: Vec<ExamGradeDto>,
-    pub(super) passed: Option<bool>,
+    pub(super) sections: Vec<ExamSectionDto>,
+    pub(super) verdicts: Option<VerdictsDto>,
+    pub(super) full: bool,
+    pub(super) mastered: bool,
     pub(super) gaps: Vec<String>,
     pub(super) can_remediate: bool,
     pub(super) remediated_count: Option<usize>,
@@ -674,8 +680,99 @@ pub(super) struct ExamDto {
     pub(super) elapsed: Option<u64>,
 }
 
+#[derive(Clone, Copy, Debug, Serialize)]
+pub(super) struct ExamRowDto {
+    pub(super) passed_at_ms: Option<u64>,
+    pub(super) full_exam_result: Option<VerdictsDto>,
+    pub(super) sections: SectionTallyDto,
+    pub(super) exam_filter: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub(super) struct SectionTallyDto {
+    pub(super) passed: usize,
+    pub(super) needs_work: usize,
+    pub(super) new_cards: usize,
+    pub(super) unexamined: usize,
+}
+
+impl From<crate::exam_status::ExamRow> for ExamRowDto {
+    fn from(row: crate::exam_status::ExamRow) -> Self {
+        Self {
+            passed_at_ms: row.passed_at_ms,
+            full_exam_result: row.full_exam_result.map(|f| VerdictsDto {
+                pass: f.pass,
+                partial: f.partial,
+                total: f.total,
+            }),
+            sections: SectionTallyDto {
+                passed: row.tally.passed,
+                needs_work: row.tally.needs_work,
+                new_cards: row.tally.new_cards,
+                unexamined: row.tally.unexamined,
+            },
+            exam_filter: row.filter.label(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub(super) struct VerdictsDto {
+    pub(super) pass: u32,
+    pub(super) partial: u32,
+    pub(super) total: u32,
+}
+
+#[derive(Serialize)]
+pub(super) struct ExamSectionDto {
+    pub(super) label: String,
+    pub(super) cards: Vec<String>,
+    pub(super) pass: bool,
+    pub(super) verdicts: VerdictsDto,
+}
+
+pub(super) struct ExamResultParts {
+    pub(super) sections: Vec<ExamSectionDto>,
+    pub(super) verdicts: Option<VerdictsDto>,
+    pub(super) mastered: bool,
+}
+
+pub(super) fn exam_result_parts(s: &exam::Sitting) -> ExamResultParts {
+    let Some(result) = s.result() else {
+        return ExamResultParts {
+            sections: Vec::new(),
+            verdicts: None,
+            mastered: false,
+        };
+    };
+    let verdicts = |score: exam::SectionScore| VerdictsDto {
+        pass: score.pass,
+        partial: score.partial,
+        total: score.total,
+    };
+    let count = result.count();
+    ExamResultParts {
+        sections: s
+            .sections()
+            .iter()
+            .zip(&result.sections)
+            .map(|(section, score)| ExamSectionDto {
+                label: section.label.clone(),
+                cards: section.card_ids.clone(),
+                pass: score.passed,
+                verdicts: verdicts(*score),
+            })
+            .collect(),
+        verdicts: Some(verdicts(count)),
+        mastered: s.full() && count.passed,
+    }
+}
+
 #[derive(Serialize)]
 pub(super) struct ExamGradeDto {
+    pub(super) section: usize,
+    pub(super) shape: &'static str,
+    pub(super) model: String,
     pub(super) question: String,
     pub(super) question_units: Vec<ContentUnit>,
     pub(super) points: Vec<String>,
@@ -695,6 +792,9 @@ pub(super) fn exam_grade_dto(
 ) -> ExamGradeDto {
     let each = |texts: &[String]| texts.iter().map(|t| exam_text_units(t)).collect();
     ExamGradeDto {
+        section: question.section,
+        shape: question.shape.label(),
+        model: question.model.clone(),
         question: question.prompt.clone(),
         question_units: exam_text_units(&question.prompt),
         points: question.points.clone(),
@@ -740,8 +840,8 @@ pub(super) fn exam_dto(ex: &Examining) -> ExamDto {
                 .collect()
         })
         .unwrap_or_default();
-    let passed = result.map(|r| r.passed);
-    let unlocks = if passed == Some(true) {
+    let parts = exam_result_parts(s);
+    let unlocks = if s.unlocked() {
         deck::dependents(&ex.deck_path)
     } else {
         Vec::new()
@@ -757,7 +857,10 @@ pub(super) fn exam_dto(ex: &Examining) -> ExamDto {
         answer: s.answer().to_string(),
         on_last: s.on_last(),
         grades,
-        passed,
+        sections: parts.sections,
+        verdicts: parts.verdicts,
+        full: s.full(),
+        mastered: parts.mastered,
         gaps: s.gaps(),
         can_remediate: s.can_remediate(),
         remediated_count: s.remediated_count(),
@@ -839,8 +942,12 @@ pub(super) struct RemoteExamDto {
     /// Prompts only: the rubric never leaves the server.
     pub(super) questions: Vec<String>,
     pub(super) questions_units: Vec<Vec<ContentUnit>>,
-    pub(super) passed: Option<bool>,
     pub(super) grades: Vec<ExamGradeDto>,
+    pub(super) sections: Vec<ExamSectionDto>,
+    pub(super) verdicts: Option<VerdictsDto>,
+    pub(super) full: bool,
+    pub(super) mastered: bool,
+    pub(super) unknown_cards: Vec<String>,
     pub(super) gaps: Vec<String>,
     pub(super) can_remediate: bool,
     pub(super) cards: Option<String>,
@@ -1155,7 +1262,6 @@ pub(super) fn review_state(
             failed: 0,
             introduced: 0,
             partial: 0,
-            exam_due: Vec::new(),
             can_restart: false,
             next_due_ms: None,
             due_left: 0,
@@ -1176,27 +1282,6 @@ pub(super) fn review_state(
     // state embedded mobile renders; this envelope only adds wire naming and
     // serve-held context.
     let s = review::state(session, store, &r.augment, &r.source_bases, None);
-    // Only computed when finished: it reloads decks, so this stays off the hot path.
-    let exam_due = if s.finished {
-        // `r.files.paths` is keyed by deck_id (routing only); the wire value
-        // clients resolve `/api/exam/start` by is the deck's own name, read
-        // back off the loaded deck, not the map key.
-        let mut due: Vec<String> = r
-            .files
-            .paths
-            .values()
-            .filter_map(|path| {
-                Deck::load(path)
-                    .ok()
-                    .filter(|d| d.state(store) == DeckState::ExamDue)
-                    .map(|d| d.subject)
-            })
-            .collect();
-        due.sort();
-        due
-    } else {
-        Vec::new()
-    };
     let card_with_citation = s.card.zip(session.current()).map(|(view, c)| {
         let mut dto = card_dto(view, c.id());
         // A cache can hold several like-named topologies (decks sharing a
@@ -1258,7 +1343,6 @@ pub(super) fn review_state(
         failed: s.failed,
         introduced: s.introduced,
         partial: s.partial,
-        exam_due,
         can_restart: s.can_restart,
         next_due_ms: s.next_due_ms,
         due_left: s.due_left,
@@ -1619,6 +1703,7 @@ mod tests {
             "input=$(cat)\ncase \"$input\" in\n*'\"grades\"'*) printf '%s' '{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}' ;;\n*'\"models\"'*) printf '%s' '{\"sections\":[{\"section\":1,\"models\":[\"m\"]}]}' ;;\n*) printf '%s' '{\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\"why\",\"points\":[\"ground truth\"]}]}' ;;\nesac",
         );
         let deck = crate::deck::Deck::load(&base).unwrap();
+        let mut store = crate::store::Store::open(dir.path().join("p.json")).unwrap();
         let mut sitting = exam::Sitting::start(
             &deck,
             Strictness::Balanced,
@@ -1626,7 +1711,7 @@ mod tests {
             crate::testutil::ask_config(&cli),
         );
         for _ in 0..500 {
-            let _ = sitting.advance(0);
+            let _ = sitting.poll(&mut store, 0, None);
             if !sitting.thinking() {
                 break;
             }
@@ -1635,14 +1720,14 @@ mod tests {
         sitting.set_answer("answer".to_string());
         sitting.submit();
         for _ in 0..500 {
-            let _ = sitting.advance(0);
+            let _ = sitting.poll(&mut store, 0, None);
             if !sitting.thinking() {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         assert!(
-            sitting.result().is_some_and(|result| result.passed),
+            sitting.result().is_some_and(|result| result.count().passed),
             "the fixture must reach a passing result: phase={:?}, error={:?}",
             sitting.phase(),
             sitting.error()

@@ -418,6 +418,7 @@ export function createPicker({
       // launching outright; Review / Enter then launches.
       row.addEventListener("click", () => row.focus());
       row._item = it; row._gated = gated; row._wsName = wsName;
+      row._examNeedsWorkOnly = true;
       row._search = (it.label || it.name).toLowerCase();
       row._default = dflt !== false;
       return row;
@@ -485,6 +486,13 @@ export function createPicker({
 
       const visibleRows = () =>
         Array.from(lists.querySelectorAll(".deckrow")).filter(r => r.style.display !== "none");
+
+      function launchExam(row) {
+        const it = row._item;
+        const needsWorkOnly = it.exam_filter === "partial" && row._examNeedsWorkOnly;
+        lastWorkspace = row._wsName || null;
+        startExam(it.name, needsWorkOnly);
+      }
 
       // The primary button reflects the focused row: Open a workspace/folder,
       // Start/Take exam a deck (disabled when locked or nothing due).
@@ -666,8 +674,22 @@ export function createPicker({
           const ex = el("button", "chip" + (accent ? " primary" : ""), "Take exam");
           ex.appendChild(el("span", "k exam-key", it.examable ? "x" : "\u{1F512}"));
           ex.disabled = !it.examable;
-          if (it.examable) ex.addEventListener("click", () => { lastWorkspace = f._wsName || null; startExam(it.name); });
+          if (it.examable) ex.addEventListener("click", () => launchExam(f));
           legend.appendChild(ex);
+          if (it.exam_filter === "partial") {
+            const needsWork = el(
+              "button",
+              "chip exam-filter",
+              (f._examNeedsWorkOnly ? "☑" : "☐") + " only what needs work",
+            );
+            needsWork.setAttribute("aria-pressed", String(f._examNeedsWorkOnly));
+            needsWork.addEventListener("mousedown", e => e.preventDefault());
+            needsWork.addEventListener("click", () => {
+              f._examNeedsWorkOnly = !f._examNeedsWorkOnly;
+              syncPrimary();
+            });
+            legend.appendChild(needsWork);
+          }
         }
       }
 
@@ -988,7 +1010,7 @@ export function createPicker({
         else if (e.key === "r") { e.preventDefault(); refresh(); } // re-scan the decks (also the ⟳ nav button)
         else if (opts.allowMastered && hit(e, keys.mastered)) { e.preventDefault(); renderMastered(); }
         else if (e.key === "x" && cur && cur._item && cur._item.examable) {
-          e.preventDefault(); lastWorkspace = cur._wsName || null; startExam(cur._item.name);
+          e.preventDefault(); launchExam(cur);
         }
       });
 

@@ -7,6 +7,10 @@ use std::{
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
+pub use crate::exam_status::{
+    ExamFilter, ExamScope, ExamSection, ExamStatus, SECTION_NUDGE_CARDS, SectionStatus,
+    SectionTally, exam_sections, exam_status, oversized_sections,
+};
 use crate::{
     ask::{self, parse_json},
     config::{AskConfig, ExamConfig, Strictness},
@@ -35,13 +39,14 @@ pub enum Shape {
     Fix,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ExamSection {
-    pub label: String,
-    pub context: Vec<String>,
-    pub card_ids: Vec<String>,
-    pub cards: Vec<String>,
-    pub size: usize,
+impl Shape {
+    pub fn label(self) -> &'static str {
+        match self {
+            Shape::Instance => "instance",
+            Shape::Boundary => "boundary",
+            Shape::Fix => "fix",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -72,11 +77,49 @@ pub struct AnswerGrade {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExamResult {
-    pub passed: bool,
     pub grades: Vec<AnswerGrade>,
+    pub sections: Vec<SectionScore>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SectionScore {
+    pub pass: u32,
+    pub partial: u32,
+    pub total: u32,
+    pub passed: bool,
 }
 
 impl ExamResult {
+    pub fn scored(questions: &[ExamQuestion], grades: Vec<AnswerGrade>, threshold: f64) -> Self {
+        let count = questions.iter().map(|q| q.section + 1).max().unwrap_or(0);
+        let mut sections = vec![SectionScore::default(); count];
+        for (question, grade) in questions.iter().zip(&grades) {
+            let score = &mut sections[question.section];
+            score.total += 1;
+            match grade.verdict {
+                Verdict::Pass => score.pass += 1,
+                Verdict::Partial => score.partial += 1,
+                Verdict::Fail => {}
+            }
+        }
+        for score in &mut sections {
+            score.passed =
+                score.total > 0 && f64::from(score.pass) / f64::from(score.total) >= threshold;
+        }
+        Self { grades, sections }
+    }
+
+    pub fn count(&self) -> SectionScore {
+        let mut count = SectionScore::default();
+        for score in &self.sections {
+            count.pass += score.pass;
+            count.partial += score.partial;
+            count.total += score.total;
+        }
+        count.passed = count.total > 0 && count.pass == count.total;
+        count
+    }
+
     pub fn gaps(&self) -> Vec<String> {
         let mut gaps = Vec::new();
         for grade in &self.grades {
@@ -112,48 +155,9 @@ pub fn generate_questions(
 
 pub fn open_for_exam(path: &Path) -> Result<Deck> {
     crate::assemble::stamp_for_session(path)?;
-    Deck::load(path).with_context(|| format!("loading {}", path.display()))
-}
-
-pub const SECTION_NUDGE_CARDS: usize = 15;
-
-pub fn oversized_sections(deck: &Deck) -> Vec<(String, usize)> {
-    exam_sections(deck)
-        .into_iter()
-        .filter(|section| section.size > SECTION_NUDGE_CARDS)
-        .map(|section| (section.label, section.size))
-        .collect()
-}
-
-pub(crate) fn exam_sections(deck: &Deck) -> Vec<ExamSection> {
-    let mut sections: Vec<ExamSection> = Vec::new();
-    for card in &deck.cards {
-        let heading = card.section_context.first();
-        let at = match sections.iter().position(|s| s.context.first() == heading) {
-            Some(at) => at,
-            None => {
-                sections.push(ExamSection {
-                    label: heading.cloned().unwrap_or_else(|| deck.display_name()),
-                    context: card.section_context.clone(),
-                    ..Default::default()
-                });
-                sections.len() - 1
-            }
-        };
-        sections[at].size += 1;
-        if let Some(id) = card.id() {
-            sections[at].card_ids.push(id);
-        }
-        let scope = format!(
-            "Q: {}\nA: {}",
-            card.front.trim(),
-            card.back.join("\n").trim()
-        );
-        if !sections[at].cards.contains(&scope) {
-            sections[at].cards.push(scope);
-        }
-    }
-    sections
+    let mut deck = Deck::load(path).with_context(|| format!("loading {}", path.display()))?;
+    deck.cards.retain(|card| card.id().is_some());
+    Ok(deck)
 }
 
 /// Both layers, told apart (ADR 0026): the deck's own sources are the primary
@@ -334,10 +338,11 @@ pub fn grade_answers(
             questions.len()
         );
     }
-    Ok(ExamResult {
-        passed: passed(&parsed.grades, cfg.pass_threshold),
-        grades: parsed.grades,
-    })
+    Ok(ExamResult::scored(
+        questions,
+        parsed.grades,
+        cfg.pass_threshold,
+    ))
 }
 
 pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig) -> Result<String> {
@@ -412,7 +417,7 @@ pub enum Phase {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
-    Passed,
+    Graded,
     RemediationCards(String),
 }
 
@@ -439,17 +444,54 @@ pub struct Sitting {
     error: Option<String>,
     pending_since: Option<u64>,
     remediated_count: Option<usize>,
+    sections: Vec<ExamSection>,
+    deck_sections: Vec<ExamSection>,
+    unlocked: bool,
+}
+
+fn sitting_record(
+    sections: &[ExamSection],
+    full: bool,
+    result: &ExamResult,
+) -> crate::store::SittingRecord {
+    let count = result.count();
+    crate::store::SittingRecord {
+        sections: sections
+            .iter()
+            .zip(&result.sections)
+            .filter(|(_, score)| score.total > 0)
+            .map(|(section, score)| crate::store::SectionRecord {
+                card_ids: section.card_ids.clone(),
+                pass: score.passed,
+            })
+            .collect(),
+        full,
+        pass: count.pass,
+        partial: count.partial,
+        total: count.total,
+    }
 }
 
 impl Sitting {
     pub fn start(deck: &Deck, strictness: Strictness, cfg: ExamConfig, ask_cfg: AskConfig) -> Self {
+        Self::start_with(deck, exam_sections(deck), strictness, cfg, ask_cfg)
+    }
+
+    pub fn start_with(
+        deck: &Deck,
+        sections: Vec<ExamSection>,
+        strictness: Strictness,
+        cfg: ExamConfig,
+        ask_cfg: AskConfig,
+    ) -> Self {
         let boundary_error = source_boundary_error(deck);
         let source_ready = boundary_error.is_none();
+        let deck_sections = exam_sections(deck);
         let pending = source_ready.then(|| {
             Pending::Questions(spawn_questions(
                 examination_sources(deck),
                 Some(workspace::content_root(&deck.path)),
-                exam_sections(deck),
+                sections.clone(),
                 cfg.clone(),
                 ask_cfg.clone(),
             ))
@@ -475,7 +517,22 @@ impl Sitting {
             error: boundary_error,
             pending_since: source_ready.then(crate::time::now_ms),
             remediated_count: None,
+            sections,
+            deck_sections,
+            unlocked: false,
         }
+    }
+
+    pub fn sections(&self) -> &[ExamSection] {
+        &self.sections
+    }
+
+    pub fn full(&self) -> bool {
+        self.sections.len() == self.deck_sections.len()
+    }
+
+    pub fn unlocked(&self) -> bool {
+        self.unlocked
     }
 
     pub fn phase(&self) -> &Phase {
@@ -590,9 +647,7 @@ impl Sitting {
     }
 
     pub fn can_remediate(&self) -> bool {
-        self.phase == Phase::Results
-            && self.result.as_ref().is_some_and(|r| !r.passed)
-            && !self.gaps().is_empty()
+        self.phase == Phase::Results && !self.gaps().is_empty()
     }
 
     pub fn remediated_count(&self) -> Option<usize> {
@@ -644,7 +699,7 @@ impl Sitting {
                 None
             }
             Reply::Grade(Ok(result)) => {
-                let effect = result.passed.then_some(Effect::Passed);
+                let effect = Some(Effect::Graded);
                 self.result = Some(result);
                 self.phase = Phase::Results;
                 effect
@@ -677,8 +732,16 @@ impl Sitting {
         let advanced = was_pending && self.pending.is_none();
         let mut store_mutated = false;
         match effect {
-            Some(Effect::Passed) => {
-                store.set_deck_mastered(&self.deck_token, now_ms);
+            Some(Effect::Graded) => {
+                if let Some(result) = &self.result {
+                    let record = sitting_record(&self.sections, self.full(), result);
+                    self.unlocked = store.record_sitting(
+                        &self.deck_token,
+                        &self.deck_sections,
+                        &record,
+                        now_ms,
+                    );
+                }
                 store_mutated = true;
             }
             Some(Effect::RemediationCards(cards)) => {
@@ -723,14 +786,6 @@ enum Reply {
 
 fn thread_gone() -> String {
     "the exam helper exited unexpectedly".to_string()
-}
-
-fn passed(grades: &[AnswerGrade], threshold: f64) -> bool {
-    if grades.is_empty() {
-        return false;
-    }
-    let passes = grades.iter().filter(|g| g.verdict == Verdict::Pass).count();
-    (passes as f64) / (grades.len() as f64) >= threshold
 }
 
 fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
@@ -1198,6 +1253,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn exam_open_excludes_a_new_card_when_stamping_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "---\nformat-version: 1\nid: deck-d\nexam: source.md\n---\n\
+             ## old\nanswer\n<!-- id: card-old -->\n\n\
+             ## new\nanswer\n\n```\nunclosed\n",
+        )
+        .unwrap();
+
+        let deck = open_for_exam(&path).unwrap();
+
+        assert_eq!(
+            vec!["old"],
+            deck.cards
+                .iter()
+                .map(|card| card.front.as_str())
+                .collect::<Vec<_>>(),
+            "the warning promises that unstamped cards are excluded from the exam"
+        );
+    }
+
+    #[test]
     fn a_workspace_deck_resolves_its_exam_files_from_the_workspace_root_as_the_exam_does() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
@@ -1648,6 +1727,99 @@ mod tests {
     }
 
     #[test]
+    fn section_status_follows_member_records_and_any_fail_wins() {
+        use SectionStatus::*;
+        type Row = (
+            &'static str,
+            [Option<bool>; 3],
+            [SectionStatus; 2],
+            ExamFilter,
+        );
+        let rows: [Row; 7] = [
+            (
+                "never examined",
+                [None, None, None],
+                [Unexamined, Unexamined],
+                ExamFilter::All,
+            ),
+            (
+                "all passed",
+                [Some(true), Some(true), Some(true)],
+                [Passed, Passed],
+                ExamFilter::None,
+            ),
+            (
+                "a card without a record among passes",
+                [Some(true), None, Some(true)],
+                [NewCards, Passed],
+                ExamFilter::Partial,
+            ),
+            (
+                "a fail beside a missing record",
+                [Some(false), None, Some(true)],
+                [NeedsWork, Passed],
+                ExamFilter::Partial,
+            ),
+            (
+                "any fail wins over a pass",
+                [Some(true), Some(false), Some(true)],
+                [NeedsWork, Passed],
+                ExamFilter::Partial,
+            ),
+            (
+                "one section unexamined",
+                [Some(true), Some(true), None],
+                [Passed, Unexamined],
+                ExamFilter::Partial,
+            ),
+            (
+                "every section needs work",
+                [Some(false), Some(false), Some(false)],
+                [NeedsWork, NeedsWork],
+                ExamFilter::All,
+            ),
+        ];
+        for (label, records, expected, filter) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("s.md");
+            std::fs::write(
+                &path,
+                "---\nformat-version: 1\nid: deck-s\nexam: source.txt\n---\n\
+                 # A\n\n## a1\nx\n<!-- id: card-a1 -->\n\n## a2\nx\n<!-- id: card-a2 -->\n\n\
+                 # B\n\n## b1\nx\n<!-- id: card-b1 -->\n",
+            )
+            .unwrap();
+            let deck = Deck::load(&path).unwrap();
+            let mut store = Store::open(dir.path().join("p.json")).unwrap();
+            for (id, pass) in ["card-a1", "card-a2", "card-b1"].iter().zip(records) {
+                if let Some(pass) = pass {
+                    store.get_or_insert(id).exam_result =
+                        Some(crate::store::ExamRecord { at_ms: 1, pass });
+                }
+            }
+            let status = deck.exam_status(&store);
+            assert_eq!(expected.to_vec(), status.sections, "{label}: statuses");
+            assert_eq!(filter, status.filter(), "{label}: filter");
+            let tally = status.tally();
+            assert_eq!(
+                2,
+                tally.passed + tally.needs_work + tally.new_cards + tally.unexamined,
+                "{label}: the tally counts every section once"
+            );
+            assert_eq!(
+                expected.iter().filter(|s| **s == Passed).count(),
+                tally.passed,
+                "{label}: passed tally"
+            );
+            assert_eq!(
+                expected == [Passed, Passed],
+                status.all_passed(),
+                "{label}: all passed"
+            );
+        }
+    }
+
+    #[test]
     fn sections_follow_headings_merge_repeats_and_label_the_unsectioned_with_the_deck_title() {
         let rows = [
             (
@@ -1930,44 +2102,95 @@ mod tests {
     }
 
     #[test]
-    fn threshold_all_pass_passes() {
-        let grades = vec![
-            AnswerGrade {
-                verdict: Verdict::Pass,
-                feedback: String::new(),
-                missed: Vec::new(),
-            },
-            AnswerGrade {
-                verdict: Verdict::Pass,
-                feedback: String::new(),
-                missed: Vec::new(),
-            },
+    fn section_pass_and_sitting_count_follow_the_verdicts() {
+        use Verdict::*;
+        type Row = (
+            &'static str,
+            &'static [(usize, Verdict)],
+            f64,
+            [bool; 2],
+            (u32, u32, u32),
+            bool,
+        );
+        let rows: [Row; 5] = [
+            (
+                "all PASS",
+                &[(0, Pass), (1, Pass)],
+                1.0,
+                [true, true],
+                (2, 0, 2),
+                true,
+            ),
+            (
+                "a PARTIAL fails its section at 1.0",
+                &[(0, Pass), (0, Partial), (1, Pass)],
+                1.0,
+                [false, true],
+                (2, 1, 3),
+                false,
+            ),
+            (
+                "a PARTIAL passes its section at 0.5",
+                &[(0, Pass), (0, Partial), (1, Pass)],
+                0.5,
+                [true, true],
+                (2, 1, 3),
+                true,
+            ),
+            (
+                "a fail in one section leaves the other passed",
+                &[(0, Fail), (1, Pass)],
+                1.0,
+                [false, true],
+                (1, 0, 2),
+                false,
+            ),
+            (
+                "an unexamined section is not scored",
+                &[(1, Pass)],
+                1.0,
+                [false, true],
+                (1, 0, 1),
+                true,
+            ),
         ];
-        assert!(passed(&grades, 1.0));
-    }
-
-    #[test]
-    fn threshold_one_partial_fails_strict() {
-        let grades = vec![
-            AnswerGrade {
-                verdict: Verdict::Pass,
-                feedback: String::new(),
-                missed: Vec::new(),
-            },
-            AnswerGrade {
-                verdict: Verdict::Partial,
-                feedback: String::new(),
-                missed: vec!["m".to_string()],
-            },
-        ];
-        assert!(!passed(&grades, 1.0));
-        assert!(passed(&grades, 0.5));
+        for (label, graded, threshold, passes, count, _) in rows {
+            let questions: Vec<ExamQuestion> = graded
+                .iter()
+                .map(|(section, _)| ExamQuestion {
+                    section: *section,
+                    ..Default::default()
+                })
+                .collect();
+            let grades: Vec<AnswerGrade> = graded
+                .iter()
+                .map(|(_, verdict)| AnswerGrade {
+                    verdict: *verdict,
+                    feedback: String::new(),
+                    missed: Vec::new(),
+                })
+                .collect();
+            let result = ExamResult::scored(&questions, grades, threshold);
+            let sections: Vec<bool> = result.sections.iter().map(|s| s.passed).collect();
+            assert_eq!(passes.to_vec(), sections, "{label}: section passes");
+            let total = result.count();
+            assert_eq!(
+                count,
+                (total.pass, total.partial, total.total),
+                "{label}: count"
+            );
+            assert_eq!(
+                count.0 == count.2,
+                total.passed,
+                "{label}: the count is full marks only when every answer is PASS"
+            );
+        }
     }
 
     #[test]
     fn gaps_collects_missed_from_non_passes_deduped() {
         let result = ExamResult {
-            passed: false,
+            sections: Vec::new(),
             grades: vec![
                 AnswerGrade {
                     verdict: Verdict::Pass,
@@ -2297,6 +2520,9 @@ mod tests {
             error: None,
             pending_since: None,
             remediated_count: None,
+            sections: Vec::new(),
+            deck_sections: Vec::new(),
+            unlocked: false,
         }
     }
 
@@ -2651,7 +2877,7 @@ mod tests {
             &ask_config(&cli),
         )
         .unwrap();
-        assert!(result.passed);
+        assert!(result.count().passed);
         assert_eq!(Verdict::Pass, result.grades[0].verdict);
     }
 
@@ -2802,9 +3028,18 @@ mod tests {
         assert_eq!(&Phase::Grading, s.phase());
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Results, s.phase());
-        assert!(!s.result().unwrap().passed);
+        assert!(!s.result().unwrap().count().passed);
         assert_eq!(vec!["the move rule"], s.gaps());
-        assert!(!store.deck_mastered("deck-d1"));
+        assert!(!store.deck_passed("deck-d1"));
+        assert_eq!(
+            Some(false),
+            store
+                .get("card-qc")
+                .and_then(|c| c.exam_result)
+                .map(|r| r.pass),
+            "a failed section is recorded on its card"
+        );
+        assert!(!s.unlocked());
 
         assert!(s.can_remediate());
         let snapshot = std::fs::read(dir.path().join("d.md")).unwrap();
@@ -2856,7 +3091,7 @@ mod tests {
     }
 
     #[test]
-    fn sitting_pass_marks_mastered() {
+    fn a_settled_sitting_records_through_record_exam_result() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = branching_cli(
@@ -2880,8 +3115,31 @@ mod tests {
         s.submit();
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Results, s.phase());
-        assert!(s.result().unwrap().passed);
-        assert!(store.deck_mastered("deck-d1"));
+        assert!(s.result().unwrap().count().passed);
+        assert!(
+            store.deck_passed("deck-d1"),
+            "every section passed: passed_at_ms"
+        );
+        assert!(
+            store.deck_mastered("deck-d1"),
+            "a full sitting at 100%: mastered_at_ms"
+        );
+        assert!(s.unlocked(), "this sitting set passed_at_ms");
+        assert_eq!(
+            Some(true),
+            store
+                .get("card-qc")
+                .and_then(|c| c.exam_result)
+                .map(|r| r.pass),
+            "the section's verdict is on its card"
+        );
+        assert_eq!(
+            Some((2, 0, 2)),
+            store
+                .full_exam_result("deck-d1")
+                .map(|f| (f.pass, f.partial, f.total)),
+            "the full count"
+        );
         assert!(!s.can_remediate());
     }
 
@@ -2959,7 +3217,7 @@ mod tests {
         s.set_answer("a2".to_string());
         s.submit();
         drain(&mut s, &mut store);
-        assert!(!s.result().unwrap().passed);
+        assert!(!s.result().unwrap().count().passed);
         s.remediate();
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
@@ -2983,8 +3241,8 @@ mod tests {
         s2.set_answer("b".to_string());
         s2.submit();
         drain(&mut s2, &mut store);
-        assert!(s2.result().unwrap().passed);
-        assert!(store.deck_mastered("deck-d1"));
+        assert!(s2.result().unwrap().count().passed);
+        assert!(store.deck_passed("deck-d1"));
 
         for card in sidecar_cards(&dir.path().join("d.md"), "deck-d1") {
             let id = card.id().expect("a personal card carries its id");
@@ -3035,7 +3293,7 @@ mod tests {
     }
 
     #[test]
-    fn advance_keeps_grade_fail_storeless() {
+    fn advance_reports_a_failed_grade_for_recording() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let cli = branching_cli(
@@ -3059,9 +3317,9 @@ mod tests {
         s.submit();
 
         let effect = advance_until_idle(&mut s);
-        assert_eq!(None, effect);
+        assert_eq!(Some(Effect::Graded), effect, "a fail is recorded too");
         assert_eq!(&Phase::Results, s.phase());
-        assert!(!s.result().unwrap().passed);
+        assert!(!s.result().unwrap().count().passed);
     }
 
     #[test]

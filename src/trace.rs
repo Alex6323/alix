@@ -538,7 +538,7 @@ mod tests {
         let deck_id = deck.deck_token.clone().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
-        assert!(!store.deck_mastered(&deck_id));
+        assert!(!store.deck_passed(&deck_id));
         assert_eq!(DeckState::NotStarted, deck.state(&store));
 
         // Manually graduates the checkpoint (FSRS `Review`) to satisfy the
@@ -554,10 +554,10 @@ mod tests {
             f.state = 2; // Review state (graduated)
         }
 
-        assert!(!store.deck_mastered(&deck_id));
+        assert!(!store.deck_passed(&deck_id));
         assert_eq!(DeckState::Finished, deck.state(&store));
 
-        store.set_deck_mastered(&deck_id, 99);
+        store.set_deck_passed(&deck_id, 99);
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
 

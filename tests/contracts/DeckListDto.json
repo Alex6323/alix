@@ -8,7 +8,9 @@
       "crammable": true,
       "deadline": null,
       "description": null,
+      "exam_filter": "none",
       "examable": false,
+      "full_exam_result": null,
       "has_exam": false,
       "has_topology": false,
       "icon": null,
@@ -23,12 +25,19 @@
       "meta": null,
       "name": "vocab.md",
       "new_cards": true,
+      "passed_at_ms": null,
       "path": null,
       "recent": true,
       "reviewable": true,
       "reviewable_recall": true,
       "reviewable_recognize": true,
       "reviewable_reconstruct": false,
+      "sections": {
+        "needs_work": 0,
+        "new_cards": 0,
+        "passed": 0,
+        "unexamined": 0
+      },
       "selectable": true,
       "state": "new"
     }
@@ -46,7 +55,9 @@
         "total": 5
       },
       "description": "learn Rust ownership",
+      "exam_filter": "none",
       "examable": false,
+      "full_exam_result": null,
       "has_exam": false,
       "has_topology": true,
       "icon": "/img/0123456789abcdef",
@@ -63,7 +74,13 @@
           "badge_dotted": false,
           "can_recognize": true,
           "crammable": true,
+          "exam_filter": "partial",
           "examable": true,
+          "full_exam_result": {
+            "partial": 1,
+            "pass": 5,
+            "total": 6
+          },
           "has_exam": true,
           "has_topology": false,
           "indent": 1,
@@ -75,10 +92,17 @@
           "meta": null,
           "name": "rustws/intro.md",
           "new_cards": false,
+          "passed_at_ms": 1700000000000,
           "reviewable": true,
           "reviewable_recall": true,
           "reviewable_recognize": true,
           "reviewable_reconstruct": false,
+          "sections": {
+            "needs_work": 1,
+            "new_cards": 0,
+            "passed": 2,
+            "unexamined": 0
+          },
           "selectable": true,
           "state": "started",
           "track_confidence": true,
@@ -88,12 +112,19 @@
       "meta": "3/10",
       "name": "rustws",
       "new_cards": true,
+      "passed_at_ms": null,
       "path": "~/decks",
       "recent": true,
       "reviewable": true,
       "reviewable_recall": true,
       "reviewable_recognize": false,
       "reviewable_reconstruct": true,
+      "sections": {
+        "needs_work": 0,
+        "new_cards": 0,
+        "passed": 0,
+        "unexamined": 0
+      },
       "selectable": false,
       "state": "workspace"
     }
