@@ -173,6 +173,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The exam no longer asks a fixed number of questions per section: for each
+  section the examiner lists the section's mental models and asks at least one
+  question about each, with no upper limit, and a reply that skips a listed
+  model or names one it did not list is generated once more. The `[exam]`
+  `num_questions` key is removed; a config that still sets it fails to load.
+
 - Exam questions stand alone: the examiner is told to reproduce any example
   it builds on, to put code in a fenced block one statement per line, to drop
   thinking aloud, and never to name a fix question's mistake. The web exam

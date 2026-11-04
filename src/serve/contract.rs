@@ -853,6 +853,7 @@ fn examdto_results_phase_wire_shape() {
                 prompt: "Why does `drop` run here?\n\n```rust\nlet s = String::new();\n```"
                     .to_string(),
                 points: vec!["memory safety without a GC".to_string()],
+                ..Default::default()
             },
             "it frees memory deterministically",
             &exam::AnswerGrade {
@@ -2749,6 +2750,7 @@ fn remoteexamdto_results_wire_shape() {
             &exam::ExamQuestion {
                 prompt: "Why does Rust use ownership?".to_string(),
                 points: vec!["memory safety without a GC".to_string()],
+                ..Default::default()
             },
             "it has a garbage collector",
             &exam::AnswerGrade {
@@ -2811,6 +2813,7 @@ fn remoteexamdto_remediated_wire_shape() {
             &exam::ExamQuestion {
                 prompt: "Why does Rust use ownership?".to_string(),
                 points: vec!["memory safety without a GC".to_string()],
+                ..Default::default()
             },
             "it has a garbage collector",
             &exam::AnswerGrade {
@@ -2875,6 +2878,7 @@ fn remoteexamdto_trace_results_wire_shape() {
             &exam::ExamQuestion {
                 prompt: "how it works".to_string(),
                 points: vec!["it reads the first line".to_string()],
+                ..Default::default()
             },
             "it reads the file",
             &exam::AnswerGrade {

@@ -77,6 +77,7 @@ fn assert_probe(name: &str) {
         let q = ExamQuestion {
             prompt: p.question.to_string(),
             points: p.points.iter().map(|x| x.to_string()).collect(),
+            ..Default::default()
         };
         let result = grade_answers(
                 &[q],

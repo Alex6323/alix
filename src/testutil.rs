@@ -34,6 +34,30 @@ pub(crate) fn fake_reply(dir: &Path, reply: &str) -> PathBuf {
     fake_cli(dir, &format!("cat >/dev/null; cat {}", out.display()))
 }
 
+/// Answers its Nth call with `replies[N-1]` (the last reply repeats), saving
+/// each call's prompt as `prompt-N` beside a call counter.
+pub(crate) fn fake_replies(dir: &Path, replies: &[&str]) -> PathBuf {
+    for (at, reply) in replies.iter().enumerate() {
+        std::fs::write(dir.join(format!("reply-{}", at + 1)), reply).unwrap();
+    }
+    let last = replies.len();
+    fake_cli(
+        dir,
+        &format!(
+            "cd {dir}; n=$(( $(cat calls 2>/dev/null || echo 0) + 1 )); echo $n > calls; \
+             cat > prompt-$n; if [ -f reply-$n ]; then cat reply-$n; else cat reply-{last}; fi",
+            dir = dir.display()
+        ),
+    )
+}
+
+pub(crate) fn fake_reply_calls(dir: &Path) -> usize {
+    std::fs::read_to_string(dir.join("calls"))
+        .ok()
+        .and_then(|count| count.trim().parse().ok())
+        .unwrap_or(0)
+}
+
 /// Like [`fake_reply`] but for arg-delivery backends: doesn't drain stdin,
 /// since `ask::run` closes stdin immediately when the prompt arrives as an argument.
 pub(crate) fn fake_arg_reply(dir: &Path, reply: &str) -> PathBuf {

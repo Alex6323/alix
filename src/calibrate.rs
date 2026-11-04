@@ -198,6 +198,7 @@ pub fn run(exam_cfg: &ExamConfig, ask_cfg: &AskConfig) -> Result<Vec<ProbeResult
             .map(|p| ExamQuestion {
                 prompt: p.question.to_string(),
                 points: p.points.iter().map(|x| x.to_string()).collect(),
+                ..Default::default()
             })
             .collect();
         let answers: Vec<String> = group.iter().map(|p| p.answer.to_string()).collect();

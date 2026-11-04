@@ -17,10 +17,22 @@ use crate::{
 
 const MAX_SOURCE_BYTES: usize = 100_000;
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ExamQuestion {
     pub prompt: String,
     pub points: Vec<String>,
+    pub section: usize,
+    pub shape: Shape,
+    pub model: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Shape {
+    #[default]
+    Instance,
+    Boundary,
+    Fix,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -97,6 +109,11 @@ pub fn generate_questions(
     generate_questions_from(&sources, Some(&root), &exam_sections(deck), cfg, ask_cfg)
 }
 
+pub fn open_for_exam(path: &Path) -> Result<Deck> {
+    crate::assemble::stamp_for_session(path)?;
+    Deck::load(path).with_context(|| format!("loading {}", path.display()))
+}
+
 pub const SECTION_NUDGE_CARDS: usize = 15;
 
 pub fn oversized_sections(deck: &Deck) -> Vec<(String, usize)> {
@@ -168,18 +185,104 @@ fn generate_questions_from(
     for source in sources.own.iter().chain(&sources.workspace) {
         crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
     }
-    let prompt = questions_prompt(sources, base, sections, cfg)?;
-    let raw = ask::run(&run_config(cfg, ask_cfg), &prompt, &[])?;
-    let parsed: QuestionsDto = parse_json(&raw).context("parsing the generated questions")?;
-    if parsed.questions.is_empty() {
-        bail!("the model returned no questions");
+    if sections.is_empty() {
+        bail!("the deck has no cards to examine");
     }
-    for q in &parsed.questions {
-        if q.prompt.trim().is_empty() || q.points.is_empty() {
-            bail!("the model returned a malformed question (empty prompt or no points)");
+    let prompt = questions_prompt(sources, base, sections, cfg)?;
+    let run = run_config(cfg, ask_cfg);
+    let reason = match ask_questions(&run, &prompt, sections.len())? {
+        Ok(questions) => return Ok(questions),
+        Err(reason) => reason,
+    };
+    let retry = format!(
+        "{prompt}\n\nYour previous answer was rejected: {reason}. Write the whole answer \
+         again and follow every rule above."
+    );
+    match ask_questions(&run, &retry, sections.len())? {
+        Ok(questions) => Ok(questions),
+        Err(reason) => bail!("the generated questions were rejected twice: {reason}"),
+    }
+}
+
+fn ask_questions(
+    run: &AskConfig,
+    prompt: &str,
+    section_count: usize,
+) -> Result<std::result::Result<Vec<ExamQuestion>, String>> {
+    let raw = ask::run(run, prompt, &[])?;
+    Ok(parse_json::<QuestionsDto>(&raw)
+        .map_err(|error| format!("it was not the JSON asked for ({error:#})"))
+        .and_then(|dto| checked_questions(section_count, dto)))
+}
+
+fn checked_questions(
+    section_count: usize,
+    dto: QuestionsDto,
+) -> std::result::Result<Vec<ExamQuestion>, String> {
+    let mut models: Vec<Vec<String>> = vec![Vec::new(); section_count];
+    for listed in dto.sections {
+        let Some(slot) = listed
+            .section
+            .checked_sub(1)
+            .and_then(|at| models.get_mut(at))
+        else {
+            return Err(format!(
+                "it lists models for section {}, but there are {section_count} sections",
+                listed.section
+            ));
+        };
+        for model in listed.models.iter().map(|model| model.trim()) {
+            if !model.is_empty() && !slot.iter().any(|known| known == model) {
+                slot.push(model.to_string());
+            }
         }
     }
-    Ok(parsed.questions)
+    if let Some(at) = models.iter().position(Vec::is_empty) {
+        return Err(format!("section {} lists no mental model", at + 1));
+    }
+    let mut covered: Vec<Vec<bool>> = models.iter().map(|m| vec![false; m.len()]).collect();
+    let mut questions = Vec::new();
+    for generated in dto.questions {
+        if generated.prompt.trim().is_empty() || generated.points.is_empty() {
+            return Err("a question has an empty prompt or no key points".to_string());
+        }
+        let Some(at) = generated
+            .section
+            .checked_sub(1)
+            .filter(|at| *at < section_count)
+        else {
+            return Err(format!(
+                "a question names section {}, but there are {section_count} sections",
+                generated.section
+            ));
+        };
+        let model = generated.model.trim().to_string();
+        let Some(which) = models[at].iter().position(|listed| *listed == model) else {
+            return Err(format!(
+                "a question in section {} names the model `{model}`, which that section does \
+                 not list",
+                at + 1
+            ));
+        };
+        covered[at][which] = true;
+        questions.push(ExamQuestion {
+            prompt: generated.prompt,
+            points: generated.points,
+            section: at,
+            shape: generated.shape,
+            model,
+        });
+    }
+    for (at, section) in covered.iter().enumerate() {
+        if let Some(which) = section.iter().position(|done| !done) {
+            return Err(format!(
+                "section {} lists the model `{}` but asks no question about it",
+                at + 1,
+                models[at][which]
+            ));
+        }
+    }
+    Ok(questions)
 }
 
 pub fn grade_answers(
@@ -415,6 +518,7 @@ impl Sitting {
         let question = ExamQuestion {
             prompt: description,
             points: rubric,
+            ..Default::default()
         };
         Self {
             kind: SittingKind::Trace,
@@ -856,55 +960,49 @@ fn questions_prompt(
     cfg: &ExamConfig,
 ) -> Result<String> {
     let sources = source_section(sources, base)?;
-    let n = cfg.num_questions;
-    let ask = if sections.is_empty() {
-        format!(
-            "Write exactly {n} open-ended questions grounded in the source above. \
-             Favor APPLICATION (\"given X, what happens / what would you do?\") and \
-             CONNECTIONS (how ideas relate, contrast or build on each other) over \
-             plain recall. Each question must be answerable from the source and \
-             demand reasoning in the student's own words.\n\n"
-        )
-    } else {
-        let mut scope = String::from(
-            "The student drilled a flashcard deck on this material, split into the \
-             sections below. Its cards are SCOPE ONLY: they show what the deck already \
-             asks. NEVER ask what a card states, and never rephrase a card; test the \
-             mental model behind the section instead.\n\n",
-        );
-        for (i, section) in sections.iter().enumerate() {
-            scope.push_str(&format!("Section {}: {}\n", i + 1, section.label));
-            for line in section.context.iter().skip(1) {
-                scope.push_str(line);
-                scope.push('\n');
-            }
-            scope.push_str("Cards:\n");
-            for card in &section.cards {
-                scope.push_str(&format!("- {}\n", card.replace('\n', "\n  ")));
-            }
+    if sections.is_empty() {
+        bail!("the deck has no cards to examine");
+    }
+    let mut scope = String::from(
+        "The student drilled a flashcard deck on this material, split into the \
+         sections below. Its cards are SCOPE ONLY: they show what the deck already \
+         asks. NEVER ask what a card states, and never rephrase a card; test the \
+         mental model behind the section instead.\n\n",
+    );
+    for (i, section) in sections.iter().enumerate() {
+        scope.push_str(&format!("Section {}: {}\n", i + 1, section.label));
+        for line in section.context.iter().skip(1) {
+            scope.push_str(line);
             scope.push('\n');
         }
-        format!(
-            "{scope}Write exactly {n} questions for EACH section ({total} in total), \
-             grouped by section in deck order. Within a section, cycle through these \
-             three shapes in this order:\n\
-             - instance: a concrete case the source supports but no card shows \
-             (\"given this program, what does the compiler report?\");\n\
-             - boundary: when does the section's idea stop holding, or what changes \
-             if a condition flips;\n\
-             - fix: a short statement or snippet with exactly one seeded mistake about \
-             the section's idea; the student must find and correct it.\n\
-             Every question must be answerable from the source above and demand \
-             reasoning in the student's own words.\n\n",
-            total = n * sections.len(),
-        )
-    };
-    let shape = if sections.is_empty() {
-        "{\"questions\": [{\"prompt\": \"...\", \"points\": [\"...\", \"...\"]}]}"
-    } else {
-        "{\"questions\": [{\"section\": \"<the section heading as given>\", \"shape\": \
-         \"instance|boundary|fix\", \"prompt\": \"...\", \"points\": [\"...\", \"...\"]}]}"
-    };
+        scope.push_str("Cards:\n");
+        for card in &section.cards {
+            scope.push_str(&format!("- {}\n", card.replace('\n', "\n  ")));
+        }
+        scope.push('\n');
+    }
+    let ask = format!(
+        "{scope}For EACH section, in deck order: first list its mental models, the \
+         distinct ideas a student must understand to master that section, as many as \
+         it really holds and at least one. Then write at least one question for every \
+         model you listed; a model may get more when it needs them. There is no upper \
+         limit. Across a section, start with an instance and then take the three shapes \
+         in turn:\n\
+         - instance: a concrete case the source supports but no card shows \
+         (\"given this program, what does the compiler report?\");\n\
+         - boundary: when does the section's idea stop holding, or what changes \
+         if a condition flips;\n\
+         - fix: a short statement or snippet with exactly one seeded mistake about \
+         the section's idea; the student must find and correct it.\n\
+         Every question must be answerable from the source above and demand \
+         reasoning in the student's own words. Tag every question with its section's \
+         number, its shape, and the model it tests, spelled exactly as you listed it \
+         for that section.\n\n"
+    );
+    let shape = "{\"sections\": [{\"section\": 1, \"models\": [\"...\", \"...\"]}], \
+                 \"questions\": [{\"section\": 1, \"shape\": \"instance|boundary|fix\", \
+                 \"model\": \"<a model listed for that section>\", \"prompt\": \"...\", \
+                 \"points\": [\"...\", \"...\"]}]}";
     let mut prompt = format!(
         "You are a strict examiner writing an oral exam that verifies a student \
          truly UNDERSTANDS a topic — not whether they memorized isolated facts.\n\n\
@@ -1193,7 +1291,23 @@ fn clean_deck_output(raw: &str) -> String {
 
 #[derive(Debug, Deserialize)]
 struct QuestionsDto {
-    questions: Vec<ExamQuestion>,
+    sections: Vec<SectionModelsDto>,
+    questions: Vec<GeneratedQuestionDto>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SectionModelsDto {
+    section: usize,
+    models: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeneratedQuestionDto {
+    section: usize,
+    shape: Shape,
+    model: String,
+    prompt: String,
+    points: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1232,6 +1346,26 @@ mod tests {
                 .all(|(_, why)| why.starts_with("cannot read `exam:`")),
             "each reason is the exam's own start error: {unreadable:#?}"
         );
+    }
+
+    const ONE_SECTION_REPLY: &str = "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\
+        \"questions\":[{\"section\":1,\"shape\":\"instance\",\"model\":\"m\",\
+        \"prompt\":\"Why move?\",\"points\":[\"avoids double free\"]}]}";
+
+    fn deck_with_exam_and_card(srcs: &[&str]) -> Deck {
+        Deck {
+            cards: parser::parse_str("deck-d", "## Why move?\nownership\n").unwrap(),
+            ..deck_with_exam(srcs)
+        }
+    }
+
+    fn one_section() -> Vec<ExamSection> {
+        vec![ExamSection {
+            label: "Moves".to_string(),
+            context: vec!["Moves".to_string()],
+            cards: vec!["Q: a\nA: b".to_string()],
+            ..Default::default()
+        }]
     }
 
     fn deck_with_exam(srcs: &[&str]) -> Deck {
@@ -1377,7 +1511,7 @@ mod tests {
             own: vec!["https://example.org/own".to_string()],
             workspace: vec!["https://example.org/context".to_string()],
         };
-        let p = questions_prompt(&sources, None, &[], &ExamConfig::default()).unwrap();
+        let p = questions_prompt(&sources, None, &one_section(), &ExamConfig::default()).unwrap();
         let own_at = p.find("https://example.org/own").unwrap();
         let workspace_at = p.find("https://example.org/context").unwrap();
         assert!(p.contains("primary grounding"));
@@ -1398,8 +1532,13 @@ mod tests {
             workspace: Vec::new(),
         };
 
-        let prompt =
-            questions_prompt(&sources, Some(dir.path()), &[], &ExamConfig::default()).unwrap();
+        let prompt = questions_prompt(
+            &sources,
+            Some(dir.path()),
+            &one_section(),
+            &ExamConfig::default(),
+        )
+        .unwrap();
 
         assert!(
             prompt.contains("Source file `a/notes.md`"),
@@ -1427,8 +1566,13 @@ mod tests {
             workspace: Vec::new(),
         };
 
-        let prompt =
-            questions_prompt(&sources, Some(dir.path()), &[], &ExamConfig::default()).unwrap();
+        let prompt = questions_prompt(
+            &sources,
+            Some(dir.path()),
+            &one_section(),
+            &ExamConfig::default(),
+        )
+        .unwrap();
 
         assert!(
             prompt.contains("Source file `deep/relative.md`"),
@@ -1458,7 +1602,8 @@ mod tests {
             workspace: vec![workspace.display().to_string()],
         };
 
-        let prompt = questions_prompt(&sources, None, &[], &ExamConfig::default()).unwrap();
+        let prompt =
+            questions_prompt(&sources, None, &one_section(), &ExamConfig::default()).unwrap();
 
         assert_eq!(
             1,
@@ -1479,13 +1624,11 @@ mod tests {
     #[test]
     fn questions_prompt_carries_source_strictness_and_json_shape() {
         let sources = url_layers(&["https://example.org/ownership"]);
-        let p = questions_prompt(&sources, None, &[], &ExamConfig::default()).unwrap();
+        let p = questions_prompt(&sources, None, &one_section(), &ExamConfig::default()).unwrap();
         assert!(p.contains("https://example.org/ownership"));
         assert!(p.contains("WebFetch"));
         assert!(p.contains("strict examiner"));
-        assert!(p.contains("APPLICATION"));
         assert!(p.contains("\"questions\""));
-        assert!(p.contains("exactly 3 open-ended questions"));
     }
 
     #[test]
@@ -1508,11 +1651,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let cfg = ExamConfig {
-            num_questions: 3,
-            ..ExamConfig::default()
-        };
-        let p = questions_prompt(&sources, None, &sections, &cfg).unwrap();
+        let p = questions_prompt(&sources, None, &sections, &ExamConfig::default()).unwrap();
         let moves = p.find("# Moves").expect("first section heading");
         let borrows = p.find("# Borrows").expect("second section heading");
         assert!(moves < borrows, "sections keep deck order: {p}");
@@ -1528,14 +1667,27 @@ mod tests {
             p.contains("NEVER ask what a card states"),
             "scope only: {p}"
         );
-        assert!(
-            p.contains("exactly 3 questions for EACH section (6 in total)"),
-            "count: {p}"
-        );
+        for rule in [
+            "first list its mental models",
+            "at least one question for every model you listed",
+            "There is no upper limit.",
+            "spelled exactly as you listed it",
+        ] {
+            assert!(p.contains(rule), "models rule {rule:?}: {p}");
+        }
+        assert!(!p.contains("Write exactly"), "no fixed count: {p}");
         for shape in ["instance:", "boundary:", "fix:"] {
             assert!(p.contains(shape), "shape {shape}: {p}");
         }
-        assert!(p.contains("\"section\""), "json tags the section: {p}");
+        for tag in [
+            "\"sections\"",
+            "\"models\"",
+            "\"section\"",
+            "\"shape\"",
+            "\"model\"",
+        ] {
+            assert!(p.contains(tag), "json carries {tag}: {p}");
+        }
     }
 
     #[test]
@@ -1619,15 +1771,12 @@ mod tests {
     #[test]
     fn questions_prompt_asks_for_standalone_fenced_questions_that_hide_the_answer() {
         let sources = url_layers(&["https://example.org/ownership"]);
-        for sections in [
-            Vec::new(),
-            vec![ExamSection {
-                label: "# Moves".to_string(),
-                context: vec!["# Moves".to_string()],
-                cards: vec!["Q: a\nA: b".to_string()],
-                ..Default::default()
-            }],
-        ] {
+        for sections in [vec![ExamSection {
+            label: "# Moves".to_string(),
+            context: vec!["# Moves".to_string()],
+            cards: vec!["Q: a\nA: b".to_string()],
+            ..Default::default()
+        }]] {
             let p = questions_prompt(&sources, None, &sections, &ExamConfig::default()).unwrap();
             for rule in [
                 "It stands alone.",
@@ -1647,15 +1796,13 @@ mod tests {
     }
 
     #[test]
-    fn questions_prompt_honors_num_questions_and_extra() {
+    fn questions_prompt_honors_extra() {
         let sources = url_layers(&["https://x"]);
         let cfg = ExamConfig {
-            num_questions: 3,
             extra: Some("Focus on lifetimes.".to_string()),
             ..ExamConfig::default()
         };
-        let p = questions_prompt(&sources, None, &[], &cfg).unwrap();
-        assert!(p.contains("exactly 3 open-ended questions"));
+        let p = questions_prompt(&sources, None, &one_section(), &cfg).unwrap();
         assert!(p.contains("Additional instructions:"));
         assert!(p.contains("Focus on lifetimes."));
     }
@@ -1665,6 +1812,7 @@ mod tests {
         let qs = vec![ExamQuestion {
             prompt: "Why move?".to_string(),
             points: vec!["avoids double free".to_string()],
+            ..Default::default()
         }];
         let p = grade_prompt(
             &qs,
@@ -1683,6 +1831,7 @@ mod tests {
         let qs = vec![ExamQuestion {
             prompt: "Q".to_string(),
             points: vec!["p".to_string()],
+            ..Default::default()
         }];
         let p = grade_prompt(&qs, &["   ".to_string()], Strictness::Balanced);
         assert!(p.contains("(no answer given)"));
@@ -1693,6 +1842,7 @@ mod tests {
         let qs = vec![ExamQuestion {
             prompt: "Q".to_string(),
             points: vec!["p".to_string()],
+            ..Default::default()
         }];
         let a = vec!["a".to_string()];
         let strict = grade_prompt(&qs, &a, Strictness::Strict);
@@ -1784,8 +1934,9 @@ mod tests {
 
     #[test]
     fn parse_questions_from_fenced_json() {
-        let raw = "Here you go:\n```json\n{\"questions\": [{\"prompt\": \"Q1\", \
-                   \"points\": [\"a\", \"b\"]}]}\n```";
+        let raw = "Here you go:\n```json\n{\"sections\": [{\"section\": 1, \"models\": [\"m\"]}], \
+                   \"questions\": [{\"section\": 1, \"shape\": \"fix\", \"model\": \"m\", \
+                   \"prompt\": \"Q1\", \"points\": [\"a\", \"b\"]}]}\n```";
         let dto: QuestionsDto = parse_json(raw).unwrap();
         assert_eq!(1, dto.questions.len());
         assert_eq!("Q1", dto.questions[0].prompt);
@@ -1922,15 +2073,20 @@ mod tests {
             workspace: Vec::new(),
         };
 
-        let prompt =
-            questions_prompt(&sources, Some(dir.path()), &[], &ExamConfig::default()).unwrap();
+        let prompt = questions_prompt(
+            &sources,
+            Some(dir.path()),
+            &one_section(),
+            &ExamConfig::default(),
+        )
+        .unwrap();
 
         assert!(
             prompt.contains("[... source truncated ...]"),
             "the pasted source carries no truncation marker, so the examiner reads a partial source as whole"
         );
         assert!(
-            prompt.contains("Each question must be answerable from the source"),
+            prompt.contains("Every question must be answerable from the source"),
             "the answerability instruction is gone, so the marker guards nothing"
         );
     }
@@ -2000,11 +2156,7 @@ mod tests {
 
         let prompt = dir.path().join("prompt.txt");
         let args = dir.path().join("args.txt");
-        std::fs::write(
-            dir.path().join("reply.json"),
-            "{\"questions\":[{\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("reply.json"), ONE_SECTION_REPLY).unwrap();
         let cli = crate::testutil::fake_cli(
             dir.path(),
             &format!(
@@ -2136,10 +2288,12 @@ mod tests {
             ExamQuestion {
                 prompt: "first".to_string(),
                 points: vec!["one".to_string()],
+                ..Default::default()
             },
             ExamQuestion {
                 prompt: "second".to_string(),
                 points: vec!["two".to_string()],
+                ..Default::default()
             },
         ]);
 
@@ -2247,38 +2401,133 @@ mod tests {
     }
 
     #[test]
-    fn generate_questions_rejects_an_empty_reply() {
+    fn generation_rejects_unattributed_questions_and_uncovered_models_with_one_retry() {
         let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let cli = fake_reply(dir.path(), "{\"questions\":[]}");
-        let deck = deck_with_exam(&["https://x"]);
-        let err = generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap_err();
-        assert!(format!("{err:#}").contains("no questions"));
+        let good = ONE_SECTION_REPLY;
+        let rows: [(&str, &str, &str, Result<usize, &str>); 7] = [
+            ("good first time", good, good, Ok(1)),
+            (
+                "bad then good",
+                "{\"sections\":[],\"questions\":[]}",
+                good,
+                Ok(2),
+            ),
+            (
+                "no model listed, twice",
+                "{\"sections\":[],\"questions\":[]}",
+                "{\"sections\":[{\"section\":1,\"models\":[\" \"]}],\"questions\":[]}",
+                Err("section 1 lists no mental model"),
+            ),
+            (
+                "a question outside every section, twice",
+                "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\"questions\":[{\"section\":2,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
+                "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\"questions\":[{\"section\":0,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
+                Err("names section 0"),
+            ),
+            (
+                "an unlisted model, twice",
+                "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"other\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
+                "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"other\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
+                Err("names the model `other`"),
+            ),
+            (
+                "an uncovered model, twice",
+                "{\"sections\":[{\"section\":1,\"models\":[\"m\",\"n\"]}],\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
+                "{\"sections\":[{\"section\":1,\"models\":[\"m\",\"n\"]}],\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
+                Err("lists the model `n` but asks no question"),
+            ),
+            (
+                "an empty prompt, twice",
+                "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\" \",\"points\":[\"p\"]}]}",
+                "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\"Q\",\"points\":[]}]}",
+                Err("empty prompt or no key points"),
+            ),
+        ];
+        for (label, first, second, expected) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            let cli = crate::testutil::fake_replies(dir.path(), &[first, second]);
+            let deck = deck_with_exam_and_card(&["https://x"]);
+            let result = generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli));
+            let calls = crate::testutil::fake_reply_calls(dir.path());
+            match (expected, result) {
+                (Ok(want_calls), Ok(questions)) => {
+                    assert_eq!(want_calls, calls, "{label}: calls");
+                    assert_eq!(1, questions.len(), "{label}: questions");
+                }
+                (Err(want), Err(error)) => {
+                    assert_eq!(2, calls, "{label}: exactly one retry");
+                    let message = format!("{error:#}");
+                    assert!(
+                        message.contains("rejected twice") && message.contains(want),
+                        "{label}: {message}"
+                    );
+                }
+                (expected, got) => panic!("{label}: expected {expected:?}, got {got:?}"),
+            }
+        }
     }
 
     #[test]
-    fn generate_questions_rejects_a_malformed_question() {
+    fn a_retry_names_the_reason_the_first_answer_was_rejected() {
         let _lock = exec_lock();
-        for (label, reply) in [
-            (
-                "empty prompt",
-                "{\"questions\":[{\"prompt\":\"\",\"points\":[\"point\"]}]}",
-            ),
-            (
-                "empty points",
-                "{\"questions\":[{\"prompt\":\"question\",\"points\":[]}]}",
-            ),
-        ] {
-            let dir = tempfile::tempdir().unwrap();
-            let cli = fake_reply(dir.path(), reply);
-            let deck = deck_with_exam(&["https://x"]);
-            let err =
-                generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap_err();
-            assert!(
-                format!("{err:#}").contains("malformed"),
-                "{label} must be rejected"
-            );
-        }
+        let dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(
+            dir.path(),
+            &["{\"sections\":[],\"questions\":[]}", ONE_SECTION_REPLY],
+        );
+        let deck = deck_with_exam_and_card(&["https://x"]);
+        generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap();
+        let second = std::fs::read_to_string(dir.path().join("prompt-2")).unwrap();
+        assert!(
+            second.contains("Your previous answer was rejected: section 1 lists no mental model"),
+            "{second}"
+        );
+    }
+
+    #[test]
+    fn opening_a_deck_for_the_exam_stamps_new_cards_and_refuses_an_uninitialized_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "## old?\na\n").unwrap();
+        crate::stamp::stamp_deck(&path).unwrap();
+        std::fs::write(
+            &path,
+            format!("{}\n## new?\nb\n", std::fs::read_to_string(&path).unwrap()),
+        )
+        .unwrap();
+        let deck = open_for_exam(&path).unwrap();
+        assert!(
+            deck.cards.iter().all(|card| card.id().is_some()),
+            "a card added after init gets its id before the sitting: {:?}",
+            deck.cards.iter().map(|card| card.id()).collect::<Vec<_>>()
+        );
+
+        let raw = dir.path().join("raw.md");
+        std::fs::write(&raw, "## q?\na\n").unwrap();
+        assert!(
+            open_for_exam(&raw).is_err(),
+            "an uninitialized deck is refused"
+        );
+        assert_eq!(
+            "## q?\na\n",
+            std::fs::read_to_string(&raw).unwrap(),
+            "and left untouched"
+        );
+    }
+
+    #[test]
+    fn a_deck_without_cards_is_not_examined() {
+        let deck = deck_with_exam(&["https://x"]);
+        let error = generate_questions(
+            &deck,
+            &ExamConfig::default(),
+            &ask_config(std::path::Path::new("unused")),
+        )
+        .unwrap_err();
+        assert!(
+            format!("{error:#}").contains("no cards to examine"),
+            "{error:#}"
+        );
     }
 
     #[test]
@@ -2287,10 +2536,12 @@ mod tests {
             ExamQuestion {
                 prompt: "Q1".to_string(),
                 points: vec!["p".to_string()],
+                ..Default::default()
             },
             ExamQuestion {
                 prompt: "Q2".to_string(),
                 points: vec!["p".to_string()],
+                ..Default::default()
             },
         ];
         let err = grade_answers(
@@ -2316,10 +2567,12 @@ mod tests {
             ExamQuestion {
                 prompt: "Q1".to_string(),
                 points: vec!["p".to_string()],
+                ..Default::default()
             },
             ExamQuestion {
                 prompt: "Q2".to_string(),
                 points: vec!["p".to_string()],
+                ..Default::default()
             },
         ];
         let err = grade_answers(
@@ -2348,18 +2601,17 @@ mod tests {
     fn generate_questions_end_to_end() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        let json = "{\"questions\":[{\"prompt\":\"Why move?\",\
-                    \"points\":[\"avoids double free\"]}]}";
-        let cli = fake_reply(dir.path(), json);
-        let deck = deck_with_exam(&["https://x"]);
-        let cfg = ExamConfig {
-            num_questions: 1,
-            ..ExamConfig::default()
-        };
-        let qs = generate_questions(&deck, &cfg, &ask_config(&cli)).unwrap();
+        let cli = fake_reply(dir.path(), ONE_SECTION_REPLY);
+        let deck = deck_with_exam_and_card(&["https://x"]);
+        let qs = generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap();
         assert_eq!(1, qs.len());
         assert_eq!("Why move?", qs[0].prompt);
         assert_eq!(vec!["avoids double free"], qs[0].points);
+        assert_eq!(
+            (0, Shape::Instance, "m"),
+            (qs[0].section, qs[0].shape, qs[0].model.as_str()),
+            "the model's 1-based section becomes an index; shape and model are kept"
+        );
     }
 
     #[test]
@@ -2371,6 +2623,7 @@ mod tests {
         let qs = vec![ExamQuestion {
             prompt: "Q".to_string(),
             points: vec!["p".to_string()],
+            ..Default::default()
         }];
         let result = grade_answers(
             &qs,
@@ -2471,7 +2724,7 @@ mod tests {
             "input=$(cat)\n\
              case \"$input\" in\n\
              *'\"grades\"'*) printf '%s' '{grades}' ;;\n\
-             *'\"questions\"'*) printf '%s' '{{\"questions\":[{{\"prompt\":\"Q1\",\"points\":[\"p1\"]}},{{\"prompt\":\"Q2\",\"points\":[\"p2\"]}}]}}' ;;\n\
+             *'\"questions\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"section\":1,\"shape\":\"instance\",\"model\":\"m\",\"prompt\":\"Q1\",\"points\":[\"p1\"]}},{{\"section\":1,\"shape\":\"boundary\",\"model\":\"m\",\"prompt\":\"Q2\",\"points\":[\"p2\"]}}]}}' ;;\n\
              *) printf '## Why does X?\\npoint one\\n' ;;\n\
              esac"
         );
@@ -2968,8 +3221,13 @@ mod windows_tests {
             workspace: Vec::new(),
         };
 
-        let prompt =
-            questions_prompt(&sources, Some(dir.path()), &[], &ExamConfig::default()).unwrap();
+        let prompt = questions_prompt(
+            &sources,
+            Some(dir.path()),
+            &one_section(),
+            &ExamConfig::default(),
+        )
+        .unwrap();
 
         assert!(
             prompt.contains("Source file `notes.md`"),

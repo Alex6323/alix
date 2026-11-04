@@ -53,9 +53,13 @@ per-question breakdown) in the browser. You reach it three ways:
   the session-end summary offers it.
 
 `alix` asks the model to read the source (URLs via `WebFetch`, local files embedded)
-and write **fresh understanding questions**, `num_questions` for each of the
-deck's `#` sections (cards before the first heading form one section of their
-own). Within a section the questions cycle through three shapes: a concrete
+and write **fresh understanding questions** for each of the deck's `#`
+sections (cards before the first heading form one section, named after the
+deck). For each section the model first lists its mental models, the distinct
+ideas the section holds, then writes at least one question per model, with no
+upper limit; questions that skip a listed model, or name a model or section
+that was not listed, are rejected and generated once more. Within a section the
+questions cycle through three shapes: a concrete
 **instance** no card shows, a **boundary** (when does the idea stop holding),
 and a **fix** (a statement with one seeded mistake to find and correct). The
 section's heading, prose and cards go into the prompt only as scope, so the
@@ -115,7 +119,7 @@ optionally overridden per workspace in `alix.toml`'s `[defaults]`. The levels:
 
 This dial (how hard each answer is judged) is independent of `pass_threshold` (how
 *many* answers must pass). Both, plus `model`, `timeout_secs` (default 300),
-`num_questions` (per section, default 3), an `extra` guidance field, and
+an `extra` guidance field, and
 `retry_cooldown_secs` (default 3600; `0` disables the wait before re-sitting
 a failed *trace* exam; a failed fact-deck exam remediates instead), live in
 the `[exam]` config section.
