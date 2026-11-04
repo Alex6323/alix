@@ -40,8 +40,7 @@ async function startMockedExam(page: Page, dto: object) {
   await page.route("**/api/exam/start", (route) => route.fulfill({ json: dto }));
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "Source Fact").click();
-  await page.getByTitle("choose a depth").click();
-  await page.locator(".legend .chip", { hasText: /^Exam/ }).click();
+  await page.getByRole("button", { name: /^Take exam/ }).click();
 }
 
 test("an exam question renders inline code and numbers its program's lines", async ({ page }) => {

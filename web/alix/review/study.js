@@ -28,7 +28,6 @@ export function createStudy({
   traceData,
   replaceTraceSession,
   openTutor,
-  startExam,
   closeMenu,
   notice,
   timers,
@@ -2010,15 +2009,7 @@ export function createStudy({
     };
     const noteEl = el("div", "remark", "");
     wrap.appendChild(noteEl);
-    const examDue = state.exam_due || [];
-    examDue.forEach(name => {
-      wrap.appendChild(el("div", "exam-ready", `✦ ${name} is ready for its exam.`));
-    });
     stage.appendChild(wrap);
-    // An exam-due deck takes the primary action; otherwise the restart chip does.
-    examDue.forEach((name, i) => {
-      chip(examDue.length === 1 ? "Take the exam" : `Exam: ${name}`, i === 0 ? "primary" : "", () => startExam(name));
-    });
     // Continue the drain when due cards remain; otherwise say the next sitting
     // starts new cards, never an unlabeled button. The waiting count lives in
     // the note: the sitting plants only the capped share, not all of them.
@@ -2027,7 +2018,7 @@ export function createStudy({
     // with the Augment screen one chip away for the choice-less cards.
     const deck = lastDeck ? lastDeck() : null;
     if (gap && gap.recall > 0 && deck) {
-      chip("Continue at Recall", examDue.length ? "" : "primary", () => {
+      chip("Continue at Recall", "primary", () => {
         // Carry the sitting's scope: a re-select without it silently widens a
         // topology- or region-scoped session to the whole deck.
         api("/api/select", post({
@@ -2044,7 +2035,7 @@ export function createStudy({
     const restartLabel = dueLeft > 0 ? "Continue"
       : newLeft > 0 ? "Start new"
       : "New session";
-    const newSession = chip(restartLabel, examDue.length || gap ? "" : "primary", restart, label(keys.restart));
+    const newSession = chip(restartLabel, gap ? "" : "primary", restart, label(keys.restart));
     summaryPaint = () => {
       const text = noteText();
       noteEl.textContent = text || "";

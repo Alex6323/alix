@@ -33,4 +33,3 @@
   .exam-points, .exam-missed { margin: 0 0 4px; padding-left: 18px; }
   .exam-points li { color: var(--ink); opacity: 0.85; }
   .exam-missed li { color: var(--again); opacity: 0.8; }
-  .exam-ready { color: var(--warn); margin-top: 8px; }

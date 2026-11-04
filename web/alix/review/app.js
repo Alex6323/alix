@@ -76,7 +76,6 @@ study = createStudy({
   traceData: () => trace.data(),
   replaceTraceSession: (next) => trace.replace(next),
   openTutor: () => tutor.show(),
-  startExam: (deck) => exam.start(deck),
   closeMenu: () => menu.classList.remove("open"),
   notice,
   timers: {

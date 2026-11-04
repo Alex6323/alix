@@ -182,6 +182,9 @@ the picker and `alix stats`:
 A deck that declares a `exam:` adds one state in between: **exam due**. For
 those decks, drilling the cards no longer finishes them: passing the **AI exam**
 does, which marks the deck *mastered*. That's the subject of a later chapter.
+On the web, Learn and Enter keep drilling an exam-due deck. The separate
+**Take exam** action is filled when the exam is due and unlocked; it does not
+appear again in the Depth menu or on a session summary.
 
 ## Unlocks, in one line
 

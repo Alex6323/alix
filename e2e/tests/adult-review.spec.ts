@@ -152,6 +152,52 @@ function longContentState({
   };
 }
 
+async function mockExamPickerRows(
+  page: Page,
+  states: Record<string, { state: string; examable: boolean }>,
+) {
+  await page.route("**/api/decks", async (route) => {
+    const response = await route.fetch();
+    const catalog = await response.json();
+    const rows = [
+      ...catalog.recent,
+      ...catalog.workspaces.flatMap((row) => row.members),
+      ...catalog.folders.flatMap((row) => row.members),
+    ];
+    const shared = {
+      has_exam: true,
+      is_trace: false,
+      reviewable: true,
+      reviewable_recognize: true,
+      reviewable_recall: true,
+      reviewable_reconstruct: false,
+      last_launch: "recall",
+    };
+    for (const [suffix, state] of Object.entries(states)) {
+      const row = rows.find((candidate) => candidate.name.endsWith(suffix));
+      expect(row, `mock row ${suffix}`).toBeDefined();
+      Object.assign(row, shared, state);
+    }
+    await route.fulfill({ response, json: catalog });
+  });
+}
+
+async function captureAssignment24(page: Page, stem: string) {
+  const directory = process.env.ALIX_A24_RENDER_DIR;
+  if (!directory) return;
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1200, height: 800 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.screenshot({
+      path: `${directory}/${stem}-${viewport.width}.png`,
+      fullPage: true,
+      animations: "disabled",
+    });
+  }
+}
+
 test("the picker lists the fixture workspace and its decks", async ({ page }) => {
   const animals = adultDeckRow(page, "Animals");
   await expect(animals).toBeVisible();
@@ -213,6 +259,81 @@ test("the exam chip stays put when focus moves between ready and locked exams", 
   expect(lockedBrowse).not.toBeNull();
   expect(lockedExam!.width).toBeCloseTo(readyExam!.width, 1);
   expect(lockedBrowse!.x).toBeCloseTo(readyBrowse!.x, 1);
+});
+
+test("the drawer keeps one exam entry and accents only a due unlocked exam", async ({ page }) => {
+  await mockExamPickerRows(page, {
+    "wild.md": { state: "examdue", examable: true },
+    "cats.md": { state: "examdue", examable: false },
+    "source-fact.md": { state: "learning", examable: true },
+  });
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Animals").click();
+
+  const takeExam = page.getByRole("button", { name: /^Take exam/ });
+
+  await adultDeckRow(page, "wild").click();
+  await expect(page.getByRole("button", { name: /^Learn/ })).toBeVisible();
+  await expect(takeExam).toHaveCount(1);
+  await expect(takeExam).toBeEnabled();
+  await expect(takeExam).toHaveClass(/\bprimary\b/);
+  await captureAssignment24(page, "drawer");
+
+  await adultDeckRow(page, "cats").click();
+  await expect(takeExam).toHaveCount(1);
+  await expect(takeExam).toBeDisabled();
+  await expect(takeExam).not.toHaveClass(/\bprimary\b/);
+
+  await adultDeckRow(page, "Source Fact").click();
+  await expect(takeExam).toHaveCount(1);
+  await expect(takeExam).toBeEnabled();
+  await expect(takeExam).not.toHaveClass(/\bprimary\b/);
+  await page.getByTitle("choose a depth").click();
+  await expect(page.getByRole("button", { name: "Exam", exact: true })).toHaveCount(0);
+});
+
+test("Enter drills an exam-due deck and never starts its exam", async ({ page }) => {
+  await mockExamPickerRows(page, {
+    "wild.md": { state: "examdue", examable: true },
+  });
+  let selectRequests = 0;
+  let examRequests = 0;
+  await page.route("**/api/select", async (route) => {
+    selectRequests += 1;
+    await route.fulfill({ json: longContentState({ answerLines: ["Selected for review."] }) });
+  });
+  await page.route("**/api/exam/start", async (route) => {
+    examRequests += 1;
+    await route.fulfill({
+      json: {
+        phase: "generating",
+        deck: "wild.md",
+        strictness: "balanced",
+        total: 0,
+        current: 0,
+        answer: "",
+        on_last: false,
+        grades: [],
+        passed: null,
+        gaps: [],
+        can_remediate: false,
+        remediated_count: null,
+        unlocks: [],
+        thinking: false,
+        error: "blocked by the routing test",
+        elapsed: null,
+      },
+    });
+  });
+
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+  await page.keyboard.press("Enter");
+
+  await expect.poll(() => selectRequests + examRequests).toBe(1);
+  expect(selectRequests).toBe(1);
+  expect(examRequests).toBe(0);
 });
 
 test("clicking a deck row fires POST /api/select, and a card front renders", async ({ page }) => {
@@ -1413,6 +1534,41 @@ test("an empty session says when the next card is due", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Nothing due.", exact: true })).toBeVisible();
   await expect(page.locator(".summary .remark")).toHaveText(/^Next due in \d+ min\.$/);
+});
+
+test("the session summary offers no exam", async ({ page }) => {
+  const done = {
+    kind: "review",
+    phase: "done",
+    card: null,
+    choices: null,
+    choice_runs: null,
+    keypoints: null,
+    keypoint_runs: null,
+    introducing: false,
+    mode: "flip",
+    depth: "recall",
+    input: "type",
+    remaining: 0,
+    initial: 1,
+    reviews: 1,
+    passed: 1,
+    failed: 0,
+    introduced: 0,
+    partial: 0,
+    exam_due: ["animals/wild.md"],
+    can_restart: false,
+    next_due_ms: null,
+    due_left: 0,
+    new_left: 0,
+    label: "wild.md",
+  };
+  await page.route("**/api/state", (route) => route.fulfill({ json: done }));
+  await openApp(page);
+
+  await expect(page.locator(".exam-ready")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /exam/i })).toHaveCount(0);
+  await captureAssignment24(page, "summary");
 });
 
 test("the tutor leave prompt owns Enter and Escape from the chat box", async ({ page }) => {

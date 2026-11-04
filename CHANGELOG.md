@@ -33,8 +33,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Confidence tracking on the web: the depth menu's **confidence** tick-box
   makes a deck ask **Sure** or **Unsure** in place of Reveal or Submit, and a
   single-answer choice card then selects first and submits on Sure/Unsure.
-  The mark is stored with the review; scheduling ignores it. The depth menu
-  also offers **Exam** for a deck with an exam.
+  The mark is stored with the review; scheduling ignores it.
 
 - The phone shows a cited card's source. Tapping a revealed answer on a card
   with `<!-- at: ... -->` citations opens the Hide sheet with a Hide / Source
@@ -172,6 +171,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   notice; decks reach the phone through the paired desktop instead.
 
 ### Changed
+
+- Web: **Take exam** is the only exam entry for a fact deck. It fills only
+  when the exam is due and unlocked; a locked exam stays unfilled and
+  disabled. **Learn** and Enter always drill, including on an exam-due deck,
+  and session summaries no longer offer an exam or announce that one is
+  ready.
 
 - The exam no longer asks a fixed number of questions per section: a first
   call lists each section's mental models from the source, a second asks at
