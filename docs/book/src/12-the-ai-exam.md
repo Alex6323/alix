@@ -42,15 +42,25 @@ unlocking its dependents directly, even when it declares `cite:` roots.
 ## Sitting the exam
 
 The exam is a guided, one-question-at-a-time flow (answer, move Back/Next, then a
-per-question breakdown) in the browser. You reach it three ways:
+per-question breakdown). It is one of a deck's launches, next to the review
+depths and Walk, and you can sit it at any time as practice, before drilling
+too:
 
-- **From the picker:** choosing an `exam due` deck starts the exam instead of an
-  empty review.
-- **From the depth menu:** the focused deck's **Depth…** menu has an **Exam**
-  chip (key `x`) next to Walk, so a deck with an exam can be sat again at any
-  time as practice.
-- **From the summary:** when you drill a deck's last cards and it turns exam due,
-  the session-end summary offers it.
+- **In the browser:** the deck drawer's **Take exam** chip (key `x`). It is
+  filled when the deck is exam due and its prerequisites are passed, and shows
+  a lock while a prerequisite is not passed. Choosing an exam-due deck itself
+  drills; it never starts the exam.
+- **On the phone:** the deck's launch sheet has an **Exam** row below Walk. The
+  phone sits the exam through a [paired](19-pairing.md) desktop, so the row is
+  disabled while no desktop is reachable.
+
+When some sections of the deck have passed and some have not, both offer
+**only what needs work**: the sitting then asks only about the sections that
+have not passed. On a fresh deck, or one whose sections all passed, the
+sitting covers the whole deck either way and the option is hidden.
+
+Starting the exam gives ids to cards added since the deck was last opened,
+the way opening a review does, so their results can be recorded.
 
 `alix` asks the model to read the source (URLs via `WebFetch`, local files embedded)
 and write **fresh understanding questions** for each of the deck's `#`
@@ -75,15 +85,36 @@ against the source's rubric, never against your cards** (grading the cards would
 be circular). The model calls run on a background thread, so the UI stays
 responsive while it thinks.
 
-- **Pass** (every question by default, tune with `pass_threshold`) marks the deck
-  **mastered** (`mastered ✓`). Mastery, not mere drilling, is what unlocks decks
-  that `requires:` this one. Source-less decks are unaffected: finishing them
-  just means drilled (`done ✓`).
-- **Fail** lists the gaps and offers to turn them into **remediation cards**: a
-  cloze card or a plain card for a missed fact, an open understanding card (a
-  prompt plus key points) for a missed concept, with overlapping gaps merged.
-  Re-drill those and re-sit. Once created, the screen reports how many remediation
-  cards it added.
+## Results: a count, per section
+
+A sitting reports points, not a verdict: each Pass is worth 1, each Partial
+0.5, each Fail 0, shown as `17 / 18` or `17.5 / 18`, with the same count for
+each examined section and the shape of each question. Every examined card
+records its section's latest result:
+
+- A **section passes** when its share of Pass answers reaches `pass_threshold`
+  (every answer, by default). A section reads as *needs work* when any of its
+  cards carries a failed result, *has new cards* when some cards were added
+  since its last sitting, and *passed* when every card carries a pass.
+- The deck is **passed** the first time every section has passed, whether in
+  one sitting or across several filtered ones. Passing, not mere drilling, is
+  what unlocks decks that `requires:` this one, and a deck that has sat its
+  exam once is never locked again by its own prerequisites. Source-less decks
+  are unaffected: finishing them just means drilled (`done ✓`).
+- The deck is **mastered** the first time a full sitting (every section)
+  scores every answer Pass; a filtered sitting never sets it. The results
+  screen says "mastered" only for such a sitting.
+
+Neither passed nor mastered is taken back by a later, weaker sitting. The
+deck row shows the highest of them with the last full sitting's count
+(`15 / 18`, `passed · 15 / 18`, `mastered 🎉 · 3d · 17 / 18`) and how many
+sections need work or have new cards since the exam.
+
+Whenever an answer missed key points, the results offer to turn the gaps into
+**remediation cards**: a cloze card or a plain card for a missed fact, an open
+understanding card (a prompt plus key points) for a missed concept, with
+overlapping gaps merged. Re-drill those and re-sit. Once created, the screen
+reports how many remediation cards it added.
 
 Those remediation cards land in the deck's
 [personal file](03-the-deck-format.md#your-personal-file) (`<deck>.local.md`),
@@ -94,9 +125,11 @@ duplicate it; once a card's interval reaches the retirement cap it's archived,
 and re-failing the gap brings it back. Because they are plain Markdown blocks
 in a file you own, you can read, edit, or delete them yourself.
 
-Resetting a whole deck (`alix reset <deck>`) also clears its mastered state, so a
-re-drilled deck must pass again; resetting only an individual card (`--card`)
-leaves mastery intact.
+Resetting a whole deck (`alix reset <deck>`) also clears its exam state, so a
+re-drilled deck must pass again; `alix reset <deck> --exam` clears only the
+exam state (each card's result, passed, mastered and the last count) and
+names the decks whose exams it will lock. Resetting only an individual card
+(`--card`) leaves the deck's passed and mastered state intact.
 
 ## Strictness: match the rigor to the material
 
@@ -113,8 +146,8 @@ optionally overridden per workspace in `alix.toml`'s `[defaults]`. The levels:
 - **lenient**: benefit of the doubt: only clearly wrong or unanswered points are
   gaps.
 
-This dial (how hard each answer is judged) is independent of `pass_threshold` (how
-*many* answers must pass). Both, plus `model`, `timeout_secs` (default 300),
+This dial (how hard each answer is judged) is independent of `pass_threshold` (the
+share of a section's answers that must pass). Both, plus `model`, `timeout_secs` (default 300),
 an `extra` guidance field, live in
 the `[exam]` config section.
 
@@ -122,7 +155,7 @@ the `[exam]` config section.
 
 Everything else serves this. The drilling loads the facts; the exam is the gate
 that turns "I reviewed it" into "I understood it, and here's the check." It's also
-why *mastery* (not completion) drives [unlocks](09-dependencies.md): a curriculum
+why *passing* (not completion) drives [unlocks](09-dependencies.md): a curriculum
 should open the next door only when you've genuinely passed through the last. The
 everyday, self-graded rehearsal for it is `explain` mode
 ([chapter 4](04-review-modes.md)); the exam is the real thing.

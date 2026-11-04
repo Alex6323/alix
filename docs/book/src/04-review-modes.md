@@ -52,8 +52,9 @@ tick-box (`c`); see [Cramming](05-scheduling.md), the **confidence** tick-box
 (`f`; [Confidence tracking](15-the-web-app.md#confidence-tracking)), a **skip intro**
 tick-box (`s`) that grades never-seen cards at once instead of introducing
 them first (for this launch only), **Walk** (`w`), an
-unscheduled read-through ([Walking a deck](15-the-web-app.md#walking-a-deck)),
-and **Exam** (`x`) on a deck with an exam ([The AI exam](12-the-ai-exam.md)). The main button repeats the
+unscheduled read-through ([Walking a deck](15-the-web-app.md#walking-a-deck)).
+A deck with an exam is sat from the drawer's **Take exam** chip (`x`), not
+from this menu ([The AI exam](12-the-ai-exam.md)). The main button repeats the
 deck's last launch, remembered per deck: **Learn** at its last depth, or
 **Walk** after a walk. The first time you ever open a
 deck, that default is Recognize only when every card has a genuine

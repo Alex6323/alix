@@ -145,9 +145,9 @@ deadline` refuses a non-workspace directory and points at `alix workspace
 init`.
 
 The picker's ready percent counts a deadline's member decks as ready once
-mastered, or finished when they have no exam grounding. Mastery itself rests
-on the [AI exam](12-the-ai-exam.md)'s sampled questions, not a check of every
-card. Treat ready% as evidence toward readiness, not proof of it.
+their exam has passed, or finished when they have no exam grounding. Passing
+itself rests on the [AI exam](12-the-ai-exam.md)'s sampled questions, not a
+check of every card. Treat ready% as evidence toward readiness, not proof of it.
 
 How deeply you drill is never configuration: it's the **session depth** you
 pick per review (the picker's Depth… menu). See

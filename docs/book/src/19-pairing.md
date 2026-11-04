@@ -108,12 +108,14 @@ Once paired, review gains things it doesn't have offline:
   mid-call forgets the call; the phone reports it as failed (the question
   goes back into the chat box) rather than waiting for a result that will
   never come.
-- A **Take the exam** chip on the session summary, for a fact deck that
-  declares exam material. It opens a full-screen exam: one question at a
-  time, then a Pass/Partial/Fail breakdown per question and, on a fail, a
-  **Turn the gaps into cards** button. A pass and any remediation cards it
-  creates land in the phone's own progress store, exactly like an offline
-  grade, matching the rule above: the server computes, the phone keeps.
+- An **Exam** row on a deck's launch sheet, for a fact deck that declares
+  exam material, with an "Only what needs work" switch when some sections
+  passed and some did not. It opens a full-screen exam: one question at a
+  time, then the points count, each section's count, a Pass/Partial/Fail
+  breakdown per question and, when an answer missed key points, a **Turn the
+  gaps into cards** button. Every sitting's results and any remediation cards
+  land in the phone's own progress store, exactly like an offline grade,
+  matching the rule above: the server computes, the phone keeps.
 
 A [trace deck](13-trace-decks.md) runs entirely on-device: predict, reveal,
 and self-grade each checkpoint. It has no AI exam or paired-only capstone.
@@ -126,10 +128,11 @@ the same liveness rule as the two chips: the row
 appears only while the phone has confirmed the paired desktop is reachable
 and new enough, and is simply absent otherwise.
 
-The Ask chip and the Take the exam chip both depend on the phone having
+The Ask chip and the Exam row both depend on the phone having
 confirmed the paired desktop is reachable and
 running at least version 0.6.0; there is no retry chrome for a dead or
-too-old server, the chip or offer simply is not there.
+too-old server: the Ask chip simply is not there, and the Exam row is
+disabled with a short hint.
 
 If the desktop answers but rejects the token partway through a review, an
 exam, a note, or a generation (the restart case above, caught mid-session
