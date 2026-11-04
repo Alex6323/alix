@@ -209,5 +209,14 @@ test("a partial-point sitting shows 17.5 out of 18 without mastered", async ({ p
   await expect(page.locator(".exam-section").first()).toContainText("8.5 / 9");
   await expect(page.locator(".exam-section").first()).toContainText("needs work");
   await expect(page.getByText(/PASSED|FAILED/)).toHaveCount(0);
+  const questionText = page.locator(".exam-rq-text");
+  const first = await questionText.nth(0).boundingBox();
+  const second = await questionText.nth(1).boundingBox();
+  expect(first, "first result question has layout bounds").not.toBeNull();
+  expect(second, "second result question has layout bounds").not.toBeNull();
+  expect(
+    Math.abs(first!.x - second!.x),
+    "question text stays aligned when the shape labels have different widths",
+  ).toBeLessThanOrEqual(1);
   await capture(page, "results-17.5");
 });

@@ -26,9 +26,11 @@
   .exam-pass { color: var(--good); font-family: var(--mono); font-weight: 700; font-size: 1.15rem; }
   .exam-unlocks { color: var(--good); font-size: 0.9rem; }
   .exam-result { border-left: 3px solid var(--line); padding: 2px 0 4px 12px; }
-  .exam-rq { color: var(--ink); margin-bottom: 2px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 6px; }
-  .exam-question-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
-  .exam-shape { color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.06em; text-transform: uppercase; }
+  .exam-rq { color: var(--ink); margin-bottom: 2px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 6px; }
+  .exam-question-meta { display: contents; }
+  .exam-qn { grid-column: 1; grid-row: 1; }
+  .exam-rq-text { grid-column: 2; grid-row: 1; min-width: 0; }
+  .exam-shape { grid-column: 1 / -1; grid-row: 2; justify-self: start; color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.06em; text-transform: uppercase; }
   .exam-q p, .exam-rq-text p, .exam-verdict .vfb p, .exam-points p, .exam-missed p { margin: 0 0 0.4em; }
   .exam-q p:last-child, .exam-rq-text p:last-child, .exam-verdict .vfb p:last-child, .exam-points p:last-child, .exam-missed p:last-child { margin-bottom: 0; }
   .exam-code { margin: 8px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--excerpt-bg); }
