@@ -3374,11 +3374,16 @@ mod windows_tests {
             workspace: Vec::new(),
         };
 
+        let section = ExamSection {
+            label: "Moves".to_string(),
+            context: vec!["Moves".to_string()],
+            ..Default::default()
+        };
         let prompt = questions_prompt(
             &sources,
             Some(dir.path()),
-            &one_section(),
-            &models_for(1),
+            &[section],
+            &[vec!["m".to_string()]],
             &ExamConfig::default(),
         )
         .unwrap();

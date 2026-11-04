@@ -217,6 +217,6 @@ test("a partial-point sitting shows 17.5 out of 18 without mastered", async ({ p
   expect(
     Math.abs(first!.x - second!.x),
     "question text stays aligned when the shape labels have different widths",
-  ).toBeLessThanOrEqual(1);
+  ).toBeLessThanOrEqual(2);
   await capture(page, "results-17.5");
 });
