@@ -1460,6 +1460,44 @@ fn reset_exam_all_reaches_decks_inside_plain_folders() {
     assert_eq!(None, reloaded.get("card-a").unwrap().exam_result);
 }
 
+#[cfg(unix)]
+#[test]
+fn reset_exam_all_does_not_follow_directory_symlinks_outside_configured_root() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("root");
+    let outside = dir.path().join("outside");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    let deck = write(
+        &outside,
+        "a.md",
+        "---\nformat-version: 1\nid: deck-a\nexam: https://x\n---\n\
+         ## q\na\n<!-- id: card-a -->\n",
+    );
+    std::os::unix::fs::symlink(&outside, root.join("linked-outside")).unwrap();
+    let config = decks_config(&root);
+    let mut store = decks_store(&[&deck]);
+    store.get_or_insert("card-a").exam_result = Some(alix::store::ExamRecord {
+        at_ms: 1,
+        pass: true,
+    });
+    store.set_deck_passed("deck-a", 1);
+    store.save().unwrap();
+
+    let out = alix(&["reset", "--exam", "--all", "--yes", "--config", &config]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let reloaded = decks_store(&[&deck]);
+    assert!(
+        reloaded.deck_passed("deck-a"),
+        "a deck outside the configured root must not be reset through a directory symlink"
+    );
+    assert!(
+        reloaded.get("card-a").unwrap().exam_result.is_some(),
+        "outside exam records must remain untouched"
+    );
+}
+
 #[test]
 fn a_target_reset_ignores_an_unreadable_default_store() {
     // The configured decks dir's store is NOT the target's store: a garbage

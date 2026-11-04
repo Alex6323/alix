@@ -725,6 +725,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix reset --exam --all` no longer follows a directory symlink outside the
+  configured decks root and clears another folder's exam progress.
+
 - A card added on the desktop and synced to the phone before the desktop
   stamped it no longer gets a second id on the phone. The desktop now stamps
   such cards before serving the entry, so phone reviews of the card stay

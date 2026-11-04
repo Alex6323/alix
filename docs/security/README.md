@@ -101,6 +101,10 @@ An error after the rename remains visible, but progress and augmentation
 bookkeeping advances to the revision that already committed, keeping later
 saves retryable.
 
+Recursive bulk exam reset canonicalizes the configured decks root and each
+candidate directory, and does not enter a directory whose target is outside
+that root (`src/workspace.rs`).
+
 Deck stamping has a separate local write boundary. A valid deck ID under the
 `id` key in opening YAML frontmatter marks a file as initialized and
 authorizes automatic maintenance of missing card IDs. The retired `alix-id`
@@ -605,6 +609,8 @@ The most relevant deterministic checks currently live beside their controls:
 - `src/deck.rs`: explicit-source precedence and no origin-root inference;
 - `src/parser/mod.rs`, `src/stamp.rs`, and `src/workspace.rs`: explicit deck
   identity, byte-preserving refusal, and initialized-only discovery;
+- `src/workspace.rs` and `tests/cli.rs`: configured-root containment for
+  recursive deck discovery used by bulk exam reset;
 - `src/source.rs` and `src/cli/doctor.rs`: fail-closed citation integrity and
   explicit exact locator repair;
 - `src/locator.rs` and `src/cite.rs`: locator grammar (relative, normalized
