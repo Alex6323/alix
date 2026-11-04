@@ -23,9 +23,11 @@ pub struct ExamQuestion {
     pub points: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ExamSection {
+    pub label: String,
     pub context: Vec<String>,
+    pub card_ids: Vec<String>,
     pub cards: Vec<String>,
 }
 
@@ -95,7 +97,17 @@ pub fn generate_questions(
     generate_questions_from(&sources, Some(&root), &exam_sections(deck), cfg, ask_cfg)
 }
 
-fn exam_sections(deck: &Deck) -> Vec<ExamSection> {
+pub const SECTION_NUDGE_CARDS: usize = 15;
+
+pub fn oversized_sections(deck: &Deck) -> Vec<(String, usize)> {
+    exam_sections(deck)
+        .into_iter()
+        .filter(|section| section.cards.len() > SECTION_NUDGE_CARDS)
+        .map(|section| (section.label, section.cards.len()))
+        .collect()
+}
+
+pub(crate) fn exam_sections(deck: &Deck) -> Vec<ExamSection> {
     let mut sections: Vec<ExamSection> = Vec::new();
     for card in &deck.cards {
         let heading = card.section_context.first();
@@ -103,12 +115,16 @@ fn exam_sections(deck: &Deck) -> Vec<ExamSection> {
             Some(at) => at,
             None => {
                 sections.push(ExamSection {
+                    label: heading.cloned().unwrap_or_else(|| deck.display_name()),
                     context: card.section_context.clone(),
-                    cards: Vec::new(),
+                    ..Default::default()
                 });
                 sections.len() - 1
             }
         };
+        if let Some(id) = card.id() {
+            sections[at].card_ids.push(id);
+        }
         let scope = format!(
             "Q: {}\nA: {}",
             card.front.trim(),
@@ -857,12 +873,7 @@ fn questions_prompt(
              mental model behind the section instead.\n\n",
         );
         for (i, section) in sections.iter().enumerate() {
-            let heading = section
-                .context
-                .first()
-                .map(String::as_str)
-                .unwrap_or("(untitled)");
-            scope.push_str(&format!("Section {}: {heading}\n", i + 1));
+            scope.push_str(&format!("Section {}: {}\n", i + 1, section.label));
             for line in section.context.iter().skip(1) {
                 scope.push_str(line);
                 scope.push('\n');
@@ -1482,15 +1493,19 @@ mod tests {
         let sources = url_layers(&["https://example.org/ownership"]);
         let sections = [
             ExamSection {
+                label: "# Moves".to_string(),
                 context: vec![
                     "# Moves".to_string(),
                     "Values move on assignment.".to_string(),
                 ],
                 cards: vec!["Q: What does `let b = a;` do to a String?\nA: Moves it".to_string()],
+                ..Default::default()
             },
             ExamSection {
+                label: "# Borrows".to_string(),
                 context: vec!["# Borrows".to_string()],
                 cards: vec!["Q: How many &mut at once?\nA: One".to_string()],
+                ..Default::default()
             },
         ];
         let cfg = ExamConfig {
@@ -1553,13 +1568,64 @@ mod tests {
     }
 
     #[test]
+    fn sections_follow_headings_merge_repeats_and_label_the_unsectioned_with_the_deck_title() {
+        let rows = [
+            (
+                "no heading",
+                "## q1?\na\n\n## q2?\nb\n",
+                vec![("Ownership", 2)],
+            ),
+            (
+                "two headings",
+                "# A\n\n## a1?\none\n\n# B\n\n## b1?\ntwo\n",
+                vec![("A", 1), ("B", 1)],
+            ),
+            (
+                "repeated heading",
+                "# A\n\n## a1?\none\n\n# B\n\n## b1?\ntwo\n\n# A\n\n## a2?\nthree\n",
+                vec![("A", 2), ("B", 1)],
+            ),
+            (
+                "a heading with prose and no cards",
+                "## q?\na\n\n# Empty\n\nJust prose.\n\n# B\n\n## b?\nc\n",
+                vec![("Ownership", 1), ("B", 1)],
+            ),
+        ];
+        for (label, body, expected) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("d.md");
+            std::fs::write(&path, format!("---\ntitle: Ownership\n---\n\n{body}")).unwrap();
+            crate::stamp::stamp_deck(&path).unwrap();
+            let deck = Deck::load(&path).unwrap();
+            let sections = exam_sections(&deck);
+            let got: Vec<(&str, usize)> = sections
+                .iter()
+                .map(|s| (s.label.as_str(), s.card_ids.len()))
+                .collect();
+            assert_eq!(expected, got, "{label}: (label, member ids) per section");
+            let mut every_id: Vec<String> =
+                deck.cards.iter().filter_map(|card| card.id()).collect();
+            let mut listed: Vec<String> =
+                sections.iter().flat_map(|s| s.card_ids.clone()).collect();
+            every_id.sort();
+            listed.sort();
+            assert_eq!(
+                every_id, listed,
+                "{label}: every card id belongs to exactly one section"
+            );
+        }
+    }
+
+    #[test]
     fn questions_prompt_asks_for_standalone_fenced_questions_that_hide_the_answer() {
         let sources = url_layers(&["https://example.org/ownership"]);
         for sections in [
             Vec::new(),
             vec![ExamSection {
+                label: "# Moves".to_string(),
                 context: vec!["# Moves".to_string()],
                 cards: vec!["Q: a\nA: b".to_string()],
+                ..Default::default()
             }],
         ] {
             let p = questions_prompt(&sources, None, &sections, &ExamConfig::default()).unwrap();

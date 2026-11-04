@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix doctor` warns when two sections of a deck share a heading (the exam
+  merges them into one section) and, on a deck with an exam, when a section
+  holds more than 15 cards.
+
 - Web: **Tutorial** in the deck picker's ☰ menu, and a **Tutorial** button
   when the picker finds no decks, open a nine-card tutorial as a walk. It
   ships with alix, is never listed in the picker or the recent list, and

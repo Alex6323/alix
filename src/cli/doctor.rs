@@ -476,6 +476,15 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             ));
         }
     }
+    if deck.has_exam() && !deck.is_trace() {
+        for (label, count) in alix::exam::oversized_sections(deck) {
+            report.warn(format!(
+                "{}: {count} cards in section `{label}`; the exam asks about every idea in a \
+                 section, so splitting it keeps sittings short",
+                deck.path.display()
+            ));
+        }
+    }
     for (key, root) in &deck.cite {
         if exam_points_into_assets(root) {
             report.warn(format!(
@@ -774,6 +783,10 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::SectionWithoutCards => "section has prose but no card below it; a section \
              introduces the cards under it"
             .to_string(),
+        LintKind::DuplicateSectionHeading { first_line } => format!(
+            "section heading repeats the one on line {first_line}; the exam merges both into \
+             one section, so rename one"
+        ),
         LintKind::UnclosedFence => "a fence opened here never closes; everything after it \
              (cards included) was swallowed as its content"
             .to_string(),
@@ -2464,6 +2477,42 @@ mod tests {
             "trace deck: `exam:` is its walk scope, not exam material: {:#?}",
             walk.warnings
         );
+    }
+
+    #[test]
+    fn a_section_above_the_nudge_size_is_a_warning_on_an_examined_deck_only() {
+        let cards =
+            |n: usize| -> String { (1..=n).map(|i| format!("## q{i}?\na{i}\n\n")).collect() };
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "notes.md", "n");
+        let rows: [(&str, String, bool); 4] = [
+            (
+                "at the nudge size",
+                format!("---\nexam: notes.md\n---\n# Big\n\n{}", cards(15)),
+                false,
+            ),
+            (
+                "one above it",
+                format!("---\nexam: notes.md\n---\n# Big\n\n{}", cards(16)),
+                true,
+            ),
+            (
+                "unsectioned, one above it",
+                format!("---\nexam: notes.md\n---\n{}", cards(16)),
+                true,
+            ),
+            ("no exam", format!("# Big\n\n{}", cards(16)), false),
+        ];
+        for (label, text, warned) in rows {
+            w(dir.path(), "d.md", &text);
+            let mut report = Report::default();
+            deck_resource_findings(&Deck::load(dir.path().join("d.md")).unwrap(), &mut report);
+            let hit = report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("cards in section"));
+            assert_eq!(warned, hit, "{label}: {:#?}", report.warnings);
+        }
     }
 
     #[test]

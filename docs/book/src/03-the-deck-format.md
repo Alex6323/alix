@@ -465,6 +465,10 @@ title is an error.
 `alix doctor` warns about a section that has prose but no card before the next
 `#`, since a section introduces the cards under it; a `#` typed where `##` was
 meant often looks like that.
+It also warns when two sections share a heading, since the exam merges them
+into one section, and, on a deck with an exam, when a section holds more than
+15 cards: the exam asks about every idea in a section, so a long one makes a
+long sitting.
 
 ### `###` to `######` — sub-cards
 

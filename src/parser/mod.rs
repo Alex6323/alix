@@ -138,6 +138,9 @@ pub enum LintKind {
         name: String,
     },
     SectionWithoutCards,
+    DuplicateSectionHeading {
+        first_line: usize,
+    },
     HintContainsAnswer {
         answer: String,
     },
@@ -1106,6 +1109,8 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
     let mut section: Vec<String> = Vec::new();
     let mut section_heading_line: Option<usize> = None;
     let mut section_has_cards = false;
+    let mut heading_lines: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     let mut seen_heading = false;
     let mut skip_delimiter = false;
     let mut skip_lines = 0usize;
@@ -1355,6 +1360,15 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                     section_has_cards,
                     lints,
                 );
+                match heading_lines.get(&text) {
+                    Some(&first_line) => lints.push(Lint {
+                        line: lineno,
+                        kind: LintKind::DuplicateSectionHeading { first_line },
+                    }),
+                    None => {
+                        heading_lines.insert(text.clone(), lineno);
+                    }
+                }
                 section_heading_line = Some(lineno);
                 section_has_cards = false;
                 open_depths.clear();
@@ -6136,6 +6150,51 @@ a
                     "{spelling:?} {position}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn a_repeated_section_heading_draws_a_lint_at_each_repeat_naming_the_first() {
+        let repeats = |text: &str| -> Vec<(usize, usize)> {
+            parse(text)
+                .lints
+                .iter()
+                .filter_map(|lint| match lint.kind {
+                    LintKind::DuplicateSectionHeading { first_line } => {
+                        Some((lint.line, first_line))
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let rows = [
+            (
+                "distinct headings",
+                "# A\n\n## q\na\n\n# B\n\n## r\nb\n",
+                vec![],
+            ),
+            (
+                "one repeat",
+                "# A\n\n## q\na\n\n# B\n\n## r\nb\n\n# A\n\n## s\nc\n",
+                vec![(11, 1)],
+            ),
+            (
+                "two repeats of one heading",
+                "# A\n\n## q\na\n\n# A\n\n## r\nb\n\n# A\n\n## s\nc\n",
+                vec![(6, 1), (11, 1)],
+            ),
+            (
+                "headings differing only in case",
+                "# A\n\n## q\na\n\n# a\n\n## r\nb\n",
+                vec![],
+            ),
+        ];
+        for (label, text, expected) in rows {
+            assert_eq!(
+                expected,
+                repeats(text),
+                "{label}: (repeat line, first line)"
+            );
         }
     }
 
