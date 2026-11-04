@@ -1420,6 +1420,7 @@ mod tests {
             due_ms: now,
             ..Default::default()
         });
+        exam_store.get_or_insert("card-exam").total_passes = 1;
 
         for (label, status, expected) in [
             (
@@ -1794,6 +1795,7 @@ mod tests {
         let paths = workspace::deck_files(&ws);
         let mut store = crate::state::open_stores(&paths, &store_path).unwrap();
         store.get_or_insert(&base_id).recall = Some(graduated_not_due(T0));
+        store.get_or_insert(&base_id).total_passes = 1;
         store.save().unwrap();
         let review = ReviewConfig::default();
 
@@ -2282,12 +2284,13 @@ mod tests {
         entry.recognize = Some(graduated_not_due(T0));
         entry.recall = Some(graduated_not_due(T0));
         entry.reconstruct = Some(graduated_not_due(T0));
+        entry.total_passes = 1;
         store.save().unwrap();
 
         let rows = list_members(root, &ws, &ReviewConfig::default(), T0 + 1_000).rows;
         assert_eq!(2, rows.len());
         let examdue = rows.iter().find(|r| r.title == "zzz-examdue").unwrap();
-        assert!(examdue.exam_due, "should have graduated into ExamDue");
+        assert!(examdue.exam_due, "every card passed once: ExamDue");
         assert!(!examdue.due, "settled at every depth: nothing due");
         assert!(!examdue.locked);
         let locked = rows.iter().find(|r| r.title == "aaa-locked").unwrap();

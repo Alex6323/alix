@@ -110,11 +110,11 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
         );
 
         let state = match deck.state(&store) {
+            _ if store.deck_mastered(deck_id) => "mastered ✓",
+            _ if store.deck_passed(deck_id) => "passed ✓",
             DeckState::NotStarted => "not started",
             DeckState::Started => "in progress",
             DeckState::ExamDue => "exam due",
-            DeckState::Finished if store.deck_mastered(deck_id) => "mastered ✓",
-            DeckState::Finished if store.deck_passed(deck_id) => "passed ✓",
             DeckState::Finished => "finished ✓",
         };
         let ignored = match deck.ignored.len() {

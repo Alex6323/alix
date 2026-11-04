@@ -626,7 +626,7 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                 PickerDepth.recognize,
                 'Recognize',
                 canRecognize
-                    ? 'pick the answer out of four'
+                    ? 'pick the answer from options'
                     : 'augment the deck to enable',
               ),
               (PickerDepth.recall, 'Recall', 'the everyday review'),
@@ -661,7 +661,7 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
               ),
               _PickerLaunchRow(
                 label: 'Walk',
-                hint: 'read every card once, no grading',
+                hint: 'every card once, unscheduled',
                 onTap: onWalk,
               ),
             ],

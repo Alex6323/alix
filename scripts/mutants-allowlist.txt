@@ -191,9 +191,9 @@ src/parser/cloze.rs:161: replace - with / in unbracketed_src
 # `:` and `skipping` is still false, so the branch pushes the line unchanged;
 # outside the branch it is pushed unchanged too, since no `at:` rewrite can
 # sit on a fence. The output is identical for every input. Line-pinned.
-src/deck.rs:913: replace > with >= in with_exam
-src/deck.rs:979: replace > with >= in with_added_cite
-src/deck.rs:1030: replace > with >= in rewrite_frozen_assets
+src/deck.rs:921: replace > with >= in with_exam
+src/deck.rs:987: replace > with >= in with_added_cite
+src/deck.rs:1038: replace > with >= in rewrite_frozen_assets
 
 # EQUIVALENT. `candidate_count` returns 0 for a card without both a table
 # token and a row, and only card-table rows carry those; the parser rejects a

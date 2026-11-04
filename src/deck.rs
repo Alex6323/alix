@@ -136,6 +136,14 @@ pub enum DeckError {
     InvalidFileName { path: PathBuf },
 }
 
+fn passed_once(card: &Card, store: &Store) -> bool {
+    card.id()
+        .and_then(|id| store.get(&id))
+        .is_some_and(|state| {
+            state.total_passes > 0 || state.walk_grade.is_some_and(|grade| grade.passed())
+        })
+}
+
 impl Deck {
     pub fn load(path: impl AsRef<Path>) -> Result<Self, DeckError> {
         Self::load_with_defaults(path, &DeckSettings::default())
@@ -302,17 +310,17 @@ impl Deck {
         if total == 0 {
             return DeckState::NotStarted;
         }
-        if store.deck_passed(self.deck_token.as_deref().unwrap_or_default()) {
+        if self.has_exam() {
+            if store.deck_mastered(self.deck_token.as_deref().unwrap_or_default()) {
+                return DeckState::Finished;
+            }
+            if self.cards.iter().all(|c| passed_once(c, store)) {
+                return DeckState::ExamDue;
+            }
+        } else if self.cards.iter().all(|c| session::has_graduated(c, store)) {
             return DeckState::Finished;
         }
-        let gated = self.cards.iter().all(|c| session::has_graduated(c, store));
-        if gated {
-            if self.has_exam() {
-                DeckState::ExamDue
-            } else {
-                DeckState::Finished
-            }
-        } else if self
+        if self
             .cards
             .iter()
             .all(|c| c.id().and_then(|id| store.progress(&id)).is_none())
@@ -1336,40 +1344,88 @@ mod tests {
     }
 
     #[test]
-    fn sourced_deck_is_examdue_until_mastered() {
+    fn an_exam_deck_is_due_once_every_card_passed_somewhere_and_stays_due_until_mastered() {
+        use crate::{depth::Depth, scheduler::Grade};
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(
             dir.path(),
             "d.md",
-            "---\nformat-version: 1\nid: \"deck-d1\"\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
+            "---\nformat-version: 1\nid: \"deck-d1\"\nexam: https://x\n---\n\
+             ## a\n1\n<!-- id: card-q1 -->\n## b\n2\n<!-- id: card-q2 -->\n",
         );
         let deck = Deck::load(&path).unwrap();
-        let (mut store, _s) = empty_store();
-
-        retire(&mut store, &deck.cards[0].id().unwrap());
-        assert_eq!(DeckState::ExamDue, deck.state(&store));
-
-        store.set_deck_passed(deck.deck_token.as_deref().unwrap(), 1);
-        assert_eq!(DeckState::Finished, deck.state(&store));
-    }
-
-    #[test]
-    fn a_sourced_deck_is_examdue_once_every_card_graduates() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(
-            dir.path(),
-            "d.md",
-            "---\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n## b\n2\n<!-- id: card-q2 -->\n",
-        );
-        let deck = Deck::load(&path).unwrap();
-        let (mut store, _s) = empty_store();
-
-        graduate(&mut store, &deck.cards[0].id().unwrap());
-        learning(&mut store, &deck.cards[1].id().unwrap());
-        assert_eq!(DeckState::Started, deck.state(&store));
-
-        graduate(&mut store, &deck.cards[1].id().unwrap());
-        assert_eq!(DeckState::ExamDue, deck.state(&store));
+        let a = deck.cards[0].id().unwrap();
+        let b = deck.cards[1].id().unwrap();
+        let review = |store: &mut Store, id: &str, grade: Grade, depth: Depth| {
+            store
+                .get_or_insert(id)
+                .record_review(1, grade, depth, false);
+        };
+        let walk = |store: &mut Store, id: &str, grade: Grade| {
+            let state = store.get_or_insert(id);
+            state.walked_ms = Some(1);
+            state.walk_grade = Some(grade);
+        };
+        type Setup<'a> = Box<dyn Fn(&mut Store) + 'a>;
+        let rows: Vec<(&str, Setup<'_>, DeckState)> = vec![
+            (
+                "no progress",
+                Box::new(|_: &mut Store| {}),
+                DeckState::NotStarted,
+            ),
+            (
+                "one card passed",
+                Box::new(|s: &mut Store| review(s, &a, Grade::Pass, Depth::Recognize)),
+                DeckState::Started,
+            ),
+            (
+                "Recognize and Reconstruct passes both count",
+                Box::new(|s: &mut Store| {
+                    review(s, &a, Grade::Pass, Depth::Recognize);
+                    review(s, &b, Grade::Pass, Depth::Reconstruct);
+                }),
+                DeckState::ExamDue,
+            ),
+            (
+                "a walk graded Pass counts",
+                Box::new(|s: &mut Store| {
+                    walk(s, &a, Grade::Pass);
+                    review(s, &b, Grade::Pass, Depth::Recall);
+                }),
+                DeckState::ExamDue,
+            ),
+            (
+                "a failed walk and a failed review do not count",
+                Box::new(|s: &mut Store| {
+                    walk(s, &a, Grade::Fail);
+                    review(s, &b, Grade::Fail, Depth::Recall);
+                }),
+                DeckState::Started,
+            ),
+            (
+                "a passed deck stays due",
+                Box::new(|s: &mut Store| {
+                    review(s, &a, Grade::Pass, Depth::Recall);
+                    review(s, &b, Grade::Pass, Depth::Recall);
+                    s.set_deck_passed("deck-d1", 1);
+                }),
+                DeckState::ExamDue,
+            ),
+            (
+                "a mastered deck is finished",
+                Box::new(|s: &mut Store| {
+                    review(s, &a, Grade::Pass, Depth::Recall);
+                    review(s, &b, Grade::Pass, Depth::Recall);
+                    s.record_full_marks(&deck, 1);
+                }),
+                DeckState::Finished,
+            ),
+        ];
+        for (label, setup, expected) in rows {
+            let (mut store, _dir) = empty_store();
+            setup(&mut store);
+            assert_eq!(expected, deck.state(&store), "{label}");
+        }
     }
 
     #[test]
@@ -1446,7 +1502,7 @@ mod tests {
     }
 
     #[test]
-    fn passing_the_exam_masters_an_undrilled_deck() {
+    fn an_undrilled_deck_that_passed_its_exam_finishes_only_when_mastered() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_deck(
             dir.path(),
@@ -1458,7 +1514,14 @@ mod tests {
         assert_eq!(DeckState::NotStarted, deck.state(&store));
 
         store.set_deck_passed(deck.deck_token.as_deref().unwrap(), 1);
-        assert_eq!(DeckState::Finished, deck.state(&store));
+        assert_eq!(
+            DeckState::NotStarted,
+            deck.state(&store),
+            "passed, never drilled"
+        );
+
+        store.record_full_marks(&deck, 2);
+        assert_eq!(DeckState::Finished, deck.state(&store), "mastered");
     }
 
     #[test]
@@ -1489,7 +1552,14 @@ mod tests {
         let (mut store, _s) = empty_store();
         let dd = Some(dir.path());
 
-        retire(&mut store, &basics.cards[0].id().unwrap());
+        store
+            .get_or_insert(&basics.cards[0].id().unwrap())
+            .record_review(
+                1,
+                crate::scheduler::Grade::Pass,
+                crate::depth::Depth::Recall,
+                false,
+            );
         assert_eq!(DeckState::ExamDue, basics.state(&store));
         assert!(is_locked(&advanced, dd, &store));
 

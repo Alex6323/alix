@@ -176,6 +176,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A deck with an exam becomes **exam due** once every card has been answered
+  right at least once, at any depth (Recognize included) or in a walk; it used
+  to need every card graduated in Recall review, so a deck drilled only at
+  Recognize or Reconstruct never became due. It now stays exam due after
+  passing, until a full sitting masters it. `alix stats` reports passed and
+  mastered before the drill state.
+
+- Phone launch sheet: Walk reads "every card once, unscheduled" and Recognize
+  "pick the answer from options" (they claimed no grading and four options).
+
 - Web: **Take exam** is the only exam entry for a fact deck. It fills, in the
   theme's accent color, only when the exam is due and unlocked; a locked exam
   stays unfilled and

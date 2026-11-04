@@ -180,9 +180,10 @@ the picker and `alix stats`:
   phase, past the initial learning steps)
 
 A deck that declares an `exam:` adds a state between started and finished:
-**exam due** (every card drilled, exam not yet passed). For those decks,
-drilling the cards no longer finishes them: passing the **AI exam** does
-(*passed*; a perfect full sitting also marks it *mastered*). That's the subject
+**exam due** (every card answered right at least once, at any depth or in a
+walk, and the deck not yet mastered). For those decks, drilling the cards
+never finishes them: passing the **AI exam** unlocks dependents (*passed*),
+and a perfect full sitting finishes the deck (*mastered*). That's the subject
 of a later chapter.
 On the web, Learn and Enter keep drilling an exam-due deck. The separate
 **Take exam** action is filled when the exam is due and unlocked; it does not

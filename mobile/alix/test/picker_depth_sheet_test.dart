@@ -118,7 +118,7 @@ void main() {
     expect(
       find.descendant(
         of: walk,
-        matching: find.text('read every card once, no grading'),
+        matching: find.text('every card once, unscheduled'),
       ),
       findsOneWidget,
       reason: 'the row says what a walk is, like its siblings',

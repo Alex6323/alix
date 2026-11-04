@@ -32,10 +32,11 @@ The exam reads only `exam:` entries (the deck's own and its workspace
 manifest's). It never reads `cite:` roots or the text your cards cite: to
 examine a cited file, list it under `exam:` as well.
 
-Once every card in an exam-grounded deck has **graduated** (reached FSRS's
-review phase, past the initial learning steps) the deck is **exam due** rather
-than finished: drilled, but not yet counted, so it doesn't unlock its
-dependents yet. A deck with no `exam:` at all (in the deck or its
+Once every card in an exam-grounded deck has been answered right at least
+once (a passing review at any depth, Recognize included, or a walk graded
+**Got it** or **Partly**) the deck is **exam due**. It stays exam due, also
+after passing, until a full sitting masters it, so retaking stays one tap
+away; passing alone already unlocks its dependents. A deck with no `exam:` at all (in the deck or its
 workspace manifest) simply becomes *finished* when all its cards graduate,
 unlocking its dependents directly, even when it declares `cite:` roots.
 

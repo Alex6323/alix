@@ -174,7 +174,7 @@ CustomPaint
                                       Expanded
                                         Column
                                           Text("Walk")
-                                          Text("read every card once, no grading")
+                                          Text("every card once, unscheduled")
                                       Icon(e15f)
                                         SizedBox(width=22.0, height=22.0)
                                           Center
