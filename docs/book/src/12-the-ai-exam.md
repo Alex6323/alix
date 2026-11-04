@@ -55,8 +55,8 @@ too:
   disabled while no desktop is reachable.
 
 Both offer **only what needs work**, on by default: the sitting then asks
-only about the sections that have not passed (failed, with new cards, or
-never examined). The browser shows the tick only when some sections passed
+only about the sections that have not passed (those that need work, have new
+cards, or were never examined). The browser shows the tick only when some sections passed
 and some did not, since otherwise the sitting covers the whole deck either
 way; the phone always shows the switch and disables it when every section
 has passed.
@@ -81,7 +81,8 @@ model knows what the deck already asks and avoids it. A question stands alone:
 it shows any program or claim it asks about instead of pointing at the source,
 and a program comes as a code block with numbered lines, so an answer can name
 "line 3". Questions, feedback and key points render inline code and math. Each
-question comes with the key points a correct answer must hit. You type a
+question comes with the key points a correct answer must hit, shown only with
+the results. You type a
 prose answer per question, and an examiner grades each **Pass / Partial / Fail
 against the source's rubric, never against your cards** (grading the cards would
 be circular). The model calls run on a background thread, so the UI stays
@@ -95,9 +96,12 @@ each examined section and the shape of each question. Every examined card
 records its section's latest result:
 
 - A **section passes** when its share of Pass answers reaches `pass_threshold`
-  (every answer, by default). A section reads as *needs work* when any of its
-  cards carries a failed result, *has new cards* when some cards were added
-  since its last sitting, and *passed* when every card carries a pass.
+  (a fraction; 1.0, every answer, by default; a Partial counts as no Pass
+  here). Each examined card then stores its section's verdict, so a section
+  reads as *needs work* when any of its cards carries a failed verdict, *has
+  new cards* when some cards were added since its last sitting, *passed* when
+  every card carries a passing one, and *never examined* when none carries
+  one.
 - The deck is **passed** the first time every section has passed, whether in
   one sitting or across several filtered ones. Passing, not mere drilling, is
   what unlocks decks that `requires:` this one, and a deck that has sat its
@@ -109,7 +113,8 @@ records its section's latest result:
 
 Neither passed nor mastered is taken back by a later, weaker sitting. The
 deck row shows the highest of them with the last full sitting's count
-(`15 / 18`, `passed · 15 / 18`, `mastered 🎉 · 3d · 17 / 18`) and how many
+(`15 / 18` when examined but not passed, `passed · 15 / 18`, `mastered 🎉 ·
+3d · 17 / 18`, where `3d` is the time since it was mastered) and how many
 sections need work or have new cards since the exam.
 
 Whenever an answer missed key points, the results offer to turn the gaps into

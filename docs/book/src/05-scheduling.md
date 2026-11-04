@@ -179,19 +179,22 @@ the picker and `alix stats`:
 - **finished** (`done ✓`): every card has **graduated** (reached FSRS's review
   phase, past the initial learning steps)
 
-A deck that declares a `exam:` adds one state in between: **exam due**. For
-those decks, drilling the cards no longer finishes them: passing the **AI exam**
-does, which marks the deck *mastered*. That's the subject of a later chapter.
+A deck that declares an `exam:` adds a state between started and finished:
+**exam due** (every card drilled, exam not yet passed). For those decks,
+drilling the cards no longer finishes them: passing the **AI exam** does
+(*passed*; a perfect full sitting also marks it *mastered*). That's the subject
+of a later chapter.
 On the web, Learn and Enter keep drilling an exam-due deck. The separate
 **Take exam** action is filled when the exam is due and unlocked; it does not
 appear again in the Depth menu or on a session summary.
 
 ## Unlocks, in one line
 
-Completion also drives dependencies, with no extra syntax: a deck's **exam** is
+Passing also drives dependencies, with no extra syntax: a deck's **exam** is
 locked while any of its *sourced* prerequisites hasn't passed its own exam. The
 deck itself stays drillable throughout. Passing a foundation's exam unlocks the
-exams that build on it. The lock is advisory and recomputed live. The
+exams that build on it. The lock applies to the exam only, never to drilling,
+and is recomputed live. The
 dependencies chapter covers it in full.
 
 ## Cramming

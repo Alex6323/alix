@@ -44,8 +44,10 @@ A fact deck with an exam has one separate **Take exam** action (`x`).
 start the exam. **Take exam** fills with the accent color only when the exam
 is due and unlocked. A locked exam stays unfilled and disabled with a lock
 glyph. The Depth menu does not repeat the exam action, and a session summary
-does not offer an exam. When some sections need work, **only what needs work**
-is ticked by default; untick it to take a full sitting. Results show the point
+does not offer an exam. When some sections have passed and some have not,
+an **only what needs work** tick follows **Take exam**, ticked by default;
+untick it to take a full sitting. Otherwise the sitting covers every section
+and the tick is hidden. Results show the point
 total, each section's count and status, and the shape of every question.
 **mastered** appears only after a perfect full sitting.
 
