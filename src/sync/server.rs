@@ -221,6 +221,20 @@ impl SyncCatalog {
                         continue;
                     }
                 };
+                let deck = if deck.deck_token.is_some()
+                    && deck.cards.iter().any(|card| card.id().is_none())
+                {
+                    match crate::assemble::stamp_and_load_deck(&deck_path) {
+                        Ok(stamped) => stamped,
+                        Err(_) => {
+                            excluded_decks.insert(deck_path);
+                            left_out.push(wire_relative_path);
+                            continue;
+                        }
+                    }
+                } else {
+                    deck
+                };
                 let Some(deck_id) = deck.deck_token else {
                     excluded_decks.insert(deck_path);
                     left_out.push(wire_relative_path);
@@ -951,6 +965,38 @@ mod tests {
             result.is_err(),
             "a metadata permission failure is not a missing optional file"
         );
+    }
+
+    #[test]
+    fn a_pull_serves_every_card_of_a_deck_with_an_id() {
+        let served = tempfile::tempdir().unwrap();
+        let deck = served.path().join("inside.md");
+        std::fs::write(
+            &deck,
+            "---\nformat-version: 1\nid: \"deck-inside\"\n---\n## old\na\n<!-- id: card-inside -->\n\n## new\nb\n",
+        )
+        .unwrap();
+        let recent = crate::recent::RecentDecks::load(served.path().join("recent.json"));
+        let catalog = SyncCatalog::load(
+            served.path(),
+            &recent,
+            &mut crate::cache::DeckCache::default(),
+        )
+        .unwrap();
+        let stage = tempfile::tempdir().unwrap();
+
+        let pull = catalog
+            .stage_pull("inside.md", "root-00000000000000000000000000", stage.path())
+            .unwrap();
+
+        let served_deck = crate::deck::Deck::load(pull.root.join("inside.md")).unwrap();
+        let unstamped: Vec<_> = served_deck
+            .cards
+            .iter()
+            .filter(|card| card.id().is_none())
+            .map(|card| card.front.clone())
+            .collect();
+        assert!(unstamped.is_empty(), "served without an id: {unstamped:?}");
     }
 
     #[test]

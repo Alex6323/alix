@@ -714,6 +714,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A card added on the desktop and synced to the phone before the desktop
+  stamped it no longer gets a second id on the phone. The desktop now stamps
+  such cards before serving the entry, so phone reviews of the card stay
+  attached after the next pull, and a phone exam limited to "only what needs
+  work" no longer drops a section made only of such cards.
+
 - The web exam no longer shows "Preparing your exam…" and a working
   indicator forever when its questions could not be generated (for
   example, an unreadable `exam:` entry); it shows the error and Close.

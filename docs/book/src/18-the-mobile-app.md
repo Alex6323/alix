@@ -162,7 +162,9 @@ no visible step on a normal pass.
 A pull replaces the files the desktop owns for that entry (its decks,
 their augment and asset files) with the desktop's current copies; anything
 the phone added on its own inside the entry is left alone and reported as
-phone-only. A member the desktop deleted stays on the phone while its
+phone-only. Every card arrives with its id: a card you added on the desktop
+gets one there before it travels, so reviews and exam results the phone
+records for it stay attached after the next pull. A member the desktop deleted stays on the phone while its
 progress is not yet pushed, listed as kept, so nothing you reviewed is
 lost before it reached the desktop. A conflicting deck, one whose progress changed on both sides
 since the last sync, stops review of that deck and asks: keep the phone's

@@ -480,7 +480,9 @@ Paired sync moves one picker entry at a time while keeping progress writes
 revision-checked per deck. A client first reads `GET /api/sync/entries`, then
 pulls a selected entry with `GET /api/sync/pull?entry=<name>`. The pull is a
 rootless ZIP whose `.alix/pull.json` manifest identifies every payload file
-and every initialized member deck. The ZIP includes the same authored and
+and every initialized member deck. Listing the entries first stamps any card of an initialized
+member that has no id yet, as opening it for review would, so every card
+travels with the desktop's id. The ZIP includes the same authored and
 generated material as share, plus, when each exists as a regular file, that
 person's progress document, the member's `*.local.*` sidecar, and the
 entry's `alix.local.toml`. It never

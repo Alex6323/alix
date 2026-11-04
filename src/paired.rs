@@ -1875,6 +1875,68 @@ mod tests {
     }
 
     #[test]
+    fn a_card_new_on_both_copies_keeps_one_id_for_phone_history_and_exam_scope() {
+        let (_tmp, root) = fresh_root();
+        let desktop = tempfile::tempdir().unwrap();
+        let desktop_deck = desktop.path().join("physics.md");
+        std::fs::write(
+            &desktop_deck,
+            format!("---\nformat-version: 1\nid: \"{DECK_C}\"\n---\n## new\nb\n"),
+        )
+        .unwrap();
+        let pull = |root: &PairedRoot| {
+            let catalog = crate::sync::SyncCatalog::load(
+                desktop.path(),
+                &crate::recent::RecentDecks::load(desktop.path().join("recent.json")),
+                &mut crate::cache::DeckCache::default(),
+            )
+            .unwrap();
+            let staged = catalog
+                .stage_pull("physics.md", &root.root_id(), &root.staging())
+                .unwrap();
+            apply_unpacked(root, &staged.root, &mut |_| Ok(())).unwrap();
+        };
+
+        pull(&root);
+        let phone_deck = rel_path(&root.entry_root(KIND_DECK, "physics.md"), "physics.md");
+        let phone_id = crate::assemble::stamp_and_load_deck(&phone_deck)
+            .unwrap()
+            .cards[0]
+            .id()
+            .unwrap();
+        let doc = root.document_path(KIND_DECK, "physics.md", DECK_C);
+        let mut phone = Store::open_deck(&doc, DECK_C, "subject").unwrap();
+        let asked = crate::exam_status::needs_work_card_ids(
+            &crate::deck::Deck::load(&phone_deck).unwrap(),
+            &phone,
+        );
+        let examined = crate::exam_status::select_sections(
+            &crate::exam::open_for_exam(&desktop_deck).unwrap(),
+            crate::exam_status::ExamScope::Cards(&asked),
+        );
+        assert!(
+            examined.unknown_cards.is_empty() && examined.sections.len() == 1,
+            "a phone needs-work sitting: asked {asked:?}, desktop does not know {:?}",
+            examined.unknown_cards
+        );
+        phone.get_or_insert(&phone_id).total_reviews = 1;
+        phone.save().unwrap();
+        crate::assemble::stamp_for_session(&desktop_deck).unwrap();
+        pull(&root);
+
+        let landed_id = crate::deck::Deck::load(&phone_deck).unwrap().cards[0]
+            .id()
+            .unwrap();
+        let phone = Store::open_deck(&doc, DECK_C, "subject").unwrap();
+        assert!(
+            phone
+                .get(&landed_id)
+                .is_some_and(|state| state.total_reviews == 1),
+            "the card is now {landed_id}; the phone's review sits under {phone_id}"
+        );
+    }
+
+    #[test]
     fn a_pull_keeps_or_conflicts_an_unpushed_document_by_desktop_movement() {
         let (_tmp, root) = fresh_root();
         apply(&root, &deck_bundle());
