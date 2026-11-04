@@ -7243,16 +7243,16 @@ fn a_mastery_save_failure_surfaces_and_the_mastery_survives_repair() {
 
     let resp = http(&base, "GET", "/api/decks", &[], &[]);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    let state = body["recent"]
+    let mastered = body["recent"]
         .as_array()
         .unwrap()
         .iter()
         .find(|d| d["name"] == "examdeck.md")
-        .map(|d| d["state"].clone());
+        .map(|d| d["mastered"].clone());
     assert_eq!(
-        Some(serde_json::json!("finished")),
-        state,
-        "the pass must survive the repaired flush: {body}"
+        Some(serde_json::Value::Bool(true)),
+        mastered,
+        "the mastery must survive the repaired flush: {body}"
     );
 }
 

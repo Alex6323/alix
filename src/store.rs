@@ -1268,8 +1268,20 @@ impl Store {
         entry.passed_at_ms.get_or_insert(now_ms);
     }
 
-    /// Returns whether this sitting set the deck's `passed_at_ms`.
     pub fn record_exam_result(&mut self, deck: &Deck, record: &SittingRecord, now_ms: u64) -> bool {
+        let deck_id = deck.deck_token.clone().unwrap_or_default();
+        let sections = crate::exam_status::exam_sections(deck);
+        self.record_sitting(&deck_id, &sections, record, now_ms)
+    }
+
+    /// Returns whether this sitting set the deck's `passed_at_ms`.
+    pub fn record_sitting(
+        &mut self,
+        deck_id: &str,
+        deck_sections: &[crate::exam_status::ExamSection],
+        record: &SittingRecord,
+        now_ms: u64,
+    ) -> bool {
         for section in &record.sections {
             let result = ExamRecord {
                 at_ms: now_ms,
@@ -1279,10 +1291,9 @@ impl Store {
                 self.get_or_insert(id).exam_result = Some(result);
             }
         }
-        let deck_id = deck.deck_token.clone().unwrap_or_default();
         if record.full {
             self.decks
-                .entry(deck_id.clone())
+                .entry(deck_id.to_string())
                 .or_default()
                 .full_exam_result = Some(FullExamResult {
                 at_ms: now_ms,
@@ -1291,13 +1302,14 @@ impl Store {
                 total: record.total,
             });
         }
-        let newly_passed = !self.deck_passed(&deck_id) && deck.exam_status(self).all_passed();
+        let newly_passed = !self.deck_passed(deck_id)
+            && crate::exam_status::status_of(deck_sections, self).all_passed();
         if newly_passed {
-            self.set_deck_passed(&deck_id, now_ms);
+            self.set_deck_passed(deck_id, now_ms);
         }
         if record.full && record.total > 0 && record.pass == record.total {
             self.decks
-                .entry(deck_id)
+                .entry(deck_id.to_string())
                 .or_default()
                 .mastered_at_ms
                 .get_or_insert(now_ms);

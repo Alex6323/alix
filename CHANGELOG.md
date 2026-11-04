@@ -185,7 +185,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answer PASS, and `full_exam_result` keeps the last full sitting's counts.
   Neither instant moves on a re-pass. A deck that has sat its exam once is
   never locked again by its prerequisites. `exam_failed_at_ms` is removed: a
-  progress file that still carries it fails to load.
+  progress file that still carries it fails to load. A section passes when its
+  share of PASS answers reaches `pass_threshold`, and remediation is offered
+  whenever an answer missed key points, even in a sitting that passed.
 
 - The exam no longer asks a fixed number of questions per section: a first
   call lists each section's mental models from the source, a second asks at

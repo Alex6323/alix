@@ -966,7 +966,7 @@ impl RemoteExamining {
     pub(super) fn advance(&mut self) {
         match self.sitting.advance(now_ms()) {
             Some(exam::Effect::RemediationCards(text)) => self.cards = Some(text),
-            Some(exam::Effect::Passed) | None => {}
+            Some(exam::Effect::Graded) | None => {}
         }
     }
 
@@ -995,7 +995,7 @@ impl RemoteExamining {
                 .iter()
                 .map(|q| crate::render::exam_text_units(&q.prompt))
                 .collect(),
-            passed: result.map(|r| r.passed),
+            passed: result.map(|r| r.passed()),
             grades,
             gaps: s.gaps(),
             can_remediate: s.can_remediate(),

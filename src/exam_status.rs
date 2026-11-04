@@ -74,7 +74,11 @@ impl ExamStatus {
 }
 
 pub fn exam_status(deck: &Deck, store: &Store) -> ExamStatus {
-    let sections = exam_sections(deck)
+    status_of(&exam_sections(deck), store)
+}
+
+pub fn status_of(sections: &[ExamSection], store: &Store) -> ExamStatus {
+    let sections = sections
         .iter()
         .map(|section| section_status(section, store))
         .collect();

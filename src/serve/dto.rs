@@ -740,7 +740,7 @@ pub(super) fn exam_dto(ex: &Examining) -> ExamDto {
                 .collect()
         })
         .unwrap_or_default();
-    let passed = result.map(|r| r.passed);
+    let passed = result.map(|r| r.passed());
     let unlocks = if passed == Some(true) {
         deck::dependents(&ex.deck_path)
     } else {
@@ -1642,7 +1642,7 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         assert!(
-            sitting.result().is_some_and(|result| result.passed),
+            sitting.result().is_some_and(|result| result.passed()),
             "the fixture must reach a passing result: phase={:?}, error={:?}",
             sitting.phase(),
             sitting.error()
