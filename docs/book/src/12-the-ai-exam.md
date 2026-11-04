@@ -108,14 +108,14 @@ records its section's latest result:
   exam once is never locked again by its own prerequisites. Source-less decks
   are unaffected: finishing them just means drilled (`done ✓`).
 - The deck is **mastered** the first time a full sitting (every section)
-  scores every answer Pass; a filtered sitting never sets it. The results
-  screen says "mastered" only for such a sitting.
+  scores every answer Pass; a filtered sitting never sets it.
 
 Neither passed nor mastered is taken back by a later, weaker sitting. The
-deck row shows the highest of them with the last full sitting's count
-(`15 / 18` when examined but not passed, `passed · 15 / 18`, `mastered 🎉 ·
-3d · 17 / 18`, where `3d` is the time since it was mastered) and how many
-sections need work or have new cards since the exam.
+results screen and the deck row both name the highest of them with the day
+it was reached, and the row adds the last full sitting's day and points:
+`passed (2 Nov) · last (4 Nov) 12 / 18`, `mastered (4 Nov) · last (4 Nov)
+18 / 18`, or `last (4 Nov) 15 / 18` when examined but not passed. A date
+outside the current year names the year (`31 Dec 2025`).
 
 Whenever an answer missed key points, the results offer to turn the gaps into
 **remediation cards**: a cloze card or a plain card for a missed fact, an open

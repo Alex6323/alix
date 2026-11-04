@@ -1175,7 +1175,7 @@ mod tests {
 
         assert!(!row.passed, "one section still needs work");
         assert_eq!(
-            Some("1.5 / 2 · 1 section needs work"),
+            Some("last (1 Jan) 1.5 / 2"),
             row.exam_badge.as_deref(),
             "the badge is the lib's"
         );

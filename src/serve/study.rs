@@ -1306,7 +1306,7 @@ impl StudyState {
                             );
                             self.writes = self.writes.wrapping_add(1);
                         }
-                        Some(exam_dto(ex))
+                        Some(exam_dto(ex, &self.store))
                     }
                 };
                 let _ = reply.send(dto);
@@ -1317,7 +1317,7 @@ impl StudyState {
                     if let Some(i) = goto {
                         ex.sitting.goto(i);
                     }
-                    exam_dto(ex)
+                    exam_dto(ex, &self.store)
                 });
                 let _ = reply.send(dto);
             }
@@ -1325,14 +1325,14 @@ impl StudyState {
                 let dto = self.examining.as_mut().map(|ex| {
                     ex.sitting.set_answer(text);
                     ex.sitting.submit();
-                    exam_dto(ex)
+                    exam_dto(ex, &self.store)
                 });
                 let _ = reply.send(dto);
             }
             StudyCommand::ExamRemediate(reply) => {
                 let dto = self.examining.as_mut().map(|ex| {
                     ex.sitting.remediate();
-                    exam_dto(ex)
+                    exam_dto(ex, &self.store)
                 });
                 let _ = reply.send(dto);
             }
@@ -2245,7 +2245,7 @@ impl StudyState {
                 self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);
                 self.walking = None;
-                let dto = exam_dto(&ex);
+                let dto = exam_dto(&ex, &self.store);
                 self.examining = Some(ex);
                 Transition::Done(Box::new(dto))
             }

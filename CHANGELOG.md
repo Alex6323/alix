@@ -225,10 +225,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   passed or not, records its per-card results on the phone, and the deck row
   shows the same exam badge as the web.
 
-- The deck row badge shows an examined deck's highest exam state with the
-  last full sitting's points (`15 / 18`, `passed · 15.5 / 18`, `mastered 🎉 ·
-  3d · 17 / 18`), plus how many sections need work or have new cards since
-  the exam.
+- The deck row badge shows an examined deck's highest exam state and the
+  day it was reached, then the last full sitting's day and points (`passed
+  (2 Nov) · last (4 Nov) 15.5 / 18`, `last (4 Nov) 15 / 18` when not
+  passed). The exam results screen, web and phone, names the same standing
+  (`mastered (4 Nov)`); `ExamDto.standing` carries it.
 
 - The exam no longer asks a fixed number of questions per section: a first
   call lists each section's mental models from the source, a second asks at

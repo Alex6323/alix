@@ -233,6 +233,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth dco_decode_depth(dynamic raw);
 
   @protected
+  ExamApplied dco_decode_exam_applied(dynamic raw);
+
+  @protected
   ExamOutcome dco_decode_exam_outcome(dynamic raw);
 
   @protected
@@ -764,6 +767,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Depth sse_decode_depth(SseDeserializer deserializer);
+
+  @protected
+  ExamApplied sse_decode_exam_applied(SseDeserializer deserializer);
 
   @protected
   ExamOutcome sse_decode_exam_outcome(SseDeserializer deserializer);
@@ -1410,6 +1416,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_depth(Depth self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_exam_applied(ExamApplied self, SseSerializer serializer);
 
   @protected
   void sse_encode_exam_outcome(ExamOutcome self, SseSerializer serializer);

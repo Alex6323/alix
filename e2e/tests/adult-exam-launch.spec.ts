@@ -174,6 +174,7 @@ function resultsDto({ mastered, pass, partial }: { mastered: boolean; pass: numb
     verdicts: { pass, partial, total: 18 },
     full: true,
     mastered,
+    standing: mastered ? "mastered (4 Nov)" : "passed (2 Nov)",
     gaps: mastered ? [] : ["ownership and the move model"],
     can_remediate: !mastered,
     remediated_count: null,
@@ -199,7 +200,7 @@ test("a full perfect sitting shows its count, section counts, shapes, and master
   await openResults(page, resultsDto({ mastered: true, pass: 18, partial: 0 }));
 
   await expect(page.locator(".exam-score")).toHaveText("18 / 18");
-  await expect(page.locator(".exam-mastered")).toHaveText("mastered");
+  await expect(page.locator(".exam-standing")).toHaveText("mastered (4 Nov)");
   await expect(page.locator(".exam-section")).toHaveCount(2);
   await expect(page.locator(".exam-section").first()).toContainText("Ownership");
   await expect(page.locator(".exam-section").first()).toContainText("9 / 9");
@@ -208,11 +209,11 @@ test("a full perfect sitting shows its count, section counts, shapes, and master
   await capture(page, "results-mastered");
 });
 
-test("a partial-point sitting shows 17.5 out of 18 without mastered", async ({ page }) => {
+test("a partial-point sitting shows 17.5 out of 18 and the deck's standing", async ({ page }) => {
   await openResults(page, resultsDto({ mastered: false, pass: 17, partial: 1 }));
 
   await expect(page.locator(".exam-score")).toHaveText("17.5 / 18");
-  await expect(page.locator(".exam-mastered")).toHaveCount(0);
+  await expect(page.locator(".exam-standing")).toHaveText("passed (2 Nov)");
   await expect(page.locator(".exam-section").first()).toContainText("8.5 / 9");
   await expect(page.locator(".exam-section").first()).toContainText("needs work");
   await expect(page.getByText(/PASSED|FAILED/)).toHaveCount(0);

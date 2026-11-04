@@ -1504,6 +1504,7 @@ Example (from the pinned test):
 | `verdicts` | {pass, partial, total}? | The sitting's raw verdict counts; null until graded. A client shows points as pass + partial / 2 over total. |
 | `full` | bool | The sitting examines every section of the deck. |
 | `mastered` | bool | A full sitting where every answer was PASS. |
+| `standing` | string? | The deck's standing after the sitting, worded by the lib: `"mastered (4 Nov)"` or `"passed (2 Nov)"` (local date; the year only outside the current one); null before results or while the deck has neither. |
 | `gaps` | [string] | Named understanding gaps. |
 | `can_remediate` | bool | An answer missed key points. |
 | `remediated_count` | number? | Null until remediation completes. |
@@ -1684,7 +1685,7 @@ phone applies it to its own state).
 | `questions` | [string] | Prompts only: the rubric (`ExamQuestion.points`) never leaves the server. |
 | `questions_units` | [[ContentUnit]] | Each of `questions` parsed as `ExamDto.question_units` is. |
 | `grades` | [ExamGradeDto] | Populated in `results`/`remediated`. |
-| `sections` / `verdicts` / `full` / `mastered` | | As in `ExamDto`. The phone records each section's `pass` on its `cards` in its own store; the server never writes. |
+| `sections` / `verdicts` / `full` / `mastered` | | As in `ExamDto`. The phone records each section's `pass` on its `cards` in its own store; the desktop records nothing of a phone sitting. There is no `standing`: the phone words its own from its store. |
 | `unknown_cards` | [card-id] | Ids from the start request's `cards` that the desktop's copy of the deck does not hold. |
 | `gaps` | [string] | Named understanding gaps. |
 | `can_remediate` | bool | An answer missed key points. |

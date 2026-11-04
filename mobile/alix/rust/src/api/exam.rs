@@ -43,7 +43,12 @@ pub fn exam_start_cards(
     Ok(Some(alix::exam_status::needs_work_card_ids(&deck, &store)))
 }
 
-/// Returns whether this sitting unlocked the deck.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExamApplied {
+    pub unlocked: bool,
+    pub standing: Option<String>,
+}
+
 #[flutter_rust_bridge::frb(sync)]
 pub fn apply_exam_result(
     deck_path: String,
@@ -51,7 +56,7 @@ pub fn apply_exam_result(
     outcome: ExamOutcome,
     now_ms: u64,
     device: Option<String>,
-) -> Result<bool> {
+) -> Result<ExamApplied> {
     let path = PathBuf::from(deck_path);
     let deck = alix::deck::Deck::load(&path)?;
     let mut store = open_store(&path, &root_dir, device)?;
@@ -71,7 +76,11 @@ pub fn apply_exam_result(
     };
     let unlocked = store.record_exam_result(&deck, &record, now_ms);
     store.save()?;
-    Ok(unlocked)
+    let deck_id = deck.deck_token.as_deref().unwrap_or_default();
+    Ok(ExamApplied {
+        unlocked,
+        standing: alix::exam_status::standing(&store, deck_id, now_ms),
+    })
 }
 
 // No retire cap on the phone: no accessor reads a resolved `retire_after`.
@@ -135,7 +144,7 @@ mod tests {
             pass,
         };
 
-        let unlocked = apply_exam_result(
+        let applied = apply_exam_result(
             deck_path.clone(),
             root_arg(root),
             ExamOutcome {
@@ -150,7 +159,8 @@ mod tests {
         )
         .unwrap();
         let store = reopened(&path, root);
-        assert!(!unlocked, "full sitting with a failed section: no unlock");
+        assert!(!applied.unlocked, "full sitting with a failed section: no unlock");
+        assert_eq!(None, applied.standing, "neither passed nor mastered: no standing");
         assert_eq!(
             Some(alix::store::FullExamResult {
                 at_ms: NOW,
@@ -174,7 +184,7 @@ mod tests {
             "the filter names only the section that needs work"
         );
 
-        let unlocked = apply_exam_result(
+        let applied = apply_exam_result(
             deck_path.clone(),
             root_arg(root),
             ExamOutcome {
@@ -189,7 +199,12 @@ mod tests {
         )
         .unwrap();
         let store = reopened(&path, root);
-        assert!(unlocked, "a filtered sitting passing the last section unlocks");
+        assert!(applied.unlocked, "a filtered sitting passing the last section unlocks");
+        assert!(
+            applied.standing.as_deref().is_some_and(|line| line.starts_with("passed (")),
+            "the phone words its own standing: {:?}",
+            applied.standing
+        );
         assert_eq!(Some(NOW + 1), store.deck_passed_at("deck-d"));
         assert_eq!(
             Some(NOW),

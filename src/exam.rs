@@ -473,6 +473,10 @@ fn sitting_record(
 }
 
 impl Sitting {
+    pub fn deck_token(&self) -> &str {
+        &self.deck_token
+    }
+
     pub fn start(deck: &Deck, strictness: Strictness, cfg: ExamConfig, ask_cfg: AskConfig) -> Self {
         Self::start_with(deck, exam_sections(deck), strictness, cfg, ask_cfg)
     }

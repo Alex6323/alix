@@ -95,29 +95,48 @@ pub struct ExamRow {
 
 impl ExamRow {
     pub fn badge(&self, now_ms: u64) -> Option<String> {
-        let result = self.full_exam_result?;
-        let count = format!("{} / {}", points(result.pass, result.partial), result.total);
-        let mut badge = match (self.mastered_at_ms, self.passed_at_ms) {
-            (Some(at), _) => {
-                let ago = crate::time::humanize_ms(now_ms.saturating_sub(at));
-                format!("mastered 🎉 · {ago} · {count}")
-            }
-            (None, Some(_)) => format!("passed · {count}"),
-            (None, None) => count,
-        };
-        let tally = self.tally;
-        if tally.needs_work > 0 {
-            badge.push_str(&match tally.needs_work {
-                1 => " · 1 section needs work".to_string(),
-                n => format!(" · {n} sections need work"),
-            });
-        } else if tally.new_cards > 0 {
-            badge.push_str(&match tally.new_cards {
-                1 => " · 1 section has new cards since the exam".to_string(),
-                n => format!(" · {n} sections have new cards since the exam"),
-            });
+        let today = crate::time::local_date(now_ms);
+        let day = |at: u64| day_label(crate::time::local_date(at), today);
+        let standing = standing_text(self.mastered_at_ms, self.passed_at_ms, now_ms);
+        let last = self.full_exam_result.map(|result| {
+            format!(
+                "last ({}) {} / {}",
+                day(result.at_ms),
+                points(result.pass, result.partial),
+                result.total
+            )
+        });
+        match (standing, last) {
+            (Some(standing), Some(last)) => Some(format!("{standing} · {last}")),
+            (standing, last) => standing.or(last),
         }
-        Some(badge)
+    }
+}
+
+pub fn standing(store: &Store, deck_id: &str, now_ms: u64) -> Option<String> {
+    standing_text(
+        store.deck_mastered_at(deck_id),
+        store.deck_passed_at(deck_id),
+        now_ms,
+    )
+}
+
+fn standing_text(mastered_at: Option<u64>, passed_at: Option<u64>, now_ms: u64) -> Option<String> {
+    let today = crate::time::local_date(now_ms);
+    let day = |at: u64| day_label(crate::time::local_date(at), today);
+    match (mastered_at, passed_at) {
+        (Some(at), _) => Some(format!("mastered ({})", day(at))),
+        (None, Some(at)) => Some(format!("passed ({})", day(at))),
+        (None, None) => None,
+    }
+}
+
+fn day_label(date: chrono::NaiveDate, today: chrono::NaiveDate) -> String {
+    use chrono::Datelike;
+    if date.year() == today.year() {
+        date.format("%-d %b").to_string()
+    } else {
+        date.format("%-d %b %Y").to_string()
     }
 }
 
@@ -289,32 +308,29 @@ mod tests {
     use crate::store::{ExamRecord, FullExamResult};
 
     #[test]
-    fn the_badge_shows_the_highest_exam_state_with_the_last_full_count() {
+    fn the_status_line_shows_the_standing_with_its_date_then_the_last_full_sitting() {
         const DAY_MS: u64 = 86_400_000;
-        let now = 10 * DAY_MS;
+        let now = 400 * DAY_MS;
+        let (passed_at, mastered_at, sat_at) = (390 * DAY_MS, 398 * DAY_MS, 399 * DAY_MS);
+        let today = crate::time::local_date(now);
+        let day = |at: u64| day_label(crate::time::local_date(at), today);
         let full = |pass, partial, total| {
             Some(FullExamResult {
-                at_ms: 1,
+                at_ms: sat_at,
                 pass,
                 partial,
                 total,
             })
         };
-        let tally = |needs_work, new_cards| SectionTally {
-            needs_work,
-            new_cards,
-            ..SectionTally::default()
-        };
-        type Row = (&'static str, ExamRow, Option<&'static str>);
-        let rows: [Row; 7] = [
+        let rows: [(&str, ExamRow, Option<String>); 6] = [
             ("never examined", ExamRow::default(), None),
             (
-                "examined",
+                "a full sitting without a standing",
                 ExamRow {
                     full_exam_result: full(15, 0, 18),
                     ..ExamRow::default()
                 },
-                Some("15 / 18"),
+                Some(format!("last ({}) 15 / 18", day(sat_at))),
             ),
             (
                 "a partial is half a point",
@@ -322,53 +338,63 @@ mod tests {
                     full_exam_result: full(15, 1, 18),
                     ..ExamRow::default()
                 },
-                Some("15.5 / 18"),
+                Some(format!("last ({}) 15.5 / 18", day(sat_at))),
             ),
             (
                 "passed",
                 ExamRow {
-                    passed_at_ms: Some(1),
-                    full_exam_result: full(15, 0, 18),
+                    passed_at_ms: Some(passed_at),
+                    full_exam_result: full(12, 0, 18),
+                    tally: SectionTally {
+                        needs_work: 2,
+                        ..SectionTally::default()
+                    },
                     ..ExamRow::default()
                 },
-                Some("passed · 15 / 18"),
+                Some(format!(
+                    "passed ({}) · last ({}) 12 / 18",
+                    day(passed_at),
+                    day(sat_at)
+                )),
+            ),
+            (
+                "passed through needs-work sittings only",
+                ExamRow {
+                    passed_at_ms: Some(passed_at),
+                    ..ExamRow::default()
+                },
+                Some(format!("passed ({})", day(passed_at))),
             ),
             (
                 "mastered wins over passed",
                 ExamRow {
-                    passed_at_ms: Some(1),
-                    mastered_at_ms: Some(now - 3 * DAY_MS),
-                    full_exam_result: full(17, 0, 18),
-                    ..ExamRow::default()
-                },
-                Some("mastered 🎉 · 3d · 17 / 18"),
-            ),
-            (
-                "needs work wins over new cards",
-                ExamRow {
-                    full_exam_result: full(15, 0, 18),
-                    tally: tally(2, 1),
-                    ..ExamRow::default()
-                },
-                Some("15 / 18 · 2 sections need work"),
-            ),
-            (
-                "new cards since the exam",
-                ExamRow {
-                    passed_at_ms: Some(1),
+                    passed_at_ms: Some(passed_at),
+                    mastered_at_ms: Some(mastered_at),
                     full_exam_result: full(18, 0, 18),
-                    tally: tally(0, 1),
                     ..ExamRow::default()
                 },
-                Some("passed · 18 / 18 · 1 section has new cards since the exam"),
+                Some(format!(
+                    "mastered ({}) · last ({}) 18 / 18",
+                    day(mastered_at),
+                    day(sat_at)
+                )),
             ),
         ];
         for (label, row, expected) in rows {
-            assert_eq!(
-                expected.map(str::to_string),
-                row.badge(now),
-                "{label}: {row:?}"
-            );
+            assert_eq!(expected, row.badge(now), "{label}: {row:?}");
+        }
+    }
+
+    #[test]
+    fn a_status_date_names_the_year_only_outside_the_current_one() {
+        let date = |y, m, d| chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
+        let today = date(2026, 11, 5);
+        for (label, day, expected) in [
+            ("this year", date(2026, 11, 2), "2 Nov"),
+            ("start of this year", date(2026, 1, 1), "1 Jan"),
+            ("last year", date(2025, 12, 31), "31 Dec 2025"),
+        ] {
+            assert_eq!(expected, day_label(day, today), "{label}");
         }
     }
 

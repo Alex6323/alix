@@ -257,7 +257,7 @@ abstract class RustLibApi extends BaseApi {
     String? device,
   });
 
-  bool crateApiExamApplyExamResult({
+  ExamApplied crateApiExamApplyExamResult({
     required String deckPath,
     required String rootDir,
     required ExamOutcome outcome,
@@ -1565,7 +1565,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  bool crateApiExamApplyExamResult({
+  ExamApplied crateApiExamApplyExamResult({
     required String deckPath,
     required String rootDir,
     required ExamOutcome outcome,
@@ -1584,7 +1584,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 36)!;
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_bool,
+          decodeSuccessData: sse_decode_exam_applied,
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiExamApplyExamResultConstMeta,
@@ -2879,6 +2879,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Depth dco_decode_depth(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return Depth.values[raw as int];
+  }
+
+  @protected
+  ExamApplied dco_decode_exam_applied(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ExamApplied(
+      unlocked: dco_decode_bool(arr[0]),
+      standing: dco_decode_opt_String(arr[1]),
+    );
   }
 
   @protected
@@ -4465,6 +4477,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
     return Depth.values[inner];
+  }
+
+  @protected
+  ExamApplied sse_decode_exam_applied(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_unlocked = sse_decode_bool(deserializer);
+    var var_standing = sse_decode_opt_String(deserializer);
+    return ExamApplied(unlocked: var_unlocked, standing: var_standing);
   }
 
   @protected
@@ -6438,6 +6458,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_depth(Depth self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_exam_applied(ExamApplied self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.unlocked, serializer);
+    sse_encode_opt_String(self.standing, serializer);
   }
 
   @protected

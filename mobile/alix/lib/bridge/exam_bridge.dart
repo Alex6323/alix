@@ -11,7 +11,8 @@ List<String>? examStartCards({
   needsWorkOnly: needsWorkOnly,
 );
 
-bool applyExamResult({
+/// The deck's standing after the sitting, worded by the core, or null.
+String? applyExamResult({
   required String deckPath,
   required String rootDir,
   required RemoteExam exam,
@@ -19,7 +20,7 @@ bool applyExamResult({
   String? device,
 }) {
   final verdicts = exam.verdicts;
-  return bridge.applyExamResult(
+  final applied = bridge.applyExamResult(
     deckPath: deckPath,
     rootDir: rootDir,
     outcome: bridge.ExamOutcome(
@@ -35,6 +36,7 @@ bool applyExamResult({
     nowMs: nowMs,
     device: device,
   );
+  return applied.standing;
 }
 
 int applyExamRemediation({

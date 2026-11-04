@@ -14,7 +14,7 @@
   .exam-input:focus { outline: none; border-color: var(--bolt); }
   .exam-summary { display: flex; align-items: baseline; gap: 10px; }
   .exam-score { color: var(--ink); font-family: var(--mono); font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .exam-mastered { color: var(--good); font-family: var(--mono); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .exam-standing { color: var(--good); font-family: var(--mono); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; }
   .exam-sections { display: flex; flex-direction: column; gap: 5px; }
   .exam-section { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; gap: 10px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; font-size: 0.82rem; }
   .exam-section-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }

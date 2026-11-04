@@ -36,6 +36,7 @@ void main() {
     List<String>? cards,
     List<String> remediationCalls = const [],
     int remediationCountReply = 1,
+    String? standingReply,
   }) async {
     await tester.pumpWidget(MaterialApp(
       home: ExamScreen(
@@ -43,7 +44,10 @@ void main() {
         client: client,
         support: tempSupport(),
         buildClient: (_) => client,
-        applyResult: (exam, nowMs) => resultCalls?.add((exam, nowMs)),
+        applyResult: (exam, nowMs) {
+          resultCalls?.add((exam, nowMs));
+          return standingReply;
+        },
         cards: cards,
         applyRemediation: (cardsText) {
           remediationCalls.add(cardsText);
@@ -182,7 +186,8 @@ void main() {
       examGetReplies: [generating, answering2, grading, resultsMastered],
     );
     final resultCalls = <(RemoteExam, BigInt)>[];
-    await pumpExam(tester, client: client, resultCalls: resultCalls);
+    await pumpExam(tester,
+        client: client, resultCalls: resultCalls, standingReply: 'mastered (4 Nov)');
 
     // examStart -> the first examGet (generating).
     await tester.pump();
@@ -207,7 +212,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('1 / 1'), findsWidgets);
-    expect(find.text('mastered'), findsOneWidget);
+    expect(find.text('mastered (4 Nov)'), findsOneWidget,
+        reason: 'the standing the phone recorded shows under the score');
     expect(find.text('Right on.'), findsOneWidget);
     expect(find.text('instance'), findsOneWidget);
     expect(resultCalls, hasLength(1));
@@ -258,7 +264,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('1.5 / 2'), findsWidgets);
-    expect(find.text('mastered'), findsNothing);
+    expect(find.textContaining('mastered ('), findsNothing);
+    expect(find.textContaining('passed ('), findsNothing);
     expect(find.text('Turn the gaps into cards'), findsOneWidget);
   });
 
@@ -338,7 +345,7 @@ void main() {
                 client: client,
                 support: tempSupport(),
                 buildClient: (_) => client,
-                applyResult: (_, _) {},
+                applyResult: (_, _) => null,
                 applyRemediation: (_) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,
@@ -437,7 +444,7 @@ void main() {
                 client: client,
                 support: tempSupport(),
                 buildClient: (_) => client,
-                applyResult: (_, _) {},
+                applyResult: (_, _) => null,
                 applyRemediation: (_) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,
@@ -469,7 +476,7 @@ void main() {
                 client: client,
                 support: tempSupport(),
                 buildClient: (_) => client,
-                applyResult: (_, _) {},
+                applyResult: (_, _) => null,
                 applyRemediation: (_) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,

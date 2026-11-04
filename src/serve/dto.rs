@@ -671,6 +671,7 @@ pub(super) struct ExamDto {
     pub(super) verdicts: Option<VerdictsDto>,
     pub(super) full: bool,
     pub(super) mastered: bool,
+    pub(super) standing: Option<String>,
     pub(super) gaps: Vec<String>,
     pub(super) can_remediate: bool,
     pub(super) remediated_count: Option<usize>,
@@ -827,7 +828,7 @@ pub(super) fn strictness_name(s: Strictness) -> &'static str {
     }
 }
 
-pub(super) fn exam_dto(ex: &Examining) -> ExamDto {
+pub(super) fn exam_dto(ex: &Examining, store: &crate::store::Store) -> ExamDto {
     let s = &ex.sitting;
     let result = s.result();
     let grades = result
@@ -861,6 +862,9 @@ pub(super) fn exam_dto(ex: &Examining) -> ExamDto {
         verdicts: parts.verdicts,
         full: s.full(),
         mastered: parts.mastered,
+        standing: result.and_then(|_| {
+            crate::exam_status::standing(store, s.deck_token(), crate::time::now_ms())
+        }),
         gaps: s.gaps(),
         can_remediate: s.can_remediate(),
         remediated_count: s.remediated_count(),
@@ -1733,15 +1737,25 @@ mod tests {
             sitting.error()
         );
 
-        let dto = exam_dto(&Examining {
-            sitting,
-            deck_path: base,
-        });
+        let dto = exam_dto(
+            &Examining {
+                sitting,
+                deck_path: base,
+            },
+            &store,
+        );
 
         assert_eq!(
             vec!["advanced.md"],
             dto.unlocks,
             "a pass exposes exactly the direct dependents"
+        );
+        assert!(
+            dto.standing
+                .as_deref()
+                .is_some_and(|line| line.starts_with("mastered (")),
+            "a perfect full sitting reports the deck mastered: {:?}",
+            dto.standing
         );
     }
 

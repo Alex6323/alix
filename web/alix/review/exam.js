@@ -225,7 +225,7 @@ export function createExam({
     if (current.phase === "results") {
       const summary = el("div", "exam-summary");
       summary.appendChild(el("div", "exam-score", countText(current.verdicts)));
-      if (current.mastered) summary.appendChild(el("div", "exam-mastered", "mastered"));
+      if (current.standing) summary.appendChild(el("div", "exam-standing", current.standing));
       wrap.appendChild(summary);
       const sections = el("div", "exam-sections");
       current.sections.forEach((section) => {

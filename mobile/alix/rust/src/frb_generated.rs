@@ -3353,6 +3353,18 @@ impl SseDecode for crate::api::review::Depth {
     }
 }
 
+impl SseDecode for crate::api::exam::ExamApplied {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_unlocked = <bool>::sse_decode(deserializer);
+        let mut var_standing = <Option<String>>::sse_decode(deserializer);
+        return crate::api::exam::ExamApplied {
+            unlocked: var_unlocked,
+            standing: var_standing,
+        };
+    }
+}
+
 impl SseDecode for crate::api::exam::ExamOutcome {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5438,6 +5450,24 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::review::Depth>>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamApplied {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.unlocked.into_into_dart().into_dart(),
+            self.standing.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::exam::ExamApplied {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::exam::ExamApplied>
+    for crate::api::exam::ExamApplied
+{
+    fn into_into_dart(self) -> crate::api::exam::ExamApplied {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamOutcome {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -6786,6 +6816,14 @@ impl SseEncode for crate::api::review::Depth {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::api::exam::ExamApplied {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.unlocked, serializer);
+        <Option<String>>::sse_encode(self.standing, serializer);
     }
 }
 
