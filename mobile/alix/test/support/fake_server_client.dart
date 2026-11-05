@@ -150,6 +150,7 @@ class FakeServerClient implements ServerClient {
   int _noteCall = 0;
   int _cardCall = 0;
   int _examGetCall = 0;
+  int get examGetCalls => _examGetCall;
   int _examGetAfterRemediateCall = 0;
   int _gradeCall = 0;
   int _remediateCall = 0;

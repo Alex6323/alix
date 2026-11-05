@@ -334,10 +334,19 @@ class _PickerScreenState extends State<PickerScreen> {
       _examStateClient = (widget.buildClient ?? HttpServerClient.new)(config);
     }
     _examPollTimer?.cancel();
-    final interval =
-        widget.generatePollInterval ?? const Duration(milliseconds: 400);
-    _examPollTimer = Timer.periodic(interval, (_) => _pollRemoteExam());
+    _examPollTimer = null;
     unawaited(_pollRemoteExam());
+  }
+
+  void _pollWhileGenerating(RemoteExam? exam) {
+    final onTop = ModalRoute.of(context)?.isCurrent ?? true;
+    if (exam?.phase != 'generating' || !onTop) {
+      _examPollTimer?.cancel();
+      _examPollTimer = null;
+      return;
+    }
+    final interval = widget.generatePollInterval ?? const Duration(seconds: 5);
+    _examPollTimer ??= Timer.periodic(interval, (_) => _pollRemoteExam());
   }
 
   String? _remoteExamKey(RemoteExam? exam) => exam == null
@@ -369,6 +378,7 @@ class _PickerScreenState extends State<PickerScreen> {
     final before = _remoteExamKey(_remoteExam);
     final after = _remoteExamKey(next);
     _remoteExam = next;
+    _pollWhileGenerating(next);
     if (next?.phase == 'generating') _noticedReadyExam = null;
     if (next?.phase == 'answering') {
       final ready = '${next!.deck}\u0000${next.questions.join('\u0001')}';

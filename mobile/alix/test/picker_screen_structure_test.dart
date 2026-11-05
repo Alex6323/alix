@@ -384,6 +384,13 @@ void main() {
       await tester.pump(const Duration(seconds: 10));
       await tester.pump();
       expect(find.text('Exam ready: exam.md.'), findsOneWidget);
+      final pollsWhenReady = client.examGetCalls;
+      await tester.pump(const Duration(seconds: 30));
+      expect(
+        client.examGetCalls,
+        pollsWhenReady,
+        reason: 'a ready exam stops the picker polling',
+      );
 
       await tester.tap(find.text('Remote exam'));
       await tester.pumpAndSettle();
