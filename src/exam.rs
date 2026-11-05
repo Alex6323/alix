@@ -181,7 +181,7 @@ pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()
     Ok(())
 }
 
-fn generate_questions_from(
+pub(crate) fn generate_questions_from(
     sources: &ExamLayers,
     base: Option<&Path>,
     sections: &[ExamSection],
@@ -229,7 +229,7 @@ fn with_one_retry<T>(
     }
 }
 
-fn checked_models(
+pub(crate) fn checked_models(
     section_count: usize,
     raw: &str,
 ) -> std::result::Result<Vec<Vec<String>>, String> {
@@ -259,7 +259,7 @@ fn checked_models(
     Ok(models)
 }
 
-fn checked_questions(
+pub(crate) fn checked_questions(
     models: &[Vec<String>],
     raw: &str,
 ) -> std::result::Result<Vec<ExamQuestion>, String> {
@@ -792,7 +792,7 @@ fn thread_gone() -> String {
     "the exam helper exited unexpectedly".to_string()
 }
 
-fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
+pub(crate) fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
     AskConfig {
         model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
         timeout_secs: cfg.timeout_secs,
@@ -937,7 +937,7 @@ fn section_scope(sections: &[ExamSection]) -> String {
     scope
 }
 
-fn models_prompt(
+pub(crate) fn models_prompt(
     sources: &ExamLayers,
     base: Option<&Path>,
     sections: &[ExamSection],
@@ -979,7 +979,7 @@ fn push_extra(prompt: &mut String, cfg: &ExamConfig) {
     }
 }
 
-fn questions_prompt(
+pub(crate) fn questions_prompt(
     sources: &ExamLayers,
     base: Option<&Path>,
     sections: &[ExamSection],
