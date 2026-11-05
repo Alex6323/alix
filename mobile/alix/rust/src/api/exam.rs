@@ -1,8 +1,7 @@
-use std::{
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExamSectionOutcome {
@@ -19,7 +18,11 @@ pub struct ExamOutcome {
     pub total: u32,
 }
 
-fn open_store(deck_path: &Path, root_dir: &str, device: Option<String>) -> Result<alix::store::Store> {
+fn open_store(
+    deck_path: &Path,
+    root_dir: &str,
+    device: Option<String>,
+) -> Result<alix::store::Store> {
     let root_store = alix::workspace::root_store_path(Path::new(root_dir));
     let mut store = alix::assemble::store_for(&[deck_path.to_path_buf()], Some(&root_store))?;
     if device.is_some() {
@@ -29,10 +32,20 @@ fn open_store(deck_path: &Path, root_dir: &str, device: Option<String>) -> Resul
 }
 
 fn exam_ideas_path(deck_path: &Path, root_dir: &Path) -> Result<PathBuf> {
+    let (files, deck_id) = exam_files(deck_path, root_dir)?;
+    Ok(files.exam_ideas_for(&deck_id))
+}
+
+fn exam_answers_path(deck_path: &Path, root_dir: &Path) -> Result<PathBuf> {
+    let (files, deck_id) = exam_files(deck_path, root_dir)?;
+    Ok(files.exam_prepared_for(&deck_id))
+}
+
+fn exam_files(deck_path: &Path, root_dir: &Path) -> Result<(alix::state::UserFiles, String)> {
     let deck = alix::deck::Deck::load(deck_path)?;
     let deck_id = deck.deck_token.context("the deck is not initialized")?;
     let root_store = alix::workspace::root_store_path(root_dir);
-    Ok(alix::state::UserFiles::new(root_store).exam_ideas_for(&deck_id))
+    Ok((alix::state::UserFiles::new(root_store), deck_id))
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -47,6 +60,95 @@ pub fn exam_ideas_load(deck_path: String, root_dir: String) -> Result<Option<Str
 pub fn exam_ideas_save(deck_path: String, root_dir: String, json: String) -> Result<()> {
     let path = exam_ideas_path(Path::new(&deck_path), Path::new(&root_dir))?;
     alix::exam_ideas::IdeasDocument::parse(&json)?.save(&path)
+}
+
+const PHONE_PREPARED_VERSION: u32 = 1;
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PhonePreparedExam {
+    version: u32,
+    questions: Vec<String>,
+    answers: Vec<String>,
+}
+
+impl PhonePreparedExam {
+    fn parse(text: &str) -> Result<Self> {
+        let document: Self =
+            serde_json::from_str(text).context("unreadable phone exam document")?;
+        if document.version != PHONE_PREPARED_VERSION
+            || document.questions.len() != document.answers.len()
+        {
+            bail!("unreadable phone exam document");
+        }
+        Ok(document)
+    }
+
+    fn save(&self, path: &Path) -> Result<()> {
+        let parent = path.parent().context("the phone exam path has no parent")?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("cannot create {}", parent.display()))?;
+        let temporary = path.with_extension("json.tmp");
+        let json =
+            serde_json::to_vec_pretty(self).context("cannot encode the phone exam document")?;
+        std::fs::write(&temporary, json)
+            .with_context(|| format!("cannot write {}", temporary.display()))?;
+        std::fs::rename(&temporary, path)
+            .with_context(|| format!("cannot replace {}", path.display()))
+    }
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn exam_answers_load(
+    deck_path: String,
+    root_dir: String,
+    questions: Vec<String>,
+) -> Result<Vec<String>> {
+    let path = exam_answers_path(Path::new(&deck_path), Path::new(&root_dir))?;
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(vec![String::new(); questions.len()]);
+        }
+        Err(error) => return Err(error).with_context(|| format!("cannot read {}", path.display())),
+    };
+    let document =
+        PhonePreparedExam::parse(&text).with_context(|| format!("reading {}", path.display()))?;
+    if document.questions != questions {
+        std::fs::remove_file(&path)
+            .with_context(|| format!("cannot remove stale {}", path.display()))?;
+        return Ok(vec![String::new(); questions.len()]);
+    }
+    Ok(document.answers)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn exam_answers_save(
+    deck_path: String,
+    root_dir: String,
+    questions: Vec<String>,
+    answers: Vec<String>,
+) -> Result<()> {
+    if questions.len() != answers.len() {
+        bail!("one phone exam answer is required per question");
+    }
+    let path = exam_answers_path(Path::new(&deck_path), Path::new(&root_dir))?;
+    PhonePreparedExam {
+        version: PHONE_PREPARED_VERSION,
+        questions,
+        answers,
+    }
+    .save(&path)
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn exam_answers_clear(deck_path: String, root_dir: String) -> Result<()> {
+    let path = exam_answers_path(Path::new(&deck_path), Path::new(&root_dir))?;
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).with_context(|| format!("cannot remove {}", path.display())),
+    }
 }
 
 /// `None` asks for a full sitting.
@@ -116,7 +218,11 @@ pub fn apply_exam_remediation(
 ) -> Result<u32> {
     let path = PathBuf::from(deck_path);
     let deck = alix::deck::Deck::load(&path)?;
-    let fingerprints = deck.cards.iter().map(|card| card.block_fingerprint).collect();
+    let fingerprints = deck
+        .cards
+        .iter()
+        .map(|card| card.block_fingerprint)
+        .collect();
     let deck_token = deck.deck_token.unwrap_or_default();
     let mut store = open_store(&path, &root_dir, device)?;
     let count = alix::store::store_remediation_cards(
@@ -160,12 +266,20 @@ mod tests {
         let deck_path = path.to_string_lossy().into_owned();
         let root_dir = root.to_string_lossy().into_owned();
 
-        assert_eq!(None, exam_ideas_load(deck_path.clone(), root_dir.clone()).unwrap());
+        assert_eq!(
+            None,
+            exam_ideas_load(deck_path.clone(), root_dir.clone()).unwrap()
+        );
 
         let first = r#"{"version":1,"material":"xxh64-first","sections":[]}"#;
         exam_ideas_save(deck_path.clone(), root_dir.clone(), first.to_string()).unwrap();
         assert_eq!(
-            Some(alix::exam_ideas::IdeasDocument::parse(first).unwrap().to_json().unwrap()),
+            Some(
+                alix::exam_ideas::IdeasDocument::parse(first)
+                    .unwrap()
+                    .to_json()
+                    .unwrap()
+            ),
             exam_ideas_load(deck_path.clone(), root_dir.clone()).unwrap()
         );
         assert!(root.join(".alix/exam/deck-d.json").is_file());
@@ -174,12 +288,96 @@ mod tests {
         let second = r#"{"version":1,"material":"xxh64-second","sections":[]}"#;
         exam_ideas_save(deck_path.clone(), root_dir.clone(), second.to_string()).unwrap();
         assert_eq!(
-            Some(alix::exam_ideas::IdeasDocument::parse(second).unwrap().to_json().unwrap()),
+            Some(
+                alix::exam_ideas::IdeasDocument::parse(second)
+                    .unwrap()
+                    .to_json()
+                    .unwrap()
+            ),
             exam_ideas_load(deck_path.clone(), root_dir.clone()).unwrap()
         );
         assert!(
-            exam_ideas_save(deck_path, root_dir, r#"{"version":1,"extra":true}"#.to_string())
-                .is_err()
+            exam_ideas_save(
+                deck_path,
+                root_dir,
+                r#"{"version":1,"extra":true}"#.to_string()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn phone_answers_resume_only_the_exact_question_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_section_deck(root);
+        let deck_path = path.to_string_lossy().into_owned();
+        let root_dir = root.to_string_lossy().into_owned();
+        let questions = vec!["one?".to_string(), "two?".to_string()];
+
+        assert_eq!(
+            vec!["", ""],
+            exam_answers_load(deck_path.clone(), root_dir.clone(), questions.clone()).unwrap()
+        );
+        exam_answers_save(
+            deck_path.clone(),
+            root_dir.clone(),
+            questions.clone(),
+            vec!["first".to_string(), String::new()],
+        )
+        .unwrap();
+        assert_eq!(
+            vec!["first", ""],
+            exam_answers_load(deck_path.clone(), root_dir.clone(), questions).unwrap()
+        );
+        let prepared = root.join(".alix/exam/deck-d.prepared.json");
+        assert!(prepared.is_file());
+
+        assert_eq!(
+            vec![""],
+            exam_answers_load(
+                deck_path.clone(),
+                root_dir.clone(),
+                vec!["replacement?".to_string()]
+            )
+            .unwrap()
+        );
+        assert!(
+            !prepared.exists(),
+            "a changed question list deletes stale answers"
+        );
+
+        exam_answers_save(
+            deck_path.clone(),
+            root_dir.clone(),
+            vec!["replacement?".to_string()],
+            vec!["answer".to_string()],
+        )
+        .unwrap();
+        exam_answers_clear(deck_path, root_dir).unwrap();
+        assert!(!prepared.exists());
+    }
+
+    #[test]
+    fn phone_answers_reject_an_unknown_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_section_deck(root);
+        let prepared = root.join(".alix/exam/deck-d.prepared.json");
+        std::fs::create_dir_all(prepared.parent().unwrap()).unwrap();
+        std::fs::write(
+            prepared,
+            r#"{"version":1,"questions":[],"answers":[],"unknown":true}"#,
+        )
+        .unwrap();
+
+        assert!(
+            exam_answers_load(
+                path.to_string_lossy().into_owned(),
+                root.to_string_lossy().into_owned(),
+                Vec::new()
+            )
+            .is_err()
         );
     }
 
@@ -213,8 +411,14 @@ mod tests {
         )
         .unwrap();
         let store = reopened(&path, root);
-        assert!(!applied.unlocked, "full sitting with a failed section: no unlock");
-        assert_eq!(None, applied.standing, "neither passed nor mastered: no standing");
+        assert!(
+            !applied.unlocked,
+            "full sitting with a failed section: no unlock"
+        );
+        assert_eq!(
+            None, applied.standing,
+            "neither passed nor mastered: no standing"
+        );
         assert_eq!(
             Some(alix::store::FullExamResult {
                 at_ms: NOW,
@@ -227,7 +431,10 @@ mod tests {
         );
         assert_eq!(
             Some(false),
-            store.get("card-b1").and_then(|c| c.exam_result).map(|r| r.pass),
+            store
+                .get("card-b1")
+                .and_then(|c| c.exam_result)
+                .map(|r| r.pass),
             "each examined card carries its section's verdict"
         );
         assert_eq!(
@@ -253,9 +460,15 @@ mod tests {
         )
         .unwrap();
         let store = reopened(&path, root);
-        assert!(applied.unlocked, "a filtered sitting passing the last section unlocks");
         assert!(
-            applied.standing.as_deref().is_some_and(|line| line.starts_with("passed (")),
+            applied.unlocked,
+            "a filtered sitting passing the last section unlocks"
+        );
+        assert!(
+            applied
+                .standing
+                .as_deref()
+                .is_some_and(|line| line.starts_with("passed (")),
             "the phone words its own standing: {:?}",
             applied.standing
         );
@@ -265,7 +478,11 @@ mod tests {
             store.full_exam_result("deck-d").map(|r| r.at_ms),
             "a filtered sitting leaves the full count alone"
         );
-        assert_eq!(None, store.deck_mastered_at("deck-d"), "mastered needs a full 100% sitting");
+        assert_eq!(
+            None,
+            store.deck_mastered_at("deck-d"),
+            "mastered needs a full 100% sitting"
+        );
     }
 
     #[test]
@@ -276,7 +493,8 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         std::fs::write(&path, format!("{text}\n## b2\nnew\n")).unwrap();
 
-        let cards = exam_start_cards(path.to_string_lossy().into_owned(), root_arg(root), false).unwrap();
+        let cards =
+            exam_start_cards(path.to_string_lossy().into_owned(), root_arg(root), false).unwrap();
 
         assert_eq!(None, cards, "a full sitting sends no card list");
         let deck = alix::deck::Deck::load(&path).unwrap();
@@ -295,10 +513,15 @@ mod tests {
         let remediation = "## a1\nx\n\n## why b?\nbecause\n".to_string();
 
         let created =
-            apply_exam_remediation(deck_path.clone(), root_arg(root), remediation.clone(), None).unwrap();
+            apply_exam_remediation(deck_path.clone(), root_arg(root), remediation.clone(), None)
+                .unwrap();
         let again = apply_exam_remediation(deck_path, root_arg(root), remediation, None).unwrap();
 
-        assert_eq!((1, 0), (created, again), "the deck's own card and a repeat are skipped");
+        assert_eq!(
+            (1, 0),
+            (created, again),
+            "the deck's own card and a repeat are skipped"
+        );
         assert_eq!(1, alix::personal::read(&path, "deck-d").cards.len());
     }
 
@@ -307,8 +530,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let path = root.join("d.md");
-        let block = "## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" -->\n";
-        std::fs::write(&path, format!("---\nformat-version: 1\nid: deck-d\n---\n{block}")).unwrap();
+        let block =
+            "## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" -->\n";
+        std::fs::write(
+            &path,
+            format!("---\nformat-version: 1\nid: deck-d\n---\n{block}"),
+        )
+        .unwrap();
         alix::stamp::stamp_deck(&path).unwrap();
 
         let created = apply_exam_remediation(
@@ -320,6 +548,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(0, created, "the block key, not the cloze question, dedups");
-        assert!(!alix::personal::sidecar_path(&path).exists(), "nothing reached disk");
+        assert!(
+            !alix::personal::sidecar_path(&path).exists(),
+            "nothing reached disk"
+        );
     }
 }

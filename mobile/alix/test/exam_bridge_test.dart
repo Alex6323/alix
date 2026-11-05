@@ -56,4 +56,58 @@ void main() {
       throwsA(anything),
     );
   });
+
+  test('exam answers resume only the exact question list', () {
+    final root = Directory.systemTemp.createTempSync('alix-exam-answers-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final deck = File('${root.path}/rust.md')
+      ..writeAsStringSync(
+        '---\nformat-version: 1\nid: deck-rust\n---\n## q\na\n<!-- id: card-q -->\n',
+      );
+    const questions = ['Why ownership?', 'What is borrowing?'];
+
+    expect(
+      exam_bridge.examAnswersLoad(
+        deckPath: deck.path,
+        rootDir: root.path,
+        questions: questions,
+      ),
+      ['', ''],
+    );
+    exam_bridge.examAnswersSave(
+      deckPath: deck.path,
+      rootDir: root.path,
+      questions: questions,
+      answers: const ['ownership controls destruction', ''],
+    );
+    expect(
+      exam_bridge.examAnswersLoad(
+        deckPath: deck.path,
+        rootDir: root.path,
+        questions: questions,
+      ),
+      ['ownership controls destruction', ''],
+    );
+
+    final prepared = File('${root.path}/.alix/exam/deck-rust.prepared.json');
+    expect(prepared.existsSync(), isTrue);
+    expect(
+      exam_bridge.examAnswersLoad(
+        deckPath: deck.path,
+        rootDir: root.path,
+        questions: const ['Replacement?'],
+      ),
+      [''],
+    );
+    expect(prepared.existsSync(), isFalse);
+
+    exam_bridge.examAnswersSave(
+      deckPath: deck.path,
+      rootDir: root.path,
+      questions: const ['Replacement?'],
+      answers: const ['answer'],
+    );
+    exam_bridge.examAnswersClear(deckPath: deck.path, rootDir: root.path);
+    expect(prepared.existsSync(), isFalse);
+  });
 }

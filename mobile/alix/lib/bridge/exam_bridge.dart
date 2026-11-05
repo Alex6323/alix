@@ -12,6 +12,33 @@ void examIdeasSave({
   required String json,
 }) => bridge.examIdeasSave(deckPath: deckPath, rootDir: rootDir, json: json);
 
+List<String> examAnswersLoad({
+  required String deckPath,
+  required String rootDir,
+  required List<String> questions,
+}) => bridge.examAnswersLoad(
+  deckPath: deckPath,
+  rootDir: rootDir,
+  questions: questions,
+);
+
+void examAnswersSave({
+  required String deckPath,
+  required String rootDir,
+  required List<String> questions,
+  required List<String> answers,
+}) => bridge.examAnswersSave(
+  deckPath: deckPath,
+  rootDir: rootDir,
+  questions: questions,
+  answers: answers,
+);
+
+void examAnswersClear({
+  required String deckPath,
+  required String rootDir,
+}) => bridge.examAnswersClear(deckPath: deckPath, rootDir: rootDir);
+
 List<String>? examStartCards({
   required String deckPath,
   required String rootDir,

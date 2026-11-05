@@ -6,8 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `exam_ideas_path`, `open_store`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `exam_answers_path`, `exam_files`, `exam_ideas_path`, `open_store`, `parse`, `save`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PhonePreparedExam`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`
 
 String? examIdeasLoad({required String deckPath, required String rootDir}) =>
     RustLib.instance.api.crateApiExamExamIdeasLoad(
@@ -24,6 +25,34 @@ void examIdeasSave({
   rootDir: rootDir,
   json: json,
 );
+
+List<String> examAnswersLoad({
+  required String deckPath,
+  required String rootDir,
+  required List<String> questions,
+}) => RustLib.instance.api.crateApiExamExamAnswersLoad(
+  deckPath: deckPath,
+  rootDir: rootDir,
+  questions: questions,
+);
+
+void examAnswersSave({
+  required String deckPath,
+  required String rootDir,
+  required List<String> questions,
+  required List<String> answers,
+}) => RustLib.instance.api.crateApiExamExamAnswersSave(
+  deckPath: deckPath,
+  rootDir: rootDir,
+  questions: questions,
+  answers: answers,
+);
+
+void examAnswersClear({required String deckPath, required String rootDir}) =>
+    RustLib.instance.api.crateApiExamExamAnswersClear(
+      deckPath: deckPath,
+      rootDir: rootDir,
+    );
 
 /// `None` asks for a full sitting.
 List<String>? examStartCards({

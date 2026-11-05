@@ -1405,6 +1405,8 @@ dependencies = [
  "anyhow",
  "chrono",
  "flutter_rust_bridge",
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 
