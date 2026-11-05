@@ -33,6 +33,7 @@ class FakeServerClient implements ServerClient {
     this.examStartReply = true,
     this.expireOnExamStart = false,
     List<RemoteExam>? examGetReplies,
+    List<RemoteExam>? examGetRepliesAfterRemediate,
     this.expireOnExamGet = false,
     Map<int, Completer<RemoteExam?>>? examGetGates,
     this.nullFirstExamGetCalls = 0,
@@ -44,17 +45,18 @@ class FakeServerClient implements ServerClient {
     this.expireOnGenerateStart = false,
     List<RemoteGenerate>? generateGetReplies,
     this.expireOnGenerateGet = false,
-  })  : postAskReplies = postAskReplies ?? const [true],
-        getAskReplies = getAskReplies ?? const [],
-        getAskGates = getAskGates ?? const {},
-        postDraftReplies = postDraftReplies ?? const [true],
-        postNoteReplies = postNoteReplies ?? const [true],
-        postCardReplies = postCardReplies ?? const [],
-        examGetReplies = examGetReplies ?? const [],
-        examGetGates = examGetGates ?? const {},
-        examGradeReplies = examGradeReplies ?? const [true],
-        examRemediateReplies = examRemediateReplies ?? const [true],
-        generateGetReplies = generateGetReplies ?? const [];
+  }) : postAskReplies = postAskReplies ?? const [true],
+       getAskReplies = getAskReplies ?? const [],
+       getAskGates = getAskGates ?? const {},
+       postDraftReplies = postDraftReplies ?? const [true],
+       postNoteReplies = postNoteReplies ?? const [true],
+       postCardReplies = postCardReplies ?? const [],
+       examGetReplies = examGetReplies ?? const [],
+       examGetRepliesAfterRemediate = examGetRepliesAfterRemediate ?? const [],
+       examGetGates = examGetGates ?? const {},
+       examGradeReplies = examGradeReplies ?? const [true],
+       examRemediateReplies = examRemediateReplies ?? const [true],
+       generateGetReplies = generateGetReplies ?? const [];
 
   // ── probe (version / backendName) ────────────────────────────────────
   final String? versionReply;
@@ -96,6 +98,7 @@ class FakeServerClient implements ServerClient {
   final bool examStartReply;
   final bool expireOnExamStart;
   final List<RemoteExam> examGetReplies;
+  final List<RemoteExam> examGetRepliesAfterRemediate;
   final bool expireOnExamGet;
 
   /// Parks a specific (0-based) `examGet()` call on a completer instead of
@@ -147,6 +150,7 @@ class FakeServerClient implements ServerClient {
   int _noteCall = 0;
   int _cardCall = 0;
   int _examGetCall = 0;
+  int _examGetAfterRemediateCall = 0;
   int _gradeCall = 0;
   int _remediateCall = 0;
   int _generateGetCall = 0;
@@ -168,7 +172,11 @@ class FakeServerClient implements ServerClient {
   Future<String?> backendName() async => backendReply;
 
   @override
-  Future<bool> postAsk(TutorCardContext card, List<TutorTurn> history, String question) async {
+  Future<bool> postAsk(
+    TutorCardContext card,
+    List<TutorTurn> history,
+    String question,
+  ) async {
     postAskHistories.add(history);
     if (expireOnPostAsk) throw const PairingExpired();
     if (postAskGate != null) return postAskGate!.future;
@@ -192,7 +200,8 @@ class FakeServerClient implements ServerClient {
   @override
   Future<bool> postDraft(TutorCardContext card, List<TutorTurn> history) async {
     postDraftHistories.add(history);
-    final reply = postDraftReplies[_draftCall.clamp(0, postDraftReplies.length - 1)];
+    final reply =
+        postDraftReplies[_draftCall.clamp(0, postDraftReplies.length - 1)];
     _draftCall++;
     return reply;
   }
@@ -200,18 +209,24 @@ class FakeServerClient implements ServerClient {
   @override
   Future<bool> postNote(TutorCardContext card, List<TutorTurn> history) async {
     postNoteHistories.add(history);
-    final reply = postNoteReplies[_noteCall.clamp(0, postNoteReplies.length - 1)];
+    final reply =
+        postNoteReplies[_noteCall.clamp(0, postNoteReplies.length - 1)];
     _noteCall++;
     return reply;
   }
 
   @override
-  Future<AddCardReply> postCard(String deckId, String front, List<String> back) async {
+  Future<AddCardReply> postCard(
+    String deckId,
+    String front,
+    List<String> back,
+  ) async {
     postCardCalls.add(PostCardCall(deckId: deckId, front: front, back: back));
     if (expireOnPostCard) throw const PairingExpired();
     if (postCardGate != null) return postCardGate!.future;
     if (postCardReplies.isEmpty) return const AddCardNoAnswer();
-    final reply = postCardReplies[_cardCall.clamp(0, postCardReplies.length - 1)];
+    final reply =
+        postCardReplies[_cardCall.clamp(0, postCardReplies.length - 1)];
     _cardCall++;
     return reply;
   }
@@ -232,6 +247,13 @@ class FakeServerClient implements ServerClient {
   @override
   Future<RemoteExam?> examGet() async {
     if (expireOnExamGet) throw const PairingExpired();
+    if (_remediateCall > 0 && examGetRepliesAfterRemediate.isNotEmpty) {
+      final call = _examGetAfterRemediateCall++;
+      return examGetRepliesAfterRemediate[call.clamp(
+        0,
+        examGetRepliesAfterRemediate.length - 1,
+      )];
+    }
     final call = _examGetCall;
     _examGetCall++;
     final gate = examGetGates[call];
@@ -246,7 +268,8 @@ class FakeServerClient implements ServerClient {
   Future<bool> examGrade(List<String> answers) async {
     gradeAnswers.add(answers);
     if (expireOnExamGrade) throw const PairingExpired();
-    final reply = examGradeReplies[_gradeCall.clamp(0, examGradeReplies.length - 1)];
+    final reply =
+        examGradeReplies[_gradeCall.clamp(0, examGradeReplies.length - 1)];
     _gradeCall++;
     return reply;
   }
@@ -254,7 +277,11 @@ class FakeServerClient implements ServerClient {
   @override
   Future<bool> examRemediate() async {
     if (expireOnExamRemediate) throw const PairingExpired();
-    final reply = examRemediateReplies[_remediateCall.clamp(0, examRemediateReplies.length - 1)];
+    final reply =
+        examRemediateReplies[_remediateCall.clamp(
+          0,
+          examRemediateReplies.length - 1,
+        )];
     _remediateCall++;
     return reply;
   }
@@ -289,7 +316,11 @@ class FakeServerClient implements ServerClient {
 
 /// One `postCard` call as the fake saw it.
 class PostCardCall {
-  const PostCardCall({required this.deckId, required this.front, required this.back});
+  const PostCardCall({
+    required this.deckId,
+    required this.front,
+    required this.back,
+  });
 
   final String deckId;
   final String front;

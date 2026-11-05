@@ -107,31 +107,34 @@ void main() {
     ]);
   });
 
-  testWidgets('the Walk row sits below the depths, describes itself, and launches a '
-      'walk without a depth', (tester) async {
-    final choices = <PickerLaunch>[];
-    var walks = 0;
-    await tester.pumpWidget(_sheet(choices.add, onWalk: () => walks++));
+  testWidgets(
+    'the Walk row sits below the depths, describes itself, and launches a '
+    'walk without a depth',
+    (tester) async {
+      final choices = <PickerLaunch>[];
+      var walks = 0;
+      await tester.pumpWidget(_sheet(choices.add, onWalk: () => walks++));
 
-    final walk = find.widgetWithText(InkWell, 'Walk');
-    expect(walk, findsOneWidget, reason: 'the row is offered');
-    expect(
-      find.descendant(
-        of: walk,
-        matching: find.text('every card once, unscheduled'),
-      ),
-      findsOneWidget,
-      reason: 'the row says what a walk is, like its siblings',
-    );
-    expect(
-      tester.getTopLeft(walk).dy,
-      greaterThan(tester.getTopLeft(find.text('Reconstruct')).dy),
-      reason: 'the walk sits below the depth launches',
-    );
-    await tester.tap(walk);
+      final walk = find.widgetWithText(InkWell, 'Walk');
+      expect(walk, findsOneWidget, reason: 'the row is offered');
+      expect(
+        find.descendant(
+          of: walk,
+          matching: find.text('every card once, unscheduled'),
+        ),
+        findsOneWidget,
+        reason: 'the row says what a walk is, like its siblings',
+      );
+      expect(
+        tester.getTopLeft(walk).dy,
+        greaterThan(tester.getTopLeft(find.text('Reconstruct')).dy),
+        reason: 'the walk sits below the depth launches',
+      );
+      await tester.tap(walk);
 
-    expect((walks, choices.length), (1, 0), reason: 'one walk, no depth');
-  });
+      expect((walks, choices.length), (1, 0), reason: 'one walk, no depth');
+    },
+  );
 
   testWidgets('a hairline separates the walk from the switches and depths it '
       'ignores', (tester) async {
@@ -233,18 +236,25 @@ void main() {
     bool serverLive = true,
     bool due = false,
     bool filterable = false,
+    PickerExamAction action = PickerExamAction.generate,
+    String? estimate,
     ValueChanged<bool>? onStart,
   }) => PickerExamOffer(
     locked: locked,
     serverLive: serverLive,
     due: due,
     filterable: filterable,
+    action: action,
+    estimate: estimate,
     onStart: onStart ?? (_) {},
   );
 
-  BoxDecoration examFrame(WidgetTester tester) {
+  BoxDecoration examFrame(
+    WidgetTester tester, {
+    String label = 'Generate exam',
+  }) {
     final framed = find.descendant(
-      of: find.widgetWithText(InkWell, 'Exam'),
+      of: find.widgetWithText(InkWell, label),
       matching: find.byWidgetPredicate(
         (widget) =>
             widget is Container &&
@@ -261,25 +271,30 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(_sheet((_) {}, onWalk: () {}));
-    expect(find.text('Exam'), findsNothing);
+    expect(find.text('Generate exam'), findsNothing);
     expect(find.text('Only what needs work'), findsNothing);
   });
 
-  testWidgets('the Exam row sits below Walk and starts a full sitting', (
-    tester,
-  ) async {
-    final starts = <bool>[];
-    await tester.pumpWidget(
-      _sheet((_) {}, onWalk: () {}, exam: offer(onStart: starts.add)),
-    );
+  testWidgets(
+    'the Generate exam row sits below Walk and starts a full sitting',
+    (tester) async {
+      final starts = <bool>[];
+      await tester.pumpWidget(
+        _sheet(
+          (_) {},
+          onWalk: () {},
+          exam: offer(onStart: starts.add),
+        ),
+      );
 
-    expect(
-      tester.getTopLeft(find.text('Exam')).dy,
-      greaterThan(tester.getTopLeft(find.text('Walk')).dy),
-    );
-    await tester.tap(find.text('Exam'));
-    expect(starts, [false]);
-  });
+      expect(
+        tester.getTopLeft(find.text('Generate exam')).dy,
+        greaterThan(tester.getTopLeft(find.text('Walk')).dy),
+      );
+      await tester.tap(find.text('Generate exam'));
+      expect(starts, [false]);
+    },
+  );
 
   testWidgets('a locked exam is disabled and says so', (tester) async {
     final starts = <bool>[];
@@ -287,7 +302,7 @@ void main() {
       _sheet((_) {}, exam: offer(locked: true, due: true, onStart: starts.add)),
     );
 
-    await tester.tap(find.text('Exam'));
+    await tester.tap(find.text('Generate exam'));
     expect(starts, isEmpty);
     expect(find.text('locked'), findsOneWidget);
     expect(fill(tester), isNull, reason: 'a locked exam is never filled');
@@ -301,12 +316,12 @@ void main() {
       _sheet((_) {}, exam: offer(serverLive: false, onStart: starts.add)),
     );
 
-    await tester.tap(find.text('Exam'));
+    await tester.tap(find.text('Generate exam'));
     expect(starts, isEmpty);
     expect(find.text('needs a paired desktop'), findsOneWidget);
   });
 
-  testWidgets('the Exam row is filled only when due and unlocked', (
+  testWidgets('the Generate exam row is filled only when due and unlocked', (
     tester,
   ) async {
     await tester.pumpWidget(_sheet((_) {}, exam: offer(due: true)));
@@ -331,7 +346,7 @@ void main() {
     expect(find.text('Only what needs work'), findsOneWidget);
     expect(filterSwitch().value, isFalse);
     expect(filterSwitch().onChanged, isNull);
-    await tester.tap(find.text('Exam'));
+    await tester.tap(find.text('Generate exam'));
     expect(idle, [false], reason: 'nothing to filter: a full sitting');
 
     final starts = <bool>[];
@@ -339,10 +354,48 @@ void main() {
       _sheet((_) {}, exam: offer(filterable: true, onStart: starts.add)),
     );
     expect(filterSwitch().value, isTrue);
-    await tester.tap(find.text('Exam'));
+    await tester.tap(find.text('Generate exam'));
     await tester.tap(find.text('Only what needs work'));
     await tester.pump();
-    await tester.tap(find.text('Exam'));
+    await tester.tap(find.text('Generate exam'));
     expect(starts, [true, false]);
+  });
+
+  testWidgets('Preparing shows the estimate and cannot be started again', (
+    tester,
+  ) async {
+    final starts = <bool>[];
+    await tester.pumpWidget(
+      _sheet(
+        (_) {},
+        exam: offer(
+          action: PickerExamAction.preparing,
+          estimate: 'about 20 to 30 minutes',
+          onStart: starts.add,
+        ),
+      ),
+    );
+
+    expect(find.text('Preparing'), findsOneWidget);
+    expect(find.text('about 20 to 30 minutes'), findsOneWidget);
+    await tester.tap(find.text('Preparing'));
+    expect(starts, isEmpty);
+  });
+
+  testWidgets('Take exam opens the ready sitting and is filled', (
+    tester,
+  ) async {
+    final starts = <bool>[];
+    await tester.pumpWidget(
+      _sheet(
+        (_) {},
+        exam: offer(action: PickerExamAction.take, onStart: starts.add),
+      ),
+    );
+
+    expect(find.text('Take exam'), findsOneWidget);
+    expect(examFrame(tester, label: 'Take exam').color, isNotNull);
+    await tester.tap(find.text('Take exam'));
+    expect(starts, [false]);
   });
 }

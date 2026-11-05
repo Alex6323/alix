@@ -96,7 +96,10 @@ class PickerPairedHeading extends StatelessWidget {
               onPressed: busy ? null : onSyncAll,
               style: TextButton.styleFrom(
                 minimumSize: Size.zero,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 foregroundColor: tokens.bolt,
                 textStyle: const TextStyle(
@@ -546,11 +549,7 @@ class PickerDeadlineSheet extends StatelessWidget {
 }
 
 /// What the depth sheet launches: a depth and the two modifiers above it.
-typedef PickerLaunch = ({
-  PickerDepth depth,
-  bool cram,
-  bool skipIntroduction,
-});
+typedef PickerLaunch = ({PickerDepth depth, bool cram, bool skipIntroduction});
 
 class PickerExamOffer {
   const PickerExamOffer({
@@ -558,6 +557,8 @@ class PickerExamOffer {
     required this.serverLive,
     required this.due,
     required this.filterable,
+    this.action = PickerExamAction.generate,
+    this.estimate,
     required this.onStart,
   });
 
@@ -565,10 +566,15 @@ class PickerExamOffer {
   final bool serverLive;
   final bool due;
   final bool filterable;
+  final PickerExamAction action;
+  final String? estimate;
   final ValueChanged<bool> onStart;
 
-  bool get enabled => !locked && serverLive;
+  bool get enabled =>
+      !locked && serverLive && action != PickerExamAction.preparing;
 }
+
+enum PickerExamAction { generate, preparing, take }
 
 class PickerDepthSheet extends StatefulWidget {
   const PickerDepthSheet({
@@ -668,19 +674,32 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
             if (widget.exam case final exam?) ...[
               SwitchListTile(
                 value: exam.filterable && _needsWorkOnly,
-                onChanged: exam.enabled && exam.filterable
+                onChanged:
+                    exam.enabled &&
+                        exam.filterable &&
+                        exam.action == PickerExamAction.generate
                     ? (on) => setState(() => _needsWorkOnly = on)
                     : null,
                 title: const Text('Only what needs work'),
               ),
               _PickerLaunchRow(
-                label: 'Exam',
-                hint: exam.locked
+                label: switch (exam.action) {
+                  PickerExamAction.generate => 'Generate exam',
+                  PickerExamAction.preparing => 'Preparing',
+                  PickerExamAction.take => 'Take exam',
+                },
+                hint: exam.action == PickerExamAction.preparing
+                    ? exam.estimate ?? 'preparing on your paired desktop'
+                    : exam.locked
                     ? 'locked'
                     : !exam.serverLive
                     ? 'needs a paired desktop'
+                    : exam.action == PickerExamAction.take
+                    ? 'ready on your paired desktop'
                     : 'graded by your paired desktop',
-                filled: exam.enabled && exam.due,
+                filled:
+                    exam.enabled &&
+                    (exam.due || exam.action == PickerExamAction.take),
                 onTap: exam.enabled
                     ? () => exam.onStart(exam.filterable && _needsWorkOnly)
                     : null,
@@ -724,7 +743,9 @@ class _PickerLaunchRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
               decoration: BoxDecoration(
                 color: filled ? tokens.bolt.withValues(alpha: 0.2) : null,
-                border: Border.all(color: filled ? Colors.transparent : tokens.line),
+                border: Border.all(
+                  color: filled ? Colors.transparent : tokens.line,
+                ),
                 borderRadius: BorderRadius.circular(11),
               ),
               child: Row(

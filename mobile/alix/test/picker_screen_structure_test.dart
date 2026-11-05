@@ -165,9 +165,9 @@ void main() {
     // A fixed far-future deadline: a computed now-relative date bakes the
     // capture day's rendering into the committed baseline (it went red the
     // day after recording).
-    File('${workspace.path}/alix.local.toml').writeAsStringSync(
-      '[review]\ndeadline = "2100-01-05"\n',
-    );
+    File(
+      '${workspace.path}/alix.local.toml',
+    ).writeAsStringSync('[review]\ndeadline = "2100-01-05"\n');
     writeTestDeck(
       '${decks.path}/base.md',
       '---\nexam: https://example.com\ntitle: Base\n---\n## q?\na\n',
@@ -320,12 +320,89 @@ void main() {
   });
 
   testWidgets(
+    'the exam action follows the remote slot and announces readiness once',
+    (tester) async {
+      final root = tempDir('alix-picker-exam-ahead-');
+      final support = tempDir('alix-picker-exam-ahead-support-');
+      writeTestDeck(
+        '${root.path}/exam.md',
+        '---\nexam: https://example.com\ntitle: Remote exam\n---\n## q?\na\n',
+      );
+      await savePairing(
+        const ServerConfig(
+          host: '127.0.0.1',
+          port: 7777,
+          token: 'abc',
+          rootId: 'root-test0000000000000000000000',
+        ),
+        support: support,
+      );
+      const generatingExam = RemoteExam(
+        phase: 'generating',
+        deck: 'exam.md',
+        strictness: 'balanced',
+        questions: [],
+        grades: [],
+        gaps: [],
+        canRemediate: false,
+        thinking: true,
+        estimate: 'about 20 to 30 minutes',
+      );
+      const answeringExam = RemoteExam(
+        phase: 'answering',
+        deck: 'exam.md',
+        strictness: 'balanced',
+        questions: ['Why?'],
+        grades: [],
+        gaps: [],
+        canRemediate: false,
+        thinking: false,
+      );
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        examGetReplies: const [generatingExam, answeringExam],
+      );
+      await pumpPicker(
+        tester,
+        root: root,
+        support: support,
+        buildClient: (_) => client,
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: root.path,
+        ),
+      );
+
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      expect(find.text('Preparing'), findsOneWidget);
+      expect(find.text('about 20 to 30 minutes'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pump();
+      expect(find.text('Exam ready: exam.md.'), findsOneWidget);
+
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      expect(find.text('Take exam'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'picker tree: generate unavailable, idle, busy, failed, and destination states',
     (tester) async {
       final root = tempDir('alix-picker-structure-generate-');
       final support = tempDir('alix-picker-structure-generate-support-');
       await savePairing(
-        const ServerConfig(host: '127.0.0.1', port: 7777, token: 'abc', rootId: 'root-test0000000000000000000000'),
+        const ServerConfig(
+          host: '127.0.0.1',
+          port: 7777,
+          token: 'abc',
+          rootId: 'root-test0000000000000000000000',
+        ),
         support: support,
       );
       final busyClient = FakeServerClient(
@@ -352,8 +429,10 @@ void main() {
         // root screen now also runs the app-open sync cycle; a fake port
         // keeps it off the real network and, listing nothing, leaves no
         // status line for this test's tree to capture.
-        buildSyncPort: (_, _) =>
-            FakeSyncPort(rootId: 'root-test0000000000000000000000', rootDir: root.path),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: root.path,
+        ),
       );
       await openSettings(tester);
       await tester.tap(find.text('Generate deck'));

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -134,6 +135,13 @@ class _PickerScreenState extends State<PickerScreen> {
   /// keep dialing the stale endpoint or root.
   ({String scheme, String host, int port, String token, String rootId})?
   _syncControllerKey;
+  ({String scheme, String host, int port, String token, String rootId})?
+  _examClientKey;
+  ServerClient? _examStateClient;
+  Timer? _examPollTimer;
+  bool _examPollInFlight = false;
+  RemoteExam? _remoteExam;
+  String? _noticedReadyExam;
 
   @override
   void initState() {
@@ -152,6 +160,8 @@ class _PickerScreenState extends State<PickerScreen> {
 
   @override
   void dispose() {
+    _examPollTimer?.cancel();
+    _examStateClient?.close();
     _syncController?.removeListener(_controller.reload);
     _controller.dispose();
     // Only dispose a controller this screen built itself; one forwarded
@@ -203,6 +213,7 @@ class _PickerScreenState extends State<PickerScreen> {
         if (mounted) _controller.reload();
       }
       if (mounted) _controller.setServerReachable(false);
+      _stopExamPolling();
       return;
     }
     final String pairedDir;
@@ -220,6 +231,7 @@ class _PickerScreenState extends State<PickerScreen> {
         if (mounted) _controller.reload();
       }
       if (mounted) _controller.setServerReachable(false);
+      _stopExamPolling();
       return;
     }
 
@@ -273,6 +285,7 @@ class _PickerScreenState extends State<PickerScreen> {
     final live =
         probe != null && compareVersions(probe.version, minServerVersion) >= 0;
     if (mounted) _controller.setServerReachable(live);
+    _configureExamPolling(config, live: live);
 
     if (isPairedRootScreen) {
       final label = probe?.profile ?? '${config.host}:${config.port}';
@@ -290,6 +303,81 @@ class _PickerScreenState extends State<PickerScreen> {
         }),
       );
     }
+  }
+
+  void _stopExamPolling() {
+    _examPollTimer?.cancel();
+    _examPollTimer = null;
+    _examStateClient?.close();
+    _examStateClient = null;
+    _examClientKey = null;
+    _remoteExam = null;
+    _noticedReadyExam = null;
+  }
+
+  void _configureExamPolling(ServerConfig config, {required bool live}) {
+    if (!mounted) return;
+    if (!live) {
+      _stopExamPolling();
+      return;
+    }
+    final key = (
+      scheme: config.scheme,
+      host: config.host,
+      port: config.port,
+      token: config.token,
+      rootId: config.rootId,
+    );
+    if (_examClientKey != key || _examStateClient == null) {
+      _stopExamPolling();
+      _examClientKey = key;
+      _examStateClient = (widget.buildClient ?? HttpServerClient.new)(config);
+    }
+    _examPollTimer?.cancel();
+    final interval =
+        widget.generatePollInterval ?? const Duration(milliseconds: 400);
+    _examPollTimer = Timer.periodic(interval, (_) => _pollRemoteExam());
+    unawaited(_pollRemoteExam());
+  }
+
+  String? _remoteExamKey(RemoteExam? exam) => exam == null
+      ? null
+      : '${exam.phase}\u0000${exam.deck}\u0000${exam.estimate ?? ''}'
+            '\u0000${exam.questions.join('\u0001')}';
+
+  Future<void> _pollRemoteExam() async {
+    final client = _examStateClient;
+    if (client == null || _examPollInFlight) return;
+    _examPollInFlight = true;
+    RemoteExam? next;
+    var expired = false;
+    try {
+      next = await client.examGet();
+    } on PairingExpired {
+      expired = true;
+    } on Object {
+      return;
+    } finally {
+      _examPollInFlight = false;
+    }
+    if (!mounted || !identical(client, _examStateClient)) return;
+    if (expired) {
+      _controller.setServerReachable(false);
+      _stopExamPolling();
+      return;
+    }
+    final before = _remoteExamKey(_remoteExam);
+    final after = _remoteExamKey(next);
+    _remoteExam = next;
+    if (next?.phase == 'generating') _noticedReadyExam = null;
+    if (next?.phase == 'answering') {
+      final ready = '${next!.deck}\u0000${next.questions.join('\u0001')}';
+      if (_noticedReadyExam != ready) {
+        _noticedReadyExam = ready;
+        _snack('Exam ready: ${next.deck}.');
+      }
+    }
+    if (before != after) _controller.reload();
   }
 
   void _syncAll() {
@@ -470,22 +558,37 @@ class _PickerScreenState extends State<PickerScreen> {
     PickerEntry entry, {
     required String root,
     required bool needsWorkOnly,
+    RemoteExam? initialExam,
   }) async {
     final support = await _support();
     final config = readActivePairing(support);
     if (config == null || !mounted) return;
     final List<String>? cards;
+    Map<String, dynamic>? ideas;
     try {
-      cards = exam_bridge.examStartCards(
-        deckPath: entry.path,
-        rootDir: root,
-        needsWorkOnly: needsWorkOnly,
-      );
+      if (initialExam == null) {
+        cards = exam_bridge.examStartCards(
+          deckPath: entry.path,
+          rootDir: root,
+          needsWorkOnly: needsWorkOnly,
+        );
+        final encoded = exam_bridge.examIdeasLoad(
+          deckPath: entry.path,
+          rootDir: root,
+        );
+        if (encoded != null) {
+          ideas = Map<String, dynamic>.from(jsonDecode(encoded) as Map);
+        }
+      } else {
+        cards = null;
+      }
     } on Object catch (error) {
       _snack('could not prepare the exam: $error');
       return;
     }
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
+    _examPollTimer?.cancel();
+    _examPollTimer = null;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ExamScreen(
@@ -494,6 +597,26 @@ class _PickerScreenState extends State<PickerScreen> {
           support: support,
           buildClient: widget.buildClient ?? HttpServerClient.new,
           cards: cards,
+          initialExam: initialExam,
+          ideas: ideas,
+          loadAnswers: (questions) => exam_bridge.examAnswersLoad(
+            deckPath: entry.path,
+            rootDir: root,
+            questions: questions,
+          ),
+          saveAnswers: (questions, answers) => exam_bridge.examAnswersSave(
+            deckPath: entry.path,
+            rootDir: root,
+            questions: questions,
+            answers: answers,
+          ),
+          clearAnswers: () =>
+              exam_bridge.examAnswersClear(deckPath: entry.path, rootDir: root),
+          saveIdeas: (ideas) => exam_bridge.examIdeasSave(
+            deckPath: entry.path,
+            rootDir: root,
+            json: jsonEncode(ideas),
+          ),
           applyResult: (exam, nowMs) => exam_bridge.applyExamResult(
             deckPath: entry.path,
             rootDir: root,
@@ -512,6 +635,8 @@ class _PickerScreenState extends State<PickerScreen> {
       ),
     );
     client.close();
+    if (!mounted) return;
+    _configureExamPolling(config, live: true);
     _controller.reload();
   }
 
@@ -547,6 +672,14 @@ class _PickerScreenState extends State<PickerScreen> {
     if (!mounted) return;
     var walk = false;
     bool? examNeedsWorkOnly;
+    RemoteExam? examInitial;
+    final deckName = examDeckName(deckPath: entry.path, rootDir: root);
+    final slot = _remoteExam?.deck == deckName ? _remoteExam : null;
+    final examAction = slot == null
+        ? PickerExamAction.generate
+        : slot.phase == 'generating'
+        ? PickerExamAction.preparing
+        : PickerExamAction.take;
     final launch = await showModalBottomSheet<PickerLaunch>(
       context: context,
       isScrollControlled: true,
@@ -563,8 +696,13 @@ class _PickerScreenState extends State<PickerScreen> {
                 serverLive: isPaired && _controller.serverReachable,
                 due: entry.examDue,
                 filterable: entry.examFilter != 'none',
+                action: examAction,
+                estimate: slot?.estimate,
                 onStart: (needsWorkOnly) {
                   examNeedsWorkOnly = needsWorkOnly;
+                  examInitial = examAction == PickerExamAction.take
+                      ? slot
+                      : null;
                   Navigator.of(sheet).pop();
                 },
               )
@@ -586,7 +724,12 @@ class _PickerScreenState extends State<PickerScreen> {
       return;
     }
     if (examNeedsWorkOnly case final needsWorkOnly?) {
-      await _openExam(entry, root: root, needsWorkOnly: needsWorkOnly);
+      await _openExam(
+        entry,
+        root: root,
+        needsWorkOnly: needsWorkOnly,
+        initialExam: examInitial,
+      );
       return;
     }
     if (launch == null) return;
@@ -640,11 +783,8 @@ class _PickerScreenState extends State<PickerScreen> {
     _openEntryIn(entry, root: pairedDir, isPaired: true);
   }
 
-  void _openSearchHit(PickerSearchHit hit) => _openEntryIn(
-    hit.entry,
-    root: hit.root,
-    isPaired: hit.root == _pairedDir,
-  );
+  void _openSearchHit(PickerSearchHit hit) =>
+      _openEntryIn(hit.entry, root: hit.root, isPaired: hit.root == _pairedDir);
 
   void _openEntryIn(
     PickerEntry entry, {
@@ -677,31 +817,50 @@ class _PickerScreenState extends State<PickerScreen> {
     required String root,
     required bool isPaired,
   }) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PickerScreen(
-          root: root,
-          dir: entry.path,
-          title: entry.title,
-          device: widget.device,
-          syncController: _syncController,
-          isPairedSubtree: isPaired,
-          isPushedRoute: true,
-        ),
-      ),
+    _examPollTimer?.cancel();
+    _examPollTimer = null;
+    unawaited(
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute(
+              builder: (_) => PickerScreen(
+                root: root,
+                dir: entry.path,
+                title: entry.title,
+                device: widget.device,
+                supportDir: widget.supportDir,
+                buildClient: widget.buildClient,
+                generatePollInterval: widget.generatePollInterval,
+                syncController: _syncController,
+                isPairedSubtree: isPaired,
+                isPushedRoute: true,
+              ),
+            ),
+          )
+          .then((_) {
+            if (mounted) unawaited(_loadPairing());
+          }),
     );
   }
 
   void _openMastered(List<PickerEntry> mastered) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PickerScreen.mastered(
-          root: widget.root,
-          entries: mastered,
-          device: widget.device,
-          syncController: _syncController,
-        ),
-      ),
+    _examPollTimer?.cancel();
+    _examPollTimer = null;
+    unawaited(
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute(
+              builder: (_) => PickerScreen.mastered(
+                root: widget.root,
+                entries: mastered,
+                device: widget.device,
+                syncController: _syncController,
+              ),
+            ),
+          )
+          .then((_) {
+            if (mounted) unawaited(_loadPairing());
+          }),
     );
   }
 

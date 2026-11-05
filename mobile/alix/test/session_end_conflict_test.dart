@@ -373,7 +373,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Deck'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Exam'));
+      await tester.tap(find.text('Take exam'));
       await tester.pumpAndSettle();
 
       expect(find.text('1 / 1'), findsOneWidget);
@@ -391,7 +391,8 @@ void main() {
     (tester) async {
       final client = FakeServerClient(
         versionReply: '0.8.0',
-        examGetReplies: [_failedExam, _remediatedExam],
+        examGetReplies: [_failedExam],
+        examGetRepliesAfterRemediate: [_remediatedExam],
       );
       final syncController = await openSession(
         tester,
@@ -412,7 +413,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Deck'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Exam'));
+      await tester.tap(find.text('Take exam'));
       await tester.pumpAndSettle();
       expect(find.text('0 / 1'), findsOneWidget);
       await tester.tap(find.text('Turn the gaps into cards'));
