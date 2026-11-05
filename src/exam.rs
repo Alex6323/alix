@@ -245,6 +245,32 @@ impl Prepared {
         crate::exam_ideas::write_atomic(path, json.as_bytes())
     }
 
+    /// This exam narrowed to the questions a sitting kept, with its answers.
+    pub fn narrowed(
+        &self,
+        sections: &[ExamSection],
+        questions: &[ExamQuestion],
+        answers: &[String],
+    ) -> Self {
+        Self {
+            questions: questions
+                .iter()
+                .filter_map(|q| {
+                    Some(PreparedQuestion {
+                        heading: sections.get(q.section)?.label.clone(),
+                        idea: q.idea,
+                        prompt: q.prompt.clone(),
+                        points: q.points.clone(),
+                        shape: q.shape,
+                        mental_model: q.mental_model.clone(),
+                    })
+                })
+                .collect(),
+            answers: answers.to_vec(),
+            ..self.clone()
+        }
+    }
+
     /// The deck's current sections this exam still covers, and its questions
     /// and answers re-indexed onto them; a question whose heading is gone is
     /// dropped.

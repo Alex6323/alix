@@ -511,6 +511,7 @@ mod tests {
             is_trace: false,
             examable: false,
             has_exam,
+            exam_prepared: false,
             badge_depth: None,
             badge_dotted: false,
             new_cards: false,

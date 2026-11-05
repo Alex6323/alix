@@ -201,16 +201,29 @@ picker `StateDto`.
 
 ### 4.3 The exam
 
-`POST /api/exam/start {deck, needs_work_only?}` → `ExamDto` with `phase` walking
-`"generating"` → `"answering"` → `"grading"` → `"results"`
-(→ `"remediating"` → `"remediated"`). Poll `GET /api/exam` while `thinking`.
-`POST /api/exam/answer {text, goto?}` saves and moves; `POST /api/exam/grade
-{text}` submits the last answer and starts grading; `POST /api/exam/remediate`
-generates remediation cards when an answer missed key points; `POST /api/exam/close` → `StateDto`.
-With `needs_work_only: true` the sitting examines only the sections that have
-not passed (needs work, new cards, unexamined), read from the server's own
-store; when every section has passed, or none has, it examines all of them.
-The result is recorded on the examined cards when grading settles.
+An exam is written ahead, then taken. `POST /api/exam/generate {deck,
+needs_work_only?}` → `PreparingDto` starts writing the questions in the
+background (several may run, one per deck); `GET /api/exam/preparing` →
+`[PreparingDto]` reports them, and `POST /api/exam/generate/cancel {deck}`
+stops one. The finished exam is kept in the deck's store, so it survives
+leaving the page and restarting the server; the deck row's `exam_prepared`
+says it is there. With `needs_work_only: true` the exam covers only the
+sections that have not passed (needs work, new cards, unexamined), read from
+the server's own store; when every section has passed, or none has, it covers
+all of them.
+
+`POST /api/exam/start {deck}` → `ExamDto` opens the prepared exam in
+`"answering"`, at the first unanswered question, with earlier answers kept;
+`phase` then walks `"grading"` → `"results"` (→ `"remediating"` →
+`"remediated"`). Poll `GET /api/exam` while `thinking`. `POST
+/api/exam/answer {text, goto?}` saves and moves; an answer locks once the
+learner moves on from it non-empty, and a locked answer is not changed.
+`POST /api/exam/grade {text}` submits the last answer and starts grading;
+grading uses the prepared exam up. `POST /api/exam/remediate` generates
+remediation cards when an answer missed key points; `POST /api/exam/close` →
+`StateDto`. A prepared exam whose exam material changed since it was written
+is removed at start (409). The result is recorded on the examined cards when
+grading settles.
 
 ### 4.4 Augment
 
@@ -758,7 +771,10 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/exam/start` | `{deck, needs_work_only?}` | `ExamDto` | 400 unknown deck; 409 not examable / locked / backend can't reach the deck's source |
+| POST | `/api/exam/generate` | `{deck, needs_work_only?}` | `PreparingDto` (the running one if any) | 400 unknown deck; 409 not examable / locked / already prepared / backend can't reach the deck's source |
+| GET | `/api/exam/preparing` | – | `[PreparingDto]` | – |
+| POST | `/api/exam/generate/cancel` | `{deck}` | – | 400 unknown deck |
+| POST | `/api/exam/start` | `{deck}` | `ExamDto` | 400 unknown deck; 409 nothing prepared / prepared exam stale / not examable / locked / backend can't reach the deck's source |
 | GET | `/api/exam` | – | `ExamDto` (poll) | 409 |
 | POST | `/api/exam/answer` | `{text, goto?}` | `ExamDto` | 409 |
 | POST | `/api/exam/grade` | `{text}` | `ExamDto` | 409 |
@@ -1134,6 +1150,7 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `is_trace` | bool | Selecting it traces instead of reviewing. |
 | `examable` | bool | Its exam can be sat right now. |
 | `has_exam` | bool | Has an exam at all (even if locked). |
+| `exam_prepared` | bool | An exam was written ahead and waits to be taken (`POST /api/exam/start`). |
 | `recent` | bool | Belongs in a recents view. |
 | `is_workspace` | bool | Group flavor. |
 | `description` | string? | Workspace goal line. |
@@ -1506,6 +1523,7 @@ Example (from the pinned test):
 | `question` | string? | The current prompt (answering phase). |
 | `question_units` | [ContentUnit]? | `question` parsed like a tutor answer, except a prose run stays one unit: inline code, math, and fenced code blocks. |
 | `answer` | string | Saved answer for the current question. |
+| `answer_locked` | bool | The current answer was given and moved on from; it cannot change. |
 | `on_last` | bool | |
 | `grades` | [ExamGradeDto] | Populated in results. |
 | `sections` | [ExamSectionDto] | The examined sections in deck order, populated in results. |
@@ -1650,6 +1668,16 @@ card's stored bytes, which have that same form (`## front`, the back lines, the
 `<!-- id: ... -->` line, each newline-terminated). The phone appends the
 block as it is, so the next pull's copy of the sidecar is identical to what
 the phone already holds.
+
+### PreparingDto
+
+An exam being written ahead (`/api/exam/generate`, `/api/exam/preparing`):
+`deck: string` (the name the request gave), `state: "generating" | "ready" |
+"failed"` *(closed)*, `elapsed: number` (seconds since it started),
+`estimate: string?` (a rough wait worded for the learner, e.g. `"usually 10
+to 20 minutes"`; null once it finished, or when there is none for the
+backend), `error: string?`
+(set when `failed`).
 
 ### RemoteAskDto
 

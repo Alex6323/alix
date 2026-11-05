@@ -1298,6 +1298,7 @@ impl StudyState {
                         let poll = ex
                             .sitting
                             .poll(&mut self.store, now_ms(), retire_after_days);
+                        ex.settle();
                         if poll.store_mutated {
                             flush_mutation(
                                 &self.store,
@@ -1317,6 +1318,7 @@ impl StudyState {
                     if let Some(i) = goto {
                         ex.sitting.goto(i);
                     }
+                    ex.save_answers();
                     exam_dto(ex, &self.store)
                 });
                 let _ = reply.send(dto);
@@ -1324,6 +1326,7 @@ impl StudyState {
             StudyCommand::ExamGrade { text, reply } => {
                 let dto = self.examining.as_mut().map(|ex| {
                     ex.sitting.set_answer(text);
+                    ex.save_answers();
                     ex.sitting.submit();
                     exam_dto(ex, &self.store)
                 });
@@ -2225,23 +2228,51 @@ impl StudyState {
                 if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
                     return Transition::Rejected;
                 }
-                let scope = if needs_work_only {
-                    exam::ExamScope::NeedsWork(&candidate)
-                } else {
-                    exam::ExamScope::Full
+                let _ = needs_work_only;
+                let Some((ideas_path, prepared_path)) = exam::exam_files(&deck) else {
+                    return Transition::Rejected;
                 };
-                let sections = crate::exam_status::select_sections(&deck, scope).sections;
-                let sitting = exam::Sitting::start_with(
+                let Ok(Some(prepared)) = exam::Prepared::load(&prepared_path) else {
+                    return Transition::Rejected;
+                };
+                if exam::material_fingerprint(&deck).ok().as_deref() != Some(&prepared.material) {
+                    let _ = std::fs::remove_file(&prepared_path);
+                    return Transition::Rejected;
+                }
+                let (sections, questions, answers) = prepared.against(&deck);
+                if questions.is_empty() {
+                    let _ = std::fs::remove_file(&prepared_path);
+                    return Transition::Rejected;
+                }
+                let ideas = crate::exam_ideas::IdeasDocument::for_material(
+                    crate::exam_ideas::IdeasDocument::load(&ideas_path)
+                        .ok()
+                        .flatten(),
+                    &prepared.material,
+                );
+                let prepared = prepared.narrowed(&sections, &questions, &answers);
+                let sitting = exam::Sitting::from_prepared(
                     &deck,
                     sections,
-                    None,
+                    questions,
+                    answers,
+                    ideas,
                     strictness,
-                    self.config.exam_cfg.clone(),
+                    self.config
+                        .exam_cfg
+                        .clone()
+                        .for_workspace(&workspace::content_root(&path)),
                     ask_cfg,
                 );
                 let ex = Examining {
                     sitting,
                     deck_path: path,
+                    prepared: Some(PreparedFiles {
+                        ideas_path,
+                        prepared_path,
+                        prepared,
+                        settled: false,
+                    }),
                 };
                 self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);

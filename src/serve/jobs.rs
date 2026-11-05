@@ -955,6 +955,89 @@ impl Reviewing {
 pub(super) struct Examining {
     pub(super) sitting: exam::Sitting,
     pub(super) deck_path: PathBuf,
+    pub(super) prepared: Option<PreparedFiles>,
+}
+
+pub(super) struct PreparedFiles {
+    pub(super) ideas_path: PathBuf,
+    pub(super) prepared_path: PathBuf,
+    pub(super) prepared: exam::Prepared,
+    pub(super) settled: bool,
+}
+
+impl Examining {
+    pub(super) fn save_answers(&mut self) {
+        if let Some(files) = self.prepared.as_mut() {
+            files.prepared.answers = self.sitting.answers().to_vec();
+            if let Err(error) = files.prepared.save(&files.prepared_path) {
+                eprintln!("saving exam answers: {error:#}");
+            }
+        }
+    }
+
+    /// Once graded: the idea history is kept and the prepared exam is used up.
+    pub(super) fn settle(&mut self) {
+        let Some(files) = self.prepared.as_mut() else {
+            return;
+        };
+        if files.settled || self.sitting.result().is_none() {
+            return;
+        }
+        files.settled = true;
+        if let Some(ideas) = self.sitting.ideas()
+            && let Err(error) = ideas.save(&files.ideas_path)
+        {
+            eprintln!("saving exam ideas: {error:#}");
+        }
+        if let Err(error) = std::fs::remove_file(&files.prepared_path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            eprintln!("removing the used exam: {error}");
+        }
+    }
+}
+
+pub(super) struct Preparing {
+    pub(super) name: String,
+    pub(super) path: PathBuf,
+    pub(super) rx: std::sync::mpsc::Receiver<Result<(), String>>,
+    pub(super) job: crate::ask::AskJob,
+    pub(super) started_ms: u64,
+    pub(super) estimate: Option<&'static str>,
+    pub(super) outcome: Option<Result<(), String>>,
+}
+
+impl Drop for Preparing {
+    fn drop(&mut self) {
+        if self.outcome.is_none() {
+            self.job.cancel();
+        }
+    }
+}
+
+impl Preparing {
+    pub(super) fn dto(&mut self) -> PreparingDto {
+        if self.outcome.is_none() {
+            match self.rx.try_recv() {
+                Ok(outcome) => self.outcome = Some(outcome),
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.outcome = Some(Err("the exam helper exited unexpectedly".to_string()));
+                }
+            }
+        }
+        PreparingDto {
+            deck: self.name.clone(),
+            state: match &self.outcome {
+                None => "generating",
+                Some(Ok(())) => "ready",
+                Some(Err(_)) => "failed",
+            },
+            elapsed: now_ms().saturating_sub(self.started_ms) / 1000,
+            estimate: self.outcome.is_none().then_some(self.estimate).flatten(),
+            error: self.outcome.as_ref().and_then(|o| o.clone().err()),
+        }
+    }
 }
 
 pub(super) struct RemoteExamining {

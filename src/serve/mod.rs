@@ -321,6 +321,7 @@ pub fn run_review(
             remote_ask: None,
             remote_exam: None,
             remote_generate: None,
+            preparing: Vec::new(),
         },
     );
 
@@ -1434,6 +1435,60 @@ pub fn run_review(
                     Some(Transition::Done(dto)) => respond_json(request, &dto),
                     Some(Transition::Rejected) => respond_status(request, 409),
                     Some(Transition::FlushFailed) => respond_status(request, 500),
+                }
+            }
+            (Method::Post, "/api/exam/generate") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    deck: String,
+                    #[serde(default)]
+                    needs_work_only: bool,
+                }
+                let Some(body) = json_body::<Body>(&mut request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let resolved = catalog
+                    .resolve_path(body.deck.clone())
+                    .flatten()
+                    .zip(catalog.decks_root());
+                let Some((path, decks_root)) = resolved else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match jobs.prepare_start(
+                    body.deck,
+                    path,
+                    decks_root,
+                    body.needs_work_only,
+                    exam_cfg.clone(),
+                    ask_cfg.clone(),
+                ) {
+                    None => respond_status(request, 503),
+                    Some(Started::Conflict) => respond_status(request, 409),
+                    Some(Started::Dto(dto)) => respond_json(request, &dto),
+                }
+            }
+            (Method::Get, "/api/exam/preparing") => match jobs.prepare_list() {
+                None => respond_status(request, 503),
+                Some(list) => respond_json(request, &list),
+            },
+            (Method::Post, "/api/exam/generate/cancel") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    deck: String,
+                }
+                let Some(body) = json_body::<Body>(&mut request) else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let Some(path) = catalog.resolve_path(body.deck).flatten() else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match jobs.prepare_cancel(path) {
+                    None => respond_status(request, 503),
+                    Some(()) => respond_status(request, 200),
                 }
             }
             (Method::Get, "/api/exam") => match study.exam_poll() {

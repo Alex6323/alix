@@ -839,6 +839,7 @@ fn examdto_results_phase_wire_shape() {
         question: None,
         question_units: None,
         answer: String::new(),
+        answer_locked: false,
         on_last: true,
         grades: vec![exam_grade_dto(
             &exam::ExamQuestion {
@@ -895,6 +896,7 @@ fn examdto_results_phase_wire_shape() {
             "question": null,
             "question_units": null,
             "answer": "",
+            "answer_locked": false,
             "on_last": true,
             "grades": [{
                 "section": 0,
@@ -1605,6 +1607,7 @@ fn decklistdto_wire_shape() {
             is_trace: false,
             examable: false,
             has_exam: false,
+            exam_prepared: false,
             recent: true,
             is_workspace: true,
             description: Some("learn Rust ownership".to_string()),
@@ -1642,6 +1645,7 @@ fn decklistdto_wire_shape() {
                 is_trace: false,
                 examable: true,
                 has_exam: true,
+                exam_prepared: false,
                 indent: 1,
                 tree: "└─ ".to_string(),
                 has_topology: false,
@@ -1686,6 +1690,7 @@ fn decklistdto_wire_shape() {
             is_trace: false,
             examable: false,
             has_exam: false,
+            exam_prepared: false,
             recent: true,
             is_workspace: false,
             description: None,
@@ -1730,6 +1735,7 @@ fn decklistdto_wire_shape() {
                 "is_trace": false,
                 "examable": false,
                 "has_exam": false,
+                "exam_prepared": false,
                 "recent": true,
                 "is_workspace": true,
                 "description": "learn Rust ownership",
@@ -1753,6 +1759,7 @@ fn decklistdto_wire_shape() {
                     "is_trace": false,
                     "examable": true,
                     "has_exam": true,
+                    "exam_prepared": false,
                     "indent": 1,
                     "tree": "└─ ",
                     "has_topology": false,
@@ -1799,6 +1806,7 @@ fn decklistdto_wire_shape() {
                 "is_trace": false,
                 "examable": false,
                 "has_exam": false,
+                "exam_prepared": false,
                 "recent": true,
                 "is_workspace": false,
                 "description": null,
@@ -2556,6 +2564,36 @@ fn receivedto_done_wire_shape() {
         &dto,
         json!({"phase": "done", "landed": "rust-decks",
                "stripped": ["progress"], "elapsed": 9, "error": null}),
+    );
+}
+
+#[test]
+fn preparingdto_wire_shapes() {
+    let generating = PreparingDto {
+        deck: "rust.md".to_string(),
+        state: "generating",
+        elapsed: 42,
+        estimate: Some("usually 10 to 20 minutes"),
+        error: None,
+    };
+    pin(
+        "PreparingDto.generating",
+        &generating,
+        json!({"deck": "rust.md", "state": "generating", "elapsed": 42,
+               "estimate": "usually 10 to 20 minutes", "error": null}),
+    );
+    let failed = PreparingDto {
+        deck: "rust.md".to_string(),
+        state: "failed",
+        elapsed: 61,
+        estimate: None,
+        error: Some("the backend timed out".to_string()),
+    };
+    pin(
+        "PreparingDto.failed",
+        &failed,
+        json!({"deck": "rust.md", "state": "failed", "elapsed": 61,
+               "estimate": null, "error": "the backend timed out"}),
     );
 }
 

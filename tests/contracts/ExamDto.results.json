@@ -1,5 +1,6 @@
 {
   "answer": "",
+  "answer_locked": false,
   "can_remediate": false,
   "current": 1,
   "deck": "rust.md",

@@ -9,6 +9,7 @@
       "deadline": null,
       "description": null,
       "exam_filter": "none",
+      "exam_prepared": false,
       "examable": false,
       "full_exam_result": null,
       "has_exam": false,
@@ -56,6 +57,7 @@
       },
       "description": "learn Rust ownership",
       "exam_filter": "none",
+      "exam_prepared": false,
       "examable": false,
       "full_exam_result": null,
       "has_exam": false,
@@ -75,6 +77,7 @@
           "can_recognize": true,
           "crammable": true,
           "exam_filter": "partial",
+          "exam_prepared": false,
           "examable": true,
           "full_exam_result": {
             "partial": 1,

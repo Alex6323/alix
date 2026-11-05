@@ -230,6 +230,7 @@ pub(super) struct DeckItemDto {
     pub(super) is_trace: bool,
     pub(super) examable: bool,
     pub(super) has_exam: bool,
+    pub(super) exam_prepared: bool,
     pub(super) recent: bool,
     pub(super) is_workspace: bool,
     pub(super) description: Option<String>,
@@ -275,6 +276,7 @@ pub(super) struct MemberDto {
     pub(super) is_trace: bool,
     pub(super) examable: bool,
     pub(super) has_exam: bool,
+    pub(super) exam_prepared: bool,
     pub(super) indent: usize,
     pub(super) tree: String,
     pub(super) has_topology: bool,
@@ -665,6 +667,7 @@ pub(super) struct ExamDto {
     pub(super) question: Option<String>,
     pub(super) question_units: Option<Vec<ContentUnit>>,
     pub(super) answer: String,
+    pub(super) answer_locked: bool,
     pub(super) on_last: bool,
     pub(super) grades: Vec<ExamGradeDto>,
     pub(super) sections: Vec<ExamSectionDto>,
@@ -856,6 +859,7 @@ pub(super) fn exam_dto(ex: &Examining, store: &crate::store::Store) -> ExamDto {
         question: s.question().map(|q| q.prompt.clone()),
         question_units: s.question().map(|q| exam_text_units(&q.prompt)),
         answer: s.answer().to_string(),
+        answer_locked: s.is_locked(s.current_index()),
         on_last: s.on_last(),
         grades,
         sections: parts.sections,
@@ -936,6 +940,15 @@ pub(super) struct RemoteAskDto {
     pub(super) note: Option<Vec<String>>,
     pub(super) error: Option<String>,
     pub(super) elapsed: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub(super) struct PreparingDto {
+    pub(super) deck: String,
+    pub(super) state: &'static str,
+    pub(super) elapsed: u64,
+    pub(super) estimate: Option<&'static str>,
+    pub(super) error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -1743,6 +1756,7 @@ mod tests {
             &Examining {
                 sitting,
                 deck_path: base,
+                prepared: None,
             },
             &store,
         );

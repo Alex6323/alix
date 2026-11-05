@@ -30,6 +30,7 @@ pub(super) struct JobsState {
     pub(super) remote_ask: Option<RemoteAsk>,
     pub(super) remote_exam: Option<RemoteExamining>,
     pub(super) remote_generate: Option<RemoteGenerating>,
+    pub(super) preparing: Vec<Preparing>,
 }
 
 pub(super) enum Started<T> {
@@ -128,6 +129,20 @@ pub(super) enum JobsCommand {
     },
     RemoteGeneratePoll(Reply<Option<RemoteGenerateDto>>),
     RemoteGenerateClose(Reply<()>),
+    PrepareStart {
+        name: String,
+        path: PathBuf,
+        decks_root: PathBuf,
+        needs_work_only: bool,
+        exam_cfg: ExamConfig,
+        ask_cfg: AskConfig,
+        reply: Reply<Started<PreparingDto>>,
+    },
+    PrepareList(Reply<Vec<PreparingDto>>),
+    PrepareCancel {
+        path: PathBuf,
+        reply: Reply<()>,
+    },
 }
 
 #[derive(Clone)]
@@ -290,6 +305,38 @@ impl JobsHandle {
     }
     pub(super) fn remote_generate_close(&self) -> Option<()> {
         self.call(JobsCommand::RemoteGenerateClose)
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one exam request's whole context"
+    )]
+    pub(super) fn prepare_start(
+        &self,
+        name: String,
+        path: PathBuf,
+        decks_root: PathBuf,
+        needs_work_only: bool,
+        exam_cfg: ExamConfig,
+        ask_cfg: AskConfig,
+    ) -> Option<Started<PreparingDto>> {
+        self.call(|reply| JobsCommand::PrepareStart {
+            name,
+            path,
+            decks_root,
+            needs_work_only,
+            exam_cfg,
+            ask_cfg,
+            reply,
+        })
+    }
+
+    pub(super) fn prepare_list(&self) -> Option<Vec<PreparingDto>> {
+        self.call(JobsCommand::PrepareList)
+    }
+
+    pub(super) fn prepare_cancel(&self, path: PathBuf) -> Option<()> {
+        self.call(|reply| JobsCommand::PrepareCancel { path, reply })
     }
 }
 
@@ -610,6 +657,31 @@ impl JobsState {
                 });
                 let _ = reply.send(out);
             }
+            JobsCommand::PrepareStart {
+                name,
+                path,
+                decks_root,
+                needs_work_only,
+                exam_cfg,
+                ask_cfg,
+                reply,
+            } => {
+                let _ = reply.send(self.prepare_start(
+                    name,
+                    path,
+                    &decks_root,
+                    needs_work_only,
+                    exam_cfg,
+                    ask_cfg,
+                ));
+            }
+            JobsCommand::PrepareList(reply) => {
+                let _ = reply.send(self.preparing.iter_mut().map(Preparing::dto).collect());
+            }
+            JobsCommand::PrepareCancel { path, reply } => {
+                self.preparing.retain(|p| p.path != path);
+                let _ = reply.send(());
+            }
             JobsCommand::RemoteGenerateClose(reply) => {
                 self.remote_generate = None;
                 let _ = reply.send(());
@@ -750,6 +822,67 @@ impl JobsState {
                 error: Some(format!("{e:#}")),
             }),
         }
+    }
+
+    fn prepare_start(
+        &mut self,
+        name: String,
+        path: PathBuf,
+        decks_root: &std::path::Path,
+        needs_work_only: bool,
+        exam_cfg: ExamConfig,
+        ask_cfg: AskConfig,
+    ) -> Started<PreparingDto> {
+        if let Some(running) = self
+            .preparing
+            .iter_mut()
+            .find(|p| p.path == path && p.outcome.is_none())
+        {
+            return Started::Dto(running.dto());
+        }
+        self.preparing.retain(|p| p.path != path);
+        let Ok(deck) = exam::open_for_exam(&path) else {
+            return Started::Conflict;
+        };
+        let exam_cfg = exam_cfg.for_workspace(&crate::workspace::content_root(&path));
+        let Ok(store) = crate::assemble::store_for(
+            std::slice::from_ref(&path),
+            self.config.instance_store.as_deref(),
+        ) else {
+            return Started::Conflict;
+        };
+        let already_prepared =
+            exam::exam_files(&deck).is_some_and(|(_, prepared)| prepared.exists());
+        if !deck.has_exam()
+            || already_prepared
+            || crate::deck::is_locked(&deck, Some(decks_root), &store)
+            || exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err()
+        {
+            return Started::Conflict;
+        }
+        let scope = if needs_work_only {
+            exam::ExamScope::NeedsWork(&store)
+        } else {
+            exam::ExamScope::Full
+        };
+        let sections = crate::exam_status::select_sections(&deck, scope).sections;
+        if sections.is_empty() {
+            return Started::Conflict;
+        }
+        let estimate = exam::wait_estimate(&ask_cfg);
+        let (rx, job) = exam::spawn_prepare(&deck, sections, exam_cfg, ask_cfg);
+        let mut preparing = Preparing {
+            name,
+            path,
+            rx,
+            job,
+            started_ms: crate::time::now_ms(),
+            estimate,
+            outcome: None,
+        };
+        let dto = preparing.dto();
+        self.preparing.push(preparing);
+        Started::Dto(dto)
     }
 
     fn remote_exam_start(

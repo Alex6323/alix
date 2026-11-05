@@ -711,6 +711,32 @@ fn add_frozen_tutor_fixture(dir: &Path) {
 /// bound turns CPU contention into a red test.
 const HANG_BUDGET: Duration = Duration::from_secs(30);
 
+/// Generates the exam ahead (the browser's "Generate exam") and waits until
+/// it is ready to take.
+fn prepare_exam(base: &str, body: &str) {
+    let resp = post_json(base, "/api/exam/generate", body);
+    assert_eq!(
+        200,
+        resp.status,
+        "generate: {}",
+        String::from_utf8_lossy(&resp.body)
+    );
+    let deck = serde_json::from_str::<serde_json::Value>(body).unwrap()["deck"].clone();
+    let list = poll_until(base, "/api/exam/preparing", |b| {
+        b.as_array().is_some_and(|l| {
+            l.iter()
+                .any(|p| p["deck"] == deck && p["state"] != "generating")
+        })
+    });
+    let entry = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["deck"] == deck)
+        .unwrap();
+    assert_eq!("ready", entry["state"], "prepared: {list}");
+}
+
 fn poll_until(
     base: &str,
     path: &str,
@@ -5898,6 +5924,7 @@ fn exam_grade_on_a_fact_deck_walks_from_answering_to_a_passing_result_via_the_fa
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
+    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
     post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
     poll_until(&base, "/api/exam", |b| b["phase"] == "answering");
 
@@ -6141,6 +6168,7 @@ fn exam_answer_sets_the_text_the_grade_submits() {
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
+    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
     post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
     poll_until(&base, "/api/exam", |b| b["phase"] == "answering");
 
@@ -6154,6 +6182,123 @@ fn exam_answer_sets_the_text_the_grade_submits() {
     assert_eq!(200, resp.status);
     let body = poll_until(&base, "/api/exam", |b| b["phase"] != "grading");
     assert_eq!("results", body["phase"], "body: {body}");
+}
+
+/// An exam is generated ahead, survives leaving, and is used up by grading;
+/// a change to its material makes it stale.
+fn deck_row_flag(base: &str, name: &str, key: &str) -> Option<bool> {
+    fn find<'a>(value: &'a serde_json::Value, name: &str) -> Option<&'a serde_json::Value> {
+        match value {
+            serde_json::Value::Object(map) if map.get("name").is_some_and(|n| n == name) => {
+                Some(value)
+            }
+            serde_json::Value::Object(map) => map.values().find_map(|v| find(v, name)),
+            serde_json::Value::Array(items) => items.iter().find_map(|v| find(v, name)),
+            _ => None,
+        }
+    }
+    let response = http(base, "GET", "/api/decks", &[], &[]);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    find(&body, name).and_then(|row| row[key].as_bool())
+}
+
+#[test]
+fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_with_its_material() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["p1"]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
+    let exam_dir = private_state_root(guard.dir()).join("exam");
+    let start = || post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+
+    assert_eq!(
+        409,
+        start().status,
+        "step 1: nothing to take before generating"
+    );
+    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
+    assert!(
+        exam_dir.join("deck-examdeck.prepared.json").exists()
+            && exam_dir.join("deck-examdeck.json").exists(),
+        "step 2: the prepared exam and the idea list land in the store"
+    );
+    assert_eq!(
+        Some(true),
+        deck_row_flag(&base, "examdeck.md", "exam_prepared"),
+        "step 2: the deck row offers the exam to take"
+    );
+    let again = post_json(&base, "/api/exam/generate", r#"{"deck":"examdeck.md"}"#);
+    assert_eq!(
+        409, again.status,
+        "step 2: a ready exam is taken, not generated again"
+    );
+
+    let resp = start();
+    assert_eq!(200, resp.status, "step 3: start");
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_eq!(
+        "answering", body["phase"],
+        "step 3: no generating phase: {body}"
+    );
+    assert_eq!(
+        false, body["answer_locked"],
+        "step 3: a fresh question is open: {body}"
+    );
+    post_json(&base, "/api/exam/answer", r#"{"text":"kept answer"}"#);
+    post_json(&base, "/api/exam/close", "{}");
+    let resumed: serde_json::Value = serde_json::from_slice(&start().body).unwrap();
+    assert_eq!(
+        "kept answer", resumed["answer"],
+        "step 4: the answer survives leaving: {resumed}"
+    );
+    assert_eq!(
+        true, resumed["answer_locked"],
+        "step 4: an answer given before leaving is locked: {resumed}"
+    );
+
+    post_json(&base, "/api/exam/grade", r#"{"text":"kept answer"}"#);
+    poll_until(&base, "/api/exam", |b| b["phase"] == "results");
+    assert!(
+        !exam_dir.join("deck-examdeck.prepared.json").exists(),
+        "step 5: grading uses the prepared exam up"
+    );
+    assert_eq!(
+        Some(false),
+        deck_row_flag(&base, "examdeck.md", "exam_prepared"),
+        "step 5: the deck row no longer offers it"
+    );
+    let ideas: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(exam_dir.join("deck-examdeck.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        false, ideas["sections"][0]["ideas"][0]["last_passed"],
+        "step 5: the asked idea is recorded as failed: {ideas}"
+    );
+    post_json(&base, "/api/exam/close", "{}");
+    assert_eq!(
+        409,
+        start().status,
+        "step 5: a graded exam cannot be taken twice"
+    );
+
+    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
+    std::fs::write(guard.dir().join("examsource.txt"), "c changed.\n").unwrap();
+    assert_eq!(
+        409,
+        start().status,
+        "step 6: a changed material makes it stale"
+    );
+    assert!(
+        !exam_dir.join("deck-examdeck.prepared.json").exists(),
+        "step 6: the stale exam is removed"
+    );
 }
 
 /// The web generate flow end to end: start answers a generating phase, the
@@ -7221,6 +7366,7 @@ fn a_mastery_save_failure_surfaces_and_the_mastery_survives_repair() {
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
+    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
     post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
     poll_until(&base, "/api/exam", |b| b["phase"] == "answering");
     let state_dir = private_state_root(guard.dir());
@@ -8133,6 +8279,7 @@ fn law_every_other_session_transition_ends_a_running_walk() {
         },
         |_| {},
     );
+    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
     let transitions = [
         ("/api/select", r#"{"deck":"sample.md"}"#),
         ("/api/select", r#"{"deck":"trace.md"}"#),
@@ -8813,6 +8960,7 @@ fn exam_start_honours_the_needs_work_filter_and_reports_per_section_results() {
         |_| {},
     );
 
+    prepare_exam(&base, r#"{"deck":"twosect.md","needs_work_only":true}"#);
     let resp = post_json(
         &base,
         "/api/exam/start",
@@ -8938,7 +9086,7 @@ fn branching_exam_cli(dir: &Path, grades_path: &Path) -> PathBuf {
             "#!/bin/sh\nPATH=/usr/bin:/bin\ninput=$(cat)\ncase \"$input\" in\n\
              *'\"grades\"'*) cat {grades} ;;\n\
              *'\"models\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}]}}' ;;\n\
-             *'\"questions\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"section\":1,\"shape\":\"instance\",\"model\":\"m\",\"prompt\":\"Q1\",\"points\":[\"p1\"]}}]}}' ;;\n\
+             *'\"questions\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"section\":1,\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q1\",\"points\":[\"p1\"]}}]}}' ;;\n\
              *) printf '## term?\\ndefinition\\n' ;;\n\
              esac\n",
             grades = grades_path.display(),

@@ -35,6 +35,7 @@ pub struct DeckSummary {
     pub exam_filter: crate::exam_status::ExamFilter,
     pub exam_due: bool,
     pub has_exam: bool,
+    pub exam_prepared: bool,
     pub locked: bool,
     /// The deck's OWN progress document failed to load, so every
     /// progress-derived claim here is suppressed and review is refused;
@@ -461,6 +462,7 @@ fn folder_summary(
         exam_filter: crate::exam_status::ExamFilter::None,
         exam_due: false,
         has_exam: false,
+        exam_prepared: false,
         locked: false,
         progress_error: false,
         icon,
@@ -492,6 +494,7 @@ fn deck_summary(
     let title = deck.map(|d| d.display_name()).unwrap_or_default();
     let is_trace = deck.is_some_and(|d| d.is_trace());
     let has_exam = deck.is_some_and(|d| d.has_exam());
+    let exam_prepared = deck.is_some_and(exam_prepared);
     // `augment` is `Some` exactly when `store` is, so gating on all three
     // preserves that invariant for `deck_due`.
     let due = match (deck, store, augment) {
@@ -553,6 +556,7 @@ fn deck_summary(
         },
         exam_due: exam_due && !progress_error,
         has_exam,
+        exam_prepared,
         locked,
         progress_error,
         icon: None,
@@ -613,6 +617,15 @@ fn deck_due(
         )
 }
 
+fn exam_prepared(deck: &Deck) -> bool {
+    deck.has_exam()
+        && deck.deck_token.as_deref().is_some_and(|token| {
+            crate::state::UserFiles::new(workspace::content_root(&deck.path))
+                .exam_prepared_for(token)
+                .is_file()
+        })
+}
+
 pub fn deadline_ready(passed: bool, finished: bool, has_exam: bool) -> bool {
     passed || (finished && !has_exam)
 }
@@ -649,6 +662,7 @@ pub struct DeckStatus {
     pub is_trace: bool,
     pub examable: bool,
     pub has_exam: bool,
+    pub exam_prepared: bool,
     pub badge_depth: Option<Depth>,
     pub badge_dotted: bool,
     pub new_cards: bool,
@@ -791,6 +805,7 @@ pub fn deck_status(
         is_trace: deck.is_trace(),
         examable: examable && !progress_error,
         has_exam,
+        exam_prepared: exam_prepared(deck),
         badge_depth: badge_depth.filter(|_| !progress_error),
         badge_dotted: badge_dotted && !progress_error,
         new_cards: new_cards && !progress_error,
@@ -2800,6 +2815,7 @@ mod tests {
             is_trace: false,
             examable: false,
             has_exam,
+            exam_prepared: false,
             badge_depth: None,
             badge_dotted: false,
             new_cards: false,
