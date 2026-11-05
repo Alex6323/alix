@@ -176,6 +176,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `[exam] timeout_secs` defaults to 3600 seconds per call instead of 300:
+  writing an exam's questions at a high effort takes many minutes, and the
+  old limit cut generation off.
+
 - A deck with an exam becomes **exam due** once every card has been answered
   right at least once, at any depth (Recognize included) or in a walk; it used
   to need every card graduated in Recall review, so a deck drilled only at

@@ -450,7 +450,7 @@ impl Default for ExamConfig {
     fn default() -> Self {
         Self {
             model: None,
-            timeout_secs: 300,
+            timeout_secs: 3600,
             pass_threshold: 1.0,
             strictness: Strictness::default(),
             extra: None,
@@ -1432,7 +1432,7 @@ pub fn default_config_toml() -> &'static str {
 # mode and tool allowlist (WebFetch reads a source URL).
 [exam]
 # model = ""                    # --model override; empty = use [ask] / CLI default
-# timeout_secs = 300            # each exam call is slower than a single question
+# timeout_secs = 3600           # writing questions at a high effort takes many minutes
 # pass_threshold = 1.0          # fraction of questions that must fully pass (1.0 = all)
 # strictness = "balanced"       # answer grading: strict | balanced | lenient
 # extra = ""                    # extra guidance appended to question generation

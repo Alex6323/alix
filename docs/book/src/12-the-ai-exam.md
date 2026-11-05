@@ -154,7 +154,7 @@ optionally overridden per workspace in `alix.toml`'s `[defaults]`. The levels:
   gaps.
 
 This dial (how hard each answer is judged) is independent of `pass_threshold` (the
-share of a section's answers that must pass). Both, plus `model`, `timeout_secs` (default 300),
+share of a section's answers that must pass). Both, plus `model`, `timeout_secs` (default 3600),
 an `extra` guidance field, live in
 the `[exam]` config section.
 
