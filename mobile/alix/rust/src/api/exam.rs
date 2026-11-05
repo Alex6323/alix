@@ -1,5 +1,4 @@
 use std::{
-    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
@@ -33,34 +32,21 @@ fn exam_ideas_path(deck_path: &Path, root_dir: &Path) -> Result<PathBuf> {
     let deck = alix::deck::Deck::load(deck_path)?;
     let deck_id = deck.deck_token.context("the deck is not initialized")?;
     let root_store = alix::workspace::root_store_path(root_dir);
-    Ok(alix::state::UserFiles::new(root_store)
-        .private_root()
-        .join("exam")
-        .join(format!("{deck_id}.json")))
+    Ok(alix::state::UserFiles::new(root_store).exam_ideas_for(&deck_id))
 }
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn exam_ideas_load(deck_path: String, root_dir: String) -> Result<Option<String>> {
     let path = exam_ideas_path(Path::new(&deck_path), Path::new(&root_dir))?;
-    match std::fs::read_to_string(&path) {
-        Ok(json) => Ok(Some(json)),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error).with_context(|| format!("cannot read {}", path.display())),
-    }
+    alix::exam_ideas::IdeasDocument::load(&path)?
+        .map(|document| document.to_json())
+        .transpose()
 }
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn exam_ideas_save(deck_path: String, root_dir: String, json: String) -> Result<()> {
     let path = exam_ideas_path(Path::new(&deck_path), Path::new(&root_dir))?;
-    let parent = path.parent().context("the exam ideas path has no parent")?;
-    std::fs::create_dir_all(parent)
-        .with_context(|| format!("cannot create {}", parent.display()))?;
-    let temporary = path.with_extension("json.tmp");
-    std::fs::write(&temporary, json)
-        .with_context(|| format!("cannot write {}", temporary.display()))?;
-    std::fs::rename(&temporary, &path)
-        .with_context(|| format!("cannot replace {}", path.display()))?;
-    Ok(())
+    alix::exam_ideas::IdeasDocument::parse(&json)?.save(&path)
 }
 
 /// `None` asks for a full sitting.
@@ -179,7 +165,7 @@ mod tests {
         let first = r#"{"version":1,"material":"xxh64-first","sections":[]}"#;
         exam_ideas_save(deck_path.clone(), root_dir.clone(), first.to_string()).unwrap();
         assert_eq!(
-            Some(first.to_string()),
+            Some(alix::exam_ideas::IdeasDocument::parse(first).unwrap().to_json().unwrap()),
             exam_ideas_load(deck_path.clone(), root_dir.clone()).unwrap()
         );
         assert!(root.join(".alix/exam/deck-d.json").is_file());
@@ -187,7 +173,14 @@ mod tests {
 
         let second = r#"{"version":1,"material":"xxh64-second","sections":[]}"#;
         exam_ideas_save(deck_path.clone(), root_dir.clone(), second.to_string()).unwrap();
-        assert_eq!(Some(second.to_string()), exam_ideas_load(deck_path, root_dir).unwrap());
+        assert_eq!(
+            Some(alix::exam_ideas::IdeasDocument::parse(second).unwrap().to_json().unwrap()),
+            exam_ideas_load(deck_path.clone(), root_dir.clone()).unwrap()
+        );
+        assert!(
+            exam_ideas_save(deck_path, root_dir, r#"{"version":1,"extra":true}"#.to_string())
+                .is_err()
+        );
     }
 
     fn root_arg(root: &Path) -> String {

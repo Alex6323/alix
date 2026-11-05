@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -28,8 +29,8 @@ void main() {
       json: first,
     );
     expect(
-      exam_bridge.examIdeasLoad(deckPath: deck.path, rootDir: root.path),
-      first,
+      jsonDecode(exam_bridge.examIdeasLoad(deckPath: deck.path, rootDir: root.path)!),
+      jsonDecode(first),
     );
 
     const second = '{"version":1,"material":"xxh64-second","sections":[]}';
@@ -39,9 +40,20 @@ void main() {
       json: second,
     );
     expect(
-      exam_bridge.examIdeasLoad(deckPath: deck.path, rootDir: root.path),
-      second,
+      jsonDecode(exam_bridge.examIdeasLoad(deckPath: deck.path, rootDir: root.path)!),
+      jsonDecode(second),
     );
-    expect(File('${root.path}/.alix/exam/deck-rust.json').readAsStringSync(), second);
+    expect(
+      jsonDecode(File('${root.path}/.alix/exam/deck-rust.json').readAsStringSync()),
+      jsonDecode(second),
+    );
+    expect(
+      () => exam_bridge.examIdeasSave(
+        deckPath: deck.path,
+        rootDir: root.path,
+        json: '{"version":1,"unknown":true}',
+      ),
+      throwsA(anything),
+    );
   });
 }
