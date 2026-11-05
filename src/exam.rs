@@ -37,7 +37,7 @@ pub struct Generated {
     pub ideas: crate::exam_ideas::IdeasDocument,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Shape {
     #[default]
@@ -167,6 +167,120 @@ pub fn generate_questions(
         &ask::AskJob::default(),
     )
     .map(|generated| generated.questions)
+}
+
+/// Questions written ahead of a sitting, with the answers given so far.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Prepared {
+    pub version: u32,
+    pub generated_at_ms: u64,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub material: String,
+    pub questions: Vec<PreparedQuestion>,
+    pub answers: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreparedQuestion {
+    pub heading: String,
+    pub idea: usize,
+    pub prompt: String,
+    pub points: Vec<String>,
+    pub shape: Shape,
+    pub mental_model: String,
+}
+
+impl Prepared {
+    pub fn new(
+        generated: &Generated,
+        sections: &[ExamSection],
+        run: &AskConfig,
+        now_ms: u64,
+    ) -> Self {
+        let questions: Vec<PreparedQuestion> = generated
+            .questions
+            .iter()
+            .filter_map(|q| {
+                Some(PreparedQuestion {
+                    heading: sections.get(q.section)?.label.clone(),
+                    idea: q.idea,
+                    prompt: q.prompt.clone(),
+                    points: q.points.clone(),
+                    shape: q.shape,
+                    mental_model: q.mental_model.clone(),
+                })
+            })
+            .collect();
+        Self {
+            version: 1,
+            generated_at_ms: now_ms,
+            model: run.model.clone(),
+            effort: run.effort.clone(),
+            material: generated.ideas.material.clone(),
+            answers: vec![String::new(); questions.len()],
+            questions,
+        }
+    }
+
+    pub fn load(path: &Path) -> Result<Option<Self>> {
+        match std::fs::read_to_string(path) {
+            Ok(text) => {
+                let prepared: Self = serde_json::from_str(&text)
+                    .with_context(|| format!("reading {}", path.display()))?;
+                if prepared.version != 1 {
+                    bail!("unreadable prepared exam {}", path.display());
+                }
+                Ok(Some(prepared))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error).with_context(|| format!("reading {}", path.display())),
+        }
+    }
+
+    pub fn save(&self, path: &Path) -> Result<()> {
+        let json = serde_json::to_string_pretty(self).context("encoding the prepared exam")?;
+        crate::exam_ideas::write_atomic(path, json.as_bytes())
+    }
+
+    /// The deck's current sections this exam still covers, and its questions
+    /// and answers re-indexed onto them; a question whose heading is gone is
+    /// dropped.
+    pub fn against(&self, deck: &Deck) -> (Vec<ExamSection>, Vec<ExamQuestion>, Vec<String>) {
+        let current = exam_sections(deck);
+        let sections: Vec<ExamSection> = current
+            .into_iter()
+            .filter(|s| self.questions.iter().any(|q| q.heading == s.label))
+            .collect();
+        let mut questions = Vec::new();
+        let mut answers = Vec::new();
+        for (q, answer) in self.questions.iter().zip(&self.answers) {
+            if let Some(at) = sections.iter().position(|s| s.label == q.heading) {
+                questions.push(ExamQuestion {
+                    prompt: q.prompt.clone(),
+                    points: q.points.clone(),
+                    section: at,
+                    shape: q.shape,
+                    mental_model: q.mental_model.clone(),
+                    idea: q.idea,
+                });
+                answers.push(answer.clone());
+            }
+        }
+        (sections, questions, answers)
+    }
+}
+
+/// The fingerprint of the exam material as the generator reads it; a prepared
+/// exam over a different fingerprint is stale.
+pub fn material_fingerprint(deck: &Deck) -> Result<String> {
+    let root = workspace::content_root(&deck.path);
+    Ok(crate::exam_ideas::material_fingerprint(&source_section(
+        &examination_sources(deck),
+        Some(&root),
+    )?))
 }
 
 pub fn open_for_exam(path: &Path) -> Result<Deck> {
@@ -451,6 +565,53 @@ pub fn spawn_generation(
             &ask_cfg,
             &worker,
         )
+        .map_err(|e| format!("{e:#}"));
+        let _ = tx.send(r);
+    });
+    (rx, job)
+}
+
+/// Where a deck's exam files live: its store root's `.alix/exam/`.
+pub fn exam_files(deck: &Deck) -> Option<(PathBuf, PathBuf)> {
+    let token = deck.deck_token.as_deref()?;
+    let files = crate::state::UserFiles::new(workspace::content_root(&deck.path));
+    Some((files.exam_ideas_for(token), files.exam_prepared_for(token)))
+}
+
+/// Writes a deck's questions ahead of its sitting, in the background: the
+/// prepared exam and the updated idea list land in the deck's store before
+/// the receiver reports, so a learner who left still finds them.
+pub fn spawn_prepare(
+    deck: &Deck,
+    sections: Vec<ExamSection>,
+    cfg: ExamConfig,
+    ask_cfg: AskConfig,
+) -> (Receiver<Result<(), String>>, ask::AskJob) {
+    let (tx, rx) = channel();
+    let job = ask::AskJob::default();
+    let worker = job.clone();
+    let sources = examination_sources(deck);
+    let base = workspace::content_root(&deck.path);
+    let files = exam_files(deck);
+    std::thread::spawn(move || {
+        let r = (|| -> Result<()> {
+            let (ideas_path, prepared_path) =
+                files.context("the deck has no id to keep its exam under")?;
+            let ideas = crate::exam_ideas::IdeasDocument::load(&ideas_path)?;
+            let generated = generate_questions_from(
+                &sources,
+                Some(&base),
+                &sections,
+                ideas,
+                &cfg,
+                &ask_cfg,
+                &worker,
+            )?;
+            let run = run_config(&cfg, &ask_cfg);
+            Prepared::new(&generated, &sections, &run, crate::time::now_ms())
+                .save(&prepared_path)?;
+            generated.ideas.save(&ideas_path)
+        })()
         .map_err(|e| format!("{e:#}"));
         let _ = tx.send(r);
     });
@@ -2751,6 +2912,93 @@ mod tests {
         assert!(
             resumed.is_locked(0) && !resumed.is_locked(1),
             "step 4: locks kept"
+        );
+    }
+
+    #[test]
+    fn preparing_writes_the_exam_and_its_ideas_into_the_decks_store() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("src.md"), "Moves transfer ownership.\n").unwrap();
+        let path = dir.path().join("deck.md");
+        std::fs::write(&path, "---\nformat-version: 1\nid: \"deck-prep\"\nexam: src.md\n---\n\n# Moves\n\n## Why move?\nownership\n")
+            .unwrap();
+        let deck = open_for_exam(&path).unwrap();
+        let cli = crate::testutil::fake_replies(
+            dir.path(),
+            &[
+                "{\"sections\":[{\"section\":1,\"models\":[\"m\",\"n\"]}]}",
+                "{\"questions\":[{\"section\":1,\"shape\":\"instance\",\"idea\":2,\
+                 \"prompt\":\"Q1\",\"points\":[\"p\"]},{\"section\":1,\"shape\":\"fix\",\
+                 \"idea\":1,\"prompt\":\"Q2\",\"points\":[\"p\"]}]}",
+            ],
+        );
+        let (rx, _job) = spawn_prepare(
+            &deck,
+            exam_sections(&deck),
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        rx.recv().unwrap().unwrap();
+        let (ideas_path, prepared_path) = exam_files(&deck).unwrap();
+        let prepared = Prepared::load(&prepared_path).unwrap().unwrap();
+        let ideas = crate::exam_ideas::IdeasDocument::load(&ideas_path)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            vec![("Moves", 1, "n"), ("Moves", 0, "m")],
+            prepared
+                .questions
+                .iter()
+                .map(|q| (q.heading.as_str(), q.idea, q.mental_model.as_str()))
+                .collect::<Vec<_>>(),
+            "step 1: questions keyed by heading and idea"
+        );
+        assert_eq!(
+            vec![String::new(); 2],
+            prepared.answers,
+            "step 1: no answers yet"
+        );
+        assert_eq!(
+            material_fingerprint(&deck).unwrap(),
+            prepared.material,
+            "step 1"
+        );
+        assert_eq!(prepared.material, ideas.material, "step 1: same material");
+        assert_eq!(
+            2,
+            ideas.section("Moves").unwrap().ideas.len(),
+            "step 1: ideas kept"
+        );
+
+        std::fs::write(dir.path().join("src.md"), "Moves transfer ownership!\n").unwrap();
+        assert_ne!(
+            prepared.material,
+            material_fingerprint(&deck).unwrap(),
+            "step 2: a changed material file changes the fingerprint"
+        );
+
+        std::fs::write(
+            &path,
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .replace("# Moves", "# Drops"),
+        )
+        .unwrap();
+        let renamed = open_for_exam(&path).unwrap();
+        let (sections, questions, answers) = prepared.against(&renamed);
+        assert!(
+            sections.is_empty() && questions.is_empty() && answers.is_empty(),
+            "step 3: a renamed heading drops its questions"
+        );
+        let (sections, questions, _) = prepared.against(&deck);
+        assert_eq!(
+            (1, vec![0, 0]),
+            (
+                sections.len(),
+                questions.iter().map(|q| q.section).collect::<Vec<_>>()
+            ),
+            "step 3: an unchanged heading keeps them, re-indexed"
         );
     }
 
