@@ -391,7 +391,6 @@ pub(super) enum StudyCommand {
     ExamStart {
         path: PathBuf,
         decks_root: PathBuf,
-        needs_work_only: bool,
         ask_cfg: crate::config::AskConfig,
         reply: Reply<Transition<Box<ExamDto>>>,
     },
@@ -718,13 +717,11 @@ impl StudyHandle {
         &self,
         path: PathBuf,
         decks_root: PathBuf,
-        needs_work_only: bool,
         ask_cfg: crate::config::AskConfig,
     ) -> Option<Transition<Box<ExamDto>>> {
         self.call(|reply| StudyCommand::ExamStart {
             path,
             decks_root,
-            needs_work_only,
             ask_cfg,
             reply,
         })
@@ -1279,11 +1276,10 @@ impl StudyState {
             StudyCommand::ExamStart {
                 path,
                 decks_root,
-                needs_work_only,
                 ask_cfg,
                 reply,
             } => {
-                let _ = reply.send(self.exam_start(path, decks_root, needs_work_only, ask_cfg));
+                let _ = reply.send(self.exam_start(path, decks_root, ask_cfg));
             }
             StudyCommand::ExamPoll(reply) => {
                 let dto = match self.examining.as_mut() {
@@ -2199,7 +2195,6 @@ impl StudyState {
         &mut self,
         path: PathBuf,
         decks_root: PathBuf,
-        needs_work_only: bool,
         ask_cfg: crate::config::AskConfig,
     ) -> Transition<Box<ExamDto>> {
         if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
@@ -2228,12 +2223,17 @@ impl StudyState {
                 if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
                     return Transition::Rejected;
                 }
-                let _ = needs_work_only;
                 let Some((ideas_path, prepared_path)) = exam::exam_files(&deck) else {
                     return Transition::Rejected;
                 };
-                let Ok(Some(prepared)) = exam::Prepared::load(&prepared_path) else {
-                    return Transition::Rejected;
+                let prepared = match exam::Prepared::load(&prepared_path) {
+                    Ok(Some(prepared)) => prepared,
+                    Ok(None) => return Transition::Rejected,
+                    Err(error) => {
+                        eprintln!("discarding an unreadable prepared exam: {error:#}");
+                        let _ = std::fs::remove_file(&prepared_path);
+                        return Transition::Rejected;
+                    }
                 };
                 if exam::material_fingerprint(&deck).ok().as_deref() != Some(&prepared.material) {
                     let _ = std::fs::remove_file(&prepared_path);

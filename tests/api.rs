@@ -6316,6 +6316,18 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
         !exam_dir.join("deck-examdeck.prepared.json").exists(),
         "step 6: the stale exam is removed"
     );
+
+    std::fs::write(exam_dir.join("deck-examdeck.prepared.json"), "{").unwrap();
+    assert_eq!(
+        409,
+        start().status,
+        "step 7: an unreadable exam cannot be taken"
+    );
+    assert_eq!(
+        Some(false),
+        deck_row_flag(&base, "examdeck.md", "exam_prepared"),
+        "step 7: the unreadable exam is removed, so Generate exam is offered again"
+    );
 }
 
 /// The web generate flow end to end: start answers a generating phase, the
@@ -8978,11 +8990,7 @@ fn exam_start_honours_the_needs_work_filter_and_reports_per_section_results() {
     );
 
     prepare_exam(&base, r#"{"deck":"twosect.md","needs_work_only":true}"#);
-    let resp = post_json(
-        &base,
-        "/api/exam/start",
-        r#"{"deck":"twosect.md","needs_work_only":true}"#,
-    );
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"twosect.md"}"#);
     assert_eq!(200, resp.status, "start");
     poll_until(&base, "/api/exam", |b| b["phase"] == "answering");
     post_json(&base, "/api/exam/grade", r#"{"text":"b"}"#);
