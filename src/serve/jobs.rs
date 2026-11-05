@@ -983,16 +983,16 @@ impl Examining {
         if files.settled || self.sitting.result().is_none() {
             return;
         }
-        files.settled = true;
         if let Some(ideas) = self.sitting.ideas()
             && let Err(error) = ideas.save(&files.ideas_path)
         {
             eprintln!("saving exam ideas: {error:#}");
+            return;
         }
-        if let Err(error) = std::fs::remove_file(&files.prepared_path)
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            eprintln!("removing the used exam: {error}");
+        match std::fs::remove_file(&files.prepared_path) {
+            Ok(()) => files.settled = true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => files.settled = true,
+            Err(error) => eprintln!("removing the used exam: {error}"),
         }
     }
 }

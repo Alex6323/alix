@@ -570,6 +570,9 @@ pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig)
     Ok(cards)
 }
 
+#[cfg(test)]
+static GENERATION_SPAWNS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 pub fn spawn_generation(
     sources: ExamLayers,
     base: Option<PathBuf>,
@@ -578,6 +581,8 @@ pub fn spawn_generation(
     cfg: ExamConfig,
     ask_cfg: AskConfig,
 ) -> (Receiver<Result<Generated, String>>, ask::AskJob) {
+    #[cfg(test)]
+    GENERATION_SPAWNS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let (tx, rx) = channel();
     let job = ask::AskJob::default();
     let worker = job.clone();
@@ -633,10 +638,9 @@ pub fn spawn_prepare(
                 &ask_cfg,
                 &worker,
             )?;
+            generated.ideas.save(&ideas_path)?;
             let run = run_config(&cfg, &ask_cfg);
-            Prepared::new(&generated, &sections, &run, crate::time::now_ms())
-                .save(&prepared_path)?;
-            generated.ideas.save(&ideas_path)
+            Prepared::new(&generated, &sections, &run, crate::time::now_ms()).save(&prepared_path)
         })()
         .map_err(|e| format!("{e:#}"));
         let _ = tx.send(r);
@@ -766,22 +770,34 @@ impl Sitting {
         cfg: ExamConfig,
         ask_cfg: AskConfig,
     ) -> Self {
-        let boundary_error = source_boundary_error(deck);
-        let source_ready = boundary_error.is_none();
-        let deck_sections = exam_sections(deck);
-        let mut job = ask::AskJob::default();
-        let pending = source_ready.then(|| {
-            let (rx, spawned) = spawn_generation(
-                examination_sources(deck),
-                Some(workspace::content_root(&deck.path)),
-                sections.clone(),
-                ideas,
-                cfg.clone(),
-                ask_cfg.clone(),
-            );
-            job = spawned;
-            Pending::Questions(rx)
-        });
+        let mut sitting = Self::idle(deck, sections, strictness, cfg, ask_cfg);
+        sitting.error = source_boundary_error(deck);
+        if sitting.error.is_some() {
+            sitting.phase = Phase::Results;
+            return sitting;
+        }
+        let (rx, job) = spawn_generation(
+            examination_sources(deck),
+            Some(workspace::content_root(&deck.path)),
+            sitting.sections.clone(),
+            ideas,
+            sitting.cfg.clone(),
+            sitting.ask_cfg.clone(),
+        );
+        sitting.job = job;
+        sitting.pending = Some(Pending::Questions(rx));
+        sitting.pending_since = Some(crate::time::now_ms());
+        sitting.phase = Phase::Generating;
+        sitting
+    }
+
+    fn idle(
+        deck: &Deck,
+        sections: Vec<ExamSection>,
+        strictness: Strictness,
+        cfg: ExamConfig,
+        ask_cfg: AskConfig,
+    ) -> Self {
         Self {
             subject: deck.subject.clone(),
             deck_token: deck.deck_token.clone().unwrap_or_default(),
@@ -790,25 +806,21 @@ impl Sitting {
             strictness,
             cfg,
             ask_cfg,
-            phase: if source_ready {
-                Phase::Generating
-            } else {
-                Phase::Results
-            },
+            phase: Phase::Answering,
             questions: Vec::new(),
             answers: Vec::new(),
             current: 0,
             result: None,
-            pending,
-            error: boundary_error,
-            pending_since: source_ready.then(crate::time::now_ms),
+            pending: None,
+            error: None,
+            pending_since: None,
             remediated_count: None,
             sections,
-            deck_sections,
+            deck_sections: exam_sections(deck),
             unlocked: false,
             ideas: None,
             locked: Vec::new(),
-            job,
+            job: ask::AskJob::default(),
         }
     }
 
@@ -828,17 +840,12 @@ impl Sitting {
         cfg: ExamConfig,
         ask_cfg: AskConfig,
     ) -> Self {
-        let mut sitting = Self::start_with(deck, sections, None, strictness, cfg, ask_cfg);
-        sitting.job.cancel();
-        sitting.pending = None;
-        sitting.pending_since = None;
-        sitting.error = None;
+        let mut sitting = Self::idle(deck, sections, strictness, cfg, ask_cfg);
         sitting.locked = answers.iter().map(|a| !a.trim().is_empty()).collect();
         sitting.current = sitting.locked.iter().position(|l| !l).unwrap_or(0);
         sitting.answers = answers;
         sitting.questions = questions;
         sitting.ideas = Some(ideas);
-        sitting.phase = Phase::Answering;
         sitting
     }
 
@@ -2942,6 +2949,32 @@ mod tests {
     }
 
     #[test]
+    fn opening_a_prepared_exam_does_not_start_question_generation() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let deck = sourced_deck(dir.path());
+        let before = GENERATION_SPAWNS.load(std::sync::atomic::Ordering::SeqCst);
+
+        let sitting = Sitting::from_prepared(
+            &deck,
+            exam_sections(&deck),
+            vec![ExamQuestion::default()],
+            vec![String::new()],
+            crate::exam_ideas::IdeasDocument::default(),
+            Strictness::Balanced,
+            ExamConfig::default(),
+            AskConfig::default(),
+        );
+
+        assert_eq!(&Phase::Answering, sitting.phase());
+        assert_eq!(
+            before,
+            GENERATION_SPAWNS.load(std::sync::atomic::Ordering::SeqCst),
+            "opening questions written ahead must not launch a fresh generation job"
+        );
+    }
+
+    #[test]
     fn preparing_writes_the_exam_and_its_ideas_into_the_decks_store() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
@@ -3025,6 +3058,50 @@ mod tests {
                 questions.iter().map(|q| q.section).collect::<Vec<_>>()
             ),
             "step 3: an unchanged heading keeps them, re-indexed"
+        );
+    }
+
+    #[test]
+    fn failed_idea_persistence_does_not_leave_a_prepared_exam() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("src.md"), "Moves transfer ownership.\n").unwrap();
+        let path = dir.path().join("deck.md");
+        std::fs::write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-prepfailure\"\nexam: src.md\n---\n\
+             # Moves\n\n## Why move?\nownership\n",
+        )
+        .unwrap();
+        let deck = open_for_exam(&path).unwrap();
+        let (ideas_path, prepared_path) = exam_files(&deck).unwrap();
+        let cli = fake_cli(
+            dir.path(),
+            &format!(
+                "input=$(cat)\n\
+                 case \"$input\" in\n\
+                 *'\"models\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}]}}' ;;\n\
+                 *'\"questions\"'*) mkdir -p {}; printf '%s' '{{\"questions\":[{{\"section\":1,\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q\",\"points\":[\"p\"]}}]}}' ;;\n\
+                 esac",
+                ideas_path.display()
+            ),
+        );
+
+        let (rx, _job) = spawn_prepare(
+            &deck,
+            exam_sections(&deck),
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+
+        let error = rx.recv().unwrap().unwrap_err();
+        assert!(
+            error.contains(&format!("writing {}", ideas_path.display())),
+            "the idea save must be the failed step: {error}"
+        );
+        assert!(
+            !prepared_path.exists(),
+            "a failed preparation must not publish questions without their idea document"
         );
     }
 
