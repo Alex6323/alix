@@ -1,6 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::{
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExamSectionOutcome {
@@ -24,6 +27,40 @@ fn open_store(deck_path: &Path, root_dir: &str, device: Option<String>) -> Resul
         store.device = device;
     }
     Ok(store)
+}
+
+fn exam_ideas_path(deck_path: &Path, root_dir: &Path) -> Result<PathBuf> {
+    let deck = alix::deck::Deck::load(deck_path)?;
+    let deck_id = deck.deck_token.context("the deck is not initialized")?;
+    let root_store = alix::workspace::root_store_path(root_dir);
+    Ok(alix::state::UserFiles::new(root_store)
+        .private_root()
+        .join("exam")
+        .join(format!("{deck_id}.json")))
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn exam_ideas_load(deck_path: String, root_dir: String) -> Result<Option<String>> {
+    let path = exam_ideas_path(Path::new(&deck_path), Path::new(&root_dir))?;
+    match std::fs::read_to_string(&path) {
+        Ok(json) => Ok(Some(json)),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("cannot read {}", path.display())),
+    }
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn exam_ideas_save(deck_path: String, root_dir: String, json: String) -> Result<()> {
+    let path = exam_ideas_path(Path::new(&deck_path), Path::new(&root_dir))?;
+    let parent = path.parent().context("the exam ideas path has no parent")?;
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("cannot create {}", parent.display()))?;
+    let temporary = path.with_extension("json.tmp");
+    std::fs::write(&temporary, json)
+        .with_context(|| format!("cannot write {}", temporary.display()))?;
+    std::fs::rename(&temporary, &path)
+        .with_context(|| format!("cannot replace {}", path.display()))?;
+    Ok(())
 }
 
 /// `None` asks for a full sitting.
@@ -127,6 +164,30 @@ mod tests {
 
     fn reopened(path: &Path, root: &Path) -> alix::store::Store {
         open_store(path, &root.to_string_lossy(), None).unwrap()
+    }
+
+    #[test]
+    fn exam_ideas_round_trip_in_the_phone_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_section_deck(root);
+        let deck_path = path.to_string_lossy().into_owned();
+        let root_dir = root.to_string_lossy().into_owned();
+
+        assert_eq!(None, exam_ideas_load(deck_path.clone(), root_dir.clone()).unwrap());
+
+        let first = r#"{"version":1,"material":"xxh64-first","sections":[]}"#;
+        exam_ideas_save(deck_path.clone(), root_dir.clone(), first.to_string()).unwrap();
+        assert_eq!(
+            Some(first.to_string()),
+            exam_ideas_load(deck_path.clone(), root_dir.clone()).unwrap()
+        );
+        assert!(root.join(".alix/exam/deck-d.json").is_file());
+        assert!(!root.join(".alix/exam/deck-d.json.tmp").exists());
+
+        let second = r#"{"version":1,"material":"xxh64-second","sections":[]}"#;
+        exam_ideas_save(deck_path.clone(), root_dir.clone(), second.to_string()).unwrap();
+        assert_eq!(Some(second.to_string()), exam_ideas_load(deck_path, root_dir).unwrap());
     }
 
     fn root_arg(root: &Path) -> String {

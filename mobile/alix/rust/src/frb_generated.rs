@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -357089677;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -282346776;
 
 // Section: executor
 
@@ -1937,6 +1937,74 @@ fn wire__crate__api__listing__deck_title_impl(
                 let output_ok = Result::<_, ()>::Ok(crate::api::listing::deck_title(api_path))?;
                 Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__api__exam__exam_ideas_load_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "exam_ideas_load",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_deck_path = <String>::sse_decode(&mut deserializer);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::exam::exam_ideas_load(api_deck_path, api_root_dir)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__exam__exam_ideas_save_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "exam_ideas_save",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_deck_path = <String>::sse_decode(&mut deserializer);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api_json = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok =
+                        crate::api::exam::exam_ideas_save(api_deck_path, api_root_dir, api_json)?;
+                    Ok(output_ok)
+                })(),
+            )
         },
     )
 }
@@ -4873,11 +4941,11 @@ fn pde_ffi_dispatcher_primary_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         39 => wire__crate__api__listing__deck_strips_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__listing__list_members_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__listing__list_root_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__listing__list_searchable_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__sync__paired_apply_pull_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__listing__list_members_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__listing__list_root_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__listing__list_searchable_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__sync__paired_apply_pull_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4951,22 +5019,24 @@ fn pde_ffi_dispatcher_sync_impl(
         37 => wire__crate__api__generate__apply_generated_deck_impl(ptr, rust_vec_len, data_len),
         38 => wire__crate__api__simple__core_version_impl(ptr, rust_vec_len, data_len),
         40 => wire__crate__api__listing__deck_title_impl(ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__exam__exam_start_cards_impl(ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__sync__paired_entries_impl(ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__sync__paired_free_space_impl(ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__sync__paired_needs_space_impl(ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__sync__paired_orphans_impl(ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__sync__paired_plan_pushes_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__sync__paired_record_push_impl(ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__sync__paired_recover_impl(ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__sync__paired_remove_entry_impl(ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__sync__paired_resolve_conflict_impl(ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__sync__paired_root_dir_impl(ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__sync__paired_staging_zip_impl(ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__exam__exam_ideas_load_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__exam__exam_ideas_save_impl(ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__exam__exam_start_cards_impl(ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__sync__paired_entries_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__sync__paired_free_space_impl(ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__sync__paired_needs_space_impl(ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__sync__paired_orphans_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__sync__paired_plan_pushes_impl(ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__sync__paired_record_push_impl(ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__sync__paired_recover_impl(ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__sync__paired_remove_entry_impl(ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__sync__paired_resolve_conflict_impl(ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__sync__paired_root_dir_impl(ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__sync__paired_staging_zip_impl(ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

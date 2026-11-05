@@ -1,6 +1,17 @@
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/exam.dart' as bridge;
 
+String? examIdeasLoad({
+  required String deckPath,
+  required String rootDir,
+}) => bridge.examIdeasLoad(deckPath: deckPath, rootDir: rootDir);
+
+void examIdeasSave({
+  required String deckPath,
+  required String rootDir,
+  required String json,
+}) => bridge.examIdeasSave(deckPath: deckPath, rootDir: rootDir, json: json);
+
 List<String>? examStartCards({
   required String deckPath,
   required String rootDir,

@@ -6,8 +6,24 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `open_store`
+// These functions are ignored because they are not marked as `pub`: `exam_ideas_path`, `open_store`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`
+
+String? examIdeasLoad({required String deckPath, required String rootDir}) =>
+    RustLib.instance.api.crateApiExamExamIdeasLoad(
+      deckPath: deckPath,
+      rootDir: rootDir,
+    );
+
+void examIdeasSave({
+  required String deckPath,
+  required String rootDir,
+  required String json,
+}) => RustLib.instance.api.crateApiExamExamIdeasSave(
+  deckPath: deckPath,
+  rootDir: rootDir,
+  json: json,
+);
 
 /// `None` asks for a full sitting.
 List<String>? examStartCards({
