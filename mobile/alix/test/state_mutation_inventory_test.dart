@@ -92,7 +92,7 @@ void main() {
       ],
       [
         'lib/review_screen.dart:391',
-        'lib/picker_screen.dart:731',
+        'lib/picker_screen.dart:890',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:129',
         'lib/walk_screen.dart:222',
@@ -114,11 +114,13 @@ void main() {
           'sheet added an import line and a method to walk_screen.dart; '
           'the tutorial entry added a constructor and the opener choice to '
           'walk_screen.dart and replaced the copy with a push in '
-          'picker_screen.dart; generate_sheet.dart is unchanged',
+          'picker_screen.dart; prepared-exam polling and resume added fields '
+          'and methods above picker_screen.dart build(); generate_sheet.dart '
+          'is unchanged',
     );
   });
 
-  test('the phase-4 baseline has one timer and no stream subscriptions', () {
+  test('the phase-4 baseline has two timers and no stream subscriptions', () {
     final paths = [
       'lib/review_screen.dart',
       'lib/picker_screen.dart',
@@ -126,8 +128,13 @@ void main() {
       'lib/trace_screen.dart',
     ];
     expect(
-      [for (final path in paths) ..._sites(path, 'Timer(')],
-      ['lib/picker/generate_controller.dart:142'],
+      [
+        for (final path in paths) ...[
+          ..._sites(path, 'Timer('),
+          ..._sites(path, 'Timer.periodic('),
+        ],
+      ],
+      ['lib/picker_screen.dart:339', 'lib/picker/generate_controller.dart:142'],
     );
     expect([
       for (final path in paths) ..._sites(path, 'StreamSubscription'),
