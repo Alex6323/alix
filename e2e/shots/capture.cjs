@@ -757,7 +757,8 @@ async function shot4(page, out) {
   await page.waitForTimeout(600);
 
   // Drive the page the way a user reaches an exam: focus the graduated deck's
-  // row; its .chip.exam-due control reads "Take exam".
+  // row; its .chip.exam-due control reads "Generate exam", then "Take exam"
+  // once the server has written it.
   const row = page.locator(".deckrow", { hasText: "what-is-ownership" });
   if (!(await row.count())) {
     log("FAILED shot 4: hero row not listed");
@@ -765,16 +766,19 @@ async function shot4(page, out) {
   }
   await row.first().click();
   await page.waitForTimeout(300);
-  const chip = page.locator(".chip.exam-due", { hasText: "Take exam" });
-  if (!(await chip.count())) {
-    log("FAILED shot 4: no Take exam chip (deck not exam-due?)");
+  const generate = page.locator(".chip.exam-due", { hasText: "Generate exam" });
+  if (!(await generate.count())) {
+    log("FAILED shot 4: no Generate exam chip (deck not exam-due?)");
     return false;
   }
-  await chip.first().click();
+  await generate.first().click();
 
   // Question generation is genuinely slow (a real model call); err long.
-  log("waiting for the exam's first question (up to 240s)…");
-  await page.locator(".exam-input").waitFor({ state: "visible", timeout: 240_000 });
+  log("waiting for the exam to be written (up to 30 min)…");
+  const take = page.locator(".chip.exam-due", { hasText: "Take exam" });
+  await take.first().waitFor({ state: "visible", timeout: 1_800_000 });
+  await take.first().click();
+  await page.locator(".exam-input").waitFor({ state: "visible", timeout: 60_000 });
 
   for (let guard = 0; guard < 20; guard++) {
     const progress = (await page.locator(".exam-progress").textContent()) || "";

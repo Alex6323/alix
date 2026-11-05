@@ -6238,6 +6238,23 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
         409, again.status,
         "step 2: a ready exam is taken, not generated again"
     );
+    let left = post_json(
+        &base,
+        "/api/exam/generate/cancel",
+        r#"{"deck":"examdeck.md"}"#,
+    );
+    assert_eq!(
+        (200, serde_json::json!([])),
+        (
+            left.status,
+            serde_json::from_slice::<serde_json::Value>(&left.body).unwrap()
+        ),
+        "step 2: cancel drops the finished job and returns the jobs left"
+    );
+    assert!(
+        exam_dir.join("deck-examdeck.prepared.json").exists(),
+        "step 2: dropping the job keeps the exam it wrote"
+    );
 
     let resp = start();
     assert_eq!(200, resp.status, "step 3: start");

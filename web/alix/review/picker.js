@@ -108,6 +108,58 @@ export function createPicker({
     return openBrowse(item);
   }
 
+  let preparing = {};
+  let preparingPoll = null;
+  let preparingNotices = [];
+  let resyncLegend = null;
+
+  function showPreparingNotices() {
+    if (!preparingNotices.length || !idleInSelect()) return;
+    notice(preparingNotices.join(" · "));
+    preparingNotices = [];
+  }
+
+  function applyPreparing(list) {
+    const next = {};
+    for (const job of list || []) next[job.deck] = job;
+    let settled = false;
+    for (const [deck, job] of Object.entries(next)) {
+      const was = preparing[deck];
+      if (!was || was.state !== "generating" || job.state === "generating") continue;
+      settled = true;
+      preparingNotices.push(job.state === "ready"
+        ? `exam ready: ${deck}`
+        : `writing the exam for ${deck} failed: ${job.error || "the server log has details"}`);
+    }
+    preparing = next;
+    const running = Object.values(next).some(job => job.state === "generating");
+    if (running && !preparingPoll) preparingPoll = timers.setInterval(refreshPreparing, 5000);
+    if (!running && preparingPoll) {
+      timers.clearInterval(preparingPoll);
+      preparingPoll = null;
+    }
+    if (!idleInSelect()) return;
+    if (settled) render();
+    else if (resyncLegend) resyncLegend();
+  }
+
+  function refreshPreparing() {
+    return api("/api/exam/preparing").then(applyPreparing).catch(() => {});
+  }
+
+  function generateExam(name, needsWorkOnly) {
+    rememberLaunch(name);
+    return api("/api/exam/generate", post({ deck: name, needs_work_only: needsWorkOnly }))
+      .then(job => applyPreparing(Object.values({ ...preparing, [name]: job })))
+      .catch(() => notice("could not start writing the exam: the server log has details"));
+  }
+
+  function stopExam(name) {
+    return api("/api/exam/generate/cancel", post({ deck: name }))
+      .then(applyPreparing)
+      .catch(() => notice("could not stop writing the exam: the server log has details"));
+  }
+
   function focusedRowName() {
     const row = focusedEl;
     return (row && ((row._item && row._item.name) || (row._open && row._open.name))) || null;
@@ -176,6 +228,7 @@ export function createPicker({
     scoreEl.innerHTML = "";
     menuWrap.style.display = "";
     setMenuContext("picker");
+    resyncLegend = null;
     // Drop cached topology heatmaps so the drawer reflects progress from any
     // session just finished (the strengths are recomputed on next focus).
     topoCache = {};
@@ -200,6 +253,8 @@ export function createPicker({
       stage.innerHTML = "";
     }
     lastDecksSignature = catalogSignature(data);
+    showPreparingNotices();
+    refreshPreparing();
     const workspaces = data.workspaces || [];
     const recent = data.recent || [];
     const folders = data.folders || [];
@@ -489,9 +544,15 @@ export function createPicker({
 
       function launchExam(row) {
         const it = row._item;
-        const needsWorkOnly = it.examable && it.exam_filter !== "none" && row._examNeedsWorkOnly;
         lastWorkspace = row._wsName || null;
-        startExam(it.name, needsWorkOnly);
+        if (it.exam_prepared) {
+          startExam(it.name);
+          return;
+        }
+        const job = preparing[it.name];
+        if (job && job.state === "generating") return;
+        const needsWorkOnly = it.examable && it.exam_filter !== "none" && row._examNeedsWorkOnly;
+        generateExam(it.name, needsWorkOnly);
       }
 
       // The primary button reflects the focused row: Open a workspace/folder,
@@ -666,16 +727,31 @@ export function createPicker({
           rb.addEventListener("click", () => { deadlinePromptOpen = true; syncPrimary(); });
           legend.appendChild(rb);
         }
-        // "Take exam" is the one exam entry for every fact deck that has an
-        // exam. It is filled only when the exam is due and unlocked.
+        // The exam entry of a fact deck: Generate exam, then Writing exam
+        // while the server writes it, then Take exam once it is prepared.
+        // It is filled only when the exam is due and unlocked.
         if (f && f._item && f._item.has_exam && !f._item.is_trace) {
           const it = f._item;
+          const job = preparing[it.name];
+          if (!it.exam_prepared && job && job.state === "generating") {
+            const minutes = Math.floor((job.elapsed || 0) / 60);
+            const wait = job.estimate ? ` · ${job.estimate}` : "";
+            const writing = el("button", "chip exam-writing", `Writing exam · ${minutes} min${wait}`);
+            writing.disabled = true;
+            legend.appendChild(writing);
+            const stop = el("button", "chip", "Stop");
+            stop.addEventListener("click", () => stopExam(it.name));
+            legend.appendChild(stop);
+            return;
+          }
           const accent = it.state === "examdue" && it.examable;
-          const ex = el("button", "chip" + (accent ? " exam-due" : ""), "Take exam");
+          const ex = el("button", "chip" + (accent ? " exam-due" : ""), it.exam_prepared ? "Take exam" : "Generate exam");
           ex.appendChild(el("span", "k exam-key", it.examable ? "x" : "\u{1F512}"));
           ex.disabled = !it.examable;
+          if (job && job.state === "failed") ex.title = job.error || "";
           if (it.examable) ex.addEventListener("click", () => launchExam(f));
           legend.appendChild(ex);
+          if (it.exam_prepared) return;
           const filterable = it.examable && it.exam_filter !== "none";
           const ticked = filterable && f._examNeedsWorkOnly;
           const needsWork = el("button", "chip exam-filter", (ticked ? "☑" : "☐") + " only what needs work");
@@ -1014,6 +1090,7 @@ export function createPicker({
       });
 
       applyFilter();
+      resyncLegend = syncPrimary;
       syncPrimary();
       const rows = visibleRows();
       // Re-land on the deck just launched (review/browse/exam/trace), so the cursor

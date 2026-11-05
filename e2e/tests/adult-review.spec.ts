@@ -166,6 +166,7 @@ async function mockExamPickerRows(
     ];
     const shared = {
       has_exam: true,
+      exam_prepared: true,
       is_trace: false,
       reviewable: true,
       reviewable_recognize: true,
@@ -225,6 +226,7 @@ test("the exam chip stays put when focus moves between ready and locked exams", 
     const shared = {
       state: "learning",
       has_exam: true,
+      exam_prepared: true,
       is_trace: false,
       reviewable: true,
       reviewable_recognize: true,

@@ -141,7 +141,7 @@ pub(super) enum JobsCommand {
     PrepareList(Reply<Vec<PreparingDto>>),
     PrepareCancel {
         path: PathBuf,
-        reply: Reply<()>,
+        reply: Reply<Vec<PreparingDto>>,
     },
 }
 
@@ -335,7 +335,7 @@ impl JobsHandle {
         self.call(JobsCommand::PrepareList)
     }
 
-    pub(super) fn prepare_cancel(&self, path: PathBuf) -> Option<()> {
+    pub(super) fn prepare_cancel(&self, path: PathBuf) -> Option<Vec<PreparingDto>> {
         self.call(|reply| JobsCommand::PrepareCancel { path, reply })
     }
 }
@@ -680,7 +680,7 @@ impl JobsState {
             }
             JobsCommand::PrepareCancel { path, reply } => {
                 self.preparing.retain(|p| p.path != path);
-                let _ = reply.send(());
+                let _ = reply.send(self.preparing.iter_mut().map(Preparing::dto).collect());
             }
             JobsCommand::RemoteGenerateClose(reply) => {
                 self.remote_generate = None;

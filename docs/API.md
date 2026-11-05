@@ -773,7 +773,7 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 |---|---|---|---|---|
 | POST | `/api/exam/generate` | `{deck, needs_work_only?}` | `PreparingDto` (the running one if any) | 400 unknown deck; 409 not examable / locked / already prepared / backend can't reach the deck's source |
 | GET | `/api/exam/preparing` | – | `[PreparingDto]` | – |
-| POST | `/api/exam/generate/cancel` | `{deck}` | – | 400 unknown deck |
+| POST | `/api/exam/generate/cancel` | `{deck}` | `[PreparingDto]` (the jobs left) | 400 unknown deck |
 | POST | `/api/exam/start` | `{deck}` | `ExamDto` | 400 unknown deck; 409 nothing prepared / prepared exam stale / not examable / locked / backend can't reach the deck's source |
 | GET | `/api/exam` | – | `ExamDto` (poll) | 409 |
 | POST | `/api/exam/answer` | `{text, goto?}` | `ExamDto` | 409 |

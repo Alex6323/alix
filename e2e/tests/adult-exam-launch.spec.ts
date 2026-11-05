@@ -11,6 +11,7 @@ type PickerState = {
   state: string;
   examable: boolean;
   exam_filter: "none" | "partial" | "all";
+  exam_prepared?: boolean;
   meta?: string | null;
 };
 
@@ -72,7 +73,7 @@ test("the drawer always shows the exam filter, accents only due unlocked exams, 
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Animals").click();
 
-  const takeExam = page.getByRole("button", { name: /^Take exam/ });
+  const takeExam = page.getByRole("button", { name: /^Generate exam/ });
   const filter = page.getByRole("button", { name: /only what needs work/ });
 
   await adultDeckRow(page, "wild").click();
@@ -104,12 +105,84 @@ test("the drawer always shows the exam filter, accents only due unlocked exams, 
   await capture(page, "drawer-nothing-to-filter");
 
   await adultDeckRow(page, "wild").click();
-  await page.route("**/api/exam/start", (route) => route.fulfill({
-    json: { phase: "generating", deck: "wild.md", strictness: "balanced", thinking: false },
+  await page.route("**/api/exam/generate", (route) => route.fulfill({
+    json: {
+      deck: "animals/wild.md",
+      state: "generating",
+      elapsed: 0,
+      estimate: "usually 10 to 20 minutes",
+      error: null,
+    },
   }));
-  const request = page.waitForRequest("**/api/exam/start");
+  const request = page.waitForRequest("**/api/exam/generate");
   await takeExam.click();
   expect((await request).postDataJSON()).toEqual({ deck: "animals/wild.md", needs_work_only: true });
+  const writing = page.getByRole("button", { name: /^Writing exam/ });
+  await expect(writing).toHaveText("Writing exam · 0 min · usually 10 to 20 minutes");
+  await expect(writing).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
+  await expect(filter).toHaveCount(0);
+  await capture(page, "drawer-writing-exam");
+});
+
+test("a finished exam announces itself and turns the chip into Take exam", async ({ page }) => {
+  let prepared = false;
+  await page.route("**/api/decks", async (route) => {
+    const response = await route.fetch();
+    const catalog = await response.json();
+    const row = catalog.workspaces
+      .flatMap((workspace: any) => workspace.members)
+      .find((candidate: any) => candidate.name.endsWith("wild.md"));
+    Object.assign(row, {
+      has_exam: true,
+      is_trace: false,
+      examable: true,
+      exam_filter: "none",
+      exam_prepared: prepared,
+    });
+    await route.fulfill({ response, json: catalog });
+  });
+  const job = (state: string) => ({
+    deck: "animals/wild.md",
+    state,
+    elapsed: 0,
+    estimate: state === "generating" ? "usually 10 to 20 minutes" : null,
+    error: null,
+  });
+  let generating = false;
+  await page.route("**/api/exam/generate", (route) => {
+    generating = true;
+    return route.fulfill({ json: job("generating") });
+  });
+  await page.route("**/api/exam/preparing", (route) =>
+    route.fulfill({ json: prepared ? [job("ready")] : generating ? [job("generating")] : [] }));
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+
+  await page.getByRole("button", { name: /^Generate exam/ }).click();
+  await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
+  prepared = true;
+
+  await expect(page.locator("#notice")).toHaveText("exam ready: animals/wild.md", { timeout: 15_000 });
+  await expect(page.getByRole("button", { name: /^Take exam/ })).toBeEnabled();
+});
+
+test("a prepared exam is taken, without the scope filter", async ({ page }) => {
+  await mockExamRows(page, {
+    "wild.md": { state: "examdue", examable: true, exam_filter: "partial", exam_prepared: true },
+  });
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+
+  await expect(page.getByRole("button", { name: /only what needs work/ })).toHaveCount(0);
+  await page.route("**/api/exam/start", (route) => route.fulfill({
+    json: { phase: "answering", deck: "wild.md", strictness: "balanced", thinking: false },
+  }));
+  const request = page.waitForRequest("**/api/exam/start");
+  await page.getByRole("button", { name: /^Take exam/ }).click();
+  expect((await request).postDataJSON()).toEqual({ deck: "animals/wild.md" });
 });
 
 test("the checked filter on an all-needs-work deck reaches the exam request", async ({ page }) => {
@@ -122,11 +195,11 @@ test("the checked filter on an all-needs-work deck reaches the exam request", as
 
   const filter = page.getByRole("button", { name: /only what needs work/ });
   await expect(filter).toHaveText(/☑ only what needs work/);
-  await page.route("**/api/exam/start", (route) => route.fulfill({
-    json: { phase: "generating", deck: "source-fact.md", strictness: "balanced", thinking: false },
+  await page.route("**/api/exam/generate", (route) => route.fulfill({
+    json: { deck: "animals/source-fact.md", state: "generating", elapsed: 0, estimate: null, error: null },
   }));
-  const request = page.waitForRequest("**/api/exam/start");
-  await page.getByRole("button", { name: /^Take exam/ }).click();
+  const request = page.waitForRequest("**/api/exam/generate");
+  await page.getByRole("button", { name: /^Generate exam/ }).click();
 
   expect((await request).postDataJSON()).toEqual({
     deck: "animals/source-fact.md",
@@ -209,7 +282,7 @@ function resultsDto({ mastered, pass, partial }: { mastered: boolean; pass: numb
 
 async function openResults(page: Page, dto: object) {
   await mockExamRows(page, {
-    "source-fact.md": { state: "examdue", examable: true, exam_filter: "none" },
+    "source-fact.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: true },
   });
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Animals").click();

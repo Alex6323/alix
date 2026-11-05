@@ -40,6 +40,15 @@ const base = {
 };
 
 async function startMockedExam(page: Page, dto: object) {
+  await page.route("**/api/decks", async (route) => {
+    const response = await route.fetch();
+    const catalog = await response.json();
+    for (const row of catalog.workspaces.flatMap((workspace: any) => workspace.members)) {
+      if (row.name.endsWith("source-fact.md")) row.exam_prepared = true;
+    }
+    await route.fulfill({ response, json: catalog });
+  });
+  await page.locator("#navRefresh").click();
   await page.route("**/api/exam/start", (route) => route.fulfill({ json: dto }));
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "Source Fact").click();
@@ -59,6 +68,29 @@ test("an exam question renders inline code and numbers its program's lines", asy
   await expect(question.locator(".exam-code .source-number"), "program: numbered lines").toHaveText(["1", "2", "3"]);
   await expect(question.locator(".exam-code .source-text").nth(2), "program: line 3").toHaveText("w += 1;");
   if (process.env.ALIX_RENDER_DIR) await page.screenshot({ path: `${process.env.ALIX_RENDER_DIR}/exam-question.png`, animations: "disabled" });
+});
+
+test("an answer given before leaving reopens read-only, an open one stays editable", async ({ page }) => {
+  await startMockedExam(page, {
+    ...base,
+    phase: "answering",
+    question: "Why?",
+    question_units: null,
+    total: 2,
+    on_last: false,
+    answer: "kept answer",
+    answer_locked: true,
+  });
+  const input = page.locator(".exam-input");
+  await expect(input, "locked: the kept answer").toHaveValue("kept answer");
+  await expect(input, "locked: read-only").not.toBeEditable();
+
+  await page.unroute("**/api/exam/start");
+  await page.route("**/api/exam/answer", (route) => route.fulfill({
+    json: { ...base, phase: "answering", total: 2, current: 1, question: "How?", question_units: null, answer: "", answer_locked: false },
+  }));
+  await input.press("Shift+Enter");
+  await expect(input, "open: editable").toBeEditable();
 });
 
 test("exam results render the question, feedback, and rubric points from their units", async ({ page }) => {

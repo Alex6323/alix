@@ -138,10 +138,14 @@ const picker = createPicker({
   openBrowse: study.openBrowse,
   openWalk: study.openWalk,
   openTutorial: study.openTutorial,
-  startExam: (deck, needsWorkOnly) => exam.start(deck, needsWorkOnly),
+  startExam: (deck) => exam.start(deck),
   openAugment: (deck) => augment.open(deck),
   notice,
-  timers: { setTimeout: window.setTimeout.bind(window) },
+  timers: {
+    setTimeout: window.setTimeout.bind(window),
+    setInterval: window.setInterval.bind(window),
+    clearInterval: window.clearInterval.bind(window),
+  },
   ui: {
     barFilter,
     chip,

@@ -1488,7 +1488,7 @@ pub fn run_review(
                 };
                 match jobs.prepare_cancel(path) {
                     None => respond_status(request, 503),
-                    Some(()) => respond_status(request, 200),
+                    Some(list) => respond_json(request, &list),
                 }
             }
             (Method::Get, "/api/exam") => match study.exam_poll() {

@@ -57,9 +57,9 @@ export function createExam({
     return poll !== null;
   }
 
-  function start(deck, needsWorkOnly = false) {
+  function start(deck) {
     rememberLaunch(deck);
-    return api("/api/exam/start", post({ deck, needs_work_only: needsWorkOnly })).then((next) => {
+    return api("/api/exam/start", post({ deck })).then((next) => {
       if (next && next.phase) {
         data = next;
         rerender();
@@ -207,6 +207,7 @@ export function createExam({
       const input = el("textarea", "exam-input");
       input.placeholder = "Type your answer… (Shift+Enter to continue)";
       input.value = current.answer || "";
+      input.readOnly = !!current.answer_locked;
       input.rows = 6;
       input.addEventListener("keydown", (event) => {
         if (event.key === "Enter" && event.shiftKey && !confirmingQuit) {
