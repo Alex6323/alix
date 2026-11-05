@@ -49,6 +49,18 @@ impl UserFiles {
         self.progress().join(format!("{deck_id}.json"))
     }
 
+    pub fn exam_ideas_for(&self, deck_id: &str) -> PathBuf {
+        self.private_root()
+            .join("exam")
+            .join(format!("{deck_id}.json"))
+    }
+
+    pub fn exam_prepared_for(&self, deck_id: &str) -> PathBuf {
+        self.private_root()
+            .join("exam")
+            .join(format!("{deck_id}.prepared.json"))
+    }
+
     pub fn recent(&self) -> PathBuf {
         self.private_root().join("recent.json")
     }
