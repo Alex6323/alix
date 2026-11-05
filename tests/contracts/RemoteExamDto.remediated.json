@@ -4,6 +4,7 @@
   "deck": "rust.md",
   "elapsed": null,
   "error": null,
+  "estimate": null,
   "full": true,
   "gaps": [
     "ownership and the GC-free memory model"
@@ -73,6 +74,7 @@
       "verdict": "FAIL"
     }
   ],
+  "ideas": null,
   "mastered": false,
   "phase": "remediated",
   "questions": [

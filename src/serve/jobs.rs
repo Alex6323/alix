@@ -959,6 +959,7 @@ pub(super) struct Examining {
 
 pub(super) struct RemoteExamining {
     pub(super) sitting: exam::Sitting,
+    pub(super) estimate: Option<&'static str>,
     pub(super) cards: Option<String>,
     pub(super) unknown_cards: Vec<String>,
 }
@@ -1009,6 +1010,10 @@ impl RemoteExamining {
             thinking: s.thinking(),
             elapsed: s.elapsed_secs(),
             error: s.error().map(str::to_string),
+            estimate: (*s.phase() == exam::Phase::Generating)
+                .then_some(self.estimate)
+                .flatten(),
+            ideas: result.and(s.ideas()).cloned(),
         }
     }
 }
@@ -1032,6 +1037,8 @@ pub(super) fn remote_exam_idle_dto() -> RemoteExamDto {
         thinking: false,
         elapsed: None,
         error: None,
+        estimate: None,
+        ideas: None,
     }
 }
 

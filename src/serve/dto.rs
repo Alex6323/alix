@@ -958,6 +958,8 @@ pub(super) struct RemoteExamDto {
     pub(super) thinking: bool,
     pub(super) elapsed: Option<u64>,
     pub(super) error: Option<String>,
+    pub(super) estimate: Option<&'static str>,
+    pub(super) ideas: Option<crate::exam_ideas::IdeasDocument>,
 }
 
 #[derive(Serialize)]

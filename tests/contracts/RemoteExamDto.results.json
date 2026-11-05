@@ -4,6 +4,7 @@
   "deck": "rust.md",
   "elapsed": null,
   "error": null,
+  "estimate": null,
   "full": true,
   "gaps": [
     "ownership and the GC-free memory model"
@@ -73,6 +74,22 @@
       "verdict": "FAIL"
     }
   ],
+  "ideas": {
+    "material": "xxh64-00000000000000ab",
+    "sections": [
+      {
+        "heading": "Ownership",
+        "ideas": [
+          {
+            "last_asked_ms": 1762300800000,
+            "last_passed": false,
+            "text": "moves transfer ownership"
+          }
+        ]
+      }
+    ],
+    "version": 1
+  },
   "mastered": false,
   "phase": "results",
   "questions": [

@@ -962,9 +962,15 @@ fn thread_gone() -> String {
     "the exam helper exited unexpectedly".to_string()
 }
 
+/// A rough wait for one generation, shown while it runs; never a commitment.
+pub fn wait_estimate(ask_cfg: &AskConfig) -> Option<&'static str> {
+    (ask_cfg.backend == crate::config::BackendKind::Claude).then_some("usually 10 to 20 minutes")
+}
+
 pub(crate) fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
     AskConfig {
         model: cfg.model.clone().or_else(|| ask_cfg.model.clone()),
+        effort: cfg.effort.clone().or_else(|| ask_cfg.effort.clone()),
         timeout_secs: cfg.timeout_secs,
         cwd: None,
         source_access: false,
@@ -2843,6 +2849,16 @@ mod tests {
         assert_eq!(None, actual.cwd);
         assert!(!actual.source_access);
         assert_eq!(Some("high".to_string()), actual.effort);
+
+        let exam = ExamConfig {
+            effort: Some("max".to_string()),
+            ..exam
+        };
+        assert_eq!(
+            Some("max".to_string()),
+            run_config(&exam, &ask).effort,
+            "the exam's own effort wins over [ask]"
+        );
     }
 
     #[test]

@@ -1945,6 +1945,8 @@ pub fn run_review(
                     deck: String,
                     #[serde(default)]
                     cards: Option<Vec<String>>,
+                    #[serde(default)]
+                    ideas: Option<crate::exam_ideas::IdeasDocument>,
                 }
                 let Ok(body) = serde_json::from_slice::<Body>(&bytes) else {
                     respond_status(request, 400);
@@ -1954,7 +1956,13 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                match jobs.remote_exam_start(path, body.cards, exam_cfg.clone(), ask_cfg.clone()) {
+                match jobs.remote_exam_start(
+                    path,
+                    body.cards,
+                    body.ideas,
+                    exam_cfg.clone(),
+                    ask_cfg.clone(),
+                ) {
                     None => respond_status(request, 503),
                     Some(Started::Conflict) => respond_status(request, 409),
                     Some(Started::Dto(dto)) => respond_json(request, &dto),

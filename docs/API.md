@@ -440,7 +440,7 @@ make, with nothing else in its block, the answer is `200` with that card's
 `{id, block}` (its bytes as stored) and nothing is appended. A match against
 the authored deck stays `422`, even when the sidecar holds the same card.
 
-A remote exam sitting starts with `POST /api/remote/exam/start {deck, cards?}`: the
+A remote exam sitting starts with `POST /api/remote/exam/start {deck, cards?, ideas?}`: the
 server resolves **its own copy** of the named deck, by the same resolution
 `/api/select` uses (a bare name, or a qualified `<workspace>/<file>`). A
 deck with no `exam:` at either level (deck or workspace) is refused outright
@@ -452,7 +452,15 @@ question locally and submits them as one batch: `POST
 /api/remote/exam/grade {answers: [string]}` grades the whole sitting in one
 call. A failed, remediable result's cards come back as deck-format text on
 `RemoteExamDto.cards` (§6) for the **client** to parse and store: the
-server generates them but never keeps them.
+server generates them but never keeps them. Generation takes minutes, so the
+sitting stays in the server's slot while the phone is away; the phone polls
+`GET /api/remote/exam` when it returns and closes the slot explicitly
+(closing cancels a running generation). Each exam asks three questions per
+section, aimed at ideas the phone's `ideas` document picks (never asked, then
+last failed, then oldest); without one, or when the exam material changed,
+the server lists the ideas first. The updated document comes back on
+`RemoteExamDto.ideas` after grading for the phone to keep; the server keeps
+no copy.
 
 `POST /api/remote/generate {url, guidance?}` mirrors §4.7's `/api/generate`,
 minus everything the iron rule forbids: there is no `dest` (a phone chooses
@@ -813,7 +821,7 @@ first, same as a double `POST`.
 | POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 403 kids; 409 a turn is already thinking |
 | POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 409 a turn is already thinking |
 | POST | `/api/remote/ask/card` | `{deck_id, front, back}` (`RemoteCreateCardReq`) | `RemoteCreateCardResp` | 400 bad/oversized body; 403 kids; 404 the desktop does not serve `deck_id`; 422 duplicate (except an identical retry of a sidecar card, which answers 200 with it) or malformed; 500 the id could not be minted |
-| POST | `/api/remote/exam/start` | `{deck, cards?: [card-id]}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / the deck has no exam or the backend cannot reach its grounding / `cards` names no card of the deck |
+| POST | `/api/remote/exam/start` | `{deck, cards?: [card-id], ideas?: object}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / the deck has no exam or the backend cannot reach its grounding / `cards` names no card of the deck |
 | GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when no sitting is open) | – |
 | POST | `/api/remote/exam/grade` | `{answers: [string]}` | `RemoteExamDto` | 400 bad/oversized body / wrong number of answers; 409 no sitting open / not in the answering phase |
 | POST | `/api/remote/exam/remediate` | – | `RemoteExamDto` | 409 no sitting open / nothing to remediate |
@@ -1693,6 +1701,8 @@ phone applies it to its own state).
 | `thinking` | bool | Poll while true. |
 | `elapsed` | number? | Seconds the in-flight call has run. |
 | `error` | string? | |
+| `estimate` | string? | A rough wait for the generation, set only while `generating` (for example `usually 10 to 20 minutes`); `null` when the backend has no measured range. Never a commitment. |
+| `ideas` | object? | The exam ideas document after grading, set in `results`/`remediated`: the phone stores it whole as its `.alix/exam/<deck-id>.json` and sends it back in the next `start`. Shape: `{"version": 1, "material": "xxh64-…", "sections": [{"heading", "ideas": [{"text", "last_asked_ms", "last_passed"}]}]}`, unknown fields rejected. |
 
 Example, remediated: `tests/contracts/RemoteExamDto.remediated.json` (written by the pinned test).
 

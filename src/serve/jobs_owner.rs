@@ -107,6 +107,7 @@ pub(super) enum JobsCommand {
     RemoteExamStart {
         path: PathBuf,
         cards: Option<Vec<String>>,
+        ideas: Option<crate::exam_ideas::IdeasDocument>,
         exam_cfg: ExamConfig,
         ask_cfg: AskConfig,
         reply: Reply<Started<RemoteExamDto>>,
@@ -244,12 +245,14 @@ impl JobsHandle {
         &self,
         path: PathBuf,
         cards: Option<Vec<String>>,
+        ideas: Option<crate::exam_ideas::IdeasDocument>,
         exam_cfg: ExamConfig,
         ask_cfg: AskConfig,
     ) -> Option<Started<RemoteExamDto>> {
         self.call(|reply| JobsCommand::RemoteExamStart {
             path,
             cards,
+            ideas,
             exam_cfg,
             ask_cfg,
             reply,
@@ -514,11 +517,12 @@ impl JobsState {
             JobsCommand::RemoteExamStart {
                 path,
                 cards,
+                ideas,
                 exam_cfg,
                 ask_cfg,
                 reply,
             } => {
-                let _ = reply.send(self.remote_exam_start(path, cards, exam_cfg, ask_cfg));
+                let _ = reply.send(self.remote_exam_start(path, cards, ideas, exam_cfg, ask_cfg));
             }
             JobsCommand::RemoteExamPoll(reply) => {
                 // advance() only, never poll(): poll() writes the store,
@@ -752,12 +756,14 @@ impl JobsState {
         &mut self,
         path: PathBuf,
         cards: Option<Vec<String>>,
+        ideas: Option<crate::exam_ideas::IdeasDocument>,
         exam_cfg: ExamConfig,
         ask_cfg: AskConfig,
     ) -> Started<RemoteExamDto> {
         if self.remote_exam.is_some() {
             return Started::Conflict;
         }
+        let exam_cfg = exam_cfg.for_workspace(&crate::workspace::content_root(&path));
         let Ok(deck) = exam::open_for_exam(&path) else {
             return Started::Conflict;
         };
@@ -776,16 +782,18 @@ impl JobsState {
         if selection.sections.is_empty() {
             return Started::Conflict;
         }
+        let estimate = exam::wait_estimate(&ask_cfg);
         let sitting = exam::Sitting::start_with(
             &deck,
             selection.sections,
-            None,
+            ideas,
             strictness,
             exam_cfg,
             ask_cfg,
         );
         let ex = RemoteExamining {
             sitting,
+            estimate,
             cards: None,
             unknown_cards: selection.unknown_cards,
         };

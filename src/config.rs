@@ -440,6 +440,7 @@ impl Strictness {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExamConfig {
     pub model: Option<String>,
+    pub effort: Option<String>,
     pub timeout_secs: u64,
     pub pass_threshold: f64,
     pub strictness: Strictness,
@@ -450,6 +451,7 @@ impl Default for ExamConfig {
     fn default() -> Self {
         Self {
             model: None,
+            effort: None,
             timeout_secs: 3600,
             pass_threshold: 1.0,
             strictness: Strictness::default(),
@@ -699,6 +701,35 @@ struct RawLocalReviewConfig {
 struct RawLocalConfig {
     #[serde(default)]
     review: RawLocalReviewConfig,
+    #[serde(default)]
+    exam: RawLocalExamConfig,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawLocalExamConfig {
+    effort: Option<String>,
+}
+
+impl ExamConfig {
+    /// The workspace's own `alix.local.toml` may set the exam effort.
+    pub fn for_workspace(self, workspace_dir: &Path) -> Self {
+        let local_manifest = crate::state::UserFiles::new(workspace_dir).local_manifest();
+        let Ok(text) = std::fs::read_to_string(local_manifest) else {
+            return self;
+        };
+        let Ok(raw) = toml::from_str::<RawLocalConfig>(&text) else {
+            return self;
+        };
+        Self {
+            effort: raw
+                .exam
+                .effort
+                .filter(|e| !e.trim().is_empty())
+                .or(self.effort),
+            ..self
+        }
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -745,6 +776,7 @@ struct RawGenerate {
 #[serde(deny_unknown_fields)]
 struct RawExam {
     model: Option<String>,
+    effort: Option<String>,
     timeout_secs: Option<u64>,
     pass_threshold: Option<f64>,
     strictness: Option<String>,
@@ -982,6 +1014,7 @@ impl Config {
         if let Some(model) = raw.exam.model.filter(|m| !m.trim().is_empty()) {
             exam.model = Some(model);
         }
+        exam.effort = raw.exam.effort.filter(|e| !e.trim().is_empty());
         if let Some(secs) = raw.exam.timeout_secs {
             exam.timeout_secs = secs;
         }
@@ -1432,6 +1465,7 @@ pub fn default_config_toml() -> &'static str {
 # mode and tool allowlist (WebFetch reads a source URL).
 [exam]
 # model = ""                    # --model override; empty = use [ask] / CLI default
+# effort = ""                   # --effort for writing questions; a workspace's alix.local.toml may override it
 # timeout_secs = 3600           # writing questions at a high effort takes many minutes
 # pass_threshold = 1.0          # fraction of questions that must fully pass (1.0 = all)
 # strictness = "balanced"       # answer grading: strict | balanced | lenient
@@ -1484,6 +1518,47 @@ pub fn default_config_toml() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_workspace_local_manifest_sets_the_exam_effort_over_the_users() {
+        let dir = tempfile::tempdir().unwrap();
+        let user = ExamConfig {
+            effort: Some("high".to_string()),
+            ..ExamConfig::default()
+        };
+        let rows = [
+            ("no local manifest", None, Some("high")),
+            (
+                "an [exam] effort",
+                Some("[exam]\neffort = \"max\"\n"),
+                Some("max"),
+            ),
+            (
+                "a blank effort",
+                Some("[exam]\neffort = \" \"\n"),
+                Some("high"),
+            ),
+            (
+                "an unknown exam key",
+                Some("[exam]\nmodel = \"x\"\n"),
+                Some("high"),
+            ),
+        ];
+        for (label, local, expected) in rows {
+            let path = dir.path().join(LOCAL_MANIFEST);
+            match local {
+                Some(text) => std::fs::write(&path, text).unwrap(),
+                None => {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+            assert_eq!(
+                expected.map(str::to_string),
+                user.clone().for_workspace(dir.path()).effort,
+                "{label}"
+            );
+        }
+    }
 
     #[test]
     fn law_profile_names_reject_emptiness_separators_dots_colons_and_reserved_verbs() {

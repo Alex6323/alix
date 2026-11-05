@@ -2692,6 +2692,8 @@ fn remoteexamdto_idle_wire_shape() {
         thinking: false,
         elapsed: None,
         error: None,
+        estimate: None,
+        ideas: None,
     };
     pin(
         "RemoteExamDto.idle",
@@ -2713,7 +2715,9 @@ fn remoteexamdto_idle_wire_shape() {
             "cards": null,
             "thinking": false,
             "elapsed": null,
-            "error": null
+            "error": null,
+            "estimate": null,
+            "ideas": null
         }),
     );
 }
@@ -2744,6 +2748,8 @@ fn remoteexamdto_answering_wire_shape() {
         thinking: false,
         elapsed: None,
         error: None,
+        estimate: None,
+        ideas: None,
     };
     pin(
         "RemoteExamDto.answering",
@@ -2765,7 +2771,9 @@ fn remoteexamdto_answering_wire_shape() {
             "cards": null,
             "thinking": false,
             "elapsed": null,
-            "error": null
+            "error": null,
+            "estimate": null,
+            "ideas": null
         }),
     );
 }
@@ -2815,6 +2823,19 @@ fn remoteexamdto_results_wire_shape() {
         thinking: false,
         elapsed: None,
         error: None,
+        estimate: None,
+        ideas: Some(crate::exam_ideas::IdeasDocument {
+            version: 1,
+            material: "xxh64-00000000000000ab".to_string(),
+            sections: vec![crate::exam_ideas::IdeaSection {
+                heading: "Ownership".to_string(),
+                ideas: vec![crate::exam_ideas::Idea {
+                    text: "moves transfer ownership".to_string(),
+                    last_asked_ms: Some(1_762_300_800_000),
+                    last_passed: Some(false),
+                }],
+            }],
+        }),
     };
     pin(
         "RemoteExamDto.results",
@@ -2855,7 +2876,9 @@ fn remoteexamdto_results_wire_shape() {
             "cards": null,
             "thinking": false,
             "elapsed": null,
-            "error": null
+            "error": null,
+            "estimate": null,
+            "ideas": {"version": 1, "material": "xxh64-00000000000000ab", "sections": [{"heading": "Ownership", "ideas": [{"text": "moves transfer ownership", "last_asked_ms": 1_762_300_800_000_u64, "last_passed": false}]}]}
         }),
     );
 }
@@ -2907,6 +2930,8 @@ fn remoteexamdto_remediated_wire_shape() {
         thinking: false,
         elapsed: None,
         error: None,
+        estimate: None,
+        ideas: None,
     };
     pin(
         "RemoteExamDto.remediated",
@@ -2947,7 +2972,9 @@ fn remoteexamdto_remediated_wire_shape() {
             "cards": "## Why does Rust use ownership?\nso drops are deterministic, no GC needed",
             "thinking": false,
             "elapsed": null,
-            "error": null
+            "error": null,
+            "estimate": null,
+            "ideas": null
         }),
     );
 }

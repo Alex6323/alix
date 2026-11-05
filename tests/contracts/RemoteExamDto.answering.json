@@ -4,9 +4,11 @@
   "deck": "rust.md",
   "elapsed": null,
   "error": null,
+  "estimate": null,
   "full": true,
   "gaps": [],
   "grades": [],
+  "ideas": null,
   "mastered": false,
   "phase": "answering",
   "questions": [
