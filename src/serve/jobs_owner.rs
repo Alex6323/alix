@@ -776,8 +776,14 @@ impl JobsState {
         if selection.sections.is_empty() {
             return Started::Conflict;
         }
-        let sitting =
-            exam::Sitting::start_with(&deck, selection.sections, strictness, exam_cfg, ask_cfg);
+        let sitting = exam::Sitting::start_with(
+            &deck,
+            selection.sections,
+            None,
+            strictness,
+            exam_cfg,
+            ask_cfg,
+        );
         let ex = RemoteExamining {
             sitting,
             cards: None,

@@ -847,7 +847,8 @@ fn examdto_results_phase_wire_shape() {
                 points: vec!["memory safety without a GC".to_string()],
                 section: 0,
                 shape: exam::Shape::Instance,
-                model: "scope ends drop values".to_string(),
+                mental_model: "scope ends drop values".to_string(),
+                idea: 0,
             },
             "it frees memory deterministically",
             &exam::AnswerGrade {
@@ -898,7 +899,7 @@ fn examdto_results_phase_wire_shape() {
             "grades": [{
                 "section": 0,
                 "shape": "instance",
-                "model": "scope ends drop values",
+                "mental_model": "scope ends drop values",
                 "question": "Why does `drop` run here?\n\n```rust\nlet s = String::new();\n```",
                 "question_units": [
                     {
@@ -2837,7 +2838,7 @@ fn remoteexamdto_results_wire_shape() {
             "grades": [{
                 "section": 0,
                 "shape": "instance",
-                "model": "",
+                "mental_model": "",
                 "question": "Why does Rust use ownership?",
                 "question_units": [{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}],
                 "points": ["memory safety without a GC"],
@@ -2929,7 +2930,7 @@ fn remoteexamdto_remediated_wire_shape() {
             "grades": [{
                 "section": 0,
                 "shape": "instance",
-                "model": "",
+                "mental_model": "",
                 "question": "Why does Rust use ownership?",
                 "question_units": [{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}],
                 "points": ["memory safety without a GC"],

@@ -22,9 +22,9 @@
           "text": "solid"
         }
       ],
+      "mental_model": "scope ends drop values",
       "missed": [],
       "missed_units": [],
-      "model": "scope ends drop values",
       "points": [
         "memory safety without a GC"
       ],

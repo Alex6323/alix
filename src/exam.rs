@@ -27,7 +27,14 @@ pub struct ExamQuestion {
     pub points: Vec<String>,
     pub section: usize,
     pub shape: Shape,
-    pub model: String,
+    pub mental_model: String,
+    pub idea: usize,
+}
+
+#[derive(Debug)]
+pub struct Generated {
+    pub questions: Vec<ExamQuestion>,
+    pub ideas: crate::exam_ideas::IdeasDocument,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -150,7 +157,16 @@ pub fn generate_questions(
         bail!("{error}");
     }
     let root = workspace::content_root(&deck.path);
-    generate_questions_from(&sources, Some(&root), &exam_sections(deck), cfg, ask_cfg)
+    generate_questions_from(
+        &sources,
+        Some(&root),
+        &exam_sections(deck),
+        None,
+        cfg,
+        ask_cfg,
+        &ask::AskJob::default(),
+    )
+    .map(|generated| generated.questions)
 }
 
 pub fn open_for_exam(path: &Path) -> Result<Deck> {
@@ -185,9 +201,11 @@ pub(crate) fn generate_questions_from(
     sources: &ExamLayers,
     base: Option<&Path>,
     sections: &[ExamSection],
+    ideas: Option<crate::exam_ideas::IdeasDocument>,
     cfg: &ExamConfig,
     ask_cfg: &AskConfig,
-) -> Result<Vec<ExamQuestion>> {
+    job: &ask::AskJob,
+) -> Result<Generated> {
     for source in sources.own.iter().chain(&sources.workspace) {
         crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
     }
@@ -195,27 +213,67 @@ pub(crate) fn generate_questions_from(
         bail!("the deck has no cards to examine");
     }
     let run = run_config(cfg, ask_cfg);
-    let models = with_one_retry(
+    let material = crate::exam_ideas::material_fingerprint(&source_section(sources, base)?);
+    let mut doc = crate::exam_ideas::IdeasDocument::for_material(ideas, &material);
+    let headings: Vec<&str> = sections.iter().map(|s| s.label.as_str()).collect();
+    let missing = doc.missing_headings(&headings);
+    if !missing.is_empty() {
+        let unlisted: Vec<ExamSection> = sections
+            .iter()
+            .filter(|s| missing.contains(&s.label.as_str()))
+            .cloned()
+            .collect();
+        let listed = with_one_retry(
+            job,
+            &run,
+            &models_prompt(sources, base, &unlisted, cfg)?,
+            |raw| checked_models(unlisted.len(), raw),
+            "the listed models",
+        )?;
+        for (section, ideas) in unlisted.iter().zip(listed) {
+            doc.set_section(&section.label, ideas);
+        }
+    }
+    let chosen: Vec<Vec<usize>> = headings.iter().map(|h| doc.select(h)).collect();
+    let chosen_text: Vec<Vec<String>> = headings
+        .iter()
+        .zip(&chosen)
+        .map(|(heading, picks)| {
+            let section = doc.section(heading);
+            picks
+                .iter()
+                .filter_map(|&at| {
+                    section
+                        .and_then(|s| s.ideas.get(at))
+                        .map(|i| i.text.clone())
+                })
+                .collect()
+        })
+        .collect();
+    let mut questions = with_one_retry(
+        job,
         &run,
-        &models_prompt(sources, base, sections, cfg)?,
-        |raw| checked_models(sections.len(), raw),
-        "the listed models",
-    )?;
-    with_one_retry(
-        &run,
-        &questions_prompt(sources, base, sections, &models, cfg)?,
-        |raw| checked_questions(&models, raw),
+        &questions_prompt(sources, base, sections, &chosen_text, cfg)?,
+        |raw| checked_questions(&chosen_text, raw),
         "the generated questions",
-    )
+    )?;
+    for question in &mut questions {
+        question.idea = chosen[question.section][question.idea];
+    }
+    Ok(Generated {
+        questions,
+        ideas: doc,
+    })
 }
 
 fn with_one_retry<T>(
+    job: &ask::AskJob,
     run: &AskConfig,
     prompt: &str,
     check: impl Fn(&str) -> std::result::Result<T, String>,
     what: &str,
 ) -> Result<T> {
-    let reason = match check(&ask::run(run, prompt, &[])?) {
+    let reason = match check(&ask::run_in(job, run, prompt)?) {
         Ok(value) => return Ok(value),
         Err(reason) => reason,
     };
@@ -223,7 +281,7 @@ fn with_one_retry<T>(
         "{prompt}\n\nYour previous answer was rejected: {reason}. Write the whole answer \
          again and follow every rule above."
     );
-    match check(&ask::run(run, &retry, &[])?) {
+    match check(&ask::run_in(job, run, &retry)?) {
         Ok(value) => Ok(value),
         Err(reason) => bail!("{what} were rejected twice: {reason}"),
     }
@@ -285,27 +343,39 @@ pub(crate) fn checked_questions(
                 generated.section
             ));
         };
-        let model = generated.model.trim().to_string();
-        let Some(which) = models[at].iter().position(|listed| *listed == model) else {
+        let Some(which) = generated
+            .idea
+            .checked_sub(1)
+            .filter(|which| *which < models[at].len())
+        else {
             return Err(format!(
-                "a question in section {} names the model `{model}`, which that section does \
-                 not list",
-                at + 1
+                "a question in section {} names idea {}, but that section lists {}",
+                at + 1,
+                generated.idea,
+                models[at].len()
             ));
         };
+        if covered[at][which] {
+            return Err(format!(
+                "section {} asks idea {} more than once",
+                at + 1,
+                which + 1
+            ));
+        }
         covered[at][which] = true;
         questions.push(ExamQuestion {
             prompt: generated.prompt,
             points: generated.points,
             section: at,
             shape: generated.shape,
-            model,
+            mental_model: models[at][which].clone(),
+            idea: which,
         });
     }
     for (at, section) in covered.iter().enumerate() {
         if let Some(which) = section.iter().position(|done| !done) {
             return Err(format!(
-                "section {} lists the model `{}` but asks no question about it",
+                "section {} lists the idea `{}` but asks no question about it",
                 at + 1,
                 models[at][which]
             ));
@@ -360,20 +430,31 @@ pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig)
     Ok(cards)
 }
 
-pub fn spawn_questions(
+pub fn spawn_generation(
     sources: ExamLayers,
     base: Option<PathBuf>,
     sections: Vec<ExamSection>,
+    ideas: Option<crate::exam_ideas::IdeasDocument>,
     cfg: ExamConfig,
     ask_cfg: AskConfig,
-) -> Receiver<Result<Vec<ExamQuestion>, String>> {
+) -> (Receiver<Result<Generated, String>>, ask::AskJob) {
     let (tx, rx) = channel();
+    let job = ask::AskJob::default();
+    let worker = job.clone();
     std::thread::spawn(move || {
-        let r = generate_questions_from(&sources, base.as_deref(), &sections, &cfg, &ask_cfg)
-            .map_err(|e| format!("{e:#}"));
+        let r = generate_questions_from(
+            &sources,
+            base.as_deref(),
+            &sections,
+            ideas,
+            &cfg,
+            &ask_cfg,
+            &worker,
+        )
+        .map_err(|e| format!("{e:#}"));
         let _ = tx.send(r);
     });
-    rx
+    (rx, job)
 }
 
 pub fn spawn_grade(
@@ -422,7 +503,7 @@ pub enum Effect {
 }
 
 enum Pending {
-    Questions(Receiver<Result<Vec<ExamQuestion>, String>>),
+    Questions(Receiver<Result<Generated, String>>),
     Grade(Receiver<Result<ExamResult, String>>),
     Remediation(Receiver<Result<String, String>>),
 }
@@ -447,6 +528,15 @@ pub struct Sitting {
     sections: Vec<ExamSection>,
     deck_sections: Vec<ExamSection>,
     unlocked: bool,
+    ideas: Option<crate::exam_ideas::IdeasDocument>,
+    locked: Vec<bool>,
+    job: ask::AskJob,
+}
+
+impl Drop for Sitting {
+    fn drop(&mut self) {
+        self.job.cancel();
+    }
 }
 
 fn sitting_record(
@@ -478,12 +568,13 @@ impl Sitting {
     }
 
     pub fn start(deck: &Deck, strictness: Strictness, cfg: ExamConfig, ask_cfg: AskConfig) -> Self {
-        Self::start_with(deck, exam_sections(deck), strictness, cfg, ask_cfg)
+        Self::start_with(deck, exam_sections(deck), None, strictness, cfg, ask_cfg)
     }
 
     pub fn start_with(
         deck: &Deck,
         sections: Vec<ExamSection>,
+        ideas: Option<crate::exam_ideas::IdeasDocument>,
         strictness: Strictness,
         cfg: ExamConfig,
         ask_cfg: AskConfig,
@@ -491,14 +582,18 @@ impl Sitting {
         let boundary_error = source_boundary_error(deck);
         let source_ready = boundary_error.is_none();
         let deck_sections = exam_sections(deck);
+        let mut job = ask::AskJob::default();
         let pending = source_ready.then(|| {
-            Pending::Questions(spawn_questions(
+            let (rx, spawned) = spawn_generation(
                 examination_sources(deck),
                 Some(workspace::content_root(&deck.path)),
                 sections.clone(),
+                ideas,
                 cfg.clone(),
                 ask_cfg.clone(),
-            ))
+            );
+            job = spawned;
+            Pending::Questions(rx)
         });
         Self {
             subject: deck.subject.clone(),
@@ -524,6 +619,56 @@ impl Sitting {
             sections,
             deck_sections,
             unlocked: false,
+            ideas: None,
+            locked: Vec::new(),
+            job,
+        }
+    }
+
+    /// A sitting over questions generated earlier: it opens in the answering
+    /// phase at the first unanswered question, with every answered one locked.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "a sitting's whole resumable state"
+    )]
+    pub fn from_prepared(
+        deck: &Deck,
+        sections: Vec<ExamSection>,
+        questions: Vec<ExamQuestion>,
+        answers: Vec<String>,
+        ideas: crate::exam_ideas::IdeasDocument,
+        strictness: Strictness,
+        cfg: ExamConfig,
+        ask_cfg: AskConfig,
+    ) -> Self {
+        let mut sitting = Self::start_with(deck, sections, None, strictness, cfg, ask_cfg);
+        sitting.job.cancel();
+        sitting.pending = None;
+        sitting.pending_since = None;
+        sitting.error = None;
+        sitting.locked = answers.iter().map(|a| !a.trim().is_empty()).collect();
+        sitting.current = sitting.locked.iter().position(|l| !l).unwrap_or(0);
+        sitting.answers = answers;
+        sitting.questions = questions;
+        sitting.ideas = Some(ideas);
+        sitting.phase = Phase::Answering;
+        sitting
+    }
+
+    pub fn ideas(&self) -> Option<&crate::exam_ideas::IdeasDocument> {
+        self.ideas.as_ref()
+    }
+
+    pub fn is_locked(&self, at: usize) -> bool {
+        self.locked.get(at).copied().unwrap_or(false)
+    }
+
+    fn lock_current(&mut self) {
+        let at = self.current;
+        if self.answers.get(at).is_some_and(|a| !a.trim().is_empty())
+            && let Some(slot) = self.locked.get_mut(at)
+        {
+            *slot = true;
         }
     }
 
@@ -591,6 +736,7 @@ impl Sitting {
 
     pub fn set_answer(&mut self, text: String) {
         if self.phase == Phase::Answering
+            && !self.is_locked(self.current)
             && let Some(slot) = self.answers.get_mut(self.current)
         {
             *slot = text;
@@ -606,24 +752,47 @@ impl Sitting {
         }
     }
     pub fn next(&mut self) {
+        self.lock_current();
         if self.current + 1 < self.questions.len() {
             self.current += 1;
         }
     }
     pub fn prev(&mut self) {
+        self.lock_current();
         self.current = self.current.saturating_sub(1);
     }
     pub fn goto(&mut self, i: usize) {
+        self.lock_current();
         if i < self.questions.len() {
             self.current = i;
         }
     }
 
-    fn accept_questions(&mut self, questions: Vec<ExamQuestion>) {
-        self.answers = vec![String::new(); questions.len()];
-        self.questions = questions;
+    fn accept_questions(&mut self, generated: Generated) {
+        self.answers = vec![String::new(); generated.questions.len()];
+        self.locked = vec![false; generated.questions.len()];
+        self.questions = generated.questions;
+        self.ideas = Some(generated.ideas);
         self.current = 0;
         self.phase = Phase::Answering;
+    }
+
+    fn record_ideas(&mut self, result: &ExamResult) {
+        let asked: Vec<crate::exam_ideas::AskedIdea> = self
+            .questions
+            .iter()
+            .zip(&result.grades)
+            .filter_map(|(question, grade)| {
+                Some(crate::exam_ideas::AskedIdea {
+                    heading: self.sections.get(question.section)?.label.clone(),
+                    idea: question.idea,
+                    passed: grade.verdict == Verdict::Pass,
+                })
+            })
+            .collect();
+        if let Some(ideas) = self.ideas.as_mut() {
+            ideas.record(&asked, crate::time::now_ms());
+        }
     }
 
     pub fn submit(&mut self) {
@@ -704,6 +873,7 @@ impl Sitting {
             }
             Reply::Grade(Ok(result)) => {
                 let effect = Some(Effect::Graded);
+                self.record_ideas(&result);
                 self.result = Some(result);
                 self.phase = Phase::Results;
                 effect
@@ -783,7 +953,7 @@ pub struct ExamPollOutcome {
 }
 
 enum Reply {
-    Questions(Result<Vec<ExamQuestion>, String>),
+    Questions(Result<Generated, String>),
     Grade(Result<ExamResult, String>),
     Remediation(Result<String, String>),
 }
@@ -997,20 +1167,19 @@ pub(crate) fn questions_prompt(
          mental model behind the section instead.\n\n",
     );
     scope.push_str(&section_scope(sections));
-    scope.push_str("The mental models to examine, per section:\n");
+    scope.push_str("The ideas this exam examines, per section, numbered:\n");
     for (i, listed) in models.iter().enumerate() {
         scope.push_str(&format!("Section {}:\n", i + 1));
-        for model in listed {
-            scope.push_str(&format!("- {model}\n"));
+        for (n, idea) in listed.iter().enumerate() {
+            scope.push_str(&format!("{}. {idea}\n", n + 1));
         }
     }
     scope.push('\n');
     let ask = format!(
-        "{scope}For EACH section, in deck order, write at least one question for every \
-         mental model listed for it; a model may get more when it needs them. There is \
-         no upper limit. A model a card states is still examined: ask the student to \
-         apply it, never to recite the card. Across a section, start with an instance \
-         and then take the three shapes in turn:\n\
+        "{scope}For EACH section, in deck order, write EXACTLY one question for every \
+         idea listed for it, no more. An idea a card states is still examined: ask the \
+         student to apply it, never to recite the card. Across a section, start with an \
+         instance and then take the three shapes in turn:\n\
          - instance: a concrete case the source supports but no card shows \
          (\"given this program, what does the compiler report?\");\n\
          - boundary: when does the section's idea stop holding, or what changes \
@@ -1019,11 +1188,10 @@ pub(crate) fn questions_prompt(
          the section's idea; the student must find and correct it.\n\
          Every question must be answerable from the source above and demand \
          reasoning in the student's own words. Tag every question with its section's \
-         number, its shape, and the model it tests, spelled exactly as listed for that \
-         section.\n\n"
+         number, its shape, and the number of the idea it tests within that section.\n\n"
     );
     let shape = "{\"questions\": [{\"section\": 1, \"shape\": \"instance|boundary|fix\", \
-                 \"model\": \"<a model listed for that section>\", \"prompt\": \"...\", \
+                 \"idea\": 1, \"prompt\": \"...\", \
                  \"points\": [\"...\", \"...\"]}]}";
     let mut prompt = format!(
         "You are a strict examiner writing an oral exam that verifies a student \
@@ -1245,7 +1413,7 @@ struct SectionModelsDto {
 struct GeneratedQuestionDto {
     section: usize,
     shape: Shape,
-    model: String,
+    idea: usize,
     prompt: String,
     points: Vec<String>,
 }
@@ -1335,7 +1503,7 @@ mod tests {
     }
 
     const ONE_SECTION_REPLY: &str = "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\
-        \"questions\":[{\"section\":1,\"shape\":\"instance\",\"model\":\"m\",\
+        \"questions\":[{\"section\":1,\"shape\":\"instance\",\"idea\":1,\
         \"prompt\":\"Why move?\",\"points\":[\"avoids double free\"]}]}";
 
     fn deck_with_exam_and_card(srcs: &[&str]) -> Deck {
@@ -1683,23 +1851,19 @@ mod tests {
             "scope only: {p}"
         );
         for rule in [
-            "The mental models to examine, per section:",
-            "at least one question for every \
-             mental model listed for it",
-            "There is \
-             no upper limit.",
-            "ask the student to \
-             apply it, never to recite the card",
-            "spelled exactly as listed for that \
-             section",
+            "The ideas this exam examines, per section, numbered:",
+            "write EXACTLY one question for every \
+         idea listed for it, no more",
+            "ask the \
+         student to apply it, never to recite the card",
+            "the number of the idea it tests within that section",
         ] {
-            assert!(p.contains(rule), "models rule {rule:?}: {p}");
+            assert!(p.contains(rule), "ideas rule {rule:?}: {p}");
         }
-        assert!(!p.contains("Write exactly"), "no fixed count: {p}");
         for shape in ["instance:", "boundary:", "fix:"] {
             assert!(p.contains(shape), "shape {shape}: {p}");
         }
-        for tag in ["\"section\"", "\"shape\"", "\"model\""] {
+        for tag in ["\"section\"", "\"shape\"", "\"idea\""] {
             assert!(p.contains(tag), "json carries {tag}: {p}");
         }
     }
@@ -1950,7 +2114,7 @@ mod tests {
             &[
                 "{\"sections\":[{\"section\":1,\"models\":[\"ownership\"]}]}",
                 "{\"questions\":[{\"section\":1,\"shape\":\"instance\",\
-                 \"model\":\"ownership\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
+                 \"idea\":1,\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
             ],
         );
         let cfg = ExamConfig {
@@ -2096,7 +2260,7 @@ mod tests {
     #[test]
     fn parse_questions_from_fenced_json() {
         let raw = "Here you go:\n```json\n{\"sections\": [{\"section\": 1, \"models\": [\"m\"]}], \
-                   \"questions\": [{\"section\": 1, \"shape\": \"fix\", \"model\": \"m\", \
+                   \"questions\": [{\"section\": 1, \"shape\": \"fix\", \"idea\": 1, \
                    \"prompt\": \"Q1\", \"points\": [\"a\", \"b\"]}]}\n```";
         let dto: QuestionsDto = parse_json(raw).unwrap();
         assert_eq!(1, dto.questions.len());
@@ -2489,18 +2653,21 @@ mod tests {
     #[test]
     fn sitting_navigation_accepts_only_question_indices() {
         let mut sitting = test_sitting(Strictness::Strict);
-        sitting.accept_questions(vec![
-            ExamQuestion {
-                prompt: "first".to_string(),
-                points: vec!["one".to_string()],
-                ..Default::default()
-            },
-            ExamQuestion {
-                prompt: "second".to_string(),
-                points: vec!["two".to_string()],
-                ..Default::default()
-            },
-        ]);
+        sitting.accept_questions(Generated {
+            questions: vec![
+                ExamQuestion {
+                    prompt: "first".to_string(),
+                    points: vec!["one".to_string()],
+                    ..Default::default()
+                },
+                ExamQuestion {
+                    prompt: "second".to_string(),
+                    points: vec!["two".to_string()],
+                    ..Default::default()
+                },
+            ],
+            ideas: crate::exam_ideas::IdeasDocument::default(),
+        });
 
         assert_eq!(Strictness::Strict, sitting.strictness());
         assert_eq!(0, sitting.current_index());
@@ -2523,6 +2690,103 @@ mod tests {
         assert_eq!(Some(0), sitting.elapsed_secs_at(500));
         sitting.pending_since = Some(crate::time::now_ms().saturating_sub(2_500));
         assert!(sitting.elapsed_secs().is_some_and(|elapsed| elapsed >= 2));
+    }
+
+    #[test]
+    fn an_answer_locks_once_the_learner_moves_on_and_a_resumed_sitting_keeps_it() {
+        let mut sitting = test_sitting(Strictness::Balanced);
+        sitting.accept_questions(Generated {
+            questions: vec![ExamQuestion::default(), ExamQuestion::default()],
+            ideas: crate::exam_ideas::IdeasDocument::default(),
+        });
+        sitting.set_answer("draft".to_string());
+        sitting.set_answer("first".to_string());
+        assert_eq!(
+            "first",
+            sitting.answers()[0],
+            "step 1: editable before moving on"
+        );
+        sitting.next();
+        sitting.goto(0);
+        sitting.set_answer("changed".to_string());
+        assert_eq!(
+            "first",
+            sitting.answers()[0],
+            "step 2: locked after moving on"
+        );
+        assert!(
+            sitting.is_locked(0) && !sitting.is_locked(1),
+            "step 2: locks"
+        );
+
+        sitting.goto(1);
+        sitting.next();
+        assert!(!sitting.is_locked(1), "step 3: an empty answer never locks");
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, "# A\n\n## q?\na\n").unwrap();
+        let deck = crate::deck::Deck::load(&path).unwrap();
+        let resumed = Sitting::from_prepared(
+            &deck,
+            exam_sections(&deck),
+            vec![ExamQuestion::default(); 3],
+            vec!["one".to_string(), String::new(), String::new()],
+            crate::exam_ideas::IdeasDocument::default(),
+            Strictness::Balanced,
+            ExamConfig::default(),
+            AskConfig::default(),
+        );
+        assert_eq!(
+            (&Phase::Answering, 1, false),
+            (resumed.phase(), resumed.current_index(), resumed.thinking()),
+            "step 4: resumed at the first unanswered question, nothing pending"
+        );
+        assert!(
+            resumed.is_locked(0) && !resumed.is_locked(1),
+            "step 4: locks kept"
+        );
+    }
+
+    #[test]
+    fn grading_records_each_asked_idea_under_its_section_heading() {
+        let mut sitting = test_sitting(Strictness::Balanced);
+        sitting.sections = vec![ExamSection {
+            label: "H".to_string(),
+            ..Default::default()
+        }];
+        let mut ideas = crate::exam_ideas::IdeasDocument::new("m".to_string());
+        ideas.set_section("H", vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        sitting.ideas = Some(ideas);
+        sitting.questions = vec![
+            ExamQuestion {
+                idea: 2,
+                ..Default::default()
+            },
+            ExamQuestion {
+                idea: 0,
+                ..Default::default()
+            },
+        ];
+        let grade = |verdict| AnswerGrade {
+            verdict,
+            feedback: String::new(),
+            missed: Vec::new(),
+        };
+        sitting.record_ideas(&ExamResult {
+            grades: vec![grade(Verdict::Pass), grade(Verdict::Partial)],
+            sections: Vec::new(),
+        });
+        let marked: Vec<_> = sitting.ideas().unwrap().sections[0]
+            .ideas
+            .iter()
+            .map(|i| (i.last_asked_ms.is_some(), i.last_passed))
+            .collect();
+        assert_eq!(
+            vec![(true, Some(false)), (false, None), (true, Some(true))],
+            marked,
+            "a partial answer counts as not passed"
+        );
     }
 
     fn test_sitting(strictness: Strictness) -> Sitting {
@@ -2550,6 +2814,9 @@ mod tests {
             sections: Vec::new(),
             deck_sections: Vec::new(),
             unlocked: false,
+            ideas: None,
+            locked: vec![false],
+            job: ask::AskJob::default(),
         }
     }
 
@@ -2593,10 +2860,11 @@ mod tests {
             ..AskConfig::default()
         };
         // No exec_lock: the gate fires before any subprocess is forked.
-        let rx = spawn_questions(
+        let (rx, _job) = spawn_generation(
             url_layers(&["https://example.org/doc"]),
             None,
             Vec::new(),
+            None,
             ExamConfig::default(),
             ask_cfg,
         );
@@ -2630,15 +2898,15 @@ mod tests {
         let _lock = exec_lock();
         let models = "{\"sections\":[{\"section\":1,\"models\":[\"m\",\"n\"]}]}".to_string();
         let no_models = "{\"sections\":[]}".to_string();
-        let q = |section: usize, model: &str, prompt: &str, points: &str| {
+        let q = |section: usize, idea: usize, prompt: &str, points: &str| {
             format!(
-                "{{\"section\":{section},\"shape\":\"fix\",\"model\":\"{model}\",\
+                "{{\"section\":{section},\"shape\":\"fix\",\"idea\":{idea},\
                  \"prompt\":\"{prompt}\",\"points\":[{points}]}}"
             )
         };
         let questions = |items: &[String]| format!("{{\"questions\":[{}]}}", items.join(","));
-        let good = questions(&[q(1, "m", "Q1", "\"p\""), q(1, "n", "Q2", "\"p\"")]);
-        let only_m = questions(&[q(1, "m", "Q", "\"p\"")]);
+        let good = questions(&[q(1, 1, "Q1", "\"p\""), q(1, 2, "Q2", "\"p\"")]);
+        let only_m = questions(&[q(1, 1, "Q", "\"p\"")]);
         let rows: Vec<(&str, Vec<String>, usize, Option<&str>)> = vec![
             (
                 "good first time",
@@ -2680,8 +2948,8 @@ mod tests {
                 "a question outside every section, twice",
                 vec![
                     models.clone(),
-                    questions(&[q(2, "m", "Q", "\"p\"")]),
-                    questions(&[q(0, "m", "Q", "\"p\"")]),
+                    questions(&[q(2, 1, "Q", "\"p\"")]),
+                    questions(&[q(0, 1, "Q", "\"p\"")]),
                 ],
                 3,
                 Some("the generated questions were rejected twice: a question names section 0"),
@@ -2690,24 +2958,34 @@ mod tests {
                 "an unlisted model, twice",
                 vec![
                     models.clone(),
-                    questions(&[q(1, "other", "Q", "\"p\"")]),
-                    questions(&[q(1, "other", "Q", "\"p\"")]),
+                    questions(&[q(1, 9, "Q", "\"p\"")]),
+                    questions(&[q(1, 9, "Q", "\"p\"")]),
                 ],
                 3,
-                Some("names the model `other`"),
+                Some("names idea 9, but that section lists 2"),
+            ),
+            (
+                "the same idea twice, twice",
+                vec![
+                    models.clone(),
+                    questions(&[q(1, 1, "Q1", "\"p\""), q(1, 1, "Q2", "\"p\"")]),
+                    questions(&[q(1, 1, "Q1", "\"p\""), q(1, 1, "Q2", "\"p\"")]),
+                ],
+                3,
+                Some("section 1 asks idea 1 more than once"),
             ),
             (
                 "an uncovered model, twice",
                 vec![models.clone(), only_m.clone(), only_m.clone()],
                 3,
-                Some("lists the model `n` but asks no question"),
+                Some("lists the idea `n` but asks no question"),
             ),
             (
                 "an empty prompt, then no key points",
                 vec![
                     models.clone(),
-                    questions(&[q(1, "m", " ", "\"p\""), q(1, "n", "Q", "\"p\"")]),
-                    questions(&[q(1, "m", "Q", ""), q(1, "n", "Q", "\"p\"")]),
+                    questions(&[q(1, 1, " ", "\"p\""), q(1, 2, "Q", "\"p\"")]),
+                    questions(&[q(1, 1, "Q", ""), q(1, 2, "Q", "\"p\"")]),
                 ],
                 3,
                 Some("empty prompt or no key points"),
@@ -2716,8 +2994,8 @@ mod tests {
                 "a blank key point, twice",
                 vec![
                     models.clone(),
-                    questions(&[q(1, "m", "Q", "\" \""), q(1, "n", "Q", "\"p\"")]),
-                    questions(&[q(1, "m", "Q", "\"\""), q(1, "n", "Q", "\"p\"")]),
+                    questions(&[q(1, 1, "Q", "\" \""), q(1, 2, "Q", "\"p\"")]),
+                    questions(&[q(1, 1, "Q", "\"\""), q(1, 2, "Q", "\"p\"")]),
                 ],
                 3,
                 Some("empty prompt or no key points"),
@@ -2736,7 +3014,8 @@ mod tests {
             );
             match (failure, result) {
                 (None, Ok(questions)) => {
-                    let tested: Vec<&str> = questions.iter().map(|q| q.model.as_str()).collect();
+                    let tested: Vec<&str> =
+                        questions.iter().map(|q| q.mental_model.as_str()).collect();
                     assert_eq!(
                         vec!["m", "n"],
                         tested,
@@ -2762,7 +3041,7 @@ mod tests {
                 "{\"sections\":[]}",
                 "{\"sections\":[{\"section\":1,\"models\":[\"moves transfer ownership\"]}]}",
                 "{\"questions\":[{\"section\":1,\"shape\":\"instance\",\
-                 \"model\":\"moves transfer ownership\",\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
+                 \"idea\":1,\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
             ],
         );
         let deck = deck_with_exam_and_card(&["https://x"]);
@@ -2780,7 +3059,7 @@ mod tests {
             read(2)
         );
         assert!(
-            read(3).contains("- moves transfer ownership"),
+            read(3).contains("1. moves transfer ownership"),
             "call 3 writes questions for the listed models: {}",
             read(3)
         );
@@ -2880,8 +3159,8 @@ mod tests {
         assert_eq!(vec!["avoids double free"], qs[0].points);
         assert_eq!(
             (0, Shape::Instance, "m"),
-            (qs[0].section, qs[0].shape, qs[0].model.as_str()),
-            "the model's 1-based section becomes an index; shape and model are kept"
+            (qs[0].section, qs[0].shape, qs[0].mental_model.as_str()),
+            "the 1-based section becomes an index; the shape and the idea's text are kept"
         );
     }
 
@@ -2995,8 +3274,8 @@ mod tests {
             "input=$(cat)\n\
              case \"$input\" in\n\
              *'\"grades\"'*) printf '%s' '{grades}' ;;\n\
-             *'\"models\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}]}}' ;;\n\
-             *'\"questions\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"section\":1,\"shape\":\"instance\",\"model\":\"m\",\"prompt\":\"Q1\",\"points\":[\"p1\"]}},{{\"section\":1,\"shape\":\"boundary\",\"model\":\"m\",\"prompt\":\"Q2\",\"points\":[\"p2\"]}}]}}' ;;\n\
+             *'\"models\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\",\"n\"]}}]}}' ;;\n\
+             *'\"questions\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"section\":1,\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q1\",\"points\":[\"p1\"]}},{{\"section\":1,\"shape\":\"boundary\",\"idea\":2,\"prompt\":\"Q2\",\"points\":[\"p2\"]}}]}}' ;;\n\
              *) printf '## Why does X?\\npoint one\\n' ;;\n\
              esac"
         );

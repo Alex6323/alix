@@ -773,7 +773,7 @@ pub(super) fn exam_result_parts(s: &exam::Sitting) -> ExamResultParts {
 pub(super) struct ExamGradeDto {
     pub(super) section: usize,
     pub(super) shape: &'static str,
-    pub(super) model: String,
+    pub(super) mental_model: String,
     pub(super) question: String,
     pub(super) question_units: Vec<ContentUnit>,
     pub(super) points: Vec<String>,
@@ -795,7 +795,7 @@ pub(super) fn exam_grade_dto(
     ExamGradeDto {
         section: question.section,
         shape: question.shape.label(),
-        model: question.model.clone(),
+        mental_model: question.mental_model.clone(),
         question: question.prompt.clone(),
         question_units: exam_text_units(&question.prompt),
         points: question.points.clone(),
@@ -1704,7 +1704,7 @@ mod tests {
         .unwrap();
         let cli = crate::testutil::fake_cli(
             dir.path(),
-            "input=$(cat)\ncase \"$input\" in\n*'\"grades\"'*) printf '%s' '{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}' ;;\n*'\"models\"'*) printf '%s' '{\"sections\":[{\"section\":1,\"models\":[\"m\"]}]}' ;;\n*) printf '%s' '{\"questions\":[{\"section\":1,\"shape\":\"fix\",\"model\":\"m\",\"prompt\":\"why\",\"points\":[\"ground truth\"]}]}' ;;\nesac",
+            "input=$(cat)\ncase \"$input\" in\n*'\"grades\"'*) printf '%s' '{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}' ;;\n*'\"models\"'*) printf '%s' '{\"sections\":[{\"section\":1,\"models\":[\"m\"]}]}' ;;\n*) printf '%s' '{\"questions\":[{\"section\":1,\"shape\":\"fix\",\"idea\":1,\"prompt\":\"why\",\"points\":[\"ground truth\"]}]}' ;;\nesac",
         );
         let deck = crate::deck::Deck::load(&base).unwrap();
         let mut store = crate::store::Store::open(dir.path().join("p.json")).unwrap();

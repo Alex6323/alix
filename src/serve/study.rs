@@ -2234,6 +2234,7 @@ impl StudyState {
                 let sitting = exam::Sitting::start_with(
                     &deck,
                     sections,
+                    None,
                     strictness,
                     self.config.exam_cfg.clone(),
                     ask_cfg,

@@ -569,6 +569,10 @@ pub(crate) fn run(config: &AskConfig, prompt: &str, extra_args: &[String]) -> Re
     run_supervised(config, prompt, extra_args, &Default::default())
 }
 
+pub(crate) fn run_in(job: &AskJob, config: &AskConfig, prompt: &str) -> Result<String> {
+    run_supervised(config, prompt, &[], &job.child)
+}
+
 fn run_supervised(
     config: &AskConfig,
     prompt: &str,

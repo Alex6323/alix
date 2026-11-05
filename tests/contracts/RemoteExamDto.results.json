@@ -23,6 +23,7 @@
           "text": "Rust has no GC"
         }
       ],
+      "mental_model": "",
       "missed": [
         "memory safety without a GC"
       ],
@@ -39,7 +40,6 @@
           }
         ]
       ],
-      "model": "",
       "points": [
         "memory safety without a GC"
       ],

@@ -1523,7 +1523,7 @@ recorded on), `pass: bool` (the share of PASS reached `pass_threshold`),
 ### ExamGradeDto
 
 `section: number` (index into `sections`), `shape` (`instance` \| `boundary`
-\| `fix`, closed), `model: string` (the mental model the question tests),
+\| `fix`, closed), `mental_model: string` (the idea the question tests),
 `question`, `points: [string]`, `answer`, `verdict`, `feedback`,
 `missed: [string]`, and the model-written ones parsed as `ExamDto.question_units`
 is: `question_units: [ContentUnit]`, `points_units: [[ContentUnit]]`,
