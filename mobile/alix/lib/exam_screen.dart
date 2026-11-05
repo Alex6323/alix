@@ -59,6 +59,12 @@ class ExamScreen extends StatefulWidget {
     required this.applyRemediation,
     required this.nowMs,
     this.cards,
+    this.initialExam,
+    this.ideas,
+    this.loadAnswers,
+    this.saveAnswers,
+    this.clearAnswers,
+    this.saveIdeas,
     this.pollInterval = const Duration(milliseconds: 400),
   });
 
@@ -87,6 +93,18 @@ class ExamScreen extends StatefulWidget {
   /// The card ids whose sections to examine; null sits the full deck.
   final List<String>? cards;
 
+  final RemoteExam? initialExam;
+
+  final Map<String, dynamic>? ideas;
+
+  final List<String> Function(List<String> questions)? loadAnswers;
+
+  final void Function(List<String> questions, List<String> answers)? saveAnswers;
+
+  final VoidCallback? clearAnswers;
+
+  final void Function(Map<String, dynamic> ideas)? saveIdeas;
+
   /// Turns a failed sitting's remediation deck-text into phone-store
   /// personal cards (a closure over `applyRemediation`), returning how many
   /// were created or revived.
@@ -109,8 +127,12 @@ class _ExamScreenState extends State<ExamScreen> {
 
   int _currentQuestion = 0;
   final List<TextEditingController> _answerControllers = [];
+  final List<bool> _answerLocked = [];
   bool _submitting = false;
   bool _remediating = false;
+  bool _acceptedStart = false;
+  bool _explicitlyClosed = false;
+  bool _closing = false;
 
   /// Guards against a sitting recording its result more than once: a stray
   /// extra poll landing on the same terminal `results` DTO (e.g. two
@@ -131,16 +153,25 @@ class _ExamScreenState extends State<ExamScreen> {
   @override
   void initState() {
     super.initState();
-    _start();
+    final initialExam = widget.initialExam;
+    if (initialExam == null) {
+      _start();
+    } else {
+      _acceptedStart = true;
+      scheduleMicrotask(() => _applyDto(initialExam));
+    }
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
-    // Fire and forget: the sitting slot is dropped either way, and a reply
-    // arriving after dispose (including a thrown PairingExpired) must not
-    // surface as an unhandled error.
-    widget.client.examClose().catchError((_) {});
+    final phase = _exam?.phase;
+    final keepSitting = phase == 'generating' ||
+        phase == 'answering' ||
+        (_acceptedStart && phase == null);
+    if (!_explicitlyClosed && !keepSitting) {
+      widget.client.examClose().catchError((_) {});
+    }
     for (final c in _answerControllers) {
       c.dispose();
     }
@@ -150,9 +181,14 @@ class _ExamScreenState extends State<ExamScreen> {
   // ── the phase walk ───────────────────────────────────────────────────
 
   Future<void> _start() async {
+    _acceptedStart = true;
     bool ok;
     try {
-      ok = await widget.client.examStart(widget.deckName, cards: widget.cards);
+      ok = await widget.client.examStart(
+        widget.deckName,
+        cards: widget.cards,
+        ideas: widget.ideas,
+      );
     } on PairingExpired {
       _expirePairingAndPop();
       return;
@@ -208,8 +244,11 @@ class _ExamScreenState extends State<ExamScreen> {
   void _applyDto(RemoteExam dto) {
     if (!mounted) return;
     if (dto.phase == 'results' && !_resultApplied) {
-      _resultApplied = true;
+      final ideas = dto.ideas;
+      if (ideas != null) widget.saveIdeas?.call(ideas);
       _standing = widget.applyResult(dto, widget.nowMs());
+      _resultApplied = true;
+      widget.clearAnswers?.call();
     }
     if (dto.phase == 'remediated' && !_remediationApplied) {
       _remediationApplied = true;
@@ -221,12 +260,50 @@ class _ExamScreenState extends State<ExamScreen> {
     setState(() {
       _exam = dto;
       if (dto.phase == 'answering' && _answerControllers.isEmpty) {
-        _answerControllers.addAll(
-          List.generate(dto.questions.length, (_) => TextEditingController()),
-        );
+        _installAnswers(dto.questions);
       }
     });
     _rescheduleTimer(dto);
+  }
+
+  void _installAnswers(List<String> questions) {
+    final loaded = widget.loadAnswers?.call(questions);
+    final answers = loaded != null && loaded.length == questions.length
+        ? loaded
+        : List.filled(questions.length, '');
+    _answerControllers.addAll([
+      for (final answer in answers) TextEditingController(text: answer),
+    ]);
+    _answerLocked.addAll([for (final answer in answers) answer.isNotEmpty]);
+    final firstEmpty = answers.indexWhere((answer) => answer.isEmpty);
+    _currentQuestion = firstEmpty >= 0
+        ? firstEmpty
+        : (questions.isEmpty ? 0 : questions.length - 1);
+  }
+
+  bool _lockAndPersistCurrent() {
+    if (_answerControllers.isEmpty) return true;
+    final index = _currentQuestion;
+    if (_answerLocked[index] || _answerControllers[index].text.trim().isEmpty) {
+      return true;
+    }
+    _answerLocked[index] = true;
+    try {
+      widget.saveAnswers?.call(
+        _exam!.questions,
+        [for (final controller in _answerControllers) controller.text],
+      );
+    } on Object catch (error) {
+      _answerLocked[index] = false;
+      _snack('Could not save the answer: $error');
+      return false;
+    }
+    return true;
+  }
+
+  void _nextQuestion() {
+    if (!_lockAndPersistCurrent()) return;
+    setState(() => _currentQuestion++);
   }
 
   /// Every timer (re)start is mounted-guarded: a dismissed screen must
@@ -241,6 +318,7 @@ class _ExamScreenState extends State<ExamScreen> {
 
   Future<void> _submit() async {
     if (_submitting) return;
+    if (!_lockAndPersistCurrent()) return;
     final answers = [for (final c in _answerControllers) c.text];
     setState(() => _submitting = true);
     bool ok;
@@ -257,6 +335,18 @@ class _ExamScreenState extends State<ExamScreen> {
       return;
     }
     await _poll();
+  }
+
+  Future<void> _explicitClose() async {
+    if (_closing) return;
+    _closing = true;
+    _explicitlyClosed = true;
+    _pollTimer?.cancel();
+    try {
+      await widget.client.examClose();
+    } on Object {}
+    widget.clearAnswers?.call();
+    if (mounted) Navigator.of(context).maybePop();
   }
 
   Future<void> _remediate() async {
@@ -341,7 +431,7 @@ class _ExamScreenState extends State<ExamScreen> {
     if (exam?.error != null) return _errorState(context);
     final phase = exam?.phase;
     if (phase == null || _pollingPhases.contains(phase)) {
-      return _working(context, exam?.elapsed);
+      return _working(context, exam?.elapsed, phase);
     }
     switch (phase) {
       case 'answering':
@@ -353,18 +443,30 @@ class _ExamScreenState extends State<ExamScreen> {
       default:
         // Open phase vocabulary (docs/API.md): an unrecognized phase reads
         // as still working rather than a dead end.
-        return _working(context, exam?.elapsed);
+        return _working(context, exam?.elapsed, phase);
     }
   }
 
-  Widget _working(BuildContext context, int? elapsed) {
+  Widget _working(BuildContext context, int? elapsed, String? phase) {
     final tokens = Theme.of(context).alix;
     final suffix = elapsed != null ? ' ${elapsed}s' : '';
     return Center(
-      child: Text(
-        'The server is working…$suffix',
-        // Matches the web's `.exam-wait` idiom (dim + italic).
-        style: TextStyle(color: tokens.dim, fontStyle: FontStyle.italic),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'The server is working…$suffix',
+            // Matches the web's `.exam-wait` idiom (dim + italic).
+            style: TextStyle(color: tokens.dim, fontStyle: FontStyle.italic),
+          ),
+          if (phase == 'generating') ...[
+            const SizedBox(height: 16),
+            OutlinedButton(
+              onPressed: _closing ? null : _explicitClose,
+              child: const Text('Cancel preparation'),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -379,7 +481,7 @@ class _ExamScreenState extends State<ExamScreen> {
           Text('The exam backend failed.', style: TextStyle(color: tokens.again)),
           const SizedBox(height: 16),
           OutlinedButton(
-            onPressed: () => Navigator.of(context).maybePop(),
+            onPressed: _explicitClose,
             child: const Text('Close'),
           ),
         ],
@@ -404,6 +506,7 @@ class _ExamScreenState extends State<ExamScreen> {
           child: TextField(
             key: const ValueKey('exam-answer-field'),
             controller: _answerControllers[index],
+            readOnly: _answerLocked[index],
             maxLines: null,
             expands: true,
             textAlignVertical: TextAlignVertical.top,
@@ -421,10 +524,14 @@ class _ExamScreenState extends State<ExamScreen> {
             FilledButton(
               onPressed: last
                   ? (_submitting ? null : _submit)
-                  : () => setState(() => _currentQuestion++),
+                  : _nextQuestion,
               child: Text(last ? 'Submit' : 'Next'),
             ),
           ],
+        ),
+        TextButton(
+          onPressed: _closing ? null : _explicitClose,
+          child: const Text('End exam'),
         ),
       ],
     );
@@ -539,7 +646,7 @@ class _ExamScreenState extends State<ExamScreen> {
           Text('Done.', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: tokens.text)),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: () => Navigator.of(context).maybePop(),
+            onPressed: _explicitClose,
             child: const Text('Close'),
           ),
         ],

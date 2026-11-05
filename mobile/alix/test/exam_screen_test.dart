@@ -37,6 +37,13 @@ void main() {
     List<String> remediationCalls = const [],
     int remediationCountReply = 1,
     String? standingReply,
+    RemoteExam? initialExam,
+    Map<String, dynamic>? ideas,
+    List<String> Function(List<String>)? loadAnswers,
+    void Function(List<String>, List<String>)? saveAnswers,
+    VoidCallback? clearAnswers,
+    void Function(Map<String, dynamic>)? saveIdeas,
+    String? Function(RemoteExam, BigInt)? applyResult,
   }) async {
     await tester.pumpWidget(MaterialApp(
       home: ExamScreen(
@@ -44,7 +51,13 @@ void main() {
         client: client,
         support: tempSupport(),
         buildClient: (_) => client,
-        applyResult: (exam, nowMs) {
+        initialExam: initialExam,
+        ideas: ideas,
+        loadAnswers: loadAnswers,
+        saveAnswers: saveAnswers,
+        clearAnswers: clearAnswers,
+        saveIdeas: saveIdeas,
+        applyResult: applyResult ?? (exam, nowMs) {
           resultCalls?.add((exam, nowMs));
           return standingReply;
         },
@@ -399,6 +412,135 @@ void main() {
     await tester.pump();
 
     expect(client.gradeAnswers.single, ['a1', 'a2']);
+  });
+
+  testWidgets('moving on persists and locks an answer, and reopening starts at the first empty one', (
+    tester,
+  ) async {
+    final saved = <List<String>>[];
+    final firstClient = FakeServerClient(examGetReplies: const [answering2]);
+    await pumpExam(
+      tester,
+      client: firstClient,
+      saveAnswers: (_, answers) => saved.add(List.of(answers)),
+    );
+    await tester.pump();
+
+    await tester.enterText(find.byKey(const ValueKey('exam-answer-field')), 'first answer');
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    expect(saved, [
+      ['first answer', ''],
+    ]);
+    await tester.tap(find.text('Back'));
+    await tester.pump();
+    final locked = tester.widget<TextField>(find.byKey(const ValueKey('exam-answer-field')));
+    expect(locked.readOnly, isTrue);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    final resumedClient = FakeServerClient();
+    await pumpExam(
+      tester,
+      client: resumedClient,
+      initialExam: answering2,
+      loadAnswers: (_) => const ['first answer', ''],
+    );
+    await tester.pump();
+
+    expect(resumedClient.startedDeck, isNull, reason: 'a ready slot is resumed, not restarted');
+    expect(find.text('Question 2 of 2'), findsOneWidget);
+    await tester.tap(find.text('Back'));
+    await tester.pump();
+    final resumedLocked = tester.widget<TextField>(find.byKey(const ValueKey('exam-answer-field')));
+    expect(resumedLocked.controller?.text, 'first answer');
+    expect(resumedLocked.readOnly, isTrue);
+  });
+
+  testWidgets('leaving generation or answering preserves the remote slot', (tester) async {
+    for (final phase in const [generating, answering2]) {
+      final client = FakeServerClient(examGetReplies: [phase]);
+      await pumpExam(tester, client: client);
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      expect(client.examCloseCalls, 0, reason: '${phase.phase} survives screen dispose');
+    }
+  });
+
+  testWidgets('explicit cancel closes the slot and clears local answers', (tester) async {
+    final client = FakeServerClient(examGetReplies: const [generating]);
+    var clears = 0;
+    await pumpExam(tester, client: client, clearAnswers: () => clears++);
+    await tester.pump();
+
+    await tester.tap(find.text('Cancel preparation'));
+    await tester.pumpAndSettle();
+
+    expect(client.examCloseCalls, 1);
+    expect(clears, 1);
+  });
+
+  testWidgets('explicitly ending an answering sitting closes and clears it', (tester) async {
+    final client = FakeServerClient(examGetReplies: const [answering2]);
+    var clears = 0;
+    await pumpExam(tester, client: client, clearAnswers: () => clears++);
+    await tester.pump();
+
+    await tester.tap(find.text('End exam'));
+    await tester.pumpAndSettle();
+
+    expect(client.examCloseCalls, 1);
+    expect(clears, 1);
+  });
+
+  testWidgets('results save ideas, apply the result, then clear answers', (tester) async {
+    final events = <String>[];
+    final client = FakeServerClient(
+      examGetReplies: const [
+        RemoteExam(
+          phase: 'results',
+          deck: 'rust.md',
+          strictness: 'balanced',
+          questions: ['Why ownership?'],
+          grades: [],
+          gaps: [],
+          canRemediate: false,
+          thinking: false,
+          ideas: {
+            'version': 1,
+            'material': 'xxh64-current',
+            'sections': <Object>[],
+          },
+        ),
+      ],
+    );
+    await pumpExam(
+      tester,
+      client: client,
+      resultCalls: <(RemoteExam, BigInt)>[],
+      saveIdeas: (_) => events.add('ideas'),
+      applyResult: (_, _) {
+        events.add('result');
+        return null;
+      },
+      clearAnswers: () => events.add('clear'),
+    );
+    await tester.pump();
+
+    expect(events, ['ideas', 'result', 'clear']);
+  });
+
+  testWidgets('a new sitting sends the saved ideas document', (tester) async {
+    const ideas = {
+      'version': 1,
+      'material': 'xxh64-current',
+      'sections': <Object>[],
+    };
+    final client = FakeServerClient(examGetReplies: const [generating]);
+    await pumpExam(tester, client: client, ideas: ideas);
+    await tester.pump();
+
+    expect(client.startedIdeas, ideas);
   });
 
   testWidgets('fail -> remediate -> cards: applyRemediation gets the cards verbatim, SnackBar shows the count',
