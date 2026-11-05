@@ -42,51 +42,79 @@ unlocking its dependents directly, even when it declares `cite:` roots.
 
 ## Sitting the exam
 
-The exam is a guided, one-question-at-a-time flow (answer, move Back/Next, then a
-per-question breakdown). It is one of a deck's launches, next to the review
-depths and Walk, and you can sit it at any time as practice, before drilling
-too:
+An exam is written ahead, then taken. Writing the questions is a long model
+call (several minutes at a high effort), so it runs in the background while
+you do something else, and the finished exam waits until you sit it. The
+sitting itself is a guided, one-question-at-a-time flow (answer, move
+Back/Next, then a per-question breakdown). It is one of a deck's launches,
+next to the review depths and Walk, and you can sit it at any time as
+practice, before drilling too:
 
-- **In the browser:** the deck drawer's **Take exam** chip (key `x`). It is
-  filled when the deck is exam due and its prerequisites are passed, and shows
-  a lock while a prerequisite is not passed. Choosing an exam-due deck itself
-  drills; it never starts the exam.
-- **On the phone:** the deck's launch sheet has an **Exam** row below Walk. The
-  phone sits the exam through a [paired](19-pairing.md) desktop, so the row is
-  disabled while no desktop is reachable.
+- **In the browser:** the deck drawer's **Generate exam** chip (key `x`)
+  starts writing the exam on the server. While it runs, a **Writing exam**
+  chip shows the minutes so far and a rough wait, beside a **Stop** chip; a
+  short notice says when the exam is ready, and the chip then reads **Take
+  exam** (key `x`). The chip is filled when the deck is exam due and its
+  prerequisites are passed, and shows a lock while a prerequisite is not
+  passed. Choosing an exam-due deck itself drills; it never starts the exam.
+- **On the phone:** the deck's launch sheet has an exam row below Walk that
+  reads **Generate exam**, then **Preparing** with the rough wait, then
+  **Take exam**; the picker says when the exam is ready. The phone sits the
+  exam through a [paired](19-pairing.md) desktop, so the row is disabled
+  while no desktop is reachable.
 
-Both offer **only what needs work**, on by default: the sitting then asks
-only about the sections that have not passed (those that need work, have new
-cards, or were never examined). Both always show the control and disable it
-when every section has passed, since the sitting then covers the whole deck
-either way.
+**Generate exam** offers **only what needs work**, on by default: the exam
+then asks only about the sections that have not passed (those that need
+work, have new cards, or were never examined). The control is always shown
+and disabled when every section has passed, since the exam then covers the
+whole deck either way.
 
-Starting the exam gives ids to cards added since the deck was last opened,
+A prepared exam is kept until it is graded. In the browser it lives in the
+deck's store (`.alix/exam/<deck-id>.prepared.json`), so it survives a closed
+page or a restarted server, and your answers are saved into it as you give
+them. On the phone, the desktop holds the prepared exam in memory and the
+phone saves each answer as you move on from it; a restarted desktop loses
+the phone's prepared exam, and **End exam** discards it. Either way, an
+answer locks once you move on from it, and leaving returns you to the first
+unanswered question next time. Grading uses the exam up. In the browser,
+editing cards or section prose leaves a prepared exam valid, a section whose
+heading was renamed or removed since is dropped from it, and changing the
+exam material discards it, so the next Generate exam writes a new one.
+
+Writing the exam gives ids to cards added since the deck was last opened,
 the way opening a review does, so their results can be recorded.
 
-`alix` asks the model to read the source (URLs via `WebFetch`, local files embedded)
-and write **fresh understanding questions** for each of the deck's `#`
-sections (cards before the first heading form one section, named after the
-deck). A first call lists each section's mental models from the source, the
-distinct ideas its topic holds, whether or not a card states them; a second
-call writes at least one question per listed model, with no upper limit, and
-asks the student to apply a model a card states rather than recite the card.
-A reply that skips a listed model, or names a model or section that was not
-listed, is rejected and generated once more. Within a section the
-questions cycle through three shapes: a concrete
-**instance** no card shows, a **boundary** (when does the idea stop holding),
-and a **fix** (a statement with one seeded mistake to find and correct). The
-section's heading, prose and cards go into the prompt only as scope, so the
-model knows what the deck already asks and avoids it. A question stands alone:
-it shows any program or claim it asks about instead of pointing at the source,
-and a program comes as a code block with numbered lines, so an answer can name
-"line 3". Questions, feedback and key points render inline code and math. Each
-question comes with the key points a correct answer must hit, shown only with
-the results. You type a
-prose answer per question, and an examiner grades each **Pass / Partial / Fail
-against the source's rubric, never against your cards** (grading the cards would
-be circular). The model calls run on a background thread, so the UI stays
-responsive while it thinks.
+`alix` asks the model to read the source (URLs via `WebFetch`, local files
+embedded) and write **fresh understanding questions** for each of the deck's
+`#` sections (cards before the first heading form one section, named after
+the deck). Each section keeps a list of its **ideas**, the distinct mental
+models its topic holds in the source, whether or not a card states them. A
+first call writes that list for every section that has none yet, or for all
+of them when the exam material changed. Each exam then picks **three ideas
+per section**: ideas never asked first, then ideas last failed, then ideas
+asked longest ago, so repeated exams work through the whole list. A second
+call writes exactly one question per picked idea and asks the student to
+apply an idea a card states rather than recite the card. A reply that skips
+a picked idea, asks one twice, or names an idea or section that was not
+listed is rejected and generated once more. Grading records each asked idea
+as passed or failed, which steers the next pick. The browser keeps the idea
+lists in `.alix/exam/<deck-id>.json`; the phone keeps its own and sends them
+with each exam.
+
+Within a section the questions cycle through three shapes: a concrete
+**instance** no card shows, a **boundary** (when does the idea stop
+holding), and a **fix** (a statement with one seeded mistake to find and
+correct). The section's heading, prose and cards go into the prompt only as
+scope, so the model knows what the deck already asks and avoids it. A
+question stands alone: it shows any program or claim it asks about instead
+of pointing at the source, and a program comes as a code block with
+numbered lines, so an answer can name "line 3". Questions, feedback and key
+points render inline code and math. Each question comes with the key points
+a correct answer must hit, shown only with the results. You type a prose
+answer per question, and an examiner grades each **Pass / Partial / Fail
+against the source's rubric, never against your cards** (grading the cards
+would be circular). The model calls run on a background thread, so the UI
+stays responsive while it thinks.
 
 ## Results: a count, per section
 
@@ -154,9 +182,11 @@ optionally overridden per workspace in `alix.toml`'s `[defaults]`. The levels:
   gaps.
 
 This dial (how hard each answer is judged) is independent of `pass_threshold` (the
-share of a section's answers that must pass). Both, plus `model`, `timeout_secs` (default 3600),
-an `extra` guidance field, live in
-the `[exam]` config section.
+share of a section's answers that must pass). Both, plus `model`, `effort`,
+`timeout_secs` (default 3600) and an `extra` guidance field, live in the
+`[exam]` config section. `effort` sets how hard the backend thinks while
+writing and grading the exam, over `[ask] effort`; a workspace may set its
+own in `alix.local.toml`'s `[exam]` section.
 
 ## Why this is the centerpiece
 

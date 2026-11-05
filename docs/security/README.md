@@ -65,7 +65,7 @@ Alix does not claim to provide:
 | Asset | Primary harm if compromised |
 | --- | --- |
 | Decks, notes, images, source citations, and frozen excerpts | Private learning or source material is disclosed or altered. |
-| `.alix/progress/<deck-id>.json`, `.alix/recent.json`, and `alix.local.toml` | Learning history, device-local settings, or scheduling state is disclosed or corrupted. |
+| `.alix/progress/<deck-id>.json`, `.alix/exam/<deck-id>.json` and `.alix/exam/<deck-id>.prepared.json`, `.alix/recent.json`, and `alix.local.toml` | Learning history, prepared exam questions and answers, device-local settings, or scheduling state is disclosed or corrupted. |
 | Pairing tokens and profile configuration | An unintended LAN client can invoke guarded API operations. |
 | User-created bug-report archive | Redacted diagnostics or metadata are disclosed after the user attaches the file. |
 | Explicit `exam` trees | A grounded AI call reads files outside the evidence the learner expected to share. |

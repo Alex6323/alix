@@ -284,6 +284,8 @@ workspace root:
 augment/deck-<token>.json    # shareable generated choices, notes, and topologies
 assets/deck-<token>/         # shareable frozen excerpts and local images
 .alix/progress/deck-<token>.json # private schedules, history, exam state
+.alix/exam/deck-<token>.json # private exam idea lists and what was asked
+.alix/exam/deck-<token>.prepared.json # a written exam waiting to be taken
 .alix/recent.json            # private recent-deck history
 ```
 

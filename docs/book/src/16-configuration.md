@@ -208,7 +208,8 @@ settings:
   `review`. Per-run flags override the language, audience, and style defaults.
   The terminal shows calm live progress, but partial generated cards remain
   hidden until the result passes validation.
-- **`[exam]`**: the AI exam: `model`, `timeout_secs` (3600),
+- **`[exam]`**: the AI exam: `model`, `effort` (unset: `[ask] effort`;
+  a workspace's `alix.local.toml` may set its own), `timeout_secs` (3600),
   `pass_threshold` (1.0), `strictness` (`balanced`), and `extra`.
 - **`[trace]`**: the `generate deck --trace` and `workspace generate` planning
   passes: `model` defaults to

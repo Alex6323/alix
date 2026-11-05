@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `[exam] effort` sets the backend effort for writing and grading exams,
+  over `[ask] effort`; a workspace's `alix.local.toml` may set its own.
+
 - `alix reset <target> --exam` clears only exam state (card exam results, the
   deck's passed and mastered instants, its last full count) and keeps drilling
   progress. It names the decks whose exams it will lock before asking.
@@ -175,6 +178,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   notice; decks reach the phone through the paired desktop instead.
 
 ### Changed
+
+- An exam is now written ahead and taken later. Web: the drawer's **Generate
+  exam** writes it in the background on the server (**Writing exam** shows
+  the minutes and a rough wait, **Stop** cancels), a notice says when it is
+  ready, and **Take exam** opens it. The prepared exam is kept in the deck's
+  store until graded, so it survives a closed page or a restarted server;
+  answers are saved as given and lock once you move on. Phone: the launch
+  sheet's exam row reads Generate exam, Preparing, then Take exam, and a
+  left sitting resumes with its answers. API: `POST /api/exam/generate`,
+  `GET /api/exam/preparing`, `POST /api/exam/generate/cancel`,
+  `DeckItemDto.exam_prepared` and `ExamDto.answer_locked` are new;
+  `POST /api/exam/start` opens only a prepared exam, and its
+  `needs_work_only` moved to `/api/exam/generate`.
+
+- An exam asks three questions per section, one for each of three ideas
+  picked from the section's idea list: never asked first, then last failed,
+  then asked longest ago. It used to ask at least one question for every
+  idea the source teaches, around 60 for a six-section deck. The idea lists
+  and their history live in `.alix/exam/<deck-id>.json` (the phone keeps
+  its own and sends it with `POST /api/remote/exam/start` as `ideas`;
+  `RemoteExamDto.ideas` returns it updated, and `RemoteExamDto.estimate`
+  gives a rough wait). The graded question's `model` field is now
+  `mental_model` on the wire.
 
 - `[exam] timeout_secs` defaults to 3600 seconds per call instead of 300:
   writing an exam's questions at a high effort takes many minutes, and the
