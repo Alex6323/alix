@@ -231,6 +231,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   passed). The exam results screen, web and phone, names the same standing
   (`mastered (4 Nov)`); `ExamDto.standing` carries it.
 
+- The exam takes each section's topic from its heading and the prose under
+  it, not from its cards: it covers everything the source teaches within that
+  topic, including what no card states yet.
+
 - The exam no longer asks a fixed number of questions per section: a first
   call lists each section's mental models from the source, a second asks at
   least one question about each, with no upper limit, and a reply that skips

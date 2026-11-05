@@ -950,13 +950,16 @@ fn models_prompt(
          topic.\n\n\
          {sources}\n\
          The student drilled a flashcard deck on this material, split into the sections \
-         below. Each section's heading and cards mark out its topic.\n\n\
+         below. Each section's heading, with the prose under it when there is any, marks \
+         out its topic. Its cards show only what the student has drilled so far; they do \
+         not mark the edge of the topic.\n\n\
          {scope}\
          For EACH section, in deck order, list its mental models: the distinct ideas a \
          student must understand to master that section's topic, as the source above \
-         teaches them. Include an idea whether or not a card states it, and stay within \
-         the section's topic. List as many as the section really holds, at least one; \
-         name each model in a short phrase.\n\n\
+         teaches them. Cover everything the source teaches within that topic, whether or \
+         not a card states it, and leave out what belongs to another section's topic. \
+         List as many as the section really holds, at least one; name each model in a \
+         short phrase.\n\n\
          Output ONLY JSON in exactly this shape, no prose, no code fences:\n\
          {{\"sections\": [{{\"section\": 1, \"models\": [\"...\", \"...\"]}}]}}"
     );
@@ -1904,6 +1907,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn models_prompt_bounds_the_topic_by_the_heading_and_shows_cards_only_as_what_is_drilled() {
+        let sources = url_layers(&["https://x"]);
+        let p = models_prompt(&sources, None, &one_section(), &ExamConfig::default()).unwrap();
+        assert!(
+            p.contains("heading, with the prose under it when there is any, marks out its topic"),
+            "the heading bounds the topic: {p}"
+        );
+        assert!(
+            p.contains(
+                "cards show only what the student has drilled so far; they do not mark the edge"
+            ),
+            "the cards are not the topic's boundary: {p}"
+        );
+        assert!(
+            !p.contains("heading and cards mark out"),
+            "no card may narrow the topic: {p}"
+        );
     }
 
     #[test]
