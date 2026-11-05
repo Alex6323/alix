@@ -131,6 +131,8 @@ class FakeServerClient implements ServerClient {
   /// The deck argument of the most recent `examStart` call.
   String? startedDeck;
 
+  Map<String, dynamic>? startedIdeas;
+
   bool generateStartCalled = false;
   String? generateStartedUrl;
   String? generateStartedGuidance;
@@ -215,9 +217,14 @@ class FakeServerClient implements ServerClient {
   }
 
   @override
-  Future<bool> examStart(String deck, {List<String>? cards}) async {
+  Future<bool> examStart(
+    String deck, {
+    List<String>? cards,
+    Map<String, dynamic>? ideas,
+  }) async {
     startedDeck = deck;
     startedCards = cards;
+    startedIdeas = ideas;
     if (expireOnExamStart) throw const PairingExpired();
     return examStartReply;
   }

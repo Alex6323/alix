@@ -482,7 +482,84 @@ void main() {
       expect(exam.sections.single.cards, ['card-0123456789abcdefghjkmnpqrs']);
       expect(exam.grades.single.section, 0);
       expect(exam.grades.single.shape, 'instance');
-      expect(exam.grades.single.model, '');
+      expect(exam.grades.single.mentalModel, '');
+    });
+
+    test('examGet maps the preparation estimate, ideas document, and mental model key', () async {
+      final s = await startServer((request) async {
+        await request.drain<void>();
+        await respondJson(request, 200, {
+          'phase': 'results',
+          'deck': 'rust.md',
+          'strictness': 'balanced',
+          'questions': ['Why ownership?'],
+          'grades': [
+            {
+              'question': 'Why ownership?',
+              'points': ['memory safety'],
+              'answer': 'ownership controls drops',
+              'verdict': 'PASS',
+              'feedback': 'Right.',
+              'missed': <String>[],
+              'mental_model': 'ownership controls destruction',
+              'model': 'must not be accepted',
+            },
+          ],
+          'gaps': <String>[],
+          'can_remediate': false,
+          'thinking': false,
+          'estimate': 'about 20 to 30 minutes',
+          'ideas': {
+            'version': 1,
+            'material': 'xxh64-0123456789abcdef',
+            'sections': <Object>[],
+          },
+        });
+      });
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+      addTearDown(client.close);
+
+      final exam = await client.examGet();
+
+      expect(exam, isNotNull);
+      expect(exam!.estimate, 'about 20 to 30 minutes');
+      expect(exam.ideas, {
+        'version': 1,
+        'material': 'xxh64-0123456789abcdef',
+        'sections': <Object>[],
+      });
+      expect(exam.grades.single.mentalModel, 'ownership controls destruction');
+    });
+
+    test('examStart sends cards and the phone ideas document', () async {
+      String? seenPath;
+      Map<String, dynamic>? seenBody;
+      final s = await startServer((request) async {
+        seenPath = request.uri.path;
+        seenBody = await readJsonBody(request);
+        await respondJson(request, 200, {'phase': 'generating'});
+      });
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+      addTearDown(client.close);
+      const ideas = {
+        'version': 1,
+        'material': 'xxh64-0123456789abcdef',
+        'sections': <Object>[],
+      };
+
+      final result = await client.examStart(
+        'rust.md',
+        cards: const ['card-a'],
+        ideas: ideas,
+      );
+
+      expect(result, isTrue);
+      expect(seenPath, '/api/remote/exam/start');
+      expect(seenBody, {
+        'deck': 'rust.md',
+        'cards': ['card-a'],
+        'ideas': ideas,
+      });
     });
 
     group('RemoteAsk.note (three wire states)', () {

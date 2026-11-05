@@ -160,6 +160,11 @@ bool _asBool(dynamic v) => v == true;
 
 List<String> _asStringList(dynamic v) => v is List ? v.whereType<String>().toList() : const [];
 
+Map<String, dynamic>? _asJsonObject(dynamic v) {
+  if (v is! Map || v.keys.any((key) => key is! String)) return null;
+  return Map<String, dynamic>.from(v);
+}
+
 /// `[ContentUnitDto]` (docs/API.md) to the review models, so a tutor answer
 /// renders through the card's unit widgets. A unit of an unknown kind or
 /// without its required fields is dropped rather than guessed at.
@@ -419,7 +424,7 @@ class RemoteExamGrade {
     required this.missed,
     this.section = 0,
     this.shape = '',
-    this.model = '',
+    this.mentalModel = '',
   });
 
   final String question;
@@ -430,7 +435,7 @@ class RemoteExamGrade {
   final List<String> missed;
   final int section;
   final String shape;
-  final String model;
+  final String mentalModel;
 
   static RemoteExamGrade? fromJson(dynamic json) {
     if (json is! Map) return null;
@@ -450,7 +455,7 @@ class RemoteExamGrade {
       missed: _asStringList(json['missed']),
       section: _asInt(json['section']) ?? 0,
       shape: _asString(json['shape']) ?? '',
-      model: _asString(json['model']) ?? '',
+      mentalModel: _asString(json['mental_model']) ?? '',
     );
   }
 }
@@ -521,6 +526,8 @@ class RemoteExam {
     required this.thinking,
     this.elapsed,
     this.error,
+    this.estimate,
+    this.ideas,
     this.sections = const [],
     this.verdicts,
     this.full = false,
@@ -548,6 +555,8 @@ class RemoteExam {
   final bool thinking;
   final int? elapsed;
   final String? error;
+  final String? estimate;
+  final Map<String, dynamic>? ideas;
 
   static RemoteExam fromJson(Map<String, dynamic> json) => RemoteExam(
         phase: _asString(json['phase']) ?? 'idle',
@@ -570,6 +579,8 @@ class RemoteExam {
         thinking: _asBool(json['thinking']),
         elapsed: _asInt(json['elapsed']),
         error: _asString(json['error']),
+        estimate: _asString(json['estimate']),
+        ideas: _asJsonObject(json['ideas']),
       );
 }
 
@@ -657,7 +668,11 @@ abstract class ServerClient {
 
   /// `POST /api/remote/exam/start`: opens a sitting on [deck] (a bare name
   /// or `<workspace>/<file>`, resolved the same way `/api/select` does).
-  Future<bool> examStart(String deck, {List<String>? cards});
+  Future<bool> examStart(
+    String deck, {
+    List<String>? cards,
+    Map<String, dynamic>? ideas,
+  });
 
   /// `GET /api/remote/exam`: polls the open sitting.
   Future<RemoteExam?> examGet();
@@ -815,8 +830,16 @@ class HttpServerClient implements ServerClient {
   }
 
   @override
-  Future<bool> examStart(String deck, {List<String>? cards}) async {
-    final json = await _post('/api/remote/exam/start', {'deck': deck, 'cards': ?cards});
+  Future<bool> examStart(
+    String deck, {
+    List<String>? cards,
+    Map<String, dynamic>? ideas,
+  }) async {
+    final json = await _post('/api/remote/exam/start', {
+      'deck': deck,
+      'cards': ?cards,
+      'ideas': ?ideas,
+    });
     return json != null;
   }
 
