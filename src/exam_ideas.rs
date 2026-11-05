@@ -164,7 +164,9 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 mod tests {
     use super::*;
 
-    fn doc(ideas: &[(Option<u64>, Option<bool>)]) -> IdeasDocument {
+    type Asked = (Option<u64>, Option<bool>);
+
+    fn doc(ideas: &[Asked]) -> IdeasDocument {
         IdeasDocument {
             version: VERSION,
             material: "xxh64-0".to_string(),
@@ -185,7 +187,7 @@ mod tests {
 
     #[test]
     fn selection_takes_never_asked_then_failed_then_oldest_three() {
-        let rows: &[(&str, &[(Option<u64>, Option<bool>)], &[usize])] = &[
+        let rows: &[(&str, &[Asked], &[usize])] = &[
             ("all fresh, list order", &[(None, None); 5], &[0, 1, 2]),
             (
                 "fresh before failed before passed",

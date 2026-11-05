@@ -307,10 +307,6 @@ impl JobsHandle {
         self.call(JobsCommand::RemoteGenerateClose)
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "one exam request's whole context"
-    )]
     pub(super) fn prepare_start(
         &self,
         name: String,
