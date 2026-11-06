@@ -344,7 +344,7 @@ class _ExamScreenState extends State<ExamScreen> {
     _pollTimer?.cancel();
     try {
       await widget.client.examClose();
-    } on Object {}
+    } on Object catch (_) {}
     widget.clearAnswers?.call();
     if (mounted) Navigator.of(context).maybePop();
   }
