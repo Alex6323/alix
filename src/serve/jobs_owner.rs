@@ -848,7 +848,7 @@ impl JobsState {
             return Started::Conflict;
         };
         let already_prepared =
-            exam::exam_files(&deck).is_some_and(|(_, prepared)| prepared.exists());
+            exam::exam_files(&deck).is_some_and(|(_, prepared)| prepared.is_file());
         if !deck.has_exam()
             || already_prepared
             || crate::deck::is_locked(&deck, Some(decks_root), &store)

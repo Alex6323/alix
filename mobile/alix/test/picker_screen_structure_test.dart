@@ -360,7 +360,7 @@ void main() {
       );
       final client = FakeServerClient(
         versionReply: minServerVersion,
-        examGetReplies: const [generatingExam, answeringExam],
+        examGetReplies: const [generatingExam, generatingExam, answeringExam],
       );
       await pumpPicker(
         tester,
@@ -378,6 +378,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Preparing'), findsOneWidget);
       expect(find.text('about 20 to 30 minutes'), findsOneWidget);
+
+      // Polling pauses while another route covers the picker, but it must
+      // resume when that route closes: writing the exam is explicitly a
+      // background operation the learner may leave to do other work.
+      await tester.pump(const Duration(seconds: 10));
+      expect(client.examGetCalls, 2);
       await tester.tapAt(const Offset(10, 10));
       await tester.pumpAndSettle();
 

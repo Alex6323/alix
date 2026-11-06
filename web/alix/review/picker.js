@@ -109,6 +109,7 @@ export function createPicker({
   }
 
   let preparing = {};
+  let preparingRequest = 0;
   let preparingPoll = null;
   let preparingNotices = [];
   let resyncLegend = null;
@@ -143,20 +144,29 @@ export function createPicker({
     else if (resyncLegend) resyncLegend();
   }
 
+  function latestOnly(request) {
+    const issued = ++preparingRequest;
+    return request.then(value => ({ value, current: issued === preparingRequest }));
+  }
+
   function refreshPreparing() {
-    return api("/api/exam/preparing").then(applyPreparing).catch(() => {});
+    return latestOnly(api("/api/exam/preparing"))
+      .then(({ value, current }) => { if (current) applyPreparing(value); })
+      .catch(() => {});
   }
 
   function generateExam(name, needsWorkOnly) {
     rememberLaunch(name);
-    return api("/api/exam/generate", post({ deck: name, needs_work_only: needsWorkOnly }))
-      .then(job => applyPreparing(Object.values({ ...preparing, [name]: job })))
+    return latestOnly(api("/api/exam/generate", post({ deck: name, needs_work_only: needsWorkOnly })))
+      .then(({ value, current }) => {
+        if (current) applyPreparing(Object.values({ ...preparing, [name]: value }));
+      })
       .catch(() => notice("could not start writing the exam: the server log has details"));
   }
 
   function stopExam(name) {
-    return api("/api/exam/generate/cancel", post({ deck: name }))
-      .then(applyPreparing)
+    return latestOnly(api("/api/exam/generate/cancel", post({ deck: name })))
+      .then(({ value, current }) => { if (current) applyPreparing(value); })
       .catch(() => notice("could not stop writing the exam: the server log has details"));
   }
 

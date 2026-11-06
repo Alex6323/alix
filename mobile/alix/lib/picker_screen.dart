@@ -140,6 +140,7 @@ class _PickerScreenState extends State<PickerScreen> {
   ServerClient? _examStateClient;
   Timer? _examPollTimer;
   bool _examPollInFlight = false;
+  bool _examPollPaused = false;
   RemoteExam? _remoteExam;
   String? _noticedReadyExam;
 
@@ -335,12 +336,18 @@ class _PickerScreenState extends State<PickerScreen> {
     }
     _examPollTimer?.cancel();
     _examPollTimer = null;
+    _examPollPaused = false;
     unawaited(_pollRemoteExam());
   }
 
+  void _pauseExamPolling() {
+    _examPollPaused = true;
+    _examPollTimer?.cancel();
+    _examPollTimer = null;
+  }
+
   void _pollWhileGenerating(RemoteExam? exam) {
-    final onTop = ModalRoute.of(context)?.isCurrent ?? true;
-    if (exam?.phase != 'generating' || !onTop) {
+    if (exam?.phase != 'generating' || _examPollPaused) {
       _examPollTimer?.cancel();
       _examPollTimer = null;
       return;
@@ -597,8 +604,7 @@ class _PickerScreenState extends State<PickerScreen> {
       return;
     }
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
-    _examPollTimer?.cancel();
-    _examPollTimer = null;
+    _pauseExamPolling();
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ExamScreen(
@@ -827,8 +833,7 @@ class _PickerScreenState extends State<PickerScreen> {
     required String root,
     required bool isPaired,
   }) {
-    _examPollTimer?.cancel();
-    _examPollTimer = null;
+    _pauseExamPolling();
     unawaited(
       Navigator.of(context)
           .push(
@@ -854,8 +859,7 @@ class _PickerScreenState extends State<PickerScreen> {
   }
 
   void _openMastered(List<PickerEntry> mastered) {
-    _examPollTimer?.cancel();
-    _examPollTimer = null;
+    _pauseExamPolling();
     unawaited(
       Navigator.of(context)
           .push(

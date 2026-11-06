@@ -6328,6 +6328,24 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
         deck_row_flag(&base, "examdeck.md", "exam_prepared"),
         "step 7: the unreadable exam is removed, so Generate exam is offered again"
     );
+
+    let prepared_path = exam_dir.join("deck-examdeck.prepared.json");
+    std::fs::create_dir(&prepared_path).unwrap();
+    assert_eq!(
+        409,
+        start().status,
+        "step 8: an unreadable prepared path cannot be taken"
+    );
+    assert_eq!(
+        Some(false),
+        deck_row_flag(&base, "examdeck.md", "exam_prepared"),
+        "step 8: the picker offers Generate for a non-file prepared path"
+    );
+    let retry = post_json(&base, "/api/exam/generate", r#"{"deck":"examdeck.md"}"#);
+    assert_eq!(
+        200, retry.status,
+        "step 8: cleanup must not leave an unreadable path blocking regeneration"
+    );
 }
 
 #[test]

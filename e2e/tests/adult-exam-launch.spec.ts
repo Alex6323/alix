@@ -168,6 +168,50 @@ test("a finished exam announces itself and turns the chip into Take exam", async
   await expect(page.getByRole("button", { name: /^Take exam/ })).toBeEnabled();
 });
 
+test("an older preparing response cannot erase a generation just started", async ({ page }) => {
+  await page.waitForLoadState("networkidle");
+  await mockExamRows(page, {
+    "wild.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: false },
+  });
+  const job = {
+    deck: "animals/wild.md",
+    state: "generating",
+    elapsed: 0,
+    estimate: "usually 10 to 20 minutes",
+    error: null,
+  };
+  let releaseOldResponse!: () => void;
+  const oldResponseGate = new Promise<void>((resolve) => { releaseOldResponse = resolve; });
+  let oldRequestStarted!: () => void;
+  const oldRequest = new Promise<void>((resolve) => { oldRequestStarted = resolve; });
+  let oldResponseReturned!: () => void;
+  const oldReturned = new Promise<void>((resolve) => { oldResponseReturned = resolve; });
+  let preparingCalls = 0;
+  await page.route("**/api/exam/preparing", async (route) => {
+    preparingCalls += 1;
+    if (preparingCalls === 1) {
+      oldRequestStarted();
+      await oldResponseGate;
+      await route.fulfill({ json: [] });
+      oldResponseReturned();
+      return;
+    }
+    await route.fulfill({ json: [job] });
+  });
+  await page.route("**/api/exam/generate", (route) => route.fulfill({ json: job }));
+
+  await page.locator("#navRefresh").click();
+  await oldRequest;
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+  await page.getByRole("button", { name: /^Generate exam/ }).click();
+  await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
+
+  releaseOldResponse();
+  await oldReturned;
+  await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
+});
+
 test("a prepared exam is taken, without the scope filter", async ({ page }) => {
   await mockExamRows(page, {
     "wild.md": { state: "examdue", examable: true, exam_filter: "partial", exam_prepared: true },
