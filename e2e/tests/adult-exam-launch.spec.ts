@@ -212,6 +212,54 @@ test("an older preparing response cannot erase a generation just started", async
   await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
 });
 
+test("an empty refresh cannot hide a generation response still in flight", async ({ page }) => {
+  await page.waitForLoadState("networkidle");
+  await mockExamRows(page, {
+    "wild.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: false },
+  });
+  const job = {
+    deck: "animals/wild.md",
+    state: "generating",
+    elapsed: 0,
+    estimate: "usually 10 to 20 minutes",
+    error: null,
+  };
+  let generationStarted!: () => void;
+  const started = new Promise<void>((resolve) => { generationStarted = resolve; });
+  let releaseGeneration!: () => void;
+  const generationGate = new Promise<void>((resolve) => { releaseGeneration = resolve; });
+  let generationReturned!: () => void;
+  const returned = new Promise<void>((resolve) => { generationReturned = resolve; });
+  let refreshAfterGenerationStarted!: () => void;
+  const refreshed = new Promise<void>((resolve) => { refreshAfterGenerationStarted = resolve; });
+  let generating = false;
+  await page.route("**/api/exam/preparing", async (route) => {
+    if (generating) refreshAfterGenerationStarted();
+    await route.fulfill({ json: [] });
+  });
+  await page.route("**/api/exam/generate", async (route) => {
+    generating = true;
+    generationStarted();
+    await generationGate;
+    await route.fulfill({ json: job });
+    generationReturned();
+  });
+
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+  await page.getByRole("button", { name: /^Generate exam/ }).click();
+  await started;
+
+  await page.locator("#navRefresh").click();
+  await refreshed;
+  releaseGeneration();
+  await returned;
+
+  await adultDeckRow(page, "wild").click();
+  await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
+});
+
 test("a prepared exam is taken, without the scope filter", async ({ page }) => {
   await mockExamRows(page, {
     "wild.md": { state: "examdue", examable: true, exam_filter: "partial", exam_prepared: true },
