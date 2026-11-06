@@ -1340,7 +1340,7 @@ impl StudyState {
                 {
                     Transition::FlushFailed
                 } else {
-                    self.examining = None;
+                    self.end_exam();
                     self.walking = None;
                     if let Ok(s) =
                         assemble::store_for(&[], self.config.cfg.instance_store.as_deref())
@@ -1730,7 +1730,7 @@ impl StudyState {
                 self.tracing = Some(w);
                 self.reviewing = None;
                 self.walking = None;
-                self.examining = None;
+                self.end_exam();
                 self.augmenting = None;
                 self.revision += 1;
                 Transition::Done((SelectedDto::Trace(Box::new(dto)), None))
@@ -1776,7 +1776,7 @@ impl StudyState {
                 self.reviewing = None;
                 self.tracing = None;
                 self.walking = None;
-                self.examining = None;
+                self.end_exam();
                 self.augmenting = None;
                 self.revision += 1;
                 Transition::Done(browse_payload(self.browsing.as_ref()))
@@ -1833,7 +1833,7 @@ impl StudyState {
                 self.reviewing = None;
                 self.tracing = None;
                 self.browsing = None;
-                self.examining = None;
+                self.end_exam();
                 self.augmenting = None;
                 self.revision += 1;
                 Transition::Done(dto)
@@ -2189,6 +2189,13 @@ impl StudyState {
             }
             Err(store::MintError::Mint(_)) => CreateOutcome::MintFailed,
         }
+    }
+
+    fn end_exam(&mut self) {
+        if let Some(ex) = self.examining.as_mut() {
+            ex.settle();
+        }
+        self.examining = None;
     }
 
     fn exam_start(

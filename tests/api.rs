@@ -6380,6 +6380,45 @@ fn a_prepared_exam_is_not_consumed_when_its_idea_history_cannot_be_saved() {
     );
 }
 
+#[test]
+fn closing_results_retries_a_repaired_idea_save_and_consumes_the_prepared_exam() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
+    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
+    let exam_dir = private_state_root(guard.dir()).join("exam");
+    let ideas = exam_dir.join("deck-examdeck.json");
+    let prepared = exam_dir.join("deck-examdeck.prepared.json");
+
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+    assert_eq!(200, resp.status);
+    let resp = post_json(&base, "/api/exam/grade", r#"{"text":"answer"}"#);
+    assert_eq!(200, resp.status);
+
+    std::fs::remove_file(&ideas).unwrap();
+    std::fs::create_dir(&ideas).unwrap();
+    let body = poll_until(&base, "/api/exam", |b| b["phase"] == "results");
+    assert_eq!("results", body["phase"], "body: {body}");
+    std::fs::remove_dir(&ideas).unwrap();
+
+    let resp = post_json(&base, "/api/exam/close", "{}");
+    assert_eq!(200, resp.status);
+    let ideas_saved = ideas.is_file();
+    let prepared_exists = prepared.exists();
+    assert!(
+        ideas_saved && !prepared_exists,
+        "closing after repair must retry the idea save and consume the prepared exam: \
+         ideas_saved={ideas_saved}, prepared_exists={prepared_exists}"
+    );
+}
+
 /// The web generate flow end to end: start answers a generating phase, the
 /// poll settles, the deck lands in the destination, close frees the slot
 /// (a later poll is 409), and the new deck resolves by name.
