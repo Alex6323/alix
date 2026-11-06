@@ -109,10 +109,7 @@ export function createPicker({
   }
 
   let preparing = {};
-  let preparingRequest = 0;
-  let latestSnapshot = 0;
-  let latestMutation = 0;
-  let appliedMutation = 0;
+  let appliedSequence = 0;
   let preparingPoll = null;
   let preparingNotices = [];
   let resyncLegend = null;
@@ -123,9 +120,11 @@ export function createPicker({
     preparingNotices = [];
   }
 
-  function applyPreparing(list) {
+  function applyPreparing(reply) {
+    if (!reply || reply.sequence <= appliedSequence) return;
+    appliedSequence = reply.sequence;
     const next = {};
-    for (const job of list || []) next[job.deck] = job;
+    for (const job of reply.jobs) next[job.deck] = job;
     let settled = false;
     for (const [deck, job] of Object.entries(next)) {
       const was = preparing[deck];
@@ -147,38 +146,20 @@ export function createPicker({
     else if (resyncLegend) resyncLegend();
   }
 
-  function snapshot(request) {
-    const issued = ++preparingRequest;
-    latestSnapshot = issued;
-    return request.then(value => ({ value, fresh: issued === latestSnapshot && issued > latestMutation }));
-  }
-
-  function mutation(request) {
-    const issued = ++preparingRequest;
-    latestMutation = issued;
-    return request.then(value => {
-      const fresh = issued > appliedMutation;
-      if (fresh) appliedMutation = issued;
-      return { value, fresh };
-    });
-  }
-
   function refreshPreparing() {
-    return snapshot(api("/api/exam/preparing"))
-      .then(({ value, fresh }) => { if (fresh) applyPreparing(value); })
-      .catch(() => {});
+    return api("/api/exam/preparing").then(applyPreparing).catch(() => {});
   }
 
   function generateExam(name, needsWorkOnly) {
     rememberLaunch(name);
-    return mutation(api("/api/exam/generate", post({ deck: name, needs_work_only: needsWorkOnly })))
-      .then(({ value, fresh }) => { if (fresh) applyPreparing(Object.values({ ...preparing, [name]: value })); })
+    return api("/api/exam/generate", post({ deck: name, needs_work_only: needsWorkOnly }))
+      .then(applyPreparing)
       .catch(() => notice("could not start writing the exam: the server log has details"));
   }
 
   function stopExam(name) {
-    return mutation(api("/api/exam/generate/cancel", post({ deck: name })))
-      .then(({ value, fresh }) => { if (fresh) applyPreparing(value); })
+    return api("/api/exam/generate/cancel", post({ deck: name }))
+      .then(applyPreparing)
       .catch(() => notice("could not stop writing the exam: the server log has details"));
   }
 

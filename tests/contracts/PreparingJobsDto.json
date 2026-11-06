@@ -1,0 +1,12 @@
+{
+  "jobs": [
+    {
+      "deck": "rust.md",
+      "elapsed": 900,
+      "error": null,
+      "estimate": null,
+      "state": "ready"
+    }
+  ],
+  "sequence": 1762390000123
+}

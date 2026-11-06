@@ -2598,6 +2598,26 @@ fn preparingdto_wire_shapes() {
 }
 
 #[test]
+fn preparingjobsdto_wire_shape() {
+    let jobs = PreparingJobsDto {
+        sequence: 1_762_390_000_123,
+        jobs: vec![PreparingDto {
+            deck: "rust.md".to_string(),
+            state: "ready",
+            elapsed: 900,
+            estimate: None,
+            error: None,
+        }],
+    };
+    pin(
+        "PreparingJobsDto",
+        &jobs,
+        json!({"sequence": 1_762_390_000_123_u64, "jobs": [{"deck": "rust.md", "state": "ready",
+               "elapsed": 900, "estimate": null, "error": null}]}),
+    );
+}
+
+#[test]
 fn remoteaskdto_thinking_wire_shape() {
     let dto = RemoteAskDto {
         thinking: true,

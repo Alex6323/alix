@@ -322,6 +322,7 @@ pub fn run_review(
             remote_exam: None,
             remote_generate: None,
             preparing: Vec::new(),
+            preparing_sequence: crate::time::now_ms(),
         },
     );
 

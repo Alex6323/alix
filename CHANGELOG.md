@@ -187,8 +187,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers are saved as given and lock once you move on. Phone: the launch
   sheet's exam row reads Generate exam, Preparing, then Take exam, and a
   left sitting resumes with its answers. API: `POST /api/exam/generate`,
-  `GET /api/exam/preparing`, `POST /api/exam/generate/cancel`,
-  `DeckItemDto.exam_prepared` and `ExamDto.answer_locked` are new;
+  `GET /api/exam/preparing`, `POST /api/exam/generate/cancel` (all three
+  reply with the sequenced `PreparingJobsDto`), `DeckItemDto.exam_prepared` and
+  `ExamDto.answer_locked` are new;
   `POST /api/exam/start` opens only a prepared exam, and its
   `needs_work_only` moved to `/api/exam/generate`.
 

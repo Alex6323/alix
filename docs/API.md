@@ -202,10 +202,13 @@ picker `StateDto`.
 ### 4.3 The exam
 
 An exam is written ahead, then taken. `POST /api/exam/generate {deck,
-needs_work_only?}` → `PreparingDto` starts writing the questions in the
-background (several may run, one per deck); `GET /api/exam/preparing` →
-`[PreparingDto]` reports them, and `POST /api/exam/generate/cancel {deck}`
-stops one. The finished exam is kept in the deck's store, so it survives
+needs_work_only?}` starts writing the questions in the background (several
+may run, one per deck); `GET /api/exam/preparing` reports them, and `POST
+/api/exam/generate/cancel {deck}` stops one. All three reply with
+`PreparingJobsDto`, the full job list after the server handled the request.
+Requests in flight together may be handled in a different order than they
+were sent, so a client applies a reply only when its `sequence` is higher
+than the last one it applied. The finished exam is kept in the deck's store, so it survives
 leaving the page and restarting the server; the deck row's `exam_prepared`
 says it is there. With `needs_work_only: true` the exam covers only the
 sections that have not passed (needs work, new cards, unexamined), read from
@@ -771,9 +774,9 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/exam/generate` | `{deck, needs_work_only?}` | `PreparingDto` (the running one if any) | 400 unknown deck; 409 not examable / locked / already prepared / backend can't reach the deck's source |
-| GET | `/api/exam/preparing` | – | `[PreparingDto]` | – |
-| POST | `/api/exam/generate/cancel` | `{deck}` | `[PreparingDto]` (the jobs left) | 400 unknown deck |
+| POST | `/api/exam/generate` | `{deck, needs_work_only?}` | `PreparingJobsDto` (an already running job is kept) | 400 unknown deck; 409 not examable / locked / already prepared / backend can't reach the deck's source |
+| GET | `/api/exam/preparing` | – | `PreparingJobsDto` | – |
+| POST | `/api/exam/generate/cancel` | `{deck}` | `PreparingJobsDto` (the jobs left) | 400 unknown deck |
 | POST | `/api/exam/start` | `{deck}` | `ExamDto` | 400 unknown deck; 409 nothing prepared / prepared exam stale / not examable / locked / backend can't reach the deck's source |
 | GET | `/api/exam` | – | `ExamDto` (poll) | 409 |
 | POST | `/api/exam/answer` | `{text, goto?}` | `ExamDto` | 409 |
@@ -1669,9 +1672,19 @@ card's stored bytes, which have that same form (`## front`, the back lines, the
 block as it is, so the next pull's copy of the sidecar is identical to what
 the phone already holds.
 
+### PreparingJobsDto
+
+Every exam being written ahead, as one reply of `/api/exam/generate`,
+`/api/exam/preparing`, or `/api/exam/generate/cancel`: `sequence: number`
+(increases with every such reply the server handles; it starts from the
+server's clock in milliseconds, so it keeps increasing across a restart
+unless the clock moved back; a reply with a lower `sequence` than one already
+applied is stale), `jobs:
+[PreparingDto]`.
+
 ### PreparingDto
 
-An exam being written ahead (`/api/exam/generate`, `/api/exam/preparing`):
+One exam being written ahead (an entry of `PreparingJobsDto.jobs`):
 `deck: string` (the name the request gave), `state: "generating" | "ready" |
 "failed"` *(closed)*, `elapsed: number` (seconds since it started),
 `estimate: string?` (a rough wait worded for the learner, e.g. `"usually 10

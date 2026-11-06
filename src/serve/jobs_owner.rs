@@ -31,6 +31,7 @@ pub(super) struct JobsState {
     pub(super) remote_exam: Option<RemoteExamining>,
     pub(super) remote_generate: Option<RemoteGenerating>,
     pub(super) preparing: Vec<Preparing>,
+    pub(super) preparing_sequence: u64,
 }
 
 pub(super) enum Started<T> {
@@ -136,12 +137,12 @@ pub(super) enum JobsCommand {
         needs_work_only: bool,
         exam_cfg: ExamConfig,
         ask_cfg: AskConfig,
-        reply: Reply<Started<PreparingDto>>,
+        reply: Reply<Started<PreparingJobsDto>>,
     },
-    PrepareList(Reply<Vec<PreparingDto>>),
+    PrepareList(Reply<PreparingJobsDto>),
     PrepareCancel {
         path: PathBuf,
-        reply: Reply<Vec<PreparingDto>>,
+        reply: Reply<PreparingJobsDto>,
     },
 }
 
@@ -315,7 +316,7 @@ impl JobsHandle {
         needs_work_only: bool,
         exam_cfg: ExamConfig,
         ask_cfg: AskConfig,
-    ) -> Option<Started<PreparingDto>> {
+    ) -> Option<Started<PreparingJobsDto>> {
         self.call(|reply| JobsCommand::PrepareStart {
             name,
             path,
@@ -327,11 +328,11 @@ impl JobsHandle {
         })
     }
 
-    pub(super) fn prepare_list(&self) -> Option<Vec<PreparingDto>> {
+    pub(super) fn prepare_list(&self) -> Option<PreparingJobsDto> {
         self.call(JobsCommand::PrepareList)
     }
 
-    pub(super) fn prepare_cancel(&self, path: PathBuf) -> Option<Vec<PreparingDto>> {
+    pub(super) fn prepare_cancel(&self, path: PathBuf) -> Option<PreparingJobsDto> {
         self.call(|reply| JobsCommand::PrepareCancel { path, reply })
     }
 }
@@ -672,11 +673,11 @@ impl JobsState {
                 ));
             }
             JobsCommand::PrepareList(reply) => {
-                let _ = reply.send(self.preparing.iter_mut().map(Preparing::dto).collect());
+                let _ = reply.send(self.preparing_jobs());
             }
             JobsCommand::PrepareCancel { path, reply } => {
                 self.preparing.retain(|p| p.path != path);
-                let _ = reply.send(self.preparing.iter_mut().map(Preparing::dto).collect());
+                let _ = reply.send(self.preparing_jobs());
             }
             JobsCommand::RemoteGenerateClose(reply) => {
                 self.remote_generate = None;
@@ -828,13 +829,13 @@ impl JobsState {
         needs_work_only: bool,
         exam_cfg: ExamConfig,
         ask_cfg: AskConfig,
-    ) -> Started<PreparingDto> {
-        if let Some(running) = self
+    ) -> Started<PreparingJobsDto> {
+        if self
             .preparing
-            .iter_mut()
-            .find(|p| p.path == path && p.outcome.is_none())
+            .iter()
+            .any(|p| p.path == path && p.outcome.is_none())
         {
-            return Started::Dto(running.dto());
+            return Started::Dto(self.preparing_jobs());
         }
         self.preparing.retain(|p| p.path != path);
         let Ok(deck) = exam::open_for_exam(&path) else {
@@ -867,7 +868,7 @@ impl JobsState {
         }
         let estimate = exam::wait_estimate(&ask_cfg);
         let (rx, job) = exam::spawn_prepare(&deck, sections, exam_cfg, ask_cfg);
-        let mut preparing = Preparing {
+        let preparing = Preparing {
             name,
             path,
             rx,
@@ -876,9 +877,16 @@ impl JobsState {
             estimate,
             outcome: None,
         };
-        let dto = preparing.dto();
         self.preparing.push(preparing);
-        Started::Dto(dto)
+        Started::Dto(self.preparing_jobs())
+    }
+
+    fn preparing_jobs(&mut self) -> PreparingJobsDto {
+        self.preparing_sequence += 1;
+        PreparingJobsDto {
+            sequence: self.preparing_sequence,
+            jobs: self.preparing.iter_mut().map(Preparing::dto).collect(),
+        }
     }
 
     fn remote_exam_start(

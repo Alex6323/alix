@@ -42,6 +42,12 @@ async function mockExamRows(page: Page, states: Record<string, PickerState>) {
   });
 }
 
+async function preparingSequence(page: Page) {
+  const response = await page.request.get("/api/exam/preparing");
+  let sequence: number = (await response.json()).sequence;
+  return (jobs: object[]) => ({ sequence: ++sequence, jobs });
+}
+
 async function capture(page: Page, stem: string) {
   const directory = process.env.ALIX_RENDER_DIR;
   if (!directory) return;
@@ -105,15 +111,21 @@ test("the drawer always shows the exam filter, accents only due unlocked exams, 
   await capture(page, "drawer-nothing-to-filter");
 
   await adultDeckRow(page, "wild").click();
-  await page.route("**/api/exam/generate", (route) => route.fulfill({
-    json: {
-      deck: "animals/wild.md",
-      state: "generating",
-      elapsed: 0,
-      estimate: "usually 10 to 20 minutes",
-      error: null,
-    },
-  }));
+  const stamp = await preparingSequence(page);
+  const job = {
+    deck: "animals/wild.md",
+    state: "generating",
+    elapsed: 0,
+    estimate: "usually 10 to 20 minutes",
+    error: null,
+  };
+  let generating = false;
+  await page.route("**/api/exam/preparing", (route) =>
+    route.fulfill({ json: stamp(generating ? [job] : []) }));
+  await page.route("**/api/exam/generate", (route) => {
+    generating = true;
+    return route.fulfill({ json: stamp([job]) });
+  });
   const request = page.waitForRequest("**/api/exam/generate");
   await takeExam.click();
   expect((await request).postDataJSON()).toEqual({ deck: "animals/wild.md", needs_work_only: true });
@@ -149,13 +161,14 @@ test("a finished exam announces itself and turns the chip into Take exam", async
     estimate: state === "generating" ? "usually 10 to 20 minutes" : null,
     error: null,
   });
+  const stamp = await preparingSequence(page);
   let generating = false;
   await page.route("**/api/exam/generate", (route) => {
     generating = true;
-    return route.fulfill({ json: job("generating") });
+    return route.fulfill({ json: stamp([job("generating")]) });
   });
   await page.route("**/api/exam/preparing", (route) =>
-    route.fulfill({ json: prepared ? [job("ready")] : generating ? [job("generating")] : [] }));
+    route.fulfill({ json: stamp(prepared ? [job("ready")] : generating ? [job("generating")] : []) }));
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Animals").click();
   await adultDeckRow(page, "wild").click();
@@ -186,19 +199,21 @@ test("an older preparing response cannot erase a generation just started", async
   const oldRequest = new Promise<void>((resolve) => { oldRequestStarted = resolve; });
   let oldResponseReturned!: () => void;
   const oldReturned = new Promise<void>((resolve) => { oldResponseReturned = resolve; });
+  const stamp = await preparingSequence(page);
   let preparingCalls = 0;
   await page.route("**/api/exam/preparing", async (route) => {
     preparingCalls += 1;
     if (preparingCalls === 1) {
+      const old = stamp([]);
       oldRequestStarted();
       await oldResponseGate;
-      await route.fulfill({ json: [] });
+      await route.fulfill({ json: old });
       oldResponseReturned();
       return;
     }
-    await route.fulfill({ json: [job] });
+    await route.fulfill({ json: stamp([job]) });
   });
-  await page.route("**/api/exam/generate", (route) => route.fulfill({ json: job }));
+  await page.route("**/api/exam/generate", (route) => route.fulfill({ json: stamp([job]) }));
 
   await page.locator("#navRefresh").click();
   await oldRequest;
@@ -232,16 +247,17 @@ test("an empty refresh cannot hide a generation response still in flight", async
   const returned = new Promise<void>((resolve) => { generationReturned = resolve; });
   let refreshAfterGenerationStarted!: () => void;
   const refreshed = new Promise<void>((resolve) => { refreshAfterGenerationStarted = resolve; });
+  const stamp = await preparingSequence(page);
   let generating = false;
   await page.route("**/api/exam/preparing", async (route) => {
     if (generating) refreshAfterGenerationStarted();
-    await route.fulfill({ json: [] });
+    await route.fulfill({ json: stamp([]) });
   });
   await page.route("**/api/exam/generate", async (route) => {
     generating = true;
     generationStarted();
     await generationGate;
-    await route.fulfill({ json: job });
+    await route.fulfill({ json: stamp([job]) });
     generationReturned();
   });
 
@@ -280,22 +296,24 @@ test("an older cancellation response cannot hide a newer generation", async ({ p
   const returned = new Promise<void>((resolve) => { cancellationReturned = resolve; });
   let emptyRefreshReturned!: () => void;
   const refreshed = new Promise<void>((resolve) => { emptyRefreshReturned = resolve; });
+  const stamp = await preparingSequence(page);
   let generating = false;
   let cancellationPending = false;
   await page.route("**/api/exam/preparing", async (route) => {
     if (cancellationPending && !generating) emptyRefreshReturned();
-    await route.fulfill({ json: generating ? [job] : [] });
+    await route.fulfill({ json: stamp(generating ? [job] : []) });
   });
   await page.route("**/api/exam/generate", async (route) => {
     generating = true;
-    await route.fulfill({ json: job });
+    await route.fulfill({ json: stamp([job]) });
   });
   await page.route("**/api/exam/generate/cancel", async (route) => {
     generating = false;
     cancellationPending = true;
+    const cancelled = stamp([]);
     cancelStarted();
     await cancellationGate;
-    await route.fulfill({ json: [] });
+    await route.fulfill({ json: cancelled });
     cancellationReturned();
   });
 
@@ -342,20 +360,22 @@ test("a delayed duplicate generation cannot hide an earlier generation response"
   const firstResponse = new Promise<void>((resolve) => { firstReturned = resolve; });
   let secondReturned!: () => void;
   const secondResponse = new Promise<void>((resolve) => { secondReturned = resolve; });
+  const stamp = await preparingSequence(page);
   let calls = 0;
-  await page.route("**/api/exam/preparing", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/exam/preparing", (route) => route.fulfill({ json: stamp(calls ? [job] : []) }));
   await page.route("**/api/exam/generate", async (route) => {
     calls += 1;
+    const reply = stamp([job]);
     if (calls === 1) {
       firstStarted();
       await firstGate;
-      await route.fulfill({ json: job });
+      await route.fulfill({ json: reply });
       firstReturned();
       return;
     }
     secondStarted();
     await secondGate;
-    await route.fulfill({ json: job });
+    await route.fulfill({ json: reply });
     secondReturned();
   });
 
@@ -376,6 +396,61 @@ test("a delayed duplicate generation cannot hide an earlier generation response"
     releaseSecond();
     await secondResponse;
   }
+});
+
+test("a generation processed after a later stop response is still shown", async ({ page }) => {
+  await page.waitForLoadState("networkidle");
+  await mockExamRows(page, {
+    "wild.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: false },
+    "source-fact.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: false },
+  });
+  const job = (deck: string) => ({
+    deck,
+    state: "generating",
+    elapsed: 0,
+    estimate: "usually 10 to 20 minutes",
+    error: null,
+  });
+  const stamp = await preparingSequence(page);
+  let serverJobs = [job("animals/wild.md")];
+  let generationStarted!: () => void;
+  const started = new Promise<void>((resolve) => { generationStarted = resolve; });
+  let releaseGeneration!: () => void;
+  const generationGate = new Promise<void>((resolve) => { releaseGeneration = resolve; });
+  let generationReturned!: () => void;
+  const generated = new Promise<void>((resolve) => { generationReturned = resolve; });
+  let stopReturned!: () => void;
+  const stopped = new Promise<void>((resolve) => { stopReturned = resolve; });
+  await page.route("**/api/exam/preparing", (route) => route.fulfill({ json: stamp(serverJobs) }));
+  await page.route("**/api/exam/generate", async (route) => {
+    generationStarted();
+    await generationGate;
+    serverJobs = [job("animals/source-fact.md")];
+    await route.fulfill({ json: stamp(serverJobs) });
+    generationReturned();
+  });
+  await page.route("**/api/exam/generate/cancel", async (route) => {
+    serverJobs = [];
+    await route.fulfill({ json: stamp(serverJobs) });
+    stopReturned();
+  });
+
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+  await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
+
+  await adultDeckRow(page, "Source Fact").click();
+  await page.getByRole("button", { name: /^Generate exam/ }).click();
+  await started;
+  await adultDeckRow(page, "wild").click();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await stopped;
+
+  releaseGeneration();
+  await generated;
+  await adultDeckRow(page, "Source Fact").click();
+  await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
 });
 
 test("a prepared exam is taken, without the scope filter", async ({ page }) => {

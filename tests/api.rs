@@ -723,12 +723,12 @@ fn prepare_exam(base: &str, body: &str) {
     );
     let deck = serde_json::from_str::<serde_json::Value>(body).unwrap()["deck"].clone();
     let list = poll_until(base, "/api/exam/preparing", |b| {
-        b.as_array().is_some_and(|l| {
+        b["jobs"].as_array().is_some_and(|l| {
             l.iter()
                 .any(|p| p["deck"] == deck && p["state"] != "generating")
         })
     });
-    let entry = list
+    let entry = list["jobs"]
         .as_array()
         .unwrap()
         .iter()
@@ -6247,7 +6247,7 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
         (200, serde_json::json!([])),
         (
             left.status,
-            serde_json::from_slice::<serde_json::Value>(&left.body).unwrap()
+            serde_json::from_slice::<serde_json::Value>(&left.body).unwrap()["jobs"].clone()
         ),
         "step 2: cancel drops the finished job and returns the jobs left"
     );
@@ -6346,6 +6346,38 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
         200, retry.status,
         "step 8: cleanup must not leave an unreadable path blocking regeneration"
     );
+}
+
+#[test]
+fn every_preparing_reply_carries_the_full_job_list_and_a_sequence_above_the_reply_before_it() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(&grades_path, r#"{"grades":[]}"#).unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
+    let deck = r#"{"deck":"examdeck.md"}"#;
+    let replies = [
+        ("generate", post_json(&base, "/api/exam/generate", deck)),
+        ("list", http(&base, "GET", "/api/exam/preparing", &[], &[])),
+        (
+            "cancel",
+            post_json(&base, "/api/exam/generate/cancel", deck),
+        ),
+        ("list", http(&base, "GET", "/api/exam/preparing", &[], &[])),
+    ];
+    let mut previous = 0;
+    for (step, resp) in replies {
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert_eq!(200, resp.status, "{step}: {body}");
+        let sequence = body["sequence"].as_u64().unwrap_or(0);
+        assert!(
+            sequence > previous,
+            "{step}: sequence {sequence} must exceed {previous}: {body}"
+        );
+        assert!(body["jobs"].is_array(), "{step}: the full job list: {body}");
+        previous = sequence;
+    }
 }
 
 #[test]

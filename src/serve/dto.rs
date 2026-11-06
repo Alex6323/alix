@@ -952,6 +952,12 @@ pub(super) struct PreparingDto {
 }
 
 #[derive(Serialize)]
+pub(super) struct PreparingJobsDto {
+    pub(super) sequence: u64,
+    pub(super) jobs: Vec<PreparingDto>,
+}
+
+#[derive(Serialize)]
 pub(super) struct RemoteExamDto {
     pub(super) phase: &'static str,
     pub(super) deck: String,
