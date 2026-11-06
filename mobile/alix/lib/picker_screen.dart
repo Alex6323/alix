@@ -650,7 +650,6 @@ class _PickerScreenState extends State<PickerScreen> {
         ),
       ),
     );
-    client.close();
     if (!mounted) return;
     _configureExamPolling(config, live: true);
     _controller.reload();

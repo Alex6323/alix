@@ -162,16 +162,20 @@ class _ExamScreenState extends State<ExamScreen> {
     }
   }
 
+  bool get _keepsSitting {
+    final phase = _exam?.phase;
+    return phase == 'generating' ||
+        phase == 'answering' ||
+        (_acceptedStart && phase == null);
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();
-    final phase = _exam?.phase;
-    final keepSitting = phase == 'generating' ||
-        phase == 'answering' ||
-        (_acceptedStart && phase == null);
-    if (!_explicitlyClosed && !keepSitting) {
-      widget.client.examClose().catchError((_) {});
-    }
+    final leaving = !_explicitlyClosed && !_keepsSitting
+        ? widget.client.examClose()
+        : Future<void>.value();
+    leaving.catchError((_) {}).whenComplete(widget.client.close);
     for (final c in _answerControllers) {
       c.dispose();
     }
@@ -339,14 +343,18 @@ class _ExamScreenState extends State<ExamScreen> {
 
   Future<void> _explicitClose() async {
     if (_closing) return;
-    _closing = true;
-    _explicitlyClosed = true;
+    setState(() {
+      _closing = true;
+      _explicitlyClosed = true;
+    });
     _pollTimer?.cancel();
     try {
       await widget.client.examClose();
     } on Object catch (_) {}
     widget.clearAnswers?.call();
-    if (mounted) Navigator.of(context).maybePop();
+    if (!mounted) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
   }
 
   Future<void> _remediate() async {
@@ -408,19 +416,25 @@ class _ExamScreenState extends State<ExamScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).maybePop(),
+    return PopScope(
+      canPop: _keepsSitting || _explicitlyClosed,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _explicitClose();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          title: Text(widget.deckName, maxLines: 1, overflow: TextOverflow.ellipsis),
         ),
-        title: Text(widget.deckName, maxLines: 1, overflow: TextOverflow.ellipsis),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: _body(context),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: _body(context),
+          ),
         ),
       ),
     );

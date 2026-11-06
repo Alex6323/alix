@@ -92,7 +92,7 @@ void main() {
       ],
       [
         'lib/review_screen.dart:391',
-        'lib/picker_screen.dart:904',
+        'lib/picker_screen.dart:903',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:129',
         'lib/walk_screen.dart:222',
@@ -115,8 +115,9 @@ void main() {
           'the tutorial entry added a constructor and the opener choice to '
           'walk_screen.dart and replaced the copy with a push in '
           'picker_screen.dart; prepared-exam polling and resume added fields '
-          'and methods above picker_screen.dart build(); generate_sheet.dart '
-          'is unchanged',
+          'and methods above picker_screen.dart build(), and the exam screen '
+          'took over closing its client, removing a line above it; '
+          'generate_sheet.dart is unchanged',
     );
   });
 

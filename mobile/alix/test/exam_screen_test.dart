@@ -467,6 +467,60 @@ void main() {
     }
   });
 
+  testWidgets('leaving the results closes the remote slot', (tester) async {
+    final client = FakeServerClient(examGetReplies: [resultsFailed]);
+    await pumpExam(tester, client: client);
+    await tester.pump();
+    expect(find.text('needs work'), findsOneWidget, reason: 'step 1: results shown');
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(client.examCloseCalls, 1, reason: 'step 2: a graded sitting is closed on leaving');
+    expect(client.closed, isTrue, reason: 'step 3: the screen closes its client after the slot');
+  });
+
+  testWidgets('closing the results releases the slot before the opener resumes', (tester) async {
+    for (final leave in ['close button', 'system back']) {
+      final client = FakeServerClient(examGetReplies: [resultsFailed]);
+      int? closesWhenResumed;
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => ExamScreen(
+                  deckName: 'rust.md',
+                  client: client,
+                  support: tempSupport(),
+                  buildClient: (_) => client,
+                  applyResult: (exam, nowMs) => null,
+                  applyRemediation: (cardsText) => 0,
+                  nowMs: () => BigInt.from(1000),
+                  pollInterval: _pollInterval,
+                ),
+              ));
+              closesWhenResumed = client.examCloseCalls;
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.text('needs work'), findsOneWidget, reason: '$leave step 1: results shown');
+
+      if (leave == 'close button') {
+        await tester.tap(find.byIcon(Icons.close));
+      } else {
+        await tester.binding.handlePopRoute();
+      }
+      await tester.pumpAndSettle();
+
+      expect(closesWhenResumed, 1, reason: '$leave step 2: the slot is closed before the opener polls');
+      expect(client.examCloseCalls, 1, reason: '$leave step 3: closed exactly once');
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
   testWidgets('explicit cancel closes the slot and clears local answers', (tester) async {
     final client = FakeServerClient(examGetReplies: const [generating]);
     var clears = 0;

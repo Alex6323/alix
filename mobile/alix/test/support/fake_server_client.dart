@@ -288,7 +288,10 @@ class FakeServerClient implements ServerClient {
   }
 
   @override
-  Future<void> examClose() async => examCloseCalls++;
+  Future<void> examClose() async {
+    if (closed) throw StateError('examClose on a closed client');
+    examCloseCalls++;
+  }
 
   @override
   Future<bool> generateStart(String url, {String? guidance}) async {
