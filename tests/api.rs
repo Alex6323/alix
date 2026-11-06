@@ -6419,6 +6419,101 @@ fn closing_results_retries_a_repaired_idea_save_and_consumes_the_prepared_exam()
     );
 }
 
+#[test]
+fn starting_a_review_retries_a_repaired_idea_save_and_consumes_the_prepared_exam() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
+    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
+    let exam_dir = private_state_root(guard.dir()).join("exam");
+    let ideas = exam_dir.join("deck-examdeck.json");
+    let prepared = exam_dir.join("deck-examdeck.prepared.json");
+
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+    assert_eq!(200, resp.status);
+    let resp = post_json(&base, "/api/exam/grade", r#"{"text":"answer"}"#);
+    assert_eq!(200, resp.status);
+
+    std::fs::remove_file(&ideas).unwrap();
+    std::fs::create_dir(&ideas).unwrap();
+    let body = poll_until(&base, "/api/exam", |b| b["phase"] == "results");
+    assert_eq!("results", body["phase"], "body: {body}");
+    std::fs::remove_dir(&ideas).unwrap();
+
+    let resp = post_json(&base, "/api/select", r#"{"deck":"sample.md"}"#);
+    assert_eq!(200, resp.status);
+    let ideas_saved = ideas.is_file();
+    let prepared_exists = prepared.exists();
+    assert!(
+        ideas_saved && !prepared_exists,
+        "starting a review after repair must retry the idea save and consume the prepared exam: \
+         ideas_saved={ideas_saved}, prepared_exists={prepared_exists}"
+    );
+}
+
+#[test]
+fn starting_trace_browse_and_walk_retry_a_repaired_idea_save() {
+    let _lock = exec_lock();
+    for (label, endpoint, body) in [
+        ("trace", "/api/select", r#"{"deck":"trace.md"}"#),
+        ("browse", "/api/browse", r#"{"deck":"sample.md"}"#),
+        ("walk", "/api/walk", r#"{"deck":"walk.md"}"#),
+    ] {
+        let scripts = TempDir::new().unwrap();
+        let grades_path = scripts.path().join("grades");
+        std::fs::write(
+            &grades_path,
+            r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#,
+        )
+        .unwrap();
+        let fake = branching_exam_cli(scripts.path(), &grades_path);
+        let (base, guard) = spawn_full_server_fixture(
+            Some(&fake),
+            |dir| {
+                write_exam_deck_fixture(dir);
+                std::fs::write(
+                    dir.join("walk.md"),
+                    "---\nformat-version: 1\nid: \"deck-walk\"\n---\n## w\na\n<!-- id: card-w -->\n",
+                )
+                .unwrap();
+            },
+            |_| {},
+        );
+        prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
+        let exam_dir = private_state_root(guard.dir()).join("exam");
+        let ideas = exam_dir.join("deck-examdeck.json");
+        let prepared = exam_dir.join("deck-examdeck.prepared.json");
+        assert_eq!(
+            200,
+            post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#).status
+        );
+        assert_eq!(
+            200,
+            post_json(&base, "/api/exam/grade", r#"{"text":"answer"}"#).status
+        );
+        std::fs::remove_file(&ideas).unwrap();
+        std::fs::create_dir(&ideas).unwrap();
+        poll_until(&base, "/api/exam", |b| b["phase"] == "results");
+        std::fs::remove_dir(&ideas).unwrap();
+
+        let resp = post_json(&base, endpoint, body);
+        assert_eq!(200, resp.status, "{label}");
+        assert!(
+            ideas.is_file() && !prepared.exists(),
+            "{label} must settle the repaired exam: ideas_saved={}, prepared_exists={}",
+            ideas.is_file(),
+            prepared.exists()
+        );
+    }
+}
+
 /// The web generate flow end to end: start answers a generating phase, the
 /// poll settles, the deck lands in the destination, close frees the slot
 /// (a later poll is 409), and the new deck resolves by name.

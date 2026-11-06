@@ -1745,6 +1745,7 @@ impl StudyState {
                 self.reviewing = Some(r);
                 self.tracing = None;
                 self.walking = None;
+                self.end_exam();
                 self.augmenting = None;
                 self.revision += 1;
                 Transition::Done((SelectedDto::Review(Box::new(self.review_dto())), record))
