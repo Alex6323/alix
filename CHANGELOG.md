@@ -754,6 +754,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The phone's exam error screen now shows the desktop's reason (such as an
+  unreadable `exam:` source) under "The exam backend failed.", as the web does.
+
 - The web's checked **only what needs work** filter now reaches the exam request
   when every section needs work, not only after part of the deck has passed.
 

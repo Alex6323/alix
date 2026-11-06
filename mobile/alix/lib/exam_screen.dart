@@ -442,7 +442,8 @@ class _ExamScreenState extends State<ExamScreen> {
 
   Widget _body(BuildContext context) {
     final exam = _exam;
-    if (exam?.error != null) return _errorState(context);
+    final error = exam?.error;
+    if (error != null) return _errorState(context, error);
     final phase = exam?.phase;
     if (phase == null || _pollingPhases.contains(phase)) {
       return _working(context, exam?.elapsed, phase);
@@ -485,7 +486,7 @@ class _ExamScreenState extends State<ExamScreen> {
     );
   }
 
-  Widget _errorState(BuildContext context) {
+  Widget _errorState(BuildContext context, String error) {
     final tokens = Theme.of(context).alix;
     return Center(
       child: Column(
@@ -493,6 +494,8 @@ class _ExamScreenState extends State<ExamScreen> {
         children: [
           // Matches the web's `.exam-error` color token (red, not neutral).
           Text('The exam backend failed.', style: TextStyle(color: tokens.again)),
+          const SizedBox(height: 8),
+          Text(error, textAlign: TextAlign.center, style: TextStyle(color: tokens.dim)),
           const SizedBox(height: 16),
           OutlinedButton(
             onPressed: _explicitClose,

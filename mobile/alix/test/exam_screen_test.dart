@@ -282,6 +282,29 @@ void main() {
     expect(find.text('Turn the gaps into cards'), findsOneWidget);
   });
 
+  testWidgets('a failed preparation shows the server error text', (tester) async {
+    const failed = RemoteExam(
+      phase: 'generating',
+      deck: 'rust.md',
+      strictness: 'balanced',
+      questions: [],
+      grades: [],
+      gaps: [],
+      canRemediate: false,
+      thinking: false,
+      error: 'cannot read `exam:` /src: Is a directory (os error 21)',
+    );
+    final client = FakeServerClient(examGetReplies: const [failed]);
+    await pumpExam(tester, client: client);
+    await tester.pump();
+
+    expect(find.text('The exam backend failed.'), findsOneWidget);
+    expect(
+      find.text('cannot read `exam:` /src: Is a directory (os error 21)'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('results show a per-section count and mark', (tester) async {
     final client = FakeServerClient(examGetReplies: const [resultsFailed]);
     await pumpExam(tester, client: client);
