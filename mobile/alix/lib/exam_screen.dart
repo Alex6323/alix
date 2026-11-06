@@ -417,7 +417,7 @@ class _ExamScreenState extends State<ExamScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: _keepsSitting || _explicitlyClosed,
+      canPop: _keepsSitting && !_closing,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _explicitClose();
       },

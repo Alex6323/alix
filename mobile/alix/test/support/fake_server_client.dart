@@ -41,6 +41,7 @@ class FakeServerClient implements ServerClient {
     this.expireOnExamGrade = false,
     List<bool>? examRemediateReplies,
     this.expireOnExamRemediate = false,
+    this.examCloseGate,
     this.generateStartReply = true,
     this.expireOnGenerateStart = false,
     List<RemoteGenerate>? generateGetReplies,
@@ -115,6 +116,7 @@ class FakeServerClient implements ServerClient {
   final bool expireOnExamGrade;
   final List<bool> examRemediateReplies;
   final bool expireOnExamRemediate;
+  final Completer<void>? examCloseGate;
 
   // ── generate (generateStart / generateGet) ──────────────────────────────
   final bool generateStartReply;
@@ -291,6 +293,7 @@ class FakeServerClient implements ServerClient {
   Future<void> examClose() async {
     if (closed) throw StateError('examClose on a closed client');
     examCloseCalls++;
+    if (examCloseGate != null) await examCloseGate!.future;
   }
 
   @override

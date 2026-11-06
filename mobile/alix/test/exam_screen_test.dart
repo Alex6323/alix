@@ -521,6 +521,60 @@ void main() {
     }
   });
 
+  testWidgets('a second back cannot resume the opener while an explicit close is in flight', (
+    tester,
+  ) async {
+    for (final (exam, closeControl) in [
+      (resultsFailed, find.byIcon(Icons.close)),
+      (answering2, find.text('End exam')),
+    ]) {
+    final closeGate = Completer<void>();
+    final client = FakeServerClient(
+      examGetReplies: [exam],
+      examCloseGate: closeGate,
+    );
+    var resumed = false;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => TextButton(
+          onPressed: () async {
+            await Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ExamScreen(
+                deckName: 'rust.md',
+                client: client,
+                support: tempSupport(),
+                buildClient: (_) => client,
+                applyResult: (exam, nowMs) => null,
+                applyRemediation: (cardsText) => 0,
+                nowMs: () => BigInt.from(1000),
+                pollInterval: _pollInterval,
+              ),
+            ));
+            resumed = true;
+          },
+          child: const Text('open'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(closeControl);
+    await tester.pump();
+    expect(client.examCloseCalls, 1, reason: '${exam.phase} step 1: the awaited close started');
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(resumed, isFalse, reason: '${exam.phase} step 2: a second back must stay gated until close finishes');
+    expect(find.byType(ExamScreen), findsOneWidget);
+
+    closeGate.complete();
+    await tester.pumpAndSettle();
+    expect(resumed, isTrue, reason: '${exam.phase} step 3: the opener resumes only after close finishes');
+    await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
   testWidgets('explicit cancel closes the slot and clears local answers', (tester) async {
     final client = FakeServerClient(examGetReplies: const [generating]);
     var clears = 0;
