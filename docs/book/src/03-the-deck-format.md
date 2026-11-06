@@ -467,8 +467,8 @@ title is an error.
 meant often looks like that.
 It also warns when two sections share a heading, since the exam merges them
 into one section, and, on a deck with an exam, when a section holds more than
-15 cards: the exam asks about every idea in a section, so a long one makes a
-long sitting.
+15 cards: the exam asks 3 questions per section and a pass credits every card
+in it, so a long section is passed on a small share of what it teaches.
 
 ### `###` to `######` — sub-cards
 

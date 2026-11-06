@@ -479,9 +479,11 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
     if deck.has_exam() && !deck.is_trace() {
         for (label, count) in alix::exam::oversized_sections(deck) {
             report.warn(format!(
-                "{}: {count} cards in section `{label}`; the exam asks about every idea in a \
-                 section, so splitting it keeps sittings short",
-                deck.path.display()
+                "{}: {count} cards in section `{label}`; the exam asks {} questions per \
+                 section and a pass credits every card in it, so splitting it examines more \
+                 of them",
+                deck.path.display(),
+                alix::exam_ideas::QUESTIONS_PER_SECTION
             ));
         }
     }
@@ -2528,6 +2530,19 @@ mod tests {
                 .iter()
                 .any(|warning| warning.contains("cards in section"));
             assert_eq!(warned, hit, "{label}: {:#?}", report.warnings);
+            let reason = format!(
+                "the exam asks {} questions per section",
+                alix::exam_ideas::QUESTIONS_PER_SECTION
+            );
+            assert_eq!(
+                warned,
+                report
+                    .warnings
+                    .iter()
+                    .any(|warning| warning.contains(&reason)),
+                "{label}: the warning names the per-section question count: {:#?}",
+                report.warnings
+            );
         }
     }
 

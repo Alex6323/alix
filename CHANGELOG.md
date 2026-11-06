@@ -759,6 +759,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix doctor`'s long-section warning gives the current reason: the exam asks
+  3 questions per section and a pass credits every card in it. It used to say
+  the exam asks about every idea in a section.
+
 - The phone's sync status no longer counts one conflicted deck twice when
   its push and the pull right after it both find the conflict.
 
