@@ -318,6 +318,66 @@ test("an older cancellation response cannot hide a newer generation", async ({ p
   await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
 });
 
+test("a delayed duplicate generation cannot hide an earlier generation response", async ({ page }) => {
+  await page.waitForLoadState("networkidle");
+  await mockExamRows(page, {
+    "wild.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: false },
+  });
+  const job = {
+    deck: "animals/wild.md",
+    state: "generating",
+    elapsed: 0,
+    estimate: "usually 10 to 20 minutes",
+    error: null,
+  };
+  let firstStarted!: () => void;
+  const firstRequest = new Promise<void>((resolve) => { firstStarted = resolve; });
+  let secondStarted!: () => void;
+  const secondRequest = new Promise<void>((resolve) => { secondStarted = resolve; });
+  let releaseFirst!: () => void;
+  const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  let releaseSecond!: () => void;
+  const secondGate = new Promise<void>((resolve) => { releaseSecond = resolve; });
+  let firstReturned!: () => void;
+  const firstResponse = new Promise<void>((resolve) => { firstReturned = resolve; });
+  let secondReturned!: () => void;
+  const secondResponse = new Promise<void>((resolve) => { secondReturned = resolve; });
+  let calls = 0;
+  await page.route("**/api/exam/preparing", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/exam/generate", async (route) => {
+    calls += 1;
+    if (calls === 1) {
+      firstStarted();
+      await firstGate;
+      await route.fulfill({ json: job });
+      firstReturned();
+      return;
+    }
+    secondStarted();
+    await secondGate;
+    await route.fulfill({ json: job });
+    secondReturned();
+  });
+
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+  const generate = page.getByRole("button", { name: /^Generate exam/ });
+  await generate.click();
+  await firstRequest;
+  await generate.click();
+  await secondRequest;
+
+  releaseFirst();
+  await firstResponse;
+  try {
+    await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
+  } finally {
+    releaseSecond();
+    await secondResponse;
+  }
+});
+
 test("a prepared exam is taken, without the scope filter", async ({ page }) => {
   await mockExamRows(page, {
     "wild.md": { state: "examdue", examable: true, exam_filter: "partial", exam_prepared: true },

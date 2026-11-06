@@ -112,6 +112,7 @@ export function createPicker({
   let preparingRequest = 0;
   let latestSnapshot = 0;
   let latestMutation = 0;
+  let appliedMutation = 0;
   let preparingPoll = null;
   let preparingNotices = [];
   let resyncLegend = null;
@@ -155,7 +156,11 @@ export function createPicker({
   function mutation(request) {
     const issued = ++preparingRequest;
     latestMutation = issued;
-    return request.then(value => ({ value, fresh: issued === latestMutation }));
+    return request.then(value => {
+      const fresh = issued > appliedMutation;
+      if (fresh) appliedMutation = issued;
+      return { value, fresh };
+    });
   }
 
   function refreshPreparing() {
