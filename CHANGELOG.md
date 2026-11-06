@@ -195,8 +195,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - An exam asks three questions per section, one for each of three ideas
   picked from the section's idea list: never asked first, then last failed,
-  then asked longest ago. It used to ask at least one question for every
-  idea the source teaches, around 60 for a six-section deck. The idea lists
+  then asked longest ago. It used to ask a fixed number for the whole deck
+  (`[exam] num_questions`, default 5); that key is removed, and a config
+  that still sets it fails to load. The idea lists
   and their history live in `.alix/exam/<deck-id>.json` (the phone keeps
   its own and sends it with `POST /api/remote/exam/start` as `ideas`;
   `RemoteExamDto.ideas` returns it updated, and `RemoteExamDto.estimate`
@@ -265,13 +266,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The exam takes each section's topic from its heading and the prose under
   it, not from its cards: it covers everything the source teaches within that
   topic, including what no card states yet.
-
-- The exam no longer asks a fixed number of questions per section: a first
-  call lists each section's mental models from the source, a second asks at
-  least one question about each, with no upper limit, and a reply that skips
-  a listed model or names one that was not listed is generated once more. The
-  `[exam]`
-  `num_questions` key is removed; a config that still sets it fails to load.
 
 - Trace decks are drill-only: finishing their checkpoint path no longer opens
   an AI compression exam, and graduated checkpoints move the trace to
