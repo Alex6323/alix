@@ -260,6 +260,64 @@ test("an empty refresh cannot hide a generation response still in flight", async
   await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
 });
 
+test("an older cancellation response cannot hide a newer generation", async ({ page }) => {
+  await page.waitForLoadState("networkidle");
+  await mockExamRows(page, {
+    "wild.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: false },
+  });
+  const job = {
+    deck: "animals/wild.md",
+    state: "generating",
+    elapsed: 0,
+    estimate: "usually 10 to 20 minutes",
+    error: null,
+  };
+  let cancelStarted!: () => void;
+  const started = new Promise<void>((resolve) => { cancelStarted = resolve; });
+  let releaseCancellation!: () => void;
+  const cancellationGate = new Promise<void>((resolve) => { releaseCancellation = resolve; });
+  let cancellationReturned!: () => void;
+  const returned = new Promise<void>((resolve) => { cancellationReturned = resolve; });
+  let emptyRefreshReturned!: () => void;
+  const refreshed = new Promise<void>((resolve) => { emptyRefreshReturned = resolve; });
+  let generating = false;
+  let cancellationPending = false;
+  await page.route("**/api/exam/preparing", async (route) => {
+    if (cancellationPending && !generating) emptyRefreshReturned();
+    await route.fulfill({ json: generating ? [job] : [] });
+  });
+  await page.route("**/api/exam/generate", async (route) => {
+    generating = true;
+    await route.fulfill({ json: job });
+  });
+  await page.route("**/api/exam/generate/cancel", async (route) => {
+    generating = false;
+    cancellationPending = true;
+    cancelStarted();
+    await cancellationGate;
+    await route.fulfill({ json: [] });
+    cancellationReturned();
+  });
+
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Animals").click();
+  await adultDeckRow(page, "wild").click();
+  await page.getByRole("button", { name: /^Generate exam/ }).click();
+  await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
+
+  await page.getByRole("button", { name: /^Stop/ }).click();
+  await started;
+  await page.locator("#navRefresh").click();
+  await refreshed;
+  await adultDeckRow(page, "wild").click();
+  await page.getByRole("button", { name: /^Generate exam/ }).click();
+  await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
+
+  releaseCancellation();
+  await returned;
+  await expect(page.getByRole("button", { name: /^Writing exam/ })).toBeVisible();
+});
+
 test("a prepared exam is taken, without the scope filter", async ({ page }) => {
   await mockExamRows(page, {
     "wild.md": { state: "examdue", examable: true, exam_filter: "partial", exam_prepared: true },

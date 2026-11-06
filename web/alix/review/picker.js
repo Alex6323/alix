@@ -110,7 +110,8 @@ export function createPicker({
 
   let preparing = {};
   let preparingRequest = 0;
-  let preparingSettledBy = 0;
+  let latestSnapshot = 0;
+  let latestMutation = 0;
   let preparingPoll = null;
   let preparingNotices = [];
   let resyncLegend = null;
@@ -147,15 +148,14 @@ export function createPicker({
 
   function snapshot(request) {
     const issued = ++preparingRequest;
-    return request.then(value => ({ value, fresh: issued === preparingRequest && issued > preparingSettledBy }));
+    latestSnapshot = issued;
+    return request.then(value => ({ value, fresh: issued === latestSnapshot && issued > latestMutation }));
   }
 
   function mutation(request) {
-    ++preparingRequest;
-    return request.then(value => {
-      preparingSettledBy = preparingRequest;
-      return value;
-    });
+    const issued = ++preparingRequest;
+    latestMutation = issued;
+    return request.then(value => ({ value, fresh: issued === latestMutation }));
   }
 
   function refreshPreparing() {
@@ -167,13 +167,13 @@ export function createPicker({
   function generateExam(name, needsWorkOnly) {
     rememberLaunch(name);
     return mutation(api("/api/exam/generate", post({ deck: name, needs_work_only: needsWorkOnly })))
-      .then(job => applyPreparing(Object.values({ ...preparing, [name]: job })))
+      .then(({ value, fresh }) => { if (fresh) applyPreparing(Object.values({ ...preparing, [name]: value })); })
       .catch(() => notice("could not start writing the exam: the server log has details"));
   }
 
   function stopExam(name) {
     return mutation(api("/api/exam/generate/cancel", post({ deck: name })))
-      .then(applyPreparing)
+      .then(({ value, fresh }) => { if (fresh) applyPreparing(value); })
       .catch(() => notice("could not stop writing the exam: the server log has details"));
   }
 
